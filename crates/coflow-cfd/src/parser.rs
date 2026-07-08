@@ -132,12 +132,7 @@ impl<'a> Parser<'a> {
             });
 
             self.skip_ws_and_comments();
-            if self.eat_char(',') {
-                continue;
-            }
-            if self.peek_char() != Some('}') {
-                return Err(self.error("expected `,` or `}` after group record"));
-            }
+            let _ = self.eat_char(',');
         }
         Ok(records)
     }

@@ -5,19 +5,21 @@
 //! (spread-source, ref target file hint, enum integer value) is
 //! collected into `FieldAnnotation` on the side.
 
-use coflow_cft::CftSchemaTypeRef;
-use coflow_data_model::{CfdDictKey, CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite};
-use coflow_runtime::{ProjectSession, RecordCoordinate, RecordView};
+use coflow_api::FlatDiagnostic;
+use coflow_cft::{CftSchemaTypeRef, CftSchemaView};
+use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite};
+use coflow_runtime::{
+    dict_key_path_text, value_summary, ProjectSession, RecordCoordinate, RecordView,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::editor::types::{FieldAnnotation, FieldCell, RecordRow, SpreadInfo};
-
-const STRING_SUMMARY_TRUNCATE_AFTER_BYTES: usize = 40;
-const STRING_SUMMARY_PREFIX_BYTES: usize = 38;
+use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow, SpreadInfo};
 
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
     pub session: &'a ProjectSession,
+    pub schema: CftSchemaView,
+    pub diagnostics: Vec<FlatDiagnostic>,
     /// Set of dimension-synthesized type names (e.g. `Item_nameVariants`).
     /// Passed in once per snapshot so the annotator can flag the derived
     /// `default` slot as read-only without recomputing per record.
@@ -29,9 +31,11 @@ impl<'a> WireContext<'a> {
     /// type set. Callers that build many rows in a row should reuse the
     /// same context to avoid re-walking the dimension list.
     #[must_use]
-    pub fn new(session: &'a ProjectSession) -> Self {
+    pub fn new(session: &'a ProjectSession, diagnostics: Vec<FlatDiagnostic>) -> Self {
         Self {
             session,
+            schema: CftSchemaView::new(&session.schema),
+            diagnostics,
             dimension_synth_types: session.dimension_synthesized_types(),
         }
     }
@@ -48,6 +52,16 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
         fields,
         field_index,
         field_summaries,
+        field_diagnostics: field_diagnostics_for_record(
+            &ctx.diagnostics,
+            view.display_path,
+            &view.coordinate,
+        ),
+        diagnostic_severity: diagnostic_severity_for_record(
+            &ctx.diagnostics,
+            view.display_path,
+            &view.coordinate,
+        ),
     }
 }
 
@@ -62,6 +76,77 @@ pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'
         fields,
         field_index,
         field_summaries,
+        field_diagnostics: field_diagnostics_for_record(
+            &ctx.diagnostics,
+            display_path,
+            &RecordCoordinate::new(record.actual_type(), record.key.clone()),
+        ),
+        diagnostic_severity: diagnostic_severity_for_record(
+            &ctx.diagnostics,
+            display_path,
+            &RecordCoordinate::new(record.actual_type(), record.key.clone()),
+        ),
+    }
+}
+
+fn field_diagnostics_for_record(
+    diagnostics: &[FlatDiagnostic],
+    file_path: &str,
+    coordinate: &RecordCoordinate,
+) -> Vec<FieldDiagnostic> {
+    diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic_matches_record(diagnostic, file_path, coordinate))
+        .filter_map(|diagnostic| {
+            diagnostic
+                .field_path
+                .as_ref()
+                .map(|field_path| FieldDiagnostic {
+                    severity: normalized_severity(&diagnostic.severity).to_string(),
+                    field_path: field_path.clone(),
+                    message: diagnostic.message.clone(),
+                })
+        })
+        .collect()
+}
+
+fn diagnostic_severity_for_record(
+    diagnostics: &[FlatDiagnostic],
+    file_path: &str,
+    coordinate: &RecordCoordinate,
+) -> Option<String> {
+    let mut best = None;
+    for diagnostic in diagnostics {
+        if !diagnostic_matches_record(diagnostic, file_path, coordinate) {
+            continue;
+        }
+        match diagnostic.severity.as_str() {
+            "error" => return Some("error".to_string()),
+            "warning" => best = Some("warning".to_string()),
+            _ => {}
+        }
+    }
+    best
+}
+
+fn diagnostic_matches_record(
+    diagnostic: &FlatDiagnostic,
+    file_path: &str,
+    coordinate: &RecordCoordinate,
+) -> bool {
+    diagnostic.file_path.as_deref() == Some(file_path)
+        && diagnostic.record_key.as_deref() == Some(coordinate.key.as_str())
+        && diagnostic
+            .actual_type
+            .as_deref()
+            .is_none_or(|actual_type| actual_type == coordinate.actual_type)
+}
+
+fn normalized_severity(severity: &str) -> &'static str {
+    match severity {
+        "error" => "error",
+        "warning" => "warning",
+        _ => "info",
     }
 }
 
@@ -87,80 +172,6 @@ fn field_indexes(fields: &[FieldCell]) -> (BTreeMap<String, usize>, BTreeMap<Str
     (index, summaries)
 }
 
-fn value_summary(value: &CfdValue) -> String {
-    match value {
-        CfdValue::Null => "-".to_string(),
-        CfdValue::Bool(value) => value.to_string(),
-        CfdValue::Int(value) => value.to_string(),
-        CfdValue::Float(value) => value.to_string(),
-        CfdValue::String(value) => string_summary(value),
-        CfdValue::Enum(value) => value
-            .variant
-            .clone()
-            .unwrap_or_else(|| value.value.to_string()),
-        CfdValue::Ref(target_key) => target_key.clone(),
-        CfdValue::Object(value) => value.actual_type().to_string(),
-        CfdValue::Array(items) => {
-            if items.is_empty() {
-                "[]".to_string()
-            } else {
-                format!("{}[{}]", value_kind(&items[0]), items.len())
-            }
-        }
-        CfdValue::Dict(entries) => {
-            if entries.is_empty() {
-                "{}".to_string()
-            } else {
-                format!(
-                    "{}->{}  ({})",
-                    dict_key_kind(&entries[0].0),
-                    value_kind(&entries[0].1),
-                    entries.len()
-                )
-            }
-        }
-    }
-}
-
-fn string_summary(value: &str) -> String {
-    if value.len() <= STRING_SUMMARY_TRUNCATE_AFTER_BYTES {
-        return value.to_string();
-    }
-    let end = previous_char_boundary(value, STRING_SUMMARY_PREFIX_BYTES);
-    format!("{}...", &value[..end])
-}
-
-fn previous_char_boundary(value: &str, preferred_end: usize) -> usize {
-    let mut end = preferred_end.min(value.len());
-    while !value.is_char_boundary(end) {
-        end -= 1;
-    }
-    end
-}
-
-const fn value_kind(value: &CfdValue) -> &'static str {
-    match value {
-        CfdValue::Null => "null",
-        CfdValue::Bool(_) => "bool",
-        CfdValue::Int(_) => "int",
-        CfdValue::Float(_) => "float",
-        CfdValue::String(_) => "string",
-        CfdValue::Enum(_) => "enum",
-        CfdValue::Ref(_) => "&",
-        CfdValue::Object(_) => "object",
-        CfdValue::Array(_) => "[]",
-        CfdValue::Dict(_) => "{}",
-    }
-}
-
-const fn dict_key_kind(key: &CfdDictKey) -> &'static str {
-    match key {
-        CfdDictKey::String(_) => "string",
-        CfdDictKey::Int(_) => "int",
-        CfdDictKey::Enum(_) => "enum",
-    }
-}
-
 fn build_annotation(
     host: &CfdRecord,
     field_name: &str,
@@ -173,7 +184,7 @@ fn build_annotation(
         .records
         .id_for_coordinate(host.actual_type(), &host.key);
     let path = CfdPath::root().field(field_name.to_string());
-    let declared_type = declared_field_type(&ctx.session.schema, host.actual_type(), field_name);
+    let declared_type = declared_field_type(ctx, host.actual_type(), field_name);
     let mut annotation = annotation_for_value(value, ctx, host_id, &path, declared_type);
     if let Some(source_id) =
         host_id.and_then(|host| ctx.session.model.spread_source_at_path(host, &path))
@@ -203,7 +214,7 @@ fn annotation_for_value(
 ) -> FieldAnnotation {
     let mut annotation = FieldAnnotation::default();
     if let Some(ty) = declared_type {
-        annotation.declared_type = Some(type_ref_label(ty));
+        annotation.declared_type = Some(ty.display_label());
         annotation.ref_target_type = ref_target_type(ty).map(str::to_string);
         annotation.enum_type = enum_type_name(ty, &ctx.session.schema).map(str::to_string);
         annotation.nullable = matches!(ty, CftSchemaTypeRef::Nullable(_));
@@ -236,9 +247,8 @@ fn annotation_for_value(
         CfdValue::Object(object) => {
             let object_type = object_type_for_value(value, declared_type);
             for (name, child) in object.fields() {
-                let child_type = object_type.and_then(|actual_type| {
-                    declared_field_type(&ctx.session.schema, actual_type, name)
-                });
+                let child_type =
+                    object_type.and_then(|actual_type| declared_field_type(ctx, actual_type, name));
                 let child_path = path.clone().field(name.clone());
                 let child_annotation =
                     annotation_for_value(child, ctx, host_id, &child_path, child_type);
@@ -263,7 +273,7 @@ fn annotation_for_value(
         CfdValue::Dict(entries) => {
             let item_type = dict_item_type(declared_type);
             for (key, child) in entries {
-                let key_text = dict_key_text(key);
+                let key_text = dict_key_path_text(key);
                 let child_path = path.clone().dict_key_value(key);
                 let child_annotation =
                     annotation_for_value(child, ctx, host_id, &child_path, item_type);
@@ -287,7 +297,7 @@ fn element_template(
 ) -> Option<Box<FieldAnnotation>> {
     let item_type = item_type?;
     let mut ann = FieldAnnotation {
-        declared_type: Some(type_ref_label(item_type)),
+        declared_type: Some(item_type.display_label()),
         ref_target_type: ref_target_type(item_type).map(str::to_string),
         enum_type: enum_type_name(item_type, &ctx.session.schema).map(str::to_string),
         nullable: matches!(item_type, CftSchemaTypeRef::Nullable(_)),
@@ -302,32 +312,11 @@ fn element_template(
 }
 
 fn declared_field_type<'a>(
-    schema: &'a coflow_cft::CftContainer,
+    ctx: &'a WireContext<'_>,
     actual_type: &str,
     field_name: &str,
 ) -> Option<&'a CftSchemaTypeRef> {
-    schema
-        .resolve_type(actual_type)?
-        .all_fields
-        .iter()
-        .find(|field| field.name == field_name)
-        .map(|field| &field.ty_ref)
-}
-
-fn type_ref_label(ty: &CftSchemaTypeRef) -> String {
-    match ty {
-        CftSchemaTypeRef::Int => "int".to_string(),
-        CftSchemaTypeRef::Float => "float".to_string(),
-        CftSchemaTypeRef::Bool => "bool".to_string(),
-        CftSchemaTypeRef::String => "string".to_string(),
-        CftSchemaTypeRef::Named(name) => name.clone(),
-        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
-        CftSchemaTypeRef::Array(inner) => format!("[{}]", type_ref_label(inner)),
-        CftSchemaTypeRef::Dict(key, value) => {
-            format!("{{{}: {}}}", type_ref_label(key), type_ref_label(value))
-        }
-        CftSchemaTypeRef::Nullable(inner) => format!("{}?", type_ref_label(inner)),
-    }
+    ctx.schema.field_type(actual_type, field_name)
 }
 
 fn ref_target_type(ty: &CftSchemaTypeRef) -> Option<&str> {
@@ -383,17 +372,6 @@ fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
     }
 }
 
-fn dict_key_text(key: &CfdDictKey) -> String {
-    match key {
-        CfdDictKey::String(value) => format!("\"{value}\""),
-        CfdDictKey::Int(value) => value.to_string(),
-        CfdDictKey::Enum(value) => value.variant.as_deref().map_or_else(
-            || format!("{}({})", value.enum_name, value.value),
-            |variant| format!("{}.{}", value.enum_name, variant),
-        ),
-    }
-}
-
 fn spread_info_for_source(
     ctx: &WireContext<'_>,
     source_id: CfdRecordId,
@@ -416,8 +394,8 @@ fn spread_info_for_source(
 
 #[cfg(test)]
 mod tests {
-    use super::{string_summary, value_summary};
     use coflow_data_model::CfdValue;
+    use coflow_runtime::value_summary;
 
     #[test]
     fn string_summary_preserves_ascii_truncation_behavior() {
@@ -434,6 +412,6 @@ mod tests {
         let value = "婆".repeat(20);
         let expected = format!("{}...", "婆".repeat(12));
 
-        assert_eq!(string_summary(&value), expected);
+        assert_eq!(value_summary(&CfdValue::String(value)), expected);
     }
 }

@@ -59,7 +59,10 @@ pub use mutation::{
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
     MutationReport, MutationRequest, MutationValue, PreparedMutation,
 };
-pub use records::{RecordTarget, RecordView, WriteOutcome};
+pub use records::{
+    dict_key_path_text, value_summary, EffectiveFieldWrite, RecordTarget, RecordView,
+    RefTargetInfo, WriteOutcome,
+};
 pub use schema_build::build_project_schema_session;
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,

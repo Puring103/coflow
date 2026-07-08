@@ -34,9 +34,9 @@ use coflow_runtime::{
 
 use crate::editor::convert::{record_view_to_row, WireContext};
 use crate::editor::types::{
-    DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords, GraphData, GraphQuery,
-    InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome,
-    WriteFieldOutcome,
+    CollectionEdit, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords,
+    GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget,
+    RenameRecordOutcome, WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -138,6 +138,7 @@ impl SessionStore {
         Ok(ProjectSnapshot {
             session_id: id,
             project_root,
+            first_source_file: first_source_file(&snapshot_partial.file_tree),
             file_tree: snapshot_partial.file_tree,
             diagnostics,
         })
@@ -166,6 +167,7 @@ impl SessionStore {
         Ok(ProjectSnapshot {
             session_id: id,
             project_root,
+            first_source_file: first_source_file(&snapshot_partial.file_tree),
             file_tree: snapshot_partial.file_tree,
             diagnostics,
         })
@@ -186,7 +188,7 @@ impl SessionStore {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let ctx = WireContext::new(&session.engine);
+        let ctx = WireContext::new(&session.engine, session.diagnostics.flatten());
         let mut records = Vec::new();
         let mut columns = BTreeMap::<String, ColumnStats>::new();
         let mut type_seen = Vec::new();
@@ -266,7 +268,15 @@ impl SessionStore {
             if let Some(cached) = session.ref_target_cache.get(expected_type) {
                 return Ok(cached.clone());
             }
-            let targets = build_ref_targets(&session, expected_type);
+            let targets: Vec<RefTarget> = session
+                .engine
+                .ref_targets(expected_type)
+                .into_iter()
+                .map(|target| RefTarget {
+                    coordinate: target.coordinate,
+                    file_path: target.file_path,
+                })
+                .collect();
             session
                 .ref_target_cache
                 .insert(expected_type.to_string(), targets.clone());
@@ -287,6 +297,7 @@ impl SessionStore {
     /// Persist a single field edit. Coordinate carries the host record's
     /// `(actual_type, key)` so the engine can address synthetic-vs-source
     /// rows that share a key.
+    #[allow(clippy::too_many_lines)]
     pub fn write_field(
         &self,
         id: u32,
@@ -298,10 +309,14 @@ impl SessionStore {
         let session_lock = &entry.state;
         let registry = self.registry()?;
 
-        let (final_coordinate, renamed) = {
+        let (final_coordinate, renamed, old_value, affected_files) = {
             let mut session = session_lock
                 .write()
                 .map_err(|_| EditorError::session("session poisoned"))?;
+            let preview = session.engine.effective_field_write(coordinate, field_path);
+            let old_value = preview
+                .as_ref()
+                .and_then(|preview| preview.old_value.clone());
             let report = session
                 .engine
                 .apply_mutation(
@@ -335,9 +350,34 @@ impl SessionStore {
                 .renamed
                 .and_then(|(old, new)| (old == *coordinate).then_some(new));
             let final_coord = renamed.clone().unwrap_or_else(|| coordinate.clone());
+            let mut affected_files = BTreeSet::new();
+            affected_files.insert(
+                file_path_for_coordinate(&session.engine, &final_coord).unwrap_or_default(),
+            );
+            if let Some(preview) = preview {
+                affected_files.insert(preview.file_path);
+            }
+            for applied in &report.applied {
+                if let Some(file) = applied.file.as_ref() {
+                    affected_files.insert(file.clone());
+                }
+                for touched in &applied.outcome.touched {
+                    if let Some(file) = file_path_for_coordinate(&session.engine, touched) {
+                        affected_files.insert(file);
+                    }
+                }
+            }
             session.ref_target_cache.clear();
             drop(session);
-            (final_coord, renamed)
+            (
+                final_coord,
+                renamed,
+                old_value,
+                affected_files
+                    .into_iter()
+                    .filter(|file| !file.is_empty())
+                    .collect(),
+            )
         };
 
         let session = session_lock
@@ -352,13 +392,53 @@ impl SessionStore {
                     final_coordinate.actual_type, final_coordinate.key
                 ))
             })?;
-        let ctx = WireContext::new(&session.engine);
+        let new_value = session
+            .engine
+            .field_value(
+                &final_coordinate.actual_type,
+                &final_coordinate.key,
+                field_path,
+            )
+            .cloned();
+        let ctx = WireContext::new(&session.engine, session.diagnostics.flatten());
         let row = record_view_to_row(&view, &ctx);
         Ok(WriteFieldOutcome {
             row,
             diagnostics: session.diagnostics.flatten(),
+            old_value,
+            new_value,
+            affected_files,
             renamed,
         })
+    }
+
+    pub fn edit_collection(
+        &self,
+        id: u32,
+        coordinate: &RecordCoordinate,
+        field_path: &[coflow_data_model::CfdPathSegment],
+        edit: CollectionEdit,
+    ) -> Result<WriteFieldOutcome, EditorError> {
+        let (current, default_item) = {
+            let entry = self.session(id)?;
+            let session = entry
+                .state
+                .read()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            let current = session
+                .engine
+                .field_value(&coordinate.actual_type, &coordinate.key, field_path)
+                .cloned()
+                .ok_or_else(|| EditorError::not_found("collection field not found"))?;
+            let default_item = session
+                .engine
+                .default_collection_item_value(&coordinate.actual_type, field_path)
+                .ok();
+            drop(session);
+            (current, default_item)
+        };
+        let next = apply_collection_edit(current, edit, default_item)?;
+        self.write_field(id, coordinate, field_path, &next)
     }
 
     pub fn insert_record(
@@ -502,7 +582,7 @@ impl SessionStore {
                     renamed.actual_type, renamed.key
                 ))
             })?;
-        let ctx = WireContext::new(&session.engine);
+        let ctx = WireContext::new(&session.engine, session.diagnostics.flatten());
         let row = record_view_to_row(&view, &ctx);
         Ok(RenameRecordOutcome {
             row,
@@ -596,48 +676,6 @@ impl SessionStore {
     }
 }
 
-fn build_ref_targets(session: &EditorSession, expected_type: &str) -> Vec<RefTarget> {
-    let mut targets = Vec::new();
-    let Some(domain_id) = session.engine.model.type_domain_id(expected_type) else {
-        return targets;
-    };
-    let Some(members) = session.engine.model.domain_members(domain_id) else {
-        return targets;
-    };
-    for type_id in members {
-        let Some(type_name) = session.engine.model.type_name(*type_id) else {
-            continue;
-        };
-        if !session
-            .engine
-            .schema
-            .is_assignable(type_name, expected_type)
-        {
-            continue;
-        }
-        for (_, record) in session.engine.model.records_of_type(type_name) {
-            let Some(file_path) = session
-                .engine
-                .file_for_record(record.actual_type(), &record.key)
-            else {
-                continue;
-            };
-            targets.push(RefTarget {
-                coordinate: RecordCoordinate::new(record.actual_type(), record.key.clone()),
-                file_path: file_path.to_string(),
-            });
-        }
-    }
-    targets.sort_by(|a, b| {
-        a.coordinate
-            .actual_type
-            .cmp(&b.coordinate.actual_type)
-            .then_with(|| a.coordinate.key.cmp(&b.coordinate.key))
-    });
-    targets.dedup_by(|a, b| a.coordinate == b.coordinate);
-    targets
-}
-
 /// Capture the record as `(CfdRecord, display_path)` before the writer
 /// touches the source. Returns `None` when no record matches the
 /// coordinate — undo is best-effort in that case.
@@ -658,6 +696,81 @@ fn snapshot_record_before_delete(
             })
     };
     Ok(snapshot)
+}
+
+fn first_source_file(nodes: &[coflow_runtime::FileTreeNode]) -> Option<String> {
+    for node in nodes {
+        if let Some(path) = node.first_source_descendant.clone() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn file_path_for_coordinate(
+    session: &ProjectSession,
+    coordinate: &RecordCoordinate,
+) -> Option<String> {
+    session
+        .file_for_record(&coordinate.actual_type, &coordinate.key)
+        .map(str::to_string)
+}
+
+fn apply_collection_edit(
+    value: CfdValue,
+    edit: CollectionEdit,
+    default_item: Option<CfdValue>,
+) -> Result<CfdValue, EditorError> {
+    match (value, edit) {
+        (CfdValue::Array(mut items), CollectionEdit::ArrayAppend) => {
+            let seed = default_item
+                .or_else(|| items.last().cloned())
+                .unwrap_or(CfdValue::Null);
+            items.push(seed);
+            Ok(CfdValue::Array(items))
+        }
+        (CfdValue::Array(mut items), CollectionEdit::ArrayRemove { index }) => {
+            if index >= items.len() {
+                return Err(EditorError::write("array index out of range"));
+            }
+            items.remove(index);
+            Ok(CfdValue::Array(items))
+        }
+        (CfdValue::Array(mut items), CollectionEdit::ArrayMove { from, to }) => {
+            if from >= items.len() || to >= items.len() {
+                return Err(EditorError::write("array index out of range"));
+            }
+            if from != to {
+                let moved = items.remove(from);
+                items.insert(to, moved);
+            }
+            Ok(CfdValue::Array(items))
+        }
+        (CfdValue::Dict(mut entries), CollectionEdit::DictInsert { key }) => {
+            if entries.iter().any(|(entry_key, _)| entry_key == &key) {
+                return Err(EditorError::write("dict key already exists"));
+            }
+            let seed = default_item
+                .or_else(|| entries.last().map(|(_, value)| value.clone()))
+                .unwrap_or(CfdValue::Null);
+            entries.push((key, seed));
+            Ok(CfdValue::Dict(entries))
+        }
+        (CfdValue::Dict(entries), CollectionEdit::DictRemove { key }) => {
+            let original_len = entries.len();
+            let entries = entries
+                .into_iter()
+                .filter(|(entry_key, _)| entry_key != &key)
+                .collect::<Vec<_>>();
+            if entries.len() == original_len {
+                return Err(EditorError::write("dict key not found"));
+            }
+            Ok(CfdValue::Dict(entries))
+        }
+        _ => Err(EditorError::write(
+            "collection edit target is not a collection",
+        )),
+    }
 }
 
 #[allow(clippy::needless_pass_by_value)]

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
+import type { CollectionEdit } from '../bindings/CollectionEdit'
 import {
   recordActualType,
   recordKey,
@@ -12,23 +13,6 @@ import {
 } from '../wire'
 import { CardHeader, DataCardExpanded } from './DataCard'
 import { Icon } from './Icon'
-import { diagnosticsForRecord } from '../App'
-
-function severityForRecord(
-  diagnostics: DiagnosticItem[] | undefined,
-  filePath: string,
-  coordinate: RecordCoordinate,
-): 'error' | 'warning' | null {
-  if (!diagnostics) return null
-  let sev: 'error' | 'warning' | null = null
-  for (const d of diagnostics) {
-    if (d.file_path !== filePath || d.record_key !== coordinate.key) continue
-    if (d.actual_type !== null && d.actual_type !== coordinate.actual_type) continue
-    if (d.severity === 'error') return 'error'
-    if (d.severity === 'warning') sev = 'warning'
-  }
-  return sev
-}
 
 interface Props {
   open: boolean
@@ -46,6 +30,12 @@ interface Props {
     coordinate: RecordCoordinate,
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
+  ) => Promise<RecordRow | void>
+  onCollectionEdit?: (
+    filePath: string,
+    coordinate: RecordCoordinate,
+    fieldPath: FieldPathSegment[],
+    edit: CollectionEdit,
   ) => Promise<RecordRow | void>
   onRenameRecord?: (
     filePath: string,
@@ -70,6 +60,7 @@ export function InspectorPanel({
   onWidthChange,
   onClose,
   onWriteField,
+  onCollectionEdit,
   onRenameRecord,
   onDiagnosticBadgeClick,
 }: Props) {
@@ -99,9 +90,10 @@ export function InspectorPanel({
     ? data.records.find(r => sameCoordinate(r.coordinate, coordinate))
     : null
 
-  const fieldDiags = record && data && diagnostics
-    ? diagnosticsForRecord(diagnostics, data.file_path, record.coordinate)
-    : []
+  const fieldDiags = record?.field_diagnostics ?? []
+  const recordSeverity = record?.diagnostic_severity === 'error' || record?.diagnostic_severity === 'warning'
+    ? record.diagnostic_severity
+    : null
 
   const canRename = !readOnly && data?.capabilities.can_edit_key && !!onRenameRecord
 
@@ -157,7 +149,7 @@ export function InspectorPanel({
                 onRename={canRename && onRenameRecord
                   ? async (next) => { await onRenameRecord(data.file_path, record.coordinate, next) }
                   : undefined}
-                diagSeverity={severityForRecord(diagnostics, data.file_path, record.coordinate)}
+                diagSeverity={recordSeverity}
                 onDiagBadgeClick={onDiagnosticBadgeClick
                   ? () => onDiagnosticBadgeClick(record.coordinate, null)
                   : undefined}
@@ -168,6 +160,9 @@ export function InspectorPanel({
                 onEdit={readOnly || !onWriteField
                   ? undefined
                   : (path, val) => { onWriteField(data.file_path, record.coordinate, path, val) }}
+                onCollectionEdit={readOnly || !onCollectionEdit
+                  ? undefined
+                  : (path, edit) => { onCollectionEdit(data.file_path, record.coordinate, path, edit) }}
                 diagnostics={fieldDiags}
                 onDiagnosticBadgeClick={onDiagnosticBadgeClick
                   ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)

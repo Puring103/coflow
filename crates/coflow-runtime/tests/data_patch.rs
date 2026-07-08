@@ -85,6 +85,46 @@ fn write_spread_project(root: &std::path::Path) {
     .expect("write config");
 }
 
+fn write_group_cfd_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type IntRange {
+                lo: int;
+                hi: int;
+            }
+
+            type DamageEffect {
+                damage: IntRange;
+                pierce_divine: bool;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("effects.cfd"),
+        r"DamageEffect {
+    eff_fireball_damage {
+        damage: { lo: 6, hi: 6 },
+        pierce_divine: false,
+    }
+
+    eff_execute_damage {
+        damage: { lo: 999, hi: 999 },
+        pierce_divine: false,
+    }
+}
+",
+    )
+    .expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+}
+
 fn write_shape_annotation_project(root: &std::path::Path) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
@@ -222,6 +262,61 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(text.contains("bad_sword"));
     assert!(text.contains("Rare"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn patch_writes_group_record_without_required_commas() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-group-cfd-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_group_cfd_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::SetField {
+                    record: PatchRecordSelector {
+                        actual_type: "DamageEffect".to_string(),
+                        key: "eff_fireball_damage".to_string(),
+                    },
+                    file: None,
+                    path: vec![
+                        PatchPathSegment::Field("damage".to_string()),
+                        PatchPathSegment::Field("lo".to_string()),
+                    ],
+                    value: json!(7),
+                }],
+            },
+        )
+        .expect("patch should write group record");
+
+    assert!(report.write_ok, "patch failed: {report:?}");
+    assert!(report.failed.is_empty());
+    let view = session
+        .record_view("DamageEffect", "eff_fireball_damage")
+        .expect("record view");
+    let Some(coflow_data_model::CfdValue::Object(damage)) = view.record.fields().get("damage")
+    else {
+        panic!("damage should be object");
+    };
+    assert_eq!(
+        damage.field("lo"),
+        Some(&coflow_data_model::CfdValue::Int(7))
+    );
+
+    let text = std::fs::read_to_string(root.join("data").join("effects.cfd")).expect("read cfd");
+    assert!(
+        text.contains("damage: { lo: 7, hi: 6 }"),
+        "written source should contain updated value: {text}"
+    );
 
     let _ = std::fs::remove_dir_all(root);
 }

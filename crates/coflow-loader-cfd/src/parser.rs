@@ -117,6 +117,8 @@ impl<'a> Parser<'a> {
                     end: self.pos,
                 },
             });
+            self.skip_ws_and_comments();
+            let _ = self.eat_char(',');
         }
         Ok(records)
     }

@@ -8,8 +8,9 @@ mod watcher;
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_runtime::RecordCoordinate;
 use editor::{
-    DeleteRecordOutcome, EditorError, FileRecords, GraphData, GraphQuery, InsertRecordOutcome,
-    ProjectSnapshot, RefTarget, RenameRecordOutcome, SessionStore, WriteFieldOutcome,
+    CollectionEdit, DeleteRecordOutcome, EditorError, FileRecords, GraphData, GraphQuery,
+    InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome, SessionStore,
+    WriteFieldOutcome,
 };
 use tauri::{AppHandle, Manager, State};
 use watcher::ProjectWatchRegistry;
@@ -134,6 +135,24 @@ fn write_field(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+fn edit_collection(
+    session_id: u32,
+    coordinate: RecordCoordinate,
+    field_path: Vec<CfdPathSegment>,
+    edit: CollectionEdit,
+    store: State<'_, SessionStore>,
+    watchers: State<'_, ProjectWatchRegistry>,
+) -> Result<WriteFieldOutcome, EditorError> {
+    watchers.suppress_internal_write_events(session_id);
+    let result = store.edit_collection(session_id, &coordinate, &field_path, edit);
+    if result.is_err() {
+        watchers.clear_internal_write_suppression(session_id);
+    }
+    result
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 fn insert_record(
     session_id: u32,
     file_path: String,
@@ -209,6 +228,7 @@ pub fn run() -> tauri::Result<()> {
             get_ref_targets,
             make_default_object,
             write_field,
+            edit_collection,
             insert_record,
             rename_record_key,
             delete_record,

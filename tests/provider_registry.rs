@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::too_many_lines)]
+
 #[test]
 fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
     let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;

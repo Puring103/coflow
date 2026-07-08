@@ -8,10 +8,10 @@ import {
 import '@xyflow/react/dist/style.css'
 import type { GraphData } from '../bindings/GraphData'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
+import type { CollectionEdit } from '../bindings/CollectionEdit'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { WriterCapabilities } from '../bindings/WriterCapabilities'
 import {
-  diagnosticMatchesCoordinate,
   graphEdgeView,
   graphNodeView,
   type DiagnosticItem,
@@ -122,6 +122,7 @@ interface NodeData extends Record<string, unknown> {
   onToggleExpand: () => void
   onRowToggle: (path: string, exp: boolean) => void
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
+  onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   /** Ctrl+click on a node body opens that record in the record view. */
   onCtrlClick?: () => void
   /** Visually mark this node as the current inspector selection. */
@@ -137,7 +138,7 @@ interface NodeData extends Record<string, unknown> {
 // threshold changes don't query every rendered node.
 
 function CfdNode({ id, data }: NodeProps) {
-  const { graphNode: gn, expanded, outgoingPaths, compact, measureHandles, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
+  const { graphNode: gn, expanded, outgoingPaths, compact, measureHandles, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCollectionEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
@@ -272,6 +273,7 @@ function CfdNode({ id, data }: NodeProps) {
               onToggle={onToggleExpand}
               onRowToggle={onRowToggle}
               onEdit={onEdit}
+              onCollectionEdit={onCollectionEdit}
             />
           )}
         </>
@@ -348,18 +350,11 @@ function topLevelField(path: string): string {
 }
 
 function severityForGraphNode(
-  diagnostics: DiagnosticItem[] | undefined,
   node: GraphNodeView,
 ): 'error' | 'warning' | null {
-  if (!diagnostics) return null
-  let sev: 'error' | 'warning' | null = null
-  for (const d of diagnostics) {
-    if (d.file_path !== node.file_path) continue
-    if (!diagnosticMatchesCoordinate(d, node.coordinate)) continue
-    if (d.severity === 'error') return 'error'
-    if (d.severity === 'warning') sev = 'warning'
-  }
-  return sev
+  return node.diagnostic_severity === 'error' || node.diagnostic_severity === 'warning'
+    ? node.diagnostic_severity
+    : null
 }
 
 function defaultEnabledFields(
@@ -566,41 +561,13 @@ interface LayoutResult {
 
 async function layoutAll(
   graph: { nodes: GraphNodeView[]; edges: GraphEdgeView[] },
-  enabledFields: Set<string>,
   activeType: string | undefined,
   nodeExpandedMap: Map<string, boolean>,
   nodeRowExpandedMap: Map<string, Set<string>>,
 ): Promise<LayoutResult> {
-  // Filter edges by toolbar
-  let activeEdges = graph.edges.filter(e => enabledFields.has(topLevelField(e.field_path)))
-
-  // Compute visible set
-  const touched = new Set<string>()
-  for (const e of activeEdges) { touched.add(e.source); touched.add(e.target) }
-
-  let visibleSet: Set<string>
-  if (activeType) {
-    const roots = graph.nodes
-      .filter(n => n.in_focus_file && n.actual_type === activeType && touched.has(n.id))
-      .map(n => n.id)
-    visibleSet = new Set(roots)
-    const out = new Map<string, string[]>()
-    for (const e of activeEdges) {
-      ;(out.get(e.source) ?? (out.set(e.source, []), out.get(e.source)!)).push(e.target)
-    }
-    const q = [...roots]
-    while (q.length) {
-      const cur = q.shift()!
-      for (const nb of out.get(cur) ?? []) {
-        if (!visibleSet.has(nb)) { visibleSet.add(nb); q.push(nb) }
-      }
-    }
-    activeEdges = activeEdges.filter(e => visibleSet.has(e.source) && visibleSet.has(e.target))
-  } else {
-    visibleSet = touched
-  }
-
-  const visibleNodes = graph.nodes.filter(n => visibleSet.has(n.id))
+  const activeEdges = graph.edges
+  const visibleNodes = graph.nodes
+  const visibleSet = new Set(visibleNodes.map(n => n.id))
 
   // Detect back-edges (cycles)
   const backEdgeKeys = detectBackEdges(visibleNodes, activeEdges)
@@ -702,12 +669,15 @@ interface Props {
   onWriteField?: (
     filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue
   ) => Promise<RecordRow | void>
+  onCollectionEdit?: (
+    filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], edit: CollectionEdit
+  ) => Promise<RecordRow | void>
   onDiagnosticBadgeClick?: (
     file: string, coordinate: RecordCoordinate, fieldPath: string | null,
   ) => void
 }
 
-export function GraphView({ graphData, activeType, fileCapabilities, diagnostics, onEnabledFieldsChange, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onDiagnosticBadgeClick }: Props) {
+export function GraphView({ graphData, activeType, fileCapabilities, diagnostics, onEnabledFieldsChange, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick }: Props) {
   const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
@@ -792,9 +762,9 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
 
   useEffect(() => {
     let cancelled = false
-    setLayoutBusy(graph.nodes.length > 0 && enabledFields.size > 0)
+    setLayoutBusy(graph.nodes.length > 0)
     setLayoutError(null)
-    layoutAll(graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap)
+    layoutAll(graph, activeType, nodeExpandedMap, nodeRowExpandedMap)
       .then(next => {
         if (!cancelled) {
           setLayout(next)
@@ -812,7 +782,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
     return () => {
       cancelled = true
     }
-  }, [graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap])
+  }, [graph, activeType, nodeExpandedMap, nodeRowExpandedMap])
 
   const { positions, visibleNodes, forwardEdges, backEdges } = layout
   const compactNodes = zoomCompactNodes
@@ -835,7 +805,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
         const capability = fileCapabilities?.[n.file_path]
         const editable = !!onWriteField && (capability ? isEditableCapabilities(capability) : isEditableFile(n.file_path))
         const rowExpanded = nodeRowExpandedMap.get(n.id)
-        const nodeSev = severityForGraphNode(diagnostics, n)
+          const nodeSev = severityForGraphNode(n)
         return {
           id: n.id,
           type: 'cfd',
@@ -851,6 +821,9 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
             onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
             onEdit: editable
               ? (path: FieldPathSegment[], val: FieldValue) => { onWriteField!(n.file_path, n.coordinate, path, val) }
+              : undefined,
+            onCollectionEdit: editable && onCollectionEdit
+              ? (path: FieldPathSegment[], edit: CollectionEdit) => { onCollectionEdit(n.file_path, n.coordinate, path, edit) }
               : undefined,
             onCtrlClick: onOpenRecord ? () => onOpenRecord(n.file_path, n.coordinate) : undefined,
             selected: !!selectedCoordinate

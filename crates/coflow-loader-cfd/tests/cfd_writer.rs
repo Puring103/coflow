@@ -1061,3 +1061,136 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
         "expected enum dict entry to be updated: {after}"
     );
 }
+
+#[test]
+fn writes_group_record_without_required_commas() {
+    let dir = temp_dir("group-no-commas");
+    let file = dir.join("effects.cfd");
+    fs::write(
+        &file,
+        r"DamageEffect {
+  eff_fireball_damage {
+    damage: { lo: 6, hi: 6 },
+    pierce_divine: false,
+  }
+
+  eff_execute_damage {
+    damage: { lo: 999, hi: 999 },
+    pierce_divine: false,
+  }
+}
+",
+    )
+    .expect("write seed");
+
+    let schema = compile_schema(
+        r"
+        type IntRange {
+          lo: int;
+          hi: int;
+        }
+
+        type DamageEffect {
+          damage: IntRange;
+          pierce_divine: bool;
+        }
+        ",
+    );
+    let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
+        .expect("load model");
+
+    let writer = CfdWriter::new();
+    let new_value = CfdValue::Int(7);
+    let segments = vec![
+        WriteFieldPathSegment::Field("damage".to_string()),
+        WriteFieldPathSegment::Field("lo".to_string()),
+    ];
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    writer
+        .write_field(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: Some(&model),
+            },
+            &WriteCellRequest {
+                origin: &origin,
+                record_key: "eff_fireball_damage",
+                actual_type: "DamageEffect",
+                field_path: &segments,
+                new_value: &new_value,
+                schema: &schema,
+                source: &source,
+            },
+        )
+        .expect("write succeeds");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(
+        after.contains("damage: { lo: 7, hi: 6 }"),
+        "target record should be updated: {after}"
+    );
+    assert!(
+        after.contains("damage: { lo: 999, hi: 999 }"),
+        "sibling record should remain unchanged: {after}"
+    );
+}
+
+#[test]
+fn write_reports_parse_diagnostics_instead_of_missing_record_for_bad_cfd() {
+    let dir = temp_dir("parse-diagnostic");
+    let file = dir.join("items.cfd");
+    fs::write(
+        &file,
+        r"// not a CFD comment
+sword: Item {
+  value: 1,
+}
+",
+    )
+    .expect("write seed");
+
+    let schema = compile_schema(
+        r"
+        type Item {
+          value: int;
+        }
+        ",
+    );
+    let writer = CfdWriter::new();
+    let new_value = CfdValue::Int(2);
+    let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let model = empty_model(&schema);
+    let err = writer
+        .write_field(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: Some(&model),
+            },
+            &WriteCellRequest {
+                origin: &origin,
+                record_key: "sword",
+                actual_type: "Item",
+                field_path: &segments,
+                new_value: &new_value,
+                schema: &schema,
+                source: &source,
+            },
+        )
+        .expect_err("invalid CFD syntax should fail before patching");
+
+    assert!(
+        err.iter()
+            .any(|diagnostic| diagnostic.message.contains("failed to parse")),
+        "expected parse diagnostic, got: {err:?}"
+    );
+    assert!(
+        err.iter()
+            .all(|diagnostic| !diagnostic.message.contains("not found in AST")),
+        "parse errors should not be masked as missing records: {err:?}"
+    );
+}

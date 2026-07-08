@@ -27,18 +27,20 @@ const MOCK_CFD_CAPS: WriterCapabilities = {
 export const MOCK_PROJECT: ProjectSnapshot = {
   session_id: 1,
   project_root: '(mock project)',
+  first_source_file: 'data/item.cfd',
   file_tree: [
     {
       name: 'data',
       path: 'data',
       is_dir: true,
       in_sources: true,
+      first_source_descendant: 'data/item.cfd',
       children: [
-        { name: 'item.cfd', path: 'data/item.cfd', is_dir: false, in_sources: true, children: [] },
-        { name: 'npc.cfd', path: 'data/npc.cfd', is_dir: false, in_sources: true, children: [] },
+        { name: 'item.cfd', path: 'data/item.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/item.cfd', children: [] },
+        { name: 'npc.cfd', path: 'data/npc.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/npc.cfd', children: [] },
       ],
     },
-    { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, children: [] },
+    { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, first_source_descendant: null, children: [] },
   ],
   diagnostics: [
     {
@@ -176,6 +178,8 @@ function row(actualType: string, key: string, fields: RecordRow['fields']): Reco
     fields,
     field_index,
     field_summaries,
+    field_diagnostics: [],
+    diagnostic_severity: null,
   }
 }
 
@@ -221,5 +225,7 @@ function mockGraphNode(row: RecordRow, filePath: string, inFocusFile: boolean): 
     in_focus_file: inFocusFile,
     is_collapsed: false,
     fields: row.fields,
+    field_diagnostics: row.field_diagnostics,
+    diagnostic_severity: row.diagnostic_severity,
   }
 }

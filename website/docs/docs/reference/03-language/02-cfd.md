@@ -32,7 +32,7 @@ basic_monster: Monster {
 
 CFD 文件只保存数据，不声明 schema。字段、类型、枚举、默认值、引用规则和 check 规则来自 CFT。
 
-注释使用 `#`：
+注释只使用 `#`：
 
 ```text
 # 整行注释
@@ -42,6 +42,7 @@ sword_fire: Item {
 ```
 
 字段、数组元素和字典条目使用 `,` 分隔，允许尾逗号。
+分组记录之间的逗号是可选的。
 
 ```text
 tags: ["weapon", "melee",]
@@ -63,7 +64,8 @@ sword_01: Item {
 - `sword_01` 是 record key。
 - `Item` 是 CFT 类型名。
 - record key 承担 `id` 语义，不要在顶层记录块里再写 `id` 字段。
-- 记录块由 `{ ... }` 包裹；块内字段、分组记录、数组元素和字典条目只能用 `,` 分隔。
+- 记录块由 `{ ... }` 包裹；普通记录字段、数组元素和字典条目使用 `,` 分隔。
+- 分组记录之间可以写 `,`，也可以仅用空白或换行分隔。
 - 记录里的字段名必须来自目标 CFT type，不能随意添加 schema 外字段。
 
 ### 分组记录
@@ -85,6 +87,22 @@ Item {
 ```
 
 这里的 `sword_fire` 和 `staff_ice` 都是 `Item` 记录。
+
+分组记录之间的逗号可选，以下写法等价：
+
+```text
+Item {
+  sword_fire {
+    name: "Fire Sword",
+    price: 100,
+  },
+
+  staff_ice {
+    name: "Ice Staff",
+    price: 150,
+  },
+}
+```
 
 ### 多态分组
 

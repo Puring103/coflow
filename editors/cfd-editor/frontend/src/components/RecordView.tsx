@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
+import type { CollectionEdit } from '../bindings/CollectionEdit'
 import {
   coordinateId,
-  diagnosticMatchesCoordinate,
   recordActualType,
   recordKey,
   sameCoordinate,
@@ -15,7 +15,7 @@ import {
 import { DataCardExpanded, CardHeader } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
-import { diagnosticsForRecord, RECORD_HIGHLIGHT_SENTINEL } from '../App'
+import { RECORD_HIGHLIGHT_SENTINEL } from '../App'
 
 interface Props {
   data: FileRecords
@@ -29,6 +29,7 @@ interface Props {
   onHighlightConsumed?: () => void
   onOpenRecord: (coordinate: RecordCoordinate) => void
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
+  onCollectionEdit?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], edit: CollectionEdit) => Promise<RecordRow | void>
   onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
   /** Click on a corner badge — either the CardHeader (fieldPath = null) or
    *  a field row (top-level fieldPath). Forwarded up to App so the
@@ -36,7 +37,7 @@ interface Props {
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, onWriteField, onRenameRecord, onDiagnosticBadgeClick }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, onWriteField, onCollectionEdit, onRenameRecord, onDiagnosticBadgeClick }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const fieldSearchRef = useRef<HTMLInputElement>(null)
@@ -75,22 +76,12 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     ? record.fields.filter(f => f.name.toLowerCase().includes(fieldSearch.toLowerCase()))
     : record.fields
 
-  const fieldDiags = diagnostics
-    ? diagnosticsForRecord(diagnostics, data.file_path, record.coordinate)
-    : []
+  const fieldDiags = record.field_diagnostics
   const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
-  // Per-record severity for sidebar dots: any error in any field, or a record-
-  // level diagnostic (field_path is null) attached to that record.
-  const recordSeverity = (coordinate: RecordCoordinate): 'error' | 'warning' | null => {
-    if (!diagnostics) return null
-    let sev: 'error' | 'warning' | null = null
-    for (const d of diagnostics) {
-      if (d.file_path !== data.file_path || !diagnosticMatchesCoordinate(d, coordinate)) continue
-      if (d.severity === 'error') return 'error'
-      if (d.severity === 'warning') sev = 'warning'
-    }
-    return sev
-  }
+  const rowSeverity = (row: RecordRow): 'error' | 'warning' | null =>
+    row.diagnostic_severity === 'error' || row.diagnostic_severity === 'warning'
+      ? row.diagnostic_severity
+      : null
 
   const onSidebarKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return
@@ -120,7 +111,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     <div className="record-view">
       <div className="rv-sidebar" role="listbox" aria-label="记录列表" onKeyDown={onSidebarKeyDown} ref={sidebarRef}>
         {sidebarRecords.map(r => {
-          const sev = recordSeverity(r.coordinate)
+          const sev = rowSeverity(r)
           const id = coordinateId(r.coordinate)
           return (
             <div
@@ -153,7 +144,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           actualType={recordActualType(record)}
           filePath={data.file_path}
           onRename={canRename ? async (next) => { await onRenameRecord!(record.coordinate, next) } : undefined}
-          diagSeverity={recordSeverity(record.coordinate)}
+          diagSeverity={rowSeverity(record)}
           onDiagBadgeClick={onDiagnosticBadgeClick ? () => onDiagnosticBadgeClick(record.coordinate, null) : undefined}
           highlight={highlightField === RECORD_HIGHLIGHT_SENTINEL}
         />
@@ -176,6 +167,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           fields={fields}
           actualType={recordActualType(record)}
           onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(record.coordinate, path, val) }}
+          onCollectionEdit={readOnly || !onCollectionEdit ? undefined : (path, edit) => { onCollectionEdit(record.coordinate, path, edit) }}
           diagnostics={fieldDiags}
           highlightField={highlightField === RECORD_HIGHLIGHT_SENTINEL ? null : highlightField}
           expandAlongPath={highlightField && highlightField !== RECORD_HIGHLIGHT_SENTINEL ? highlightField : null}

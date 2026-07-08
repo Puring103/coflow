@@ -106,13 +106,6 @@ pub(super) fn skip_ws_and_comments(source: &str, pos: &mut usize) {
         while peek_char(source, *pos).is_some_and(char::is_whitespace) {
             *pos += peek_char(source, *pos).map_or(0, char::len_utf8);
         }
-        if source[*pos..].starts_with("//") {
-            *pos += 2;
-            while peek_char(source, *pos).is_some_and(|ch| ch != '\n') {
-                *pos += peek_char(source, *pos).map_or(0, char::len_utf8);
-            }
-            continue;
-        }
         if source[*pos..].starts_with('#') {
             *pos += 1;
             while peek_char(source, *pos).is_some_and(|ch| ch != '\n') {

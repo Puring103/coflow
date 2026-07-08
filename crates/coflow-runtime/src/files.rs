@@ -25,6 +25,8 @@ pub struct FileTreeNode {
     pub path: String,
     pub is_dir: bool,
     pub in_sources: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_source_descendant: Option<String>,
     pub children: Vec<Self>,
 }
 
@@ -101,6 +103,7 @@ pub fn build_file_tree(
         insert_virtual_source(&mut roots, source);
     }
     sort_tree(&mut roots);
+    annotate_first_source_descendant(&mut roots);
     roots
 }
 
@@ -160,12 +163,14 @@ pub fn build_dimension_subtree(
         );
     }
     sort_tree(&mut children);
+    annotate_first_source_descendant(&mut children);
 
     Some(FileTreeNode {
         name: group_name,
         path: path_to_slash(dir.strip_prefix(root).unwrap_or(dir)),
         is_dir: true,
         in_sources: true,
+        first_source_descendant: first_source_descendant(&children),
         children,
     })
 }
@@ -205,6 +210,7 @@ fn insert_path(
         path: path.clone(),
         is_dir,
         in_sources: in_src,
+        first_source_descendant: None,
         children: Vec::new(),
     };
     if is_dir {
@@ -244,6 +250,7 @@ fn insert_dimension_path(
         path: path.clone(),
         is_dir,
         in_sources: is_dir || in_sources.contains(&path),
+        first_source_descendant: None,
         children: Vec::new(),
     };
     if is_dir {
@@ -268,6 +275,7 @@ fn insert_virtual_source(nodes: &mut Vec<FileTreeNode>, source: &str) {
                 path: REMOTE_SOURCE_GROUP_PATH.to_string(),
                 is_dir: true,
                 in_sources: true,
+                first_source_descendant: None,
                 children: Vec::new(),
             });
             nodes.len() - 1
@@ -277,6 +285,7 @@ fn insert_virtual_source(nodes: &mut Vec<FileTreeNode>, source: &str) {
         path: source.to_string(),
         is_dir: false,
         in_sources: true,
+        first_source_descendant: None,
         children: Vec::new(),
     });
 }
@@ -312,6 +321,23 @@ fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
             sort_tree(&mut node.children);
         }
     }
+}
+
+fn annotate_first_source_descendant(nodes: &mut [FileTreeNode]) {
+    for node in nodes {
+        annotate_first_source_descendant(&mut node.children);
+        node.first_source_descendant = if !node.is_dir && node.in_sources {
+            Some(node.path.clone())
+        } else {
+            first_source_descendant(&node.children)
+        };
+    }
+}
+
+fn first_source_descendant(nodes: &[FileTreeNode]) -> Option<String> {
+    nodes
+        .iter()
+        .find_map(|node| node.first_source_descendant.clone())
 }
 
 #[cfg(test)]

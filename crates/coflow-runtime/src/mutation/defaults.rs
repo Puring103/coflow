@@ -23,6 +23,16 @@ pub(super) fn default_record_for_type(
     })
 }
 
+pub fn default_value_for_type_ref(
+    schema: &CftContainer,
+    ty: &CftSchemaTypeRef,
+    materialization: DefaultMaterialization,
+) -> Result<CfdValue, DiagnosticSet> {
+    let schema = CftSchemaView::new(schema);
+    let mut stack = BTreeSet::new();
+    default_value_for_ty(&schema, ty, None, materialization, &mut stack)
+}
+
 pub(super) fn default_missing_fields_for_type(
     schema: &CftContainer,
     type_name: &str,

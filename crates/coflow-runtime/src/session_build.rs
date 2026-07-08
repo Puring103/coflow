@@ -165,7 +165,7 @@ fn build_data_pipeline(
 
 fn load_base_data(
     ctx: &SessionBuildContext<'_>,
-) -> Result<(ProjectLoadOutput, SessionIndexes), DataLoadFailure> {
+) -> Result<(ProjectLoadOutput, SessionIndexes), Box<DataLoadFailure>> {
     load_data(ctx, false, !ctx.has_dimension_fields())
 }
 
@@ -189,7 +189,7 @@ fn load_data(
     ctx: &SessionBuildContext<'_>,
     include_implicit_dimension_sources: bool,
     run_checks: bool,
-) -> Result<(ProjectLoadOutput, SessionIndexes), DataLoadFailure> {
+) -> Result<(ProjectLoadOutput, SessionIndexes), Box<DataLoadFailure>> {
     let mut indexes = SessionIndexes::default();
     let output = match load_project_data(
         &ctx.project,
@@ -205,10 +205,10 @@ fn load_data(
     ) {
         Ok(output) => output,
         Err(diagnostics) => {
-            return Err(DataLoadFailure {
+            return Err(Box::new(DataLoadFailure {
                 diagnostics,
                 indexes,
-            })
+            }));
         }
     };
     Ok((output, indexes))

@@ -9,7 +9,7 @@
 //! derived metadata (file hints, enum int values, spread info, ...).
 
 use coflow_api::{FlatDiagnostic, WriterCapabilities};
-use coflow_data_model::{CfdRecord, CfdValue};
+use coflow_data_model::{CfdDictKey, CfdRecord, CfdValue};
 use coflow_runtime::{FileTreeNode, RecordCoordinate};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -124,6 +124,8 @@ pub struct ProjectSnapshot {
     pub session_id: u32,
     pub project_root: String,
     pub file_tree: Vec<FileTreeNode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_source_file: Option<String>,
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
@@ -170,6 +172,22 @@ pub struct RecordRow {
     pub fields: Vec<FieldCell>,
     pub field_index: BTreeMap<String, usize>,
     pub field_summaries: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_diagnostics: Vec<FieldDiagnostic>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic_severity: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct FieldDiagnostic {
+    pub severity: String,
+    pub field_path: String,
+    pub message: String,
 }
 
 /// One cell in a record row.
@@ -291,10 +309,36 @@ pub struct SpreadInfo {
 pub struct WriteFieldOutcome {
     pub row: RecordRow,
     pub diagnostics: Vec<FlatDiagnostic>,
+    /// Value at the target path before the write. Captured by the backend
+    /// from engine state so undo does not depend on a stale front-end cache.
+    #[serde(default)]
+    pub old_value: Option<CfdValue>,
+    /// Value at the target path after the write. Collection edits are built
+    /// in the backend, so the frontend uses this authoritative value for
+    /// undo/redo instead of reconstructing the collection mutation.
+    #[serde(default)]
+    pub new_value: Option<CfdValue>,
+    #[serde(default)]
+    pub affected_files: Vec<String>,
     /// `Some(new_coordinate)` when the write changed the host record's `id`
     /// field. The front-end refreshes any caches keyed by the old coordinate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub renamed: Option<RecordCoordinate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CollectionEdit {
+    ArrayAppend,
+    ArrayRemove { index: usize },
+    ArrayMove { from: usize, to: usize },
+    DictInsert { key: CfdDictKey },
+    DictRemove { key: CfdDictKey },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -389,6 +433,10 @@ pub struct GraphNode {
     pub in_focus_file: bool,
     pub is_collapsed: bool,
     pub fields: Vec<FieldCell>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_diagnostics: Vec<FieldDiagnostic>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic_severity: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

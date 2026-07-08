@@ -5,8 +5,9 @@
     clippy::unwrap_used
 )]
 
-use cfd_editor_lib::editor::SessionStore;
-use coflow_data_model::{CfdObject, CfdValue};
+use cfd_editor_lib::editor::{CollectionEdit, SessionStore};
+use coflow_data_model::{CfdObject, CfdPathSegment, CfdValue};
+use coflow_runtime::RecordCoordinate;
 use std::collections::BTreeMap;
 
 #[test]
@@ -150,6 +151,15 @@ fn insert_record_uses_engine_minimal_materialization_for_empty_editor_payload() 
     let snapshot = store
         .load_project(&root.join("coflow.yaml"))
         .expect("load project");
+    let data_node = snapshot
+        .file_tree
+        .iter()
+        .find(|node| node.path == "data")
+        .expect("data directory node");
+    assert_eq!(
+        data_node.first_source_descendant.as_deref(),
+        Some("data/items.cfd")
+    );
     let payload = object_value("Item", BTreeMap::new());
     let outcome = store
         .insert_record(
@@ -356,6 +366,169 @@ dimensions:
             .as_ref()
             .is_some_and(|annotation| annotation.read_only),
         "variant slots stay editable",
+    );
+}
+
+#[test]
+fn write_field_reports_spread_source_old_value_and_affected_file() {
+    let root = temp_project_dir("cfd-editor-spread-write-outcome");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                name: string;
+                power: int;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/source.cfd"),
+        r#"base: Item { name: "Base", power: 1 }"#,
+    )
+    .expect("write source");
+    std::fs::write(root.join("data/host.cfd"), r"child: Item { ...&base }").expect("write host");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/source.cfd\n  - path: data/host.cfd\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let outcome = store
+        .write_field(
+            snapshot.session_id,
+            &RecordCoordinate::new("Item", "child"),
+            &[CfdPathSegment::Field("name".to_string())],
+            &CfdValue::String("Changed".to_string()),
+        )
+        .expect("write spread field");
+
+    assert_eq!(
+        outcome.old_value,
+        Some(CfdValue::String("Base".to_string()))
+    );
+    assert_eq!(
+        outcome.new_value,
+        Some(CfdValue::String("Changed".to_string()))
+    );
+    assert!(
+        outcome
+            .affected_files
+            .iter()
+            .any(|file| file == "data/source.cfd"),
+        "affected files should include spread source file: {:?}",
+        outcome.affected_files
+    );
+}
+
+#[test]
+fn edit_collection_appends_schema_default_item() {
+    let root = temp_project_dir("cfd-editor-collection-edit");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Bag {
+                nums: [int] = [];
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.cfd"), r"bag: Bag { nums: [] }").expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/items.cfd\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let outcome = store
+        .edit_collection(
+            snapshot.session_id,
+            &RecordCoordinate::new("Bag", "bag"),
+            &[CfdPathSegment::Field("nums".to_string())],
+            CollectionEdit::ArrayAppend,
+        )
+        .expect("append array item");
+    let nums = outcome
+        .row
+        .fields
+        .iter()
+        .find(|field| field.name == "nums")
+        .expect("nums field");
+    assert_eq!(nums.value, CfdValue::Array(vec![CfdValue::Int(0)]));
+    assert_eq!(outcome.old_value, Some(CfdValue::Array(Vec::new())));
+    assert_eq!(
+        outcome.new_value,
+        Some(CfdValue::Array(vec![CfdValue::Int(0)]))
+    );
+}
+
+#[test]
+fn row_diagnostics_are_precomputed_by_backend() {
+    let root = temp_project_dir("cfd-editor-row-diagnostics");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                value: int;
+                check { value > 0; }
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        r"
+            sword: Item { value: -1 }
+        ",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/items.cfd\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    assert!(
+        snapshot.diagnostics.iter().any(|diagnostic| {
+            diagnostic.record_key.as_deref() == Some("sword")
+                && diagnostic.field_path.as_deref() == Some("value")
+        }),
+        "project should surface the check diagnostic"
+    );
+    let records = store
+        .get_file_records(snapshot.session_id, "data/items.cfd")
+        .expect("load file records");
+    let item = records
+        .records
+        .iter()
+        .find(|row| row.coordinate.actual_type == "Item" && row.coordinate.key == "sword")
+        .expect("item row");
+
+    assert!(item.diagnostic_severity.is_some());
+    assert!(
+        item.field_diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.field_path == "value"),
+        "row should carry field diagnostics for frontend rendering: {:?}",
+        item.field_diagnostics
     );
 }
 

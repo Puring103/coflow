@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { CfdValue } from './bindings/CfdValue'
+import type { CollectionEdit } from './bindings/CollectionEdit'
 import type { DeleteRecordOutcome } from './bindings/DeleteRecordOutcome'
 import type { FileRecords } from './bindings/FileRecords'
 import type { GraphData } from './bindings/GraphData'
@@ -111,6 +112,20 @@ export async function writeField(
     coordinate,
     fieldPath,
     newValue,
+  })
+}
+
+export async function editCollection(
+  sessionId: number,
+  coordinate: RecordCoordinate,
+  fieldPath: FieldPathSegment[],
+  edit: CollectionEdit,
+): Promise<WriteFieldOutcome> {
+  return invokeCommand<WriteFieldOutcome>('edit_collection', {
+    sessionId,
+    coordinate,
+    fieldPath,
+    edit,
   })
 }
 

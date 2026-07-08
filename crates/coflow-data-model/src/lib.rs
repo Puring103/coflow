@@ -37,8 +37,8 @@ pub mod serde_i64;
 mod value_semantics;
 
 pub use diagnostic::{
-    CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdLabel, CfdPath, CfdPathSegment, CfdSeverity,
-    CfdStage,
+    format_cfd_dict_key, CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdLabel, CfdPath,
+    CfdPathSegment, CfdSeverity, CfdStage,
 };
 pub use model::{
     CfdDataModel, CfdDictKey, CfdDomainId, CfdDomainIndex, CfdEnumValue, CfdInputDictKey,

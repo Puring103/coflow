@@ -12,8 +12,10 @@ import {
 } from 'react'
 import type { FieldCell } from '../bindings/FieldCell'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
+import type { FieldDiagnostic as WireFieldDiagnostic } from '../bindings/FieldDiagnostic'
 import type { SpreadInfo } from '../bindings/SpreadInfo'
 import type { DictKey, FieldPathSegment, FieldValue } from '../wire'
+import type { CollectionEdit } from '../bindings/CollectionEdit'
 import {
   annotationChild,
   annotationDeclaredType,
@@ -43,7 +45,7 @@ import {
 import { Icon } from './Icon'
 import { DiagBadge } from './DiagBadge'
 import { typeColor, enumColor } from '../utils/typeColor'
-import { buildDefaultObject, loadEnumVariants, loadRefTargets } from '../utils/editContext'
+import { loadEnumVariants, loadRefTargets } from '../utils/editContext'
 
 export function CardHeader({
   recordKey,
@@ -269,11 +271,7 @@ function ValueChip({ value }: { value: FieldValue }) {
   }
 }
 
-export interface FieldDiagnostic {
-  severity: 'error' | 'warning' | 'info'
-  fieldPath: string
-  message: string
-}
+export type FieldDiagnostic = WireFieldDiagnostic
 
 interface DiagCtxValue {
   byPath: Map<string, FieldDiagnostic[]>
@@ -292,9 +290,16 @@ function severityRank(s: 'error' | 'warning' | 'info'): number {
   return s === 'error' ? 3 : s === 'warning' ? 2 : 1
 }
 
+function normalizedDiagnosticSeverity(severity: string): 'error' | 'warning' | 'info' {
+  return severity === 'error' || severity === 'warning' ? severity : 'info'
+}
+
 function strongest(a: FieldDiagnostic[]): 'error' | 'warning' | 'info' {
   let best: 'error' | 'warning' | 'info' = 'info'
-  for (const d of a) if (severityRank(d.severity) > severityRank(best)) best = d.severity
+  for (const d of a) {
+    const sev = normalizedDiagnosticSeverity(d.severity)
+    if (severityRank(sev) > severityRank(best)) best = sev
+  }
   return best
 }
 
@@ -306,11 +311,13 @@ function buildDiagCtx(
   const byPath = new Map<string, FieldDiagnostic[]>()
   const prefixes = new Map<string, 'error' | 'warning'>()
   for (const d of diags) {
-    const list = byPath.get(d.fieldPath) ?? []
+    const fieldPath = d.field_path
+    const list = byPath.get(fieldPath) ?? []
     list.push(d)
-    byPath.set(d.fieldPath, list)
-    if (d.severity === 'info') continue
-    let p = d.fieldPath
+    byPath.set(fieldPath, list)
+    const severity = normalizedDiagnosticSeverity(d.severity)
+    if (severity === 'info') continue
+    let p = fieldPath
     while (true) {
       const lastDot = p.lastIndexOf('.')
       const lastBracket = p.lastIndexOf('[')
@@ -319,7 +326,7 @@ function buildDiagCtx(
       p = p.slice(0, cut)
       const cur = prefixes.get(p)
       if (cur === 'error') break
-      if (d.severity === 'error' || cur !== 'warning') prefixes.set(p, d.severity)
+      if (severity === 'error' || cur !== 'warning') prefixes.set(p, severity)
     }
   }
   return { byPath, prefixes, onBadgeClick }
@@ -330,6 +337,7 @@ export interface ExpandedProps {
   actualType?: string
   depth?: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
+  onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   pathPrefix?: string
   onRowToggle?: (path: string, expanded: boolean) => void
   diagnostics?: FieldDiagnostic[]
@@ -350,6 +358,7 @@ export function DataCardExpanded({
   actualType,
   depth = 0,
   onEdit,
+  onCollectionEdit,
   pathPrefix,
   onRowToggle,
   diagnostics,
@@ -445,6 +454,7 @@ export function DataCardExpanded({
             value={fc.value}
             depth={depth}
             onEdit={fieldEdit}
+            onCollectionEdit={fieldEdit ? onCollectionEdit : undefined}
             isSpread={!!spreadInfo}
             spreadInfo={spreadInfo}
             declaredType={declaredType}
@@ -485,6 +495,7 @@ function FieldRow({
   value,
   depth,
   onEdit,
+  onCollectionEdit,
   isSpread,
   spreadInfo,
   declaredType,
@@ -503,6 +514,7 @@ function FieldRow({
   value: FieldValue
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
+  onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   isSpread?: boolean
   spreadInfo?: SpreadInfo
   declaredType?: string
@@ -533,6 +545,7 @@ function FieldRow({
         value={displayValue}
         depth={depth}
         onEdit={onEdit}
+        onCollectionEdit={onCollectionEdit}
         isSpread={isSpread}
         spreadInfo={spreadInfo}
         declaredType={declaredType}
@@ -1119,6 +1132,7 @@ function ExpandableRow({
   value,
   depth,
   onEdit,
+  onCollectionEdit,
   isSpread,
   spreadInfo,
   declaredType,
@@ -1135,6 +1149,7 @@ function ExpandableRow({
   value: FieldValue
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
+  onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   isSpread?: boolean
   spreadInfo?: SpreadInfo
   declaredType?: string
@@ -1202,6 +1217,7 @@ function ExpandableRow({
                 value={fc.value}
                 depth={depth + 1}
                 onEdit={onEdit}
+                onCollectionEdit={onCollectionEdit}
                 fieldPath={[...fieldPath, fieldPathField(fc.name)]}
                 pathKey={pathKey ? `${pathKey}.${fc.name}` : fc.name}
                 onRowToggle={onRowToggle}
@@ -1220,6 +1236,7 @@ function ExpandableRow({
               fieldPath={fieldPath}
               pathKey={pathKey}
               onEdit={onEdit}
+              onCollectionEdit={onCollectionEdit}
               onRowToggle={onRowToggle}
               itemTemplate={annotationItem(valueAnnotation)}
               itemAnnotations={valueAnnotation?.children}
@@ -1249,17 +1266,16 @@ function ExpandableRow({
                 trailing={onEdit ? (
                   <DeleteButton
                     title="删除"
-                    onClick={() => onEdit(fieldPath, dictRemove(value, key))}
+                    onClick={() => onCollectionEdit?.(fieldPath, { kind: 'dict_remove', key })}
                   />
                 ) : undefined}
               />
             )})}
-          {onEdit && (value.kind === 'array' || value.kind === 'dict') && (
+          {onCollectionEdit && (value.kind === 'array' || value.kind === 'dict') && (
             <CollectionAddRow
               container={value}
               depth={depth + 1}
-              itemTemplate={annotationItem(valueAnnotation)}
-              onAdd={next => onEdit(fieldPath, next)}
+              onCollectionEdit={edit => onCollectionEdit(fieldPath, edit)}
             />
           )}
           {value.kind === 'array' && value.value.length === 0 && (
@@ -1304,40 +1320,6 @@ function childCount(v: FieldValue): number | null {
   }
 }
 
-function arrayMove(arr: FieldValue & { kind: 'array' }, from: number, to: number): FieldValue {
-  if (from === to || from < 0 || to < 0 || from >= arr.value.length || to >= arr.value.length) {
-    return arr
-  }
-  const items = arr.value.slice()
-  const [moved] = items.splice(from, 1)
-  items.splice(to, 0, moved)
-  return { kind: 'array', value: items }
-}
-
-function arrayRemove(arr: FieldValue & { kind: 'array' }, i: number): FieldValue {
-  const items = arr.value.slice()
-  items.splice(i, 1)
-  return { kind: 'array', value: items }
-}
-
-function arrayAppend(arr: FieldValue & { kind: 'array' }, value: FieldValue): FieldValue {
-  return { kind: 'array', value: [...arr.value, value] }
-}
-
-function dictRemove(d: FieldValue & { kind: 'dict' }, key: DictKey): FieldValue {
-  return { kind: 'dict', value: d.value.filter(([entryKey]) => !dictKeyEq(entryKey, key)) }
-}
-
-function dictInsert(d: FieldValue & { kind: 'dict' }, key: DictKey, value: FieldValue): FieldValue {
-  const idx = d.value.findIndex(([entryKey]) => dictKeyEq(entryKey, key))
-  if (idx >= 0) {
-    const entries = d.value.slice()
-    entries[idx] = [key, value]
-    return { kind: 'dict', value: entries }
-  }
-  return { kind: 'dict', value: [...d.value, [key, value]] }
-}
-
 function dictKeyEq(a: DictKey, b: DictKey): boolean {
   if (a.kind !== b.kind) return false
   if (a.kind === 'string' && b.kind === 'string') return a.value === b.value
@@ -1359,102 +1341,6 @@ function dictKeyPathText(key: DictKey): string {
   }
 }
 
-function replaceValueAtPath(
-  root: FieldValue,
-  path: FieldPathSegment[],
-  replacement: FieldValue,
-): FieldValue | null {
-  if (path.length === 0) return replacement
-  const [head, ...tail] = path
-  if (head.kind === 'field') {
-    if (root.kind !== 'object') return null
-    const current = root.value.fields[head.value]
-    if (!current) return null
-    const next = replaceValueAtPath(current, tail, replacement)
-    if (!next) return null
-    return {
-      kind: 'object',
-      value: {
-        ...root.value,
-        fields: {
-          ...root.value.fields,
-          [head.value]: next,
-        },
-      },
-    }
-  }
-  if (head.kind === 'index') {
-    if (root.kind !== 'array') return null
-    const current = root.value[head.value]
-    if (!current) return null
-    const next = replaceValueAtPath(current, tail, replacement)
-    if (!next) return null
-    const values = root.value.slice()
-    values[head.value] = next
-    return { kind: 'array', value: values }
-  }
-  return null
-}
-
-/// Resolve a valid default value to append to `container`. Preference order:
-///   1. Clone of the last existing non-null element (keeps ref/enum picks
-///      the user has already made, avoiding an "empty" placeholder that
-///      the write validator would reject).
-///   2. Element derived from the declared type — first ref target,
-///      first enum variant, scalar zero, empty sub-collection.
-///   3. `null` for nullable fields.
-/// Returns null only when the schema demands a non-null element but no
-/// valid seed exists (e.g. `[&Foo]` and there are zero `Foo` records).
-async function resolveDefaultElement(
-  container: FieldValue & { kind: 'array' | 'dict' },
-  itemTemplate?: FieldAnnotation,
-): Promise<FieldValue | null> {
-  // 1. Clone the last element (including null) — keeps the user's most
-  //    recent choice; if they've been appending nulls, keep giving them
-  //    nulls to append.
-  const sample = lastElement(container)
-  if (sample) return cloneShape(sample)
-
-  if (!itemTemplate) return null
-
-  const nullable = itemTemplate.nullable
-  const refTarget = itemTemplate.ref_target_type ?? undefined
-  if (refTarget) {
-    const targets = await loadRefTargets(refTarget)
-    if (targets.ok && targets.targets.length > 0) {
-      return refValue(targets.targets[0].coordinate.key)
-    }
-    return nullable ? nullValue() : null
-  }
-  const enumType = itemTemplate.enum_type ?? undefined
-  if (enumType) {
-    const enumResult = await loadEnumVariants(enumType)
-    if (enumResult.ok && enumResult.variants.length > 0) {
-      return enumValue(enumType, enumResult.variants[0], 0n)
-    }
-    return nullable ? nullValue() : null
-  }
-  const declared = itemTemplate.declared_type
-    ? stripNullableType(itemTemplate.declared_type) ?? itemTemplate.declared_type
-    : undefined
-  if (declared === 'bool') return boolValue(false)
-  if (declared === 'int') return intValue(0)
-  if (declared === 'float') return floatValue(0)
-  if (declared === 'string') return stringValue('')
-  // Nested collection element — item_annotation was pre-filled for those too,
-  // but structurally a fresh empty is the right seed.
-  if (itemTemplate.item_annotation) {
-    const isDict = declared?.startsWith('{') && declared.endsWith('}')
-    return isDict ? { kind: 'dict', value: [] } : { kind: 'array', value: [] }
-  }
-  // Named object type — ask the backend for a schema-valid default.
-  if (declared) {
-    const objectDefault = await buildDefaultObject(declared)
-    if (objectDefault) return objectDefault
-  }
-  return nullable ? nullValue() : null
-}
-
 /** If `declaredType` describes an array/dict, return an empty collection
  *  value the UI can render as if the null field were already materialized.
  *  Object types are not covered — they would need per-field defaults. */
@@ -1466,41 +1352,13 @@ function collectionShapeFromDeclared(declaredType?: string): FieldValue | null {
   return null
 }
 
-function lastElement(container: FieldValue & { kind: 'array' | 'dict' }): FieldValue | null {
-  if (container.kind === 'array') {
-    return container.value.length > 0 ? container.value[container.value.length - 1] : null
-  }
-  return container.value.length > 0 ? container.value[container.value.length - 1][1] : null
-}
-
-function cloneShape(sample: FieldValue): FieldValue {
-  switch (sample.kind) {
-    case 'null': return nullValue()
-    case 'bool': return boolValue(sample.value)
-    case 'int': return intValue(sample.value)
-    case 'float': return floatValue(sample.value)
-    case 'string': return stringValue(sample.value)
-    case 'enum': return enumValue(sample.value.enum_name, sample.value.variant, sample.value.value)
-    case 'ref': return refValue(sample.value)
-    case 'object': return {
-      kind: 'object',
-      value: {
-        actual_type: sample.value.actual_type,
-        fields: Object.fromEntries(objectFields(sample).map(f => [f.name, cloneShape(f.value)])),
-      },
-    }
-    case 'array': return { kind: 'array', value: sample.value.map(cloneShape) }
-    case 'dict': return { kind: 'dict', value: sample.value.map(([k, v]) => [k, cloneShape(v)]) }
-  }
-}
-
-
 function ArrayItems({
   container,
   depth,
   fieldPath,
   pathKey,
   onEdit,
+  onCollectionEdit,
   onRowToggle,
   itemTemplate,
   itemAnnotations,
@@ -1510,6 +1368,7 @@ function ArrayItems({
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
+  onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   onRowToggle?: (path: string, expanded: boolean) => void
   /** Element-schema template supplied by the annotator. Prefer this over the
    *  per-index children when the child hasn't accumulated its own metadata. */
@@ -1522,7 +1381,7 @@ function ArrayItems({
 
   function dropAt(target: number) {
     if (dragIdx === null || dragIdx === target) return
-    onEdit?.(fieldPath, arrayMove(container, dragIdx, target))
+    onCollectionEdit?.(fieldPath, { kind: 'array_move', from: dragIdx, to: target })
     setDragIdx(null)
     setOverIdx(null)
   }
@@ -1531,9 +1390,13 @@ function ArrayItems({
     <>
       {container.value.map((item, i) => {
         const itemAnnotation = itemAnnotations?.[String(i)] ?? itemTemplate
-        const dragHandle = onEdit ? <DragHandle rowIndex={i} dragArmedRef={dragArmedRef} /> : undefined
-        const trailing = onEdit ? (
-          <DeleteButton title="删除" onClick={() => onEdit(fieldPath, arrayRemove(container, i))} />
+        const canCollectionEdit = !!onCollectionEdit
+        const dragHandle = canCollectionEdit ? <DragHandle rowIndex={i} dragArmedRef={dragArmedRef} /> : undefined
+        const trailing = canCollectionEdit ? (
+          <DeleteButton
+            title="删除"
+            onClick={() => onCollectionEdit?.(fieldPath, { kind: 'array_remove', index: i })}
+          />
         ) : undefined
         return (
           <FieldRow
@@ -1542,6 +1405,7 @@ function ArrayItems({
             value={item}
             depth={depth}
             onEdit={onEdit}
+            onCollectionEdit={onCollectionEdit}
             fieldPath={[...fieldPath, fieldPathIndex(i)]}
             pathKey={pathKey ? `${pathKey}[${i}]` : `[${i}]`}
             onRowToggle={onRowToggle}
@@ -1552,7 +1416,7 @@ function ArrayItems({
             valueAnnotation={itemAnnotation}
             leading={dragHandle}
             trailing={trailing}
-            dragProps={onEdit ? {
+            dragProps={canCollectionEdit ? {
               extraClass: `dc-row-draggable${overIdx === i && dragIdx !== null && dragIdx !== i ? ' drop-target' : ''}${dragIdx === i ? ' dragging' : ''}`,
               draggable: true,
               onDragStart: (e: ReactDragEvent) => {
@@ -1615,12 +1479,10 @@ function DeleteButton({ onClick, title }: { onClick: () => void; title: string }
   )
 }
 
-function CollectionAddRow({ container, depth, itemTemplate, onAdd }: {
+function CollectionAddRow({ container, depth, onCollectionEdit }: {
   container: FieldValue & { kind: 'array' | 'dict' }
   depth: number
-  /** Backend-provided element schema for this collection. */
-  itemTemplate?: FieldAnnotation
-  onAdd: (next: FieldValue) => void
+  onCollectionEdit: (edit: CollectionEdit) => void
 }) {
   const [adding, setAdding] = useState(false)
   const [dupError, setDupError] = useState<string | null>(null)
@@ -1628,10 +1490,6 @@ function CollectionAddRow({ container, depth, itemTemplate, onAdd }: {
   const [busy, setBusy] = useState(false)
 
   function reset() { setAdding(false); setDupError(null); setAddError(null) }
-
-  async function resolveDefault(): Promise<FieldValue | null> {
-    return resolveDefaultElement(container, itemTemplate)
-  }
 
   if (container.kind === 'array') {
     return (
@@ -1643,12 +1501,7 @@ function CollectionAddRow({ container, depth, itemTemplate, onAdd }: {
             setAddError(null)
             setBusy(true)
             try {
-              const def = await resolveDefault()
-              if (def === null) {
-                setAddError('该字段没有可选的默认值')
-                return
-              }
-              onAdd(arrayAppend(container, def))
+              onCollectionEdit({ kind: 'array_append' })
             } finally {
               setBusy(false)
             }
@@ -1669,12 +1522,7 @@ function CollectionAddRow({ container, depth, itemTemplate, onAdd }: {
       setDupError(`键 "${dictKeyText(key)}" 已存在`)
       return
     }
-    const def = await resolveDefault()
-    if (def === null) {
-      setDupError('该字段没有可选的默认值')
-      return
-    }
-    onAdd(dictInsert(container, key, def))
+    onCollectionEdit({ kind: 'dict_insert', key })
     reset()
   }
   return (
@@ -1834,6 +1682,7 @@ export function DataCardNode({
   onToggle,
   onRowToggle,
   onEdit,
+  onCollectionEdit,
 }: {
   fields: FieldCell[]
   actualType: string
@@ -1841,6 +1690,7 @@ export function DataCardNode({
   onToggle: () => void
   onRowToggle?: (path: string, expanded: boolean) => void
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
+  onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
 }) {
   const visible = showAll ? fields : fields.slice(0, NODE_PEEK_FIELDS)
   return (
@@ -1850,6 +1700,7 @@ export function DataCardNode({
         actualType={actualType}
         onRowToggle={onRowToggle}
         onEdit={onEdit}
+        onCollectionEdit={onCollectionEdit}
       />
       {fields.length > NODE_PEEK_FIELDS && (
         <button className="dc-node-more" onClick={onToggle}>

@@ -139,7 +139,7 @@ impl CfdPath {
     #[must_use]
     pub fn dict_key_value(mut self, key: &CfdDictKey) -> Self {
         self.segments
-            .push(CfdPathSegment::DictKey(format_dict_key(key)));
+            .push(CfdPathSegment::DictKey(format_cfd_dict_key(key)));
         self
     }
 
@@ -166,7 +166,8 @@ pub enum CfdPathSegment {
     DictKey(String),
 }
 
-fn format_dict_key(key: &CfdDictKey) -> String {
+#[must_use]
+pub fn format_cfd_dict_key(key: &CfdDictKey) -> String {
     match key {
         CfdDictKey::String(value) => format!("\"{value}\""),
         CfdDictKey::Int(value) => value.to_string(),

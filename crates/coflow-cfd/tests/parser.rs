@@ -42,6 +42,28 @@ fn group_record_expands_to_multiple_records() {
 }
 
 #[test]
+fn group_record_commas_are_optional() {
+    let ast = parse_ok(
+        r"
+        Item {
+          sword { value: 1 }
+          shield { value: 2 },
+          bow { value: 3 }
+        }
+        ",
+    );
+    let coords = ast
+        .records
+        .iter()
+        .map(|record| (record.type_name.as_str(), record.key.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        coords,
+        vec![("Item", "sword"), ("Item", "shield"), ("Item", "bow")]
+    );
+}
+
+#[test]
 fn nested_block_as_field_value() {
     let ast = parse_ok("hero: Player { stats: Stats { hp: 100, }, }");
     assert_eq!(ast.records.len(), 1);

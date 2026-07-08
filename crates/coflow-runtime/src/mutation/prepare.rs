@@ -8,7 +8,9 @@ use crate::write_rules;
 use crate::{ProjectSession, RecordCoordinate};
 
 use super::coercion::{coerce_cfd_field_value, coerce_json_field_value, coerce_mutation_value};
-use super::defaults::{default_missing_fields_for_type, default_record_for_type};
+use super::defaults::{
+    default_missing_fields_for_type, default_record_for_type, default_value_for_type_ref,
+};
 use super::types::PreparedMutationOp;
 use super::{one_mutation_error, one_path_error, schema_field};
 use super::{
@@ -57,6 +59,54 @@ impl ProjectSession {
     ) -> Result<CfdValue, DiagnosticSet> {
         let record = default_record_for_type(&self.schema, type_name, materialization)?;
         Ok(CfdValue::Object(Box::new(record.object)))
+    }
+
+    /// Build a default value for an item of the collection at `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the path is not a collection field or when a
+    /// default reference item cannot be chosen because no target record exists.
+    pub fn default_collection_item_value(
+        &self,
+        actual_type: &str,
+        path: &[CfdPathSegment],
+    ) -> Result<CfdValue, DiagnosticSet> {
+        let ty = write_rules::expected_type_for_cfd_path(
+            &self.schema,
+            actual_type,
+            path,
+            "MUTATION-PATH",
+            "MUTATION",
+        )?;
+        let item_ty = match ty.non_nullable() {
+            CftSchemaTypeRef::Array(item) | CftSchemaTypeRef::Dict(_, item) => item.as_ref(),
+            _ => {
+                return Err(one_path_error(
+                    "mutation path does not point to a collection",
+                ));
+            }
+        };
+        match item_ty.non_nullable() {
+            CftSchemaTypeRef::Ref(target_type) => self
+                .ref_targets(target_type)
+                .into_iter()
+                .next()
+                .map(|target| CfdValue::Ref(target.coordinate.key))
+                .ok_or_else(|| {
+                    one_mutation_error(
+                        "MUTATION-DEFAULT",
+                        format!(
+                            "collection item type `&{target_type}` has no available target record"
+                        ),
+                    )
+                }),
+            _ => default_value_for_type_ref(
+                &self.schema,
+                item_ty,
+                DefaultMaterialization::EditableShape,
+            ),
+        }
     }
 }
 

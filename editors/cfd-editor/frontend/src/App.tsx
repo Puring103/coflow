@@ -21,22 +21,16 @@ import {
   deletedSnapshotValue,
   diagnosticKey,
   diagnosticMatchesAnchor,
-  diagnosticMatchesCoordinate,
-  diagnosticSeverity,
   errorDiagnostics,
   errorMessage,
   fieldPathField,
-  makeObjectValue,
-  objectFields,
   recordActualType,
   recordKey,
   sameCoordinate,
-  type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
 } from './wire'
 import { summaryOf } from './components/DataCard'
-import type { FieldDiagnostic } from './components/DataCard'
 import { typeColor } from './utils/typeColor'
 import { isEditableFile } from './utils/editable'
 import { setActiveSession } from './utils/editContext'
@@ -142,10 +136,9 @@ export default function App() {
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
       setGraphCache({ [graphCacheKey('data/npc.cfd', null, null, GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
-      const firstFile = MOCK_PROJECT.file_tree
-        .flatMap(n => (n.is_dir ? n.children : [n]))
-        .find(n => !n.is_dir && n.in_sources)
-      if (firstFile) router.push({ view: 'table', file: firstFile.path })
+      if (MOCK_PROJECT.first_source_file) {
+        router.push({ view: 'table', file: MOCK_PROJECT.first_source_file })
+      }
     }
   }, [])
 
@@ -168,7 +161,7 @@ export default function App() {
       setGraphCache({})
       setUndoStack([])
       setRedoStack([])
-      const firstFile = collectSourceFiles(snapshot)[0]
+      const firstFile = snapshot.first_source_file ?? collectSourceFiles(snapshot)[0]
       if (firstFile) router.push({ view: 'table', file: firstFile })
     },
     [router]
@@ -484,26 +477,34 @@ export default function App() {
         // we don't clobber the newer state with older data.
         if (mySeq !== writeSeqRef.current) return outcome.row
         setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
-        const refreshed = await api.getFileRecords(project.session_id, filePath)
+        const refreshFiles = outcome.affected_files.length > 0 ? outcome.affected_files : [filePath]
+        const refreshedFiles = await Promise.all(
+          refreshFiles.map(async file => [file, await api.getFileRecords(project.session_id, file)] as const),
+        )
         if (mySeq !== writeSeqRef.current) return outcome.row
-        setFileDataCache(c => ({ ...c, [filePath]: refreshed }))
+        setFileDataCache(c => {
+          const next = { ...c }
+          for (const [file, records] of refreshedFiles) next[file] = records
+          return next
+        })
         setGraphCache({})
         const finalCoordinate = outcome.renamed ?? coordinate
         if (outcome.renamed) {
           rebindCoordinate(coordinate, outcome.renamed)
         }
-        if (opts.recordHistory) {
-          const oldValue = opts.oldValue ?? snapshotOldValue(fileDataCache, filePath, coordinate, fieldPath)
-          if (oldValue) {
-            setUndoStack(s => [...s, {
-              kind: 'field',
-              filePath, coordinate: finalCoordinate, fieldPath,
-              oldValue: cloneValue(oldValue),
-              newValue: cloneValue(newValue),
-            }])
-            setRedoStack([])
-          }
+      if (opts.recordHistory) {
+        const oldValue = opts.oldValue ?? outcome.old_value
+        const historyNewValue = outcome.new_value ?? newValue
+        if (oldValue) {
+          setUndoStack(s => [...s, {
+            kind: 'field',
+            filePath, coordinate: finalCoordinate, fieldPath,
+            oldValue: cloneValue(oldValue),
+            newValue: cloneValue(historyNewValue),
+          }])
+          setRedoStack([])
         }
+      }
         return outcome.row
       } catch (err) {
         setErrorMsg(`写入失败: ${errorMessage(err)}`)
@@ -516,13 +517,64 @@ export default function App() {
         }
       }
     },
-    [project, fileDataCache, rebindCoordinate],
+    [project, rebindCoordinate],
   )
 
   const writeField = useCallback(
     (filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) =>
       writeFieldInternal(filePath, coordinate, fieldPath, newValue),
     [writeFieldInternal],
+  )
+
+  const editCollection = useCallback(
+    async (
+      filePath: string,
+      coordinate: RecordCoordinate,
+      fieldPath: FieldPathSegment[],
+      edit: import('./bindings/CollectionEdit').CollectionEdit,
+    ) => {
+      if (!project || !api.isTauri) return
+      const mySeq = ++writeSeqRef.current
+      try {
+        const outcome = await api.editCollection(project.session_id, coordinate, fieldPath, edit)
+        if (mySeq !== writeSeqRef.current) return outcome.row
+        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
+        const refreshFiles = outcome.affected_files.length > 0 ? outcome.affected_files : [filePath]
+        const refreshedFiles = await Promise.all(
+          refreshFiles.map(async file => [file, await api.getFileRecords(project.session_id, file)] as const),
+        )
+        if (mySeq !== writeSeqRef.current) return outcome.row
+        setFileDataCache(c => {
+          const next = { ...c }
+          for (const [file, records] of refreshedFiles) next[file] = records
+          return next
+      })
+      setGraphCache({})
+      const finalCoordinate = outcome.renamed ?? coordinate
+      if (outcome.renamed) {
+        rebindCoordinate(coordinate, outcome.renamed)
+      }
+      if (outcome.old_value && outcome.new_value) {
+        setUndoStack(s => [...s, {
+          kind: 'field',
+          filePath,
+          coordinate: finalCoordinate,
+          fieldPath,
+          oldValue: cloneValue(outcome.old_value!),
+          newValue: cloneValue(outcome.new_value!),
+        }])
+        setRedoStack([])
+      }
+      return outcome.row
+      } catch (err) {
+        setErrorMsg(`集合编辑失败: ${errorMessage(err)}`)
+        const diags = errorDiagnostics(err)
+        if (diags.length > 0) {
+          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
+        }
+      }
+    },
+    [project, rebindCoordinate],
   )
 
   const renameRecordInternal = useCallback(
@@ -1021,7 +1073,7 @@ export default function App() {
                 {activeFile?.split('/').map((part, i, arr) => {
                   const dirPath = arr.slice(0, i + 1).join('/')
                   const isLeaf = i === arr.length - 1
-                  const siblingFile = findFirstSourceFileInDir(project, dirPath)
+                  const siblingFile = firstSourceFileForPath(project, dirPath)
                   const clickable = !isLeaf && !!siblingFile
                   return (
                     <span key={i} className="breadcrumb-part">
@@ -1153,6 +1205,7 @@ export default function App() {
                     onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
+                    onCollectionEdit={(coordinate, path, edit) => editCollection(currentRoute.file, coordinate, path, edit)}
                     onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
                     onDiagnosticBadgeClick={(coordinate, fieldPath) =>
                       focusDiagnosticForAnchor(currentRoute.file, coordinate.key, coordinate.actual_type, fieldPath)
@@ -1172,6 +1225,7 @@ export default function App() {
                       onClearSelection={closeInspector}
                       selectedCoordinate={inspectorCoord}
                       onWriteField={writeField}
+                      onCollectionEdit={editCollection}
                       onDiagnosticBadgeClick={(file, coordinate, fieldPath) =>
                         focusDiagnosticForAnchor(file, coordinate.key, coordinate.actual_type, fieldPath)
                       }
@@ -1219,6 +1273,7 @@ export default function App() {
           onWidthChange={setInspectorW}
           onClose={closeInspector}
           onWriteField={writeField}
+          onCollectionEdit={editCollection}
           onRenameRecord={renameRecord}
           onDiagnosticBadgeClick={(coordinate, fieldPath) => {
             if (!inspectorCoord) return
@@ -1277,24 +1332,6 @@ export default function App() {
       )}
     </div>
   )
-}
-
-/** Distill the project's flat diagnostic list down to per-record FieldDiagnostics
- *  for one file. Diagnostics with no field_path are skipped (they apply to the
- *  whole record and surface in the diagnostics panel instead). */
-export function diagnosticsForRecord(
-  diags: DiagnosticItem[],
-  filePath: string,
-  coordinate: RecordCoordinate,
-): FieldDiagnostic[] {
-  const out: FieldDiagnostic[] = []
-  for (const d of diags) {
-    if (d.file_path !== filePath) continue
-    if (!diagnosticMatchesCoordinate(d, coordinate)) continue
-    if (!d.field_path) continue
-    out.push({ severity: diagnosticSeverity(d.severity), fieldPath: d.field_path, message: d.message })
-  }
-  return out
 }
 
 function collectSourceFiles(snapshot: ProjectSnapshot): string[] {
@@ -1362,46 +1399,6 @@ function rebindEntryCoordinate(
   return { ...entry, coordinate: newCoordinate }
 }
 
-/** Walk a FieldValue along a FieldPathSegment path and return the value that
- *  lives there, or null if any segment doesn't resolve. Used to snapshot the
- *  pre-edit value of an arbitrary nested field. */
-function readFieldPath(root: FieldValue, path: FieldPathSegment[]): FieldValue | null {
-  let cur: FieldValue = root
-  for (const seg of path) {
-    if (seg.kind === 'field') {
-      if (cur.kind !== 'object') return null
-      const fc = objectFields(cur).find(f => f.name === seg.value)
-      if (!fc) return null
-      cur = fc.value
-    } else if (seg.kind === 'index') {
-      if (cur.kind !== 'array') return null
-      const item = cur.value[seg.value]
-      if (!item) return null
-      cur = item
-    } else {
-      return null
-    }
-  }
-  return cur
-}
-
-/** Look up the current value at (filePath, coordinate, fieldPath) in the
- *  file-data cache so we can record it as the undo target. Returns null if
- *  the file/record/path isn't present (e.g. cache miss). */
-function snapshotOldValue(
-  cache: Record<string, FileRecords>,
-  filePath: string,
-  coordinate: RecordCoordinate,
-  fieldPath: FieldPathSegment[],
-): FieldValue | null {
-  const fr = cache[filePath]
-  if (!fr) return null
-  const row = fr.records.find(r => sameCoordinate(r.coordinate, coordinate))
-  if (!row) return null
-  const root: FieldValue = makeObjectValue(recordActualType(row), row.fields)
-  return readFieldPath(root, fieldPath)
-}
-
 /** Roving-tabindex arrow-key navigation for a `role="tablist"` of string ids. */
 function onTabListKeyDown(
   e: React.KeyboardEvent,
@@ -1436,18 +1433,19 @@ function onTabListKeyDown(
 
 /** Find the first in-source file whose path starts with `dirPath/`. Used to
  *  make breadcrumb path segments clickable to jump into that directory. */
-function findFirstSourceFileInDir(project: ProjectSnapshot | null, dirPath: string): string | null {
+function firstSourceFileForPath(project: ProjectSnapshot | null, dirPath: string): string | null {
   if (!project) return null
-  const prefix = dirPath.endsWith('/') ? dirPath : dirPath + '/'
-  let result: string | null = null
-  function walk(n: ProjectSnapshot['file_tree'][number]) {
-    if (result) return
-    if (!n.is_dir && n.in_sources && n.path.startsWith(prefix)) {
-      result = n.path
-      return
+  function find(n: ProjectSnapshot['file_tree'][number]): string | null {
+    if (n.path === dirPath) return n.first_source_descendant ?? null
+    for (const c of n.children) {
+      const hit = find(c)
+      if (hit) return hit
     }
-    for (const c of n.children) walk(c)
+    return null
   }
-  for (const n of project.file_tree) walk(n)
-  return result
+  for (const n of project.file_tree) {
+    const hit = find(n)
+    if (hit) return hit
+  }
+  return null
 }

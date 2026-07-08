@@ -3,14 +3,15 @@ use std::path::Path;
 
 use coflow_api::CftContainer;
 use coflow_cft::CftSchemaView;
-use coflow_data_model::{CfdDataModel, CfdRecordId};
+use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::{path_to_slash, Project};
 use serde::{Deserialize, Serialize};
 
 use crate::dimensions::{self, dimensions_for_project, DimensionInfo};
 use crate::files::{self, DimensionGroup, FileTreeNode, FileTreeOptions};
 use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
-use crate::records::RecordView;
+use crate::records::{EffectiveFieldWrite, RecordView, RefTargetInfo};
+use crate::writes::record_value_at_path;
 
 /// Stable, wire-friendly coordinate of a top-level record.
 ///
@@ -141,6 +142,97 @@ impl ProjectSession {
             source_id: record_ref.source_id,
             provider_id: record_ref.provider_id.as_str(),
         })
+    }
+
+    /// Read a record field by model path through the same path resolver the
+    /// write engine uses for current-value checks.
+    #[must_use]
+    pub fn field_value(
+        &self,
+        actual_type: &str,
+        key: &str,
+        path: &[CfdPathSegment],
+    ) -> Option<&CfdValue> {
+        let record = self.record_view(actual_type, key)?;
+        record_value_at_path(
+            record.record,
+            &CfdPath {
+                segments: path.to_vec(),
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn effective_field_write(
+        &self,
+        coordinate: &RecordCoordinate,
+        path: &[CfdPathSegment],
+    ) -> Option<EffectiveFieldWrite> {
+        let record_ref = self
+            .records
+            .get_by_coordinate(&coordinate.actual_type, &coordinate.key)?;
+        let host_path = CfdPath {
+            segments: path.to_vec(),
+        };
+        let (target_ref, target_path) = if let Some((source_id, source_path)) =
+            self.model.spread_source_path(record_ref.id, &host_path)
+        {
+            (self.records.get(source_id)?, source_path.segments)
+        } else {
+            (record_ref, path.to_vec())
+        };
+        let target_record = self.model.record(target_ref.id)?;
+        let old_value = record_value_at_path(
+            target_record,
+            &CfdPath {
+                segments: target_path.clone(),
+            },
+        )
+        .cloned();
+        Some(EffectiveFieldWrite {
+            host: coordinate.clone(),
+            target: target_ref.coordinate.clone(),
+            file_path: target_ref.display_path.clone(),
+            field_path: target_path,
+            old_value,
+        })
+    }
+
+    #[must_use]
+    pub fn ref_targets(&self, expected_type: &str) -> Vec<RefTargetInfo> {
+        let mut targets = Vec::new();
+        let Some(domain_id) = self.model.type_domain_id(expected_type) else {
+            return targets;
+        };
+        let Some(members) = self.model.domain_members(domain_id) else {
+            return targets;
+        };
+        for type_id in members {
+            let Some(type_name) = self.model.type_name(*type_id) else {
+                continue;
+            };
+            if !self.schema.is_assignable(type_name, expected_type) {
+                continue;
+            }
+            for (_, record) in self.model.records_of_type(type_name) {
+                let Some(file_path) = self.file_for_record(record.actual_type(), &record.key)
+                else {
+                    continue;
+                };
+                targets.push(RefTargetInfo {
+                    coordinate: RecordCoordinate::new(record.actual_type(), record.key.clone()),
+                    file_path: file_path.to_string(),
+                });
+            }
+        }
+        targets.sort_by(|a, b| {
+            a.coordinate
+                .actual_type
+                .cmp(&b.coordinate.actual_type)
+                .then_with(|| a.coordinate.key.cmp(&b.coordinate.key))
+        });
+        targets.dedup_by(|a, b| a.coordinate == b.coordinate);
+        targets
     }
 
     /// Iterate read-only views of every record backed by `file`.

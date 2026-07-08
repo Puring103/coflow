@@ -16,7 +16,7 @@ use coflow_api::{
     RecordOrigin, RenameRecordRequest, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::CftSchemaView;
-use coflow_data_model::{CfdRecordId, CfdValue};
+use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue};
 
 use super::records::WriteOutcome;
 use super::write_rules;
@@ -24,6 +24,13 @@ use super::{build_project_session_for_build, ProjectSession, RecordCoordinate};
 use refs::{reference_update_actions, source_rewrite_actions};
 use target::{guess_new_coordinate, is_id_path, write_target_for_path};
 use writer::{lookup_source_writer, source_for_file};
+
+pub(crate) fn record_value_at_path<'a>(
+    record: &'a CfdRecord,
+    path: &CfdPath,
+) -> Option<&'a CfdValue> {
+    path::value_at_path(record, path)
+}
 
 impl ProjectSession {
     /// Persist a single field edit and rebuild the session in place.

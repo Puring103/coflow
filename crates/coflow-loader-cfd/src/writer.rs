@@ -18,7 +18,7 @@ use coflow_api::{
     TableManagerDescriptor, TableOperationResult, TextSpan, WriteCellRequest, WriteContext,
     WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
-use coflow_cfd::{parse_cfd, CfdAst};
+use coflow_cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
 use coflow_cft::Span;
 use patch::{
     append_record_source, apply_patch, collect_spread_ref_key_spans, delete_record_span,
@@ -106,7 +106,8 @@ impl CfdWriter {
                 format!("failed to read `{}`: {err}", path.display()),
             ))
         })?;
-        let (ast, _) = parse_cfd(&text);
+        let (ast, diagnostics) = parse_cfd(&text);
+        ensure_parse_ok(path, &diagnostics)?;
         if let Ok(mut cache) = self.cache.write() {
             cache.insert(
                 path.to_path_buf(),
@@ -128,7 +129,8 @@ impl CfdWriter {
             ))
         })?;
 
-        let (new_ast, _) = parse_cfd(&new_source);
+        let (new_ast, diagnostics) = parse_cfd(&new_source);
+        ensure_parse_ok(path, &diagnostics)?;
         let mtime = file_mtime(path);
         if let Ok(mut cache) = self.cache.write() {
             cache.insert(
@@ -152,6 +154,20 @@ impl CfdWriter {
 
 fn file_mtime(path: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
+}
+
+fn ensure_parse_ok(path: &Path, diagnostics: &[CfdSyntaxDiagnostic]) -> Result<(), DiagnosticSet> {
+    if let Some(diagnostic) = diagnostics.first() {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!(
+                "failed to parse `{}` for write: {}",
+                path.display(),
+                diagnostic.message
+            ),
+        )));
+    }
+    Ok(())
 }
 
 impl SourceWriter for CfdWriter {

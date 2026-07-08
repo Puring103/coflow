@@ -204,6 +204,7 @@ impl CftSchemaView {
             .map(|meta| meta.all_fields.as_slice())
     }
 
+    #[must_use]
     pub fn fields(&self, type_name: &str) -> Option<impl Iterator<Item = &CftFieldMeta>> {
         self.fields_slice(type_name).map(|fields| fields.iter())
     }

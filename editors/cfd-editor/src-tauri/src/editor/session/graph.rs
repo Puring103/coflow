@@ -48,7 +48,7 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
         depths.insert(*id, 0);
     }
 
-    let ctx = WireContext::new(&session.engine);
+    let ctx = WireContext::new(&session.engine, session.diagnostics.flatten());
 
     while let Some((id, depth)) = queue.pop_front() {
         let Some(record) = session.engine.model.record(id) else {
@@ -65,11 +65,8 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
         let in_focus = host_file == file_path;
         let is_collapsed = depth >= max_depth;
 
-        let fields = if is_collapsed {
-            Vec::new()
-        } else {
-            record_to_row(record, &host_file, &ctx).fields
-        };
+        let row = record_to_row(record, &host_file, &ctx);
+        let fields = if is_collapsed { Vec::new() } else { row.fields };
 
         nodes.entry(node_key.clone()).or_insert_with(|| GraphNode {
             coordinate: coordinate.clone(),
@@ -77,6 +74,8 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
             in_focus_file: in_focus,
             is_collapsed,
             fields,
+            field_diagnostics: row.field_diagnostics,
+            diagnostic_severity: row.diagnostic_severity,
         });
 
         if is_collapsed {

@@ -179,6 +179,105 @@ fn grouped_records_expand_to_records_of_the_same_type() -> TestResult {
 }
 
 #[test]
+fn grouped_record_commas_are_optional() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+        "#,
+    );
+
+    let records = parse_cfd_input_records(
+        &schema,
+        r#"
+            Item {
+                sword { name: "Sword" },
+                shield { name: "Shield" }
+                bow { name: "Bow" },
+            }
+        "#,
+    )?;
+
+    let coords = records
+        .iter()
+        .map(|record| (record.actual_type.as_str(), record.key.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        coords,
+        vec![("Item", "sword"), ("Item", "shield"), ("Item", "bow")]
+    );
+    Ok(())
+}
+
+#[test]
+fn cfd_rejects_slash_slash_comments() {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+        "#,
+    );
+
+    let err = parse_cfd_input_records(
+        &schema,
+        r#"
+            // not a CFD comment
+            sword: Item { name: "Sword" }
+        "#,
+    )
+    .expect_err("only # comments should be accepted");
+
+    assert_has_text_code(&err, CfdTextErrorCode::Syntax);
+}
+
+#[test]
+fn schema_free_ast_matches_loader_record_coordinates_for_supported_syntax() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                name: string;
+                tags: [string] = [];
+            }
+            abstract type Reward {}
+            type ItemReward : Reward { item: &Item; count: int; }
+            type CurrencyReward : Reward { amount: int; }
+        "#,
+    );
+    let source = r#"
+        # group commas are optional
+        Item {
+            sword { name: "Sword", tags: ["weapon", "melee"] }
+            shield { name: "Shield", tags: ["armor"], },
+        }
+
+        Reward {
+            item_reward: ItemReward {
+                item: &sword,
+                count: 1,
+            }
+            coin_reward: CurrencyReward { amount: 50 },
+        }
+    "#;
+
+    let loader_records = parse_cfd_input_records(&schema, source)?;
+    let (ast, diagnostics) = coflow_cfd::parse_cfd(source);
+    assert!(
+        diagnostics.is_empty(),
+        "schema-free parser diagnostics: {diagnostics:?}"
+    );
+
+    let loader_coords = loader_records
+        .iter()
+        .map(|record| (record.actual_type.as_str(), record.key.as_str()))
+        .collect::<Vec<_>>();
+    let ast_coords = ast
+        .records
+        .iter()
+        .map(|record| (record.type_name.as_str(), record.key.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(ast_coords, loader_coords);
+    Ok(())
+}
+
+#[test]
 fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
     let schema = compile_schema(
         r#"

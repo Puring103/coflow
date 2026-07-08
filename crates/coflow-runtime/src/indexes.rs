@@ -263,7 +263,6 @@ impl RecordIndex {
         &self.rejected
     }
 
-    #[must_use]
     pub fn rejected_in_file(&self, file: &str) -> impl Iterator<Item = &RejectedRecordRef> {
         self.rejected_files
             .get(file)
@@ -272,7 +271,6 @@ impl RecordIndex {
             .filter_map(|index| self.rejected.get(*index))
     }
 
-    #[must_use]
     pub fn rejected_by_coordinate(
         &self,
         actual_type: &str,

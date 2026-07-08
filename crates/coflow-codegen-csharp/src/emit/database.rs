@@ -295,16 +295,9 @@ fn collect_table_dependencies_for_field_type(
                     hit_table = true;
                 }
             }
-            if !hit_table {
-                if view.type_meta(name).is_ok() {
-                    for field in view.fields(name)? {
-                        collect_table_dependencies_for_field_type(
-                            view,
-                            &field.ty_ref,
-                            table_set,
-                            out,
-                        )?;
-                    }
+            if !hit_table && view.type_meta(name).is_ok() {
+                for field in view.fields(name)? {
+                    collect_table_dependencies_for_field_type(view, &field.ty_ref, table_set, out)?;
                 }
             }
         }

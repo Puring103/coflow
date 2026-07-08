@@ -72,6 +72,32 @@ impl CftSchemaTypeRef {
             other => other,
         }
     }
+
+    #[must_use]
+    pub fn display_label(&self) -> String {
+        format_schema_type_ref(self)
+    }
+}
+
+#[must_use]
+pub fn format_schema_type_ref(ty: &CftSchemaTypeRef) -> String {
+    match ty {
+        CftSchemaTypeRef::Int => "int".to_string(),
+        CftSchemaTypeRef::Float => "float".to_string(),
+        CftSchemaTypeRef::Bool => "bool".to_string(),
+        CftSchemaTypeRef::String => "string".to_string(),
+        CftSchemaTypeRef::Named(name) => name.clone(),
+        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
+        CftSchemaTypeRef::Array(inner) => format!("[{}]", format_schema_type_ref(inner)),
+        CftSchemaTypeRef::Dict(key, value) => {
+            format!(
+                "{{{}: {}}}",
+                format_schema_type_ref(key),
+                format_schema_type_ref(value)
+            )
+        }
+        CftSchemaTypeRef::Nullable(inner) => format!("{}?", format_schema_type_ref(inner)),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
