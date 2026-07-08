@@ -7,7 +7,7 @@
 )]
 
 use coflow_api::{
-    DataLoader, LoadContext, ResolvedSource, SourceLocation, SourceLocationSpec,
+    ResolvedSource, SourceLoadContext, SourceLocation, SourceLocationSpec, SourceProvider,
     SourceResolveContext,
 };
 use coflow_cft::{CftContainer, ModuleId};
@@ -499,7 +499,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let cfd_loader = CfdLoader;
     let loaded = cfd_loader
         .load(
-            LoadContext {
+            SourceLoadContext {
                 project_root: &root,
                 schema: &schema,
             },

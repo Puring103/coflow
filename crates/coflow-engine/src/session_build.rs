@@ -269,7 +269,7 @@ fn assemble_session(
 
 fn loader_extensions(registry: &ProviderRegistry) -> BTreeSet<String> {
     let mut extensions = BTreeSet::new();
-    for loader in registry.loaders() {
+    for loader in registry.source_providers() {
         for ext in loader.descriptor().extensions {
             extensions.insert((*ext).to_string());
         }

@@ -14,7 +14,7 @@ use crate::{CreateTableRequest, Diagnostic, DiagnosticSet};
 /// Implementations dispatch on [`RecordOrigin`] to locate the cell/span, write
 /// the new value to the source (file, remote API, ...), and report which
 /// records were touched so the session can run incremental checks.
-pub trait DataWriter: Send + Sync {
+pub trait SourceWriter: Send + Sync {
     fn descriptor(&self) -> &'static WriterDescriptor;
 
     /// Cheap pre-flight check: type matches, target file exists, etc. The
@@ -92,7 +92,7 @@ pub trait DataWriter: Send + Sync {
     /// Rewrite source-level references to a renamed record key.
     ///
     /// The default implementation is a no-op because ordinary `CfdValue::Ref`
-    /// locations are updated via [`DataWriter::write_field`]. Providers should
+    /// locations are updated via [`SourceWriter::write_field`]. Providers should
     /// override this when their source syntax contains references that do not
     /// survive as runtime refs.
     ///

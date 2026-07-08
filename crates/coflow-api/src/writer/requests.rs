@@ -66,7 +66,7 @@ pub struct RenameRecordRequest<'a> {
 ///
 /// Engines use this for source syntax that compiles away before the runtime
 /// model is built, such as provider-local spread entries. Direct refs are
-/// rewritten through [`crate::DataWriter::write_field`] at the exact [`RefEdge`]
+/// rewritten through [`crate::SourceWriter::write_field`] at the exact [`RefEdge`]
 /// site.
 #[derive(Debug, Clone)]
 pub struct RewriteRecordReferencesRequest<'a> {
@@ -100,7 +100,7 @@ pub struct WriteOutcome {
     pub diagnostics: DiagnosticSet,
 }
 
-/// Context passed to writers. Mirrors [`crate::LoadContext`] but for writes.
+/// Context passed to writers. Mirrors [`crate::SourceLoadContext`] but for writes.
 #[derive(Debug, Clone, Copy)]
 pub struct WriteContext<'a> {
     pub project_root: &'a Path,

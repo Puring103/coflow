@@ -1,6 +1,7 @@
 use coflow_api::{
-    DataLoader, Diagnostic, DiagnosticSet, LoadContext, LoadedRecords, LoaderDescriptor,
-    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocationSpec, SourceResolveContext,
+    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, ResolvedSource,
+    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
+    SourceResolveContext,
 };
 use coflow_loader_table_core::{
     collect_table_input_records, TableSheet, TableSheetConfig, TableSource,
@@ -402,7 +403,7 @@ where
     }
 }
 
-pub const LARK_SHEET_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+pub const LARK_SHEET_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescriptor {
     id: "lark-sheet",
     display_name: "Lark Sheet",
     extensions: &[],
@@ -410,11 +411,11 @@ pub const LARK_SHEET_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
     option_keys: &["spreadsheet_token", "url", "app_id", "app_secret"],
 };
 
-impl<C> DataLoader for LarkSheetLoader<C>
+impl<C> SourceProvider for LarkSheetLoader<C>
 where
     C: LarkHttpClient + Send + Sync,
 {
-    fn descriptor(&self) -> &'static LoaderDescriptor {
+    fn descriptor(&self) -> &'static SourceProviderDescriptor {
         &LARK_SHEET_LOADER_DESCRIPTOR
     }
 
@@ -466,15 +467,15 @@ where
 
     fn load(
         &self,
-        ctx: LoadContext<'_>,
+        ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
-    ) -> Result<LoadedRecords, DiagnosticSet> {
+    ) -> Result<LoadedSource, DiagnosticSet> {
         let lark_source = lark_source_from_spec(source)?;
         let table_source = self
             .load_lark_table_source_cached(&lark_source)
             .map_err(lark_diagnostics_to_api)?;
         collect_table_input_records(ctx.schema, &[table_source])
-            .map(|loaded| LoadedRecords {
+            .map(|loaded| LoadedSource {
                 records: loaded.records,
             })
             .map_err(table_diagnostics_to_api)

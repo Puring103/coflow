@@ -10,9 +10,9 @@
 )]
 
 use coflow_api::{
-    CfdValue, DataWriter, DeleteRecordRequest, InsertRecordRequest, RecordOrigin, ResolvedSource,
-    RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec, WriteCellRequest,
-    WriteContext, WriteFieldPathSegment,
+    CfdValue, DeleteRecordRequest, InsertRecordRequest, RecordOrigin, ResolvedSource,
+    RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec, SourceWriter,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_api::{CftContainer, ModuleId};
 use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};

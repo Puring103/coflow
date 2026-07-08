@@ -16,9 +16,9 @@
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
 use coflow_api::{
-    DataLoader, Diagnostic, DiagnosticSet, LoadContext, LoadedRecords, LoaderDescriptor,
-    ProbeResult, ProjectSourceRef, RecordOrigin, ResolvedSource, SourceLocationSpec,
-    SourceResolveContext,
+    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, RecordOrigin,
+    ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    SourceProviderDescriptor, SourceResolveContext,
 };
 
 mod diagnostics;
@@ -85,7 +85,7 @@ pub fn load_cfd_model(
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CfdLoader;
 
-pub const CFD_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+pub const CFD_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescriptor {
     id: "cfd",
     display_name: "Coflow data text",
     extensions: &["cfd"],
@@ -93,8 +93,8 @@ pub const CFD_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
     option_keys: &[],
 };
 
-impl DataLoader for CfdLoader {
-    fn descriptor(&self) -> &'static LoaderDescriptor {
+impl SourceProvider for CfdLoader {
+    fn descriptor(&self) -> &'static SourceProviderDescriptor {
         &CFD_LOADER_DESCRIPTOR
     }
 
@@ -156,9 +156,9 @@ impl DataLoader for CfdLoader {
 
     fn load(
         &self,
-        ctx: LoadContext<'_>,
+        ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
-    ) -> Result<LoadedRecords, DiagnosticSet> {
+    ) -> Result<LoadedSource, DiagnosticSet> {
         let SourceLocationSpec::Path(file) = &source.location else {
             return Err(DiagnosticSet::one(Diagnostic::error(
                 "CFD-SOURCE",
@@ -185,7 +185,7 @@ impl DataLoader for CfdLoader {
                         })
                     })
                     .collect();
-                LoadedRecords { records }
+                LoadedSource { records }
             })
             .map_err(|err| cfd_error_to_diagnostics(file, &contents, err))
     }

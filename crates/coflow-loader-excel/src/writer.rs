@@ -1,14 +1,14 @@
 //! Writer that persists field edits back to local `.xlsx` workbooks.
 //!
-//! `ExcelWriter` is the [`DataWriter`] for [`RecordOrigin::Table`] origins
+//! `ExcelWriter` is the [`SourceWriter`] for [`RecordOrigin::Table`] origins
 //! whose document is `SourceDocument::Local`. It uses
 //! [`umya-spreadsheet`](https://docs.rs/umya-spreadsheet) so existing styles,
 //! merged cells, and column widths survive round-trips.
 use calamine::Reader;
 use coflow_api::{
-    CreateTableRequest, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet,
-    InsertRecordRequest, RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest,
-    SourceDocument, SourceLocationSpec, SyncHeaderRequest, TableContext, TableManager,
+    CreateTableRequest, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
+    RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument,
+    SourceLocationSpec, SourceWriter, SyncHeaderRequest, TableContext, TableManager,
     TableManagerDescriptor, TableOperationResult, WriteCellRequest, WriteContext, WriteOutcome,
     WriterCapabilities, WriterDescriptor,
 };
@@ -57,7 +57,7 @@ impl ExcelWriter {
     }
 }
 
-impl DataWriter for ExcelWriter {
+impl SourceWriter for ExcelWriter {
     fn descriptor(&self) -> &'static WriterDescriptor {
         &EXCEL_WRITER_DESCRIPTOR
     }

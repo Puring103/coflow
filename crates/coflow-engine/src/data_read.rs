@@ -258,7 +258,7 @@ const fn requires_explicit_large_get(query: &DataGetQuery, match_count: usize) -
 }
 
 fn writer_capabilities(registry: &ProviderRegistry, provider_id: &str) -> WriterCapabilities {
-    registry.writer(provider_id).map_or_else(
+    registry.source_writer(provider_id).map_or_else(
         || WriterCapabilities::read_only().with_provider_id(provider_id.to_string()),
         |writer| {
             writer

@@ -1,6 +1,6 @@
 //! Writer that persists field edits back to local `.csv` files.
 //!
-//! `CsvWriter` is the [`DataWriter`] for [`RecordOrigin::Table`] origins whose
+//! `CsvWriter` is the [`SourceWriter`] for [`RecordOrigin::Table`] origins whose
 //! document is `SourceDocument::Local` and whose backing file is a CSV. Each
 //! call re-reads the file, applies the planned mutation in-memory, and writes
 //! the whole document back. The CSV format has no sheet concept, so the plan's
@@ -11,8 +11,8 @@ mod plan;
 mod table_manager;
 
 use coflow_api::{
-    DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
-    RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
+    DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
+    RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec, SourceWriter,
     WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_loader_table_core::writer::{
@@ -55,7 +55,7 @@ impl CsvWriter {
     }
 }
 
-impl DataWriter for CsvWriter {
+impl SourceWriter for CsvWriter {
     fn descriptor(&self) -> &'static WriterDescriptor {
         &CSV_WRITER_DESCRIPTOR
     }

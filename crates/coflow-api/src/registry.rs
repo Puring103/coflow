@@ -1,12 +1,12 @@
 mod errors;
 mod selection;
 
-pub use errors::{LoaderSelectionError, ProviderRegistrationError};
+pub use errors::{ProviderRegistrationError, SourceProviderSelectionError};
 
 use crate::{
-    CodeGenerator, CodegenDescriptor, DataExporter, DataLoader, DataWriter, DimensionSourceManager,
-    DimensionSourceManagerDescriptor, ExporterDescriptor, LoaderDescriptor, TableManager,
-    TableManagerDescriptor, WriterDescriptor,
+    CodeGenerator, CodegenDescriptor, DataExporter, DimensionSourceManager,
+    DimensionSourceManagerDescriptor, ExporterDescriptor, SourceProvider, SourceProviderDescriptor,
+    SourceWriter, TableManager, TableManagerDescriptor, WriterDescriptor,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 #[derive(Default, Clone)]
 pub struct ProviderRegistry {
-    loaders: BTreeMap<&'static str, Arc<dyn DataLoader>>,
-    writers: BTreeMap<&'static str, Arc<dyn DataWriter>>,
+    source_providers: BTreeMap<&'static str, Arc<dyn SourceProvider>>,
+    source_writers: BTreeMap<&'static str, Arc<dyn SourceWriter>>,
     table_managers: BTreeMap<&'static str, Arc<dyn TableManager>>,
     dimension_source_managers: BTreeMap<&'static str, Arc<dyn DimensionSourceManager>>,
     exporters: BTreeMap<&'static str, Arc<dyn DataExporter>>,
@@ -25,8 +25,14 @@ pub struct ProviderRegistry {
 impl fmt::Debug for ProviderRegistry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProviderRegistry")
-            .field("loaders", &self.loaders.keys().collect::<Vec<_>>())
-            .field("writers", &self.writers.keys().collect::<Vec<_>>())
+            .field(
+                "source_providers",
+                &self.source_providers.keys().collect::<Vec<_>>(),
+            )
+            .field(
+                "source_writers",
+                &self.source_writers.keys().collect::<Vec<_>>(),
+            )
             .field(
                 "table_managers",
                 &self.table_managers.keys().collect::<Vec<_>>(),
@@ -42,39 +48,42 @@ impl fmt::Debug for ProviderRegistry {
 }
 
 impl ProviderRegistry {
-    /// Registers a loader provider.
+    /// Registers a source provider.
     ///
     /// # Errors
     ///
-    /// Returns an error when another loader with the same provider id has
-    /// already been registered.
-    pub fn register_loader<L>(&mut self, loader: L) -> Result<(), ProviderRegistrationError>
+    /// Returns an error when another source provider with the same provider id
+    /// has already been registered.
+    pub fn register_source_provider<L>(
+        &mut self,
+        source_provider: L,
+    ) -> Result<(), ProviderRegistrationError>
     where
-        L: DataLoader + 'static,
+        L: SourceProvider + 'static,
     {
-        let id = loader.descriptor().id;
-        if self.loaders.contains_key(id) {
-            return Err(ProviderRegistrationError::duplicate("loader", id));
+        let id = source_provider.descriptor().id;
+        if self.source_providers.contains_key(id) {
+            return Err(ProviderRegistrationError::duplicate("source provider", id));
         }
-        self.loaders.insert(id, Arc::new(loader));
+        self.source_providers.insert(id, Arc::new(source_provider));
         Ok(())
     }
 
-    /// Registers a writer provider.
+    /// Registers a source writer.
     ///
     /// # Errors
     ///
-    /// Returns an error when another writer with the same provider id has
-    /// already been registered.
-    pub fn register_writer<W>(&mut self, writer: W) -> Result<(), ProviderRegistrationError>
+    /// Returns an error when another source writer with the same provider id
+    /// has already been registered.
+    pub fn register_source_writer<W>(&mut self, writer: W) -> Result<(), ProviderRegistrationError>
     where
-        W: DataWriter + 'static,
+        W: SourceWriter + 'static,
     {
         let id = writer.descriptor().id;
-        if self.writers.contains_key(id) {
-            return Err(ProviderRegistrationError::duplicate("writer", id));
+        if self.source_writers.contains_key(id) {
+            return Err(ProviderRegistrationError::duplicate("source writer", id));
         }
-        self.writers.insert(id, Arc::new(writer));
+        self.source_writers.insert(id, Arc::new(writer));
         Ok(())
     }
 
@@ -157,13 +166,13 @@ impl ProviderRegistry {
     }
 
     #[must_use]
-    pub fn loader(&self, id: &str) -> Option<Arc<dyn DataLoader>> {
-        self.loaders.get(id).cloned()
+    pub fn source_provider(&self, id: &str) -> Option<Arc<dyn SourceProvider>> {
+        self.source_providers.get(id).cloned()
     }
 
     #[must_use]
-    pub fn writer(&self, id: &str) -> Option<Arc<dyn DataWriter>> {
-        self.writers.get(id).cloned()
+    pub fn source_writer(&self, id: &str) -> Option<Arc<dyn SourceWriter>> {
+        self.source_writers.get(id).cloned()
     }
 
     #[must_use]
@@ -177,13 +186,13 @@ impl ProviderRegistry {
     }
 
     #[must_use]
-    pub fn writers(&self) -> Vec<Arc<dyn DataWriter>> {
-        self.writers.values().cloned().collect()
+    pub fn source_writers(&self) -> Vec<Arc<dyn SourceWriter>> {
+        self.source_writers.values().cloned().collect()
     }
 
     #[must_use]
-    pub fn writer_descriptors(&self) -> Vec<&'static WriterDescriptor> {
-        self.writers
+    pub fn source_writer_descriptors(&self) -> Vec<&'static WriterDescriptor> {
+        self.source_writers
             .values()
             .map(|writer| writer.descriptor())
             .collect()
@@ -218,16 +227,16 @@ impl ProviderRegistry {
     }
 
     #[must_use]
-    pub fn loader_descriptors(&self) -> Vec<&'static LoaderDescriptor> {
-        self.loaders
+    pub fn source_provider_descriptors(&self) -> Vec<&'static SourceProviderDescriptor> {
+        self.source_providers
             .values()
-            .map(|loader| loader.descriptor())
+            .map(|source_provider| source_provider.descriptor())
             .collect()
     }
 
     #[must_use]
-    pub fn loaders(&self) -> Vec<Arc<dyn DataLoader>> {
-        self.loaders.values().cloned().collect()
+    pub fn source_providers(&self) -> Vec<Arc<dyn SourceProvider>> {
+        self.source_providers.values().cloned().collect()
     }
 
     #[must_use]

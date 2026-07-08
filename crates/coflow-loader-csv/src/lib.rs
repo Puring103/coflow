@@ -31,8 +31,9 @@ pub use source::{collect_input_records, CsvInputRecords, CsvSheet, CsvSource};
 pub use writer::CsvWriter;
 
 use coflow_api::{
-    DataLoader, Diagnostic, DiagnosticSet, LoadContext, LoadedRecords, LoaderDescriptor,
-    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocationSpec, SourceResolveContext,
+    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, ResolvedSource,
+    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
+    SourceResolveContext,
 };
 use options::csv_sheets_from_options;
 use std::fs;
@@ -41,7 +42,7 @@ use std::path::Path;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CsvLoader;
 
-pub const CSV_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+pub const CSV_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescriptor {
     id: "csv",
     display_name: "CSV file",
     extensions: &["csv"],
@@ -49,8 +50,8 @@ pub const CSV_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
     option_keys: &["sheets"],
 };
 
-impl DataLoader for CsvLoader {
-    fn descriptor(&self) -> &'static LoaderDescriptor {
+impl SourceProvider for CsvLoader {
+    fn descriptor(&self) -> &'static SourceProviderDescriptor {
         &CSV_LOADER_DESCRIPTOR
     }
 
@@ -107,9 +108,9 @@ impl DataLoader for CsvLoader {
 
     fn load(
         &self,
-        ctx: LoadContext<'_>,
+        ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
-    ) -> Result<LoadedRecords, DiagnosticSet> {
+    ) -> Result<LoadedSource, DiagnosticSet> {
         let SourceLocationSpec::Path(file) = &source.location else {
             return Err(DiagnosticSet::one(Diagnostic::error(
                 "CSV-SOURCE",
@@ -120,7 +121,7 @@ impl DataLoader for CsvLoader {
         let sheets = csv_sheets_from_options(&source.options)?;
         let csv_source = CsvSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[csv_source])
-            .map(|loaded| LoadedRecords {
+            .map(|loaded| LoadedSource {
                 records: loaded.records,
             })
             .map_err(csv_diagnostics_to_api)

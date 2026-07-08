@@ -2,20 +2,38 @@
 fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
     let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
 
-    ensure(registry.loader("excel").is_some(), "missing excel loader")?;
-    ensure(registry.loader("csv").is_some(), "missing csv loader")?;
     ensure(
-        registry.loader("lark-sheet").is_some(),
-        "missing lark-sheet loader",
+        registry.source_provider("excel").is_some(),
+        "missing excel source provider",
     )?;
-    ensure(registry.loader("cfd").is_some(), "missing cfd loader")?;
-    ensure(registry.writer("excel").is_some(), "missing excel writer")?;
-    ensure(registry.writer("csv").is_some(), "missing csv writer")?;
     ensure(
-        registry.writer("lark-sheet").is_some(),
+        registry.source_provider("csv").is_some(),
+        "missing csv source provider",
+    )?;
+    ensure(
+        registry.source_provider("lark-sheet").is_some(),
+        "missing lark-sheet source provider",
+    )?;
+    ensure(
+        registry.source_provider("cfd").is_some(),
+        "missing cfd source provider",
+    )?;
+    ensure(
+        registry.source_writer("excel").is_some(),
+        "missing excel writer",
+    )?;
+    ensure(
+        registry.source_writer("csv").is_some(),
+        "missing csv writer",
+    )?;
+    ensure(
+        registry.source_writer("lark-sheet").is_some(),
         "missing lark-sheet writer",
     )?;
-    ensure(registry.writer("cfd").is_some(), "missing cfd writer")?;
+    ensure(
+        registry.source_writer("cfd").is_some(),
+        "missing cfd writer",
+    )?;
     ensure(
         registry.table_manager("excel").is_some(),
         "missing excel table manager",
@@ -53,14 +71,18 @@ fn registry_rejects_duplicate_provider_ids() -> Result<(), String> {
     let mut registry = coflow_api::ProviderRegistry::default();
 
     registry
-        .register_loader(coflow_loader_excel::ExcelLoader)
+        .register_source_provider(coflow_loader_excel::ExcelLoader)
         .map_err(|err| err.to_string())?;
     let err = registry
-        .register_loader(coflow_loader_excel::ExcelLoader)
+        .register_source_provider(coflow_loader_excel::ExcelLoader)
         .err()
-        .ok_or_else(|| "duplicate loader id should fail".to_string())?;
-    ensure_eq(err.provider_kind(), "loader", "duplicate loader kind")?;
-    ensure_eq(err.id(), "excel", "duplicate loader id")?;
+        .ok_or_else(|| "duplicate source provider id should fail".to_string())?;
+    ensure_eq(
+        err.provider_kind(),
+        "source provider",
+        "duplicate source provider kind",
+    )?;
+    ensure_eq(err.id(), "excel", "duplicate source provider id")?;
 
     registry
         .register_exporter(coflow_exporter_json::JsonExporter)

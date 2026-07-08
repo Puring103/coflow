@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Static description of a writer provider.
+/// Static description of a source writer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriterDescriptor {
     pub id: &'static str,

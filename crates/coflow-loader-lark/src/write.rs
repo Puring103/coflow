@@ -1,7 +1,7 @@
 use coflow_api::{
-    CreateTableRequest, DataWriter, DeleteRecordRequest, DiagnosticSet, InsertRecordRequest,
-    RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument,
-    SourceLocationSpec, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
+    CreateTableRequest, DeleteRecordRequest, DiagnosticSet, InsertRecordRequest, RecordOrigin,
+    RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
+    SourceWriter, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
     WriterCapabilities, WriterDescriptor,
 };
 use coflow_loader_table_core::cell_value::render_cell_value;
@@ -33,7 +33,7 @@ pub static LARK_SHEET_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     },
 };
 
-impl<C> DataWriter for LarkSheetWriter<C>
+impl<C> SourceWriter for LarkSheetWriter<C>
 where
     C: LarkHttpClient + Send + Sync,
 {

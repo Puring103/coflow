@@ -9,9 +9,9 @@
 )]
 
 use coflow_api::{
-    CfdValue, DataWriter, DeleteRecordRequest, InsertRecordRequest, RecordOrigin, ResolvedSource,
-    RewriteRecordReferencesRequest, SourceLocationSpec, SpreadRewriteTarget, TextSpan,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    CfdValue, DeleteRecordRequest, InsertRecordRequest, RecordOrigin, ResolvedSource,
+    RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, SpreadRewriteTarget,
+    TextSpan, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::CfdDataModel;

@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use coflow_api::{
-    DataWriter, DiagnosticSet, ProviderRegistry, RecordOrigin, ResolvedSource,
-    RewriteRecordReferencesRequest, SpreadRewriteTarget, WriteCellRequest, WriteFieldPathSegment,
+    DiagnosticSet, ProviderRegistry, RecordOrigin, ResolvedSource, RewriteRecordReferencesRequest,
+    SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteFieldPathSegment,
 };
 use coflow_data_model::{CfdRecordId, CfdValue};
 
-use super::{lookup_writer, source_for_file};
+use super::{lookup_source_writer, source_for_file};
 use crate::writes::path::{cfd_path_to_write_path, value_at_path, write_path_from_cfd_path};
 use crate::ProjectSession;
 
 pub(super) struct ReferenceUpdateAction {
-    pub(super) writer: Arc<dyn DataWriter>,
+    pub(super) writer: Arc<dyn SourceWriter>,
     pub(super) request: OwnedWriteCellRequest,
 }
 
@@ -42,7 +42,7 @@ impl OwnedWriteCellRequest {
 }
 
 pub(super) struct SourceRewriteAction {
-    pub(super) writer: Arc<dyn DataWriter>,
+    pub(super) writer: Arc<dyn SourceWriter>,
     pub(super) request: OwnedRewriteRecordReferencesRequest,
 }
 
@@ -89,7 +89,7 @@ pub(super) fn reference_update_actions(
             continue;
         }
         let source = source_for_file(session, &host_ref.display_path)?;
-        let writer = lookup_writer(registry, &source)?;
+        let writer = lookup_source_writer(registry, &source)?;
         actions.push(ReferenceUpdateAction {
             writer,
             request: OwnedWriteCellRequest {
@@ -133,7 +133,7 @@ pub(super) fn source_rewrite_actions(
     by_file
         .into_values()
         .map(|(source, targets)| {
-            let writer = lookup_writer(registry, &source)?;
+            let writer = lookup_source_writer(registry, &source)?;
             Ok(SourceRewriteAction {
                 writer,
                 request: OwnedRewriteRecordReferencesRequest {

@@ -11,7 +11,7 @@ mod common;
 use common::*;
 
 #[test]
-fn codegen_csharp_writes_newtonsoft_json_loader() {
+fn codegen_csharp_writes_newtonsoft_json_source_provider() {
     let root = temp_project_dir("csharp-codegen");
     let _cleanup = TempDirCleanup(root.clone());
     write_acyclic_csharp_project(&root, "json");

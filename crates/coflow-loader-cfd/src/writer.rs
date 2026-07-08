@@ -1,7 +1,7 @@
 //! Writer that persists field edits back to `.cfd` source text using span
 //! patches against the parsed AST.
 //!
-//! `CfdWriter` is the [`DataWriter`] implementation used by sources whose
+//! `CfdWriter` is the [`SourceWriter`] implementation used by sources whose
 //! origin is [`RecordOrigin::File`]. It maintains an in-memory cache of
 //! `(source_text, CfdAst)` keyed by absolute file path so that repeated edits
 //! avoid re-reading and re-parsing the file.
@@ -12,9 +12,9 @@ mod schema_nav;
 mod target;
 
 use coflow_api::{
-    CreateTableRequest, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet,
-    InsertRecordRequest, RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest,
-    SourceLocationSpec, SyncHeaderRequest, TableContext, TableManager, TableManagerDescriptor,
+    CreateTableRequest, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
+    RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec,
+    SourceWriter, SyncHeaderRequest, TableContext, TableManager, TableManagerDescriptor,
     TableOperationResult, TextSpan, WriteCellRequest, WriteContext, WriteOutcome,
     WriterCapabilities, WriterDescriptor,
 };
@@ -152,7 +152,7 @@ fn file_mtime(path: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
-impl DataWriter for CfdWriter {
+impl SourceWriter for CfdWriter {
     fn descriptor(&self) -> &'static WriterDescriptor {
         &CFD_WRITER_DESCRIPTOR
     }

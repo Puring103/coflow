@@ -108,7 +108,7 @@ pub(crate) fn api_error_message(description: &str, code: i64, msg: Option<&str>)
     )
 }
 
-/// `DataWriter` for [`RecordOrigin::Table`] origins whose document is a
+/// `SourceWriter` for [`RecordOrigin::Table`] origins whose document is a
 /// `Remote("lark:<spreadsheet_token>")`. Routes the edit through Lark's
 /// `values_batch_update` endpoint.
 ///
@@ -130,8 +130,8 @@ mod tests {
     use super::*;
     use crate::source::lark_source_from_spec;
     use coflow_api::{
-        CftContainer, DataLoader, LoadContext, ModuleId, ProbeResult, ProjectSourceRef,
-        ResolvedSource, SourceLocationSpec, SourceResolveContext,
+        CftContainer, ModuleId, ProbeResult, ProjectSourceRef, ResolvedSource, SourceLoadContext,
+        SourceLocationSpec, SourceProvider, SourceResolveContext,
     };
     use serde_json::{json, Value};
     use std::path::Path;
@@ -245,7 +245,7 @@ mod tests {
             }),
             display_name: "https://example.feishu.cn/wiki/wiki_token".to_string(),
         };
-        let ctx = LoadContext {
+        let ctx = SourceLoadContext {
             project_root: Path::new("."),
             schema: &schema,
         };

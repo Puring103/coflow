@@ -19,8 +19,9 @@
 #![allow(clippy::missing_const_for_fn, clippy::multiple_crate_versions)]
 
 use coflow_api::{
-    DataLoader, Diagnostic, DiagnosticSet, LoadContext, LoadedRecords, LoaderDescriptor,
-    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocationSpec, SourceResolveContext,
+    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, ResolvedSource,
+    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
+    SourceResolveContext,
 };
 use std::fs;
 use std::path::Path;
@@ -40,7 +41,7 @@ pub use writer::{ExcelWriter, EXCEL_WRITER_DESCRIPTOR};
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ExcelLoader;
 
-pub const EXCEL_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+pub const EXCEL_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescriptor {
     id: "excel",
     display_name: "Excel workbook",
     extensions: &["xlsx", "xlsm", "xls"],
@@ -48,8 +49,8 @@ pub const EXCEL_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
     option_keys: &["sheets"],
 };
 
-impl DataLoader for ExcelLoader {
-    fn descriptor(&self) -> &'static LoaderDescriptor {
+impl SourceProvider for ExcelLoader {
+    fn descriptor(&self) -> &'static SourceProviderDescriptor {
         &EXCEL_LOADER_DESCRIPTOR
     }
 
@@ -104,9 +105,9 @@ impl DataLoader for ExcelLoader {
 
     fn load(
         &self,
-        ctx: LoadContext<'_>,
+        ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
-    ) -> Result<LoadedRecords, DiagnosticSet> {
+    ) -> Result<LoadedSource, DiagnosticSet> {
         let SourceLocationSpec::Path(file) = &source.location else {
             return Err(DiagnosticSet::one(Diagnostic::error(
                 "EXCEL-SOURCE",
@@ -117,7 +118,7 @@ impl DataLoader for ExcelLoader {
         let sheets = excel_sheets_from_options(&source.options)?;
         let excel_source = ExcelSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[excel_source])
-            .map(|loaded| LoadedRecords {
+            .map(|loaded| LoadedSource {
                 records: loaded.records,
             })
             .map_err(excel_diagnostics_to_api)

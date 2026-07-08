@@ -12,9 +12,9 @@ mod refs;
 use std::sync::Arc;
 
 use coflow_api::{
-    DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
-    ProviderRegistry, RecordOrigin, RenameRecordRequest, ResolvedSource, Severity,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, ProviderRegistry,
+    RecordOrigin, RenameRecordRequest, ResolvedSource, Severity, SourceWriter, WriteCellRequest,
+    WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdRecordId, CfdValue};
@@ -77,7 +77,7 @@ impl ProjectSession {
         )?;
         write_rules::validate_value_for_write(self, &expected, new_value, "WRITE-SHAPE", "WRITE")?;
         let source = source_for_file(self, &target.display_path)?;
-        let writer = lookup_writer(registry, &source)?;
+        let writer = lookup_source_writer(registry, &source)?;
         let yaml_path = self.project.config_path.clone();
 
         let write_request = WriteCellRequest {
@@ -155,7 +155,7 @@ impl ProjectSession {
         let target_origin = target_ref.origin.clone();
         let target_display_path = target_ref.display_path.clone();
         let target_source = source_for_file(self, &target_display_path)?;
-        let target_writer = lookup_writer(registry, &target_source)?;
+        let target_writer = lookup_source_writer(registry, &target_source)?;
         let ctx = WriteContext {
             project_root: &self.project.root_dir,
             schema: &self.schema,
@@ -224,7 +224,7 @@ impl ProjectSession {
         let sheet = sheet
             .map(ToOwned::to_owned)
             .or_else(|| sheet_for_file_type(self, file, actual_type));
-        let writer = lookup_writer(registry, &source)?;
+        let writer = lookup_source_writer(registry, &source)?;
         let request = InsertRecordRequest {
             source: &source,
             sheet: sheet.as_deref(),
@@ -281,7 +281,7 @@ impl ProjectSession {
         let display_path = record_ref.display_path.clone();
         let origin = record.origin.clone();
         let source = source_for_file(self, &display_path)?;
-        let writer = lookup_writer(registry, &source)?;
+        let writer = lookup_source_writer(registry, &source)?;
         let request = DeleteRecordRequest {
             origin: &origin,
             record_key: key,
@@ -337,11 +337,11 @@ fn source_for_file(session: &ProjectSession, file: &str) -> Result<ResolvedSourc
         })
 }
 
-fn lookup_writer(
+fn lookup_source_writer(
     registry: &ProviderRegistry,
     source: &ResolvedSource,
-) -> Result<Arc<dyn DataWriter>, DiagnosticSet> {
-    registry.writer(&source.provider_id).ok_or_else(|| {
+) -> Result<Arc<dyn SourceWriter>, DiagnosticSet> {
+    registry.source_writer(&source.provider_id).ok_or_else(|| {
         DiagnosticSet::one(Diagnostic {
             code: "WRITE-NO-WRITER".to_string(),
             stage: "WRITE".to_string(),

@@ -2,11 +2,11 @@
 
 use coflow::commands::{check_project, CommandOutcome};
 use coflow_api::{
-    CfdInputRecord, CfdInputValue, DataLoader, DataWriter, DiagnosticSet, LoadContext,
-    LoadedRecords, LoaderDescriptor, ProbeResult, ProjectSourceRef, RecordOrigin,
-    RenameRecordRequest, ResolvedSource, RewriteRecordReferencesRequest, SourceDocument,
-    SourceLocationSpec, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
-    WriterDescriptor,
+    CfdInputRecord, CfdInputValue, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
+    RecordOrigin, RenameRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
+    SourceDocument, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    SourceProviderDescriptor, SourceWriter, WriteCellRequest, WriteContext, WriteOutcome,
+    WriterCapabilities, WriterDescriptor,
 };
 use coflow_engine::{build_project_session, RecordCoordinate};
 use coflow_project::Project;
@@ -151,10 +151,10 @@ fn rename_record_key_does_not_scan_remote_sources_without_spread_provenance() {
     let tracker = Arc::new(Mutex::new(RemoteRewriteTracker::default()));
     let mut registry = coflow_builtins::default_provider_registry().expect("default registry");
     registry
-        .register_loader(FakeRemoteLoader)
+        .register_source_provider(FakeRemoteLoader)
         .expect("register fake remote loader");
     registry
-        .register_writer(FakeRemoteWriter {
+        .register_source_writer(FakeRemoteWriter {
             tracker: Arc::clone(&tracker),
         })
         .expect("register fake remote writer");
@@ -304,7 +304,7 @@ struct RemoteRewriteCall {
 #[derive(Debug, Default, Clone, Copy)]
 struct FakeRemoteLoader;
 
-static FAKE_REMOTE_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+static FAKE_REMOTE_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescriptor {
     id: "fake-remote",
     display_name: "Fake remote",
     extensions: &[],
@@ -312,8 +312,8 @@ static FAKE_REMOTE_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
     option_keys: &[],
 };
 
-impl DataLoader for FakeRemoteLoader {
-    fn descriptor(&self) -> &'static LoaderDescriptor {
+impl SourceProvider for FakeRemoteLoader {
+    fn descriptor(&self) -> &'static SourceProviderDescriptor {
         &FAKE_REMOTE_LOADER_DESCRIPTOR
     }
 
@@ -327,12 +327,12 @@ impl DataLoader for FakeRemoteLoader {
 
     fn load(
         &self,
-        _ctx: LoadContext<'_>,
+        _ctx: SourceLoadContext<'_>,
         _source: &ResolvedSource,
-    ) -> Result<LoadedRecords, DiagnosticSet> {
+    ) -> Result<LoadedSource, DiagnosticSet> {
         let mut field_columns = BTreeMap::new();
         field_columns.insert(vec!["path_name".to_string()], 2);
-        Ok(LoadedRecords {
+        Ok(LoadedSource {
             records: vec![CfdInputRecord::new(
                 "remote_bundle",
                 "Bundle",
@@ -369,7 +369,7 @@ static FAKE_REMOTE_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     },
 };
 
-impl DataWriter for FakeRemoteWriter {
+impl SourceWriter for FakeRemoteWriter {
     fn descriptor(&self) -> &'static WriterDescriptor {
         &FAKE_REMOTE_WRITER_DESCRIPTOR
     }

@@ -37,14 +37,15 @@ pub use operations::{
     SyncHeaderRequest, TableContext, TableManager, TableManagerDescriptor, TableOperationResult,
 };
 pub use provider::{
-    DataLoader, LoadContext, LoadedRecords, LoaderDescriptor, OutputSpec, ProbeConfidence,
-    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocationSpec, SourceResolveContext,
+    LoadedSource, OutputSpec, ProbeConfidence, ProbeResult, ProjectSourceRef, ResolvedSource,
+    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
+    SourceResolveContext,
 };
-pub use registry::{LoaderSelectionError, ProviderRegistrationError, ProviderRegistry};
+pub use registry::{ProviderRegistrationError, ProviderRegistry, SourceProviderSelectionError};
 pub use writer::{
-    DataWriter, DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest,
-    RewriteRecordReferencesRequest, SpreadRewriteTarget, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest,
+    SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 
 pub use coflow_cft::{

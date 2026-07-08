@@ -37,14 +37,14 @@ pub fn default_provider_registry() -> Result<ProviderRegistry, ProviderRegistrat
 pub fn register_default_providers(
     registry: &mut ProviderRegistry,
 ) -> Result<(), ProviderRegistrationError> {
-    registry.register_loader(coflow_loader_excel::ExcelLoader)?;
-    registry.register_loader(coflow_loader_csv::CsvLoader)?;
-    registry.register_loader(coflow_loader_lark::LarkSheetLoader::default())?;
-    registry.register_loader(coflow_loader_cfd::CfdLoader)?;
-    registry.register_writer(coflow_loader_excel::ExcelWriter::new())?;
-    registry.register_writer(coflow_loader_lark::LarkSheetWriter::default())?;
-    registry.register_writer(coflow_loader_cfd::CfdWriter::new())?;
-    registry.register_writer(coflow_loader_csv::CsvWriter::new())?;
+    registry.register_source_provider(coflow_loader_excel::ExcelLoader)?;
+    registry.register_source_provider(coflow_loader_csv::CsvLoader)?;
+    registry.register_source_provider(coflow_loader_lark::LarkSheetLoader::default())?;
+    registry.register_source_provider(coflow_loader_cfd::CfdLoader)?;
+    registry.register_source_writer(coflow_loader_excel::ExcelWriter::new())?;
+    registry.register_source_writer(coflow_loader_lark::LarkSheetWriter::default())?;
+    registry.register_source_writer(coflow_loader_cfd::CfdWriter::new())?;
+    registry.register_source_writer(coflow_loader_csv::CsvWriter::new())?;
     registry.register_table_manager(coflow_loader_excel::ExcelWriter::new())?;
     registry.register_table_manager(coflow_loader_csv::CsvWriter::new())?;
     registry.register_table_manager(coflow_loader_cfd::CfdWriter::new())?;

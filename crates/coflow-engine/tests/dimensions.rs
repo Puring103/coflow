@@ -13,7 +13,7 @@ use coflow_project::Project;
 fn csv_dimension_registry() -> coflow_api::ProviderRegistry {
     let mut registry = coflow_api::ProviderRegistry::default();
     registry
-        .register_loader(coflow_loader_csv::CsvLoader)
+        .register_source_provider(coflow_loader_csv::CsvLoader)
         .expect("csv loader");
     registry
         .register_dimension_source_manager(coflow_loader_csv::CsvWriter::new())

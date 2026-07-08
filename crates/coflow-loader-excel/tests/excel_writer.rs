@@ -9,9 +9,9 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
-    CfdInputRecord, CfdInputValue, CfdValue, DataWriter, DeleteRecordRequest, InsertRecordRequest,
-    RecordOrigin, ResolvedSource, SourceDocument, SourceLocationSpec, WriteCellRequest,
-    WriteContext, WriteFieldPathSegment,
+    CfdInputRecord, CfdInputValue, CfdValue, DeleteRecordRequest, InsertRecordRequest,
+    RecordOrigin, ResolvedSource, SourceDocument, SourceLocationSpec, SourceWriter,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::CftContainer;
 use coflow_loader_excel::ExcelWriter;

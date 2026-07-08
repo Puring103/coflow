@@ -31,7 +31,7 @@ pub(super) fn session_capabilities_for_file(
         .source_for_display(file_path)
         .and_then(|source_id| session.engine.sources.entries().get(source_id.index()))
         .map_or(FALLBACK_PROVIDER_ID, |entry| entry.provider_id.as_str());
-    let writer = registry.writer(provider_id);
+    let writer = registry.source_writer(provider_id);
     writer.map_or_else(
         || WriterCapabilities::read_only().with_provider_id(provider_id),
         |w| {

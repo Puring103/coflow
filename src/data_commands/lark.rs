@@ -45,7 +45,7 @@ pub(super) fn create_lark_table(
         })?;
     let resolved_source = configured_project_source(&session.project, source_config);
     let layout = lark_table_layout(session, source_config, actual_type, sheet)?;
-    let writer = registry.writer("lark-sheet").ok_or_else(|| {
+    let writer = registry.source_writer("lark-sheet").ok_or_else(|| {
         DiagnosticSet::one(coflow_api::Diagnostic::error(
             "DATA-FILE-PROVIDER",
             "DATA-FILE",

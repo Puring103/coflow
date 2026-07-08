@@ -1,10 +1,10 @@
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LoaderSelectionError {
-    UnknownLoader { id: String },
-    NoLoader,
-    AmbiguousLoaders { ids: Vec<String> },
+pub enum SourceProviderSelectionError {
+    UnknownSourceProvider { id: String },
+    NoSourceProvider,
+    AmbiguousSourceProviders { ids: Vec<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

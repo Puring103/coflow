@@ -1,8 +1,8 @@
 use coflow_api::{
     map_diagnostics_with_origins, origins_of, CfdInputRecord, CftContainer, Diagnostic,
-    DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderSelectionError, ProjectSourceRef,
-    ProviderRegistry, RecordOrigin, ResolvedSource, Severity, SourceLocation, SourceLocationSpec,
-    SourceResolveContext,
+    DiagnosticSet, Label, LoadedSource, ProjectSourceRef, ProviderRegistry, RecordOrigin,
+    ResolvedSource, Severity, SourceLoadContext, SourceLocation, SourceLocationSpec,
+    SourceProviderSelectionError, SourceResolveContext,
 };
 use coflow_cft::CftSchemaView;
 use coflow_checker::run_checks_for_dimensions_with_deps;
@@ -21,7 +21,7 @@ use crate::indexes::{
 };
 use crate::session::RecordCoordinate;
 
-type ResolvedLoaderSource = (Arc<dyn coflow_api::DataLoader>, ResolvedSource);
+type ResolvedLoaderSource = (Arc<dyn coflow_api::SourceProvider>, ResolvedSource);
 
 #[derive(Debug, Clone)]
 pub(crate) struct ProjectLoadOutput {
@@ -174,7 +174,7 @@ fn load_resolved_sources(
     let mut diagnostics = DiagnosticSet::empty();
     for (loader, spec) in &resolved_sources {
         diagnostics.extend(loader.preflight(
-            LoadContext {
+            SourceLoadContext {
                 project_root: &project.root_dir,
                 schema,
             },
@@ -199,7 +199,7 @@ fn load_resolved_sources(
             display_path: display_path.clone(),
         });
         match loader.load(
-            LoadContext {
+            SourceLoadContext {
                 project_root: &project.root_dir,
                 schema,
             },
@@ -233,7 +233,7 @@ fn resolve_implicit_source(
     let source_type =
         (!configured.provider_id.is_empty()).then_some(configured.provider_id.as_str());
     let source_ref = source_ref(configured, source_type, &option_keys);
-    let loader = match registry.select_loader(&source_ref) {
+    let loader = match registry.select_source_provider(&source_ref) {
         Ok(loader) => loader,
         Err(err) => {
             let mut diagnostics = DiagnosticSet::empty();
@@ -293,7 +293,7 @@ fn resolve_sources(
         && matches!(configured.location, SourceLocationSpec::Path(ref path) if path.is_dir())
     {
         let mut resolved = Vec::new();
-        for loader in registry.loaders() {
+        for loader in registry.source_providers() {
             for source in loader.resolve(ctx, configured)? {
                 resolved.push((Arc::clone(&loader), source));
             }
@@ -303,7 +303,7 @@ fn resolve_sources(
 
     let option_keys = source_option_keys(&configured.options);
     let source_ref = source_ref(configured, source.source_type.as_deref(), &option_keys);
-    let loader = match registry.select_loader(&source_ref) {
+    let loader = match registry.select_source_provider(&source_ref) {
         Ok(loader) => loader,
         Err(err) => {
             let mut diagnostics = DiagnosticSet::empty();
@@ -340,7 +340,7 @@ fn push_loaded_records(
     source_id: SourceId,
     source: &ResolvedSource,
     display_path: &str,
-    loaded: LoadedRecords,
+    loaded: LoadedSource,
 ) {
     for record in loaded.records {
         records_index.push_pending(PendingRecordRef {
@@ -398,25 +398,25 @@ fn source_option_keys(options: &Value) -> Vec<&str> {
 fn loader_selection_diagnostic(
     config_path: &Path,
     spec: &ResolvedSource,
-    err: LoaderSelectionError,
+    err: SourceProviderSelectionError,
 ) -> Diagnostic {
     let source = match &spec.location {
         SourceLocationSpec::Path(path) => path.display().to_string(),
         SourceLocationSpec::Uri(uri) => uri.clone(),
     };
     match err {
-        LoaderSelectionError::UnknownLoader { id } => project_diagnostic(
+        SourceProviderSelectionError::UnknownSourceProvider { id } => project_diagnostic(
             config_path,
-            format!("source `{source}` uses unknown loader `{id}`"),
+            format!("source `{source}` uses unknown source provider `{id}`"),
         ),
-        LoaderSelectionError::NoLoader => project_diagnostic(
+        SourceProviderSelectionError::NoSourceProvider => project_diagnostic(
             config_path,
-            format!("source `{source}` has no matching loader"),
+            format!("source `{source}` has no matching source provider"),
         ),
-        LoaderSelectionError::AmbiguousLoaders { ids } => project_diagnostic(
+        SourceProviderSelectionError::AmbiguousSourceProviders { ids } => project_diagnostic(
             config_path,
             format!(
-                "source `{source}` matches multiple loaders {}; set source `type` explicitly",
+                "source `{source}` matches multiple source providers {}; set source `type` explicitly",
                 ids.join(", ")
             ),
         ),

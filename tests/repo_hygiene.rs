@@ -84,9 +84,9 @@ fn api_registry_is_split_by_responsibility() {
         .expect("read API registry errors");
 
     for expected in [
-        "pub fn select_loader",
-        "LoaderSelectionError::UnknownLoader",
-        "LoaderSelectionError::AmbiguousLoaders",
+        "pub fn select_source_provider",
+        "SourceProviderSelectionError::UnknownSourceProvider",
+        "SourceProviderSelectionError::AmbiguousSourceProviders",
     ] {
         assert!(
             selection.contains(expected),
@@ -98,7 +98,7 @@ fn api_registry_is_split_by_responsibility() {
         );
     }
     for expected in [
-        "pub enum LoaderSelectionError",
+        "pub enum SourceProviderSelectionError",
         "pub struct ProviderRegistrationError",
         "impl std::error::Error for ProviderRegistrationError",
     ] {
@@ -115,6 +115,38 @@ fn api_registry_is_split_by_responsibility() {
         registry.lines().count() < 260,
         "coflow-api registry.rs should stay focused on provider storage and lookup"
     );
+    for expected in [
+        "source_providers:",
+        "source_writers:",
+        "pub fn register_source_provider",
+        "pub fn register_source_writer",
+        "pub fn source_provider(",
+        "pub fn source_writer(",
+        "pub fn source_provider_descriptors",
+        "pub fn source_writer_descriptors",
+    ] {
+        assert!(
+            registry.contains(expected),
+            "API registry should expose source provider/writer item `{expected}`"
+        );
+    }
+    for forbidden in [
+        "DataLoader",
+        "DataWriter",
+        "register_loader",
+        "register_writer",
+        "pub fn loader(",
+        "pub fn writer(",
+        "pub fn loader_descriptors",
+        "pub fn writer_descriptors",
+        "    loaders: BTreeMap",
+        "    writers: BTreeMap",
+    ] {
+        assert!(
+            !registry.contains(forbidden),
+            "API registry should use source provider/writer naming instead of `{forbidden}`"
+        );
+    }
 }
 
 #[test]
@@ -161,12 +193,16 @@ fn api_writer_contract_is_split_by_responsibility() {
         );
     }
     assert!(
-        writer.contains("pub trait DataWriter"),
+        writer.contains("pub trait SourceWriter"),
         "API writer trait should remain in writer.rs"
     );
     assert!(
+        !writer.contains("pub trait DataWriter"),
+        "API writer contract should be named SourceWriter"
+    );
+    assert!(
         writer.lines().count() < 170,
-        "coflow-api writer.rs should stay focused on the DataWriter trait"
+        "coflow-api writer.rs should stay focused on the SourceWriter trait"
     );
 }
 
@@ -567,7 +603,7 @@ fn project_diagnostic_conversion_does_not_live_in_project_lib_rs() {
 }
 
 #[test]
-fn table_provider_algorithms_are_not_reexported_by_excel_loader() {
+fn table_provider_algorithms_are_not_reexported_by_excel_source_provider() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/lib.rs")
         .expect("read excel loader");
 
@@ -1238,7 +1274,7 @@ fn engine_runtime_does_not_depend_on_excel_implementation_crates() {
 }
 
 #[test]
-fn engine_data_file_commands_do_not_depend_on_cfd_provider_writer() {
+fn engine_data_file_commands_do_not_depend_on_cfd_provider_source_writer() {
     let manifest =
         std::fs::read_to_string("crates/coflow-engine/Cargo.toml").expect("read engine manifest");
     let production_manifest = manifest
@@ -3537,7 +3573,7 @@ fn lark_loader_write_operations_do_not_live_in_lib_rs() {
         .expect("read lark write layout");
 
     for expected in [
-        "impl<C> DataWriter for LarkSheetWriter<C>",
+        "impl<C> SourceWriter for LarkSheetWriter<C>",
         "pub static LARK_SHEET_WRITER_DESCRIPTOR",
     ] {
         assert!(

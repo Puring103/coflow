@@ -38,7 +38,7 @@ pub struct OutputSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LoaderDescriptor {
+pub struct SourceProviderDescriptor {
     pub id: &'static str,
     pub display_name: &'static str,
     pub extensions: &'static [&'static str],
@@ -88,18 +88,18 @@ impl ProbeResult {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct LoadContext<'a> {
+pub struct SourceLoadContext<'a> {
     pub project_root: &'a Path,
     pub schema: &'a CftContainer,
 }
 
 #[derive(Debug, Clone)]
-pub struct LoadedRecords {
+pub struct LoadedSource {
     pub records: Vec<CfdInputRecord>,
 }
 
-pub trait DataLoader: Send + Sync {
-    fn descriptor(&self) -> &'static LoaderDescriptor;
+pub trait SourceProvider: Send + Sync {
+    fn descriptor(&self) -> &'static SourceProviderDescriptor;
 
     fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult;
 
@@ -117,7 +117,7 @@ pub trait DataLoader: Send + Sync {
         Ok(vec![source.clone()])
     }
 
-    fn preflight(&self, _ctx: LoadContext<'_>, _source: &ResolvedSource) -> DiagnosticSet {
+    fn preflight(&self, _ctx: SourceLoadContext<'_>, _source: &ResolvedSource) -> DiagnosticSet {
         DiagnosticSet::empty()
     }
 
@@ -129,7 +129,7 @@ pub trait DataLoader: Send + Sync {
     /// into schema-guided input records.
     fn load(
         &self,
-        ctx: LoadContext<'_>,
+        ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
-    ) -> Result<LoadedRecords, DiagnosticSet>;
+    ) -> Result<LoadedSource, DiagnosticSet>;
 }
