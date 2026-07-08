@@ -782,8 +782,11 @@ fn language_dimension_rolls_back_all_changed_csv_files_when_reload_checks_fail()
         "#,
     )
     .expect("write schema");
-    std::fs::write(root.join("data/items.csv"), "id,name,title\npotion,Potion,New Title\n")
-        .expect("write items");
+    std::fs::write(
+        root.join("data/items.csv"),
+        "id,name,title\npotion,Potion,New Title\n",
+    )
+    .expect("write items");
     let original_name_csv = "id,default,zh\npotion,Old,BAD\n";
     let original_title_csv = "id,default,zh\npotion,Old Title,旧标题\n";
     std::fs::write(

@@ -1,11 +1,11 @@
 use coflow_api::FlatDiagnostic;
-use coflow_runtime::{
-    build_project_schema_session, inspect_schema, schema_files, SchemaFilesReport,
-    SchemaInspectReport,
-};
 use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
     path_to_slash, Project, SchemaSourceOverride,
+};
+use coflow_runtime::{
+    build_project_schema_session, inspect_schema, schema_files, SchemaFilesReport,
+    SchemaInspectReport,
 };
 use serde::Serialize;
 use std::io::{self, Read, Write};

@@ -2655,6 +2655,61 @@ fn engine_mutation_coercion_does_not_live_in_mutation_mod_rs() {
 }
 
 #[test]
+fn engine_mutation_prepare_does_not_live_in_mutation_mod_rs() {
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
+        .expect("read mutation module");
+    let prepare = std::fs::read_to_string("crates/coflow-engine/src/mutation/prepare.rs")
+        .expect("read mutation prepare module");
+
+    for expected in [
+        "pub fn prepare_mutation",
+        "fn prepare_one",
+        "fn prepare_insert_fields",
+        "fn expected_value_for_path",
+        "fn effective_write_target_for_set_field",
+    ] {
+        assert!(
+            prepare.contains(expected),
+            "mutation preparation helper `{expected}` should live in mutation/prepare.rs"
+        );
+        assert!(
+            !mutation.contains(expected),
+            "mutation preparation helper `{expected}` should not live in mutation/mod.rs"
+        );
+    }
+    assert!(
+        mutation.lines().count() < 120,
+        "coflow-engine mutation/mod.rs should stay as a small module boundary"
+    );
+}
+
+#[test]
+fn engine_mutation_apply_does_not_live_in_mutation_mod_rs() {
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
+        .expect("read mutation module");
+    let apply = std::fs::read_to_string("crates/coflow-engine/src/mutation/apply.rs")
+        .expect("read mutation apply module");
+
+    for expected in [
+        "pub fn apply_prepared_mutation",
+        "pub fn apply_mutation",
+        "fn apply_prepared_one",
+        "enum MutationApplyError",
+        "fn session_flat_diagnostics",
+        "fn flat_diagnostics",
+    ] {
+        assert!(
+            apply.contains(expected),
+            "mutation apply helper `{expected}` should live in mutation/apply.rs"
+        );
+        assert!(
+            !mutation.contains(expected),
+            "mutation apply helper `{expected}` should not live in mutation/mod.rs"
+        );
+    }
+}
+
+#[test]
 fn checker_diagnostic_rendering_does_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");

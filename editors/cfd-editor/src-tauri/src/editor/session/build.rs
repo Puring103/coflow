@@ -1,8 +1,8 @@
 //! Project session construction through the shared Coflow engine.
 
 use coflow_api::{ProviderRegistry, WriterCapabilities};
-use coflow_runtime::{build_project_session_read_only, FileTreeNode};
 use coflow_project::Project;
+use coflow_runtime::{build_project_session_read_only, FileTreeNode};
 use std::collections::HashMap;
 
 use super::diagnostics::diagnostics_from_store;
