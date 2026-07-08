@@ -47,6 +47,10 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
         "missing cfd table manager",
     )?;
     ensure(
+        registry.table_manager("lark-sheet").is_some(),
+        "missing lark-sheet table manager",
+    )?;
+    ensure(
         registry.dimension_source_manager("csv").is_some(),
         "missing csv dimension source manager",
     )?;

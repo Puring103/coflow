@@ -200,6 +200,12 @@ fn api_writer_contract_is_split_by_responsibility() {
         !writer.contains("pub trait DataWriter"),
         "API writer contract should be named SourceWriter"
     );
+    for forbidden in ["CreateTableRequest", "fn create_table"] {
+        assert!(
+            !writer.contains(forbidden),
+            "table creation should live on TableManager, not SourceWriter: `{forbidden}`"
+        );
+    }
     assert!(
         writer.lines().count() < 170,
         "coflow-api writer.rs should stay focused on the SourceWriter trait"

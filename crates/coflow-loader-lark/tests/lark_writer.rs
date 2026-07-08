@@ -12,7 +12,7 @@
 use coflow_api::{
     CfdValue, DeleteRecordRequest, InsertRecordRequest, RecordOrigin, ResolvedSource,
     RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec, SourceWriter,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    TableContext, TableManager, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_api::{CftContainer, ModuleId};
 use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};
@@ -538,7 +538,7 @@ fn creates_lark_sheet_and_writes_header() {
             r#"{"code":0,"data":{}}"#,
         ),
     ]);
-    let writer = LarkSheetWriter::new(client.clone());
+    let table_manager = LarkSheetWriter::new(client.clone());
     let schema = item_schema();
     let source = lark_source();
     let headers = vec!["id".to_string(), "name".to_string(), "power".to_string()];
@@ -549,13 +549,14 @@ fn creates_lark_sheet_and_writes_header() {
         headers: &headers,
         schema: &schema,
     };
-    let ctx = WriteContext {
+    let ctx = TableContext {
         project_root: std::path::Path::new("."),
-        schema: &schema,
-        model: None,
+        schema: Some(&schema),
     };
 
-    writer.create_table(ctx, &request).expect("create table");
+    table_manager
+        .create_table(ctx, &request)
+        .expect("create table");
 
     let calls = client.calls();
     let Some((_, _, Some(body))) = calls.iter().find(|(_, url, _)| url.contains("/values")) else {

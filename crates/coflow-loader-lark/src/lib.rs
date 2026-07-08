@@ -42,7 +42,7 @@ pub use load::{
     LARK_SHEET_LOADER_DESCRIPTOR,
 };
 pub use source::{LarkSheetLocator, LarkSheetSource};
-pub use write::LARK_SHEET_WRITER_DESCRIPTOR;
+pub use write::{LARK_SHEET_TABLE_MANAGER_DESCRIPTOR, LARK_SHEET_WRITER_DESCRIPTOR};
 
 pub(crate) const AUTH_URL: &str =
     "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal";

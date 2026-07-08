@@ -26,7 +26,6 @@ pub struct WriterCapabilities {
     pub can_edit_key: bool,
     pub can_insert_record: bool,
     pub can_delete_record: bool,
-    pub can_create_table: bool,
     pub requires_full_refresh_after_write: bool,
     pub is_remote: bool,
 }
@@ -40,7 +39,6 @@ impl WriterCapabilities {
             can_edit_key: false,
             can_insert_record: false,
             can_delete_record: false,
-            can_create_table: false,
             requires_full_refresh_after_write: false,
             is_remote: false,
         }
@@ -54,7 +52,6 @@ impl WriterCapabilities {
             can_edit_key: true,
             can_insert_record: true,
             can_delete_record: true,
-            can_create_table: true,
             requires_full_refresh_after_write: true,
             is_remote: false,
         }
@@ -68,7 +65,6 @@ impl WriterCapabilities {
             can_edit_key: true,
             can_insert_record: false,
             can_delete_record: false,
-            can_create_table: false,
             requires_full_refresh_after_write: true,
             is_remote: true,
         }

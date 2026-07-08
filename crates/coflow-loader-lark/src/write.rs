@@ -1,8 +1,9 @@
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, DiagnosticSet, InsertRecordRequest, RecordOrigin,
     RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
-    SourceWriter, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
-    WriterCapabilities, WriterDescriptor,
+    SourceWriter, TableContext, TableManager, TableManagerDescriptor, TableOperationResult,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriterCapabilities,
+    WriterDescriptor,
 };
 use coflow_loader_table_core::cell_value::render_cell_value;
 use coflow_loader_table_core::writer::{plan_insert_record, TableInsertRecord, TableWritePlan};
@@ -27,10 +28,14 @@ pub static LARK_SHEET_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         can_edit_key: true,
         can_insert_record: true,
         can_delete_record: true,
-        can_create_table: true,
         requires_full_refresh_after_write: true,
         is_remote: true,
     },
+};
+
+pub static LARK_SHEET_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
+    id: "lark-sheet",
+    display_name: "Lark Sheet",
 };
 
 impl<C> SourceWriter for LarkSheetWriter<C>
@@ -226,29 +231,6 @@ where
         })
     }
 
-    fn create_table(
-        &self,
-        _ctx: WriteContext<'_>,
-        request: &CreateTableRequest<'_>,
-    ) -> Result<WriteOutcome, DiagnosticSet> {
-        let auth = self.lark_write_auth(request.source)?;
-        let spreadsheet_token =
-            self.lark_spreadsheet_token_from_source(request.source, &auth.token)?;
-        if self
-            .cached_sheet_id(&spreadsheet_token, request.sheet, &auth.token)
-            .is_ok()
-        {
-            return Err(DiagnosticSet::one(diag(
-                "LARK-WRITE",
-                format!("sheet `{}` already exists", request.sheet),
-            )));
-        }
-        let sheet_id = self.create_lark_sheet(&spreadsheet_token, request.sheet, &auth)?;
-        self.write_lark_header(&spreadsheet_token, &sheet_id, request.headers, &auth)?;
-        self.invalidate_caches(None, Some(&spreadsheet_token));
-        Ok(WriteOutcome::default())
-    }
-
     fn delete_record(
         &self,
         _ctx: WriteContext<'_>,
@@ -320,5 +302,42 @@ where
         _request: &RewriteRecordReferencesRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         Ok(WriteOutcome::default())
+    }
+}
+
+impl<C> TableManager for LarkSheetWriter<C>
+where
+    C: LarkHttpClient + Send + Sync,
+{
+    fn descriptor(&self) -> &'static TableManagerDescriptor {
+        &LARK_SHEET_TABLE_MANAGER_DESCRIPTOR
+    }
+
+    fn create_table(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &CreateTableRequest<'_>,
+    ) -> Result<TableOperationResult, DiagnosticSet> {
+        let auth = self.lark_write_auth(request.source)?;
+        let spreadsheet_token =
+            self.lark_spreadsheet_token_from_source(request.source, &auth.token)?;
+        if self
+            .cached_sheet_id(&spreadsheet_token, request.sheet, &auth.token)
+            .is_ok()
+        {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!("sheet `{}` already exists", request.sheet),
+            )));
+        }
+        let sheet_id = self.create_lark_sheet(&spreadsheet_token, request.sheet, &auth)?;
+        self.write_lark_header(&spreadsheet_token, &sheet_id, request.headers, &auth)?;
+        self.invalidate_caches(None, Some(&spreadsheet_token));
+        Ok(TableOperationResult {
+            headers: request.headers.to_vec(),
+            added: request.headers.to_vec(),
+            removed: Vec::new(),
+            diagnostics: DiagnosticSet::empty(),
+        })
     }
 }

@@ -7,7 +7,7 @@ pub use requests::{
     SpreadRewriteTarget, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
 };
 
-use crate::{CreateTableRequest, Diagnostic, DiagnosticSet};
+use crate::{Diagnostic, DiagnosticSet};
 
 /// Trait for source-specific writers that persist field edits.
 ///
@@ -50,24 +50,6 @@ pub trait SourceWriter: Send + Sync {
             "WRITE-UNSUPPORTED",
             "WRITE",
             "writer does not support inserting records",
-        )))
-    }
-
-    /// Create a table/sheet and write its header row.
-    ///
-    /// # Errors
-    ///
-    /// Returns diagnostics when the writer cannot create tables for this
-    /// source or when the provider rejects the requested sheet/header.
-    fn create_table(
-        &self,
-        _ctx: WriteContext<'_>,
-        _request: &CreateTableRequest<'_>,
-    ) -> Result<WriteOutcome, DiagnosticSet> {
-        Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-UNSUPPORTED",
-            "WRITE",
-            "writer does not support creating tables",
         )))
     }
 

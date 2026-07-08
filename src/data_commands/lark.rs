@@ -1,5 +1,5 @@
 use coflow_api::{
-    CreateTableRequest, DiagnosticSet, ProviderRegistry, SourceLocationSpec, WriteContext,
+    CreateTableRequest, DiagnosticSet, ProviderRegistry, SourceLocationSpec, TableContext,
 };
 use coflow_engine::{configured_project_source, DataFileReport};
 
@@ -45,18 +45,17 @@ pub(super) fn create_lark_table(
         })?;
     let resolved_source = configured_project_source(&session.project, source_config);
     let layout = lark_table_layout(session, source_config, actual_type, sheet)?;
-    let writer = registry.source_writer("lark-sheet").ok_or_else(|| {
+    let table_manager = registry.table_manager("lark-sheet").ok_or_else(|| {
         DiagnosticSet::one(coflow_api::Diagnostic::error(
             "DATA-FILE-PROVIDER",
             "DATA-FILE",
-            "lark-sheet writer is not registered",
+            "lark-sheet table manager is not registered",
         ))
     })?;
-    writer.create_table(
-        WriteContext {
+    let result = table_manager.create_table(
+        TableContext {
             project_root: &session.project.root_dir,
-            schema: &session.schema,
-            model: None,
+            schema: Some(&session.schema),
         },
         &CreateTableRequest {
             source: &resolved_source,
@@ -71,9 +70,9 @@ pub(super) fn create_lark_table(
         provider: "lark-sheet".to_string(),
         sheet: Some(layout.sheet),
         actual_type: Some(layout.actual_type),
-        headers: layout.headers,
-        added: Vec::new(),
-        removed: Vec::new(),
+        headers: result.headers,
+        added: result.added,
+        removed: result.removed,
         diagnostics: Vec::new(),
     })
 }
