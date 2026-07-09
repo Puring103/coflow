@@ -50,14 +50,16 @@ Writer 实现 `DataWriter`，负责根据 record origin 写回原始数据源。
 
 CLI 写入命令和编辑器都应通过 writer，而不是直接修改 DataModel。
 
+表格类 Provider 还可以注册 table manager，用于 `data create-file`、`data create-table` 和 `data sync-header` 这类 schema-guided 表头维护命令。
+
 内置 writer 当前报告的能力：
 
-| Provider | 编辑字段 | 修改 key | 插入记录 | 删除记录 | 写后刷新 | 远端 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `excel` | 是 | 是 | 是 | 是 | 是 | 否 |
-| `csv` | 是 | 是 | 是 | 是 | 是 | 否 |
-| `cfd` | 是 | 是 | 是 | 是 | 是 | 否 |
-| `lark-sheet` | 是 | 是 | 是 | 是 | 是 | 是 |
+| Provider | 编辑字段 | 修改 key | 插入记录 | 删除记录 | 创建表格 | 写后刷新 | 远端 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `excel` | 是 | 是 | 是 | 是 | 是 | 是 | 否 |
+| `csv` | 是 | 是 | 是 | 是 | 否 | 是 | 否 |
+| `cfd` | 是 | 是 | 是 | 是 | 否 | 是 | 否 |
+| `lark-sheet` | 是 | 是 | 是 | 是 | 是 | 是 | 是 |
 
 ## Exporter
 
