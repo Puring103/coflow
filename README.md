@@ -1,122 +1,73 @@
 # Coflow
 
-Coflow 面向游戏行业配表工具割裂、各项目重复自研、AI 难以深入策划工作流的
-现状，提供一套强类型、强校验、可编辑、可渐进本地化、AI 友好的现代化配置工作流。
+<p align="center">
+  <img src="assets/coflow-overview.png" alt="Coflow —— AI 时代的数据配置工作流" width="900">
+</p>
 
-## 核心亮点
+**AI 时代的数据配置工作流 —— 灵活 · 可信 · 高效**
 
-- 统一配置工程链路：覆盖从配置建模到运行时交付的完整流程，减少每个项目重复维护导表脚本和配套工具。
-- 强类型建模：用明确的数据结构约束配置内容，减少隐式约定、字段漂移和跨表理解成本。
-- 强业务校验：将配置规则前置到构建流程中，提前发现错误，避免问题进入运行时或上线后暴露。
-- 多种数据源读写：覆盖本地表格、文本配置和在线协作表格，将不同来源的数据汇总到同一套编辑流程中。
-- 专用配置表达：表格适合批量数据，文本配置适合复杂结构，让不同类型的数据用最合适的方式维护。
-- AI 友好维护：提供结构化 CLI 命令，让 AI 能理解配置结构、定位数据、修改内容并根据校验结果持续修复，推动 AI 从辅助写文案进入真实配置生产流程。
-- 可视化编辑器：提供文件/数据源视图、表格视图、记录详情视图、关系图视图和诊断面板，方便策划和程序从不同角度查看、编辑和排查配置。
-- 精准诊断定位：配置错误能清楚定位到具体来源，方便编辑器展示、持续集成拦截和自动化修复。
-- 高效本地化：可以按字段逐步开启本地化，不必一次性改造整套配置；且不局限于文本，任意类型的配置值都可以纳入本地化流程。
+从类型建模、多源采集、业务校验，到数据交付，Coflow 把游戏配置整理成一套可验证、可定位、可写回、AI 可维护的流水线。
 
-## AI Agent Skills 安装
-
-如果需要让 AI agent 维护外部 Coflow 项目，安装仓库内置的三个外部 skills：
-
-```powershell
-npx skills add Puring103/coflow -g --skill coflow-workflow --copy -y
-npx skills add Puring103/coflow -g --skill coflow-schema --copy -y
-npx skills add Puring103/coflow -g --skill coflow-data --copy -y
-```
-
-也可以只安装某一个 skill：
-
-```powershell
-npx skills add Puring103/coflow -g --skill coflow-schema --copy -y
-```
-
-也可以把下面这段话直接复制给 agent，让 agent 在本机完成 skills 安装：
-
-```text
-请运行以下命令安装 Coflow 外部项目维护 skills：
-`npx skills add Puring103/coflow -g --skill coflow-workflow --copy -y`
-`npx skills add Puring103/coflow -g --skill coflow-schema --copy -y`
-`npx skills add Puring103/coflow -g --skill coflow-data --copy -y`
-```
+- 官网与文档：<https://puring103.github.io/coflow/>
+- 最新 Release：<https://github.com/Puring103/coflow/releases/latest>
 
 ---
 
-## 能力概览
+## 核心特性
 
-- 编译 CFT schema 文件并执行 `check {}` 规则。
-- 加载 Excel、CSV、CFD 文本数据和飞书/Lark 表格，构建类型化 data model。
-- 通过统一 writer/patch 机制写回支持编辑的数据源。
-- 导出 JSON 或 MessagePack 数据文件。
-- 生成适用于 .NET 和 Unity 风格项目的 C# 运行时加载代码。
-- 提供面向 AI agent 的 schema/data 读取、定位和修改命令。
-- 提供可视化编辑器和 LSP/VS Code 集成。
+- **强类型建模**：CFT schema 支持类型、默认值、枚举、引用、多态、数组、字典、注解和 check 规则。配置约束只有一份权威定义，改一处生效。
+- **构建期挡错**：类型不对、引用悬空、check 不过都会在构建阶段挡下，错误数据不会进入产物。每条诊断带上文件、表、单元格和字段路径。
+- **多数据源统合**：Excel、CSV、CFD 文本和飞书/Lark 表格加载后进入同一个 runtime model，跨源引用天然成立；改动通过统一 writer/patch 机制写回原始数据源。
+- **专用配置表达**：表格适合批量数值，CFD 文本适合嵌套结构、多态对象和覆盖模板 —— 每一份数据都放在最合适的地方。
+- **AI 友好维护**：稳定的 CLI 让 AI agent 读 schema、查记录、提交结构化 patch、消费诊断继续修。改动经 schema 校验、可回滚、可复盘。
+- **维度与变体**：一份 schema 支持任意维度的变体（语言、平台、服等）。每个变体在构建期独立展开、各自跑 check，覆盖漏了在构建期就发现。
+- **运行时交付**：一次构建同时产出运行时数据（JSON / MessagePack）和加载代码（C#），消除 DTO 与 schema 的手写漂移。
+- **可视化编辑器与 LSP**：文件视图、表格视图、记录视图、关系图和诊断面板；VS Code/LSP 集成提供 CFT/CFD 的诊断、补全、hover、跳转和语义高亮。
 
 ---
 
-## 详细功能介绍
+## 安装
 
-### Schema 与校验
+### CLI
 
-Coflow 使用 CFT 描述配置结构和规则。CFT 支持类型、字段、枚举、默认值、继承、
-多态、nullable、数组、字典、记录引用和字段注解。业务规则可以直接写在 schema
-中，构建时统一执行，避免配置问题只在游戏运行期暴露。
+```powershell
+cargo install --git https://github.com/Puring103/coflow.git coflow
+coflow --help
+```
 
-### 多数据源读取与编辑
+也可以直接下载 [最新 Release](https://github.com/Puring103/coflow/releases/latest)。
 
-Coflow 可以从 Excel、CSV、CFD 文本配置和飞书/Lark 表格读取数据，并汇总成统一
-data model。表格适合批量配置，CFD 适合复杂嵌套结构、数组、字典、多态对象和
-覆盖模板。支持写回的数据源会通过统一 writer/patch 机制编辑，避免绕过工具手动
-改文件导致结构漂移。
+### AI Agent Skills
 
-### AI 友好工作流
+一条命令安装仓库全部 skills（覆盖工作流、schema 建模、数据维护）：
 
-Coflow 提供结构化 schema/data 命令，让 AI agent 可以读取 schema、查看数据源、
-列出记录、获取记录详情、创建文件、同步表头、写入 CFD 文件和批量 patch 数据。
-写入后返回结构化诊断，agent 可以根据错误位置继续修正，形成可验证的自动维护闭环。
+```powershell
+npx skills add Puring103/coflow -g --skill "*" --copy -y
+```
 
-### 可视化编辑器与语言服务
-
-Coflow 编辑器围绕真实项目数据工作，提供文件/数据源视图、表格视图、记录详情视图、
-关系图视图和诊断面板。策划可以从表格或记录角度编辑，程序可以从引用关系和诊断
-角度排查问题。VS Code/LSP 集成提供 CFT/CFD 的诊断、补全、hover、跳转、符号和
-语义高亮能力。
-
-### 渐进式本地化
-
-Coflow 支持按字段逐步开启本地化，不要求一次性改造整套配置。被标记的字段会进入
-本地化流程，且不局限于字符串，任意类型的配置值都可以参与本地化。工具链可以生成
-和维护翻译表，并在多语言维度下继续执行配置校验。
-
-### 运行时产物
-
-Coflow 可以导出 JSON 或 MessagePack 数据，并生成适用于 .NET 与 Unity 风格项目的
-C# 加载代码。构建会先检查项目、数据和输出目录，成功后再写入产物，避免失败构建
-污染输出目录。
+也可以直接把上面这行命令复制给 AI agent，让它在本机完成安装。
 
 ---
 
 ## 快速开始
 
-运行 RPG 示例：
+跑一遍仓库自带的 RPG 示例：
 
 ```powershell
 coflow check examples/rpg
 coflow build examples/rpg
 ```
 
-生成文件写入 `examples/rpg/coflow.yaml` 声明的路径：
+产物写入 `examples/rpg/coflow.yaml` 声明的路径：
 
 ```text
 examples/rpg/generated/data
 examples/rpg/generated/csharp
 ```
 
-导出和 codegen 会接管对应输出目录。每次写入都会先在临时 staging 目录生成
-完整产物，成功后替换整个输出目录；目录内的旧文件、人工文件和其他工具产物
-不会被保留。不要把手写文件放进 `outputs.*.dir`。
+导出目录会被 coflow 接管：每次写入先在临时 staging 目录生成完整产物，成功后替换整个输出目录；旧文件和手写文件都不会保留。不要把手写文件放进 `outputs.*.dir`。
 
-单独运行各阶段：
+单独运行某个阶段：
 
 ```powershell
 coflow cft check examples/rpg
@@ -124,29 +75,19 @@ coflow export json examples/rpg
 coflow codegen csharp examples/rpg
 ```
 
-使用 MessagePack 时，把 `coflow.yaml` 中的 `outputs.data.type` 改为
-`messagepack`，再运行：
-
-```powershell
-coflow build examples/rpg
-```
+使用 MessagePack 时把 `outputs.data.type` 改为 `messagepack` 后重新 build 即可。
 
 ---
 
-## 项目配置
+## 项目形态
 
-Coflow 项目由 `coflow.yaml` 配置：
+一个 Coflow 项目由 `coflow.yaml` 描述。最简形式：
 
 ```yaml
 schema: schema/
 
 sources:
-  - path: data
-    sheets:
-      - sheet: Item
-        columns:
-          Item ID: id
-          Name: name
+  - path: data          # 目录源，自动发现 .xlsx / .csv / .cfd
 
 outputs:
   data:
@@ -158,177 +99,80 @@ outputs:
     namespace: Example.Rpg.Config
 ```
 
-`schema` 指向一个精确小写 `.cft` 文件、schema 目录，或文件/目录列表。`sources`
-使用 `path` 表示本地文件或目录，使用 `url` 表示远端 source；`type` 是可选的
-provider id，省略时由 registry probe 推断。除 `type`、`path`、`url` 之外的
-source 字段会原样传给 provider 作为 options。`path` 可以指向 `.xlsx` / `.xlsm` /
-`.xls` / `.csv` / `.cfd` 文件，也可以指向目录；目录源会由 loader resolve 阶段递归发现
-支持的 Excel、CSV 和 CFD 文件。
-
-Excel 和飞书电子表格共享同一套 sheet 配置习惯：省略 `sheets` 时默认加载所有
-sheet，sheet 名作为 CFT 类型名，表头文本作为字段名；配置 `sheets` 时可显式映射
-sheet、类型、record key 列和列头。`key` 可省略，默认使用 `id`、`Id` 或 `ID` 表头列；`columns`
-是可选的列头重命名映射，不是白名单。
-
-飞书 source 示例：
+需要显式映射 sheet、类型和列头时：
 
 ```yaml
 sources:
-  - type: lark-sheet
-    url: https://example.feishu.cn/wiki/xxxxx
-    app_id: cli_xxx
-    app_secret: xxx
+  - path: data/tables.xlsx
     sheets:
       - sheet: Item
-        key: id
+        key: id                 # 省略时默认 id / Id / ID
         columns:
+          Item ID: id
           Name: name
+      - sheet: Skill
+        columns:
+          Skill ID: id
 ```
 
-`lark-sheet` source 使用顶层 `url` 定位远端表格；`https://.../wiki/...` 会先解析到
-真实电子表格 token，已知 token 可写成 `url: lark:<spreadsheet_token>`。暂不支持飞书多维表格/Base。
-目录源可同时包含 Excel 和 CFD 文件，此时 `sheets` 只作用于 Excel，CFD 文件仍由
-文本中的记录类型决定 CFT 类型。
-`outputs.data.type` 支持 `json` 或 `messagepack`；`outputs.code.type` 目前支持
-`csharp`。`outputs.*` 除 `type`、`dir` 之外的字段也会作为 provider options
-传入，例如 C# codegen 的 `namespace`。
+`sources` 支持 `path`（本地文件或目录）或 `url`（远端 source）；`type` 是可选的 provider id，省略时按后缀推断。目录源可同时包含 Excel、CSV 和 CFD 文件；`sheets` 只作用于 Excel。
 
----
+`outputs.data.type` 支持 `json` / `messagepack`；`outputs.code.type` 目前支持 `csharp`。`outputs.*` 除 `type`、`dir` 外的字段会作为 provider options 传入（例如 C# codegen 的 `namespace`）。
 
-## 常用命令
+启用维度和变体（例如本地化）：
 
-```powershell
-coflow init my-config
-coflow check examples/rpg
-coflow build examples/rpg
-coflow export json examples/rpg --out generated/data
-coflow export messagepack examples/rpg --out generated/data
-coflow codegen csharp examples/rpg --out generated/csharp --namespace Game.Config
-coflow lsp examples/rpg
-```
-
-AI/data automation 命令默认输出 JSON：
-
-```powershell
-coflow schema inspect examples/rpg
-coflow schema files examples/rpg
-coflow schema write-file examples/rpg --file schema/main.cft --stdin --check
-coflow data sources examples/rpg
-coflow data list examples/rpg --type Item
-coflow data get examples/rpg Item.sword
-coflow data create-file examples/rpg --file data/items.csv --type Item --provider csv
-coflow data sync-header examples/rpg --file data/items.csv --type Item
-coflow data write-file examples/rpg --file data/items.cfd --stdin --check
-coflow data patch examples/rpg --patch patch.json
-```
-
-`schema write-file` 只允许写入项目配置已包含的精确小写 `.cft` schema 文件；
-`--dry-run` 可预览，`--check` 会在写入后或 dry-run 内存内容上编译 schema 并返回诊断。
-
-`data patch` 通过和编辑器相同的 provider writer 层写入数据。它不会用 CFT
-`check {}` 阻拦写入；写完后会重建项目并返回诊断，供 agent 继续修正。
-`data write-file` 只允许重写配置内本地 CFD source 覆盖的精确小写 `.cfd` 文件
-（未指定 `type` 的目录/`.cfd`，或显式 `type: cfd`），适合复杂 CFD 整文件修改；
-表格文件仍应使用 `data patch`、`data create-file` 和 `data sync-header`。
-`data create-file` / `data sync-header` 是本地文件级命令，支持 `.cfd`、`.csv`
-和 `.xlsx`；表格文件同步表头，CFD 文件同步记录顶层字段而不写表头。
-
-完整命令行为见 [CLI 命令参考](website/docs/docs/reference/08-cli.md)。
-
----
-
-## AI Agent Skills
-
-仓库内提供面向 AI agent 的 Coflow skills：
-
-- `coflow-workflow`：理解和执行外部 Coflow 项目工作流、check/build、CI 和最佳实践。
-- `coflow-schema`：设计和维护 CFT schema，包含游戏配置数据结构建模建议。
-- `coflow-data`：维护 CFD、Excel、CSV、飞书/Lark 表格数据和 `data patch` 写回。
-
-从本仓库安装指定 skill：
-
-```powershell
-npx skills add Puring103/coflow -g --skill coflow-schema --copy -y
-```
-
-安装三个外部项目维护 skills：
-
-```powershell
-npx skills add Puring103/coflow -g --skill coflow-workflow --copy -y
-npx skills add Puring103/coflow -g --skill coflow-schema --copy -y
-npx skills add Puring103/coflow -g --skill coflow-data --copy -y
-```
-
-安装仓库内全部 skills：
-
-```powershell
-npx skills add Puring103/coflow -g --skill "*" --copy -y
-```
-
-本地开发仓库时可先进入仓库目录并预览可安装的 skill：
-
-```powershell
-npx skills add . -l
+```yaml
+dimensions:
+  language:
+    variants: [zh, en, ja]
+    out_dir: data/dimensions/language
 ```
 
 ---
 
 ## CFT 简览
 
-CFT 描述配置数据形状、默认值、record-key 引用和校验规则。
-
-常量：
+CFT 描述配置数据的形状、默认值、引用和校验规则。
 
 ```cft
+# 常量
 const MAX_LEVEL: int = 100;
-```
 
-枚举：
-
-```cft
+# 枚举
 enum Rarity {
   Common = 0,
-  Rare = 10,
-  Epic = 20,
+  Rare   = 10,
+  Epic   = 20,
 }
-```
 
-类型和字段：
-
-```cft
+# 类型和字段
+# @idAsEnum 让 record key 自动填充到空 enum，生成强类型 C# key
 @idAsEnum(ItemId)
 type Item {
-  name: string;
-  rarity: Rarity = Rarity.Common;
-  tags: [string] = [];
-  attributes: {string: int} = {};
+  name:       string;
+  rarity:     Rarity = Rarity.Common;   # 默认值
+  tags:       [string] = [];            # 数组
+  attributes: {string: int} = {};       # 字典
 }
 
 enum ItemId {}
-```
 
-继承和多态值：
-
-```cft
+# 继承和多态
 abstract type Reward {
   source: string = "drop";
-
   check { source != ""; }
 }
 
 sealed type ItemReward : Reward {
-  item: Item;
+  item:  &Item;   # &Type 表示对某条记录的引用
   count: int = 1;
 }
-```
 
-校验：
-
-```cft
+# 业务校验
 type Monster {
-  level: int;
-  tags: [string] = [];
-  drop_weights: [int] = [];
+  level:        int;
+  tags:         [string] = [];
+  drop_weights: [int]    = [];
 
   check {
     level >= 1 && level <= MAX_LEVEL;
@@ -342,44 +186,68 @@ type Monster {
 
 常用注解：
 
-- `@idAsEnum(Name)`：把加载到的 record key 填充进手动声明的空 enum，并用于生成强类型 C# key。
+- `@idAsEnum(Name)`：把 record key 填充进空 enum，生成强类型 C# key。
 - `@struct`：让 sealed value-like type 生成 C# struct。
 - `@expand`：让 Excel 相邻列展开成嵌套 object 字段。
 - `@localized`：声明字段值按语言维度变化。
-- `@singleton`：声明数据集中该 type 有且仅有一条 record。
+- `@singleton`：声明该 type 有且仅有一条 record。
+
+check 支持 `len` / `contains` / `isUnique` / `min` / `max` / `sum` / `keys` / `values` / `matches` 等内建函数；`isUnique` 支持可比较标量数组（`int`、`bool`、`string`、`enum` 及其 nullable 形式）。
 
 ---
 
 ## Excel 编写要点
 
-- 每个导入 sheet 必须有 `id`、`Id` 或 `ID` 列；它是 record key，不是 CFT 字段。
-- record key 是 string identifier。
-- 名为 `#` 的表头是可选导入控制列；数据行中该列单元格为 `##` 时，整行在
-  `id` 或字段解析前跳过。
-- CFT 字段类型写成 `&Item`、`[&Item]` 或 `{string: &Item}` 时，表格单元格写
-  `&sword_01` 这类 key-only 记录引用。
-- 普通 object 字段类型写成 `Stats`、`Reward` 时表示内联对象。表格对象单元格可写
-  `Stats{hp: 100, attack: 50}`，多态对象也用 `ConcreteType{...}`。
-- 裸字符串保持字符串语义。导出的 JSON 和 MessagePack 中，引用字段保存为
-  `"sword_01"` 这类纯 key 字符串，而不是 `"Item.sword_01"`。
+- 每张导入 sheet 必须有 `id` / `Id` / `ID` 列，作为 record key（不是 CFT 字段）；record key 是 string identifier。
+- 表头 `#` 是可选导入控制列，数据行该列写 `##` 时整行跳过。
+- CFT 字段类型是 `&Item` / `[&Item]` / `{string: &Item}` 时，单元格写 `&sword_01` 这类 key-only 引用。
+- CFT 字段是普通对象（`Stats`、`Reward`）时，单元格写 `Stats{hp: 100, attack: 50}`；多态对象用 `ConcreteType{...}`。
+- 裸字符串保持字符串语义。JSON / MessagePack 中，引用字段导出为纯 key 字符串（`"sword_01"`，不是 `"Item.sword_01"`）。
+- `coflow build` 会在 `coflow.yaml` 同级维护 `coflow.enum.lock.json`，让 `@idAsEnum` 的整数值在行顺序变化时保持稳定；此文件应提交到版本库。
 
-`coflow build` 会在 `coflow.yaml` 同级维护 `coflow.enum.lock.json`，用于稳定
-`@idAsEnum` 的整数值。Excel 行顺序变化时，已有生成 enum 的整数值保持不变；
-新的数据驱动枚举变体会追加到 lockfile。该文件可提交到版本库；它不属于
-生成输出目录。占位 enum 带 `@flag` 时，新变体按 `1, 2, 4, ...` 分配，
-不会自动生成 `None = 0`。
+---
 
-check 中常用内建函数包括 `len`、`contains`、`isUnique`、`min`、`max`、`sum`、
-`keys`、`values` 和 `matches`。`isUnique` 支持可比较标量数组（`int`、`bool`、
-`string`、`enum` 及其 nullable 形式），不支持对象数组。
+## 常用命令
+
+```powershell
+# 项目与构建
+coflow init my-config
+coflow check examples/rpg
+coflow build examples/rpg
+coflow export json examples/rpg --out generated/data
+coflow export messagepack examples/rpg --out generated/data
+coflow codegen csharp examples/rpg --out generated/csharp --namespace Game.Config
+coflow lsp examples/rpg
+
+# AI / 自动化入口（默认输出 JSON）
+coflow schema inspect examples/rpg
+coflow schema files examples/rpg
+coflow schema write-file examples/rpg --file schema/main.cft --stdin --check
+coflow data sources examples/rpg
+coflow data list examples/rpg --type Item
+coflow data get examples/rpg Item.sword
+coflow data create-file examples/rpg --file data/items.csv --type Item --provider csv
+coflow data sync-header examples/rpg --file data/items.csv --type Item
+coflow data write-file examples/rpg --file data/items.cfd --stdin --check
+coflow data patch examples/rpg --patch patch.json
+```
+
+data 命令区分：
+
+- **`data patch`**：走 provider writer 逐字段/记录写回，适合表格和 CFD；写完后重建项目并返回诊断，不阻拦写入。
+- **`data write-file`**：整文件重写，只允许作用于配置里 CFD source 覆盖的 `.cfd` 文件，适合大范围 CFD 修改。
+- **`data create-file` / `data sync-header`**：本地文件级命令，支持 `.cfd` / `.csv` / `.xlsx`；表格文件同步表头，CFD 同步记录顶层字段。
+
+`schema write-file` 只允许写入项目配置已包含的精确小写 `.cft` schema 文件；`--dry-run` 预览，`--check` 在写入后（或 dry-run 内存内容上）编译并返回诊断。
 
 ---
 
 ## 运行时依赖
 
-生成的 JSON C# 加载器使用 `Newtonsoft.Json`。生成的 MessagePack C# 加载器
-使用 MessagePack-CSharp，并走显式 `MessagePackReader` 路径，面向普通 .NET 和
-Unity/IL2CPP 风格环境。
+生成的 C# 加载器：
+
+- **JSON**：依赖 `Newtonsoft.Json`。
+- **MessagePack**：依赖 MessagePack-CSharp，走显式 `MessagePackReader` 路径，面向普通 .NET 和 Unity/IL2CPP 环境。
 
 默认生成入口是 `CoflowTables`：
 
@@ -389,7 +257,21 @@ var item = tables.TbItem.Get("potion");
 var maybeItem = tables.TbItem.Find("potion");
 ```
 
-每张表通过 `Tb{TypeName}` 访问器暴露 `Get`、`Find`、`TryGet` 和只读列表 API。
-生成 loader 面向受信 Coflow exporter 产物；不会生成自定义 `CftLoadException`。
-JSON 导出不会为无记录的表写空 `[]` 文件，C# JSON loader 会把缺失的空表文件
-视为空表。
+每张表通过 `Tb{TypeName}` 访问器暴露 `Get`、`Find`、`TryGet` 和只读列表 API。生成的 loader 面向受信的 Coflow exporter 产物；不会生成自定义 `CftLoadException`。JSON 导出不会为无记录的表写空 `[]` 文件，C# JSON loader 会把缺失的空表文件视为空表。
+
+---
+
+## 文档导航
+
+- [设计理念](https://puring103.github.io/coflow/docs/) —— 为什么需要 Coflow
+- [安装与快速开始](https://puring103.github.io/coflow/docs/guide/install.html)
+- [策划视角](https://puring103.github.io/coflow/docs/guide/for-designers.html) · [程序视角](https://puring103.github.io/coflow/docs/guide/for-programmers.html) · [AI Agent](https://puring103.github.io/coflow/docs/guide/ai-agent.html)
+- [CFT Schema](https://puring103.github.io/coflow/docs/reference/03-language/01-cft.html) · [CFD 文本数据](https://puring103.github.io/coflow/docs/reference/03-language/02-cfd.html) · [表格单元格值](https://puring103.github.io/coflow/docs/reference/03-language/03-cell-value.html)
+- [数据源与 Provider](https://puring103.github.io/coflow/docs/reference/04-sources/01-overview.html) · [诊断模型](https://puring103.github.io/coflow/docs/reference/09-diagnostics/01-diagnostics.html) · [本地化与维度](https://puring103.github.io/coflow/docs/reference/10-localization.html)
+- [CLI 命令参考](https://puring103.github.io/coflow/docs/reference/08-cli.html)
+
+---
+
+## 许可证
+
+Apache-2.0
