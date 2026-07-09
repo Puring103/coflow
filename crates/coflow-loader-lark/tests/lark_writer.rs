@@ -575,6 +575,69 @@ fn creates_lark_sheet_and_writes_header() {
 }
 
 #[test]
+fn syncs_lark_sheet_header() {
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":2}}]}}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v2/spreadsheets/sht_test/values/shtid_items%21A1%3AIV1?valueRenderOption=ToString",
+            r#"{"code":0,"data":{"valueRange":{"values":[["id","name"]]}}}"#,
+        ),
+        ScriptedResponse::put(
+            "/sheets/v2/spreadsheets/sht_test/values",
+            r#"{"code":0,"data":{}}"#,
+        ),
+    ]);
+    let table_manager = LarkSheetWriter::new(client.clone());
+    let schema = item_schema();
+    let source = lark_source();
+    let headers = vec!["id".to_string(), "name".to_string(), "power".to_string()];
+    let request = coflow_api::SyncHeaderRequest {
+        source: &source,
+        sheet: Some("Items"),
+        actual_type: "Item",
+        headers: &headers,
+        schema: &schema,
+    };
+    let ctx = TableContext {
+        project_root: std::path::Path::new("."),
+        schema: Some(&schema),
+    };
+
+    let result = table_manager
+        .sync_header(ctx, &request)
+        .expect("sync header");
+
+    assert_eq!(result.added, vec!["power".to_string()]);
+    assert!(result.removed.is_empty());
+    let calls = client.calls();
+    let Some((_, _, Some(body))) = calls
+        .iter()
+        .find(|(method, url, body)| {
+            *method == "PUT" && url.contains("/values") && body.is_some()
+        })
+    else {
+        panic!("values body should be recorded");
+    };
+    assert_eq!(
+        body,
+        &serde_json::json!({
+            "valueRange": {
+                "range": "shtid_items!A1:C1",
+                "values": [["id", "name", "power"]],
+            }
+        })
+    );
+    assert_eq!(client.remaining(), 0);
+}
+
+#[test]
 fn deletes_record_after_remote_key_guard() {
     let client = ScriptedClient::new([
         ScriptedResponse::post(
@@ -628,8 +691,8 @@ fn deletes_record_after_remote_key_guard() {
             "dimension": {
                 "sheetId": "shtid_items",
                 "majorDimension": "ROWS",
-                "startIndex": 1,
-                "endIndex": 2,
+                "startIndex": 2,
+                "endIndex": 3,
             }
         })
     );

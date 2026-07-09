@@ -104,9 +104,12 @@ where
         row: usize,
         auth: &LarkWriteAuth,
     ) -> Result<(), DiagnosticSet> {
-        let zero_based = row.checked_sub(1).ok_or_else(|| {
-            DiagnosticSet::one(diag("LARK-WRITE", "lark row index must be at least 1"))
-        })?;
+        if row == 0 {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "lark row index must be at least 1",
+            )));
+        }
         let endpoint = format!(
             "{API_BASE}/sheets/v2/spreadsheets/{}/dimension_range",
             url_component(spreadsheet_token)
@@ -115,8 +118,8 @@ where
             "dimension": {
                 "sheetId": sheet_id,
                 "majorDimension": "ROWS",
-                "startIndex": zero_based,
-                "endIndex": zero_based + 1,
+                "startIndex": row,
+                "endIndex": row + 1,
             }
         });
         self.send_lark_write(

@@ -101,7 +101,7 @@ fn apply_data_patch_command(root: &std::path::Path, file_name: &str, patch: &Val
             "data",
             "patch",
             root.to_str().expect("utf8 path"),
-            "--patch",
+            "--patch-file",
             patch_path.to_str().expect("utf8 patch path"),
         ])
         .output()
@@ -395,6 +395,42 @@ fn data_get_can_fetch_single_complete_record() {
 }
 
 #[test]
+fn data_get_succeeds_when_records_exist_with_project_diagnostics() {
+    let root = temp_project_dir("cli-data-get-with-diagnostics");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_project(&root);
+    std::fs::write(
+        root.join("data").join("bad_items.cfd"),
+        r#"bad_sword: Item { name: "Bad Sword", price: -1 }"#,
+    )
+    .expect("write bad cfd");
+
+    let output = coflow()
+        .args([
+            "data",
+            "get",
+            root.to_str().expect("utf8 path"),
+            "Item.sword",
+        ])
+        .output()
+        .expect("run data get");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("data get json");
+    assert_eq!(json["records"][0]["record"]["key"], "sword");
+    assert!(json["diagnostics"]
+        .as_array()
+        .expect("diagnostics")
+        .iter()
+        .any(|diagnostic| diagnostic["stage"] == "CHECK"));
+}
+
+#[test]
 fn data_get_treats_single_config_file_argument_as_project_path() {
     let root = temp_project_dir("cli-data-get-config-file");
     let _cleanup = TempDirCleanup(root.clone());
@@ -452,7 +488,7 @@ fn data_patch_writes_then_returns_check_diagnostics_and_nonzero_exit() {
             "data",
             "patch",
             root.to_str().expect("utf8 path"),
-            "--patch",
+            "--patch-file",
             patch_path.to_str().expect("utf8 patch path"),
         ])
         .output()
@@ -507,7 +543,7 @@ fn data_patch_returns_nonzero_when_check_after_write_is_false_but_errors_remain(
             "data",
             "patch",
             root.to_str().expect("utf8 path"),
-            "--patch",
+            "--patch-file",
             patch_path.to_str().expect("utf8 patch path"),
         ])
         .output()
@@ -612,6 +648,43 @@ fn data_patch_cli_supports_rename_and_dict_key_paths() {
     );
     let json: Value = serde_json::from_slice(&output.stdout).expect("get json");
     assert_eq!(json["records"][0]["record"]["key"], "starter_renamed");
+}
+
+#[test]
+fn data_patch_accepts_json_string_argument() {
+    let root = temp_project_dir("cli-data-patch-json-string");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_project(&root);
+    let patch = serde_json::to_string(&json!({
+        "ops": [{
+            "op": "set_field",
+            "record": { "type": "Item", "key": "sword" },
+            "path": [{ "kind": "field", "value": "price" }],
+            "value": 125
+        }]
+    }))
+    .expect("patch json");
+
+    let output = coflow()
+        .args([
+            "data",
+            "patch",
+            root.to_str().expect("utf8 path"),
+            "--patch-json",
+            &patch,
+        ])
+        .output()
+        .expect("run data patch");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("data patch json");
+    assert_eq!(json["write_ok"], true);
+    assert_eq!(json["applied"].as_array().expect("applied").len(), 1);
 }
 
 #[test]

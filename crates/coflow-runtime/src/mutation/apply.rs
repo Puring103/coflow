@@ -29,7 +29,6 @@ impl ProjectSession {
         } = prepared;
         let mut applied = Vec::new();
         let mut failed = Vec::new();
-        let mut failure_diagnostics = Vec::new();
         let mut write_ok = true;
 
         for (index, op) in ops.iter().enumerate() {
@@ -47,23 +46,20 @@ impl ProjectSession {
                         op: prepared_op_name(op),
                         diagnostics: flat.clone(),
                     });
-                    failure_diagnostics.extend(flat);
                     if stop_on_write_error || err.is_terminal() {
-                        failure_diagnostics.extend(session_flat_diagnostics(self));
                         return Ok(MutationReport {
                             write_ok: false,
                             check_ok: false,
                             applied,
                             failed,
-                            diagnostics: failure_diagnostics,
+                            diagnostics: session_flat_diagnostics(self),
                         });
                     }
                 }
             }
         }
 
-        let mut diagnostics = failure_diagnostics;
-        diagnostics.extend(session_flat_diagnostics(self));
+        let diagnostics = session_flat_diagnostics(self);
         let check_ok = write_ok
             && (!check_after_write
                 || diagnostics

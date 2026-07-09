@@ -1,4 +1,4 @@
-use super::lark::{create_lark_table, infer_table_provider};
+use super::lark::{create_lark_table, infer_table_provider, sync_lark_header};
 use super::output::file_error_report;
 use coflow_api::ProviderRegistry;
 use coflow_runtime::{
@@ -63,15 +63,23 @@ pub(super) fn sync_header_report(
     provider: Option<String>,
     sheet: Option<String>,
 ) -> DataFileReport {
-    sync_data_header(
-        session,
-        registry,
-        DataSyncHeaderOptions {
-            file,
-            actual_type,
-            provider,
-            sheet,
-        },
-    )
-    .unwrap_or_else(|diagnostics| file_error_report(&diagnostics))
+    let provider_id = provider
+        .as_deref()
+        .or_else(|| infer_table_provider(&file))
+        .unwrap_or("");
+    let result = if provider_id == "lark-sheet" || provider_id == "lark" {
+        sync_lark_header(session, registry, &file, actual_type, sheet)
+    } else {
+        sync_data_header(
+            session,
+            registry,
+            DataSyncHeaderOptions {
+                file,
+                actual_type,
+                provider,
+                sheet,
+            },
+        )
+    };
+    result.unwrap_or_else(|diagnostics| file_error_report(&diagnostics))
 }

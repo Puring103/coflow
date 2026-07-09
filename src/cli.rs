@@ -299,9 +299,15 @@ pub(crate) struct DataGetArgs {
 pub(crate) struct DataPatchArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
+    /// JSON patch request string.
+    #[arg(long = "patch-json", value_name = "JSON", conflicts_with_all = ["patch_file", "patch"])]
+    pub(crate) patch_json: Option<String>,
     /// JSON patch request file.
-    #[arg(long, value_name = "PATCH_FILE")]
-    pub(crate) patch: PathBuf,
+    #[arg(long = "patch-file", value_name = "PATCH_FILE", conflicts_with_all = ["patch_json", "patch"])]
+    pub(crate) patch_file: Option<PathBuf>,
+    /// Deprecated alias for --patch-file.
+    #[arg(long, value_name = "PATCH_FILE", hide = true, conflicts_with_all = ["patch_json", "patch_file"])]
+    pub(crate) patch: Option<PathBuf>,
     /// Emit human-readable text instead of JSON.
     #[arg(long)]
     pub(crate) human: bool,

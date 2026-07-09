@@ -1745,11 +1745,11 @@ fn patch_collects_validation_failures_when_stop_disabled() {
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
-    assert!(report
+    assert!(!report
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "MUTATION-PATH"));
-    assert!(report
+    assert!(!report
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
@@ -1811,7 +1811,7 @@ fn patch_stops_on_terminal_writer_error_even_when_stop_disabled() {
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "MUTATION-INSERT"));
-    assert!(report
+    assert!(!report
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "MUTATION-INSERT"));

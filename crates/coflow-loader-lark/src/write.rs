@@ -1,9 +1,9 @@
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, DiagnosticSet, InsertRecordRequest, RecordOrigin,
     RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
-    SourceWriter, TableAddressing, TableContext, TableManager, TableManagerDescriptor,
-    TableOperationResult, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
-    WriterCapabilities, WriterDescriptor,
+    SourceWriter, SyncHeaderRequest, TableAddressing, TableContext, TableManager,
+    TableManagerDescriptor, TableOperationResult, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_loader_table_core::cell_value::render_cell_value;
 use coflow_loader_table_core::writer::{plan_insert_record, TableInsertRecord, TableWritePlan};
@@ -343,4 +343,44 @@ where
             diagnostics: DiagnosticSet::empty(),
         })
     }
+
+    fn sync_header(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &SyncHeaderRequest<'_>,
+    ) -> Result<TableOperationResult, DiagnosticSet> {
+        let auth = self.lark_write_auth(request.source)?;
+        let spreadsheet_token =
+            self.lark_spreadsheet_token_from_source(request.source, &auth.token)?;
+        let sheet = request.sheet.unwrap_or(request.actual_type);
+        let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet, &auth.token)?;
+        let old_header = self.read_lark_header(&spreadsheet_token, &sheet_id, &auth.token)?;
+        let added = added_columns(request.headers, &old_header);
+        let removed = removed_columns(request.headers, &old_header);
+        self.write_lark_header(&spreadsheet_token, &sheet_id, request.headers, &auth)?;
+        Ok(TableOperationResult {
+            headers: request.headers.to_vec(),
+            added,
+            removed,
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
+}
+
+fn added_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
+    let old = old_header.iter().collect::<std::collections::BTreeSet<_>>();
+    new_header
+        .iter()
+        .filter(|header| !old.contains(header))
+        .cloned()
+        .collect()
+}
+
+fn removed_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
+    let new = new_header.iter().collect::<std::collections::BTreeSet<_>>();
+    old_header
+        .iter()
+        .filter(|header| !new.contains(header))
+        .cloned()
+        .collect()
 }

@@ -74,6 +74,12 @@ pub struct DataWriteFileReport {
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
+#[derive(Debug)]
+pub struct DataPatchInput {
+    pub json: Option<String>,
+    pub file: Option<PathBuf>,
+}
+
 /// Lists resolved data sources and provider writer capabilities.
 ///
 /// # Errors
@@ -146,7 +152,7 @@ pub fn get(options: DataGetOptions) -> Result<bool, DiagnosticSet> {
     };
     match data_get(&session, &query) {
         Ok(report) => {
-            let ok = report.diagnostics.is_empty();
+            let ok = !report.records.is_empty() || report.diagnostics.is_empty();
             if options.human {
                 write_get_human(&report)?;
             } else {
@@ -179,22 +185,42 @@ pub fn get(options: DataGetOptions) -> Result<bool, DiagnosticSet> {
 /// diagnostics are written as command output and return `Ok(false)`.
 pub fn patch(
     config_or_dir: Option<&Path>,
-    patch_path: &Path,
+    input: DataPatchInput,
     human: bool,
 ) -> Result<bool, DiagnosticSet> {
-    let patch_text = std::fs::read_to_string(patch_path).map_err(|err| {
-        cli_file_error(
-            patch_path,
-            "CLI-FILE-READ",
-            format!("failed to read `{}`: {err}", patch_path.display()),
-        )
-    })?;
+    let (patch_text, source_label) = match (input.json, input.file) {
+        (Some(json), None) => (json, "--patch-json".to_string()),
+        (None, Some(path)) => {
+            let text = std::fs::read_to_string(&path).map_err(|err| {
+                cli_file_error(
+                    &path,
+                    "CLI-FILE-READ",
+                    format!("failed to read `{}`: {err}", path.display()),
+                )
+            })?;
+            (text, path.display().to_string())
+        }
+        (None, None) => {
+            return Err(DiagnosticSet::one(coflow_api::Diagnostic::error(
+                "CLI-PATCH-INPUT",
+                "CLI",
+                "data patch requires --patch-json JSON or --patch-file PATCH_FILE",
+            )));
+        }
+        (Some(_), Some(_)) => {
+            return Err(DiagnosticSet::one(coflow_api::Diagnostic::error(
+                "CLI-PATCH-INPUT",
+                "CLI",
+                "use only one of --patch-json or --patch-file",
+            )));
+        }
+    };
     let request: DataPatchRequest = serde_json::from_str(&patch_text).map_err(|err| {
-        cli_file_error(
-            patch_path,
+        DiagnosticSet::one(coflow_api::Diagnostic::error(
             "CLI-PATCH-PARSE",
-            format!("failed to parse `{}`: {err}", patch_path.display()),
-        )
+            "CLI",
+            format!("failed to parse patch request from {source_label}: {err}"),
+        ))
     })?;
     let (mut session, registry) = open_session(config_or_dir)?;
     let report = match session.apply_data_patch(&registry, request) {

@@ -1,5 +1,6 @@
 use coflow_api::{
-    CreateTableRequest, DiagnosticSet, ProviderRegistry, SourceLocationSpec, TableContext,
+    CreateTableRequest, DiagnosticSet, ProviderRegistry, SourceLocationSpec, SyncHeaderRequest,
+    TableContext,
 };
 use coflow_runtime::{configured_project_source, DataFileReport};
 
@@ -27,22 +28,7 @@ pub(super) fn create_lark_table(
     actual_type: Option<String>,
     sheet: Option<String>,
 ) -> Result<DataFileReport, DiagnosticSet> {
-    let source_config = session
-        .project
-        .config
-        .sources
-        .iter()
-        .find(|candidate| {
-            candidate.source_type.as_deref() == Some("lark-sheet")
-                && matches!(candidate.location(), SourceLocationSpec::Uri(uri) if uri == source)
-        })
-        .ok_or_else(|| {
-            DiagnosticSet::one(coflow_api::Diagnostic::error(
-                "DATA-FILE-SOURCE",
-                "DATA-FILE",
-                format!("lark source `{source}` is not configured"),
-            ))
-        })?;
+    let source_config = configured_lark_source(session, source)?;
     let resolved_source = configured_project_source(&session.project, source_config);
     let layout = lark_table_layout(session, source_config, actual_type, sheet)?;
     let table_manager = registry.table_manager("lark-sheet").ok_or_else(|| {
@@ -75,6 +61,70 @@ pub(super) fn create_lark_table(
         removed: result.removed,
         diagnostics: Vec::new(),
     })
+}
+
+pub(super) fn sync_lark_header(
+    session: &coflow_runtime::ProjectSchemaSession,
+    registry: &ProviderRegistry,
+    source: &str,
+    actual_type: String,
+    sheet: Option<String>,
+) -> Result<DataFileReport, DiagnosticSet> {
+    let source_config = configured_lark_source(session, source)?;
+    let resolved_source = configured_project_source(&session.project, source_config);
+    let layout = lark_table_layout(session, source_config, Some(actual_type), sheet)?;
+    let table_manager = registry.table_manager("lark-sheet").ok_or_else(|| {
+        DiagnosticSet::one(coflow_api::Diagnostic::error(
+            "DATA-FILE-PROVIDER",
+            "DATA-FILE",
+            "lark-sheet table manager is not registered",
+        ))
+    })?;
+    let result = table_manager.sync_header(
+        TableContext {
+            project_root: &session.project.root_dir,
+            schema: Some(&session.schema),
+        },
+        &SyncHeaderRequest {
+            source: &resolved_source,
+            sheet: Some(&layout.sheet),
+            actual_type: &layout.actual_type,
+            headers: &layout.headers,
+            schema: &session.schema,
+        },
+    )?;
+    Ok(DataFileReport {
+        file: source.to_string(),
+        provider: "lark-sheet".to_string(),
+        sheet: Some(layout.sheet),
+        actual_type: Some(layout.actual_type),
+        headers: result.headers,
+        added: result.added,
+        removed: result.removed,
+        diagnostics: Vec::new(),
+    })
+}
+
+fn configured_lark_source<'a>(
+    session: &'a coflow_runtime::ProjectSchemaSession,
+    source: &str,
+) -> Result<&'a coflow_project::SourceConfig, DiagnosticSet> {
+    session
+        .project
+        .config
+        .sources
+        .iter()
+        .find(|candidate| {
+            candidate.source_type.as_deref() == Some("lark-sheet")
+                && matches!(candidate.location(), SourceLocationSpec::Uri(uri) if uri == source)
+        })
+        .ok_or_else(|| {
+            DiagnosticSet::one(coflow_api::Diagnostic::error(
+                "DATA-FILE-SOURCE",
+                "DATA-FILE",
+                format!("lark source `{source}` is not configured"),
+            ))
+        })
 }
 
 struct CliTableLayout {
