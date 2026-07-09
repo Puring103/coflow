@@ -853,7 +853,10 @@ fn top_level_cli_errors_use_readable_human_output() {
         stderr.contains("----------------------------------------"),
         "stderr: {stderr}"
     );
-    assert!(stderr.contains("[CLI-ERROR] [CLI]"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("[PROJECT-CONFIG-NOT-FOUND] [PROJECT]"),
+        "stderr: {stderr}"
+    );
     assert!(
         stderr
             .contains("message\n  config or directory `definitely-missing-project` does not exist"),

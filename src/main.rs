@@ -15,9 +15,10 @@
 
 use clap::Parser;
 use cli_output::{
-    display_path, project_path, relativize_message_paths, write_cli_error,
-    write_human_cft_diagnostics, write_json_diagnostics, write_project_diagnostics,
+    display_path, project_path, write_human_cft_diagnostics, write_json_diagnostics,
+    write_project_diagnostics,
 };
+use coflow::diagnostics::cli_error;
 use coflow::commands::{
     build_project, check_project, export_project_data, generate_project_code, BuildOptions,
     CodegenOptions, CommandOutcome, ExportOptions, CSHARP_CODEGEN_ID, JSON_EXPORTER_ID,
@@ -25,6 +26,7 @@ use coflow::commands::{
 };
 use coflow::diagnostics::DiagnosticJson;
 use coflow::{data_commands, schema_commands};
+use coflow_api::DiagnosticSet;
 use coflow_project::{compile_schema_project, dedupe_cft_diagnostics, Project};
 use data_get_target::parse_data_get_target;
 use serde_json::Value;
@@ -45,14 +47,14 @@ fn main() -> ExitCode {
     match run() {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
-        Err(message) => {
-            let _ = write_cli_error(&message);
+        Err(diagnostics) => {
+            let _ = write_project_diagnostics(diagnostics, false, PathBuf::from(".").as_path());
             ExitCode::FAILURE
         }
     }
 }
 
-fn run() -> Result<bool, String> {
+fn run() -> Result<bool, DiagnosticSet> {
     match Cli::parse().command {
         Command::Init(args) => init_project(args),
         Command::Cft(command) => run_cft(&command),
@@ -66,26 +68,26 @@ fn run() -> Result<bool, String> {
     }
 }
 
-fn run_cft(command: &CftArgs) -> Result<bool, String> {
+fn run_cft(command: &CftArgs) -> Result<bool, DiagnosticSet> {
     match &command.command {
         CftCommand::Check(args) => cft_check(args),
     }
 }
 
-fn run_export(command: &ExportArgs) -> Result<bool, String> {
+fn run_export(command: &ExportArgs) -> Result<bool, DiagnosticSet> {
     match &command.command {
         ExportCommand::Json(args) => export_json(args),
         ExportCommand::Messagepack(args) => export_messagepack(args),
     }
 }
 
-fn run_codegen(command: &CodegenArgs) -> Result<bool, String> {
+fn run_codegen(command: &CodegenArgs) -> Result<bool, DiagnosticSet> {
     match &command.command {
         CodegenCommand::Csharp(args) => codegen_csharp(args),
     }
 }
 
-fn run_schema(command: &SchemaArgs) -> Result<bool, String> {
+fn run_schema(command: &SchemaArgs) -> Result<bool, DiagnosticSet> {
     match &command.command {
         SchemaCommand::Inspect(args) => schema_commands::inspect(
             args.config_or_dir.as_deref(),
@@ -125,7 +127,7 @@ fn run_schema(command: &SchemaArgs) -> Result<bool, String> {
     }
 }
 
-fn run_data(command: &DataArgs) -> Result<bool, String> {
+fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
     match &command.command {
         DataCommand::Sources(args) => {
             data_commands::sources(args.config_or_dir.as_deref(), args.human)
@@ -139,7 +141,7 @@ fn run_data(command: &DataArgs) -> Result<bool, String> {
             args.human,
         ),
         DataCommand::Get(args) => {
-            let target = parse_data_get_target(&args.target)?;
+            let target = parse_data_get_target(&args.target).map_err(cli_arg_error)?;
             data_commands::get(data_commands::DataGetOptions {
                 config_or_dir: target.config_or_dir,
                 selector: target.selector,
@@ -208,7 +210,7 @@ fn run_data(command: &DataArgs) -> Result<bool, String> {
     }
 }
 
-fn init_project(args: InitArgs) -> Result<bool, String> {
+fn init_project(args: InitArgs) -> Result<bool, DiagnosticSet> {
     let dir = args.dir.unwrap_or_else(|| PathBuf::from("."));
     let outcome = coflow_project::init_project(&dir)?;
     println!("created {}", outcome.config_path.display());
@@ -223,15 +225,15 @@ fn split_keys(keys: &[String]) -> Vec<String> {
         .collect()
 }
 
-fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
+fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let project_diagnostics = project.schema_diagnostic_set();
     if !project_diagnostics.is_empty() {
-        write_project_diagnostics(project_diagnostics, args.json, &project.root_dir)?;
+        write_project_diagnostics(project_diagnostics, args.json, &project.root_dir)
+            .map_err(output_error)?;
         return Ok(false);
     }
-    let build = compile_schema_project(&project, args.stdin_path.as_deref())
-        .map_err(|message| relativize_message_paths(&message, &project.root_dir))?;
+    let build = compile_schema_project(&project, args.stdin_path.as_deref())?;
     let diagnostics = dedupe_cft_diagnostics(build.diagnostics);
     if args.json {
         write_json_diagnostics(
@@ -241,7 +243,8 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
                     DiagnosticJson::from_cft(diagnostic, &build.sources, &build.paths)
                 })
                 .collect(),
-        )?;
+        )
+        .map_err(output_error)?;
     } else if diagnostics.is_empty() {
         println!(
             "CFT check passed: {}",
@@ -253,28 +256,26 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
             &build.sources,
             &build.paths,
             &project.root_dir,
-        )?;
+        )
+        .map_err(output_error)?;
     }
     Ok(diagnostics.is_empty())
 }
 
-fn run_lsp(args: &LspArgs) -> Result<bool, String> {
+fn run_lsp(args: &LspArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let root_dir = project.root_dir.clone();
-    coflow_lsp::run(project).map_err(|message| relativize_message_paths(&message, &root_dir))
+    coflow_lsp::run(project).map_err(|message| cli_error("LSP-RUNTIME", message))
 }
 
-fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
+fn project_check(args: &ProjectCheckArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir.clone();
     let config_path = project.config_path.clone();
-    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
-    match check_project(project, &registry)
-        .map_err(|message| relativize_message_paths(&message, &root_dir))?
-    {
+    let registry = default_provider_registry()?;
+    match check_project(project, &registry)? {
         CommandOutcome::Success(_) => {
             if args.json {
-                write_json_diagnostics(Vec::new())?;
+                write_json_diagnostics(Vec::new()).map_err(output_error)?;
             } else {
                 println!(
                     "Project check passed: {}",
@@ -284,18 +285,18 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
             Ok(true)
         }
         CommandOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, args.json, &root_dir)?;
+            write_project_diagnostics(diagnostics, args.json, &root_dir).map_err(output_error)?;
             Ok(false)
         }
     }
 }
 
-fn project_build(args: &BuildArgs) -> Result<bool, String> {
+fn project_build(args: &BuildArgs) -> Result<bool, DiagnosticSet> {
     let mut project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     override_code_namespace(&mut project, args.namespace.as_deref());
     let root_dir = project.root_dir.clone();
     let config_path = project.config_path.clone();
-    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
+    let registry = default_provider_registry()?;
     match build_project(
         project,
         &registry,
@@ -303,9 +304,7 @@ fn project_build(args: &BuildArgs) -> Result<bool, String> {
             data_out_dir: args.data_out_dir.as_deref(),
             code_out_dir: args.code_out_dir.as_deref(),
         },
-    )
-    .map_err(|message| relativize_message_paths(&message, &root_dir))?
-    {
+    )? {
         CommandOutcome::Success(report) => {
             println!(
                 "{} data exported to {}",
@@ -326,16 +325,16 @@ fn project_build(args: &BuildArgs) -> Result<bool, String> {
             Ok(true)
         }
         CommandOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &root_dir)?;
+            write_project_diagnostics(diagnostics, false, &root_dir).map_err(output_error)?;
             Ok(false)
         }
     }
 }
 
-fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
+fn export_json(args: &ExportJsonArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir.clone();
-    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
+    let registry = default_provider_registry()?;
     match export_project_data(
         project,
         &registry,
@@ -343,9 +342,7 @@ fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
         ExportOptions {
             out_dir: args.out_dir.as_deref(),
         },
-    )
-    .map_err(|message| relativize_message_paths(&message, &root_dir))?
-    {
+    )? {
         CommandOutcome::Success(report) => {
             println!(
                 "JSON data exported to {}",
@@ -354,16 +351,16 @@ fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
             Ok(true)
         }
         CommandOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &root_dir)?;
+            write_project_diagnostics(diagnostics, false, &root_dir).map_err(output_error)?;
             Ok(false)
         }
     }
 }
 
-fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
+fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir.clone();
-    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
+    let registry = default_provider_registry()?;
     match export_project_data(
         project,
         &registry,
@@ -371,9 +368,7 @@ fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
         ExportOptions {
             out_dir: args.out_dir.as_deref(),
         },
-    )
-    .map_err(|message| relativize_message_paths(&message, &root_dir))?
-    {
+    )? {
         CommandOutcome::Success(report) => {
             println!(
                 "MessagePack data exported to {}",
@@ -382,17 +377,17 @@ fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
             Ok(true)
         }
         CommandOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &root_dir)?;
+            write_project_diagnostics(diagnostics, false, &root_dir).map_err(output_error)?;
             Ok(false)
         }
     }
 }
 
-fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
+fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, DiagnosticSet> {
     let mut project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     override_code_namespace(&mut project, args.namespace.as_deref());
     let root_dir = project.root_dir.clone();
-    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
+    let registry = default_provider_registry()?;
     match generate_project_code(
         project,
         &registry,
@@ -400,9 +395,7 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
         CodegenOptions {
             out_dir: args.out_dir.as_deref(),
         },
-    )
-    .map_err(|message| relativize_message_paths(&message, &root_dir))?
-    {
+    )? {
         CommandOutcome::Success(report) => {
             println!(
                 "C# code generated to {}",
@@ -411,7 +404,7 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
             Ok(true)
         }
         CommandOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &root_dir)?;
+            write_project_diagnostics(diagnostics, false, &root_dir).map_err(output_error)?;
             Ok(false)
         }
     }
@@ -429,4 +422,17 @@ fn override_code_namespace(project: &mut Project, namespace: Option<&str>) {
         );
         output.options = Value::Object(options);
     }
+}
+
+fn cli_arg_error(message: String) -> DiagnosticSet {
+    cli_error("CLI-ARG", message)
+}
+
+fn output_error(message: String) -> DiagnosticSet {
+    cli_error("CLI-OUTPUT", message)
+}
+
+fn default_provider_registry() -> Result<coflow_api::ProviderRegistry, DiagnosticSet> {
+    coflow_builtins::default_provider_registry()
+        .map_err(|err| cli_error("PROVIDER-REGISTRY", err.to_string()))
 }

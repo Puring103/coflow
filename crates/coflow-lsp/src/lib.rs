@@ -27,6 +27,7 @@ mod state;
 mod text;
 mod uri;
 
+use coflow_api::DiagnosticSet;
 use coflow_cfd::parse_cfd;
 use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
@@ -276,7 +277,13 @@ impl<W: Write> LspServer<W> {
     }
 
     fn validate_project(&mut self) -> Result<(), String> {
-        let schema_files = self.project.schema_files()?;
+        let schema_files = match self.project.schema_files() {
+            Ok(files) => files,
+            Err(diagnostics) => {
+                self.publish_diagnostic_set(&diagnostics, &BTreeMap::new())?;
+                return Ok(());
+            }
+        };
         let mut schema_by_path = BTreeMap::new();
 
         for file in &schema_files {
@@ -312,7 +319,13 @@ impl<W: Write> LspServer<W> {
         }
 
         let preferred_uris = self.preferred_diagnostic_uris(&schema_by_path);
-        let raw_build = compile_schema_project_with_overrides(&self.project, &overrides)?;
+        let raw_build = match compile_schema_project_with_overrides(&self.project, &overrides) {
+            Ok(build) => build,
+            Err(diagnostics) => {
+                self.publish_diagnostic_set(&diagnostics, &preferred_uris)?;
+                return Ok(());
+            }
+        };
         let build = LspBuild::new(raw_build);
         let diagnostics = dedupe_cft_diagnostics(build.schema.diagnostics.clone());
         let mut by_uri: BTreeMap<String, Vec<Value>> = BTreeMap::new();
@@ -366,6 +379,32 @@ impl<W: Write> LspServer<W> {
             }
         }
         preferred
+    }
+
+    fn publish_diagnostic_set(
+        &mut self,
+        diagnostics: &DiagnosticSet,
+        preferred_uris: &BTreeMap<PathBuf, String>,
+    ) -> Result<(), String> {
+        let mut by_uri: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+        for diagnostic in diagnostics {
+            let uri = diagnostic
+                .primary
+                .as_ref()
+                .map(|label| lsp_label_location(&label.location))
+                .map_or_else(
+                    || preferred_diagnostic_uri(preferred_uris, &self.project.config_path),
+                    |location| label_uri(&location, preferred_uris),
+                );
+            by_uri
+                .entry(uri)
+                .or_default()
+                .push(lsp_diagnostic(diagnostic));
+        }
+        for (uri, diagnostics) in by_uri {
+            self.publish_diagnostics(&uri, &diagnostics)?;
+        }
+        Ok(())
     }
 
     fn completion(&mut self, id: &Value, params: &Value) -> Result<(), String> {

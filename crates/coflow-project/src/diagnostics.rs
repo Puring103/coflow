@@ -156,6 +156,48 @@ pub(super) fn project_diagnostics_to_set(
     }
 }
 
+#[must_use]
+pub fn plain_error(
+    code: impl Into<String>,
+    stage: impl Into<String>,
+    message: impl Into<String>,
+) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic {
+        code: code.into(),
+        stage: stage.into(),
+        severity: Severity::Error,
+        message: message.into(),
+        primary: None,
+        related: Vec::new(),
+    })
+}
+
+#[must_use]
+pub fn file_error(
+    path: &Path,
+    code: impl Into<String>,
+    stage: impl Into<String>,
+    message: impl Into<String>,
+) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic {
+        code: code.into(),
+        stage: stage.into(),
+        severity: Severity::Error,
+        message: message.into(),
+        primary: Some(Label {
+            location: SourceLocation::FileSpan {
+                path: path.to_path_buf(),
+                start_line: 0,
+                start_character: 0,
+                end_line: 0,
+                end_character: 1,
+            },
+            message: None,
+        }),
+        related: Vec::new(),
+    })
+}
+
 fn project_diagnostic(config_path: &Path, diagnostic: ProjectDiagnostic) -> Diagnostic {
     Diagnostic {
         code: diagnostic.code.unwrap_or_else(|| "PROJECT-001".to_string()),
@@ -173,11 +215,3 @@ fn project_diagnostic(config_path: &Path, diagnostic: ProjectDiagnostic) -> Diag
     }
 }
 
-pub(super) fn join_diagnostic_messages(diagnostics: DiagnosticSet) -> String {
-    diagnostics
-        .diagnostics
-        .into_iter()
-        .map(|diagnostic| diagnostic.message)
-        .collect::<Vec<_>>()
-        .join("\n")
-}

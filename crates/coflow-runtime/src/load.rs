@@ -47,7 +47,7 @@ pub(crate) struct LoadProjectDataOptions {
     pub(crate) run_checks: bool,
 }
 
-pub(crate) fn empty_load_output() -> Result<ProjectLoadOutput, String> {
+pub(crate) fn empty_load_output() -> Result<ProjectLoadOutput, DiagnosticSet> {
     Ok(ProjectLoadOutput {
         model: empty_model()?,
         diagnostics: DiagnosticSet::empty(),
@@ -485,8 +485,14 @@ pub fn format_cfd_path(path: &CfdPath) -> String {
     out
 }
 
-pub(crate) fn empty_model() -> Result<CfdDataModel, String> {
+pub(crate) fn empty_model() -> Result<CfdDataModel, DiagnosticSet> {
     CfdDataModel::builder(&CftContainer::new())
         .build()
-        .map_err(|_| "empty model build failed".to_string())
+        .map_err(|_| {
+            DiagnosticSet::one(Diagnostic::error(
+                "RUNTIME-INTERNAL",
+                "RUNTIME",
+                "empty model build failed",
+            ))
+        })
 }

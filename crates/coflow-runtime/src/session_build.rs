@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use coflow_api::{CftContainer, ProviderRegistry};
+use coflow_api::{CftContainer, DiagnosticSet, ProviderRegistry};
 use coflow_cft::CftSchemaView;
 use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
@@ -30,7 +30,7 @@ use crate::session::{ProjectSchemaSession, ProjectSession};
 pub fn build_project_session_for_build(
     project: Project,
     registry: &ProviderRegistry,
-) -> Result<ProjectSession, String> {
+) -> Result<ProjectSession, DiagnosticSet> {
     build_project_session_with_mode(project, registry, DimensionBuildMode::Generate)
 }
 
@@ -45,7 +45,7 @@ pub fn build_project_session_for_build(
 pub fn open_project_session_read_only(
     project: Project,
     registry: &ProviderRegistry,
-) -> Result<ProjectSession, String> {
+) -> Result<ProjectSession, DiagnosticSet> {
     build_project_session_with_mode(project, registry, DimensionBuildMode::ReadOnly)
 }
 
@@ -59,7 +59,7 @@ fn build_project_session_with_mode(
     project: Project,
     registry: &ProviderRegistry,
     dimension_mode: DimensionBuildMode,
-) -> Result<ProjectSession, String> {
+) -> Result<ProjectSession, DiagnosticSet> {
     let ProjectSchemaSession {
         project,
         schema,
@@ -85,7 +85,7 @@ fn build_project_session_with_mode(
     Ok(assemble_session(ctx, model, diagnostics, indexes))
 }
 
-fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, String> {
+fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let mut initial_diagnostics = project.schema_diagnostic_set();
     initial_diagnostics.extend(project.data_diagnostic_set());
     build_project_schema_with_diagnostics(project, initial_diagnostics)
@@ -122,7 +122,7 @@ struct LoadedSessionData {
 }
 
 impl LoadedSessionData {
-    fn empty() -> Result<Self, String> {
+    fn empty() -> Result<Self, DiagnosticSet> {
         Ok(Self {
             model: empty_model()?,
             indexes: SessionIndexes::default(),
@@ -133,7 +133,7 @@ impl LoadedSessionData {
 fn build_data_pipeline(
     ctx: &SessionBuildContext<'_>,
     diagnostics: &mut DiagnosticsStore,
-) -> Result<LoadedSessionData, String> {
+) -> Result<LoadedSessionData, DiagnosticSet> {
     let (mut output, mut indexes) = match load_base_data(ctx) {
         Ok(loaded) => loaded,
         Err(load_failure) => {
@@ -172,7 +172,7 @@ fn load_base_data(
 fn reload_with_dimensions(
     ctx: &SessionBuildContext<'_>,
     diagnostics: &mut DiagnosticsStore,
-) -> Result<(ProjectLoadOutput, SessionIndexes), String> {
+) -> Result<(ProjectLoadOutput, SessionIndexes), DiagnosticSet> {
     match load_data(ctx, true, true) {
         Ok(loaded) => Ok(loaded),
         Err(load_failure) => {

@@ -41,7 +41,9 @@ use crate::editor::types::{
 
 pub use diagnostics::Diagnostics;
 
-use build::{build_session, default_provider_registry, session_capabilities_for_file};
+use build::{
+    build_session, default_provider_registry, diagnostic_messages, session_capabilities_for_file,
+};
 use path::strip_unc_prefix;
 
 /// A loaded project. Held inside `Arc<RwLock<…>>` so multi-session and
@@ -113,7 +115,8 @@ impl SessionStore {
     }
 
     pub fn init_project(&self, dir: &StdPath) -> Result<ProjectSnapshot, EditorError> {
-        let outcome = coflow_project::init_project(dir).map_err(EditorError::project)?;
+        let outcome =
+            coflow_project::init_project(dir).map_err(|err| EditorError::project(diagnostic_messages(&err)))?;
         self.load_project(&outcome.config_path)
     }
 

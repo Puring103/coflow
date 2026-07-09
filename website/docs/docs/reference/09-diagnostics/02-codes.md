@@ -6,8 +6,28 @@
 
 | 诊断码 | 阶段 | 含义 |
 | --- | --- | --- |
-| `CLI-ERROR` | `CLI` | 不可恢复的命令级错误，例如配置文件无法读取、YAML 无法解析、命令参数无法进入结构化检查 |
+| `CLI-ARG` | `CLI` | 命令参数组合非法，例如写文件命令缺少 `--stdin` |
+| `CLI-STDIN` | `CLI` | 读取标准输入失败 |
+| `CLI-OUTPUT` | `CLI` | 写 stdout/stderr 或 JSON 输出失败 |
+| `CLI-FILE-READ` | `CLI` | CLI 直接读取补丁、schema 或 data 文件失败 |
+| `CLI-FILE-WRITE` | `CLI` | CLI 直接写入 schema 或 data 文件失败 |
+| `CLI-PATCH-PARSE` | `CLI` | `data patch` 的 JSON patch 文件无法解析 |
+| `PROVIDER-REGISTRY` | `CLI` | 默认 provider registry 初始化失败 |
+| `LSP-RUNTIME` | `CLI` | LSP 主循环启动或运行失败 |
+| `PROJECT-CONFIG-NOT-FOUND` | `PROJECT` | 指定的配置文件或目录不存在，且当前目录无法发现 `coflow.yaml` |
+| `PROJECT-CONFIG-PATH` | `PROJECT` | 配置路径无法规范化或不是支持的文件/目录 |
+| `PROJECT-CONFIG-AMBIGUOUS` | `PROJECT` | 目录下同时存在多个默认配置文件 |
+| `PROJECT-CONFIG-READ` | `PROJECT` | `coflow.yaml` 读取失败 |
+| `PROJECT-CONFIG-PARSE` | `PROJECT` | `coflow.yaml` YAML 解析失败 |
+| `PROJECT-INIT-IO` | `PROJECT` | `coflow init` 创建目录或写入初始文件失败 |
+| `PROJECT-SCHEMA-PATH` | `PROJECT` | schema glob 或 schema 文件路径解析失败 |
+| `PROJECT-SCHEMA-READ` | `PROJECT` | schema 文件读取失败 |
+| `PROJECT-SCHEMA` | `PROJECT` | schema 编译后缺少预期容器等内部项目 schema 错误 |
 | `PROJECT-001` | `PROJECT` | 已解析项目配置或命令 preflight 诊断，例如路径不存在、source 配置非法、output 缺失或类型不兼容 |
+| `SCHEMA-STDIN-PATH` | `PROJECT` | `--stdin-path` 与配置中的 schema 文件不匹配 |
+| `SCHEMA-WRITE-TARGET` | `CLI` | `schema write-file` 目标不是已配置的本地 `.cft` schema 文件 |
+| `DATA-WRITE-TARGET` | `CLI` | `data write-file` 目标不是已配置本地 CFD source 覆盖的 `.cfd` 文件 |
+| `RUNTIME-INTERNAL` | `RUNTIME` | runtime 构造空模型等不可恢复内部错误 |
 | `DIM-CONFIG-001` | `PROJECT` | schema 中存在 `@localized` 字段，但未配置 `dimensions.language` |
 | `DIM-CONFIG-002` | `PROJECT` | `dimensions.language.variants` 为空、包含 `default`、包含重复项或不是合法 CFT 标识符 |
 | `DIM-CONFIG-003` | `PROJECT` | `dimensions.language.out_dir` 缺失 |

@@ -1,6 +1,6 @@
 //! Project session construction through the shared Coflow engine.
 
-use coflow_api::{ProviderRegistry, WriterCapabilities};
+use coflow_api::{DiagnosticSet, ProviderRegistry, WriterCapabilities};
 use coflow_project::Project;
 use coflow_runtime::{open_project_session_read_only, FileTreeNode};
 use std::collections::HashMap;
@@ -49,11 +49,11 @@ pub(super) fn build_session(
     registry: &ProviderRegistry,
 ) -> Result<(EditorSession, SessionSnapshotParts), EditorError> {
     let project = Project::open_schema_only(Some(yaml_path_in))
-        .map_err(|err| EditorError::project(format!("failed to open project: {err}")))?;
+        .map_err(|err| EditorError::project(prefixed_diagnostics("failed to open project", &err)))?;
     let yaml_path = project.config_path.clone();
     let project_root = project.root_dir.clone();
     let engine = open_project_session_read_only(project, registry)
-        .map_err(|err| EditorError::project(format!("failed to build project: {err}")))?;
+        .map_err(|err| EditorError::project(prefixed_diagnostics("failed to build project", &err)))?;
     let file_tree = engine.file_tree();
     let diagnostics = diagnostics_from_store(&engine.diagnostics, &project_root);
 
@@ -67,4 +67,22 @@ pub(super) fn build_session(
         },
         SessionSnapshotParts { file_tree },
     ))
+}
+
+pub(super) fn diagnostic_messages(diagnostics: &DiagnosticSet) -> String {
+    diagnostics
+        .diagnostics
+        .iter()
+        .map(|diagnostic| format!("[{}] {}", diagnostic.code, diagnostic.message))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn prefixed_diagnostics(prefix: &str, diagnostics: &DiagnosticSet) -> String {
+    let messages = diagnostic_messages(diagnostics);
+    if messages.is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{prefix}: {messages}")
+    }
 }

@@ -1,4 +1,5 @@
-use coflow_api::FlatDiagnostic;
+use crate::diagnostics::{cli_error, cli_file_error};
+use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
     path_to_slash, Project, SchemaSourceOverride,
@@ -65,7 +66,7 @@ pub fn inspect(
     type_filter: Option<&str>,
     include_derived: bool,
     human: bool,
-) -> Result<bool, String> {
+) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     let session = build_project_schema_session(project)?;
     let report = inspect_schema(&session, type_filter, include_derived);
@@ -83,7 +84,7 @@ pub fn inspect(
 ///
 /// Returns an error when the project cannot be opened, the schema session
 /// cannot be built, or output cannot be written.
-pub fn files(config_or_dir: Option<&Path>, human: bool) -> Result<bool, String> {
+pub fn files(config_or_dir: Option<&Path>, human: bool) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     let session = build_project_schema_session(project)?;
     let report = schema_files(&session);
@@ -106,14 +107,21 @@ pub fn files(config_or_dir: Option<&Path>, human: bool) -> Result<bool, String> 
 pub fn write_file(
     config_or_dir: Option<&Path>,
     options: &SchemaWriteFileOptions,
-) -> Result<bool, String> {
+) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     let target = resolve_schema_write_target(&project, &options.file)?;
-    let current = std::fs::read_to_string(&target.absolute_path)
-        .map_err(|err| format!("failed to read `{}`: {err}", target.absolute_path.display()))?;
+    let current = std::fs::read_to_string(&target.absolute_path).map_err(|err| {
+        cli_file_error(
+            &target.absolute_path,
+            "CLI-FILE-READ",
+            format!("failed to read `{}`: {err}", target.absolute_path.display()),
+        )
+    })?;
     let source = match options.input {
         SchemaWriteInput::Stdin => read_stdin_source()?,
-        SchemaWriteInput::Missing => return Err("schema write-file requires --stdin".to_string()),
+        SchemaWriteInput::Missing => {
+            return Err(cli_error("CLI-ARG", "schema write-file requires --stdin"));
+        }
     };
     let changed = current != source;
 
@@ -125,9 +133,13 @@ pub fn write_file(
     let dry_run = matches!(options.mode, SchemaWriteMode::DryRun);
     if !dry_run {
         std::fs::write(&target.absolute_path, &source).map_err(|err| {
-            format!(
-                "failed to write `{}`: {err}",
-                target.absolute_path.display()
+            cli_file_error(
+                &target.absolute_path,
+                "CLI-FILE-WRITE",
+                format!(
+                    "failed to write `{}`: {err}",
+                    target.absolute_path.display()
+                ),
             )
         })?;
     }
@@ -148,18 +160,18 @@ pub fn write_file(
     Ok(ok)
 }
 
-fn write_json(value: &impl Serialize) -> Result<(), String> {
+fn write_json(value: &impl Serialize) -> Result<(), DiagnosticSet> {
     serde_json::to_writer(io::stdout().lock(), value)
-        .map_err(|err| format!("failed to write JSON: {err}"))?;
+        .map_err(|err| cli_error("CLI-OUTPUT", format!("failed to write JSON: {err}")))?;
     println!();
     Ok(())
 }
 
-fn read_stdin_source() -> Result<String, String> {
+fn read_stdin_source() -> Result<String, DiagnosticSet> {
     let mut source = String::new();
     io::stdin()
         .read_to_string(&mut source)
-        .map_err(|err| format!("failed to read stdin: {err}"))?;
+        .map_err(|err| cli_error("CLI-STDIN", format!("failed to read stdin: {err}")))?;
     Ok(source)
 }
 
@@ -171,22 +183,30 @@ struct SchemaWriteTarget {
     module_id: String,
 }
 
-fn resolve_schema_write_target(project: &Project, file: &str) -> Result<SchemaWriteTarget, String> {
+fn resolve_schema_write_target(
+    project: &Project,
+    file: &str,
+) -> Result<SchemaWriteTarget, DiagnosticSet> {
     let requested_path = Path::new(file);
     if requested_path
         .extension()
         .and_then(|extension| extension.to_str())
         != Some("cft")
     {
-        return Err(format!(
-            "`--file {file}` must name a configured .cft schema file"
+        return Err(cli_error(
+            "SCHEMA-WRITE-TARGET",
+            format!("`--file {file}` must name a configured .cft schema file"),
         ));
     }
     let requested_absolute = project.resolve_path(requested_path);
     let requested_canonical = std::fs::canonicalize(&requested_absolute).map_err(|err| {
-        format!(
-            "failed to resolve schema file `{}`: {err}",
-            requested_absolute.display()
+        cli_file_error(
+            &requested_absolute,
+            "SCHEMA-WRITE-TARGET",
+            format!(
+                "failed to resolve schema file `{}`: {err}",
+                requested_absolute.display()
+            ),
         )
     })?;
     let schema_files = project.schema_files()?;
@@ -194,8 +214,9 @@ fn resolve_schema_write_target(project: &Project, file: &str) -> Result<SchemaWr
         .into_iter()
         .find(|schema_file| schema_file.canonical_path == requested_canonical)
     else {
-        return Err(format!(
-            "`--file {file}` is not part of the configured schema"
+        return Err(cli_error(
+            "SCHEMA-WRITE-TARGET",
+            format!("`--file {file}` is not part of the configured schema"),
         ));
     };
     let project_path = schema_file
@@ -217,7 +238,7 @@ fn check_schema_source(
     project: &Project,
     target: &SchemaWriteTarget,
     source: &str,
-) -> Result<Vec<FlatDiagnostic>, String> {
+) -> Result<Vec<FlatDiagnostic>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     let build = compile_schema_project_with_overrides(
         project,
@@ -239,47 +260,47 @@ fn check_schema_source(
         .collect())
 }
 
-fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), String> {
+fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), DiagnosticSet> {
     let mut stdout = io::stdout().lock();
     for ty in &report.types {
         writeln!(stdout, "type {}", ty.name)
-            .map_err(|err| format!("failed to write output: {err}"))?;
+            .map_err(output_error)?;
         for annotation in &ty.annotations {
             writeln!(stdout, "  @{}", annotation.name)
-                .map_err(|err| format!("failed to write output: {err}"))?;
+                .map_err(output_error)?;
         }
         for field in &ty.fields {
             writeln!(stdout, "  {}: {}", field.name, field.raw_type)
-                .map_err(|err| format!("failed to write output: {err}"))?;
+                .map_err(output_error)?;
         }
     }
     for schema_enum in &report.enums {
         writeln!(stdout, "enum {}", schema_enum.name)
-            .map_err(|err| format!("failed to write output: {err}"))?;
+            .map_err(output_error)?;
         for variant in &schema_enum.variants {
             writeln!(stdout, "  {} = {}", variant.name, variant.value)
-                .map_err(|err| format!("failed to write output: {err}"))?;
+                .map_err(output_error)?;
         }
     }
     for schema_const in &report.consts {
         writeln!(stdout, "const {}", schema_const.name)
-            .map_err(|err| format!("failed to write output: {err}"))?;
+            .map_err(output_error)?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 
-fn write_schema_files_human(report: &SchemaFilesReport) -> Result<(), String> {
+fn write_schema_files_human(report: &SchemaFilesReport) -> Result<(), DiagnosticSet> {
     let mut stdout = io::stdout().lock();
     for file in &report.files {
         writeln!(stdout, "{}", file.module)
-            .map_err(|err| format!("failed to write output: {err}"))?;
+            .map_err(output_error)?;
         writeln!(stdout, "{}", file.source)
-            .map_err(|err| format!("failed to write output: {err}"))?;
+            .map_err(output_error)?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 
-fn write_schema_write_file_human(report: &SchemaWriteFileReport) -> Result<(), String> {
+fn write_schema_write_file_human(report: &SchemaWriteFileReport) -> Result<(), DiagnosticSet> {
     let mut stdout = io::stdout().lock();
     writeln!(
         stdout,
@@ -292,21 +313,25 @@ fn write_schema_write_file_human(report: &SchemaWriteFileReport) -> Result<(), S
             .check_ok
             .map_or_else(|| "skipped".to_string(), |ok| ok.to_string())
     )
-    .map_err(|err| format!("failed to write output: {err}"))?;
+    .map_err(output_error)?;
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 
 fn write_flat_diagnostics(
     stdout: &mut impl Write,
     diagnostics: &[FlatDiagnostic],
-) -> Result<(), String> {
+) -> Result<(), DiagnosticSet> {
     for diagnostic in diagnostics {
         writeln!(
             stdout,
             "[{}] [{}] {}",
             diagnostic.code, diagnostic.stage, diagnostic.message
         )
-        .map_err(|err| format!("failed to write output: {err}"))?;
+        .map_err(output_error)?;
     }
     Ok(())
+}
+
+fn output_error(err: io::Error) -> DiagnosticSet {
+    cli_error("CLI-OUTPUT", format!("failed to write output: {err}"))
 }

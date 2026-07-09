@@ -17,7 +17,7 @@ use crate::session::ProjectSchemaSession;
 ///
 /// Returns unrecoverable project/schema I/O errors. User-fixable project and
 /// schema diagnostics are captured in the returned session diagnostics.
-pub fn build_project_schema_session(project: Project) -> Result<ProjectSchemaSession, String> {
+pub fn build_project_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let diagnostics = project.schema_diagnostic_set();
     build_project_schema_with_diagnostics(project, diagnostics)
 }
@@ -25,7 +25,7 @@ pub fn build_project_schema_session(project: Project) -> Result<ProjectSchemaSes
 pub(crate) fn build_project_schema_with_diagnostics(
     project: Project,
     diagnostics: DiagnosticSet,
-) -> Result<ProjectSchemaSession, String> {
+) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let mut diagnostics = DiagnosticsStore::from_set(diagnostics);
     let schema = if diagnostics.is_empty() {
         match compile_project_schema(&project)? {
@@ -96,7 +96,7 @@ fn validate_dimension_schema_config(project: &Project, schema: &CftContainer) ->
 
 fn compile_project_schema(
     project: &Project,
-) -> Result<Result<CftContainer, DiagnosticSet>, String> {
+) -> Result<Result<CftContainer, DiagnosticSet>, DiagnosticSet> {
     let project_diagnostics = project.schema_diagnostic_set();
     if !project_diagnostics.is_empty() {
         return Ok(Err(project_diagnostics));
@@ -106,7 +106,13 @@ fn compile_project_schema(
     if diagnostics.is_empty() {
         build
             .container
-            .ok_or_else(|| "schema compilation did not produce a container".to_string())
+            .ok_or_else(|| {
+                DiagnosticSet::one(Diagnostic::error(
+                    "PROJECT-SCHEMA",
+                    "PROJECT",
+                    "schema compilation did not produce a container",
+                ))
+            })
             .map(Ok)
     } else {
         Ok(Err(diagnostics))

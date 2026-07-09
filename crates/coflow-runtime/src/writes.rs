@@ -107,14 +107,7 @@ impl ProjectSession {
         }
         writer.write_field(write_ctx, &write_request)?;
 
-        let new_session =
-            build_project_session_for_build(self.project.clone(), registry).map_err(|err| {
-                DiagnosticSet::one(Diagnostic::error(
-                    "WRITE-REBUILD",
-                    "WRITE",
-                    format!("post-write rebuild failed: {err}"),
-                ))
-            })?;
+        let new_session = build_project_session_for_build(self.project.clone(), registry)?;
         let new_write_coordinate =
             guess_new_coordinate(&new_session, &target.coordinate, path, new_value);
         let renamed = (new_write_coordinate != target.coordinate)
@@ -191,14 +184,7 @@ impl ProjectSession {
             action.writer.rewrite_record_references(ctx, &request)?;
         }
 
-        let new_session =
-            build_project_session_for_build(self.project.clone(), registry).map_err(|err| {
-                DiagnosticSet::one(Diagnostic::error(
-                    "WRITE-REBUILD",
-                    "WRITE",
-                    format!("post-write rebuild failed: {err}"),
-                ))
-            })?;
+        let new_session = build_project_session_for_build(self.project.clone(), registry)?;
         let new_coordinate = RecordCoordinate::new(actual_type, new_key);
         let diagnostics = new_session.diagnostics.as_set().clone();
         *self = new_session;
@@ -249,14 +235,7 @@ impl ProjectSession {
         };
         writer.insert_record(ctx, &request)?;
 
-        let new_session =
-            build_project_session_for_build(self.project.clone(), registry).map_err(|err| {
-                DiagnosticSet::one(Diagnostic::error(
-                    "WRITE-REBUILD",
-                    "WRITE",
-                    format!("post-write rebuild failed: {err}"),
-                ))
-            })?;
+        let new_session = build_project_session_for_build(self.project.clone(), registry)?;
         let inserted = RecordCoordinate::new(actual_type, record_key);
         let diagnostics = new_session.diagnostics.as_set().clone();
         *self = new_session;
@@ -305,14 +284,7 @@ impl ProjectSession {
         };
         writer.delete_record(ctx, &request)?;
 
-        let new_session =
-            build_project_session_for_build(self.project.clone(), registry).map_err(|err| {
-                DiagnosticSet::one(Diagnostic::error(
-                    "WRITE-REBUILD",
-                    "WRITE",
-                    format!("post-write rebuild failed: {err}"),
-                ))
-            })?;
+        let new_session = build_project_session_for_build(self.project.clone(), registry)?;
         let diagnostics = new_session.diagnostics.as_set().clone();
         *self = new_session;
         Ok(WriteOutcome {

@@ -1,3 +1,5 @@
+use crate::diagnostics::plain_error;
+use coflow_api::DiagnosticSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -7,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 ///
 /// Returns an error when the requested config file/directory cannot be resolved
 /// to `coflow.yaml` or `coflow.yml`.
-pub fn resolve_config_path(config_or_dir: Option<&Path>) -> Result<PathBuf, String> {
+pub fn resolve_config_path(config_or_dir: Option<&Path>) -> Result<PathBuf, DiagnosticSet> {
     let candidate = config_or_dir.unwrap_or_else(|| Path::new("."));
     if config_or_dir.is_some() && candidate.is_file() {
         return Ok(candidate.to_path_buf());
@@ -16,9 +18,10 @@ pub fn resolve_config_path(config_or_dir: Option<&Path>) -> Result<PathBuf, Stri
         if is_yaml_path(candidate) {
             return Ok(candidate.to_path_buf());
         }
-        return Err(format!(
-            "config or directory `{}` does not exist",
-            candidate.display()
+        return Err(plain_error(
+            "PROJECT-CONFIG-NOT-FOUND",
+            "PROJECT",
+            format!("config or directory `{}` does not exist", candidate.display()),
         ));
     }
     let dir = if candidate.is_dir() {
@@ -26,9 +29,13 @@ pub fn resolve_config_path(config_or_dir: Option<&Path>) -> Result<PathBuf, Stri
     } else if is_yaml_path(candidate) {
         return Ok(candidate.to_path_buf());
     } else {
-        return Err(format!(
-            "`{}` is neither a config file nor a directory",
-            candidate.display()
+        return Err(plain_error(
+            "PROJECT-CONFIG-PATH",
+            "PROJECT",
+            format!(
+                "`{}` is neither a config file nor a directory",
+                candidate.display()
+            ),
         ));
     };
     find_default_config(dir)
@@ -42,20 +49,25 @@ pub(super) fn resolve_project_relative(root_dir: &Path, path: &Path) -> PathBuf 
     }
 }
 
-fn find_default_config(dir: &Path) -> Result<PathBuf, String> {
+fn find_default_config(dir: &Path) -> Result<PathBuf, DiagnosticSet> {
     let yaml_path = dir.join("coflow.yaml");
     let yml_path = dir.join("coflow.yml");
     match (yaml_path.exists(), yml_path.exists()) {
         (true, false) => Ok(yaml_path),
         (false, true) => Ok(yml_path),
-        (true, true) => Err(format!(
-            "both `{}` and `{}` exist; specify the config file explicitly",
-            yaml_path.display(),
-            yml_path.display()
+        (true, true) => Err(plain_error(
+            "PROJECT-CONFIG-AMBIGUOUS",
+            "PROJECT",
+            format!(
+                "both `{}` and `{}` exist; specify the config file explicitly",
+                yaml_path.display(),
+                yml_path.display()
+            ),
         )),
-        (false, false) => Err(format!(
-            "no coflow.yaml or coflow.yml found in `{}`",
-            dir.display()
+        (false, false) => Err(plain_error(
+            "PROJECT-CONFIG-NOT-FOUND",
+            "PROJECT",
+            format!("no coflow.yaml or coflow.yml found in `{}`", dir.display()),
         )),
     }
 }

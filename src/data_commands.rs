@@ -1,4 +1,5 @@
-use coflow_api::{FlatDiagnostic, ProviderRegistry};
+use crate::diagnostics::{cli_error, cli_file_error};
+use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
 use coflow_project::Project;
 use coflow_runtime::{
     build_project_schema_session, build_project_session_for_build, data_get, data_list,
@@ -80,7 +81,7 @@ pub struct DataWriteFileReport {
 /// Returns an error when the project cannot be opened, the default provider
 /// registry cannot be built, the project session cannot be built, or output
 /// cannot be written.
-pub fn sources(config_or_dir: Option<&Path>, human: bool) -> Result<bool, String> {
+pub fn sources(config_or_dir: Option<&Path>, human: bool) -> Result<bool, DiagnosticSet> {
     let (session, registry) = open_session(config_or_dir)?;
     let report = data_sources(&session, &registry);
     if human {
@@ -105,7 +106,7 @@ pub fn list(
     limit: Option<usize>,
     offset: usize,
     human: bool,
-) -> Result<bool, String> {
+) -> Result<bool, DiagnosticSet> {
     let (session, _registry) = open_session(config_or_dir)?;
     let report = data_list(
         &session,
@@ -132,7 +133,7 @@ pub fn list(
 /// registry cannot be built, the project session cannot be built, or output
 /// cannot be written. User-fixable lookup diagnostics are written as command
 /// output and return `Ok(false)`.
-pub fn get(options: DataGetOptions) -> Result<bool, String> {
+pub fn get(options: DataGetOptions) -> Result<bool, DiagnosticSet> {
     let (session, _registry) = open_session(options.config_or_dir.as_deref())?;
     let query = DataGetQuery {
         selector: options.selector,
@@ -176,11 +177,25 @@ pub fn get(options: DataGetOptions) -> Result<bool, String> {
 /// cannot be opened, the default provider registry cannot be built, the
 /// project session cannot be built, or output cannot be written. Engine patch
 /// diagnostics are written as command output and return `Ok(false)`.
-pub fn patch(config_or_dir: Option<&Path>, patch_path: &Path, human: bool) -> Result<bool, String> {
-    let patch_text = std::fs::read_to_string(patch_path)
-        .map_err(|err| format!("failed to read `{}`: {err}", patch_path.display()))?;
-    let request: DataPatchRequest = serde_json::from_str(&patch_text)
-        .map_err(|err| format!("failed to parse `{}`: {err}", patch_path.display()))?;
+pub fn patch(
+    config_or_dir: Option<&Path>,
+    patch_path: &Path,
+    human: bool,
+) -> Result<bool, DiagnosticSet> {
+    let patch_text = std::fs::read_to_string(patch_path).map_err(|err| {
+        cli_file_error(
+            patch_path,
+            "CLI-FILE-READ",
+            format!("failed to read `{}`: {err}", patch_path.display()),
+        )
+    })?;
+    let request: DataPatchRequest = serde_json::from_str(&patch_text).map_err(|err| {
+        cli_file_error(
+            patch_path,
+            "CLI-PATCH-PARSE",
+            format!("failed to parse `{}`: {err}", patch_path.display()),
+        )
+    })?;
     let (mut session, registry) = open_session(config_or_dir)?;
     let report = match session.apply_data_patch(&registry, request) {
         Ok(report) => report,
@@ -216,9 +231,9 @@ pub fn create_file(
     provider: Option<String>,
     sheet: Option<String>,
     human: bool,
-) -> Result<bool, String> {
+) -> Result<bool, DiagnosticSet> {
     let session = open_schema_session(config_or_dir)?;
-    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
+    let registry = default_provider_registry()?;
     let report = files::create_file_report(&session, &registry, file, actual_type, provider, sheet);
     let ok = report.diagnostics.is_empty();
     if human {
@@ -243,9 +258,9 @@ pub fn create_table(
     provider: Option<&str>,
     sheet: Option<String>,
     human: bool,
-) -> Result<bool, String> {
+) -> Result<bool, DiagnosticSet> {
     let session = open_schema_session(config_or_dir)?;
-    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
+    let registry = default_provider_registry()?;
     let report =
         files::create_table_report(&session, &registry, source, actual_type, provider, sheet);
     let ok = report.diagnostics.is_empty();
@@ -271,9 +286,9 @@ pub fn sync_header(
     provider: Option<String>,
     sheet: Option<String>,
     human: bool,
-) -> Result<bool, String> {
+) -> Result<bool, DiagnosticSet> {
     let session = open_schema_session(config_or_dir)?;
-    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
+    let registry = default_provider_registry()?;
     let report = files::sync_header_report(&session, &registry, file, actual_type, provider, sheet);
     let ok = report.diagnostics.is_empty();
     if human {
@@ -294,7 +309,7 @@ pub fn sync_header(
 pub fn write_file(
     config_or_dir: Option<&Path>,
     options: &DataWriteFileOptions,
-) -> Result<bool, String> {
+) -> Result<bool, DiagnosticSet> {
     let report = write_file::run_write_file(config_or_dir, options)?;
     let ok = report.check_ok.unwrap_or(true);
     match options.output {
@@ -312,16 +327,21 @@ fn has_error_diagnostics(diagnostics: &[FlatDiagnostic]) -> bool {
 
 fn open_session(
     config_or_dir: Option<&Path>,
-) -> Result<(ProjectSession, ProviderRegistry), String> {
+) -> Result<(ProjectSession, ProviderRegistry), DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
-    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
+    let registry = default_provider_registry()?;
     let session = build_project_session_for_build(project, &registry)?;
     Ok((session, registry))
 }
 
 fn open_schema_session(
     config_or_dir: Option<&Path>,
-) -> Result<coflow_runtime::ProjectSchemaSession, String> {
+) -> Result<coflow_runtime::ProjectSchemaSession, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     build_project_schema_session(project)
+}
+
+fn default_provider_registry() -> Result<ProviderRegistry, DiagnosticSet> {
+    coflow_builtins::default_provider_registry()
+        .map_err(|err| cli_error("PROVIDER-REGISTRY", err.to_string()))
 }

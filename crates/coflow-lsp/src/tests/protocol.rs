@@ -20,11 +20,15 @@ fn request_errors_are_reported_without_returning_from_handler() {
 
     assert!(result.is_ok(), "handler should isolate request errors");
     let messages = written_messages(&server.writer);
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0]["id"], 7);
-    assert!(messages[0]["error"]["message"]
-        .as_str()
-        .is_some_and(|message| message.contains("schema path")));
+    let response = messages
+        .iter()
+        .find(|message| message.get("id") == Some(&json!(7)))
+        .expect("request response");
+    assert_eq!(response["result"], Value::Null);
+    assert!(messages.iter().any(|message| {
+        message.get("method") == Some(&json!("textDocument/publishDiagnostics"))
+            && message["params"]["diagnostics"][0]["code"] == "PROJECT-SCHEMA-PATH"
+    }));
 }
 
 #[test]
@@ -48,12 +52,10 @@ fn notification_errors_are_logged_without_returning_from_handler() {
 
     assert!(result.is_ok(), "handler should isolate notification errors");
     let messages = written_messages(&server.writer);
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0]["method"], "window/logMessage");
-    assert_eq!(messages[0]["params"]["type"], 1);
-    assert!(messages[0]["params"]["message"]
-        .as_str()
-        .is_some_and(|message| message.contains("schema path")));
+    assert!(messages.iter().any(|message| {
+        message.get("method") == Some(&json!("textDocument/publishDiagnostics"))
+            && message["params"]["diagnostics"][0]["code"] == "PROJECT-SCHEMA-PATH"
+    }));
 }
 
 #[test]

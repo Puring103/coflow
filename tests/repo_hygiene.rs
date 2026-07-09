@@ -283,7 +283,6 @@ fn root_cli_arguments_do_not_live_in_main_rs() {
     );
     for expected in [
         "pub(crate) fn write_project_diagnostics",
-        "pub(crate) fn write_cli_error",
         "fn write_diagnostic_block",
         "pub(crate) fn relativize_message_paths",
         "fn slash_path",
@@ -604,7 +603,6 @@ fn project_diagnostic_conversion_does_not_live_in_project_lib_rs() {
         "fn cft_label_range",
         "fn byte_position",
         "pub(super) fn project_diagnostics_to_set",
-        "pub(super) fn join_diagnostic_messages",
     ] {
         assert!(
             diagnostics.contains(expected),

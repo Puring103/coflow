@@ -192,7 +192,9 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
                 .collect::<Vec<_>>()
                 .join("\n")
         } else {
-            Project::open(Some(&config)).expect_err("data validation should fail")
+            Project::open(Some(&config))
+                .expect_err("data validation should fail")
+                .to_string()
         };
         assert!(
             message.contains(expected),
@@ -430,6 +432,7 @@ fn project_config_rejects_old_source_fields() -> TestResult {
         std::fs::write(&config, yaml).map_err(|err| err.to_string())?;
         let message = Project::open_schema_only(Some(&config))
             .err()
+            .map(|diagnostics| diagnostics.to_string())
             .or_else(|| {
                 Project::open_schema_only(Some(&config)).ok().map(|project| {
                     project

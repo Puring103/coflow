@@ -103,10 +103,14 @@ pub fn preflight_codegen(
     codegen_id: &str,
     data_format: &str,
     output_config: &OutputConfig,
-) -> Result<DiagnosticSet, String> {
-    let codegen = registry
-        .codegen(codegen_id)
-        .ok_or_else(|| format!("no code generator registered for `{codegen_id}`"))?;
+) -> Result<DiagnosticSet, DiagnosticSet> {
+    let codegen = registry.codegen(codegen_id).ok_or_else(|| {
+        DiagnosticSet::one(Diagnostic::error(
+            "CODEGEN",
+            "CODEGEN",
+            format!("no code generator registered for `{codegen_id}`"),
+        ))
+    })?;
     let output = OutputSpec {
         output_type: codegen_id.to_string(),
         dir: PathBuf::new(),
@@ -133,13 +137,17 @@ pub fn required_data_output<'a>(
     project: &'a Project,
     exporter_id: &str,
     command: &str,
-) -> Result<&'a OutputConfig, String> {
+) -> Result<&'a OutputConfig, DiagnosticSet> {
     let output = project.config.outputs.data.as_ref().ok_or_else(|| {
-        format!(
-            "coflow.yaml missing outputs.data; required `type: {exporter_id}` and `dir` for `{command}`"
+        project_config_diagnostic_set(
+            project,
+            format!(
+                "coflow.yaml missing outputs.data; required `type: {exporter_id}` and `dir` for `{command}`"
+            ),
+            ["outputs", "data"],
         )
     })?;
-    require_output_type(output, "data", exporter_id, command)?;
+    require_output_type(project, output, "data", exporter_id, command)?;
     Ok(output)
 }
 
@@ -147,19 +155,30 @@ pub fn required_code_output<'a>(
     project: &'a Project,
     codegen_id: &str,
     command: &str,
-) -> Result<&'a OutputConfig, String> {
+) -> Result<&'a OutputConfig, DiagnosticSet> {
     let output = project.config.outputs.code.as_ref().ok_or_else(|| {
-        format!(
-            "coflow.yaml missing outputs.code; required `type: {codegen_id}` and `dir` for `{command}`"
+        project_config_diagnostic_set(
+            project,
+            format!(
+                "coflow.yaml missing outputs.code; required `type: {codegen_id}` and `dir` for `{command}`"
+            ),
+            ["outputs", "code"],
         )
     })?;
-    require_output_type(output, "code", codegen_id, command)?;
+    require_output_type(project, output, "code", codegen_id, command)?;
     Ok(output)
 }
 
-pub fn configured_data_format<'a>(project: &'a Project, command: &str) -> Result<&'a str, String> {
+pub fn configured_data_format<'a>(
+    project: &'a Project,
+    command: &str,
+) -> Result<&'a str, DiagnosticSet> {
     let output = project.config.outputs.data.as_ref().ok_or_else(|| {
-        format!("coflow.yaml missing outputs.data; required `type` and `dir` for `{command}`")
+        project_config_diagnostic_set(
+            project,
+            format!("coflow.yaml missing outputs.data; required `type` and `dir` for `{command}`"),
+            ["outputs", "data"],
+        )
     })?;
     Ok(output.output_type.as_str())
 }
@@ -167,25 +186,34 @@ pub fn configured_data_format<'a>(project: &'a Project, command: &str) -> Result
 pub fn configured_data_output<'a>(
     project: &'a Project,
     command: &str,
-) -> Result<(&'a OutputConfig, &'a str), String> {
+) -> Result<(&'a OutputConfig, &'a str), DiagnosticSet> {
     let output = project.config.outputs.data.as_ref().ok_or_else(|| {
-        format!("coflow.yaml missing outputs.data; required `type` and `dir` for `{command}`")
+        project_config_diagnostic_set(
+            project,
+            format!("coflow.yaml missing outputs.data; required `type` and `dir` for `{command}`"),
+            ["outputs", "data"],
+        )
     })?;
     Ok((output, output.output_type.as_str()))
 }
 
 fn require_output_type(
+    project: &Project,
     output: &OutputConfig,
     output_name: &str,
     required_type: &str,
     command: &str,
-) -> Result<(), String> {
+) -> Result<(), DiagnosticSet> {
     if output.output_type == required_type {
         Ok(())
     } else {
-        Err(format!(
+        Err(project_config_diagnostic_set(
+            project,
+            format!(
             "coflow.yaml outputs.{output_name}.type is `{}`; required `{required_type}` for `{command}`",
             output.output_type
+            ),
+            ["outputs", output_name, "type"],
         ))
     }
 }
@@ -213,6 +241,27 @@ fn diagnostic_set(path: impl Into<PathBuf>, message: impl Into<String>) -> Diagn
         message: message.into(),
         primary: Some(Label {
             location: SourceLocation::Artifact { path: path.into() },
+            message: None,
+        }),
+        related: Vec::new(),
+    })
+}
+
+fn project_config_diagnostic_set(
+    project: &Project,
+    message: impl Into<String>,
+    key_path: impl IntoIterator<Item = impl Into<String>>,
+) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic {
+        code: "PROJECT-001".to_string(),
+        stage: "PROJECT".to_string(),
+        severity: Severity::Error,
+        message: message.into(),
+        primary: Some(Label {
+            location: SourceLocation::ProjectConfig {
+                path: project.config_path.clone(),
+                key_path: key_path.into_iter().map(Into::into).collect(),
+            },
             message: None,
         }),
         related: Vec::new(),

@@ -1,5 +1,6 @@
 use crate::{CfdDiagnostics, CfdInputRecord, RecordOrigin};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,6 +38,27 @@ impl DiagnosticSet {
 
     pub fn push(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
+    }
+
+    #[must_use]
+    pub fn contains(&self, needle: &str) -> bool {
+        self.to_string().contains(needle)
+    }
+}
+
+impl fmt::Display for DiagnosticSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, diagnostic) in self.diagnostics.iter().enumerate() {
+            if index > 0 {
+                writeln!(f)?;
+            }
+            write!(
+                f,
+                "[{}] [{}] {}",
+                diagnostic.code, diagnostic.stage, diagnostic.message
+            )?;
+        }
+        Ok(())
     }
 }
 

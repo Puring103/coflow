@@ -51,16 +51,11 @@ impl Project {
     ///
     /// Returns an error when the config path cannot be found, read,
     /// canonicalized, or parsed as YAML.
-    pub fn open(config_or_dir: Option<&Path>) -> Result<Self, String> {
+    pub fn open(config_or_dir: Option<&Path>) -> Result<Self, DiagnosticSet> {
         let project = Self::open_schema_only(config_or_dir)?;
         let schema_diagnostics = project.schema_diagnostic_set();
         if !schema_diagnostics.is_empty() {
-            return Err(schema_diagnostics
-                .diagnostics
-                .into_iter()
-                .map(|diagnostic| diagnostic.message)
-                .collect::<Vec<_>>()
-                .join("\n"));
+            return Err(schema_diagnostics);
         }
         project.validate_for_data()?;
         Ok(project)
@@ -72,22 +67,41 @@ impl Project {
     ///
     /// Returns an error when the config path cannot be found, read,
     /// canonicalized, or parsed as YAML.
-    pub fn open_schema_only(config_or_dir: Option<&Path>) -> Result<Self, String> {
+    pub fn open_schema_only(config_or_dir: Option<&Path>) -> Result<Self, DiagnosticSet> {
         let config_path = resolve_config_path(config_or_dir)?;
         let config_path = fs::canonicalize(&config_path).map_err(|err| {
-            format!(
-                "failed to resolve config `{}`: {err}",
-                config_path.display()
+            diagnostics::file_error(
+                &config_path,
+                "PROJECT-CONFIG-PATH",
+                "PROJECT",
+                format!("failed to resolve config `{}`: {err}", config_path.display()),
             )
         })?;
-        let root_dir = config_path
-            .parent()
-            .ok_or_else(|| format!("config `{}` has no parent directory", config_path.display()))?
-            .to_path_buf();
-        let source = fs::read_to_string(&config_path)
-            .map_err(|err| format!("failed to read `{}`: {err}", config_path.display()))?;
-        let config = serde_yaml::from_str(&source)
-            .map_err(|err| format!("failed to parse `{}`: {err}", config_path.display()))?;
+        let root_dir = config_path.parent().ok_or_else(|| {
+            diagnostics::file_error(
+                &config_path,
+                "PROJECT-CONFIG-PATH",
+                "PROJECT",
+                format!("config `{}` has no parent directory", config_path.display()),
+            )
+        })?;
+        let root_dir = root_dir.to_path_buf();
+        let source = fs::read_to_string(&config_path).map_err(|err| {
+            diagnostics::file_error(
+                &config_path,
+                "PROJECT-CONFIG-READ",
+                "PROJECT",
+                format!("failed to read `{}`: {err}", config_path.display()),
+            )
+        })?;
+        let config = serde_yaml::from_str(&source).map_err(|err| {
+            diagnostics::file_error(
+                &config_path,
+                "PROJECT-CONFIG-PARSE",
+                "PROJECT",
+                format!("failed to parse `{}`: {err}", config_path.display()),
+            )
+        })?;
         Ok(Self {
             config_path,
             root_dir,
@@ -101,12 +115,12 @@ impl Project {
     ///
     /// Returns an error when a data source file or directory is missing or a
     /// data-stage source/sheet setting is invalid.
-    pub fn validate_for_data(&self) -> Result<(), String> {
+    pub fn validate_for_data(&self) -> Result<(), DiagnosticSet> {
         let diagnostics = self.data_diagnostic_set();
         if diagnostics.is_empty() {
             Ok(())
         } else {
-            Err(diagnostics::join_diagnostic_messages(diagnostics))
+            Err(diagnostics)
         }
     }
 
@@ -116,12 +130,12 @@ impl Project {
     ///
     /// Returns an error when code or data output settings are missing or have
     /// invalid shape.
-    pub fn validate_for_codegen(&self) -> Result<(), String> {
+    pub fn validate_for_codegen(&self) -> Result<(), DiagnosticSet> {
         let diagnostics = self.codegen_diagnostic_set();
         if diagnostics.is_empty() {
             Ok(())
         } else {
-            Err(diagnostics::join_diagnostic_messages(diagnostics))
+            Err(diagnostics)
         }
     }
 
@@ -164,7 +178,7 @@ impl Project {
     ///
     /// Returns an error when a configured schema path does not exist or a schema
     /// directory cannot be read.
-    pub fn schema_files(&self) -> Result<Vec<SchemaFile>, String> {
+    pub fn schema_files(&self) -> Result<Vec<SchemaFile>, DiagnosticSet> {
         schema_sources::schema_files(&self.config.schema, &self.root_dir)
     }
 }
@@ -230,30 +244,63 @@ pub struct InitOutcome {
 /// Returns a human-readable error when `coflow.yaml` already exists in
 /// `dir` (refuses to overwrite) or when any directory or file cannot be
 /// created.
-pub fn init_project(dir: impl AsRef<Path>) -> Result<InitOutcome, String> {
+pub fn init_project(dir: impl AsRef<Path>) -> Result<InitOutcome, DiagnosticSet> {
     let dir = dir.as_ref();
     let config_path = dir.join("coflow.yaml");
     if config_path.exists() {
-        return Err(format!("`{}` already exists", config_path.display()));
+        return Err(diagnostics::file_error(
+            &config_path,
+            "PROJECT-INIT-IO",
+            "PROJECT",
+            format!("`{}` already exists", config_path.display()),
+        ));
     }
-    fs::create_dir_all(dir.join("schema"))
-        .map_err(|err| format!("failed to create `{}`: {err}", dir.join("schema").display()))?;
-    fs::create_dir_all(dir.join("data"))
-        .map_err(|err| format!("failed to create `{}`: {err}", dir.join("data").display()))?;
+    fs::create_dir_all(dir.join("schema")).map_err(|err| {
+        diagnostics::file_error(
+            &dir.join("schema"),
+            "PROJECT-INIT-IO",
+            "PROJECT",
+            format!("failed to create `{}`: {err}", dir.join("schema").display()),
+        )
+    })?;
+    fs::create_dir_all(dir.join("data")).map_err(|err| {
+        diagnostics::file_error(
+            &dir.join("data"),
+            "PROJECT-INIT-IO",
+            "PROJECT",
+            format!("failed to create `{}`: {err}", dir.join("data").display()),
+        )
+    })?;
     fs::create_dir_all(dir.join("generated").join("data")).map_err(|err| {
-        format!(
+        diagnostics::file_error(
+            &dir.join("generated").join("data"),
+            "PROJECT-INIT-IO",
+            "PROJECT",
+            format!(
             "failed to create `{}`: {err}",
             dir.join("generated").join("data").display()
+            ),
         )
     })?;
     fs::create_dir_all(dir.join("generated").join("csharp")).map_err(|err| {
-        format!(
+        diagnostics::file_error(
+            &dir.join("generated").join("csharp"),
+            "PROJECT-INIT-IO",
+            "PROJECT",
+            format!(
             "failed to create `{}`: {err}",
             dir.join("generated").join("csharp").display()
+            ),
         )
     })?;
-    fs::write(&config_path, DEFAULT_PROJECT_YAML)
-        .map_err(|err| format!("failed to write `{}`: {err}", config_path.display()))?;
+    fs::write(&config_path, DEFAULT_PROJECT_YAML).map_err(|err| {
+        diagnostics::file_error(
+            &config_path,
+            "PROJECT-INIT-IO",
+            "PROJECT",
+            format!("failed to write `{}`: {err}", config_path.display()),
+        )
+    })?;
     Ok(InitOutcome { config_path })
 }
 
@@ -266,12 +313,18 @@ pub fn init_project(dir: impl AsRef<Path>) -> Result<InitOutcome, String> {
 pub fn compile_schema_project(
     project: &Project,
     stdin_path: Option<&Path>,
-) -> Result<SchemaBuild, String> {
+) -> Result<SchemaBuild, DiagnosticSet> {
     let overrides = if let Some(path) = stdin_path {
         let mut source = String::new();
         io::stdin()
             .read_to_string(&mut source)
-            .map_err(|err| format!("failed to read stdin: {err}"))?;
+            .map_err(|err| {
+                diagnostics::plain_error(
+                    "CLI-STDIN",
+                    "CLI",
+                    format!("failed to read stdin: {err}"),
+                )
+            })?;
         let requested = path_to_slash(path);
         let absolute = if path.is_absolute() {
             path.to_path_buf()
@@ -299,7 +352,7 @@ pub fn compile_schema_project(
 pub fn compile_schema_project_with_overrides(
     project: &Project,
     overrides: &[SchemaSourceOverride],
-) -> Result<SchemaBuild, String> {
+) -> Result<SchemaBuild, DiagnosticSet> {
     let schema_files = project.schema_files()?;
     let mut matched_overrides = vec![false; overrides.len()];
     let mut sources = BTreeMap::new();
@@ -323,8 +376,14 @@ pub fn compile_schema_project_with_overrides(
             matched_overrides[index] = true;
             source_override.source.clone()
         } else {
-            fs::read_to_string(&schema_file.path)
-                .map_err(|err| format!("failed to read `{}`: {err}", schema_file.path.display()))?
+            fs::read_to_string(&schema_file.path).map_err(|err| {
+                diagnostics::file_error(
+                    &schema_file.path,
+                    "PROJECT-SCHEMA-READ",
+                    "PROJECT",
+                    format!("failed to read `{}`: {err}", schema_file.path.display()),
+                )
+            })?
         };
         sources.insert(schema_file.module_id.clone(), source.clone());
         paths.insert(
@@ -343,8 +402,10 @@ pub fn compile_schema_project_with_overrides(
                 || source_override.normalized_path.display().to_string(),
                 str::to_string,
             );
-            return Err(format!(
-                "`--stdin-path {requested}` is not part of the configured schema"
+            return Err(diagnostics::plain_error(
+                "SCHEMA-STDIN-PATH",
+                "SCHEMA",
+                format!("`--stdin-path {requested}` is not part of the configured schema"),
             ));
         }
     }

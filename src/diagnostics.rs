@@ -2,8 +2,38 @@ use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_cft::{CftDiagnostic, CftLabel, ModuleId, Span};
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::path::Path;
 
 const PROJECT_DIAGNOSTIC_STAGE: &str = "PROJECT";
+
+#[must_use]
+pub fn cli_error(code: impl Into<String>, message: impl Into<String>) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic::error(code, "CLI", message))
+}
+
+#[must_use]
+pub fn cli_file_error(
+    path: &Path,
+    code: impl Into<String>,
+    message: impl Into<String>,
+) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic::error(code, "CLI", message).with_primary(Label {
+        location: SourceLocation::Artifact {
+            path: path.to_path_buf(),
+        },
+        message: None,
+    }))
+}
+
+#[must_use]
+pub fn diagnostic_messages(diagnostics: &DiagnosticSet) -> String {
+    diagnostics
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 #[derive(Debug, Serialize)]
 pub struct DiagnosticJson {

@@ -75,7 +75,7 @@ pub struct BuildReport {
 pub fn check_project(
     project: Project,
     registry: &ProviderRegistry,
-) -> Result<CommandOutcome<CheckReport>, String> {
+) -> Result<CommandOutcome<CheckReport>, DiagnosticSet> {
     let session = build_project_session_for_build(project, registry)?;
     if session.has_diagnostics() {
         Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()))
@@ -94,7 +94,7 @@ pub fn build_project(
     project: Project,
     registry: &ProviderRegistry,
     options: BuildOptions<'_>,
-) -> Result<CommandOutcome<BuildReport>, String> {
+) -> Result<CommandOutcome<BuildReport>, DiagnosticSet> {
     let diagnostics = build_config_diagnostics(&project);
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
@@ -153,16 +153,12 @@ pub fn export_project_data(
     registry: &ProviderRegistry,
     exporter_id: &str,
     options: ExportOptions<'_>,
-) -> Result<CommandOutcome<ExportReport>, String> {
+) -> Result<CommandOutcome<ExportReport>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.data_diagnostic_set());
     let command = format!("coflow export {exporter_id}");
-    if let Err(message) = required_data_output(&project, exporter_id, &command) {
-        diagnostics.push(project_diagnostic(
-            &project.config_path,
-            message,
-            ["outputs", "data"],
-        ));
+    if let Err(output_diagnostics) = required_data_output(&project, exporter_id, &command) {
+        diagnostics.extend(output_diagnostics);
     }
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
@@ -217,7 +213,7 @@ pub fn generate_project_code(
     registry: &ProviderRegistry,
     codegen_id: &str,
     options: CodegenOptions<'_>,
-) -> Result<CommandOutcome<CodegenReport>, String> {
+) -> Result<CommandOutcome<CodegenReport>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.codegen_diagnostic_set());
     if !diagnostics.is_empty() {
@@ -323,12 +319,8 @@ struct BuildCodegenPlan {
 fn build_config_diagnostics(project: &Project) -> DiagnosticSet {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.data_diagnostic_set());
-    if let Err(message) = configured_data_output(project, "coflow build") {
-        diagnostics.push(project_diagnostic(
-            &project.config_path,
-            message,
-            ["outputs", "data"],
-        ));
+    if let Err(output_diagnostics) = configured_data_output(project, "coflow build") {
+        diagnostics.extend(output_diagnostics);
     }
     diagnostics
 }
@@ -338,10 +330,7 @@ fn build_provider_plan<'a>(
     registry: &ProviderRegistry,
     options: BuildOptions<'a>,
 ) -> Result<BuildProviderPlan, DiagnosticSet> {
-    let (data_output, data_format) =
-        configured_data_output(project, "coflow build").map_err(|message| {
-            project_diagnostic_set(&project.config_path, message, ["outputs", "data"])
-        })?;
+    let (data_output, data_format) = configured_data_output(project, "coflow build")?;
     let data_exporter = registry.exporter(data_format).ok_or_else(|| {
         project_diagnostic_set(
             &project.config_path,
@@ -416,7 +405,7 @@ fn build_codegen_preflight_diagnostics(
     registry: &ProviderRegistry,
     session: &ProjectSession,
     plan: &BuildProviderPlan,
-) -> Result<DiagnosticSet, String> {
+) -> Result<DiagnosticSet, DiagnosticSet> {
     let Some(code) = plan.code.as_ref() else {
         return Ok(DiagnosticSet::empty());
     };

@@ -58,16 +58,6 @@ pub(crate) fn write_human_cft_diagnostics(
     write_human_diagnostics(&diagnostics, Some(root_dir))
 }
 
-pub(crate) fn write_cli_error(message: &str) -> Result<(), String> {
-    let mut stderr = io::stderr().lock();
-    writeln!(stderr, "{DIAGNOSTIC_SEPARATOR}")
-        .map_err(|err| format!("failed to write diagnostics: {err}"))?;
-    writeln!(stderr, "[CLI-ERROR] [CLI]")
-        .map_err(|err| format!("failed to write diagnostics: {err}"))?;
-    write_message_field(&mut stderr, message)
-        .map_err(|err| format!("failed to write diagnostics: {err}"))
-}
-
 fn write_diagnostic_block(
     stderr: &mut impl Write,
     diagnostic: &DiagnosticJson,
