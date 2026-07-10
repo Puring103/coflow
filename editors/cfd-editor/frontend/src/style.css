@@ -798,7 +798,19 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   display: block;
   width: 100%;
   min-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+/* Inside a table cell, value chips render as inline so the surrounding
+ * .cell-edit-wrap's `text-overflow: ellipsis` actually kicks in — the
+ * default `inline-flex` on .vc would swallow the ellipsis. */
+.cell-edit-wrap > .vc,
+.cell-edit-wrap > .dc-compact {
+  display: inline;
+  max-width: 100%;
+}
+.cell-edit-wrap > .vc > * { vertical-align: middle; }
 .cell-edit-wrap.editable {
   cursor: text;
   border-radius: 3px;
@@ -824,16 +836,14 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   font-weight: 500;
   color: var(--text-key);
   font-size: var(--fs-ui);
+  white-space: nowrap;
 }
 .cell-key.editable {
   cursor: text;
   display: inline-block;
-  max-width: 100%;
   border-radius: 3px;
   padding: 1px 3px;
   margin: -1px -3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   vertical-align: middle;
 }
 .cell-key.editable:hover {
@@ -1159,15 +1169,15 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .rv-sidebar-item {
   display: flex;
   flex-direction: column;
-  padding: 6px 10px 6px 12px;
+  padding: 8px 12px 8px 12px;
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  gap: 2px;
-  margin-bottom: 1px;
+  gap: 3px;
   position: relative;
   border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--border);
   transition: background 80ms, border-color 80ms;
 }
+.rv-sidebar-item:last-child { border-bottom: none; }
 .rv-sidebar-item:hover { background: var(--bg-3); }
 .rv-sidebar-item.selected {
   background: var(--bg-4);
@@ -1674,25 +1684,16 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
  * dc-row / gn-header does — so the badge always lands at the container's
  * upper-right corner instead of trailing the visible text. */
 .cell-key-wrap,
-.dc-null-wrap {
-  display: inline-flex;
-  align-items: center;
+.dc-null-wrap,
+.dc-cell-diag {
+  display: block;
   min-width: 0;
   max-width: 100%;
-}
-.cell-key-wrap > .cell-key,
-.cell-key-wrap > .inline-editor {
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
+  white-space: nowrap;
 }
-.dc-cell-diag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-}
-.dc-null-wrap .dc-null { flex: 0 1 auto; }
+.dc-null-wrap .dc-null { display: inline; }
 
 /* Focused item in the diagnostics panel (post-click flash). */
 @keyframes diag-item-flash {

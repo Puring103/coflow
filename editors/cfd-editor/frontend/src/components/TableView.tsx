@@ -135,7 +135,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     // all get sized correctly. `max_summary_len` from the backend is a byte
     // length (CJK triples) and it also caps strings at 40 bytes — computing
     // widths on the frontend from the summaries we render sidesteps both.
-    const measure = makeTextMeasurer()
+    const measure = (text: string) => estimateTextWidth(text, false)
+    const measureMono = (text: string) => estimateTextWidth(text, true)
     // Chrome around the content per cell type.
     const PILL_CHROME = 46
     const REF_PREFIX = 14
@@ -151,9 +152,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     let keyWidth = measure('Key') + PLAIN_CHROME + 12 /* sort caret */
     for (const record of data.records) {
       if (recordActualType(record) !== activeType) continue
-      keyWidth = Math.max(keyWidth, measure(recordKey(record)) + PLAIN_CHROME + BADGE_ROOM)
+      keyWidth = Math.max(keyWidth, measureMono(recordKey(record)) + PLAIN_CHROME + BADGE_ROOM)
     }
-    const hints: Record<string, number> = { key: Math.max(MIN, Math.ceil(keyWidth)) }
+    const KEY_MAX = 500
+    const hints: Record<string, number> = { key: Math.min(KEY_MAX, Math.max(MIN, Math.ceil(keyWidth))) }
     for (const column of data.columns) {
       if (!column.type_names.includes(activeType)) continue
       const kind = columnDropdownKind(data, column.name, activeType)
@@ -472,25 +474,38 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 })
 
 
-/** Cheap accurate string-width measurer. Uses a single OffscreenCanvas (or
- *  DOM canvas) sized to the table's actual font, so widths respect CJK,
- *  ligatures and punctuation instead of a fudged char*px estimate. */
-function makeTextMeasurer(): (text: string) => number {
-  if (typeof document === 'undefined') return text => text.length * 8
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return text => text.length * 8
-  const body = getComputedStyle(document.body)
-  const family = body.fontFamily || 'system-ui, sans-serif'
-  ctx.font = `13px ${family}` // matches --fs-ui-ish; tables use this size
-  const cache = new Map<string, number>()
-  return text => {
-    const hit = cache.get(text)
-    if (hit !== undefined) return hit
-    const w = ctx.measureText(text).width
-    cache.set(text, w)
-    return w
+/** Approximate visual width in pixels for `text` at 12px UI font. Uses a
+ *  codepoint scan (East Asian Wide ≈ 2 ASCII cells) instead of canvas
+ *  measurement — deterministic across webview builds and cheap enough to
+ *  run over every cell. Not pixel-perfect, but the caller adds chrome
+ *  padding and clamps to a max, so approximate is enough. */
+function estimateTextWidth(text: string, monospace = false): number {
+  const narrow = monospace ? 7.3 : 6.6
+  const wide = monospace ? 13.6 : 13.2
+  let w = 0
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!
+    w += isEastAsianWide(cp) ? wide : narrow
   }
+  return w
+}
+
+/** Rough East Asian Wide detection covering the ranges that show up in game
+ *  data: CJK ideographs, Hangul, kana, full-width forms, CJK punctuation.
+ *  Doesn't need to be exhaustive — misses under-count width by ~1 char,
+ *  which the column-width clamp absorbs. */
+function isEastAsianWide(cp: number): boolean {
+  return (
+    (cp >= 0x1100 && cp <= 0x115F) ||        // Hangul Jamo
+    (cp >= 0x2E80 && cp <= 0x9FFF) ||        // CJK Radicals..Unified Ideographs
+    (cp >= 0xA960 && cp <= 0xA97F) ||        // Hangul Jamo Extended-A
+    (cp >= 0xAC00 && cp <= 0xD7A3) ||        // Hangul Syllables
+    (cp >= 0xF900 && cp <= 0xFAFF) ||        // CJK Compatibility Ideographs
+    (cp >= 0xFE30 && cp <= 0xFE4F) ||        // CJK Compatibility Forms
+    (cp >= 0xFF00 && cp <= 0xFF60) ||        // Full-width Forms
+    (cp >= 0xFFE0 && cp <= 0xFFE6) ||        // Full-width signs
+    (cp >= 0x20000 && cp <= 0x3FFFD)         // CJK Extension B..F, supplements
+  )
 }
 
 function fieldCell(record: RecordRow, fieldName: string) {
