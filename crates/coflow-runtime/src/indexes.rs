@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_api::{DiagnosticSet, ResolvedSource, SourceLocation};
+use coflow_api::{source_location_display_path, DiagnosticSet, ResolvedSource};
 use coflow_data_model::RecordOrigin;
 use coflow_data_model::{CfdDataModel, CfdRecordId};
-use coflow_project::path_to_slash;
 
 use crate::RecordCoordinate;
 
@@ -415,12 +414,3 @@ impl FileIndex {
     }
 }
 
-fn source_location_display_path(location: &SourceLocation) -> String {
-    match location {
-        SourceLocation::FileSpan { path, .. }
-        | SourceLocation::TableCell { path, .. }
-        | SourceLocation::ProjectConfig { path, .. }
-        | SourceLocation::Artifact { path } => path_to_slash(path),
-        SourceLocation::RemoteCell { document, .. } => document.clone(),
-    }
-}

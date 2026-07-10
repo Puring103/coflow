@@ -930,7 +930,6 @@ fn project_diagnostic_conversion_does_not_live_in_project_lib_rs() {
         "pub fn diagnostic_set_from_cft",
         "fn diagnostic_from_cft",
         "fn cft_label_range",
-        "fn byte_position",
         "pub(super) fn project_diagnostics_to_set",
     ] {
         assert!(

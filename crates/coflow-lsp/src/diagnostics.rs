@@ -47,7 +47,7 @@ pub fn lsp_diagnostic(diagnostic: &coflow_api::Diagnostic) -> Value {
     out.insert("code".to_string(), json!(&diagnostic.code));
     out.insert(
         "source".to_string(),
-        json!(format!("cft {}", diagnostic.stage)),
+        json!(format!("coflow {}", diagnostic.stage)),
     );
     out.insert("message".to_string(), json!(&diagnostic.message));
 
@@ -84,35 +84,30 @@ enum LspLabelDocument {
 }
 
 pub fn lsp_label_location(location: &coflow_api::SourceLocation) -> LspLabelLocation {
+    let range = location.text_range();
     match location {
-        coflow_api::SourceLocation::FileSpan {
-            path,
-            start_line,
-            start_character,
-            end_line,
-            end_character,
-        } => LspLabelLocation {
+        coflow_api::SourceLocation::FileSpan { path, .. } => LspLabelLocation {
             document: LspLabelDocument::Path(path.clone()),
-            start_line: *start_line,
-            start_character: *start_character,
-            end_line: *end_line,
-            end_character: *end_character,
+            start_line: range.start.line,
+            start_character: range.start.character,
+            end_line: range.end.line,
+            end_character: range.end.character,
         },
         coflow_api::SourceLocation::ProjectConfig { path, .. }
         | coflow_api::SourceLocation::Artifact { path }
         | coflow_api::SourceLocation::TableCell { path, .. } => LspLabelLocation {
             document: LspLabelDocument::Path(path.clone()),
-            start_line: 0,
-            start_character: 0,
-            end_line: 0,
-            end_character: 1,
+            start_line: range.start.line,
+            start_character: range.start.character,
+            end_line: range.end.line,
+            end_character: range.end.character,
         },
         coflow_api::SourceLocation::RemoteCell { document, .. } => LspLabelLocation {
             document: LspLabelDocument::Uri(document.clone()),
-            start_line: 0,
-            start_character: 0,
-            end_line: 0,
-            end_character: 1,
+            start_line: range.start.line,
+            start_character: range.start.character,
+            end_line: range.end.line,
+            end_character: range.end.character,
         },
     }
 }

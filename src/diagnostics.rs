@@ -1,4 +1,6 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_api::{
+    byte_range, Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, TextRange,
+};
 use coflow_cft::{CftDiagnostic, CftLabel, ModuleId, Span};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -240,59 +242,44 @@ struct JsonLocation {
 }
 
 fn label_location(label: &Label) -> JsonLocation {
+    let range = label.location.text_range();
     match &label.location {
-        SourceLocation::FileSpan {
-            path,
-            start_line,
-            start_character,
-            end_line,
-            end_character,
-        } => JsonLocation {
+        SourceLocation::FileSpan { path, .. } => JsonLocation {
             path: path.display().to_string(),
             sheet: None,
             cell: None,
-            start_line: *start_line,
-            start_character: *start_character,
-            end_line: *end_line,
-            end_character: *end_character,
+            start_line: range.start.line,
+            start_character: range.start.character,
+            end_line: range.end.line,
+            end_character: range.end.character,
         },
-        SourceLocation::TableCell {
-            path,
-            sheet,
-            row,
-            column,
-        } => JsonLocation {
+        SourceLocation::TableCell { path, .. } => JsonLocation {
             path: path.display().to_string(),
-            sheet: sheet.clone(),
-            cell: Some(excel_cell(*row, *column)),
-            start_line: row.saturating_sub(1),
-            start_character: column.saturating_sub(1),
-            end_line: row.saturating_sub(1),
-            end_character: *column,
+            sheet: label.location.sheet().map(str::to_string),
+            cell: label.location.cell_name(),
+            start_line: range.start.line,
+            start_character: range.start.character,
+            end_line: range.end.line,
+            end_character: range.end.character,
         },
-        SourceLocation::RemoteCell {
-            document,
-            sheet,
-            row,
-            column,
-        } => JsonLocation {
-            path: document.clone(),
-            sheet: sheet.clone(),
-            cell: (*row > 0 && *column > 0).then(|| excel_cell(*row, *column)),
-            start_line: row.saturating_sub(1),
-            start_character: column.saturating_sub(1),
-            end_line: row.saturating_sub(1),
-            end_character: (*column).max(1),
+        SourceLocation::RemoteCell { .. } => JsonLocation {
+            path: label.location.display_path(),
+            sheet: label.location.sheet().map(str::to_string),
+            cell: label.location.cell_name(),
+            start_line: range.start.line,
+            start_character: range.start.character,
+            end_line: range.end.line,
+            end_character: range.end.character,
         },
         SourceLocation::ProjectConfig { path, .. } | SourceLocation::Artifact { path } => {
             JsonLocation {
                 path: path.display().to_string(),
                 sheet: None,
                 cell: None,
-                start_line: 0,
-                start_character: 0,
-                end_line: 0,
-                end_character: 1,
+                start_line: range.start.line,
+                start_character: range.start.character,
+                end_line: range.end.line,
+                end_character: range.end.character,
             }
         }
     }
@@ -306,59 +293,9 @@ const fn severity_name(severity: Severity) -> &'static str {
     }
 }
 
-fn excel_cell(row: usize, column: usize) -> String {
-    format!("{}{}", excel_column_name(column), row)
-}
-
-fn excel_column_name(column: usize) -> String {
-    let mut value = column;
-    let mut name = Vec::new();
-    while value > 0 {
-        value -= 1;
-        #[allow(clippy::cast_possible_truncation)]
-        let offset = (value % 26) as u8;
-        name.push((b'A' + offset) as char);
-        value /= 26;
-    }
-    name.iter().rev().collect()
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Range {
-    start: Position,
-    end: Position,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Position {
-    line: usize,
-    character: usize,
-}
-
-fn cft_label_range(label: &CftLabel, sources: &BTreeMap<String, String>) -> Range {
+fn cft_label_range(label: &CftLabel, sources: &BTreeMap<String, String>) -> TextRange {
     let source = sources
         .get(label.module.as_str())
         .map_or("", String::as_str);
-    Range {
-        start: byte_position(source, label.span.start),
-        end: byte_position(source, label.span.end.max(label.span.start + 1)),
-    }
-}
-
-fn byte_position(source: &str, byte_offset: usize) -> Position {
-    let target = byte_offset.min(source.len());
-    let mut line = 0;
-    let mut character = 0;
-    for (byte_index, ch) in source.char_indices() {
-        if byte_index >= target {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            character = 0;
-        } else {
-            character += ch.len_utf16();
-        }
-    }
-    Position { line, character }
+    byte_range(source, label.span.start, label.span.end)
 }

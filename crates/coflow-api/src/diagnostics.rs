@@ -1,7 +1,7 @@
 use coflow_data_model::{CfdDiagnostics, CfdInputRecord, RecordOrigin};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiagnosticSet {
@@ -153,6 +153,47 @@ pub struct Label {
     pub message: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextPosition {
+    pub line: usize,
+    pub character: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextRange {
+    pub start: TextPosition,
+    pub end: TextPosition,
+}
+
+impl TextRange {
+    #[must_use]
+    pub fn from_byte_offsets(source: &str, start: usize, end: usize) -> Self {
+        Self {
+            start: byte_position(source, start),
+            end: byte_position(source, end.max(start.saturating_add(1))),
+        }
+    }
+
+    #[must_use]
+    pub const fn from_parts(
+        start_line: usize,
+        start_character: usize,
+        end_line: usize,
+        end_character: usize,
+    ) -> Self {
+        Self {
+            start: TextPosition {
+                line: start_line,
+                character: start_character,
+            },
+            end: TextPosition {
+                line: end_line,
+                character: end_character,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceLocation {
@@ -182,6 +223,60 @@ pub enum SourceLocation {
     Artifact {
         path: PathBuf,
     },
+}
+
+impl SourceLocation {
+    #[must_use]
+    pub fn display_path(&self) -> String {
+        source_location_display_path(self)
+    }
+
+    #[must_use]
+    pub fn text_range(&self) -> TextRange {
+        match self {
+            Self::FileSpan {
+                start_line,
+                start_character,
+                end_line,
+                end_character,
+                ..
+            } => TextRange::from_parts(
+                *start_line,
+                *start_character,
+                *end_line,
+                *end_character,
+            ),
+            Self::TableCell { row, column, .. } | Self::RemoteCell { row, column, .. } => {
+                TextRange::from_parts(
+                    row.saturating_sub(1),
+                    column.saturating_sub(1),
+                    row.saturating_sub(1),
+                    (*column).max(1),
+                )
+            }
+            Self::ProjectConfig { .. } | Self::Artifact { .. } => {
+                TextRange::from_parts(0, 0, 0, 1)
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn sheet(&self) -> Option<&str> {
+        match self {
+            Self::TableCell { sheet, .. } | Self::RemoteCell { sheet, .. } => sheet.as_deref(),
+            Self::FileSpan { .. } | Self::ProjectConfig { .. } | Self::Artifact { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn cell_name(&self) -> Option<String> {
+        match self {
+            Self::TableCell { row, column, .. } | Self::RemoteCell { row, column, .. } => {
+                spreadsheet_cell_name(*row, *column)
+            }
+            Self::FileSpan { .. } | Self::ProjectConfig { .. } | Self::Artifact { .. } => None,
+        }
+    }
 }
 
 impl From<coflow_data_model::SourceLocation> for SourceLocation {
@@ -299,8 +394,32 @@ fn severity_str(severity: Severity) -> &'static str {
     }
 }
 
-fn source_location_display_path(location: &SourceLocation) -> String {
-    let path_to_slash = |path: &Path| path.to_string_lossy().replace('\\', "/");
+#[must_use]
+pub fn byte_position(source: &str, byte_offset: usize) -> TextPosition {
+    let target = byte_offset.min(source.len());
+    let mut line = 0;
+    let mut character = 0;
+    for (byte_index, ch) in source.char_indices() {
+        if byte_index >= target {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            character = 0;
+        } else {
+            character += ch.len_utf16();
+        }
+    }
+    TextPosition { line, character }
+}
+
+#[must_use]
+pub fn byte_range(source: &str, start: usize, end: usize) -> TextRange {
+    TextRange::from_byte_offsets(source, start, end)
+}
+
+#[must_use]
+pub fn source_location_display_path(location: &SourceLocation) -> String {
     match location {
         SourceLocation::FileSpan { path, .. }
         | SourceLocation::TableCell { path, .. }
@@ -308,4 +427,42 @@ fn source_location_display_path(location: &SourceLocation) -> String {
         | SourceLocation::Artifact { path } => path_to_slash(path),
         SourceLocation::RemoteCell { document, .. } => document.clone(),
     }
+}
+
+#[must_use]
+pub fn path_to_slash(path: &Path) -> String {
+    let raw = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => Some(part.to_string_lossy().replace('\\', "/")),
+            Component::Prefix(prefix) => Some(prefix.as_os_str().to_string_lossy().to_string()),
+            Component::RootDir | Component::CurDir => None,
+            Component::ParentDir => Some("..".to_string()),
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    raw.strip_prefix(r"\\?\")
+        .or_else(|| raw.strip_prefix("//?/"))
+        .map_or_else(|| raw.clone(), str::to_owned)
+}
+
+#[must_use]
+pub fn spreadsheet_cell_name(row: usize, column: usize) -> Option<String> {
+    if row == 0 || column == 0 {
+        return None;
+    }
+    Some(format!("{}{}", spreadsheet_column_name(column), row))
+}
+
+fn spreadsheet_column_name(column: usize) -> String {
+    let mut value = column;
+    let mut name = Vec::new();
+    while value > 0 {
+        value -= 1;
+        #[allow(clippy::cast_possible_truncation)]
+        let offset = (value % 26) as u8;
+        name.push((b'A' + offset) as char);
+        value /= 26;
+    }
+    name.iter().rev().collect()
 }

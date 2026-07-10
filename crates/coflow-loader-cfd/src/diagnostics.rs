@@ -1,4 +1,4 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Label, SourceLocation};
+use coflow_api::{byte_range, Diagnostic, DiagnosticSet, Label, SourceLocation};
 use coflow_data_model::TextSpan;
 use coflow_data_model::CfdDiagnostics;
 use std::error::Error;
@@ -93,38 +93,13 @@ pub struct CfdTextSpan {
     pub end: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Position {
-    line: usize,
-    character: usize,
-}
-
-fn byte_position(source: &str, byte_offset: usize) -> Position {
-    let target = byte_offset.min(source.len());
-    let mut line = 0;
-    let mut character = 0;
-    for (byte_index, ch) in source.char_indices() {
-        if byte_index >= target {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            character = 0;
-        } else {
-            character += ch.len_utf16();
-        }
-    }
-    Position { line, character }
-}
-
 pub(super) fn text_span(source: &str, span: CfdTextSpan) -> TextSpan {
-    let start = byte_position(source, span.start);
-    let end = byte_position(source, span.end.max(span.start + 1));
+    let range = byte_range(source, span.start, span.end);
     TextSpan {
-        start_line: start.line,
-        start_character: start.character,
-        end_line: end.line,
-        end_character: end.character,
+        start_line: range.start.line,
+        start_character: range.start.character,
+        end_line: range.end.line,
+        end_character: range.end.character,
     }
 }
 
@@ -139,9 +114,7 @@ pub(super) fn cfd_error_to_diagnostics(
                 .diagnostics
                 .into_iter()
                 .map(|diagnostic| {
-                    let start = byte_position(source, diagnostic.span.start);
-                    let end =
-                        byte_position(source, diagnostic.span.end.max(diagnostic.span.start + 1));
+                    let range = byte_range(source, diagnostic.span.start, diagnostic.span.end);
                     Diagnostic::error(
                         format!("CFD-TEXT-{:?}", diagnostic.code),
                         "CFD",
@@ -150,10 +123,10 @@ pub(super) fn cfd_error_to_diagnostics(
                     .with_primary(Label {
                         location: SourceLocation::FileSpan {
                             path: file.to_path_buf(),
-                            start_line: start.line,
-                            start_character: start.character,
-                            end_line: end.line,
-                            end_character: end.character,
+                            start_line: range.start.line,
+                            start_character: range.start.character,
+                            end_line: range.end.line,
+                            end_character: range.end.character,
                         },
                         message: None,
                     })

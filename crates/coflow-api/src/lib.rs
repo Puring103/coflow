@@ -28,8 +28,9 @@ pub use artifacts::{ArtifactContent, ArtifactContentKind, ArtifactFile, Artifact
 pub use codegen::{CodeGenerator, CodegenContext, CodegenDescriptor};
 pub use data_output::{DataExporter, ExportContext, ExporterDescriptor};
 pub use diagnostics::{
-    map_diagnostics_with_origins, origins_of, Diagnostic, DiagnosticSet, FlatDiagnostic, Label,
-    Severity, SourceLocation,
+    byte_position, byte_range, map_diagnostics_with_origins, origins_of, path_to_slash,
+    source_location_display_path, spreadsheet_cell_name, Diagnostic, DiagnosticSet,
+    FlatDiagnostic, Label, Severity, SourceLocation, TextPosition, TextRange,
 };
 pub use operations::{
     CreateTableRequest, DimensionSourceEntry, DimensionSourceManager,

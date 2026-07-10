@@ -1,5 +1,7 @@
 use crate::validation::ProjectDiagnostic;
-use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_api::{
+    byte_range, Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, TextRange,
+};
 use coflow_cft::{CftDiagnostic, CftLabel};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -104,44 +106,11 @@ fn label_from_cft(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Range {
-    start: Position,
-    end: Position,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Position {
-    line: usize,
-    character: usize,
-}
-
-fn cft_label_range(label: &CftLabel, sources: &BTreeMap<String, String>) -> Range {
+fn cft_label_range(label: &CftLabel, sources: &BTreeMap<String, String>) -> TextRange {
     let source = sources
         .get(label.module.as_str())
         .map_or("", String::as_str);
-    Range {
-        start: byte_position(source, label.span.start),
-        end: byte_position(source, label.span.end.max(label.span.start + 1)),
-    }
-}
-
-fn byte_position(source: &str, byte_offset: usize) -> Position {
-    let target = byte_offset.min(source.len());
-    let mut line = 0;
-    let mut character = 0;
-    for (byte_index, ch) in source.char_indices() {
-        if byte_index >= target {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            character = 0;
-        } else {
-            character += ch.len_utf16();
-        }
-    }
-    Position { line, character }
+    byte_range(source, label.span.start, label.span.end)
 }
 
 pub(super) fn project_diagnostics_to_set(

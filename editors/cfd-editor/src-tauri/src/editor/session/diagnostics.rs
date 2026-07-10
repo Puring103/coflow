@@ -1,7 +1,7 @@
 //! Editor-side view of the engine's diagnostics in wire-friendly
 //! [`coflow_api::FlatDiagnostic`] shape.
 
-use coflow_api::FlatDiagnostic;
+use coflow_api::{path_to_slash, FlatDiagnostic};
 use coflow_runtime::DiagnosticsStore;
 use std::path::Path;
 
@@ -75,5 +75,5 @@ fn project_relative_path(project_root: &Path, path: &str) -> String {
 }
 
 fn normalize(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    path_to_slash(path)
 }
