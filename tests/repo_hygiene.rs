@@ -2063,6 +2063,16 @@ fn cft_schema_view_dimension_check_analysis_is_split_out() {
             "CFT schema view should expose query methods instead of public map field `{forbidden}`"
         );
     }
+    for forbidden in [
+        "pub fields: BTreeMap",
+        "pub dimension_fields: BTreeMap",
+        "pub variants: BTreeMap",
+    ] {
+        assert!(
+            !schema_view.contains(forbidden),
+            "CFT schema metadata should not expose lookup index field `{forbidden}`"
+        );
+    }
     for expected in [
         "pub fn type_is_struct",
         "pub fn type_id_as_enum",

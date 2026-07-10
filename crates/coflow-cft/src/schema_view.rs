@@ -195,8 +195,9 @@ impl CftSchemaView {
 
     #[must_use]
     pub fn field_type(&self, actual_type: &str, field_name: &str) -> Option<&CftSchemaTypeRef> {
-        self.field_meta(actual_type, field_name)
-            .map(|field| &field.ty_ref)
+        self.types
+            .get(actual_type)
+            .and_then(|meta| meta.fields.get(field_name))
     }
 
     #[must_use]
@@ -314,8 +315,8 @@ pub struct CftTypeMeta {
     pub dimension_checks: BTreeMap<String, CftSchemaCheckBlock>,
     pub own_fields: Vec<CftFieldMeta>,
     pub all_fields: Vec<CftFieldMeta>,
-    pub fields: BTreeMap<String, CftSchemaTypeRef>,
-    pub dimension_fields: BTreeMap<String, CftDimensionFieldMeta>,
+    fields: BTreeMap<String, CftSchemaTypeRef>,
+    dimension_fields: BTreeMap<String, CftDimensionFieldMeta>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -414,7 +415,7 @@ pub struct CftEnumMeta {
     pub name: String,
     pub annotations: Vec<CftAnnotation>,
     pub all_variants: Vec<CftEnumVariantMeta>,
-    pub variants: BTreeMap<String, i64>,
+    variants: BTreeMap<String, i64>,
 }
 
 #[derive(Debug, Clone)]
