@@ -397,6 +397,7 @@ coflow data sources examples/rpg --human
 ```
 
 该命令会加载完整项目数据，因此要求数据源文件存在。
+输出中的 `diagnostics` 会包含项目 session 诊断，包括数据加载、DataModel 和 CFT `check {}`。
 
 ### `data list`
 
@@ -414,6 +415,7 @@ coflow data list examples/rpg --file data/items.cfd --limit 20
 ```
 
 每条记录包含 record type、record key、来源文件和 provider。
+输出中的 `diagnostics` 会包含项目 session 诊断，包括数据加载、DataModel 和 CFT `check {}`。
 
 ### `data get`
 
@@ -433,6 +435,7 @@ coflow data get examples/rpg --type Item --all
 ```
 
 没有指定单条 `TYPE.KEY` 时，如果匹配记录超过默认安全上限，需要显式传入 `--limit` 或 `--all`。
+输出中的 `diagnostics` 会包含项目 session 诊断，包括数据加载、DataModel 和 CFT `check {}`。
 
 ### `data create-file`
 
@@ -550,7 +553,6 @@ patch JSON 示例：
 
 ```json
 {
-  "check_after_write": true,
   "stop_on_write_error": true,
   "ops": [
     {
@@ -611,6 +613,8 @@ patch value 支持普通 JSON 值，也支持以下特殊对象：
 
 写入会走 provider writer 层，不绕过数据源。批量 patch 按顺序应用；已经成功的操作不会因为后续操作失败自动回滚，调用方需要读取输出中的 `applied` 和 `failed`。
 
+每次成功写入后会刷新项目 session，最终报告中的 `check_ok` 和 `diagnostics` 来自写入后的项目诊断。`check_after_write` 是兼容字段；调用方应以报告里的 `check_ok` 为准。
+
 ## 命令矩阵
 
 | 命令 | 需要 schema | 需要数据源 | 构建 DataModel | 执行 CFT check | 写入文件 |
@@ -621,14 +625,14 @@ patch value 支持普通 JSON 值，也支持以下特殊对象：
 | `schema inspect` | 是 | 否 | 否 | 否 | 否 |
 | `schema files` | 是 | 否 | 否 | 否 | 否 |
 | `schema write-file` | 是 | 否 | 否 | 可选 schema 编译 | 写 `.cft` |
-| `data sources` | 是 | 是 | 是 | 否 | 否 |
-| `data list` | 是 | 是 | 是 | 否 | 否 |
-| `data get` | 是 | 是 | 是 | 否 | 否 |
+| `data sources` | 是 | 是 | 是 | 是 | 否 |
+| `data list` | 是 | 是 | 是 | 是 | 否 |
+| `data get` | 是 | 是 | 是 | 是 | 否 |
 | `data create-file` | 是 | 否 | 否 | 否 | 创建数据文件 |
 | `data create-table` | 是 | 否 | 否 | 否 | 创建表格 sheet/table |
 | `data sync-header` | 是 | 否 | 否 | 否 | 更新本地数据文件 |
 | `data write-file` | 是 | 是 | 可选 | 可选 | 写 `.cfd` |
-| `data patch` | 是 | 是 | 是 | 可选 | 通过 writer 修改数据 |
+| `data patch` | 是 | 是 | 是 | 是 | 通过 writer 修改数据 |
 | `check` | 是 | 是 | 是 | 是 | 否 |
 | `build` | 是 | 是 | 是 | 是 | 数据和可选代码 |
 | `export json` | 是 | 是 | 是 | 是 | JSON 数据 |

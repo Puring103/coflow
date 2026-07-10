@@ -158,6 +158,10 @@ coflow check examples/rpg --json
 
 建议在提交 schema 或数据变更前运行该命令。
 
+`check` 不执行 exporter 或 codegen preflight。启用了 C# codegen、MessagePack loader
+或其他产物输出的项目，提交前应运行 `coflow build`，让数据校验和产物
+preflight 在同一流程里完成。
+
 ## `build`
 
 `build` 运行完整校验，然后导出数据，并按项目配置可选生成代码。
@@ -369,6 +373,7 @@ Get-Content schema/main.cft | coflow schema write-file examples/rpg --file schem
 - 不能写入数据文件、输出目录或未配置的任意路径。
 - `--dry-run` 不落盘，只报告差异和检查结果。
 - `--check` 会在写入后编译 schema；dry-run 模式下会用标准输入内容在内存中检查。
+  它不加载数据源、不同步表头，也不执行项目级 DataModel / `check {}` 校验。
 
 非 dry-run 模式下，如果 `--check` 发现诊断，文件已经写入，调用方需要根据报告继续修正。
 
@@ -392,6 +397,7 @@ coflow data sources examples/rpg --human
 ```
 
 该命令会加载完整项目数据，因此要求数据源文件存在。
+输出中的 `diagnostics` 会包含项目 session 诊断，包括数据加载、DataModel 和 CFT `check {}`。
 
 ### `data list`
 
@@ -409,6 +415,7 @@ coflow data list examples/rpg --file data/items.cfd --limit 20
 ```
 
 每条记录包含 record type、record key、来源文件和 provider。
+输出中的 `diagnostics` 会包含项目 session 诊断，包括数据加载、DataModel 和 CFT `check {}`。
 
 ### `data get`
 
@@ -428,6 +435,7 @@ coflow data get examples/rpg --type Item --all
 ```
 
 没有指定单条 `TYPE.KEY` 时，如果匹配记录超过默认安全上限，需要显式传入 `--limit` 或 `--all`。
+输出中的 `diagnostics` 会包含项目 session 诊断，包括数据加载、DataModel 和 CFT `check {}`。
 
 ### `data create-file`
 
@@ -516,6 +524,8 @@ Get-Content data/items.cfd | coflow data write-file examples/rpg --file data/ite
 - 只接受精确小写 `.cfd` 文件。
 - `--file` 必须位于项目配置中的本地 CFD source 覆盖范围内。
 - 不能写入表格文件、远端 source、输出目录、显式非 CFD provider source 或未配置路径。
+- `data write-file` 不创建新 source。新增 CFD 文件应先用 `data create-file --provider cfd`
+  创建并纳入可写范围，再用 `data write-file` 重写内容。
 - `--dry-run` 不落盘，只比较目标文件内容并输出报告。
 - `--check` 在非 dry-run 写入后运行完整项目校验。
 
@@ -528,6 +538,7 @@ Get-Content data/items.cfd | coflow data write-file examples/rpg --file data/ite
 ```powershell
 coflow data patch [CONFIG_OR_DIR] --patch JSON [--human]
 coflow data patch [CONFIG_OR_DIR] --patch-file PATCH_FILE [--human]
+coflow data patch [CONFIG_OR_DIR] --stdin [--human]
 ```
 
 示例：
@@ -535,13 +546,13 @@ coflow data patch [CONFIG_OR_DIR] --patch-file PATCH_FILE [--human]
 ```powershell
 coflow data patch examples/rpg --patch '{"ops":[{"op":"set_field","record":{"type":"Item","key":"sword"},"path":[{"kind":"field","value":"price"}],"value":125}]}'
 coflow data patch examples/rpg --patch-file patch.json
+Get-Content patch.json | coflow data patch examples/rpg --stdin
 ```
 
 patch JSON 示例：
 
 ```json
 {
-  "check_after_write": true,
   "stop_on_write_error": true,
   "ops": [
     {
@@ -602,6 +613,8 @@ patch value 支持普通 JSON 值，也支持以下特殊对象：
 
 写入会走 provider writer 层，不绕过数据源。批量 patch 按顺序应用；已经成功的操作不会因为后续操作失败自动回滚，调用方需要读取输出中的 `applied` 和 `failed`。
 
+每次成功写入后会刷新项目 session，最终报告中的 `check_ok` 和 `diagnostics` 来自写入后的项目诊断。`check_after_write` 是兼容字段；调用方应以报告里的 `check_ok` 为准。
+
 ## 命令矩阵
 
 | 命令 | 需要 schema | 需要数据源 | 构建 DataModel | 执行 CFT check | 写入文件 |
@@ -612,14 +625,14 @@ patch value 支持普通 JSON 值，也支持以下特殊对象：
 | `schema inspect` | 是 | 否 | 否 | 否 | 否 |
 | `schema files` | 是 | 否 | 否 | 否 | 否 |
 | `schema write-file` | 是 | 否 | 否 | 可选 schema 编译 | 写 `.cft` |
-| `data sources` | 是 | 是 | 是 | 否 | 否 |
-| `data list` | 是 | 是 | 是 | 否 | 否 |
-| `data get` | 是 | 是 | 是 | 否 | 否 |
+| `data sources` | 是 | 是 | 是 | 是 | 否 |
+| `data list` | 是 | 是 | 是 | 是 | 否 |
+| `data get` | 是 | 是 | 是 | 是 | 否 |
 | `data create-file` | 是 | 否 | 否 | 否 | 创建数据文件 |
 | `data create-table` | 是 | 否 | 否 | 否 | 创建表格 sheet/table |
 | `data sync-header` | 是 | 否 | 否 | 否 | 更新本地数据文件 |
 | `data write-file` | 是 | 是 | 可选 | 可选 | 写 `.cfd` |
-| `data patch` | 是 | 是 | 是 | 可选 | 通过 writer 修改数据 |
+| `data patch` | 是 | 是 | 是 | 是 | 通过 writer 修改数据 |
 | `check` | 是 | 是 | 是 | 是 | 否 |
 | `build` | 是 | 是 | 是 | 是 | 数据和可选代码 |
 | `export json` | 是 | 是 | 是 | 是 | JSON 数据 |

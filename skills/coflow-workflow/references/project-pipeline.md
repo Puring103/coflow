@@ -77,7 +77,7 @@ Schema 编译阶段会处理：
 | `coflow schema inspect` | 是 | 是 | 否 | 否 | 否 | 否 |
 | `coflow schema files` | 是 | 是 | 否 | 否 | 否 | 否 |
 | `coflow schema write-file --check` | 是 | 是 | 否 | 否 | 否 | 可写 schema 文件 |
-| `coflow data sources` | 是 | 是 | 是 | 否 | 否 | 否 |
+| `coflow data sources` | 是 | 是 | 是 | 是 | 是 | 否 |
 | `coflow data list/get` | 是 | 是 | 是 | 是 | 是 | 否 |
 | `coflow data create-file` | 是 | 是 | 否 | 否 | 否 | 写数据文件 |
 | `coflow data sync-header` | 是 | 是 | 否 | 否 | 否 | 写数据文件 |
@@ -89,6 +89,21 @@ Schema 编译阶段会处理：
 | `coflow build` | 是 | 是 | 是 | 是 | 是 | 是 |
 
 `codegen csharp` 是 schema-only 命令。它不要求 source 存在，也不构建 DataModel。
+
+`data sources`、`data list` 和 `data get` 使用完整项目 session。它们的主要输出
+分别是 source、record 索引和 record 内容，但返回的 `diagnostics` 会包含数据加载、
+DataModel 和 CFT `check {}` 诊断。
+
+`data patch` 写入后会刷新项目 session 并返回写入后的诊断；业务校验诊断不会回滚
+已经成功写入的数据，调用方应根据 `write_ok`、`check_ok` 和 `diagnostics` 继续修正。
+
+`schema write-file --check` 的 Check 列为“否”，因为它只在写入后重新编译
+schema。它不会加载 source、同步表头、构建 DataModel，也不会执行 CFT
+`check {}`。
+
+`coflow check` 覆盖项目配置、schema、source、DataModel 和 CFT `check {}`，
+但不执行 exporter / codegen preflight。启用产物输出的项目应在发布或提交产物前
+运行 `coflow build`。
 
 ## Source Resolve
 
