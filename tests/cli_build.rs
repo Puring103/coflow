@@ -222,4 +222,27 @@ outputs:
         containing_stderr.contains("overlaps data source"),
         "stderr: {containing_stderr}"
     );
+
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - path: data/items.cfd
+outputs:
+  data:
+    type: json
+    dir: data/generated
+",
+    )
+    .expect("write file source nested output config");
+    let file_source_nested = coflow()
+        .args(["build", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run file source nested overlap build");
+    assert!(!file_source_nested.status.success());
+    let file_source_nested_stderr = String::from_utf8_lossy(&file_source_nested.stderr);
+    assert!(
+        file_source_nested_stderr.contains("overlaps data source"),
+        "stderr: {file_source_nested_stderr}"
+    );
 }

@@ -23,7 +23,6 @@ impl ProjectSession {
         prepared: PreparedMutation,
     ) -> Result<MutationReport, DiagnosticSet> {
         let PreparedMutation {
-            check_after_write,
             stop_on_write_error,
             ops,
         } = prepared;
@@ -61,10 +60,9 @@ impl ProjectSession {
 
         let diagnostics = session_flat_diagnostics(self);
         let check_ok = write_ok
-            && (!check_after_write
-                || diagnostics
-                    .iter()
-                    .all(|diagnostic| diagnostic.severity != "error"));
+            && diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.severity != "error");
         Ok(MutationReport {
             write_ok,
             check_ok,

@@ -31,7 +31,7 @@ impl ProjectSession {
         request: MutationRequest,
     ) -> Result<PreparedMutation, DiagnosticSet> {
         let MutationRequest {
-            check_after_write,
+            check_after_write: _,
             stop_on_write_error,
             ops,
         } = request;
@@ -40,7 +40,6 @@ impl ProjectSession {
             .map(|op| PreparedMutationOp::Pending { op })
             .collect();
         Ok(PreparedMutation {
-            check_after_write,
             stop_on_write_error,
             ops: prepared_ops,
         })

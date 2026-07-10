@@ -77,7 +77,6 @@ pub enum DefaultMaterialization {
 
 #[derive(Debug, Clone)]
 pub struct PreparedMutation {
-    pub(super) check_after_write: bool,
     pub(super) stop_on_write_error: bool,
     pub(super) ops: Vec<PreparedMutationOp>,
 }

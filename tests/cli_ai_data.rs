@@ -557,7 +557,7 @@ fn data_patch_returns_nonzero_when_check_after_write_is_false_but_errors_remain(
     );
     let json: Value = serde_json::from_slice(&output.stdout).expect("data patch json");
     assert_eq!(json["write_ok"], true);
-    assert_eq!(json["check_ok"], true);
+    assert_eq!(json["check_ok"], false);
     assert!(
         json["diagnostics"]
             .as_array()

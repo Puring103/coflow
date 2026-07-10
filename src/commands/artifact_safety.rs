@@ -140,8 +140,21 @@ fn configured_source_paths(project: &Project) -> Vec<PathBuf> {
             SourceLocationSpec::Path(path) => Some(path),
             SourceLocationSpec::Uri(_) => None,
         })
-        .map(|path| project.resolve_path(path))
+        .flat_map(|path| source_overlap_paths(project.resolve_path(path)))
         .collect()
+}
+
+fn source_overlap_paths(path: PathBuf) -> Vec<PathBuf> {
+    let mut paths = vec![path.clone()];
+    let is_file_source = fs::metadata(&path)
+        .map(|metadata| metadata.is_file())
+        .unwrap_or_else(|_| path.extension().is_some());
+    if is_file_source {
+        if let Some(parent) = path.parent() {
+            paths.push(parent.to_path_buf());
+        }
+    }
+    paths
 }
 
 fn normalized_existing_or_future_path(path: &Path) -> PathBuf {
