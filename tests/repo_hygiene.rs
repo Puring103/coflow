@@ -516,6 +516,42 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
 }
 
 #[test]
+fn root_cli_session_builders_use_runtime_facade() {
+    let command_modules = [
+        (
+            "src/commands.rs",
+            std::fs::read_to_string("src/commands.rs").expect("read root CLI commands"),
+        ),
+        (
+            "src/data_commands.rs",
+            std::fs::read_to_string("src/data_commands.rs").expect("read root CLI data commands"),
+        ),
+        (
+            "src/schema_commands.rs",
+            std::fs::read_to_string("src/schema_commands.rs")
+                .expect("read root CLI schema commands"),
+        ),
+    ];
+
+    for (path, source) in command_modules {
+        assert!(
+            source.contains("Runtime"),
+            "{path} should construct project sessions through the runtime facade"
+        );
+        for forbidden in [
+            "build_project_schema_session",
+            "build_project_session_for_build",
+            "open_project_session_read_only",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{path} should not call runtime session builder `{forbidden}` directly"
+            );
+        }
+    }
+}
+
+#[test]
 fn project_config_deserialization_does_not_live_in_project_lib_rs() {
     let project =
         std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
@@ -1263,6 +1299,7 @@ fn engine_runtime_facade_does_not_live_in_lib_rs() {
         "pub struct Runtime",
         "pub struct ReadOnlyProjectSession",
         "pub struct BuildProjectSession",
+        "pub fn build_schema_session",
         "pub fn open_read_only_session",
         "pub fn build_project_session",
     ] {

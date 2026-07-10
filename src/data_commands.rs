@@ -2,9 +2,8 @@ use crate::diagnostics::{cli_error, cli_file_error};
 use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
 use coflow_project::Project;
 use coflow_runtime::{
-    build_project_schema_session, build_project_session_for_build, data_get, data_list,
-    data_sources, open_project_session_read_only, DataGetQuery, DataGetReport, DataListQuery,
-    DataPatchReport, DataPatchRequest, ProjectSchemaSession, ProjectSession, RecordCoordinate,
+    data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery, DataPatchReport,
+    DataPatchRequest, ProjectSchemaSession, ProjectSession, RecordCoordinate, Runtime,
 };
 use output::{
     file_error_report, flat_diagnostics, write_data_write_file_human, write_file_report_human,
@@ -261,8 +260,7 @@ pub fn create_file(
     sheet: Option<String>,
     human: bool,
 ) -> Result<bool, DiagnosticSet> {
-    let session = open_schema_session(config_or_dir)?;
-    let registry = default_provider_registry()?;
+    let (session, registry) = open_schema_session(config_or_dir)?;
     let report = files::create_file_report(&session, &registry, file, actual_type, provider, sheet);
     let ok = report.diagnostics.is_empty();
     if human {
@@ -288,8 +286,7 @@ pub fn create_table(
     sheet: Option<String>,
     human: bool,
 ) -> Result<bool, DiagnosticSet> {
-    let session = open_schema_session(config_or_dir)?;
-    let registry = default_provider_registry()?;
+    let (session, registry) = open_schema_session(config_or_dir)?;
     let report =
         files::create_table_report(&session, &registry, source, actual_type, provider, sheet);
     let ok = report.diagnostics.is_empty();
@@ -318,7 +315,8 @@ pub fn sync_header(
 ) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     let registry = default_provider_registry()?;
-    let session = open_project_session_read_only(project, &registry)?;
+    let runtime = Runtime::new(registry.clone());
+    let session = runtime.open_read_only_session(project)?.into_session();
     let duplicate_header_diagnostics =
         duplicate_table_column_diagnostics(session.diagnostics.as_set());
     if !duplicate_header_diagnostics.is_empty() {
@@ -401,15 +399,18 @@ fn open_session(
 ) -> Result<(ProjectSession, ProviderRegistry), DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     let registry = default_provider_registry()?;
-    let session = build_project_session_for_build(project, &registry)?;
+    let runtime = Runtime::new(registry.clone());
+    let session = runtime.build_project_session(project)?.into_session();
     Ok((session, registry))
 }
 
 fn open_schema_session(
     config_or_dir: Option<&Path>,
-) -> Result<ProjectSchemaSession, DiagnosticSet> {
+) -> Result<(ProjectSchemaSession, ProviderRegistry), DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
-    build_project_schema_session(project)
+    let registry = default_provider_registry()?;
+    let session = Runtime::build_schema_session(project)?;
+    Ok((session, registry))
 }
 
 fn default_provider_registry() -> Result<ProviderRegistry, DiagnosticSet> {

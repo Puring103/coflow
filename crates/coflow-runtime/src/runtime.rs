@@ -26,10 +26,7 @@ impl Runtime {
     /// # Errors
     ///
     /// Returns unrecoverable project/config/schema I/O diagnostics.
-    pub fn build_schema_session(
-        &self,
-        project: Project,
-    ) -> Result<ProjectSchemaSession, DiagnosticSet> {
+    pub fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
         build_project_schema_session(project)
     }
 

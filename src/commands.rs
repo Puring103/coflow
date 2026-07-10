@@ -7,9 +7,7 @@ use crate::artifacts::{
 use artifact_safety::{artifact_safety_diagnostics, ArtifactOutputPlan};
 use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
 use coflow_project::{OutputConfig, Project};
-use coflow_runtime::{
-    build_project_schema_session, build_project_session_for_build, ProjectSession,
-};
+use coflow_runtime::{ProjectSession, Runtime};
 use id_as_enum::{id_as_enum_variants_for_schema_only, stage_id_as_enum_lockfile_for_build};
 use std::path::{Path, PathBuf};
 
@@ -76,7 +74,8 @@ pub fn check_project(
     project: Project,
     registry: &ProviderRegistry,
 ) -> Result<CommandOutcome<CheckReport>, DiagnosticSet> {
-    let session = build_project_session_for_build(project, registry)?;
+    let runtime = Runtime::new(registry.clone());
+    let session = runtime.build_project_session(project)?.into_session();
     if session.has_diagnostics() {
         Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()))
     } else {
@@ -103,7 +102,8 @@ pub fn build_project(
         Ok(plan) => plan,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    let session = build_project_session_for_build(project, registry)?;
+    let runtime = Runtime::new(registry.clone());
+    let session = runtime.build_project_session(project)?.into_session();
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()));
     }
@@ -173,7 +173,8 @@ pub fn export_project_data(
     let exporter_descriptor = exporter.descriptor();
     let output = required_data_output(&project, exporter_id, &command)?.clone();
     let dir = output_dir(&project, &output, options.out_dir);
-    let session = build_project_session_for_build(project, registry)?;
+    let runtime = Runtime::new(registry.clone());
+    let session = runtime.build_project_session(project)?.into_session();
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()));
     }
@@ -241,7 +242,7 @@ pub fn generate_project_code(
         )));
     }
     let dir = output_dir(&project, &output, options.out_dir);
-    let session = build_project_schema_session(project)?;
+    let session = Runtime::build_schema_session(project)?;
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()));
     }
