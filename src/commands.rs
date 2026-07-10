@@ -439,7 +439,7 @@ fn commit_build_artifacts(
     };
 
     let id_as_enum_artifacts =
-        stage_id_as_enum_lockfile_for_build(session.project(), session.schema(), session.model())?;
+        stage_id_as_enum_lockfile_for_build(session.project(), schema, session.model())?;
     let staged_code = stage_codegen_artifacts(
         registry,
         CodegenArtifactRequest {

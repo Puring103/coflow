@@ -531,6 +531,25 @@ fn root_cli_id_as_enum_lockfile_does_not_live_in_commands_rs() {
         commands.lines().count() < 800,
         "root CLI commands.rs should stay below the 800-line large-module threshold"
     );
+    assert!(
+        id_as_enum.contains("use coflow_cft::{CftAnnotation, CftAnnotationValue, CftSchemaView};")
+            && id_as_enum.contains("schema: &CftSchemaView")
+            && id_as_enum.contains("schema.type_metas()")
+            && id_as_enum.contains(".enum_meta(&enum_name)"),
+        "root CLI @idAsEnum helper should use CftSchemaView"
+    );
+    for forbidden in [
+        "CftContainer",
+        "schema.all_types()",
+        "schema.all_enums()",
+        "schema.resolve_enum(",
+        "schema.resolve_type(",
+    ] {
+        assert!(
+            !id_as_enum.contains(forbidden),
+            "root CLI @idAsEnum helper should not use raw schema owner query `{forbidden}`"
+        );
+    }
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use crate::artifacts::{stage_json_file, StagedArtifactFile};
 use crate::commands::artifact_safety::artifact_diagnostic_set;
 use coflow_api::DiagnosticSet;
+use coflow_cft::{CftAnnotation, CftAnnotationValue, CftSchemaView};
 use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 use serde::Serialize;
@@ -42,7 +43,7 @@ pub(super) fn id_as_enum_variants_for_schema_only(
 
 pub(super) fn stage_id_as_enum_lockfile_for_build(
     project: &Project,
-    schema: &coflow_cft::CftContainer,
+    schema: &CftSchemaView,
     model: &CfdDataModel,
 ) -> Result<IdAsEnumArtifacts, DiagnosticSet> {
     let lockfile = enum_lockfile_path(project);
@@ -54,13 +55,13 @@ pub(super) fn stage_id_as_enum_lockfile_for_build(
 }
 
 fn collect_declared_id_as_enum_ids(
-    schema: &coflow_cft::CftContainer,
+    schema: &CftSchemaView,
 ) -> BTreeMap<String, IdAsEnumIds> {
     let mut out = BTreeMap::new();
-    for schema_type in schema.all_types() {
+    for schema_type in schema.type_metas() {
         if let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "idAsEnum") {
             let is_flags = schema
-                .resolve_enum(&enum_name)
+                .enum_meta(&enum_name)
                 .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
             out.entry(enum_name).or_insert_with(|| IdAsEnumIds {
                 ids: Vec::new(),
@@ -72,11 +73,11 @@ fn collect_declared_id_as_enum_ids(
 }
 
 fn collect_id_as_enum_ids(
-    schema: &coflow_cft::CftContainer,
+    schema: &CftSchemaView,
     model: &CfdDataModel,
 ) -> BTreeMap<String, IdAsEnumIds> {
     let mut out = collect_declared_id_as_enum_ids(schema);
-    for schema_type in schema.all_types() {
+    for schema_type in schema.type_metas() {
         let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "idAsEnum") else {
             continue;
         };
@@ -277,17 +278,17 @@ fn variants_json(
     })
 }
 
-fn annotation_name_arg(annotations: &[coflow_cft::CftAnnotation], name: &str) -> Option<String> {
+fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
     annotations
         .iter()
         .find(|annotation| annotation.name == name)
         .and_then(|annotation| annotation.args.first())
         .and_then(|arg| match arg {
-            coflow_cft::CftAnnotationValue::Name(value) => Some(value.clone()),
+            CftAnnotationValue::Name(value) => Some(value.clone()),
             _ => None,
         })
 }
 
-fn has_annotation(annotations: &[coflow_cft::CftAnnotation], name: &str) -> bool {
+fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
     annotations.iter().any(|annotation| annotation.name == name)
 }
