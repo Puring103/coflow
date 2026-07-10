@@ -2,6 +2,8 @@ use coflow_api::{
     CreateTableRequest, DiagnosticSet, ProviderRegistry, SourceLocationSpec, SyncHeaderRequest,
     TableContext,
 };
+use coflow_cft::CftSchemaView;
+use coflow_loader_table_core::{TableSheetConfig, TableSourceOptions};
 use coflow_runtime::{configured_project_source, DataFileReport};
 
 pub(super) fn infer_table_provider(source: &str) -> Option<&'static str> {
@@ -136,14 +138,14 @@ fn lark_table_layout(
     actual_type: Option<String>,
     sheet: Option<String>,
 ) -> Result<CliTableLayout, DiagnosticSet> {
-    let sheet_config = matching_lark_sheet_config(source, actual_type.as_deref(), sheet.as_deref());
+    let table_options = lark_table_options(source)?;
+    let sheet_config =
+        matching_lark_sheet_config(&table_options, actual_type.as_deref(), sheet.as_deref());
     let actual_type = actual_type
         .or_else(|| {
             sheet_config
-                .as_ref()
-                .and_then(|config| config.get("type"))
-                .and_then(serde_json::Value::as_str)
-                .map(ToOwned::to_owned)
+                .and_then(|config| config.type_name.as_ref())
+                .cloned()
         })
         .ok_or_else(|| {
             DiagnosticSet::one(coflow_api::Diagnostic::error(
@@ -152,45 +154,41 @@ fn lark_table_layout(
                 "`--type` is required for lark table creation",
             ))
         })?;
-    let schema_type = session.schema().resolve_type(&actual_type).ok_or_else(|| {
-        DiagnosticSet::one(coflow_api::Diagnostic::error(
+    let schema_view = CftSchemaView::new(session.schema());
+    let Some(schema_fields) = schema_view.full_fields(&actual_type) else {
+        return Err(DiagnosticSet::one(coflow_api::Diagnostic::error(
             "DATA-FILE-TYPE",
             "DATA-FILE",
             format!("unknown CFT type `{actual_type}`"),
-        ))
-    })?;
+        )));
+    };
+    if schema_view
+        .type_meta(&actual_type)
+        .is_some_and(|schema_type| schema_type.is_abstract)
+    {
+        return Err(DiagnosticSet::one(coflow_api::Diagnostic::error(
+            "DATA-FILE-TYPE",
+            "DATA-FILE",
+            format!("abstract type `{actual_type}` cannot be used for a lark table"),
+        )));
+    }
     let sheet = sheet
-        .or_else(|| {
-            sheet_config
-                .as_ref()
-                .and_then(|config| config.get("sheet"))
-                .and_then(serde_json::Value::as_str)
-                .map(ToOwned::to_owned)
-        })
+        .or_else(|| sheet_config.map(|config| config.sheet.clone()))
         .unwrap_or_else(|| actual_type.clone());
     let key_header = sheet_config
-        .as_ref()
-        .and_then(|config| config.get("key"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("id")
-        .to_string();
+        .and_then(|config| config.key.clone())
+        .unwrap_or_else(|| "id".to_string());
     let field_headers = sheet_config
-        .as_ref()
-        .and_then(|config| config.get("columns"))
-        .and_then(serde_json::Value::as_object)
-        .map(|columns| {
-            columns
+        .map(|config| {
+            config
+                .columns
                 .iter()
-                .filter_map(|(source, field)| {
-                    field
-                        .as_str()
-                        .map(|field| (field.to_string(), source.clone()))
-                })
+                .map(|(source, field)| (field.clone(), source.clone()))
                 .collect::<std::collections::BTreeMap<_, _>>()
         })
         .unwrap_or_default();
     let mut headers = vec![key_header];
-    headers.extend(schema_type.all_fields.iter().map(|field| {
+    headers.extend(schema_fields.iter().map(|field| {
         field_headers
             .get(&field.name)
             .cloned()
@@ -203,31 +201,30 @@ fn lark_table_layout(
     })
 }
 
-fn matching_lark_sheet_config(
+fn lark_table_options(
     source: &coflow_project::SourceConfig,
+) -> Result<TableSourceOptions, DiagnosticSet> {
+    TableSourceOptions::decode(source.options(), "lark source").map_err(|err| {
+        DiagnosticSet::one(coflow_api::Diagnostic::error(
+            "DATA-FILE-SOURCE",
+            "DATA-FILE",
+            err.message,
+        ))
+    })
+}
+
+fn matching_lark_sheet_config<'a>(
+    options: &'a TableSourceOptions,
     actual_type: Option<&str>,
     sheet: Option<&str>,
-) -> Option<serde_json::Value> {
-    source
-        .options()
-        .get("sheets")?
-        .as_array()?
+) -> Option<&'a TableSheetConfig> {
+    options
+        .sheets()
         .iter()
-        .filter_map(serde_json::Value::as_object)
-        .find(|object| {
-            let type_matches = actual_type.is_none_or(|expected| {
-                object
-                    .get("type")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|candidate| candidate == expected)
-            });
-            let sheet_matches = sheet.is_none_or(|expected| {
-                object
-                    .get("sheet")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|candidate| candidate == expected)
-            });
+        .find(|config| {
+            let type_matches = actual_type
+                .is_none_or(|expected| config.type_name.as_deref() == Some(expected));
+            let sheet_matches = sheet.is_none_or(|expected| config.sheet == expected);
             type_matches && sheet_matches
         })
-        .map(|object| serde_json::Value::Object(object.clone()))
 }

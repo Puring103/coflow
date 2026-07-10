@@ -585,6 +585,7 @@ dependencies = [
  "coflow-exporter-json",
  "coflow-loader-csv",
  "coflow-loader-excel",
+ "coflow-loader-table-core",
  "coflow-lsp",
  "coflow-project",
  "coflow-runtime",

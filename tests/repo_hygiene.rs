@@ -584,6 +584,7 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
         "pub(super) fn create_lark_table",
         "struct CliTableLayout",
         "fn lark_table_layout",
+        "fn lark_table_options",
         "fn matching_lark_sheet_config",
     ] {
         assert!(
@@ -651,6 +652,28 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
         commands.lines().count() < 800,
         "root CLI data_commands.rs should stay below the 800-line large-module threshold"
     );
+    assert!(
+        lark.contains("TableSourceOptions::decode(source.options(), \"lark source\")"),
+        "root CLI Lark helper should use the typed table option facade"
+    );
+    assert!(
+        lark.contains("CftSchemaView::new(session.schema())"),
+        "root CLI Lark helper should use the schema query facade"
+    );
+    for forbidden in [
+        "serde_json::Value",
+        "options().get(\"sheets\")",
+        ".as_array()",
+        "Value::as_object",
+        "filter_map(serde_json::Value::as_object)",
+        "resolve_type(&actual_type)",
+        "schema_type.all_fields",
+    ] {
+        assert!(
+            !lark.contains(forbidden),
+            "root CLI Lark helper should not bypass provider/schema facades with `{forbidden}`"
+        );
+    }
 }
 
 #[test]
@@ -1415,6 +1438,10 @@ fn hosts_depend_on_runtime_boundary_not_engine_implementation() {
     assert!(
         root_manifest.contains("coflow-runtime ="),
         "root CLI should depend on coflow-runtime"
+    );
+    assert!(
+        root_manifest.contains("coflow-loader-table-core ="),
+        "root CLI should reuse table-core typed table option facade instead of hand-parsing provider options"
     );
     assert!(
         !root_manifest.contains("coflow-engine ="),
