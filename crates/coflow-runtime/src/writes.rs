@@ -9,6 +9,7 @@
 mod path;
 mod refs;
 mod target;
+mod transaction;
 mod writer;
 
 use coflow_api::{
@@ -23,6 +24,7 @@ use super::write_rules;
 use super::{build_project_session_for_build, ProjectSession, RecordCoordinate};
 use refs::{reference_update_actions, source_rewrite_actions};
 use target::{guess_new_coordinate, is_id_path, write_target_for_path};
+use transaction::LocalFileTransaction;
 use writer::{lookup_source_writer, source_for_file};
 
 pub(crate) fn record_value_at_path<'a>(
@@ -173,18 +175,38 @@ impl ProjectSession {
 
         let reference_actions = reference_update_actions(self, registry, target_id, new_key)?;
         let rewrite_actions = source_rewrite_actions(self, registry, target_id, old_key, new_key)?;
+        let transaction = LocalFileTransaction::begin(
+            std::iter::once(&target_source)
+                .chain(reference_actions.iter().map(|action| action.source()))
+                .chain(rewrite_actions.iter().map(|action| action.source())),
+        )?;
 
-        target_writer.rename_record(ctx, &target_request)?;
+        if let Err(mut diagnostics) = target_writer.rename_record(ctx, &target_request) {
+            rollback_transaction(transaction, &mut diagnostics);
+            return Err(diagnostics);
+        }
         for action in &reference_actions {
             let request = action.request.as_request(&self.schema);
-            action.writer.write_field(ctx, &request)?;
+            if let Err(mut diagnostics) = action.writer.write_field(ctx, &request) {
+                rollback_transaction(transaction, &mut diagnostics);
+                return Err(diagnostics);
+            }
         }
         for action in &rewrite_actions {
             let request = action.request.as_request(&self.schema);
-            action.writer.rewrite_record_references(ctx, &request)?;
+            if let Err(mut diagnostics) = action.writer.rewrite_record_references(ctx, &request) {
+                rollback_transaction(transaction, &mut diagnostics);
+                return Err(diagnostics);
+            }
         }
 
-        let new_session = build_project_session_for_build(self.project.clone(), registry)?;
+        let new_session = match build_project_session_for_build(self.project.clone(), registry) {
+            Ok(session) => session,
+            Err(mut diagnostics) => {
+                rollback_transaction(transaction, &mut diagnostics);
+                return Err(diagnostics);
+            }
+        };
         let new_coordinate = RecordCoordinate::new(actual_type, new_key);
         let diagnostics = new_session.diagnostics.as_set().clone();
         *self = new_session;
@@ -294,6 +316,15 @@ impl ProjectSession {
             renamed: None,
             diagnostics,
         })
+    }
+}
+
+fn rollback_transaction(
+    transaction: Option<LocalFileTransaction>,
+    diagnostics: &mut DiagnosticSet,
+) {
+    if let Some(transaction) = transaction {
+        transaction.rollback_into(diagnostics);
     }
 }
 

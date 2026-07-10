@@ -15,6 +15,12 @@ pub(super) struct ReferenceUpdateAction {
     pub(super) request: OwnedWriteCellRequest,
 }
 
+impl ReferenceUpdateAction {
+    pub(super) fn source(&self) -> &ResolvedSource {
+        &self.request.source
+    }
+}
+
 pub(super) struct OwnedWriteCellRequest {
     origin: RecordOrigin,
     record_key: String,
@@ -44,6 +50,12 @@ impl OwnedWriteCellRequest {
 pub(super) struct SourceRewriteAction {
     pub(super) writer: Arc<dyn SourceWriter>,
     pub(super) request: OwnedRewriteRecordReferencesRequest,
+}
+
+impl SourceRewriteAction {
+    pub(super) fn source(&self) -> &ResolvedSource {
+        &self.request.source
+    }
 }
 
 pub(super) struct OwnedRewriteRecordReferencesRequest {

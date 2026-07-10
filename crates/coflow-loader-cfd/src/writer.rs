@@ -2,9 +2,9 @@
 //! patches against the parsed AST.
 //!
 //! `CfdWriter` is the [`SourceWriter`] implementation used by sources whose
-//! origin is [`RecordOrigin::File`]. It maintains an in-memory cache of
-//! `(source_text, CfdAst)` keyed by absolute file path so that repeated edits
-//! avoid re-reading and re-parsing the file.
+//! origin is [`RecordOrigin::File`]. Each write reads and parses the backing
+//! file from disk so transaction rollback and external edits are always
+//! observed by the next operation.
 mod dimensions;
 mod patch;
 mod render;
@@ -25,9 +25,7 @@ use patch::{
     find_record, replace_spans, serialize_record, validate_record_key, validate_values,
 };
 use render::{added_columns, cfd_top_level_fields, removed_columns, rewrite_cfd_records};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::path::Path;
 use target::spread_entries_at_path;
 
 pub static CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
@@ -52,24 +50,9 @@ pub static CFD_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDe
     addressing: TableAddressing::Document,
 };
 
-/// Writer for `.cfd` text sources. Holds a cache of source text + AST per
-/// file so repeated edits don't re-parse from disk.
-/// Cache entry tagged with the file's modification time at the moment the
-/// `(source, ast)` pair was captured. We compare mtime on every read so an
-/// external editor that edited the same `.cfd` between writes invalidates
-/// us automatically — without that, patches built off a stale AST would
-/// compute spans against the wrong text and silently corrupt the file.
-#[derive(Debug, Clone)]
-struct CacheEntry {
-    mtime: Option<std::time::SystemTime>,
-    source: String,
-    ast: CfdAst,
-}
-
+/// Writer for `.cfd` text sources.
 #[derive(Debug, Default)]
-pub struct CfdWriter {
-    cache: RwLock<HashMap<PathBuf, CacheEntry>>,
-}
+pub struct CfdWriter;
 
 impl CfdWriter {
     #[must_use]
@@ -77,29 +60,7 @@ impl CfdWriter {
         Self::default()
     }
 
-    /// Drop the cache entry for a file. Call this from the session when an
-    /// external change (file watcher, user-driven reload) makes the cached
-    /// AST stale.
-    pub fn invalidate(&self, path: &Path) {
-        if let Ok(mut cache) = self.cache.write() {
-            cache.remove(path);
-        }
-    }
-
     fn read_or_parse(&self, path: &Path) -> Result<(String, CfdAst), DiagnosticSet> {
-        let disk_mtime = file_mtime(path);
-        let cached = self
-            .cache
-            .read()
-            .ok()
-            .and_then(|cache| cache.get(path).cloned());
-        if let Some(entry) = cached {
-            if entry.mtime == disk_mtime {
-                return Ok((entry.source, entry.ast));
-            }
-            // mtime drifted — fall through to re-read from disk.
-        }
-
         let text = std::fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CFD-READ",
@@ -108,16 +69,6 @@ impl CfdWriter {
         })?;
         let (ast, diagnostics) = parse_cfd(&text);
         ensure_parse_ok(path, &diagnostics)?;
-        if let Ok(mut cache) = self.cache.write() {
-            cache.insert(
-                path.to_path_buf(),
-                CacheEntry {
-                    mtime: disk_mtime,
-                    source: text.clone(),
-                    ast: ast.clone(),
-                },
-            );
-        }
         Ok((text, ast))
     }
 
@@ -129,19 +80,8 @@ impl CfdWriter {
             ))
         })?;
 
-        let (new_ast, diagnostics) = parse_cfd(&new_source);
+        let (_, diagnostics) = parse_cfd(&new_source);
         ensure_parse_ok(path, &diagnostics)?;
-        let mtime = file_mtime(path);
-        if let Ok(mut cache) = self.cache.write() {
-            cache.insert(
-                path.to_path_buf(),
-                CacheEntry {
-                    mtime,
-                    source: new_source,
-                    ast: new_ast,
-                },
-            );
-        }
         Ok(())
     }
 }
@@ -150,10 +90,6 @@ impl CfdWriter {
     fn write_source_public(&self, path: &Path, new_source: String) -> Result<(), DiagnosticSet> {
         self.write_source(path, new_source)
     }
-}
-
-fn file_mtime(path: &Path) -> Option<std::time::SystemTime> {
-    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
 fn ensure_parse_ok(path: &Path, diagnostics: &[CfdSyntaxDiagnostic]) -> Result<(), DiagnosticSet> {

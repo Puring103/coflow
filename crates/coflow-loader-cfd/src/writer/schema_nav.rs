@@ -24,6 +24,24 @@ pub(super) fn type_after_field_segment_for_ref(
     }
 }
 
+pub(super) fn concrete_type_for_block(
+    schema: &CftContainer,
+    expected_type: &CftSchemaTypeRef,
+    type_marker: Option<&str>,
+) -> CftSchemaTypeRef {
+    let Some(type_marker) = type_marker else {
+        return expected_type.clone();
+    };
+    let CftSchemaTypeRef::Named(expected_name) = non_nullable(expected_type) else {
+        return expected_type.clone();
+    };
+    if schema.is_assignable(type_marker, expected_name) {
+        CftSchemaTypeRef::Named(type_marker.to_string())
+    } else {
+        expected_type.clone()
+    }
+}
+
 pub(super) fn object_type_name<'a>(
     expected: Option<&'a CftSchemaTypeRef>,
     actual_type: &'a str,

@@ -131,6 +131,73 @@ shield: Item {
 }
 
 #[test]
+fn writes_field_inside_polymorphic_block_using_type_marker() {
+    let dir = temp_dir("polymorphic-field");
+    let file = dir.join("stages.cfd");
+    fs::write(
+        &file,
+        r#"stage_start: Stage {
+  first_clear_reward: ItemReward { item: &sword, count: 1 },
+}
+"#,
+    )
+    .expect("write seed");
+
+    let schema = compile_schema(
+        r"
+        type Item {
+          name: string;
+        }
+
+        abstract type Reward {}
+
+        type ItemReward : Reward {
+          item: &Item;
+          count: int;
+        }
+
+        type Stage {
+          first_clear_reward: Reward;
+        }
+        ",
+    );
+    let writer = CfdWriter::new();
+    let request_value = CfdValue::Ref("blade".to_string());
+    let segments = vec![
+        WriteFieldPathSegment::Field("first_clear_reward".to_string()),
+        WriteFieldPathSegment::Field("item".to_string()),
+    ];
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let model = empty_model(&schema);
+    let request = WriteCellRequest {
+        origin: &origin,
+        record_key: "stage_start",
+        actual_type: "Stage",
+        field_path: &segments,
+        new_value: &request_value,
+        schema: &schema,
+        source: &source,
+    };
+    writer
+        .write_field(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: Some(&model),
+            },
+            &request,
+        )
+        .expect("write succeeds");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(
+        after.contains("ItemReward { item: &blade, count: 1 }"),
+        "expected polymorphic field ref update: {after}"
+    );
+}
+
+#[test]
 fn writes_record_by_exact_type_when_unrelated_types_share_key() {
     let dir = temp_dir("same-key-write");
     let file = dir.join("records.cfd");

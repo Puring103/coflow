@@ -2,8 +2,9 @@
 
 use coflow::commands::{check_project, CommandOutcome};
 use coflow_api::{
-    CfdInputRecord, CfdInputValue, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    RecordOrigin, RenameRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
+    CfdInputRecord, CfdInputValue, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult,
+    ProjectSourceRef, RecordOrigin, RenameRecordRequest, ResolvedSource,
+    RewriteRecordReferencesRequest,
     SourceDocument, SourceLoadContext, SourceLocationSpec, SourceProvider,
     SourceProviderDescriptor, SourceWriter, WriteCellRequest, WriteContext, WriteOutcome,
     WriterCapabilities, WriterDescriptor,
@@ -186,6 +187,60 @@ fn rename_record_key_does_not_scan_remote_sources_without_spread_provenance() {
     );
 }
 
+#[test]
+fn rename_record_key_rolls_back_local_files_when_reference_write_fails() {
+    let root = common::temp_project_dir("engine-rename-rollback-local");
+    let _cleanup = common::TempDirCleanup(root.clone());
+    write_local_rollback_project(&root);
+    let mut registry = coflow_builtins::default_provider_registry().expect("default registry");
+    registry
+        .register_source_provider(FakeLocalFailLoader)
+        .expect("register fake local loader");
+    registry
+        .register_source_writer(FakeLocalFailWriter)
+        .expect("register fake local writer");
+
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open project");
+    let mut session = build_project_session_for_build(project, &registry).expect("build session");
+    assert!(
+        !session.has_diagnostics(),
+        "diagnostics before rename: {:?}",
+        session.diagnostics.as_set()
+    );
+
+    let err = session
+        .rename_record_key(&registry, "Item", "sword", "blade")
+        .expect_err("fake local writer should fail");
+    assert!(
+        err.iter()
+            .any(|diagnostic| diagnostic.code == "FAKE-LOCAL-WRITE"),
+        "expected fake writer diagnostic: {err:?}"
+    );
+    assert!(
+        !err.iter()
+            .any(|diagnostic| diagnostic.code == "WRITE-ROLLBACK"),
+        "rollback itself should succeed: {err:?}"
+    );
+
+    let items = std::fs::read_to_string(root.join("data/items.cfd")).expect("read items");
+    assert!(
+        items.contains("sword: Item"),
+        "target rename should have been rolled back:\n{items}"
+    );
+    assert!(
+        !items.contains("blade: Item"),
+        "rolled back source should not keep new key:\n{items}"
+    );
+    assert!(
+        session.records.get_by_coordinate("Item", "sword").is_some(),
+        "failed rename should leave current session on old coordinate"
+    );
+    assert!(
+        session.records.get_by_coordinate("Item", "blade").is_none(),
+        "failed rename should not update current session"
+    );
+}
+
 fn write_rename_reference_project(root: &std::path::Path) {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
@@ -247,6 +302,48 @@ sources:
     .expect("write config");
 }
 
+fn write_local_rollback_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r"
+        type Item {
+            name: string;
+        }
+
+        type Bundle {
+            item: &Item;
+        }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        r#"sword: Item {
+    name: "Sword",
+}
+"#,
+    )
+    .expect("write items");
+    std::fs::write(root.join("data/failing.fake"), "starter,&sword\n")
+        .expect("write fake source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - path: data/items.cfd
+  - path: data/failing.fake
+    type: fake-local-fail
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+}
+
 fn write_remote_rewrite_project(root: &std::path::Path) {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
@@ -285,6 +382,96 @@ outputs:
 ",
     )
     .expect("write config");
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct FakeLocalFailLoader;
+
+static FAKE_LOCAL_FAIL_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescriptor {
+    id: "fake-local-fail",
+    display_name: "Fake local failing source",
+    extensions: &[],
+    uri_schemes: &[],
+    option_keys: &[],
+};
+
+impl SourceProvider for FakeLocalFailLoader {
+    fn descriptor(&self) -> &'static SourceProviderDescriptor {
+        &FAKE_LOCAL_FAIL_LOADER_DESCRIPTOR
+    }
+
+    fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult {
+        if source.source_type == Some("fake-local-fail") {
+            ProbeResult::certain()
+        } else {
+            ProbeResult::none()
+        }
+    }
+
+    fn load(
+        &self,
+        _ctx: SourceLoadContext<'_>,
+        source: &ResolvedSource,
+    ) -> Result<LoadedSource, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &source.location else {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "FAKE-LOCAL-LOAD",
+                "TEST",
+                "fake local source expects a path",
+            )));
+        };
+        let mut field_columns = BTreeMap::new();
+        field_columns.insert(vec!["item".to_string()], 2);
+        Ok(LoadedSource {
+            records: vec![CfdInputRecord::new(
+                "starter",
+                "Bundle",
+                [("item", CfdInputValue::record_ref("sword"))],
+            )
+            .with_origin(RecordOrigin::Table {
+                document: SourceDocument::Local(path.clone()),
+                sheet: "Bundle".to_string(),
+                row: 1,
+                id_column: 1,
+                field_columns,
+            })],
+        })
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct FakeLocalFailWriter;
+
+static FAKE_LOCAL_FAIL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
+    id: "fake-local-fail",
+    display_name: "Fake local failing source",
+    capabilities: WriterCapabilities {
+        provider_id: String::new(),
+        can_edit_field: true,
+        can_edit_key: false,
+        can_insert_record: false,
+        can_delete_record: false,
+        requires_full_refresh_after_write: true,
+        is_remote: false,
+    },
+};
+
+impl SourceWriter for FakeLocalFailWriter {
+    fn descriptor(&self) -> &'static WriterDescriptor {
+        &FAKE_LOCAL_FAIL_WRITER_DESCRIPTOR
+    }
+
+    fn write_field(
+        &self,
+        _ctx: WriteContext<'_>,
+        _request: &WriteCellRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "FAKE-LOCAL-WRITE",
+            "WRITE",
+            "intentional fake local write failure",
+        )))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -400,7 +587,7 @@ impl SourceWriter for FakeRemoteWriter {
         request: &RewriteRecordReferencesRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let SourceLocationSpec::Uri(uri) = &request.source.location else {
-            return Err(DiagnosticSet::one(coflow_api::Diagnostic::error(
+            return Err(DiagnosticSet::one(Diagnostic::error(
                 "FAKE-REMOTE",
                 "TEST",
                 "fake remote rewrite should receive uri source",

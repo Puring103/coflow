@@ -4,8 +4,8 @@ use coflow_cft::Span;
 
 use super::diag;
 use super::schema_nav::{
-    dict_key_path_matches, type_after_dict_key_segment, type_after_field_segment,
-    type_after_field_segment_for_ref, type_after_index_segment,
+    concrete_type_for_block, dict_key_path_matches, type_after_dict_key_segment,
+    type_after_field_segment, type_after_field_segment_for_ref, type_after_index_segment,
 };
 
 pub(super) enum WriteTarget {
@@ -99,7 +99,12 @@ fn locate_target_in_value(
     }
     match (&path[0], value) {
         (WriteFieldPathSegment::Field(name), AstValue::Block(block)) => {
-            locate_field_target(schema, current_type, block, name, path, depth)
+            let block_type = concrete_type_for_block(
+                schema,
+                current_type,
+                block.type_marker.as_ref().map(|t| t.0.as_str()),
+            );
+            locate_field_target(schema, &block_type, block, name, path, depth)
         }
         (WriteFieldPathSegment::Index(index), AstValue::Array(items, _)) => {
             locate_array_target(schema, current_type, items, *index, path, depth)
@@ -259,8 +264,17 @@ fn block_entries_at_path<'a>(
     }
     match value {
         AstValue::Block(block) => {
-            let Some((next, next_type)) =
-                value_at_spread_path_segment(schema, block.entries.as_slice(), ty, &path[0])?
+            let block_type = concrete_type_for_block(
+                schema,
+                ty,
+                block.type_marker.as_ref().map(|t| t.0.as_str()),
+            );
+            let Some((next, next_type)) = value_at_spread_path_segment(
+                schema,
+                block.entries.as_slice(),
+                &block_type,
+                &path[0],
+            )?
             else {
                 return Err(DiagnosticSet::one(diag(
                     "CFD-WRITE",

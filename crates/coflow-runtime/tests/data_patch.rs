@@ -182,6 +182,45 @@ fn write_domain_key_project(root: &std::path::Path) {
     .expect("write config");
 }
 
+fn write_polymorphic_ref_rename_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item { name: string; }
+            abstract type Reward {}
+            type ItemReward : Reward {
+                item: &Item;
+                count: int;
+            }
+            type Stage {
+                first_clear_reward: Reward;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"sword: Item { name: "Sword" }
+shield: Item { name: "Shield" }
+"#,
+    )
+    .expect("write items");
+    std::fs::write(
+        root.join("data").join("stages.cfd"),
+        r#"stage_start: Stage {
+    first_clear_reward: ItemReward { item: &sword, count: 1 },
+}
+"#,
+    )
+    .expect("write stages");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/items.cfd\n  - path: data/stages.cfd\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+}
+
 fn registry() -> coflow_api::ProviderRegistry {
     coflow_builtins::default_provider_registry().expect("default provider registry")
 }
@@ -262,6 +301,58 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(text.contains("bad_sword"));
     assert!(text.contains("Rare"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn rename_record_updates_refs_inside_polymorphic_cfd_values() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-polymorphic-rename-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_polymorphic_ref_rename_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::RenameRecord {
+                    record: PatchRecordSelector {
+                        actual_type: "Item".to_string(),
+                        key: "sword".to_string(),
+                    },
+                    file: Some("data/items.cfd".to_string()),
+                    new_key: "blade".to_string(),
+                }],
+            },
+        )
+        .expect("rename item");
+
+    assert!(report.write_ok, "rename failed: {:?}", report.failed);
+    assert!(
+        report.check_ok,
+        "post-check diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_eq!(report.applied.len(), 1);
+
+    let items = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read items");
+    let stages =
+        std::fs::read_to_string(root.join("data").join("stages.cfd")).expect("read stages");
+    assert!(items.contains("blade: Item"), "item key not renamed: {items}");
+    assert!(
+        stages.contains("ItemReward { item: &blade, count: 1 }"),
+        "polymorphic ref not renamed: {stages}"
+    );
+    assert!(
+        session.record_view("Item", "blade").is_some(),
+        "rebuilt session should expose renamed item"
+    );
 
     let _ = std::fs::remove_dir_all(root);
 }
