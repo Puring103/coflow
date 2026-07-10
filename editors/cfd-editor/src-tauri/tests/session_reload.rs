@@ -5,7 +5,7 @@
     clippy::unwrap_used
 )]
 
-use cfd_editor_lib::editor::{CollectionEdit, SessionStore};
+use cfd_editor_lib::editor::{CollectionEdit, CreateFieldSource, CreateRequiredInput, SessionStore};
 use coflow_data_model::{CfdObject, CfdPathSegment, CfdValue};
 use coflow_runtime::RecordCoordinate;
 use std::collections::BTreeMap;
@@ -225,6 +225,75 @@ fn insert_record_returns_mutation_diagnostics_for_missing_required_ref() {
         .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read data");
     assert!(!text.contains("bad_holder"));
+}
+
+#[test]
+fn create_record_draft_surfaces_required_ref_fields_for_insert_form() {
+    let root = temp_project_dir("cfd-editor-create-draft-required-ref");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item { name: string; }
+            type Holder {
+                item: &Item;
+                note: string;
+                tags: [string] = [];
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"sword: Item { name: "Sword" }"#,
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let draft = store
+        .create_record_draft(snapshot.session_id, "Holder")
+        .expect("create record draft");
+
+    let item = draft
+        .fields
+        .iter()
+        .find(|field| field.name == "item")
+        .expect("item field");
+    assert!(matches!(item.source, CreateFieldSource::RequiredInput));
+    assert!(matches!(
+        item.required.as_ref(),
+        Some(CreateRequiredInput::Ref { target_type }) if target_type == "Item"
+    ));
+    assert_eq!(
+        item.annotation
+            .as_ref()
+            .and_then(|annotation| annotation.ref_target_type.as_deref()),
+        Some("Item")
+    );
+
+    let note = draft
+        .fields
+        .iter()
+        .find(|field| field.name == "note")
+        .expect("note field");
+    assert!(matches!(note.source, CreateFieldSource::TypeSeed));
+    assert_eq!(note.value, Some(CfdValue::String(String::new())));
+
+    let tags = draft
+        .fields
+        .iter()
+        .find(|field| field.name == "tags")
+        .expect("tags field");
+    assert!(matches!(tags.source, CreateFieldSource::SchemaDefault));
 }
 
 #[test]
@@ -471,6 +540,51 @@ fn edit_collection_appends_schema_default_item() {
     assert_eq!(
         outcome.new_value,
         Some(CfdValue::Array(vec![CfdValue::Int(0)]))
+    );
+}
+
+#[test]
+fn edit_collection_appends_by_copying_last_item_before_schema_seed() {
+    let root = temp_project_dir("cfd-editor-collection-copy-last");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Bag {
+                nums: [int] = [];
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.cfd"), r"bag: Bag { nums: [7] }").expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/items.cfd\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let outcome = store
+        .edit_collection(
+            snapshot.session_id,
+            &RecordCoordinate::new("Bag", "bag"),
+            &[CfdPathSegment::Field("nums".to_string())],
+            CollectionEdit::ArrayAppend,
+        )
+        .expect("append array item");
+    let nums = outcome
+        .row
+        .fields
+        .iter()
+        .find(|field| field.name == "nums")
+        .expect("nums field");
+    assert_eq!(
+        nums.value,
+        CfdValue::Array(vec![CfdValue::Int(7), CfdValue::Int(7)])
     );
 }
 

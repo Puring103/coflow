@@ -364,6 +364,70 @@ pub struct InsertRecordOutcome {
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct CreateRecordDraft {
+    pub actual_type: String,
+    pub fields: Vec<CreateRecordFieldDraft>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct CreateRecordFieldDraft {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<CfdValue>,
+    pub source: CreateFieldSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<CreateRequiredInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation: Option<FieldAnnotation>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(rename_all = "snake_case")]
+pub enum CreateFieldSource {
+    SchemaDefault,
+    TypeSeed,
+    RequiredInput,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CreateRequiredInput {
+    Ref {
+        target_type: String,
+    },
+    AbstractObject {
+        expected_type: String,
+        concrete_types: Vec<String>,
+    },
+    RecursiveObject {
+        type_name: String,
+    },
+    Unsupported {
+        message: String,
+    },
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(

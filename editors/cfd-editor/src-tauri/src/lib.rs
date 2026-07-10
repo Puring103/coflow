@@ -8,9 +8,9 @@ mod watcher;
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_runtime::RecordCoordinate;
 use editor::{
-    CollectionEdit, DeleteRecordOutcome, EditorError, FileRecords, GraphData, GraphQuery,
-    InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome, SessionStore,
-    WriteFieldOutcome,
+    CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, EditorError, FileRecords, GraphData,
+    GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome,
+    SessionStore, WriteFieldOutcome,
 };
 use tauri::{AppHandle, Manager, State};
 use watcher::ProjectWatchRegistry;
@@ -113,6 +113,16 @@ fn make_default_object(
     store: State<'_, SessionStore>,
 ) -> Result<CfdValue, EditorError> {
     store.make_default_object(session_id, &type_name)
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+fn create_record_draft(
+    session_id: u32,
+    actual_type: String,
+    store: State<'_, SessionStore>,
+) -> Result<CreateRecordDraft, EditorError> {
+    store.create_record_draft(session_id, &actual_type)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -227,6 +237,7 @@ pub fn run() -> tauri::Result<()> {
             get_enum_variants,
             get_ref_targets,
             make_default_object,
+            create_record_draft,
             write_field,
             edit_collection,
             insert_record,

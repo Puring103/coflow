@@ -205,6 +205,23 @@ fn build_annotation(
     }
 }
 
+#[must_use]
+pub fn annotation_for_draft_field(
+    actual_type: &str,
+    field_name: &str,
+    value: &CfdValue,
+    ctx: &WireContext<'_>,
+) -> Option<FieldAnnotation> {
+    let path = CfdPath::root().field(field_name.to_string());
+    let declared_type = declared_field_type(ctx, actual_type, field_name);
+    let annotation = annotation_for_value(value, ctx, None, &path, declared_type);
+    if annotation.is_empty() {
+        None
+    } else {
+        Some(annotation)
+    }
+}
+
 fn annotation_for_value(
     value: &CfdValue,
     ctx: &WireContext<'_>,

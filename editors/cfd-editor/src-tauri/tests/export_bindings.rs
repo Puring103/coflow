@@ -33,6 +33,10 @@ fn export_bindings() {
     t::CollectionEdit::export_all().expect("export CollectionEdit");
     t::RenameRecordOutcome::export_all().expect("export RenameRecordOutcome");
     t::InsertRecordOutcome::export_all().expect("export InsertRecordOutcome");
+    t::CreateRecordDraft::export_all().expect("export CreateRecordDraft");
+    t::CreateRecordFieldDraft::export_all().expect("export CreateRecordFieldDraft");
+    t::CreateFieldSource::export_all().expect("export CreateFieldSource");
+    t::CreateRequiredInput::export_all().expect("export CreateRequiredInput");
     t::DeleteRecordOutcome::export_all().expect("export DeleteRecordOutcome");
     t::DeletedRecordSnapshot::export_all().expect("export DeletedRecordSnapshot");
     t::GraphData::export_all().expect("export GraphData");

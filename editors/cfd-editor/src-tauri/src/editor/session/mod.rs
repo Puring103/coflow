@@ -32,9 +32,10 @@ use coflow_runtime::{
     ProjectSession, RecordCoordinate,
 };
 
-use crate::editor::convert::{record_view_to_row, WireContext};
+use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
 use crate::editor::types::{
-    CollectionEdit, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords,
+    CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
+    CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords,
     GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget,
     RenameRecordOutcome, WriteFieldOutcome,
 };
@@ -239,6 +240,24 @@ impl SessionStore {
             .engine
             .default_record_value(type_name, DefaultMaterialization::EditableShape)
             .map_err(api_diagnostics_to_editor_error)
+    }
+
+    pub fn create_record_draft(
+        &self,
+        id: u32,
+        actual_type: &str,
+    ) -> Result<CreateRecordDraft, EditorError> {
+        let entry = self.session(id)?;
+        let session_lock = &entry.state;
+        let session = session_lock
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let draft = session
+            .engine
+            .create_record_draft(actual_type)
+            .map_err(api_diagnostics_to_editor_error)?;
+        let ctx = WireContext::new(&session.engine, session.diagnostics.flatten());
+        Ok(create_record_draft_to_wire(&draft, &ctx))
     }
 
     pub fn get_enum_variants(&self, id: u32, enum_name: &str) -> Result<Vec<String>, EditorError> {
@@ -726,8 +745,10 @@ fn apply_collection_edit(
 ) -> Result<CfdValue, EditorError> {
     match (value, edit) {
         (CfdValue::Array(mut items), CollectionEdit::ArrayAppend) => {
-            let seed = default_item
-                .or_else(|| items.last().cloned())
+            let seed = items
+                .last()
+                .cloned()
+                .or(default_item)
                 .unwrap_or(CfdValue::Null);
             items.push(seed);
             Ok(CfdValue::Array(items))
@@ -753,8 +774,10 @@ fn apply_collection_edit(
             if entries.iter().any(|(entry_key, _)| entry_key == &key) {
                 return Err(EditorError::write("dict key already exists"));
             }
-            let seed = default_item
-                .or_else(|| entries.last().map(|(_, value)| value.clone()))
+            let seed = entries
+                .last()
+                .map(|(_, value)| value.clone())
+                .or(default_item)
                 .unwrap_or(CfdValue::Null);
             entries.push((key, seed));
             Ok(CfdValue::Dict(entries))
@@ -773,6 +796,75 @@ fn apply_collection_edit(
         _ => Err(EditorError::write(
             "collection edit target is not a collection",
         )),
+    }
+}
+
+fn create_record_draft_to_wire(
+    draft: &coflow_runtime::CreateRecordDraft,
+    ctx: &WireContext<'_>,
+) -> CreateRecordDraft {
+    CreateRecordDraft {
+        actual_type: draft.actual_type.clone(),
+        fields: draft
+            .fields
+            .iter()
+            .map(|field| create_record_field_draft_to_wire(&draft.actual_type, field, ctx))
+            .collect(),
+    }
+}
+
+fn create_record_field_draft_to_wire(
+    actual_type: &str,
+    field: &coflow_runtime::CreateRecordFieldDraft,
+    ctx: &WireContext<'_>,
+) -> CreateRecordFieldDraft {
+    let annotation = field
+        .value
+        .as_ref()
+        .and_then(|value| annotation_for_draft_field(actual_type, &field.name, value, ctx));
+    CreateRecordFieldDraft {
+        name: field.name.clone(),
+        value: field.value.clone(),
+        source: create_field_source_to_wire(field.source),
+        required: field.required.as_ref().map(create_required_input_to_wire),
+        annotation,
+    }
+}
+
+const fn create_field_source_to_wire(
+    source: coflow_runtime::CreateFieldSource,
+) -> CreateFieldSource {
+    match source {
+        coflow_runtime::CreateFieldSource::SchemaDefault => CreateFieldSource::SchemaDefault,
+        coflow_runtime::CreateFieldSource::TypeSeed => CreateFieldSource::TypeSeed,
+        coflow_runtime::CreateFieldSource::RequiredInput => CreateFieldSource::RequiredInput,
+    }
+}
+
+fn create_required_input_to_wire(
+    input: &coflow_runtime::CreateRequiredInput,
+) -> CreateRequiredInput {
+    match input {
+        coflow_runtime::CreateRequiredInput::Ref { target_type } => CreateRequiredInput::Ref {
+            target_type: target_type.clone(),
+        },
+        coflow_runtime::CreateRequiredInput::AbstractObject {
+            expected_type,
+            concrete_types,
+        } => CreateRequiredInput::AbstractObject {
+            expected_type: expected_type.clone(),
+            concrete_types: concrete_types.clone(),
+        },
+        coflow_runtime::CreateRequiredInput::RecursiveObject { type_name } => {
+            CreateRequiredInput::RecursiveObject {
+                type_name: type_name.clone(),
+            }
+        }
+        coflow_runtime::CreateRequiredInput::Unsupported { message } => {
+            CreateRequiredInput::Unsupported {
+                message: message.clone(),
+            }
+        }
     }
 }
 
