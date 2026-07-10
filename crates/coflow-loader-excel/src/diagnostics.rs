@@ -1,7 +1,8 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_data_model::{CfdDiagnostic, CfdLabel, CfdRecordId, RecordOrigin};
 use coflow_loader_table_core::{
-    map_label_to_table, TableDiagnostic, TableDiagnostics, TableLabel, TableLocation,
+    map_label_to_table, TableDiagnostic, TableDiagnosticKind, TableDiagnostics, TableLabel,
+    TableLocation,
 };
 use std::path::PathBuf;
 
@@ -59,7 +60,7 @@ impl From<TableDiagnostic> for ExcelDiagnostic {
         Self {
             code: diagnostic.provider_code("EXCEL"),
             stage: diagnostic.provider_stage("EXCEL"),
-            message: table_message_to_excel(&diagnostic.message),
+            message: excel_message(&diagnostic),
             source: diagnostic.source,
             primary: diagnostic.primary.map(ExcelLabel::from),
             related: diagnostic
@@ -201,10 +202,9 @@ fn excel_label_to_api(label: ExcelLabel) -> Label {
     }
 }
 
-fn table_message_to_excel(message: &str) -> String {
-    if message == "record key cell is empty" {
-        "empty id cell".to_string()
-    } else {
-        message.to_string()
+fn excel_message(diagnostic: &TableDiagnostic) -> String {
+    match diagnostic.kind {
+        TableDiagnosticKind::EmptyIdCell => "empty id cell".to_string(),
+        _ => diagnostic.message.clone(),
     }
 }
