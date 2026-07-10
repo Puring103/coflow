@@ -11,6 +11,7 @@ import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
 import type { FileRecords } from './bindings/FileRecords'
+import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
@@ -876,6 +877,13 @@ export default function App() {
     },
     [currentRoute?.view, currentRoute?.file, insertRecord],
   )
+  const tableOnCreateRecordDraft = useCallback(
+    (actualType: string): Promise<CreateRecordDraft> => {
+      if (!project) return Promise.reject(new Error('未打开项目'))
+      return api.createRecordDraft(project.session_id, actualType)
+    },
+    [project],
+  )
   const tableOnDeleteRecord = useCallback(
     (coordinate: RecordCoordinate): Promise<void> => {
       if (currentRoute?.view === 'table') return deleteRecord(currentRoute.file, coordinate)
@@ -1189,6 +1197,7 @@ export default function App() {
                     onWriteField={tableOnWriteField}
                     onRenameRecord={tableOnRenameRecord}
                     onInsertRecord={tableOnInsertRecord}
+                    onCreateRecordDraft={tableOnCreateRecordDraft}
                     onDeleteRecord={tableOnDeleteRecord}
                     onDiagnosticBadgeClick={tableOnBadgeClick}
                   />

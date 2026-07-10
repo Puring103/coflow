@@ -913,6 +913,229 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   cursor: pointer;
 }
 
+.create-record-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.create-record-dialog {
+  width: min(760px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.create-record-header,
+.create-record-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.create-record-header h2 {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.create-record-header p {
+  color: var(--text-mute);
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.create-record-header .btn-icon { margin-left: auto; }
+
+.create-record-meta {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px);
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.create-record-meta label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.create-record-meta input,
+.create-record-meta select {
+  height: var(--h-input);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-0);
+  color: var(--text);
+  padding: 0 10px;
+  outline: none;
+  font-family: inherit;
+  font-size: var(--fs-ui);
+}
+
+.create-record-meta input:focus,
+.create-record-meta select:focus {
+  border-color: var(--accent);
+  background: var(--bg-2);
+}
+
+.create-record-meta input[aria-invalid="true"] {
+  border-color: color-mix(in srgb, var(--red) 70%, var(--border-strong));
+}
+
+.create-record-loading,
+.create-record-error,
+.create-record-required-summary {
+  margin: 10px 14px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.create-record-loading {
+  color: var(--text-dim);
+  background: var(--bg-2);
+}
+
+.create-record-error,
+.create-record-required-summary {
+  color: var(--red);
+  border: 1px solid color-mix(in srgb, var(--red) 45%, var(--border));
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+.create-record-fields {
+  padding: 8px 14px 12px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+}
+
+.create-field-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.create-field-row.schema-default {
+  background: color-mix(in srgb, var(--bg-2) 72%, var(--bg-0));
+  color: var(--text-dim);
+}
+
+.create-field-row.required {
+  border-color: color-mix(in srgb, var(--red) 50%, var(--border-strong));
+}
+
+.create-field-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.create-field-label {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.create-field-name {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.create-field-type {
+  color: var(--text-mute);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.create-field-state {
+  width: max-content;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-mute);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.create-field-row.required .create-field-state {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+}
+
+.create-field-control {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.create-field-control .dc-input,
+.create-field-control .dc-pill-select,
+.create-field-control .dc-pill-wrap {
+  max-width: 100%;
+}
+
+.create-field-placeholder {
+  color: var(--text-mute);
+  font-size: 12px;
+}
+
+.create-field-help {
+  grid-column: 2;
+  color: var(--red);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.create-record-actions {
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+  margin-top: auto;
+}
+
+@media (max-width: 720px) {
+  .create-record-backdrop { padding: 12px; }
+  .create-record-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+  .create-record-meta,
+  .create-field-row {
+    grid-template-columns: 1fr;
+  }
+  .create-field-help { grid-column: 1; }
+}
+
 /* ─── Context menu ─── */
 .context-menu {
   position: fixed;

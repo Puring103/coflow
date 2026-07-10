@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { CfdValue } from './bindings/CfdValue'
 import type { CollectionEdit } from './bindings/CollectionEdit'
+import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { DeleteRecordOutcome } from './bindings/DeleteRecordOutcome'
 import type { FileRecords } from './bindings/FileRecords'
 import type { GraphData } from './bindings/GraphData'
@@ -99,6 +100,10 @@ export async function getRefTargets(sessionId: number, targetType: string): Prom
 
 export async function makeDefaultObject(sessionId: number, typeName: string): Promise<FieldValue> {
   return invokeCommand<CfdValue>('make_default_object', { sessionId, typeName })
+}
+
+export async function createRecordDraft(sessionId: number, actualType: string): Promise<CreateRecordDraft> {
+  return invokeCommand<CreateRecordDraft>('create_record_draft', { sessionId, actualType })
 }
 
 export async function writeField(

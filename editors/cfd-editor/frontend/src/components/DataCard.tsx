@@ -658,7 +658,7 @@ function topLevelSegmentOfPathKey(pathKey: string): string {
   return m ? m[0] : pathKey
 }
 
-function DirectEditor({
+export function DirectEditor({
   value,
   onCommit,
   refTargetType,
@@ -891,6 +891,11 @@ export function RefDirectSelect({
           title={targetType}
           onChange={e => commit(e.target.value)}
         >
+          {(nullable || value.kind === 'null') && (
+            <option value={NULL_SENTINEL} disabled={!nullable}>
+              {nullable ? '(null)' : '选择引用...'}
+            </option>
+          )}
           {value.kind === 'ref' && !hasCurrent && value.value && <option value={value.value}>{value.value}</option>}
           {targets.map(target => (
             <option key={target.label} value={target.key} title={target.label}>
