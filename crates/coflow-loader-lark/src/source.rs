@@ -122,6 +122,17 @@ pub(crate) fn sheet_for_type_from_options(
         .map(ToOwned::to_owned))
 }
 
+pub(crate) fn type_for_sheet_from_options(
+    options: &Value,
+    sheet: Option<&str>,
+) -> Result<Option<String>, DiagnosticSet> {
+    Ok(lark_table_options_from_options(options)?
+        .sheets()
+        .iter()
+        .find(|config| sheet.is_none_or(|expected| config.sheet == expected))
+        .and_then(|config| config.type_name.clone()))
+}
+
 pub(crate) fn lark_document(source: &LarkSheetSource) -> String {
     match &source.locator {
         LarkSheetLocator::Url(url) => url.clone(),

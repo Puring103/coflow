@@ -1,19 +1,21 @@
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, DiagnosticSet, InsertRecordRequest,
     RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter,
-    SyncHeaderRequest, TableAddressing, TableContext, TableManager,
+    SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions, TableManager,
     TableManagerDescriptor, TableOperationResult, WriteCellRequest, WriteContext,
     WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::cell_value::render_cell_value;
+use coflow_loader_table_core::TableSheetConfig;
 use coflow_loader_table_core::writer::{plan_insert_record, TableInsertRecord, TableWritePlan};
 use serde_json::json;
 
 use crate::diagnostics::{diag, lark_render_error, table_write_diagnostics_to_api};
 use crate::http::LarkHttpClient;
 use crate::source::{
-    lark_document_spreadsheet_token, required_option_string, sheet_for_type_from_options,
+    lark_document_spreadsheet_token, required_option_string, sheet_config_from_options,
+    sheet_for_type_from_options, type_for_sheet_from_options,
 };
 use crate::write_http::LarkWriteFailure;
 use crate::write_layout::{lark_insert_layout, resolve_lark_column, LarkInsertLayoutRequest};
@@ -318,6 +320,35 @@ where
         &LARK_SHEET_TABLE_MANAGER_DESCRIPTOR
     }
 
+    fn type_for_sheet(
+        &self,
+        source: &coflow_api::ResolvedSource,
+        sheet: Option<&str>,
+    ) -> Result<Option<String>, DiagnosticSet> {
+        type_for_sheet_from_options(&source.options, sheet)
+    }
+
+    fn sheet_for_type(
+        &self,
+        source: &coflow_api::ResolvedSource,
+        actual_type: &str,
+    ) -> Result<Option<String>, DiagnosticSet> {
+        sheet_for_type_from_options(&source.options, actual_type)
+    }
+
+    fn header_options(
+        &self,
+        source: &coflow_api::ResolvedSource,
+        sheet: &str,
+        actual_type: &str,
+    ) -> Result<TableHeaderOptions, DiagnosticSet> {
+        Ok(table_header_options(sheet_config_from_options(
+            &source.options,
+            sheet,
+            actual_type,
+        )?))
+    }
+
     fn create_table(
         &self,
         _ctx: TableContext<'_>,
@@ -367,6 +398,17 @@ where
             diagnostics: DiagnosticSet::empty(),
         })
     }
+}
+
+fn table_header_options(config: TableSheetConfig) -> TableHeaderOptions {
+    let mut out = TableHeaderOptions::new(config.sheet);
+    if let Some(type_name) = config.type_name {
+        out = out.with_type(type_name);
+    }
+    if let Some(key) = config.key {
+        out = out.with_key(key);
+    }
+    out.with_columns(config.columns)
 }
 
 fn added_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {

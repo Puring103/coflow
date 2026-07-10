@@ -41,10 +41,10 @@ pub struct DataFileReport {
 }
 
 #[derive(Debug, Clone)]
-struct TableLayout {
-    actual_type: String,
-    sheet: String,
-    headers: Vec<String>,
+pub struct TableHeaderLayout {
+    pub actual_type: String,
+    pub sheet: String,
+    pub headers: Vec<String>,
 }
 
 /// Creates a local data file for a configured project.
@@ -67,7 +67,7 @@ pub fn create_data_file(
     let layout = descriptor
         .requires_table_layout()
         .then(|| {
-            table_layout(
+            table_header_layout(
                 session,
                 manager.as_ref(),
                 &source,
@@ -127,7 +127,7 @@ pub fn sync_data_header(
     }
     let source = table_operation_source(session.project(), &options.file, &provider_id, path);
     let manager = table_manager(registry, &provider_id)?;
-    let layout = table_layout(
+    let layout = table_header_layout(
         session,
         manager.as_ref(),
         &source,
@@ -306,14 +306,14 @@ fn resolve_project_file(project: &Project, file: &str) -> PathBuf {
     project.resolve_path(Path::new(file))
 }
 
-fn table_layout(
+pub fn table_header_layout(
     session: &ProjectSchemaSession,
     manager: &dyn TableManager,
     source: &ResolvedSource,
     file: &str,
     actual_type: Option<String>,
     sheet: Option<String>,
-) -> Result<TableLayout, DiagnosticSet> {
+) -> Result<TableHeaderLayout, DiagnosticSet> {
     let actual_type = match actual_type {
         Some(actual_type) => actual_type,
         None => manager.type_for_sheet(source, sheet.as_deref())?.ok_or_else(|| {
@@ -357,7 +357,7 @@ fn table_layout(
                     .unwrap_or_else(|| field.name.clone())
             }),
     );
-    Ok(TableLayout {
+    Ok(TableHeaderLayout {
         actual_type,
         sheet: header_options.sheet,
         headers,

@@ -33,8 +33,8 @@ mod write_rules;
 mod writes;
 
 pub use data_files::{
-    create_data_file, sync_data_header, DataCreateFileOptions, DataFileReport,
-    DataSyncHeaderOptions,
+    create_data_file, sync_data_header, table_header_layout, DataCreateFileOptions,
+    DataFileReport, DataSyncHeaderOptions, TableHeaderLayout,
 };
 pub use data_patch::{
     DataPatchAppliedOp, DataPatchFailedOp, DataPatchOp, DataPatchReport, DataPatchRequest,

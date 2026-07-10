@@ -617,10 +617,9 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
     for expected in [
         "pub(super) fn infer_table_provider",
         "pub(super) fn create_lark_table",
-        "struct CliTableLayout",
-        "fn lark_table_layout",
-        "fn lark_table_options",
-        "fn matching_lark_sheet_config",
+        "pub(super) fn sync_lark_header",
+        "fn lark_table_manager",
+        "fn configured_lark_source",
     ] {
         assert!(
             lark.contains(expected),
@@ -688,20 +687,22 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
         "root CLI data_commands.rs should stay below the 800-line large-module threshold"
     );
     assert!(
-        lark.contains("TableSourceOptions::decode(source.options(), \"lark source\")"),
-        "root CLI Lark helper should use the typed table option facade"
-    );
-    assert!(
-        lark.contains("session.schema_view()"),
-        "root CLI Lark helper should request the schema query facade from the session"
+        lark.contains("table_header_layout("),
+        "root CLI Lark helper should reuse runtime table header planning"
     );
     for forbidden in [
         "serde_json::Value",
+        "TableSourceOptions",
+        "TableSheetConfig",
         "options().get(\"sheets\")",
         ".as_array()",
         "Value::as_object",
         "filter_map(serde_json::Value::as_object)",
         "CftSchemaView::new(session.schema())",
+        "session.schema_view()",
+        "fn lark_table_layout",
+        "fn lark_table_options",
+        "fn matching_lark_sheet_config",
         "resolve_type(&actual_type)",
         "schema_type.all_fields",
     ] {
@@ -750,17 +751,9 @@ fn root_cli_session_builders_use_runtime_facade() {
 
 #[test]
 fn root_cli_schema_queries_go_through_session_facade() {
-    let command_modules = [
-        (
-            "src/commands.rs",
-            std::fs::read_to_string("src/commands.rs").expect("read root CLI commands"),
-        ),
-        (
-            "src/data_commands/lark.rs",
-            std::fs::read_to_string("src/data_commands/lark.rs")
-                .expect("read root CLI Lark data command helpers"),
-        ),
-    ];
+    let commands = std::fs::read_to_string("src/commands.rs").expect("read root CLI commands");
+    let lark = std::fs::read_to_string("src/data_commands/lark.rs")
+        .expect("read root CLI Lark data command helpers");
 
     let session = std::fs::read_to_string("crates/coflow-runtime/src/session.rs")
         .expect("read runtime session");
@@ -769,16 +762,23 @@ fn root_cli_schema_queries_go_through_session_facade() {
         "runtime session should own construction of the schema query facade"
     );
 
-    for (path, source) in command_modules {
-        assert!(
-            source.contains("session.schema_view()"),
-            "{path} should request schema queries through the runtime session facade"
-        );
-        assert!(
-            !source.contains("CftSchemaView::new(session.schema())"),
-            "{path} should not reconstruct schema views from the raw schema getter"
-        );
-    }
+    assert!(
+        commands.contains("session.schema_view()"),
+        "root CLI build/export/codegen commands should request schema queries through the runtime session facade"
+    );
+    assert!(
+        !commands.contains("CftSchemaView::new(session.schema())"),
+        "root CLI commands should not reconstruct schema views from the raw schema getter"
+    );
+    assert!(
+        lark.contains("table_header_layout("),
+        "root CLI Lark helper should delegate schema/header planning to runtime"
+    );
+    assert!(
+        !lark.contains("session.schema_view()")
+            && !lark.contains("CftSchemaView::new(session.schema())"),
+        "root CLI Lark helper should not own schema query construction"
+    );
 }
 
 #[test]
