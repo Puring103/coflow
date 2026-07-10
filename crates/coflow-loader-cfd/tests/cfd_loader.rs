@@ -552,8 +552,6 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
 
 #[test]
 fn explicit_cfd_loader_rejects_url_source() -> TestResult {
-    let schema = CftContainer::new();
-    let schema_view = CftSchemaView::new(&schema);
     let source = ResolvedSource {
         provider_id: CFD_LOADER_DESCRIPTOR.id.to_string(),
         location: SourceLocationSpec::Uri("https://example.test/items.cfd".to_string()),
@@ -565,7 +563,6 @@ fn explicit_cfd_loader_rejects_url_source() -> TestResult {
         .resolve(
             SourceResolveContext {
                 project_root: Path::new("."),
-                schema: &schema_view,
             },
             &source,
         )

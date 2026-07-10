@@ -162,8 +162,6 @@ mod tests {
     #[test]
     fn explicit_lark_loader_rejects_path_source() {
         let loader = LarkSheetLoader::new(NoopClient);
-        let schema = CftContainer::new();
-        let schema_view = coflow_cft::CftSchemaView::new(&schema);
         let source = ResolvedSource {
             provider_id: LARK_SHEET_LOADER_DESCRIPTOR.id.to_string(),
             location: SourceLocationSpec::Path(Path::new("data.xlsx").to_path_buf()),
@@ -177,7 +175,6 @@ mod tests {
         let Err(err) = loader.resolve(
             SourceResolveContext {
                 project_root: Path::new("."),
-                schema: &schema_view,
             },
             &source,
         ) else {

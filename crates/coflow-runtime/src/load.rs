@@ -72,8 +72,7 @@ pub(crate) fn load_project_data(
 
     for source in &project.config.sources {
         let configured = configured_source(project, source);
-        let resolved_sources =
-            match resolve_sources(project, &schema_view, registry, source, &configured) {
+        let resolved_sources = match resolve_sources(project, registry, source, &configured) {
             Ok(resolved_sources) => resolved_sources,
             Err(err) => {
                 diagnostics.extend(err);
@@ -96,7 +95,7 @@ pub(crate) fn load_project_data(
         let dimension_fields = dimensions::dimension_fields(&schema_view);
         for configured in dimensions::dimension_sources(project, &dimension_fields) {
             let resolved_sources =
-                match resolve_implicit_source(project, &schema_view, registry, &configured) {
+                match resolve_implicit_source(project, registry, &configured) {
                     Ok(resolved_sources) => resolved_sources,
                     Err(err) => {
                         diagnostics.extend(err);
@@ -218,13 +217,11 @@ fn load_resolved_sources(
 
 fn resolve_implicit_source(
     project: &Project,
-    schema: &CftSchemaView,
     registry: &ProviderRegistry,
     configured: &ResolvedSource,
 ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
     let ctx = SourceResolveContext {
         project_root: &project.root_dir,
-        schema,
     };
     let option_keys = source_option_keys(&configured.options);
     let source_type =
@@ -287,14 +284,12 @@ fn dimension_check_plan(
 
 fn resolve_sources(
     project: &Project,
-    schema: &CftSchemaView,
     registry: &ProviderRegistry,
     source: &SourceConfig,
     configured: &ResolvedSource,
 ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
     let ctx = SourceResolveContext {
         project_root: &project.root_dir,
-        schema,
     };
     if source.source_type.is_none()
         && matches!(configured.location, SourceLocationSpec::Path(ref path) if path.is_dir())

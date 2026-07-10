@@ -92,10 +92,16 @@ fn provider_shared_algorithms_do_not_live_in_coflow_api() {
 fn api_source_contexts_use_schema_view_not_full_container() {
     let provider =
         std::fs::read_to_string("crates/coflow-api/src/provider.rs").expect("read API provider");
+    let resolve_context = struct_block(&provider, "pub struct SourceResolveContext")
+        .expect("find SourceResolveContext");
 
     assert!(
         provider.contains("use coflow_cft::CftSchemaView;"),
         "source provider contexts should depend on the schema query facade"
+    );
+    assert!(
+        !resolve_context.contains("schema"),
+        "source provider resolve context should not expose schema; only load needs schema semantics"
     );
     for forbidden in [
         "use coflow_cft::CftContainer",
@@ -107,6 +113,13 @@ fn api_source_contexts_use_schema_view_not_full_container() {
             "source provider contexts should not expose full schema container `{forbidden}`"
         );
     }
+}
+
+fn struct_block<'a>(source: &'a str, marker: &str) -> Option<&'a str> {
+    let start = source.find(marker)?;
+    let tail = &source[start..];
+    let end = tail.find('}')?;
+    Some(&tail[..=end])
 }
 
 #[test]

@@ -21,7 +21,6 @@ pub struct ProjectSourceRef<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct SourceResolveContext<'a> {
     pub project_root: &'a Path,
-    pub schema: &'a CftSchemaView,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
