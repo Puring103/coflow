@@ -34,7 +34,8 @@
 | `MUTATION-DEFAULT` | `MUTATION` | `data patch` 生成默认记录或默认 collection item 失败 |
 | `MUTATION-FILE` | `MUTATION` | `data patch` 指定的目标文件不是已加载数据源 |
 | `MUTATION-FILE-GUARD` | `MUTATION` | `data patch` 的 file guard 与记录实际来源不匹配 |
-| `MUTATION-INSERT` | `MUTATION` | `data patch` 插入记录时 key 冲突或 record key 不合法 |
+| `MUTATION-INSERT` | `MUTATION` | `data patch` 插入记录时 record key 不合法或插入前置校验失败 |
+| `MUTATION-INSERT-CONFLICT` | `MUTATION` | `data patch` 插入记录时 key 已存在 |
 | `MUTATION-DIMENSION` | `MUTATION` | `data patch` 尝试对维度变体表新增或删除记录；变体表只能修改已有记录的变体字段 |
 | `RUNTIME-INTERNAL` | `RUNTIME` | runtime 构造空模型等不可恢复内部错误 |
 | `DIM-CONFIG-001` | `PROJECT` | schema 中存在 `@localized` 字段，但未配置 `dimensions.language` |
@@ -151,6 +152,8 @@
 | `EXCEL-COLUMN` | `EXCEL` | 表头映射错误，例如未知字段、缺失字段、`@expand` 相邻列不合法 |
 | `EXCEL-ID` | `EXCEL` | key 列缺失、key 为空或 key 非法 |
 | `EXCEL-CELL` | `EXCEL` | 不支持的 Excel 原生单元格值或结构，例如 formula、merged cell、error、date/time、duration |
+| `EXCEL-TABLE` | `EXCEL` | Excel table manager 创建表、同步表头或写入 workbook 失败 |
+| `EXCEL-TABLE-SHEET-MISSING` | `EXCEL` | Excel table manager 读取或写入目标 sheet 时发现 sheet 不存在 |
 | `EXCEL-WRITE` | `EXCEL` | Excel writer 写回失败 |
 
 ### CSV

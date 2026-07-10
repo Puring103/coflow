@@ -13,6 +13,9 @@ use crate::options::{
     excel_type_for_sheet_from_options,
 };
 
+const EXCEL_TABLE: &str = "EXCEL-TABLE";
+const EXCEL_TABLE_SHEET_MISSING: &str = "EXCEL-TABLE-SHEET-MISSING";
+
 pub static EXCEL_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
     id: "excel",
     display_name: "Excel table",
@@ -62,7 +65,7 @@ impl TableManager for ExcelWriter {
     ) -> Result<TableOperationResult, DiagnosticSet> {
         let SourceLocationSpec::Path(path) = &request.source.location else {
             return Err(DiagnosticSet::one(diag(
-                "EXCEL-TABLE",
+                EXCEL_TABLE,
                 "excel table manager requires a local path source",
             )));
         };
@@ -72,7 +75,7 @@ impl TableManager for ExcelWriter {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent).map_err(|err| {
                     DiagnosticSet::one(diag(
-                        "EXCEL-TABLE",
+                        EXCEL_TABLE,
                         format!("failed to create `{}`: {err}", parent.display()),
                     ))
                 })?;
@@ -94,7 +97,7 @@ impl TableManager for ExcelWriter {
     ) -> Result<TableOperationResult, DiagnosticSet> {
         let SourceLocationSpec::Path(path) = &request.source.location else {
             return Err(DiagnosticSet::one(diag(
-                "EXCEL-TABLE",
+                EXCEL_TABLE,
                 "excel table manager requires a local path source",
             )));
         };
@@ -138,14 +141,14 @@ fn create_excel_file(path: &Path, sheet: &str, headers: &[String]) -> Result<(),
     let mut book = umya_spreadsheet::new_file();
     if sheet != "Sheet1" {
         let existing = book.get_sheet_by_name_mut("Sheet1").ok_or_else(|| {
-            DiagnosticSet::one(diag("EXCEL-TABLE", "default worksheet is missing"))
+            DiagnosticSet::one(diag(EXCEL_TABLE, "default worksheet is missing"))
         })?;
         existing.set_name(sheet);
     }
     write_excel_headers(&mut book, sheet, headers)?;
     umya_spreadsheet::writer::xlsx::write(&book, path).map_err(|err| {
         DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE,
             format!("failed to write `{}`: {err:?}", path.display()),
         ))
     })
@@ -154,19 +157,19 @@ fn create_excel_file(path: &Path, sheet: &str, headers: &[String]) -> Result<(),
 fn append_excel_sheet(path: &Path, sheet: &str, headers: &[String]) -> Result<(), DiagnosticSet> {
     let mut book = umya_spreadsheet::reader::xlsx::read(path).map_err(|err| {
         DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE,
             format!("failed to read `{}`: {err:?}", path.display()),
         ))
     })?;
     if book.get_sheet_by_name(sheet).is_some() {
         return Err(DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE,
             format!("sheet `{sheet}` already exists in `{}`", path.display()),
         )));
     }
     book.new_sheet(sheet).map_err(|err| {
         DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE,
             format!(
                 "failed to create sheet `{sheet}` in `{}`: {err}",
                 path.display()
@@ -176,7 +179,7 @@ fn append_excel_sheet(path: &Path, sheet: &str, headers: &[String]) -> Result<()
     write_excel_headers(&mut book, sheet, headers)?;
     umya_spreadsheet::writer::xlsx::write(&book, path).map_err(|err| {
         DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE,
             format!("failed to write `{}`: {err:?}", path.display()),
         ))
     })
@@ -189,13 +192,13 @@ fn write_excel_headers(
 ) -> Result<(), DiagnosticSet> {
     let worksheet = book.get_sheet_by_name_mut(sheet).ok_or_else(|| {
         DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE_SHEET_MISSING,
             format!("sheet `{sheet}` not found after workbook update"),
         ))
     })?;
     for (index, header) in headers.iter().enumerate() {
         let column = u32::try_from(index + 1)
-            .map_err(|_| DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel")))?;
+            .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel")))?;
         worksheet.get_cell_mut((column, 1_u32)).set_value(header);
     }
     Ok(())
@@ -204,13 +207,13 @@ fn write_excel_headers(
 fn excel_header(path: &Path, sheet: &str) -> Result<Vec<String>, DiagnosticSet> {
     let mut workbook = calamine::open_workbook_auto(path).map_err(|err| {
         DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE,
             format!("failed to read `{}`: {err}", path.display()),
         ))
     })?;
     let range = workbook.worksheet_range(sheet).map_err(|err| {
         DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE_SHEET_MISSING,
             format!("sheet `{sheet}` not found in `{}`: {err}", path.display()),
         ))
     })?;
@@ -223,9 +226,7 @@ fn excel_header(path: &Path, sheet: &str) -> Result<Vec<String>, DiagnosticSet> 
 
 fn excel_sheet_missing(diagnostics: &DiagnosticSet) -> bool {
     diagnostics.diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == "EXCEL-TABLE"
-            && diagnostic.message.contains("sheet `")
-            && diagnostic.message.contains("not found")
+        diagnostic.code == EXCEL_TABLE_SHEET_MISSING
     })
 }
 
@@ -238,18 +239,18 @@ fn sync_excel_header(
     let mut old_index = BTreeMap::new();
     for (index, header) in old_header.iter().enumerate() {
         let column = u32::try_from(index + 1)
-            .map_err(|_| DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel")))?;
+            .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel")))?;
         old_index.insert(header.clone(), column);
     }
     let mut book = umya_spreadsheet::reader::xlsx::read(path).map_err(|err| {
         DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE,
             format!("failed to read `{}`: {err:?}", path.display()),
         ))
     })?;
     let sheet = book.get_sheet_by_name_mut(sheet_name).ok_or_else(|| {
         DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE_SHEET_MISSING,
             format!("sheet `{sheet_name}` not found in `{}`", path.display()),
         ))
     })?;
@@ -269,20 +270,20 @@ fn sync_excel_header(
     }
     if !old_header.is_empty() {
         let count = u32::try_from(old_header.len())
-            .map_err(|_| DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel")))?;
+            .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel")))?;
         sheet.remove_column_by_index(&1, &count);
     }
     for (index, header) in new_header.iter().enumerate() {
         let column = u32::try_from(index + 1)
-            .map_err(|_| DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel")))?;
+            .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel")))?;
         sheet.get_cell_mut((column, 1_u32)).set_value(header);
     }
     for (row_index, row) in rows.iter().enumerate() {
         let excel_row = u32::try_from(row_index + 2)
-            .map_err(|_| DiagnosticSet::one(diag("EXCEL-TABLE", "too many rows for Excel")))?;
+            .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many rows for Excel")))?;
         for (column_index, value) in row.iter().enumerate() {
             let excel_column = u32::try_from(column_index + 1).map_err(|_| {
-                DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel"))
+                DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel"))
             })?;
             sheet
                 .get_cell_mut((excel_column, excel_row))
@@ -291,7 +292,7 @@ fn sync_excel_header(
     }
     umya_spreadsheet::writer::xlsx::write(&book, path).map_err(|err| {
         DiagnosticSet::one(diag(
-            "EXCEL-TABLE",
+            EXCEL_TABLE,
             format!("failed to write `{}`: {err:?}", path.display()),
         ))
     })

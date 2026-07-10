@@ -215,7 +215,7 @@ const fn mutation_op_name(op: &MutationOp) -> &'static str {
 fn classify_prepare_error(op: &MutationOp, diagnostics: DiagnosticSet) -> MutationApplyError {
     let terminal_insert_conflict = matches!(op, MutationOp::InsertRecord { .. })
         && diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "MUTATION-INSERT" && diagnostic.message.contains("already exists")
+            diagnostic.code == "MUTATION-INSERT-CONFLICT"
         });
     if terminal_insert_conflict {
         MutationApplyError::Terminal(diagnostics)

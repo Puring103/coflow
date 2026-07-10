@@ -427,12 +427,13 @@ fn ensure_record_key_can_insert(
     key: &str,
     current_record: Option<coflow_data_model::CfdRecordId>,
 ) -> Result<(), DiagnosticSet> {
-    write_rules::ensure_record_key_available(
+    write_rules::ensure_record_key_available_with_conflict_code(
         session,
         actual_type,
         key,
         current_record,
         "MUTATION-INSERT",
+        "MUTATION-INSERT-CONFLICT",
         "MUTATION",
     )
 }

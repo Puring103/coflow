@@ -34,6 +34,26 @@ pub fn ensure_record_key_available(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
+    ensure_record_key_available_with_conflict_code(
+        session,
+        actual_type,
+        key,
+        current_record,
+        code,
+        code,
+        stage,
+    )
+}
+
+pub fn ensure_record_key_available_with_conflict_code(
+    session: &ProjectSession,
+    actual_type: &str,
+    key: &str,
+    current_record: Option<CfdRecordId>,
+    code: &'static str,
+    conflict_code: &'static str,
+    stage: &'static str,
+) -> Result<(), DiagnosticSet> {
     validate_record_key_for_stage(key, code, stage)?;
     let Some(domain) = session.model.type_domain_id(actual_type) else {
         return Err(one_error(
@@ -50,13 +70,13 @@ pub fn ensure_record_key_available(
     }
     let existing = session.model.record(existing_id).ok_or_else(|| {
         one_error(
-            code,
+            conflict_code,
             stage,
             format!("key `{key}` already exists in `{actual_type}` inheritance domain"),
         )
     })?;
     Err(one_error(
-        code,
+        conflict_code,
         stage,
         format!(
             "key `{key}` already exists in `{actual_type}` inheritance domain as `{}.{}`",

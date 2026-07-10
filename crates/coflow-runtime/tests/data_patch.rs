@@ -1252,7 +1252,7 @@ fn insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_write() {
     assert!(report.failed[0]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "MUTATION-INSERT"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-INSERT-CONFLICT"));
     let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
     assert_eq!(before, after);
 
@@ -2177,11 +2177,11 @@ fn patch_stops_on_terminal_writer_error_even_when_stop_disabled() {
     assert!(report.failed[0]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "MUTATION-INSERT"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-INSERT-CONFLICT"));
     assert!(!report
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "MUTATION-INSERT"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-INSERT-CONFLICT"));
 
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(!text.contains("Should Not Run"));
