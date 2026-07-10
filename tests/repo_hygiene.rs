@@ -357,8 +357,12 @@ fn api_table_operations_do_not_expose_schema_owner() {
 
     for expected in [
         "pub struct TableContext",
+        "pub struct TableHeaderOptions",
         "pub struct CreateTableRequest",
         "pub struct SyncHeaderRequest",
+        "fn type_for_sheet(",
+        "fn sheet_for_type(",
+        "fn header_options(",
     ] {
         assert!(
             operations.contains(expected),
@@ -2803,8 +2807,22 @@ fn engine_data_file_headers_use_cft_compiler_context() {
         .expect("read engine data file commands");
 
     assert!(
-        data_files.contains("CftSchemaView::new(&session.schema)"),
-        "data file header planning should use CftSchemaView for schema metadata"
+        data_files.contains("session.schema_view()"),
+        "data file header planning should request schema metadata through the session facade"
+    );
+    for expected in [
+        "manager.type_for_sheet(",
+        ".sheet_for_type(",
+        "manager.header_options(",
+    ] {
+        assert!(
+            data_files.contains(expected),
+            "data file header planning should ask TableManager for provider option detail `{expected}`"
+        );
+    }
+    assert!(
+        data_files.contains("source.options().clone()"),
+        "data file table operations should preserve configured source options without reusing configured source location"
     );
     assert!(
         data_files.contains(".table_manager_descriptors()"),
@@ -2825,10 +2843,16 @@ fn engine_data_file_headers_use_cft_compiler_context() {
         "\"xlsx\" => Ok(\"excel\"",
         "\"cfd\" | \"csv\"",
         "\"cfd\" | \"csv\" | \"excel\"",
+        "options().get(\"sheets\")",
+        ".as_array()",
+        "Value::as_object",
+        "matching_sheet_config",
+        "SourceTableConfig",
+        "table_source_config",
     ] {
         assert!(
             !data_files.contains(forbidden),
-            "data file commands should not use raw schema query `{forbidden}`"
+            "data file commands should not bypass schema/provider facades with `{forbidden}`"
         );
     }
 }

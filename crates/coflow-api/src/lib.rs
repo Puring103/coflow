@@ -34,8 +34,8 @@ pub use diagnostics::{
 pub use operations::{
     CreateTableRequest, DimensionSourceEntry, DimensionSourceManager,
     DimensionSourceManagerDescriptor, DimensionSourceOptionsRequest, DimensionSourceRequest,
-    DimensionSourceResult, SyncHeaderRequest, TableAddressing, TableContext, TableManager,
-    TableManagerDescriptor, TableOperationResult,
+    DimensionSourceResult, SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions,
+    TableManager, TableManagerDescriptor, TableOperationResult,
 };
 pub use provider::{
     LoadedSource, OutputSpec, ProbeConfidence, ProbeResult, ProjectSourceRef, ResolvedSource,

@@ -1,13 +1,11 @@
 use coflow_api::{
     CreateTableRequest, Diagnostic, DiagnosticSet, FlatDiagnostic, ProviderRegistry,
     ResolvedSource, Severity, SourceLocationSpec, SyncHeaderRequest, TableAddressing, TableContext,
-    TableManagerDescriptor,
+    TableManager, TableManagerDescriptor,
 };
-use coflow_cft::CftSchemaView;
 use coflow_project::{path_to_slash, Project, SourceConfig};
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::ProjectSchemaSession;
@@ -63,13 +61,23 @@ pub fn create_data_file(
     let provider_id = resolve_provider_id(registry, options.provider.as_deref(), &options.file)?;
     let descriptor = table_manager_descriptor(registry, &provider_id)?;
     let path = resolve_project_file(&session.project, &options.file);
+    let source = table_operation_source(session.project(), &options.file, &provider_id, path);
+    let manager = table_manager(registry, &provider_id)?;
     let actual_type = options.actual_type;
     let layout = descriptor
         .requires_table_layout()
-        .then(|| table_layout(session, &options.file, actual_type.clone(), options.sheet))
+        .then(|| {
+            table_layout(
+                session,
+                manager.as_ref(),
+                &source,
+                &options.file,
+                actual_type.clone(),
+                options.sheet,
+            )
+        })
         .transpose()?;
-    let source = table_operation_source(&options.file, &provider_id, path);
-    let result = table_manager(registry, &provider_id)?.create_table(
+    let result = manager.create_table(
         table_context(session),
         &CreateTableRequest {
             source: &source,
@@ -117,15 +125,18 @@ pub fn sync_data_header(
             format!("file `{}` does not exist", options.file),
         ));
     }
+    let source = table_operation_source(session.project(), &options.file, &provider_id, path);
+    let manager = table_manager(registry, &provider_id)?;
     let layout = table_layout(
         session,
+        manager.as_ref(),
+        &source,
         &options.file,
         Some(options.actual_type),
         options.sheet,
     )?;
-    let source = table_operation_source(&options.file, &provider_id, path);
-    let schema_view = CftSchemaView::new(&session.schema);
-    let result = table_manager(registry, &provider_id)?.sync_header(
+    let schema_view = session.schema_view();
+    let result = manager.sync_header(
         table_context(session),
         &SyncHeaderRequest {
             source: &source,
@@ -154,11 +165,17 @@ fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
     }
 }
 
-fn table_operation_source(file: &str, provider_id: &str, path: PathBuf) -> ResolvedSource {
+fn table_operation_source(
+    project: &Project,
+    file: &str,
+    provider_id: &str,
+    path: PathBuf,
+) -> ResolvedSource {
     ResolvedSource {
         provider_id: provider_id.to_string(),
         location: SourceLocationSpec::Path(path),
-        options: Value::Null,
+        options: configured_table_source(project, file)
+            .map_or(Value::Null, |source| source.options().clone()),
         display_name: file.to_string(),
     }
 }
@@ -176,7 +193,7 @@ impl TableManagerDescriptorExt for TableManagerDescriptor {
 fn table_manager(
     registry: &ProviderRegistry,
     provider_id: &str,
-) -> Result<std::sync::Arc<dyn coflow_api::TableManager>, DiagnosticSet> {
+) -> Result<std::sync::Arc<dyn TableManager>, DiagnosticSet> {
     registry.table_manager(provider_id).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-PROVIDER",
@@ -291,19 +308,22 @@ fn resolve_project_file(project: &Project, file: &str) -> PathBuf {
 
 fn table_layout(
     session: &ProjectSchemaSession,
+    manager: &dyn TableManager,
+    source: &ResolvedSource,
     file: &str,
     actual_type: Option<String>,
     sheet: Option<String>,
 ) -> Result<TableLayout, DiagnosticSet> {
-    let actual_type = actual_type
-        .or_else(|| configured_type_for_file(&session.project, file, sheet.as_deref()))
-        .ok_or_else(|| {
+    let actual_type = match actual_type {
+        Some(actual_type) => actual_type,
+        None => manager.type_for_sheet(source, sheet.as_deref())?.ok_or_else(|| {
             one_data_file_error(
                 "DATA-FILE-TYPE",
                 format!("`--type` is required for table file `{file}`"),
             )
-        })?;
-    let schema_view = CftSchemaView::new(&session.schema);
+        })?,
+    };
+    let schema_view = session.schema_view();
     let schema_type = schema_view.type_meta(&actual_type).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-TYPE",
@@ -316,20 +336,15 @@ fn table_layout(
             format!("abstract type `{actual_type}` cannot be used for a data file"),
         ));
     }
-    let config =
-        table_source_config_for_file(&session.project, file, &actual_type, sheet.as_deref());
-    let sheet = sheet
-        .or_else(|| config.as_ref().map(|config| config.sheet.clone()))
-        .unwrap_or_else(|| actual_type.clone());
-    let key_header = config
-        .as_ref()
-        .and_then(|config| config.key.clone())
-        .unwrap_or_else(|| "id".to_string());
-    let field_headers = config
-        .as_ref()
-        .map(|config| config.field_headers.clone())
-        .unwrap_or_default();
-    let mut headers = vec![key_header];
+    let sheet = match sheet {
+        Some(sheet) => sheet,
+        None => manager
+            .sheet_for_type(source, &actual_type)?
+            .unwrap_or_else(|| actual_type.clone()),
+    };
+    let header_options = manager.header_options(source, &sheet, &actual_type)?;
+    let mut headers = vec![header_options.key_column().to_string()];
+    let field_headers = header_options.field_headers();
     headers.extend(
         schema_view
             .full_fields(&actual_type)
@@ -344,101 +359,17 @@ fn table_layout(
     );
     Ok(TableLayout {
         actual_type,
-        sheet,
+        sheet: header_options.sheet,
         headers,
     })
 }
 
-#[derive(Debug, Clone, Default)]
-struct SourceTableConfig {
-    sheet: String,
-    key: Option<String>,
-    field_headers: BTreeMap<String, String>,
-}
-
-fn configured_type_for_file(project: &Project, file: &str, sheet: Option<&str>) -> Option<String> {
-    table_source_config(project, file, None, sheet)
-        .and_then(|config| source_sheet_value(&config, "type"))
-}
-
-fn table_source_config_for_file(
-    project: &Project,
-    file: &str,
-    actual_type: &str,
-    sheet: Option<&str>,
-) -> Option<SourceTableConfig> {
-    let value = table_source_config(project, file, Some(actual_type), sheet)?;
-    let sheet_name = source_sheet_value(&value, "sheet")?;
-    let key = source_sheet_value(&value, "key");
-    let field_headers = value
-        .get("columns")
-        .and_then(Value::as_object)
-        .map(|columns| {
-            columns
-                .iter()
-                .filter_map(|(source, field)| {
-                    field
-                        .as_str()
-                        .map(|field| (field.to_string(), source.clone()))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    Some(SourceTableConfig {
-        sheet: sheet_name,
-        key,
-        field_headers,
-    })
-}
-
-fn table_source_config(
-    project: &Project,
-    file: &str,
-    actual_type: Option<&str>,
-    sheet: Option<&str>,
-) -> Option<Value> {
-    let source = project
+fn configured_table_source<'a>(project: &'a Project, file: &str) -> Option<&'a SourceConfig> {
+    project
         .config
         .sources
         .iter()
-        .filter(|source| source_path_matches(project, source, file))
-        .find_map(|source| matching_sheet_config(source, actual_type, sheet))?;
-    Some(source)
-}
-
-fn matching_sheet_config(
-    source: &SourceConfig,
-    actual_type: Option<&str>,
-    sheet: Option<&str>,
-) -> Option<Value> {
-    let sheets = source.options().get("sheets")?.as_array()?;
-    sheets
-        .iter()
-        .filter_map(Value::as_object)
-        .find(|object| {
-            let type_matches = actual_type.is_none_or(|expected| {
-                object
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .is_some_and(|candidate| candidate == expected)
-            });
-            let sheet_matches = sheet.is_none_or(|expected| {
-                object
-                    .get("sheet")
-                    .and_then(Value::as_str)
-                    .is_some_and(|candidate| candidate == expected)
-            });
-            type_matches && sheet_matches
-        })
-        .map(|object| Value::Object(object.clone()))
-}
-
-fn source_sheet_value(value: &Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .map(ToOwned::to_owned)
+        .find(|source| source_path_matches(project, source, file))
 }
 
 fn source_path_matches(project: &Project, source: &SourceConfig, file: &str) -> bool {

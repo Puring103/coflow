@@ -1,11 +1,15 @@
 use coflow_api::{
     CreateTableRequest, DiagnosticSet, SourceLocationSpec, SyncHeaderRequest, TableAddressing,
-    TableContext, TableManager, TableManagerDescriptor, TableOperationResult,
+    TableContext, TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
 };
+use coflow_loader_table_core::TableSheetConfig;
 use std::collections::BTreeMap;
 use std::fs;
 
 use super::{diag, CsvWriter};
+use crate::options::{
+    csv_sheet_config_from_options, csv_sheet_for_type_from_options, csv_type_for_sheet_from_options,
+};
 use crate::{parse, write};
 
 pub static CSV_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
@@ -19,6 +23,35 @@ pub static CSV_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDe
 impl TableManager for CsvWriter {
     fn descriptor(&self) -> &'static TableManagerDescriptor {
         &CSV_TABLE_MANAGER_DESCRIPTOR
+    }
+
+    fn type_for_sheet(
+        &self,
+        source: &coflow_api::ResolvedSource,
+        sheet: Option<&str>,
+    ) -> Result<Option<String>, DiagnosticSet> {
+        csv_type_for_sheet_from_options(&source.options, sheet)
+    }
+
+    fn sheet_for_type(
+        &self,
+        source: &coflow_api::ResolvedSource,
+        actual_type: &str,
+    ) -> Result<Option<String>, DiagnosticSet> {
+        csv_sheet_for_type_from_options(&source.options, actual_type)
+    }
+
+    fn header_options(
+        &self,
+        source: &coflow_api::ResolvedSource,
+        sheet: &str,
+        actual_type: &str,
+    ) -> Result<TableHeaderOptions, DiagnosticSet> {
+        Ok(table_header_options(csv_sheet_config_from_options(
+            &source.options,
+            sheet,
+            actual_type,
+        )?))
     }
 
     fn create_table(
@@ -101,6 +134,17 @@ impl TableManager for CsvWriter {
             diagnostics: DiagnosticSet::empty(),
         })
     }
+}
+
+fn table_header_options(config: TableSheetConfig) -> TableHeaderOptions {
+    let mut out = TableHeaderOptions::new(config.sheet);
+    if let Some(type_name) = config.type_name {
+        out = out.with_type(type_name);
+    }
+    if let Some(key) = config.key {
+        out = out.with_key(key);
+    }
+    out.with_columns(config.columns)
 }
 
 fn added_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {

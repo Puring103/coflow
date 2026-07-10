@@ -1,12 +1,17 @@
 use calamine::Reader;
 use coflow_api::{
     CreateTableRequest, DiagnosticSet, SourceLocationSpec, SyncHeaderRequest, TableAddressing,
-    TableContext, TableManager, TableManagerDescriptor, TableOperationResult,
+    TableContext, TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
 };
+use coflow_loader_table_core::TableSheetConfig;
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::{diag, excel_cell_to_text, ExcelWriter};
+use crate::options::{
+    excel_sheet_config_from_options, excel_sheet_for_type_from_options,
+    excel_type_for_sheet_from_options,
+};
 
 pub static EXCEL_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
     id: "excel",
@@ -19,6 +24,35 @@ pub static EXCEL_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManager
 impl TableManager for ExcelWriter {
     fn descriptor(&self) -> &'static TableManagerDescriptor {
         &EXCEL_TABLE_MANAGER_DESCRIPTOR
+    }
+
+    fn type_for_sheet(
+        &self,
+        source: &coflow_api::ResolvedSource,
+        sheet: Option<&str>,
+    ) -> Result<Option<String>, DiagnosticSet> {
+        excel_type_for_sheet_from_options(&source.options, sheet)
+    }
+
+    fn sheet_for_type(
+        &self,
+        source: &coflow_api::ResolvedSource,
+        actual_type: &str,
+    ) -> Result<Option<String>, DiagnosticSet> {
+        excel_sheet_for_type_from_options(&source.options, actual_type)
+    }
+
+    fn header_options(
+        &self,
+        source: &coflow_api::ResolvedSource,
+        sheet: &str,
+        actual_type: &str,
+    ) -> Result<TableHeaderOptions, DiagnosticSet> {
+        Ok(table_header_options(excel_sheet_config_from_options(
+            &source.options,
+            sheet,
+            actual_type,
+        )?))
     }
 
     fn create_table(
@@ -87,6 +121,17 @@ impl TableManager for ExcelWriter {
             diagnostics: DiagnosticSet::empty(),
         })
     }
+}
+
+fn table_header_options(config: TableSheetConfig) -> TableHeaderOptions {
+    let mut out = TableHeaderOptions::new(config.sheet);
+    if let Some(type_name) = config.type_name {
+        out = out.with_type(type_name);
+    }
+    if let Some(key) = config.key {
+        out = out.with_key(key);
+    }
+    out.with_columns(config.columns)
 }
 
 fn create_excel_file(path: &Path, sheet: &str, headers: &[String]) -> Result<(), DiagnosticSet> {

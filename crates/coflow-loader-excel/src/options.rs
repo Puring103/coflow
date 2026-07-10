@@ -30,6 +30,17 @@ pub(crate) fn excel_sheet_for_type_from_options(
         .map(ToOwned::to_owned))
 }
 
+pub(crate) fn excel_type_for_sheet_from_options(
+    options: &Value,
+    sheet: Option<&str>,
+) -> Result<Option<String>, DiagnosticSet> {
+    Ok(excel_table_options_from_options(options)?
+        .sheets()
+        .iter()
+        .find(|config| sheet.is_none_or(|expected| config.sheet == expected))
+        .and_then(|config| config.type_name.clone()))
+}
+
 fn excel_table_options_from_options(options: &Value) -> Result<TableSourceOptions, DiagnosticSet> {
     TableSourceOptions::decode(options, "excel source").map_err(|err| {
         DiagnosticSet::one(Diagnostic::error("EXCEL-SOURCE", "EXCEL", err.message))
