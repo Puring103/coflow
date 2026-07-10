@@ -34,7 +34,7 @@ impl<'a> WireContext<'a> {
     pub fn new(session: &'a ProjectSession, diagnostics: Vec<FlatDiagnostic>) -> Self {
         Self {
             session,
-            schema: CftSchemaView::new(&session.schema),
+            schema: CftSchemaView::new(session.schema()),
             diagnostics,
             dimension_synth_types: session.dimension_synthesized_types(),
         }
@@ -181,13 +181,13 @@ fn build_annotation(
 ) -> Option<FieldAnnotation> {
     let host_id = ctx
         .session
-        .records
+        .records()
         .id_for_coordinate(host.actual_type(), &host.key);
     let path = CfdPath::root().field(field_name.to_string());
     let declared_type = declared_field_type(ctx, host.actual_type(), field_name);
     let mut annotation = annotation_for_value(value, ctx, host_id, &path, declared_type);
     if let Some(source_id) =
-        host_id.and_then(|host| ctx.session.model.spread_source_at_path(host, &path))
+        host_id.and_then(|host| ctx.session.model().spread_source_at_path(host, &path))
     {
         annotation.spread_info = spread_info_for_source(ctx, source_id, parent_path, field_name);
     }
@@ -233,7 +233,7 @@ fn annotation_for_value(
     if let Some(ty) = declared_type {
         annotation.declared_type = Some(ty.display_label());
         annotation.ref_target_type = ref_target_type(ty).map(str::to_string);
-        annotation.enum_type = enum_type_name(ty, &ctx.session.schema).map(str::to_string);
+        annotation.enum_type = enum_type_name(ty, ctx.session.schema()).map(str::to_string);
         annotation.nullable = matches!(ty, CftSchemaTypeRef::Nullable(_));
         annotation.polymorphic_types = polymorphic_types_for(ty, &ctx.schema);
         // Preload the element template when the declared type is a
@@ -249,10 +249,10 @@ fn annotation_for_value(
             annotation.ref_target_file = host_id
                 .and_then(|host| {
                     ctx.session
-                        .model
+                        .model()
                         .resolve_effective_ref(&RefSite::new(host, path.clone()))
                 })
-                .and_then(|target| ctx.session.model.record(target))
+                .and_then(|target| ctx.session.model().record(target))
                 .and_then(|record| {
                     ctx.session
                         .file_for_record(record.actual_type(), &record.key)
@@ -317,7 +317,7 @@ fn element_template(
     let mut ann = FieldAnnotation {
         declared_type: Some(item_type.display_label()),
         ref_target_type: ref_target_type(item_type).map(str::to_string),
-        enum_type: enum_type_name(item_type, &ctx.session.schema).map(str::to_string),
+        enum_type: enum_type_name(item_type, ctx.session.schema()).map(str::to_string),
         nullable: matches!(item_type, CftSchemaTypeRef::Nullable(_)),
         polymorphic_types: polymorphic_types_for(item_type, &ctx.schema),
         ..FieldAnnotation::default()
@@ -422,7 +422,7 @@ fn spread_info_for_source(
     parent_path: &[String],
     field_name: &str,
 ) -> Option<SpreadInfo> {
-    let source = ctx.session.model.record(source_id)?;
+    let source = ctx.session.model().record(source_id)?;
     let mut source_field_path = parent_path.to_vec();
     source_field_path.push(field_name.to_string());
     let source_record_file = ctx

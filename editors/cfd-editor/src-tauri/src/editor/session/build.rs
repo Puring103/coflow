@@ -27,9 +27,9 @@ pub(super) fn session_capabilities_for_file(
 ) -> WriterCapabilities {
     let provider_id = session
         .engine
-        .files
+        .files()
         .source_for_display(file_path)
-        .and_then(|source_id| session.engine.sources.entries().get(source_id.index()))
+        .and_then(|source_id| session.engine.sources().entries().get(source_id.index()))
         .map_or(FALLBACK_PROVIDER_ID, |entry| entry.provider_id.as_str());
     let writer = registry.source_writer(provider_id);
     writer.map_or_else(
@@ -58,7 +58,7 @@ pub(super) fn build_session(
         .map(coflow_runtime::ReadOnlyProjectSession::into_session)
         .map_err(|err| EditorError::project(prefixed_diagnostics("failed to build project", &err)))?;
     let file_tree = engine.file_tree();
-    let diagnostics = diagnostics_from_store(&engine.diagnostics, &project_root);
+    let diagnostics = diagnostics_from_store(engine.diagnostics(), &project_root);
 
     Ok((
         EditorSession {

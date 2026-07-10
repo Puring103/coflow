@@ -41,13 +41,13 @@ impl RecordCoordinate {
 
 #[derive(Debug)]
 pub struct ProjectSession {
-    pub project: Project,
-    pub schema: CftContainer,
-    pub model: CfdDataModel,
-    pub diagnostics: DiagnosticsStore,
-    pub sources: SourceIndex,
-    pub records: RecordIndex,
-    pub files: FileIndex,
+    pub(crate) project: Project,
+    pub(crate) schema: CftContainer,
+    pub(crate) model: CfdDataModel,
+    pub(crate) diagnostics: DiagnosticsStore,
+    pub(crate) sources: SourceIndex,
+    pub(crate) records: RecordIndex,
+    pub(crate) files: FileIndex,
     pub(crate) loader_extensions: BTreeSet<String>,
 }
 
@@ -371,9 +371,9 @@ impl ProjectSession {
 
 #[derive(Debug)]
 pub struct ProjectSchemaSession {
-    pub project: Project,
-    pub schema: CftContainer,
-    pub diagnostics: DiagnosticsStore,
+    pub(crate) project: Project,
+    pub(crate) schema: CftContainer,
+    pub(crate) diagnostics: DiagnosticsStore,
 }
 
 impl ProjectSchemaSession {

@@ -1379,6 +1379,21 @@ fn engine_session_api_does_not_live_in_lib_rs() {
             "engine session API `{expected}` should not live in lib.rs"
         );
     }
+
+    for forbidden in [
+        "pub project: Project",
+        "pub schema: CftContainer",
+        "pub model: CfdDataModel",
+        "pub diagnostics: DiagnosticsStore",
+        "pub sources: SourceIndex",
+        "pub records: RecordIndex",
+        "pub files: FileIndex",
+    ] {
+        assert!(
+            !session.contains(forbidden),
+            "ProjectSession should expose `{forbidden}` through accessors, not public fields"
+        );
+    }
 }
 
 #[test]

@@ -32,17 +32,17 @@ fn engine_builds_record_and_source_indexes() {
         "check diagnostic should be captured"
     );
     assert!(
-        session.files.source_files().contains("data/configs.xlsx"),
+        session.files().source_files().contains("data/configs.xlsx"),
         "file index should contain loaded xlsx source"
     );
     let record = session
-        .records
+        .records()
         .get_by_coordinate("Item", "item_1")
         .expect("record index should contain item_1");
     assert_eq!(record.display_path, "data/configs.xlsx");
     assert_eq!(record.provider_id, "excel");
     let table = session
-        .model
+        .model()
         .table("Item")
         .expect("check diagnostics should not discard the loaded model");
     assert_eq!(
@@ -52,7 +52,7 @@ fn engine_builds_record_and_source_indexes() {
     );
     assert!(
         session
-            .files
+            .files()
             .source_for_display("data/configs.xlsx")
             .is_some(),
         "file index should map display path to source id"
@@ -93,7 +93,7 @@ fn rename_record_key_updates_cross_source_references() {
     assert!(
         !session.has_diagnostics(),
         "diagnostics before rename: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     let outcome = session
@@ -108,17 +108,17 @@ fn rename_record_key_updates_cross_source_references() {
         ))
     );
     assert!(
-        session.records.get_by_coordinate("Item", "blade").is_some(),
+        session.records().get_by_coordinate("Item", "blade").is_some(),
         "renamed record should be indexed"
     );
     assert!(
-        session.records.get_by_coordinate("Item", "sword").is_none(),
+        session.records().get_by_coordinate("Item", "sword").is_none(),
         "old coordinate should be absent"
     );
     assert!(
         !session.has_diagnostics(),
         "diagnostics after rename: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
     let items = std::fs::read_to_string(root.join("data/items.cfd")).expect("read items");
     let bundles = std::fs::read_to_string(root.join("data/bundles.csv")).expect("read bundles");
@@ -165,7 +165,7 @@ fn rename_record_key_does_not_scan_remote_sources_without_spread_provenance() {
     assert!(
         !session.has_diagnostics(),
         "diagnostics before rename: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     session
@@ -205,7 +205,7 @@ fn rename_record_key_rolls_back_local_files_when_reference_write_fails() {
     assert!(
         !session.has_diagnostics(),
         "diagnostics before rename: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     let err = session
@@ -232,11 +232,11 @@ fn rename_record_key_rolls_back_local_files_when_reference_write_fails() {
         "rolled back source should not keep new key:\n{items}"
     );
     assert!(
-        session.records.get_by_coordinate("Item", "sword").is_some(),
+        session.records().get_by_coordinate("Item", "sword").is_some(),
         "failed rename should leave current session on old coordinate"
     );
     assert!(
-        session.records.get_by_coordinate("Item", "blade").is_none(),
+        session.records().get_by_coordinate("Item", "blade").is_none(),
         "failed rename should not update current session"
     );
 }

@@ -148,7 +148,7 @@ fn check_project_after_data_write(
 ) -> Result<Vec<FlatDiagnostic>, DiagnosticSet> {
     let (session, _registry) = open_session(config_or_dir)?;
     Ok(session
-        .diagnostics
+        .diagnostics()
         .as_set()
         .diagnostics
         .iter()

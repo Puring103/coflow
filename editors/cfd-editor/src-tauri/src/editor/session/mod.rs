@@ -65,8 +65,8 @@ impl std::fmt::Debug for EditorSession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EditorSession")
             .field("project_root", &self.project_root)
-            .field("source_files", &self.engine.files.source_files().len())
-            .field("records", &self.engine.records.by_id().len())
+            .field("source_files", &self.engine.files().source_files().len())
+            .field("records", &self.engine.records().by_id().len())
             .finish_non_exhaustive()
     }
 }
@@ -268,7 +268,7 @@ impl SessionStore {
             .map_err(|_| EditorError::session("session poisoned"))?;
         Ok(session
             .engine
-            .schema
+            .schema()
             .resolve_enum(enum_name)
             .map(|e| e.variants.iter().map(|v| v.name.clone()).collect())
             .unwrap_or_default())
@@ -367,7 +367,7 @@ impl SessionStore {
                 .map(|applied| applied.outcome.clone())
                 .ok_or_else(|| EditorError::write("write field did not apply"))?;
             session.diagnostics =
-                Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
+                Diagnostics::from_store(session.engine.diagnostics(), &session.project_root);
             let renamed = outcome
                 .renamed
                 .and_then(|(old, new)| (old == *coordinate).then_some(new));
@@ -529,7 +529,7 @@ impl SessionStore {
                 ));
             }
             session.diagnostics =
-                Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
+                Diagnostics::from_store(session.engine.diagnostics(), &session.project_root);
             session.ref_target_cache.clear();
         }
         let file_records = self.get_file_records(id, file_path)?;
@@ -582,7 +582,7 @@ impl SessionStore {
                 .map(|applied| applied.outcome.clone())
                 .ok_or_else(|| EditorError::write("rename did not apply"))?;
             session.diagnostics =
-                Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
+                Diagnostics::from_store(session.engine.diagnostics(), &session.project_root);
             let renamed = outcome
                 .renamed
                 .and_then(|(old, new)| (old == *coordinate).then_some(new))
@@ -663,7 +663,7 @@ impl SessionStore {
                 ));
             }
             session.diagnostics =
-                Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
+                Diagnostics::from_store(session.engine.diagnostics(), &session.project_root);
             session.ref_target_cache.clear();
         }
         let file_records = self.get_file_records(id, &file_path)?;

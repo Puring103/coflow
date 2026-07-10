@@ -155,13 +155,13 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
     let session = build_project_session_for_build(project, &registry).expect("session");
 
     let duplicate_index = session
-        .diagnostics
+        .diagnostics()
         .as_set()
         .diagnostics
         .iter()
         .position(|diagnostic| diagnostic.code == CfdErrorCode::DuplicateId.to_string())
         .expect("duplicate diagnostic");
-    let duplicate = &session.diagnostics.as_set().diagnostics[duplicate_index];
+    let duplicate = &session.diagnostics().as_set().diagnostics[duplicate_index];
     let primary = duplicate
         .primary
         .as_ref()
@@ -176,21 +176,21 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
         "duplicate diagnostic should point at data/items.cfd: {duplicate:?}"
     );
     let logical = session
-        .diagnostics
+        .diagnostics()
         .logical_location(duplicate_index)
         .expect("duplicate diagnostic should keep logical record location");
     assert_eq!(logical.actual_type.as_deref(), Some("Item"));
     assert_eq!(logical.record_key.as_deref(), Some("sword"));
-    let indexed_file = path_to_slash(path);
+    let indexed_file = path_to_slash(path.as_path());
     assert!(
-        !session.diagnostics.by_file(&indexed_file).is_empty(),
+        !session.diagnostics().by_file(&indexed_file).is_empty(),
         "duplicate diagnostic should be indexed by source file `{indexed_file}`"
     );
     assert!(
-        !session.diagnostics.by_record("Item", "sword").is_empty(),
+        !session.diagnostics().by_record("Item", "sword").is_empty(),
         "duplicate diagnostic should be indexed by logical record"
     );
-    let rejected = session.records.rejected();
+    let rejected = session.records().rejected();
     assert_eq!(
         rejected.len(),
         2,
@@ -202,13 +202,13 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
             && record.display_path == "data/items.cfd"
     }));
     assert_eq!(
-        session.records.rejected_in_file("data/items.cfd").count(),
+        session.records().rejected_in_file("data/items.cfd").count(),
         2,
         "rejected source rows should be queryable by file"
     );
     assert_eq!(
         session
-            .records
+            .records()
             .rejected_by_coordinate("Item", "sword")
             .count(),
         2,

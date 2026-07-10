@@ -109,7 +109,7 @@ fn localized_schema_requires_language_dimension_config() {
 
     assert!(
         session
-            .diagnostics
+            .diagnostics()
             .as_set()
             .diagnostics
             .iter()
@@ -119,7 +119,7 @@ fn localized_schema_requires_language_dimension_config() {
                     == "schema contains @localized fields but dimensions.language is not configured"
             }),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -157,7 +157,7 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
 
     assert!(
         session
-            .diagnostics
+            .diagnostics()
             .as_set()
             .diagnostics
             .iter()
@@ -169,15 +169,12 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
                         matches!(
                             &label.location,
                             coflow_api::SourceLocation::ProjectConfig { key_path, .. }
-                                if key_path == &vec![
-                                    "dimensions".to_string(),
-                                    "platform".to_string()
-                                ]
+                                if key_path.as_slice() == ["dimensions", "platform"]
                         )
                     })
             }),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -237,7 +234,7 @@ dimensions:
     let session = build_project_session_for_build(project, &registry).expect("build session");
 
     let variants = session
-        .schema
+        .schema()
         .resolve_type("Item_nameVariants")
         .expect("synthesized type");
     assert_eq!(
@@ -268,7 +265,7 @@ dimensions:
         ]
     );
     assert!(session
-        .files
+        .files()
         .source_files()
         .contains("data/dimensions/language/Item_name.csv"));
 
@@ -326,7 +323,7 @@ dimensions:
     let session = build_project_session_for_build(project, &registry).expect("build session");
 
     let variants = session
-        .schema
+        .schema()
         .resolve_type("Item_nameVariants")
         .expect("synthesized type");
     assert_eq!(
@@ -338,11 +335,11 @@ dimensions:
         vec!["default", "pc", "mobile"]
     );
     assert!(session
-        .files
+        .files()
         .source_files()
         .contains("data/dimensions/platform/Item_name.csv"));
     assert!(session
-        .records
+        .records()
         .get_by_coordinate("Item_nameVariants", "potion")
         .is_some());
 
@@ -386,7 +383,7 @@ dimensions:
     let session = build_project_session_for_build(project, &registry).expect("build session");
 
     let variants = session
-        .schema
+        .schema()
         .resolve_type("Item_nameVariants")
         .expect("synthesized type");
     assert_eq!(variants.all_fields[0].ty, "string?");
@@ -440,7 +437,7 @@ dimensions:
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
     assert!(
         !root.join("data/dimensions/language/Item_name.csv").exists(),
@@ -504,11 +501,11 @@ dimensions:
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
-    assert!(session.schema.resolve_type("Base_nameVariants").is_some());
-    assert!(session.schema.resolve_type("Child_nameVariants").is_none());
+    assert!(session.schema().resolve_type("Base_nameVariants").is_some());
+    assert!(session.schema().resolve_type("Child_nameVariants").is_none());
     assert!(root.join("data/dimensions/language/Base_name.csv").exists());
     assert!(
         !root
@@ -570,7 +567,7 @@ dimensions:
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
@@ -630,11 +627,11 @@ dimensions:
     assert!(
         session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
     assert!(
         session
-            .diagnostics
+            .diagnostics()
             .as_set()
             .diagnostics
             .iter()
@@ -643,7 +640,7 @@ dimensions:
                     && diagnostic.message.contains("unmanaged id `stale`")
             }),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -705,13 +702,13 @@ dimensions:
     );
     assert!(
         session
-            .diagnostics
+            .diagnostics()
             .as_set()
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.message.contains("[language=zh]")),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
@@ -771,7 +768,7 @@ dimensions:
     assert!(session.has_diagnostics());
     assert!(
         session
-            .diagnostics
+            .diagnostics()
             .as_set()
             .diagnostics
             .iter()
@@ -780,7 +777,7 @@ dimensions:
                     && diagnostic.message.contains("unmanaged id `extra`")
             }),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -836,7 +833,7 @@ dimensions:
     assert!(session.has_diagnostics());
     assert!(
         session
-            .diagnostics
+            .diagnostics()
             .as_set()
             .diagnostics
             .iter()
@@ -845,7 +842,7 @@ dimensions:
                     && diagnostic.message.contains("duplicate id `potion`")
             }),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -900,7 +897,7 @@ dimensions:
     assert!(session.has_diagnostics());
     assert!(
         session
-            .diagnostics
+            .diagnostics()
             .as_set()
             .diagnostics
             .iter()
@@ -909,7 +906,7 @@ dimensions:
                     && diagnostic.message.contains("no longer managed")
             }),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -1094,7 +1091,7 @@ dimensions:
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     let generated_path = root.join("data/dimensions/language/Item_name.csv");
@@ -1109,7 +1106,7 @@ dimensions:
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
     let second_modified = std::fs::metadata(&generated_path)
         .expect("metadata")
@@ -1167,11 +1164,11 @@ dimensions:
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     assert!(session
-        .files
+        .files()
         .source_files()
         .contains("data/dimensions/language/ui_icon.csv"));
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/ui_icon.csv"))
@@ -1237,7 +1234,7 @@ dimensions:
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     let generated_name =
@@ -1317,7 +1314,7 @@ dimensions:
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/UiText.cfd"))
@@ -1327,7 +1324,7 @@ dimensions:
         "welcome: UiText_welcomeVariants {\n    default: \"Welcome\",\n    zh: \"欢迎\",\n    en: null,\n}\n\n"
     );
     assert!(session
-        .files
+        .files()
         .source_files()
         .contains("data/dimensions/language/UiText.cfd"));
 
@@ -1388,16 +1385,16 @@ dimensions:
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     // Both records exist in the model, each addressable by (type, key).
     let source = session
-        .records
+        .records()
         .get_by_coordinate("Item", "potion")
         .expect("source `Item.potion` should be indexed");
     let synthetic = session
-        .records
+        .records()
         .get_by_coordinate("Item_nameVariants", "potion")
         .expect("synthetic `Item_nameVariants.potion` should be indexed");
     assert_ne!(source.id, synthetic.id, "both records have distinct ids");
@@ -1410,7 +1407,7 @@ dimensions:
     // The synthetic file lists only the synthetic record — the source row's
     // fields must not bleed through.
     let ids_in_variants_file = session
-        .records
+        .records()
         .ids_in_file("data/dimensions/language/Item_name.csv")
         .to_vec();
     assert_eq!(
@@ -1419,7 +1416,7 @@ dimensions:
         "synthetic file index should hold only the variant record"
     );
     let coordinate = session
-        .records
+        .records()
         .get(synthetic.id)
         .expect("synthetic record ref")
         .coordinate
@@ -1507,7 +1504,7 @@ sources:
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics.as_set()
+        session.diagnostics().as_set()
     );
 
     session
