@@ -40,7 +40,7 @@ coflow check <project>
 修改数据时优先使用 writer 命令：
 
 ```powershell
-coflow data patch <project> --patch patch.json
+coflow data patch <project> --patch '<json>'
 coflow data sync-header <project> --file data/items.csv --type Item
 coflow data write-file <project> --file data/items.cfd --stdin --check
 coflow check <project>

@@ -21,7 +21,7 @@ coflow schema files [CONFIG_OR_DIR] [--human]
 coflow data sources [CONFIG_OR_DIR] [--human]
 coflow data list [CONFIG_OR_DIR] [--type TYPE] [--file FILE] [--limit N] [--offset N] [--human]
 coflow data get [CONFIG_OR_DIR] [TYPE.KEY] [--type TYPE] [--file FILE] [--keys a,b] [--limit N] [--offset N] [--all] [--human]
-coflow data patch [CONFIG_OR_DIR] --patch PATCH_FILE [--human]
+coflow data patch [CONFIG_OR_DIR] --patch JSON [--human]
 ```
 
 Default output for the new `schema` and `data` commands is JSON. `--human` opts into text output. `CONFIG_OR_DIR` is optional and follows existing Coflow project resolution.
@@ -2143,7 +2143,7 @@ provider, but not full field values.
 Outputs complete record values. By default, large result sets require `--limit`
 or `--all` to avoid accidental full-project dumps.
 
-### `coflow data patch [CONFIG_OR_DIR] --patch PATCH_FILE [--human]`
+### `coflow data patch [CONFIG_OR_DIR] --patch JSON [--human]`
 
 Applies a batch data patch through provider writers. Write errors stop the batch
 when `stop_on_write_error` is true. CFT check diagnostics do not block writes;
@@ -2162,7 +2162,7 @@ cargo run -- schema inspect examples/rpg
 cargo run -- data sources examples/rpg
 cargo run -- data list examples/rpg --type Item
 cargo run -- data get examples/rpg Item.potion
-cargo run -- data patch examples/rpg --patch patch.json
+cargo run -- data patch examples/rpg --patch-file patch.json
 ```
 
 `data patch` writes through the same provider writer layer used by the editor.

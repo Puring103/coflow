@@ -91,3 +91,19 @@ type Item {
 表格 writer 会根据 record origin 定位原始行和列，再写回单元格文本。嵌套数组、字典、多态对象等复杂值会被渲染为可再次解析的单元格值文本。
 
 写回仍会遵守 Provider 文件边界和 schema 约束，不会绕过数据源直接改 DataModel。
+
+## 创建表格
+
+`coflow data create-table` 可以在已有表格 source 中创建新的 sheet/table，并按 CFT type 写入表头。
+
+```powershell
+coflow data create-table <project> --source data/gameplay.xlsx --type Item --sheet Item
+coflow data create-table <project> --source lark:sht_xxxxx --type Item --provider lark-sheet --sheet Item
+```
+
+它和 `data create-file` 的边界不同：
+
+- `data create-file` 创建新的本地 `.cfd`、`.csv` 或 Excel 文件。
+- `data create-table` 在已有 Excel workbook 或远端 Lark spreadsheet 中创建一个 sheet/table。
+
+创建表格只需要 schema，不加载完整 DataModel，也不执行 `check {}`。创建后如果要确认数据源整体可用，继续运行 `coflow check`。

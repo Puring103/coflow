@@ -229,7 +229,7 @@ coflow data get examples/rpg Item.sword
 coflow data create-file examples/rpg --file data/items.csv --type Item --provider csv
 coflow data sync-header examples/rpg --file data/items.csv --type Item
 coflow data write-file examples/rpg --file data/items.cfd --stdin --check
-coflow data patch examples/rpg --patch patch.json
+coflow data patch examples/rpg --patch-file patch.json
 ```
 
 data 命令区分：

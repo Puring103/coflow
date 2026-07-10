@@ -451,6 +451,30 @@ coflow data create-file examples/rpg --file data/items.cfd --provider cfd
 - `.cfd` 创建空文件，不写表头。
 - 命令拒绝覆盖已存在文件。
 
+### `data create-table`
+
+在已有表格 source 中创建 sheet/table，并按当前 schema 写入表头。
+
+```powershell
+coflow data create-table [CONFIG_OR_DIR] --source SOURCE [--type TYPE] [--provider excel|lark-sheet] [--sheet SHEET] [--human]
+```
+
+示例：
+
+```powershell
+coflow data create-table examples/rpg --source data/gameplay.xlsx --type Item --sheet Item
+coflow data create-table examples/rpg --source lark:sht_xxxxx --type Item --provider lark-sheet --sheet Item
+```
+
+规则：
+
+- `--source` 是项目相对 Excel 文件，或已配置的飞书/Lark 远端 source 地址。
+- `--provider` 省略时，`lark:`、飞书/Lark URL 会推断为 `lark-sheet`，其他 source 默认按 Excel 表格处理。
+- `--type` 用来决定表头字段；创建 Lark table 时必须提供。
+- `--sheet` 是要创建的 sheet/table 名；省略时使用 `--type`。
+- Excel source 会拒绝创建已存在的 sheet。
+- Lark source 必须能匹配 `coflow.yaml` 中已配置的 `lark-sheet` source，并使用该 source 的 `app_id` / `app_secret` 访问远端表格。
+
 ### `data sync-header`
 
 按当前 schema 同步本地数据文件的顶层字段或表头。
@@ -502,16 +526,18 @@ Get-Content data/items.cfd | coflow data write-file examples/rpg --file data/ite
 通过 provider writer 应用批量数据补丁。
 
 ```powershell
-coflow data patch [CONFIG_OR_DIR] --patch PATCH_FILE [--human]
+coflow data patch [CONFIG_OR_DIR] --patch JSON [--human]
+coflow data patch [CONFIG_OR_DIR] --patch-file PATCH_FILE [--human]
 ```
 
 示例：
 
 ```powershell
-coflow data patch examples/rpg --patch patch.json
+coflow data patch examples/rpg --patch '{"ops":[{"op":"set_field","record":{"type":"Item","key":"sword"},"path":[{"kind":"field","value":"price"}],"value":125}]}'
+coflow data patch examples/rpg --patch-file patch.json
 ```
 
-patch 文件示例：
+patch JSON 示例：
 
 ```json
 {
@@ -590,6 +616,7 @@ patch value 支持普通 JSON 值，也支持以下特殊对象：
 | `data list` | 是 | 是 | 是 | 否 | 否 |
 | `data get` | 是 | 是 | 是 | 否 | 否 |
 | `data create-file` | 是 | 否 | 否 | 否 | 创建数据文件 |
+| `data create-table` | 是 | 否 | 否 | 否 | 创建表格 sheet/table |
 | `data sync-header` | 是 | 否 | 否 | 否 | 更新本地数据文件 |
 | `data write-file` | 是 | 是 | 可选 | 可选 | 写 `.cfd` |
 | `data patch` | 是 | 是 | 是 | 可选 | 通过 writer 修改数据 |

@@ -237,7 +237,7 @@ lich,frozen,60</code></pre>
 </div>
 <div class="agent__step">
 <span class="agent__prompt">$</span>
-<code>coflow data patch --patch patch.json</code>
+<code>coflow data patch --patch '&lt;json&gt;'</code>
 <span class="agent__note">结构化写回</span>
 </div>
 <div class="agent__step">

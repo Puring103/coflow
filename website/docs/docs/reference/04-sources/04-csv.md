@@ -33,7 +33,7 @@ sources:
 CSV writer 支持通过以下命令写本地文件：
 
 ```powershell
-coflow data patch <project> --patch patch.json
+coflow data patch <project> --patch '<json>'
 coflow data create-file <project> --file data/items.csv --type Item --provider csv
 coflow data sync-header <project> --file data/items.csv --type Item
 ```

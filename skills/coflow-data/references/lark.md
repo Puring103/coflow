@@ -57,7 +57,18 @@ Lark writer 面向远端表格写回。当前 writer 能力为：
 | 修改 record key | 是 |
 | 插入记录 | 是 |
 | 删除记录 | 是 |
+| 创建 sheet/table | 是 |
 | 写后完整刷新 | 是 |
 | 远端 source | 是 |
 
 自动化命令和编辑器会根据 writer 报告的能力和诊断返回结果。写回失败使用 `LARK-WRITE` 诊断。
+
+### 创建远端 sheet
+
+`coflow data create-table` 可以在已配置的 Lark spreadsheet 中创建 sheet，并写入目标 CFT type 的表头：
+
+```powershell
+coflow data create-table <project> --source lark:sht_xxxxx --type Item --provider lark-sheet --sheet Item
+```
+
+`--source` 必须能匹配 `coflow.yaml` 中的 Lark source；命令会复用该 source 的 `app_id`、`app_secret` 和 `sheets` 映射配置。若目标 sheet 已存在，命令会返回诊断而不是覆盖。
