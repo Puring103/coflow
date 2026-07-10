@@ -564,6 +564,18 @@ fn root_cli_artifact_staging_does_not_live_in_artifacts_rs() {
         artifacts.lines().count() < 400,
         "root CLI artifacts.rs should stay focused on artifact orchestration"
     );
+    assert!(
+        artifacts.contains("use coflow_cft::CftSchemaView;")
+            && artifacts.contains("pub schema: &'a CftSchemaView")
+            && artifacts.contains("schema: &CftSchemaView"),
+        "root CLI artifact helpers should receive the schema query facade"
+    );
+    for forbidden in ["CftContainer", "CftSchemaView::new("] {
+        assert!(
+            !artifacts.contains(forbidden),
+            "root CLI artifact helpers should not own full schema container access `{forbidden}`"
+        );
+    }
 }
 
 #[test]

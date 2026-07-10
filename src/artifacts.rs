@@ -8,7 +8,7 @@ use coflow_api::{
     CodegenContext, Diagnostic, DiagnosticSet, ExportContext, Label, OutputSpec, ProviderRegistry,
     Severity, SourceLocation,
 };
-use coflow_cft::{CftContainer, CftSchemaView};
+use coflow_cft::CftSchemaView;
 use coflow_data_model::CfdDataModel;
 use coflow_project::{OutputConfig, Project};
 use serde::Serialize;
@@ -29,7 +29,7 @@ pub fn output_dir(
 
 pub fn write_data_tables(
     registry: &ProviderRegistry,
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     model: &CfdDataModel,
     exporter_id: &str,
     output: &OutputConfig,
@@ -40,7 +40,7 @@ pub fn write_data_tables(
 
 pub fn stage_data_tables(
     registry: &ProviderRegistry,
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     model: &CfdDataModel,
     exporter_id: &str,
     output_config: &OutputConfig,
@@ -57,10 +57,9 @@ pub fn stage_data_tables(
         dir: dir.to_path_buf(),
         options: output_options(output_config),
     };
-    let schema_view = CftSchemaView::new(schema);
     let artifacts = exporter.export(
         ExportContext {
-            schema: &schema_view,
+            schema,
             model,
         },
         &output,
@@ -70,7 +69,7 @@ pub fn stage_data_tables(
 
 #[derive(Debug, Clone, Copy)]
 pub struct CodegenArtifactRequest<'a> {
-    pub schema: &'a CftContainer,
+    pub schema: &'a CftSchemaView,
     pub model: Option<&'a CfdDataModel>,
     pub codegen_id: &'a str,
     pub data_format: &'a str,
@@ -94,10 +93,9 @@ pub fn stage_codegen_artifacts(
         dir: request.dir.to_path_buf(),
         options: codegen_output_options(request.output_config, request.id_as_enum_variants),
     };
-    let schema_view = CftSchemaView::new(request.schema);
     let artifacts = codegen.generate(
         CodegenContext {
-            schema: &schema_view,
+            schema: request.schema,
             model: request.model,
             data_format: request.data_format,
         },
@@ -108,7 +106,7 @@ pub fn stage_codegen_artifacts(
 
 pub fn preflight_codegen(
     registry: &ProviderRegistry,
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     model: Option<&CfdDataModel>,
     codegen_id: &str,
     data_format: &str,
@@ -126,10 +124,9 @@ pub fn preflight_codegen(
         dir: PathBuf::new(),
         options: codegen_output_options(output_config, &Value::Null),
     };
-    let schema_view = CftSchemaView::new(schema);
     Ok(codegen.preflight(
         CodegenContext {
-            schema: &schema_view,
+            schema,
             model,
             data_format,
         },
