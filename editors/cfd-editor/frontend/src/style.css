@@ -936,67 +936,62 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   overflow: hidden;
 }
 
-.create-record-header,
-.create-record-actions {
+.create-record-card-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  background: var(--bg-2);
-  border-bottom: 1px solid var(--border);
-}
-
-.create-record-header h2 {
-  font-size: 15px;
-  font-weight: 650;
-  line-height: 1.4;
-}
-
-.create-record-header p {
-  color: var(--text-mute);
-  font-size: 11px;
-  line-height: 1.5;
-  margin-top: 2px;
-}
-
-.create-record-header .btn-icon { margin-left: auto; }
-
-.create-record-meta {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px);
   gap: 10px;
-  padding: 12px 14px;
+  padding: 8px 10px 8px 0;
+  background: var(--bg-3);
   border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
 }
 
-.create-record-meta label {
-  display: grid;
-  gap: 5px;
-  color: var(--text-dim);
-  font-size: 11px;
+.create-record-card-header .gn-color-bar {
+  width: 4px;
+  align-self: stretch;
+  flex-shrink: 0;
+  background: var(--node-color, var(--accent));
 }
 
-.create-record-meta input,
-.create-record-meta select {
-  height: var(--h-input);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-0);
-  color: var(--text);
-  padding: 0 10px;
-  outline: none;
-  font-family: inherit;
-  font-size: var(--fs-ui);
-}
-
-.create-record-meta input:focus,
-.create-record-meta select:focus {
-  border-color: var(--accent);
+.create-record-key-input {
+  flex: 1;
+  font-weight: 700;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
   background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 3px 6px;
+  outline: none;
+  min-width: 0;
+}
+.create-record-key-input:focus {
+  border-color: var(--accent);
+  background: var(--bg-0);
+}
+.create-record-key-input[aria-invalid="true"] {
+  border-color: color-mix(in srgb, var(--red) 70%, var(--border-strong));
 }
 
-.create-record-meta input[aria-invalid="true"] {
-  border-color: color-mix(in srgb, var(--red) 70%, var(--border-strong));
+.create-record-type-tag {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--node-color, var(--accent));
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--node-color, var(--accent)) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--node-color, var(--accent)) 30%, transparent);
+  border-radius: 3px;
+  padding: 2px 6px;
+  line-height: 1.5;
+}
+
+.create-record-close {
+  flex-shrink: 0;
+  margin-right: 4px;
 }
 
 .create-record-loading,
@@ -1021,105 +1016,54 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 
 .create-record-fields {
-  padding: 8px 14px 12px;
+  margin: 12px 14px;
   overflow: auto;
-  display: grid;
-  gap: 6px;
+  flex: 1;
+  min-height: 0;
 }
 
-.create-field-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr);
-  gap: 10px;
-  align-items: center;
-  min-height: 44px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-2);
-}
-
-.create-field-row.schema-default {
-  background: color-mix(in srgb, var(--bg-2) 72%, var(--bg-0));
-  color: var(--text-dim);
-}
-
-.create-field-row.required {
-  border-color: color-mix(in srgb, var(--red) 50%, var(--border-strong));
-}
-
-.create-field-main {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.create-field-label {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-}
-
-.create-field-name {
-  color: var(--text);
-  font-weight: 600;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.create-field-type {
+/* Schema-default, unedited rows: fade the value so users can tell they'd be
+ * skipped on write. Also dims text-based DirectEditor inputs; controls remain
+ * clickable and regain full contrast on focus. */
+.dc-row.create-field-muted .dc-row-value-inner,
+.dc-row.create-field-muted .dc-row-value-inner .dc-input,
+.dc-row.create-field-muted .dc-row-value-inner .dc-pill-select {
   color: var(--text-mute);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10.5px;
-  white-space: nowrap;
+  opacity: 0.72;
+}
+.dc-row.create-field-muted .dc-row-value-inner:focus-within,
+.dc-row.create-field-muted .dc-row-value-inner:focus-within .dc-input,
+.dc-row.create-field-muted .dc-row-value-inner:focus-within .dc-pill-select {
+  color: var(--text);
+  opacity: 1;
 }
 
-.create-field-state {
-  width: max-content;
-  max-width: 100%;
+/* Required rows: red edge on the label side + "必填" tag before the value. */
+.dc-row.create-field-required {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--red) 55%, transparent);
+}
+.dc-row.create-field-required .dc-row-value::before {
+  content: '必填';
+  flex-shrink: 0;
   padding: 1px 6px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--text-mute);
+  border: 1px solid color-mix(in srgb, var(--red) 45%, var(--border));
+  color: var(--red);
   font-size: 10.5px;
   line-height: 1.5;
-}
-
-.create-field-row.required .create-field-state {
-  color: var(--red);
-  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
-}
-
-.create-field-control {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-}
-
-.create-field-control .dc-input,
-.create-field-control .dc-pill-select,
-.create-field-control .dc-pill-wrap {
-  max-width: 100%;
-}
-
-.create-field-placeholder {
-  color: var(--text-mute);
-  font-size: 12px;
-}
-
-.create-field-help {
-  grid-column: 2;
-  color: var(--red);
-  font-size: 11px;
-  line-height: 1.4;
+  white-space: nowrap;
+  order: 2;
+  margin-left: auto;
 }
 
 .create-record-actions {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 14px;
   border-top: 1px solid var(--border);
-  border-bottom: 0;
+  background: var(--bg-2);
   margin-top: auto;
 }
 
@@ -1129,11 +1073,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
     width: calc(100vw - 24px);
     max-height: calc(100vh - 24px);
   }
-  .create-record-meta,
-  .create-field-row {
-    grid-template-columns: 1fr;
-  }
-  .create-field-help { grid-column: 1; }
 }
 
 /* ─── Context menu ─── */
@@ -1188,13 +1127,32 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   overflow: hidden;
 }
 
-.rv-sidebar {
+.rv-sidebar-wrap {
   width: 220px;
   min-width: 180px;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-2);
   border-right: 1px solid var(--border);
+  min-height: 0;
+}
+
+.rv-sidebar {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 6px;
+}
+
+.rv-sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.rv-sidebar-new {
+  width: 100%;
+  justify-content: center;
 }
 
 .rv-sidebar-item {

@@ -12,7 +12,6 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
-import type { CreateRecordFieldDraft } from '../bindings/CreateRecordFieldDraft'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import {
@@ -30,7 +29,8 @@ import {
   type FieldPathSegment,
   type FieldValue,
 } from '../wire'
-import { DataCardCompact, DirectEditor, EnumDirectSelect, RefDirectSelect, summaryOf } from './DataCard'
+import { DataCardCompact, EnumDirectSelect, RefDirectSelect, summaryOf } from './DataCard'
+import { CreateRecordDialog } from './CreateRecordDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 
@@ -68,8 +68,6 @@ const ROW_H = 30
 export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selectedCoordinate, onSelectRecord, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
-  const [newKey, setNewKey] = useState('')
-  const [newType, setNewType] = useState<string>(activeType || data.type_names[0] || '')
   const selectedId = selectedCoordinate ? coordinateId(selectedCoordinate) : null
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
@@ -88,10 +86,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   useEffect(() => {
     setGlobalFilter(searchQuery ?? '')
   }, [searchQuery])
-
-  useEffect(() => {
-    setNewType(activeType || data.type_names[0] || '')
-  }, [activeType, data.type_names])
 
   const filtered = useMemo(
     () => data.records.filter(r => recordActualType(r) === activeType),
@@ -392,10 +386,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           ) : !data.capabilities.can_insert_record || !onInsertRecord || !onCreateRecordDraft ? (
             <span className="table-footer-readonly">该来源不支持新建记录</span>
           ) : (
-            <button className="btn btn-outlined" onClick={() => {
-              setNewType(activeType || data.type_names[0] || '')
-              setShowNewRecord(true)
-            }}>
+            <button className="btn btn-outlined" onClick={() => setShowNewRecord(true)}>
               <Icon name="plus" size={13} />
               新建记录
             </button>
@@ -405,14 +396,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
       {showNewRecord && onInsertRecord && onCreateRecordDraft && (
         <CreateRecordDialog
-          typeNames={data.type_names}
-          initialType={newType}
-          initialKey={newKey}
-          onKeyChange={setNewKey}
-          onTypeChange={setNewType}
+          actualType={activeType || data.type_names[0] || ''}
+          existingKeys={data.records.map(r => r.coordinate.key)}
           onCreateRecordDraft={onCreateRecordDraft}
           onInsertRecord={onInsertRecord}
-          onClose={() => { setShowNewRecord(false); setNewKey('') }}
+          onClose={() => setShowNewRecord(false)}
         />
       )}
 
@@ -459,274 +447,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   )
 })
 
-function CreateRecordDialog({
-  typeNames,
-  initialType,
-  initialKey,
-  onKeyChange,
-  onTypeChange,
-  onCreateRecordDraft,
-  onInsertRecord,
-  onClose,
-}: {
-  typeNames: string[]
-  initialType: string
-  initialKey: string
-  onKeyChange: (key: string) => void
-  onTypeChange: (actualType: string) => void
-  onCreateRecordDraft: (actualType: string) => Promise<CreateRecordDraft>
-  onInsertRecord: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
-  onClose: () => void
-}) {
-  const [recordKeyDraft, setRecordKeyDraft] = useState(initialKey)
-  const [actualType, setActualType] = useState(initialType || typeNames[0] || '')
-  const [draft, setDraft] = useState<CreateRecordDraft | null>(null)
-  const [values, setValues] = useState<Record<string, FieldValue | null>>({})
-  const [dirty, setDirty] = useState<Set<string>>(() => new Set())
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    if (!actualType) return
-    let alive = true
-    setLoading(true)
-    setLoadError(null)
-    setDraft(null)
-    setValues({})
-    setDirty(new Set())
-    onCreateRecordDraft(actualType)
-      .then(next => {
-        if (!alive) return
-        setDraft(next)
-        setValues(Object.fromEntries(next.fields.map(field => [field.name, field.value])))
-      })
-      .catch(err => {
-        if (!alive) return
-        setLoadError(errorText(err))
-      })
-      .finally(() => { if (alive) setLoading(false) })
-    return () => { alive = false }
-  }, [actualType, onCreateRecordDraft])
-
-  const requiredFields = useMemo(
-    () => draft?.fields.filter(field => isRequiredMissing(field, values[field.name] ?? null)) ?? [],
-    [draft, values],
-  )
-  const canSubmit = !!recordKeyDraft.trim() && !!draft && requiredFields.length === 0 && !saving && !loading
-
-  function changeType(next: string) {
-    setActualType(next)
-    onTypeChange(next)
-  }
-
-  function changeKey(next: string) {
-    setRecordKeyDraft(next)
-    onKeyChange(next)
-  }
-
-  function setFieldValue(field: CreateRecordFieldDraft, next: FieldValue) {
-    setValues(prev => ({ ...prev, [field.name]: next }))
-    setDirty(prev => {
-      const out = new Set(prev)
-      out.add(field.name)
-      return out
-    })
-  }
-
-  async function submit() {
-    if (!canSubmit || !draft) return
-    setSaving(true)
-    try {
-      await onInsertRecord(recordKeyDraft.trim(), draft.actual_type, buildInsertPayload(draft, values, dirty))
-      onClose()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div
-      className="create-record-backdrop"
-      role="presentation"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <section
-        className="create-record-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-record-title"
-        onMouseDown={e => e.stopPropagation()}
-        onKeyDown={e => { if (e.key === 'Escape') onClose() }}
-      >
-        <header className="create-record-header">
-          <div>
-            <h2 id="create-record-title">新建记录</h2>
-            <p>确认字段后写入当前数据源；灰色 schema default 未改动时不会写入文件。</p>
-          </div>
-          <button className="btn btn-icon" onClick={onClose} aria-label="关闭新建记录表单">
-            <Icon name="close" size={14} />
-          </button>
-        </header>
-
-        <div className="create-record-meta">
-          <label>
-            <span>记录 Key</span>
-            <input
-              value={recordKeyDraft}
-              autoFocus
-              onChange={e => changeKey(e.target.value)}
-              placeholder="record_key"
-              aria-invalid={!recordKeyDraft.trim()}
-            />
-          </label>
-          <label>
-            <span>类型</span>
-            <select value={actualType} onChange={e => changeType(e.target.value)}>
-              {typeNames.map(typeName => <option key={typeName} value={typeName}>{typeName}</option>)}
-            </select>
-          </label>
-        </div>
-
-        {loadError && <div className="create-record-error" role="alert">{loadError}</div>}
-        {loading && <div className="create-record-loading">正在读取字段默认值...</div>}
-
-        {draft && (
-          <div className="create-record-fields" role="list" aria-label="新记录字段">
-            {draft.fields.map(field => (
-              <CreateRecordFieldRow
-                key={field.name}
-                field={field}
-                value={values[field.name] ?? null}
-                dirty={dirty.has(field.name)}
-                onChange={next => setFieldValue(field, next)}
-              />
-            ))}
-          </div>
-        )}
-
-        {requiredFields.length > 0 && (
-          <div className="create-record-required-summary" role="alert">
-            还有 {requiredFields.length} 个必填字段需要确认：{requiredFields.map(field => field.name).join(', ')}
-          </div>
-        )}
-
-        <footer className="create-record-actions">
-          <button className="btn" onClick={onClose} disabled={saving}>取消</button>
-          <button className="btn btn-primary" onClick={submit} disabled={!canSubmit}>
-            {saving ? '创建中...' : '创建'}
-          </button>
-        </footer>
-      </section>
-    </div>
-  )
-}
-
-function CreateRecordFieldRow({
-  field,
-  value,
-  dirty,
-  onChange,
-}: {
-  field: CreateRecordFieldDraft
-  value: FieldValue | null
-  dirty: boolean
-  onChange: (next: FieldValue) => void
-}) {
-  const required = !!field.required
-  const schemaDefault = field.source === 'schema_default'
-  const annotation = field.annotation
-  return (
-    <div
-      className={`create-field-row${required ? ' required' : ''}${schemaDefault && !dirty ? ' schema-default' : ''}`}
-      role="listitem"
-    >
-      <div className="create-field-main">
-        <label className="create-field-label">
-          <span className="create-field-name">{field.name}</span>
-          {annotation?.declared_type && <span className="create-field-type">{annotation.declared_type}</span>}
-        </label>
-        <span className="create-field-state">{fieldStateLabel(field, dirty)}</span>
-      </div>
-      <div className="create-field-control">
-        {value ? (
-          <DirectEditor
-            value={value}
-            onCommit={onChange}
-            refTargetType={annotation?.ref_target_type ?? requiredRefTarget(field)}
-            enumType={annotation?.enum_type ?? undefined}
-            nullable={annotation?.nullable ?? false}
-          />
-        ) : (
-          <span className="create-field-placeholder">{requiredText(field)}</span>
-        )}
-      </div>
-      {required && <div className="create-field-help">{requiredText(field)}</div>}
-    </div>
-  )
-}
-
-function buildInsertPayload(
-  draft: CreateRecordDraft,
-  values: Record<string, FieldValue | null>,
-  dirty: Set<string>,
-): FieldValue {
-  const fields: { [key: string]: FieldValue | undefined } = {}
-  for (const field of draft.fields) {
-    const value = values[field.name]
-    if (!value) continue
-    const shouldWrite = field.source !== 'schema_default' || dirty.has(field.name)
-    if (shouldWrite) fields[field.name] = value
-  }
-  return {
-    kind: 'object',
-    value: {
-      actual_type: draft.actual_type,
-      fields,
-    },
-  }
-}
-
-function isRequiredMissing(field: CreateRecordFieldDraft, value: FieldValue | null): boolean {
-  if (!field.required) return false
-  if (field.required.kind === 'ref') return value?.kind !== 'ref' || !value.value.trim()
-  return true
-}
-
-function fieldStateLabel(field: CreateRecordFieldDraft, dirty: boolean): string {
-  if (field.required) return '必填'
-  if (field.source === 'schema_default') return dirty ? '覆盖默认值' : 'schema default'
-  return '类型默认值'
-}
-
-function requiredRefTarget(field: CreateRecordFieldDraft): string | undefined {
-  return field.required?.kind === 'ref' ? field.required.target_type : undefined
-}
-
-function requiredText(field: CreateRecordFieldDraft): string {
-  const required = field.required
-  if (!required) return ''
-  switch (required.kind) {
-    case 'ref':
-      return `请选择 &${required.target_type}`
-    case 'abstract_object':
-      return `请选择 ${required.expected_type} 的具体类型`
-    case 'recursive_object':
-      return `递归对象 ${required.type_name} 需要显式值`
-    case 'unsupported':
-      return required.message
-  }
-}
-
-function errorText(err: unknown): string {
-  if (err instanceof Error) return err.message
-  if (typeof err === 'string') return err
-  try {
-    return JSON.stringify(err)
-  } catch {
-    return String(err)
-  }
-}
 
 function fieldCell(record: RecordRow, fieldName: string) {
   const index = record.field_index[fieldName]

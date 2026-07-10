@@ -1216,6 +1216,8 @@ export default function App() {
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
                     onCollectionEdit={(coordinate, path, edit) => editCollection(currentRoute.file, coordinate, path, edit)}
                     onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
+                    onInsertRecord={(rk, type, fields) => insertRecord(currentRoute.file, rk, type, fields)}
+                    onCreateRecordDraft={tableOnCreateRecordDraft}
                     onDiagnosticBadgeClick={(coordinate, fieldPath) =>
                       focusDiagnosticForAnchor(currentRoute.file, coordinate.key, coordinate.actual_type, fieldPath)
                     }

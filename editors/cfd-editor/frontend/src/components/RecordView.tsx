@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
+import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
@@ -13,6 +14,7 @@ import {
   type FieldValue,
 } from '../wire'
 import { DataCardExpanded, CardHeader } from './DataCard'
+import { CreateRecordDialog } from './CreateRecordDialog'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import { RECORD_HIGHLIGHT_SENTINEL } from '../App'
@@ -31,15 +33,18 @@ interface Props {
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
   onCollectionEdit?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], edit: CollectionEdit) => Promise<RecordRow | void>
   onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
+  onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
+  onCreateRecordDraft?: (actualType: string) => Promise<CreateRecordDraft>
   /** Click on a corner badge — either the CardHeader (fieldPath = null) or
    *  a field row (top-level fieldPath). Forwarded up to App so the
    *  diagnostics panel can focus the matching item. */
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, onWriteField, onCollectionEdit, onRenameRecord, onDiagnosticBadgeClick }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
+  const [showNewRecord, setShowNewRecord] = useState(false)
   const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
 
@@ -107,35 +112,52 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     }
   }
 
+  const newRecordType = typeFilter || recordActualType(record)
+  const canCreate = !readOnly
+    && data.capabilities.can_insert_record
+    && !!onInsertRecord
+    && !!onCreateRecordDraft
+    && !!newRecordType
+
   return (
     <div className="record-view">
-      <div className="rv-sidebar" role="listbox" aria-label="记录列表" onKeyDown={onSidebarKeyDown} ref={sidebarRef}>
-        {sidebarRecords.map(r => {
-          const sev = rowSeverity(r)
-          const id = coordinateId(r.coordinate)
-          return (
-            <div
-              key={id}
-              className={`rv-sidebar-item${id === activeId ? ' selected' : ''}${sev ? ' rv-sidebar-' + sev : ''}`}
-              role="option"
-              aria-selected={id === activeId}
-              tabIndex={id === activeId ? 0 : -1}
-              data-coordinate-id={id}
-              style={{ '--type-color': typeColor(recordActualType(r)) } as React.CSSProperties}
-              onClick={() => onOpenRecord(r.coordinate)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  onOpenRecord(r.coordinate)
-                }
-              }}
-            >
-              <span className="rv-item-type" style={{ color: typeColor(recordActualType(r)) }}>{recordActualType(r)}</span>
-              <span className="rv-item-key">{recordKey(r)}</span>
-            </div>
-          )
-        })}
+      <div className="rv-sidebar-wrap">
+        <div className="rv-sidebar" role="listbox" aria-label="记录列表" onKeyDown={onSidebarKeyDown} ref={sidebarRef}>
+          {sidebarRecords.map(r => {
+            const sev = rowSeverity(r)
+            const id = coordinateId(r.coordinate)
+            return (
+              <div
+                key={id}
+                className={`rv-sidebar-item${id === activeId ? ' selected' : ''}${sev ? ' rv-sidebar-' + sev : ''}`}
+                role="option"
+                aria-selected={id === activeId}
+                tabIndex={id === activeId ? 0 : -1}
+                data-coordinate-id={id}
+                style={{ '--type-color': typeColor(recordActualType(r)) } as React.CSSProperties}
+                onClick={() => onOpenRecord(r.coordinate)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onOpenRecord(r.coordinate)
+                  }
+                }}
+              >
+                <span className="rv-item-type" style={{ color: typeColor(recordActualType(r)) }}>{recordActualType(r)}</span>
+                <span className="rv-item-key">{recordKey(r)}</span>
+              </div>
+            )
+          })}
+        </div>
+        {canCreate && (
+          <div className="rv-sidebar-footer">
+            <button className="btn btn-outlined rv-sidebar-new" onClick={() => setShowNewRecord(true)}>
+              <Icon name="plus" size={13} />
+              新建记录
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="rv-main">
@@ -177,6 +199,15 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
             : undefined}
         />
       </div>
+      {showNewRecord && onInsertRecord && onCreateRecordDraft && (
+        <CreateRecordDialog
+          actualType={newRecordType}
+          existingKeys={data.records.map(r => r.coordinate.key)}
+          onCreateRecordDraft={onCreateRecordDraft}
+          onInsertRecord={onInsertRecord}
+          onClose={() => setShowNewRecord(false)}
+        />
+      )}
     </div>
   )
 }
