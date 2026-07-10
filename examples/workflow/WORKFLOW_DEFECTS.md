@@ -175,8 +175,7 @@ coflow data migrate-records <project> --from data/workflow.xlsx --to data/progre
 
 1. 引用/解析失败状态下 writer 自修复能力。
 2. 记录/字段迁移命令。
-3. 本地化重复 id 和 stale CSV 清理。
-4. 文件锁场景错误聚合。
+3. 文件锁场景错误聚合。
 
 ## 已完成修复
 

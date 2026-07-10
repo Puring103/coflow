@@ -1,0 +1,61 @@
+DropTable {
+  drop_slime_green {
+    monster: &slime_green,
+    rewards: [
+      ItemReward { key: reward_slime_potion, item: &potion_small, count: 1 },
+      CurrencyReward { key: reward_slime_gold, currency: gold, amount: 8 },
+    ],
+    weights: [70, 30],
+  }
+
+  drop_goblin_scout {
+    monster: &goblin_scout,
+    rewards: [
+      ItemReward { key: reward_goblin_sword, item: &iron_sword, count: 1 },
+      CurrencyReward { key: reward_goblin_gold, currency: gold, amount: 20 },
+    ],
+    weights: [40, 60],
+  }
+}
+
+Stage {
+  stage_forest_01 {
+    name: "Forest Entrance",
+    unlock_level: 1,
+    recommended_power: 30,
+    spawns: [
+      { monster: &slime_green, count: 3, weight: 100 },
+    ],
+    drop_table: &drop_slime_green,
+    first_clear_reward: ItemReward { key: first_clear_potion, item: &potion_small, count: 2 },
+    unlock_stage: null,
+  }
+
+  stage_forest_02 {
+    name: "Scout Camp",
+    unlock_level: 3,
+    recommended_power: 90,
+    spawns: [
+      { monster: &goblin_scout, count: 3, weight: 80 },
+      { monster: &slime_green, count: 2, weight: 20 },
+    ],
+    drop_table: &drop_goblin_scout,
+    first_clear_reward: ItemReward { key: first_clear_sword, item: &iron_sword, count: 1 },
+    unlock_stage: &stage_forest_01,
+  }
+
+  stage_forest_03 {
+    ...&stage_forest_02,
+    name: "Scout Camp Hard",
+    unlock_level: 5,
+    recommended_power: 160,
+    first_clear_reward: CurrencyReward { key: first_clear_hard_gold, currency: gold, amount: 50 },
+    unlock_stage: &stage_forest_02,
+  }
+}
+
+
+
+
+
+

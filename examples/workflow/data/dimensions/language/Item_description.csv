@@ -1,0 +1,10 @@
+id,default,zh,en
+potion_small,Restores a small amount of HP.,null,null
+iron_sword,A basic sword for new adventurers.,null,null
+bulk_herb_01,Bulk inserted herb.,null,null
+bulk_herb_02,Bulk inserted herb.,null,null
+bulk_herb_03,Bulk inserted herb.,null,null
+event_token,A limited event token.,null,null
+phoenix_feather,A rare revival material.,null,null
+extra_charm,Stored on the extra item sheet.,null,null
+extra_ring,Explicit sheet insert.,null,null

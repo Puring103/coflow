@@ -1,0 +1,57 @@
+schema: schema/main.cft
+
+sources:
+  - path: data/workflow.xlsx
+    type: excel
+    sheets:
+      - sheet: Item
+        type: Item
+        columns:
+          Name: name
+          Description: description
+          Rarity: rarity
+          Buy Price: buy_price
+          Level Required: level_required
+          Tags: tags
+      - sheet: ItemExtra
+        type: Item
+        columns:
+          Name: name
+          Description: description
+          Rarity: rarity
+          Buy Price: buy_price
+          Level Required: level_required
+          Tags: tags
+      - sheet: Skill
+        type: Skill
+        columns:
+          Name: name
+          Element: element
+          Tags: tags
+          Power: power
+          Follow Up ID: follow_up
+      - sheet: Monster
+        type: Monster
+        columns:
+          Name: name
+          Level: level
+          HP: hp
+          Power: power
+          Skill ID: skill
+          Enabled: enabled
+  - path: data/progression
+
+dimensions:
+  language:
+    variants: [zh, en]
+    out_dir: data/dimensions/language
+    display_name: 本地化
+
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Example.Workflow.Config

@@ -1,0 +1,13 @@
+{
+  "ItemId": {
+    "bulk_herb_01": 2,
+    "bulk_herb_02": 3,
+    "bulk_herb_03": 4,
+    "event_token": 5,
+    "extra_charm": 7,
+    "extra_ring": 8,
+    "iron_sword": 1,
+    "phoenix_feather": 6,
+    "potion_small": 0
+  }
+}

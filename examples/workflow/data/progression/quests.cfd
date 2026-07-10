@@ -1,0 +1,20 @@
+Quest {
+  quest_first_potion {
+    title: "Gather Supplies",
+    stage: &stage_forest_01,
+    reward_item: &potion_small,
+    min_level: 1,
+    prerequisites: [],
+    objectives: ["clear_stage", "collect_potion"],
+  }
+
+  quest_first_blade {
+    title: "First Blade",
+    stage: &stage_forest_02,
+    reward_item: &iron_sword,
+    min_level: 3,
+    prerequisites: [&quest_first_potion],
+    objectives: ["clear_stage", "defeat_goblin"],
+  }
+}
+

@@ -1,0 +1,217 @@
+enum Rarity {
+  Common = 0,
+  Rare = 1,
+  Epic = 2,
+  Legendary = 3,
+}
+
+enum Element {
+  Physical = 0,
+  Fire = 1,
+  Ice = 2,
+  Lightning = 3,
+}
+
+enum ItemId {}
+
+@flag
+enum ItemTag {
+  None = 0,
+  Consumable = 1,
+  Equipment = 2,
+  Material = 4,
+  Starter = 8,
+  Event = 16,
+}
+
+@flag
+enum SkillTag {
+  None = 0,
+  Damage = 1,
+  Control = 2,
+  Heal = 4,
+  Passive = 8,
+}
+
+@idAsEnum(ItemId)
+type Item {
+  @localized
+  name: string;
+
+  @localized
+  description: string = "";
+
+  rarity: Rarity = Rarity.Common;
+  buy_price: int = 0;
+  level_required: int = 1;
+  tags: ItemTag = ItemTag.None;
+
+  check {
+    id != "";
+    id.matches("^[a-z][a-z0-9_]*$");
+    name != "";
+    buy_price >= 0;
+    level_required >= 1;
+  }
+}
+
+type Skill {
+  @localized
+  name: string;
+
+  element: Element = Element.Physical;
+  tags: SkillTag = SkillTag.None;
+  power: int = 0;
+  follow_up: &Skill? = null;
+
+  check {
+    id != "";
+    id.matches("^[a-z][a-z0-9_]*$");
+    name != "";
+    power >= 0;
+
+    when follow_up != null {
+      follow_up.id != id;
+      follow_up.power <= power;
+    }
+  }
+}
+
+type Monster {
+  @localized
+  name: string;
+
+  level: int = 1;
+  hp: int;
+  power: int;
+  skill: &Skill;
+  enabled: bool = true;
+
+  check {
+    id != "";
+    id.matches("^[a-z][a-z0-9_]*$");
+    name != "";
+    level >= 1;
+    hp > 0;
+    power > 0;
+    skill.id != "";
+  }
+}
+
+abstract type Reward {
+  key: string;
+
+  check {
+    key != "";
+    key.matches("^[a-z][a-z0-9_]*$");
+  }
+}
+
+type ItemReward : Reward {
+  item: &Item;
+  count: int = 1;
+
+  check {
+    item.id != "";
+    count > 0;
+  }
+}
+
+type CurrencyReward : Reward {
+  currency: string = "gold";
+  amount: int;
+
+  check {
+    currency != "";
+    amount > 0;
+  }
+}
+
+type DropTable {
+  monster: &Monster;
+  rewards: [Reward];
+  weights: [int];
+
+  check {
+    id != "";
+    id.matches("^drop_[a-z][a-z0-9_]*$");
+    monster.id != "";
+    rewards.len() > 0;
+    rewards.len() == weights.len();
+    weights.sum() == 100;
+
+    all reward in rewards {
+      reward.key != "";
+    }
+
+    all weight in weights {
+      weight > 0;
+    }
+  }
+}
+
+sealed type StageSpawn {
+  monster: &Monster;
+  count: int = 1;
+  weight: int = 1;
+
+  check {
+    monster.id != "";
+    count > 0;
+    weight > 0;
+  }
+}
+
+type Stage {
+  @localized
+  name: string;
+
+  unlock_level: int = 1;
+  recommended_power: int = 1;
+  spawns: [StageSpawn];
+  drop_table: &DropTable;
+  first_clear_reward: Reward;
+  unlock_stage: &Stage? = null;
+
+  check {
+    id != "";
+    id.matches("^stage_[a-z][a-z0-9_]*$");
+    name != "";
+    unlock_level >= 1;
+    recommended_power > 0;
+    spawns.len() > 0;
+    drop_table.id != "";
+    first_clear_reward.key != "";
+
+    when unlock_stage != null {
+      unlock_stage.id != id;
+      unlock_stage.unlock_level <= unlock_level;
+    }
+  }
+}
+
+type Quest {
+  @localized
+  title: string;
+
+  stage: &Stage;
+  reward_item: &Item;
+  min_level: int = 1;
+  prerequisites: [&Quest] = [];
+  objectives: [string] = [];
+
+  check {
+    id != "";
+    id.matches("^quest_[a-z][a-z0-9_]*$");
+    title != "";
+    stage.unlock_level <= min_level;
+    reward_item.id != "";
+    objectives.len() > 0;
+
+    none prerequisite in prerequisites {
+      prerequisite.id == id;
+    }
+  }
+}
+
+
