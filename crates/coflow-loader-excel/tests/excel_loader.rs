@@ -459,8 +459,103 @@ fn rejects_excel_error_cells() -> TestResult {
     assert_eq!(location.row, Some(2));
     assert_eq!(location.column, Some(2));
     assert!(
-        diagnostic.message.contains("Error"),
-        "expected Error kind, got {}",
+        diagnostic.message.contains("Formula"),
+        "expected Formula kind, got {}",
+        diagnostic.message
+    );
+    Ok(())
+}
+
+#[test]
+fn rejects_formula_cells_even_when_cached_result_is_valid() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                value: int;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("formula-cell");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "value")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_formula(1, 1, Formula::new("=10+20").set_result("30"))
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
+        return Err("expected formula cell rejection".to_string());
+    };
+
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-CELL")?;
+    assert!(
+        diagnostic.message.contains("Formula"),
+        "expected Formula kind, got {}",
+        diagnostic.message
+    );
+    Ok(())
+}
+
+#[test]
+fn rejects_merged_cells() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                value: string;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("merged-cell");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "value")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    let format = Format::new();
+    sheet
+        .merge_range(1, 1, 2, 1, "merged", &format)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
+        return Err("expected merged cell rejection".to_string());
+    };
+
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-CELL")?;
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
+    assert_eq!(location.sheet.as_deref(), Some("Item"));
+    assert_eq!(location.row, Some(2));
+    assert_eq!(location.column, Some(2));
+    assert!(
+        diagnostic.message.contains("MergedCell"),
+        "expected MergedCell kind, got {}",
         diagnostic.message
     );
     Ok(())

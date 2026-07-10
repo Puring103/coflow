@@ -8,7 +8,6 @@
 
 - #20：文档说明 `coflow.enum.lock.json` 保留已删除 key 是稳定编号策略，并标注未来可加 prune/compact。
 - #24：文档强调 CFD spread 必须写 `...&key`，不是 `...key`。
-- #19：配置校验识别维度 CSV 被手动加入 `sources`，给出比 `unknown CFT type Item_name` 更明确的诊断。
 
 ## P0：高风险缺陷
 
@@ -125,40 +124,6 @@ coflow data migrate-records <project> --from data/workflow.xlsx --to data/progre
 
 ## 本地化与 enum lock
 
-### 17. 删除 localized 字段后旧维度 CSV 未清理
-
-- 复现轮次：第 31 轮。
-- 现象：
-  - 移除 `Quest.title @localized` 后 build 通过。
-  - `data/dimensions/language/Quest_title.csv` 仍存在。
-- 影响：
-  - stale 维度文件残留。
-- 建议：
-  - build 检测并清理不再需要的维度文件。
-  - 或输出 stale dimension source warning。
-
-### 18. 维度 CSV 重复 id 未报错
-
-- 复现轮次：第 31 轮。
-- 现象：
-  - `Item_name.csv` 追加重复 `potion_small` 后 check/build 均通过。
-- 影响：
-  - 本地化值来源不透明。
-- 建议：
-  - 对维度 CSV 重复 id 增加诊断。
-  - 明确当前语义是首行优先、后写覆盖还是不支持重复。
-
-### 19. 维度 CSV 不应作为普通 source 重复配置
-
-- 复现轮次：第 17 轮。
-- 现象：
-  - 显式添加 `data/dimensions/language/Item_name.csv` 到 `sources` 后，普通 CSV provider 推断为 `Item_name`，报 `CSV-TYPE unknown CFT type Item_name`。
-- 影响：
-  - 用户可能误配置维度文件。
-- 建议：
-  - 文档说明维度 CSV 是 runtime 生成/管理 source，不应手动加入 `sources`。
-  - 或配置校验识别并给出更明确提示。
-
 ### 20. enum lock 保留已删除 key 需要文档或清理能力
 
 - 复现轮次：第 22 轮、第 33 轮。
@@ -172,28 +137,6 @@ coflow data migrate-records <project> --from data/workflow.xlsx --to data/progre
   - 可选提供 prune/compact 命令。
 
 ## Excel / CFD 数据安全边界
-
-### 21. Excel 公式单元格没有显式诊断
-
-- 复现轮次：第 28 轮。
-- 现象：
-  - 将 `Item.extra_charm.buy_price` 写成 `=10+20`。
-  - check 通过，`data get` 读到旧缓存值。
-- 影响：
-  - 人工编辑后数据可能不是用户看到的公式结果。
-- 建议：
-  - 对公式单元格增加诊断或 warning。
-  - 文档说明是否读取 cached value。
-
-### 22. 合并单元格诊断可以更明确
-
-- 复现轮次：第 28 轮。
-- 现象：
-  - 合并 `Monster!B2:B3` 后，第二行报 `missing required field name`。
-- 影响：
-  - 可以定位，但没有说明根因是合并单元格。
-- 建议：
-  - Excel loader 检测 merged cells 并给出专门诊断。
 
 ### 23. CFD spread 互相引用未报错
 
@@ -330,3 +273,50 @@ coflow data migrate-records <project> --from data/workflow.xlsx --to data/progre
 - 原始现象：
   - `data write-file` 到不存在的新 CFD 文件失败。
   - 需要先 `data create-file`。
+
+### 17. 删除 localized 字段后旧维度 CSV 未清理
+
+- 复现轮次：第 31 轮。
+- 当前状态：
+  - build/generation 阶段会拒绝 `dimensions.*.out_dir` 下不再由当前 schema 管理的 `.csv/.cfd` 文件。
+  - Coflow 不自动删除旧变体文件；用户需要确认后手动移除。
+- 原始现象：
+  - 移除 `Quest.title @localized` 后 build 通过。
+  - `data/dimensions/language/Quest_title.csv` 仍存在。
+
+### 18. 维度 CSV 重复 id 未报错
+
+- 复现轮次：第 31 轮。
+- 当前状态：
+  - 维度 CSV/CFD sync 会拒绝重复 id。
+  - 维度表只能修改已有变体值；不能人工新增额外记录。
+- 原始现象：
+  - `Item_name.csv` 追加重复 `potion_small` 后 check/build 均通过。
+
+### 19. 维度 CSV 不应作为普通 source 重复配置
+
+- 复现轮次：第 17 轮。
+- 当前状态：
+  - project config 校验会拒绝显式 source 位于 `dimensions.*.out_dir` 下。
+  - 报错使用 `DIM-SOURCE-003`，提示该 source 由 Coflow 管理，应从 `sources` 移除。
+- 原始现象：
+  - 显式添加 `data/dimensions/language/Item_name.csv` 到 `sources` 后，普通 CSV provider 推断为 `Item_name`，报 `CSV-TYPE unknown CFT type Item_name`。
+
+### 21. Excel 公式单元格没有显式诊断
+
+- 复现轮次：第 28 轮。
+- 当前状态：
+  - Excel loader 会拒绝公式单元格，即使该公式有可读缓存结果。
+  - 公式需要先在 Excel 中转成静态值再作为配置输入。
+- 原始现象：
+  - 将 `Item.extra_charm.buy_price` 写成 `=10+20`。
+  - check 通过，`data get` 读到旧缓存值。
+
+### 22. 合并单元格诊断可以更明确
+
+- 复现轮次：第 28 轮。
+- 当前状态：
+  - Excel loader 会拒绝 `.xls` / `.xlsx` / `.xlsm` 中的合并单元格。
+  - 诊断定位到合并区域左上角单元格。
+- 原始现象：
+  - 合并 `Monster!B2:B3` 后，第二行报 `missing required field name`。

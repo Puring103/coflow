@@ -4,7 +4,7 @@ use coflow_api::{
 };
 use coflow_cfd::ast::CfdBlockEntry;
 use coflow_cfd::parse_cfd;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::path::Path;
 
@@ -33,7 +33,12 @@ impl DimensionSourceManager for CfdWriter {
                 "cfd dimension source requires a path source",
             )));
         };
-        let existing = read_existing_dimension_cfd(path, request.variants)?;
+        let expected_keys = request
+            .entries
+            .iter()
+            .map(|entry| entry.key.as_str())
+            .collect::<BTreeSet<_>>();
+        let existing = read_existing_dimension_cfd(path, request.variants, &expected_keys)?;
         let mut out = String::new();
         for entry in request.entries {
             let row = existing.get(&entry.key);
@@ -64,6 +69,7 @@ struct DimensionCfdRow {
 fn read_existing_dimension_cfd(
     path: &Path,
     variants: &[String],
+    expected_keys: &BTreeSet<&str>,
 ) -> Result<BTreeMap<String, DimensionCfdRow>, DiagnosticSet> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
@@ -91,6 +97,26 @@ fn read_existing_dimension_cfd(
     }
     let mut out = BTreeMap::new();
     for record in ast.records {
+        if !expected_keys.contains(record.key.as_str()) {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-DIMENSION",
+                format!(
+                    "dimension source `{}` contains unmanaged id `{}`; variant tables can only edit existing records",
+                    path.display(),
+                    record.key
+                ),
+            )));
+        }
+        if out.contains_key(&record.key) {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-DIMENSION",
+                format!(
+                    "dimension source `{}` contains duplicate id `{}`; variant tables can only edit existing records",
+                    path.display(),
+                    record.key
+                ),
+            )));
+        }
         let mut row = DimensionCfdRow {
             actual_type: record.type_name,
             ..DimensionCfdRow::default()

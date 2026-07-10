@@ -105,7 +105,8 @@ impl SessionBuildContext<'_> {
     }
 
     fn should_generate_dimensions(&self) -> bool {
-        self.dimension_mode == DimensionBuildMode::Generate && self.has_dimension_fields()
+        self.dimension_mode == DimensionBuildMode::Generate
+            && !self.project.config.dimensions.is_empty()
     }
 }
 

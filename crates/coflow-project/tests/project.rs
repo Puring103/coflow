@@ -729,6 +729,42 @@ dimensions:
 }
 
 #[test]
+fn project_config_rejects_sources_inside_dimension_out_dir() -> TestResult {
+    let root = temp_project_dir("coflow-project-dimension-source-overlap");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::create_dir_all(root.join("data/dimensions/language"))
+        .map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Item { name: string; }")
+        .map_err(|err| err.to_string())?;
+    std::fs::write(root.join("data/dimensions/language/Item_name.csv"), "id,default,zh\n")
+        .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/dimensions/language/Item_name.csv
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    let diagnostics = project.schema_diagnostic_set();
+    assert!(
+        diagnostics.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "DIM-SOURCE-003"
+                && diagnostic.message.contains("is managed by Coflow")
+        }),
+        "expected dimension source overlap diagnostic, got {diagnostics:?}"
+    );
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
 fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult {
     let root = temp_project_dir("coflow-project-codegen-validation");
     let missing_code = project_with_outputs(&root, OutputsConfig::default());

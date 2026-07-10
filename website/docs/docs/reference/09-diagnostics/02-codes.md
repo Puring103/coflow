@@ -11,7 +11,7 @@
 | `CLI-OUTPUT` | `CLI` | 写 stdout/stderr 或 JSON 输出失败 |
 | `CLI-FILE-READ` | `CLI` | CLI 直接读取补丁、schema 或 data 文件失败 |
 | `CLI-FILE-WRITE` | `CLI` | CLI 直接写入 schema 或 data 文件失败 |
-| `CLI-PATCH-PARSE` | `CLI` | `data patch` 的 JSON patch 文件无法解析 |
+| `CLI-PATCH-PARSE` | `CLI` | `data patch` 的 JSON patch 请求无法解析 |
 | `PROVIDER-REGISTRY` | `CLI` | 默认 provider registry 初始化失败 |
 | `LSP-RUNTIME` | `CLI` | LSP 主循环启动或运行失败 |
 | `PROJECT-CONFIG-NOT-FOUND` | `PROJECT` | 指定的配置文件或目录不存在，且当前目录无法发现 `coflow.yaml` |
@@ -27,11 +27,14 @@
 | `SCHEMA-STDIN-PATH` | `PROJECT` | `--stdin-path` 与配置中的 schema 文件不匹配 |
 | `SCHEMA-WRITE-TARGET` | `CLI` | `schema write-file` 目标不是已配置的本地 `.cft` schema 文件 |
 | `DATA-WRITE-TARGET` | `CLI` | `data write-file` 目标不是已配置本地 CFD source 覆盖的 `.cfd` 文件 |
+| `MUTATION-DIMENSION` | `MUTATION` | `data patch` 尝试对维度变体表新增或删除记录；变体表只能修改已有记录的变体字段 |
 | `RUNTIME-INTERNAL` | `RUNTIME` | runtime 构造空模型等不可恢复内部错误 |
 | `DIM-CONFIG-001` | `PROJECT` | schema 中存在 `@localized` 字段，但未配置 `dimensions.language` |
 | `DIM-CONFIG-002` | `PROJECT` | `dimensions.language.variants` 为空、包含 `default`、包含重复项或不是合法 CFT 标识符 |
 | `DIM-CONFIG-003` | `PROJECT` | `dimensions.language.out_dir` 缺失 |
 | `DIM-SOURCE-001` | `PROJECT` / engine | 维度文件生成或隐式 source 注册失败，例如无法创建目录、读取或写入维度文件失败 |
+| `DIM-SOURCE-003` | `PROJECT` | 显式 source 位于 `dimensions.*.out_dir` 下；维度文件由 Coflow 管理，不能加入 `sources` |
+| `DIM-SOURCE-004` | `PROJECT` | `dimensions.*.out_dir` 下存在当前 schema 不再管理的旧维度文件 |
 | `CFT-LSP` | `LSP` | Language Server 无法解析当前文档或项目上下文时返回的编辑器诊断 |
 
 `PROJECT-001` 是项目配置聚合诊断，会尽量一次报告多个独立配置问题。
@@ -137,7 +140,7 @@
 | `EXCEL-TYPE` | `EXCEL` | sheet 映射到未知 CFT type |
 | `EXCEL-COLUMN` | `EXCEL` | 表头映射错误，例如未知字段、重复字段、`@expand` 相邻列不合法 |
 | `EXCEL-ID` | `EXCEL` | key 列缺失、key 为空或 key 非法 |
-| `EXCEL-CELL` | `EXCEL` | 不支持的 Excel 原生单元格值，例如 error、date/time、duration |
+| `EXCEL-CELL` | `EXCEL` | 不支持的 Excel 原生单元格值或结构，例如 formula、merged cell、error、date/time、duration |
 | `EXCEL-WRITE` | `EXCEL` | Excel writer 写回失败 |
 
 ### CSV
@@ -152,6 +155,7 @@
 | `CSV-COLUMN` | `CSV` | 表头映射错误，例如未知字段、重复字段、`@expand` 相邻列不合法 |
 | `CSV-ID` | `CSV` | key 列缺失、key 为空或 key 非法 |
 | `CSV-WRITE` | `CSV` | CSV writer 写回失败 |
+| `CSV-DIMENSION` | `CSV` | CSV 维度文件生成/同步失败，例如维度表存在重复或未管理的 id |
 
 ### 单元格值
 
@@ -180,6 +184,7 @@
 | `CFD-SOURCE` | `CFD` | CFD source resolve/preflight 失败，例如扩展名或路径不合法 |
 | `CFD-READ` | `CFD` | CFD 文件读取失败 |
 | `CFD-WRITE` | `CFD` | CFD writer 写回失败 |
+| `CFD-DIMENSION` | `CFD` | CFD 维度文件生成/同步失败，例如维度表存在重复或未管理的 id |
 | `CFD-TEXT-Syntax` | `CFD` | CFD 文本语法错误 |
 | `CFD-TEXT-UnknownType` | `CFD` | 文本记录或对象使用未知类型 |
 | `CFD-TEXT-UnknownField` | `CFD` | 字段名不存在 |

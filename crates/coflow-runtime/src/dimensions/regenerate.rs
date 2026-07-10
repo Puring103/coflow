@@ -6,7 +6,7 @@ use coflow_api::{
 };
 use coflow_data_model::{CfdDataModel, CfdValue};
 use coflow_project::Project;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -38,9 +38,6 @@ pub(crate) fn plan_dimension_generation(
             .iter()
             .filter(|field| field.dimension == *dimension)
             .collect::<Vec<_>>();
-        if dimension_fields.is_empty() {
-            continue;
-        }
         let Some(out_dir) = config.out_dir.as_ref() else {
             diagnostics.push(dimension_diagnostic(
                 &project.config_path,
@@ -51,10 +48,12 @@ pub(crate) fn plan_dimension_generation(
             continue;
         };
         let out_dir = project.resolve_path(out_dir);
+        let mut expected_paths = BTreeSet::new();
 
         for field in dimension_fields {
             let provider_id = if field.is_singleton { "cfd" } else { "csv" };
             let path = dimension_source_path(&out_dir, field);
+            expected_paths.insert(path.clone());
             operations.push(DimensionGenerationOperation {
                 dimension: dimension.clone(),
                 provider_id: provider_id.to_string(),
@@ -66,12 +65,49 @@ pub(crate) fn plan_dimension_generation(
                 variants: config.variants.clone(),
             });
         }
+        diagnostics.extend(unmanaged_dimension_source_diagnostics(
+            &project.config_path,
+            dimension,
+            &out_dir,
+            &expected_paths,
+        ));
     }
 
     DimensionGenerationPlanResult {
         plan: DimensionGenerationPlan { operations },
         diagnostics,
     }
+}
+
+fn unmanaged_dimension_source_diagnostics(
+    config_path: &Path,
+    dimension: &str,
+    out_dir: &Path,
+    expected_paths: &BTreeSet<PathBuf>,
+) -> DiagnosticSet {
+    let mut diagnostics = DiagnosticSet::empty();
+    let Ok(entries) = fs::read_dir(out_dir) else {
+        return diagnostics;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let is_dimension_file = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| matches!(extension, "csv" | "cfd"));
+        if is_dimension_file && !expected_paths.contains(&path) {
+            diagnostics.push(dimension_diagnostic(
+                config_path,
+                dimension,
+                "DIM-SOURCE-004",
+                format!(
+                    "dimension source `{}` is no longer managed by the current schema; remove it from dimensions.{dimension}.out_dir",
+                    path.display()
+                ),
+            ));
+        }
+    }
+    diagnostics
 }
 
 #[must_use]

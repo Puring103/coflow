@@ -1,4 +1,4 @@
-use calamine::{open_workbook_auto, Data, Reader};
+use calamine::{open_workbook_auto, Data, Dimensions, Reader, Sheets};
 use coflow_cft::CftContainer;
 use coflow_data_model::CfdInputRecord;
 use coflow_loader_table_core::{
@@ -190,6 +190,8 @@ fn table_source_from_excel(source: &ExcelSource) -> Result<TableSource, ExcelDia
                 continue;
             }
         };
+        reject_formula_cells(&mut workbook, source, sheet, &mut diagnostics);
+        reject_merged_cells(&mut workbook, source, sheet, &mut diagnostics);
 
         if range.is_empty() {
             diagnostics.push(ExcelDiagnostic::excel(
@@ -233,6 +235,65 @@ fn table_source_from_excel(source: &ExcelSource) -> Result<TableSource, ExcelDia
     } else {
         Err(ExcelDiagnostics { diagnostics })
     }
+}
+
+fn reject_formula_cells(
+    workbook: &mut Sheets<std::io::BufReader<std::fs::File>>,
+    source: &ExcelSource,
+    sheet: &ExcelSheet,
+    diagnostics: &mut Vec<ExcelDiagnostic>,
+) {
+    let Ok(formulas) = workbook.worksheet_formula(&sheet.sheet) else {
+        return;
+    };
+    let (range_start_row, range_start_col) = formulas.start().unwrap_or((0, 0));
+    for (zero_based_row, zero_based_col, formula) in formulas.used_cells() {
+        if formula.is_empty() {
+            continue;
+        }
+        diagnostics.push(unsupported_cell_diagnostic(
+            ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()).cell(
+                range_start_row as usize + zero_based_row + 1,
+                range_start_col as usize + zero_based_col + 1,
+            ),
+            "Formula",
+        ));
+    }
+}
+
+fn reject_merged_cells(
+    workbook: &mut Sheets<std::io::BufReader<std::fs::File>>,
+    source: &ExcelSource,
+    sheet: &ExcelSheet,
+    diagnostics: &mut Vec<ExcelDiagnostic>,
+) {
+    let merge_cells = match workbook {
+        Sheets::Xls(workbook) => workbook.worksheet_merge_cells(&sheet.sheet).unwrap_or_default(),
+        Sheets::Xlsx(workbook) => workbook
+            .worksheet_merge_cells(&sheet.sheet)
+            .and_then(Result::ok)
+            .unwrap_or_default(),
+        Sheets::Xlsb(_) | Sheets::Ods(_) => Vec::new(),
+    };
+    for dimensions in merge_cells {
+        diagnostics.push(unsupported_cell_diagnostic(
+            ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()).cell(
+                dimensions.start.0 as usize + 1,
+                dimensions.start.1 as usize + 1,
+            ),
+            &format!("MergedCell({})", format_dimensions(dimensions)),
+        ));
+    }
+}
+
+fn format_dimensions(dimensions: Dimensions) -> String {
+    format!(
+        "R{}C{}:R{}C{}",
+        dimensions.start.0 + 1,
+        dimensions.start.1 + 1,
+        dimensions.end.0 + 1,
+        dimensions.end.1 + 1
+    )
 }
 
 fn cell_text(

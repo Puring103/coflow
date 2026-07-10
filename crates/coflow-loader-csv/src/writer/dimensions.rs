@@ -5,7 +5,7 @@ use coflow_api::{
 };
 use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -43,7 +43,12 @@ impl DimensionSourceManager for CsvWriter {
                 "csv dimension source requires a local path source",
             )));
         };
-        let existing = read_existing_dimension_csv(path, request.variants)?;
+        let expected_keys = request
+            .entries
+            .iter()
+            .map(|entry| entry.key.as_str())
+            .collect::<BTreeSet<_>>();
+        let existing = read_existing_dimension_csv(path, request.variants, &expected_keys)?;
         let mut rows = Vec::new();
         let mut header = vec!["id".to_string(), "default".to_string()];
         header.extend(request.variants.iter().cloned());
@@ -75,6 +80,7 @@ struct DimensionCsvRow {
 fn read_existing_dimension_csv(
     path: &Path,
     variants: &[String],
+    expected_keys: &BTreeSet<&str>,
 ) -> Result<BTreeMap<String, DimensionCsvRow>, DiagnosticSet> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
@@ -120,6 +126,24 @@ fn read_existing_dimension_csv(
         let Some(id) = record.get(id_col) else {
             continue;
         };
+        if !expected_keys.contains(id.as_str()) {
+            return Err(DiagnosticSet::one(diag(
+                "CSV-DIMENSION",
+                format!(
+                    "dimension source `{}` contains unmanaged id `{id}`; variant tables can only edit existing records",
+                    path.display()
+                ),
+            )));
+        }
+        if out.contains_key(id) {
+            return Err(DiagnosticSet::one(diag(
+                "CSV-DIMENSION",
+                format!(
+                    "dimension source `{}` contains duplicate id `{id}`; variant tables can only edit existing records",
+                    path.display()
+                ),
+            )));
+        }
         let row = out
             .entry(id.clone())
             .or_insert_with(DimensionCsvRow::default);

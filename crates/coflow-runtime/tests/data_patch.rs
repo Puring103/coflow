@@ -221,6 +221,41 @@ shield: Item { name: "Shield" }
     .expect("write config");
 }
 
+fn write_dimension_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"
+            type Item {
+                @localized
+                name: string;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write items");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+outputs:
+  data:
+    type: json
+    dir: generated/data
+"#,
+    )
+    .expect("write config");
+}
+
 fn registry() -> coflow_api::ProviderRegistry {
     coflow_builtins::default_provider_registry().expect("default provider registry")
 }
@@ -301,6 +336,60 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(text.contains("bad_sword"));
     assert!(text.contains("Rare"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn patch_rejects_insert_and_delete_on_dimension_variant_tables() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-structure-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_dimension_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: false,
+                ops: vec![
+                    DataPatchOp::InsertRecord {
+                        file: "data/dimensions/language/Item_name.csv".to_string(),
+                        sheet: Some("Item_name".to_string()),
+                        actual_type: "Item_nameVariants".to_string(),
+                        key: "extra".to_string(),
+                        fields: Default::default(),
+                        materialization: DefaultMaterialization::Minimal,
+                    },
+                    DataPatchOp::DeleteRecord {
+                        record: PatchRecordSelector {
+                            actual_type: "Item_nameVariants".to_string(),
+                            key: "potion".to_string(),
+                        },
+                        file: None,
+                    },
+                ],
+            },
+        )
+        .expect("patch report");
+
+    assert!(!report.write_ok);
+    assert_eq!(report.failed.len(), 2);
+    assert!(report.failed.iter().all(|failed| {
+        failed
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "MUTATION-DIMENSION")
+    }));
+
+    let generated =
+        std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+            .expect("read dimension csv");
+    assert_eq!(generated, "id,default,zh\npotion,Potion,null\n");
 
     let _ = std::fs::remove_dir_all(root);
 }

@@ -40,7 +40,68 @@ pub(super) fn validate_project_config_schema_only_collecting(
     diagnostics.extend(validate_outputs_collecting(&config.outputs));
     diagnostics.extend(validate_source_shapes_collecting(&config.sources));
     diagnostics.extend(validate_dimensions_collecting(&config.dimensions));
+    diagnostics.extend(validate_dimension_source_overlap_collecting(
+        root_dir,
+        &config.sources,
+        &config.dimensions,
+    ));
     diagnostics
+}
+
+fn validate_dimension_source_overlap_collecting(
+    root_dir: &Path,
+    sources: &[SourceConfig],
+    dimensions: &BTreeMap<String, DimensionConfig>,
+) -> Vec<ProjectDiagnostic> {
+    let dimension_dirs = dimensions
+        .iter()
+        .filter_map(|(dimension, config)| {
+            config
+                .out_dir
+                .as_ref()
+                .map(|out_dir| (dimension.as_str(), normalize_path(&resolve_project_relative(root_dir, out_dir))))
+        })
+        .collect::<Vec<_>>();
+    if dimension_dirs.is_empty() {
+        return Vec::new();
+    }
+
+    let mut diagnostics = Vec::new();
+    for (index, source) in sources.iter().enumerate() {
+        let SourceLocationSpec::Path(path) = source.location() else {
+            continue;
+        };
+        let source_path = normalize_path(&resolve_project_relative(root_dir, path));
+        for (dimension, out_dir) in &dimension_dirs {
+            if source_path == *out_dir || source_path.starts_with(out_dir) {
+                diagnostics.push(
+                    ProjectDiagnostic::new(
+                        format!(
+                            "source `{}` is inside dimensions.{dimension}.out_dir and is managed by Coflow; remove it from sources",
+                            path_to_slash(path)
+                        ),
+                        ["sources".to_string(), index.to_string()],
+                    )
+                    .with_code("DIM-SOURCE-003"),
+                );
+            }
+        }
+    }
+    diagnostics
+}
+
+fn normalize_path(path: &Path) -> std::path::PathBuf {
+    let mut out = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            _ => out.push(component.as_os_str()),
+        }
+    }
+    out
 }
 
 fn validate_dimensions_collecting(
