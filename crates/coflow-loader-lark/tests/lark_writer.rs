@@ -14,7 +14,7 @@ use coflow_api::{
     SourceLocationSpec, SourceWriter, TableContext, TableManager, WriteCellRequest, WriteContext,
     WriteFieldPathSegment,
 };
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
 use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};
 use serde_json::Value;
@@ -216,6 +216,7 @@ fn writes_cell_with_full_handshake_then_caches() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = CftContainer::new();
+    let schema_view = CftSchemaView::new(&schema);
     let source = lark_source();
     let origin = lark_origin();
     let new_value = CfdValue::String("New".to_string());
@@ -226,12 +227,12 @@ fn writes_cell_with_full_handshake_then_caches() {
         actual_type: "Item",
         field_path: &segments,
         new_value: &new_value,
-        schema: &schema,
+        schema: &schema_view,
         source: &source,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &schema,
+        schema: &schema_view,
         model: None,
     };
     writer.write_field(ctx, &request).expect("first write");
@@ -270,6 +271,7 @@ fn writes_cell_from_wiki_url_origin() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = CftContainer::new();
+    let schema_view = CftSchemaView::new(&schema);
     let source = lark_wiki_source();
     let origin = lark_wiki_origin();
     let new_value = CfdValue::String("New".to_string());
@@ -280,12 +282,12 @@ fn writes_cell_from_wiki_url_origin() {
         actual_type: "Item",
         field_path: &segments,
         new_value: &new_value,
-        schema: &schema,
+        schema: &schema_view,
         source: &source,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &schema,
+        schema: &schema_view,
         model: None,
     };
 
@@ -316,6 +318,7 @@ fn surfaces_business_error_on_failure() {
     ]);
     let writer = LarkSheetWriter::new(client);
     let schema = CftContainer::new();
+    let schema_view = CftSchemaView::new(&schema);
     let source = lark_source();
     let origin = lark_origin();
     let new_value = CfdValue::String("X".to_string());
@@ -326,12 +329,12 @@ fn surfaces_business_error_on_failure() {
         actual_type: "Item",
         field_path: &segments,
         new_value: &new_value,
-        schema: &schema,
+        schema: &schema_view,
         source: &source,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &schema,
+        schema: &schema_view,
         model: None,
     };
     let Err(diag) = writer.write_field(ctx, &request) else {
@@ -368,6 +371,7 @@ fn retries_once_after_token_expired() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = CftContainer::new();
+    let schema_view = CftSchemaView::new(&schema);
     let source = lark_source();
     let origin = lark_origin();
     let new_value = CfdValue::String("Retry".to_string());
@@ -378,12 +382,12 @@ fn retries_once_after_token_expired() {
         actual_type: "Item",
         field_path: &segments,
         new_value: &new_value,
-        schema: &schema,
+        schema: &schema_view,
         source: &source,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &schema,
+        schema: &schema_view,
         model: None,
     };
     writer.write_field(ctx, &request).expect("retry succeeds");
@@ -424,6 +428,7 @@ fn inserts_record_by_appending_lark_row() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = item_schema();
+    let schema_view = CftSchemaView::new(&schema);
     let source = lark_source();
     let fields = BTreeMap::from([
         ("name".to_string(), CfdValue::String("Blade".to_string())),
@@ -435,11 +440,11 @@ fn inserts_record_by_appending_lark_row() {
         record_key: "blade",
         actual_type: "Item",
         fields: &fields,
-        schema: &schema,
+        schema: &schema_view,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &schema,
+        schema: &schema_view,
         model: None,
     };
 
@@ -491,6 +496,7 @@ fn inserts_record_from_wiki_url_source() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = item_schema();
+    let schema_view = CftSchemaView::new(&schema);
     let source = lark_wiki_source();
     let fields = BTreeMap::from([
         ("name".to_string(), CfdValue::String("Blade".to_string())),
@@ -502,11 +508,11 @@ fn inserts_record_from_wiki_url_source() {
         record_key: "blade",
         actual_type: "Item",
         fields: &fields,
-        schema: &schema,
+        schema: &schema_view,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &schema,
+        schema: &schema_view,
         model: None,
     };
 
@@ -656,6 +662,7 @@ fn deletes_record_after_remote_key_guard() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = CftContainer::new();
+    let schema_view = CftSchemaView::new(&schema);
     let source = lark_source();
     let origin = lark_origin();
     let request = DeleteRecordRequest {
@@ -666,7 +673,7 @@ fn deletes_record_after_remote_key_guard() {
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &schema,
+        schema: &schema_view,
         model: None,
     };
 
@@ -699,6 +706,7 @@ fn rewrite_record_references_does_not_scan_lark_cells() {
     let client = ScriptedClient::new([]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = item_schema();
+    let schema_view = CftSchemaView::new(&schema);
     let source = lark_source();
     let targets = [];
     let request = RewriteRecordReferencesRequest {
@@ -706,11 +714,11 @@ fn rewrite_record_references_does_not_scan_lark_cells() {
         old_key: "sword",
         new_key: "blade",
         targets: &targets,
-        schema: &schema,
+        schema: &schema_view,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &schema,
+        schema: &schema_view,
         model: None,
     };
 

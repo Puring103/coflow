@@ -13,7 +13,7 @@ use coflow_api::{
     SourceLocationSpec, SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteContext,
     WriteFieldPathSegment,
 };
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdObject, CfdValue, RecordOrigin, TextSpan};
 use coflow_loader_cfd::{load_cfd_model, parse_cfd_input_records, CfdWriter};
 use std::fs;
@@ -89,6 +89,8 @@ shield: Item {
         }
         ",
     );
+
+    let schema_view = CftSchemaView::new(&schema);
     let writer = CfdWriter::new();
     let request_value = CfdValue::Int(42);
     let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
@@ -101,14 +103,14 @@ shield: Item {
         actual_type: "Item",
         field_path: &segments,
         new_value: &request_value,
-        schema: &schema,
+        schema: &schema_view,
         source: &source,
     };
     writer
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: Some(&model),
             },
             &request,
@@ -161,6 +163,8 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
         }
         ",
     );
+
+    let schema_view = CftSchemaView::new(&schema);
     let writer = CfdWriter::new();
     let request_value = CfdValue::Ref("blade".to_string());
     let segments = vec![
@@ -176,14 +180,14 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
         actual_type: "Stage",
         field_path: &segments,
         new_value: &request_value,
-        schema: &schema,
+        schema: &schema_view,
         source: &source,
     };
     writer
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: Some(&model),
             },
             &request,
@@ -220,6 +224,8 @@ shared: Skill {
         type Skill { name: string; }
         ",
     );
+
+    let schema_view = CftSchemaView::new(&schema);
     let writer = CfdWriter::new();
     let request_value = CfdValue::String("New Skill".to_string());
     let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
@@ -232,7 +238,7 @@ shared: Skill {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -241,7 +247,7 @@ shared: Skill {
                 actual_type: "Skill",
                 field_path: &segments,
                 new_value: &request_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -290,6 +296,8 @@ picker: Holder {
         }
         ",
     );
+
+    let schema_view = CftSchemaView::new(&schema);
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
     let _ = model
@@ -305,7 +313,7 @@ picker: Holder {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -314,7 +322,7 @@ picker: Holder {
                 actual_type: "Holder",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -366,6 +374,8 @@ picker: Holder {
         ",
     );
 
+    let schema_view = CftSchemaView::new(&schema);
+
     let writer = CfdWriter::new();
     let new_value = CfdValue::Ref("ghost".to_string());
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
@@ -375,7 +385,7 @@ picker: Holder {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &WriteCellRequest {
@@ -384,7 +394,7 @@ picker: Holder {
                 actual_type: "Holder",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -422,6 +432,8 @@ fn rejects_empty_ref_key() {
         ",
     );
 
+    let schema_view = CftSchemaView::new(&schema);
+
     let writer = CfdWriter::new();
     let new_value = CfdValue::Ref(String::new());
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
@@ -431,7 +443,7 @@ fn rejects_empty_ref_key() {
     let result = writer.write_field(
         WriteContext {
             project_root: &dir,
-            schema: &schema,
+            schema: &schema_view,
             model: Some(&model),
         },
         &WriteCellRequest {
@@ -440,7 +452,7 @@ fn rejects_empty_ref_key() {
             actual_type: "Holder",
             field_path: &segments,
             new_value: &new_value,
-            schema: &schema,
+            schema: &schema_view,
             source: &source,
         },
     );
@@ -475,6 +487,7 @@ fn inserts_record_at_end_of_cfd_file() {
         }
         ",
     );
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&file);
     let writer = CfdWriter::new();
     let fields = std::collections::BTreeMap::from([
@@ -486,7 +499,7 @@ fn inserts_record_at_end_of_cfd_file() {
         .insert_record(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &InsertRecordRequest {
@@ -495,7 +508,7 @@ fn inserts_record_at_end_of_cfd_file() {
                 record_key: "potion",
                 actual_type: "Item",
                 fields: &fields,
-                schema: &schema,
+                schema: &schema_view,
             },
         )
         .expect("insert succeeds");
@@ -527,6 +540,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
         type Skill { name: string; }
         ",
     );
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&file);
     let writer = CfdWriter::new();
     let fields = std::collections::BTreeMap::from([(
@@ -538,7 +552,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
         .insert_record(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &InsertRecordRequest {
@@ -547,7 +561,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
                 record_key: "shared",
                 actual_type: "Skill",
                 fields: &fields,
-                schema: &schema,
+                schema: &schema_view,
             },
         )
         .expect("insert unrelated same-key skill");
@@ -591,6 +605,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
         }
         ",
     );
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&file);
     let writer = CfdWriter::new();
     let slot_fields = std::collections::BTreeMap::from([(
@@ -606,7 +621,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
         .insert_record(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &InsertRecordRequest {
@@ -615,7 +630,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
                 record_key: "starter",
                 actual_type: "Loot",
                 fields: &fields,
-                schema: &schema,
+                schema: &schema_view,
             },
         )
         .expect("insert succeeds");
@@ -652,6 +667,7 @@ shield: Item {
         }
         ",
     );
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&file);
     let origin = origin_for(&file);
     let writer = CfdWriter::new();
@@ -660,7 +676,7 @@ shield: Item {
         .delete_record(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &DeleteRecordRequest {
@@ -702,6 +718,7 @@ shared: Skill {
         type Skill { name: string; }
         ",
     );
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&file);
     let origin = origin_for(&file);
     let writer = CfdWriter::new();
@@ -710,7 +727,7 @@ shared: Skill {
         .delete_record(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &DeleteRecordRequest {
@@ -767,6 +784,8 @@ elite_monster: Monster {
         }
         ",
     );
+
+    let schema_view = CftSchemaView::new(&schema);
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
 
@@ -779,7 +798,7 @@ elite_monster: Monster {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -788,7 +807,7 @@ elite_monster: Monster {
                 actual_type: "Monster",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -870,6 +889,7 @@ other_copy: OtherHolder {
         }
         ",
     );
+    let schema_view = CftSchemaView::new(&schema);
     let writer = CfdWriter::new();
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -884,14 +904,14 @@ other_copy: OtherHolder {
         old_key: "base",
         new_key: "renamed",
         targets: &targets,
-        schema: &schema,
+        schema: &schema_view,
     };
 
     writer
         .rewrite_record_references(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &request,
@@ -948,6 +968,7 @@ host: Loadout {
         }
         ",
     );
+    let schema_view = CftSchemaView::new(&schema);
     let writer = CfdWriter::new();
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -976,14 +997,14 @@ host: Loadout {
         old_key: "base",
         new_key: "renamed",
         targets: &targets,
-        schema: &schema,
+        schema: &schema_view,
     };
 
     writer
         .rewrite_record_references(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &request,
@@ -1035,6 +1056,8 @@ elite: Monster {
         ",
     );
 
+    let schema_view = CftSchemaView::new(&schema);
+
     let writer = CfdWriter::new();
     let new_value = CfdValue::Int(42);
     let segments = vec![
@@ -1047,7 +1070,7 @@ elite: Monster {
     let result = writer.write_field(
         WriteContext {
             project_root: &dir,
-            schema: &schema,
+            schema: &schema_view,
             model: Some(&model),
         },
         &WriteCellRequest {
@@ -1056,7 +1079,7 @@ elite: Monster {
             actual_type: "Monster",
             field_path: &segments,
             new_value: &new_value,
-            schema: &schema,
+            schema: &schema_view,
             source: &source,
         },
     );
@@ -1092,6 +1115,8 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
         }
         ",
     );
+
+    let schema_view = CftSchemaView::new(&schema);
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
 
@@ -1107,7 +1132,7 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -1116,7 +1141,7 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
                 actual_type: "Loot",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -1163,6 +1188,8 @@ fn writes_group_record_without_required_commas() {
         }
         ",
     );
+
+    let schema_view = CftSchemaView::new(&schema);
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
 
@@ -1178,7 +1205,7 @@ fn writes_group_record_without_required_commas() {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -1187,7 +1214,7 @@ fn writes_group_record_without_required_commas() {
                 actual_type: "DamageEffect",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -1225,6 +1252,8 @@ sword: Item {
         }
         ",
     );
+
+    let schema_view = CftSchemaView::new(&schema);
     let writer = CfdWriter::new();
     let new_value = CfdValue::Int(2);
     let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
@@ -1235,7 +1264,7 @@ sword: Item {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &schema,
+                schema: &schema_view,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -1244,7 +1273,7 @@ sword: Item {
                 actual_type: "Item",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )

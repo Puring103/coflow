@@ -1,18 +1,17 @@
-use coflow_cft::{CftContainer, CftSchemaTypeRef};
-use coflow_cft::CftSchemaView;
+use coflow_cft::{CftSchemaTypeRef, CftSchemaView};
 
 pub(super) fn type_after_field_segment(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     actual_type: &str,
     field_name: &str,
 ) -> Option<CftSchemaTypeRef> {
-    CftSchemaView::new(schema)
+    schema
         .field_meta(actual_type, field_name)
         .map(|field| field.ty_ref.clone())
 }
 
 pub(super) fn type_after_field_segment_for_ref(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     current_type: &CftSchemaTypeRef,
     field_name: &str,
 ) -> Option<CftSchemaTypeRef> {
@@ -25,7 +24,7 @@ pub(super) fn type_after_field_segment_for_ref(
 }
 
 pub(super) fn concrete_type_for_block(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     expected_type: &CftSchemaTypeRef,
     type_marker: Option<&str>,
 ) -> CftSchemaTypeRef {
@@ -72,7 +71,7 @@ pub(super) fn type_after_dict_key_segment(
 }
 
 pub(super) fn dict_key_path_matches(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     key_type: &CftSchemaTypeRef,
     source_key: &str,
     path_key: &str,
@@ -84,7 +83,7 @@ pub(super) fn dict_key_path_matches(
         CftSchemaTypeRef::String if path_key.starts_with('"') => {
             serde_json::from_str::<String>(path_key).is_ok_and(|decoded| decoded == source_key)
         }
-        CftSchemaTypeRef::Named(enum_name) if schema.has_enum(enum_name) => path_key
+        CftSchemaTypeRef::Named(enum_name) if schema.is_schema_enum(enum_name) => path_key
             .strip_prefix(enum_name)
             .and_then(|rest| rest.strip_prefix('.'))
             .is_some_and(|variant| variant == source_key),

@@ -184,7 +184,7 @@ fn read_csv_layout(
     sheet: &str,
     actual_type: &str,
     options: &Value,
-    schema: &coflow_cft::CftContainer,
+    schema: &coflow_cft::CftSchemaView,
 ) -> Result<CsvLayout, DiagnosticSet> {
     let text = fs::read_to_string(path).map_err(|err| {
         DiagnosticSet::one(diag(

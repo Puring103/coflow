@@ -1,5 +1,5 @@
 use crate::{DiagnosticSet, ResolvedSource};
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdDataModel, CfdValue, RecordOrigin};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -23,7 +23,7 @@ pub struct WriteCellRequest<'a> {
     pub new_value: &'a CfdValue,
     /// Optional pre-resolved schema type for the record. Writers that produce
     /// typed source representations (e.g. CFD) use this for serialization.
-    pub schema: &'a CftContainer,
+    pub schema: &'a CftSchemaView,
     /// Original `ResolvedSource` that produced the record. Writers consult
     /// `source.options` to retrieve provider-specific configuration (Lark
     /// app credentials, alternate Excel sheet mappings, etc.).
@@ -40,7 +40,7 @@ pub struct InsertRecordRequest<'a> {
     pub record_key: &'a str,
     pub actual_type: &'a str,
     pub fields: &'a BTreeMap<String, CfdValue>,
-    pub schema: &'a CftContainer,
+    pub schema: &'a CftSchemaView,
 }
 
 /// Request describing a top-level record deletion.
@@ -60,7 +60,7 @@ pub struct RenameRecordRequest<'a> {
     pub new_key: &'a str,
     pub actual_type: &'a str,
     pub source: &'a ResolvedSource,
-    pub schema: &'a CftContainer,
+    pub schema: &'a CftSchemaView,
 }
 
 /// Request to rewrite reference tokens inside one source after a record key
@@ -76,7 +76,7 @@ pub struct RewriteRecordReferencesRequest<'a> {
     pub old_key: &'a str,
     pub new_key: &'a str,
     pub targets: &'a [SpreadRewriteTarget],
-    pub schema: &'a CftContainer,
+    pub schema: &'a CftSchemaView,
 }
 
 /// A precise spread-source token to rewrite inside provider source syntax.
@@ -106,7 +106,7 @@ pub struct WriteOutcome {
 #[derive(Debug, Clone, Copy)]
 pub struct WriteContext<'a> {
     pub project_root: &'a Path,
-    pub schema: &'a CftContainer,
+    pub schema: &'a CftSchemaView,
     /// The current data model. Writers use it to resolve [`CfdRecordId`]s
     /// inside the request value (e.g. for ref serialization). May be `None`
     /// when running pre-flight on a value that hasn't been merged into the

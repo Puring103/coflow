@@ -446,7 +446,7 @@ fn read_sheet_layout(
     sheet: &str,
     actual_type: &str,
     options: &Value,
-    schema: &coflow_cft::CftContainer,
+    schema: &coflow_cft::CftSchemaView,
 ) -> Result<SheetLayout, DiagnosticSet> {
     let config = sheet_config_from_options(options, sheet, actual_type);
     let mut workbook = calamine::open_workbook_auto(path).map_err(|err| {

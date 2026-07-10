@@ -89,6 +89,7 @@ impl ProjectSession {
         let source = source_for_file(self, &target.display_path)?;
         let writer = lookup_source_writer(registry, &source)?;
         let yaml_path = self.project.config_path.clone();
+        let schema_view = CftSchemaView::new(&self.schema);
 
         let write_request = WriteCellRequest {
             origin: &target.origin,
@@ -96,12 +97,12 @@ impl ProjectSession {
             actual_type: &target.coordinate.actual_type,
             field_path: &target.field_path,
             new_value,
-            schema: &self.schema,
+            schema: &schema_view,
             source: &source,
         };
         let write_ctx = WriteContext {
             project_root: &self.project.root_dir,
-            schema: &self.schema,
+            schema: &schema_view,
             model: Some(&self.model),
         };
         let preflight = writer.preflight(write_ctx, &write_request);
@@ -160,9 +161,10 @@ impl ProjectSession {
         let target_display_path = target_ref.display_path.clone();
         let target_source = source_for_file(self, &target_display_path)?;
         let target_writer = lookup_source_writer(registry, &target_source)?;
+        let schema_view = CftSchemaView::new(&self.schema);
         let ctx = WriteContext {
             project_root: &self.project.root_dir,
-            schema: &self.schema,
+            schema: &schema_view,
             model: Some(&self.model),
         };
         let target_request = RenameRecordRequest {
@@ -171,7 +173,7 @@ impl ProjectSession {
             new_key,
             actual_type,
             source: &target_source,
-            schema: &self.schema,
+            schema: &schema_view,
         };
 
         let reference_actions = reference_update_actions(self, registry, target_id, new_key)?;
@@ -187,14 +189,14 @@ impl ProjectSession {
             return Err(diagnostics);
         }
         for action in &reference_actions {
-            let request = action.request.as_request(&self.schema);
+            let request = action.request.as_request(&schema_view);
             if let Err(mut diagnostics) = action.writer.write_field(ctx, &request) {
                 rollback_transaction(transaction, &mut diagnostics);
                 return Err(diagnostics);
             }
         }
         for action in &rewrite_actions {
-            let request = action.request.as_request(&self.schema);
+            let request = action.request.as_request(&schema_view);
             if let Err(mut diagnostics) = action.writer.rewrite_record_references(ctx, &request) {
                 rollback_transaction(transaction, &mut diagnostics);
                 return Err(diagnostics);
@@ -243,17 +245,18 @@ impl ProjectSession {
             .map(ToOwned::to_owned)
             .or_else(|| sheet_for_file_type(self, file, actual_type));
         let writer = lookup_source_writer(registry, &source)?;
+        let schema_view = CftSchemaView::new(&self.schema);
         let request = InsertRecordRequest {
             source: &source,
             sheet: sheet.as_deref(),
             record_key,
             actual_type,
             fields,
-            schema: &self.schema,
+            schema: &schema_view,
         };
         let ctx = WriteContext {
             project_root: &self.project.root_dir,
-            schema: &self.schema,
+            schema: &schema_view,
             model: Some(&self.model),
         };
         writer.insert_record(ctx, &request)?;
@@ -294,6 +297,7 @@ impl ProjectSession {
         let origin = record.origin.clone();
         let source = source_for_file(self, &display_path)?;
         let writer = lookup_source_writer(registry, &source)?;
+        let schema_view = CftSchemaView::new(&self.schema);
         let request = DeleteRecordRequest {
             origin: &origin,
             record_key: key,
@@ -302,7 +306,7 @@ impl ProjectSession {
         };
         let ctx = WriteContext {
             project_root: &self.project.root_dir,
-            schema: &self.schema,
+            schema: &schema_view,
             model: Some(&self.model),
         };
         writer.delete_record(ctx, &request)?;

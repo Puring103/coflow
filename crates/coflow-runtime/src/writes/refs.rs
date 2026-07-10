@@ -4,7 +4,7 @@ use coflow_api::{
     DiagnosticSet, ProviderRegistry, ResolvedSource, RewriteRecordReferencesRequest, SourceWriter,
     SpreadRewriteTarget, WriteCellRequest, WriteFieldPathSegment,
 };
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdRecordId, CfdValue, RecordOrigin};
 
 use super::{lookup_source_writer, source_for_file};
@@ -34,7 +34,7 @@ pub(super) struct OwnedWriteCellRequest {
 impl OwnedWriteCellRequest {
     pub(super) fn as_request<'a>(
         &'a self,
-        schema: &'a CftContainer,
+        schema: &'a CftSchemaView,
     ) -> WriteCellRequest<'a> {
         WriteCellRequest {
             origin: &self.origin,
@@ -69,7 +69,7 @@ pub(super) struct OwnedRewriteRecordReferencesRequest {
 impl OwnedRewriteRecordReferencesRequest {
     pub(super) fn as_request<'a>(
         &'a self,
-        schema: &'a CftContainer,
+        schema: &'a CftSchemaView,
     ) -> RewriteRecordReferencesRequest<'a> {
         RewriteRecordReferencesRequest {
             source: &self.source,

@@ -8,7 +8,7 @@ mod columns;
 mod diagnostics;
 mod types;
 
-use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaView};
+use coflow_cft::{record_key_ident_error, CftSchemaView};
 use coflow_data_model::{
     CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath, CfdPathSegment, RecordOrigin,
     SourceDocument,
@@ -221,14 +221,13 @@ pub fn collect_table_input_records(
 /// Returns diagnostics when the type is unknown, the header is missing required
 /// columns, or `@expand` columns are malformed.
 pub fn resolve_table_write_layout(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     source_name: &Path,
     sheet: &TableSheetConfig,
     header_row: &[String],
 ) -> Result<TableWriteLayout, TableDiagnostics> {
-    let view = CftSchemaView::new(schema);
     let type_name = sheet.type_name();
-    let Some(fields) = full_field_types(&view, type_name) else {
+    let Some(fields) = full_field_types(schema, type_name) else {
         return Err(TableDiagnostics {
             diagnostics: table_load_error_diagnostics(TableLoadError::UnknownType {
                 location: Box::new(
@@ -239,7 +238,7 @@ pub fn resolve_table_write_layout(
         });
     };
     let resolved = resolve_columns(
-        &view,
+        schema,
         source_name,
         sheet,
         type_name,

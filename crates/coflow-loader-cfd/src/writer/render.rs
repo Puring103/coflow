@@ -1,6 +1,6 @@
 use coflow_api::DiagnosticSet;
 use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord};
-use coflow_cft::{CftContainer, CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView};
+use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView};
 use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -207,7 +207,7 @@ pub(super) fn serialize_value(v: &CfdValue, depth: usize) -> String {
 
 pub(super) fn serialize_value_for_type(
     v: &CfdValue,
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchemaView>,
     expected: Option<&CftSchemaTypeRef>,
     depth: usize,
 ) -> String {

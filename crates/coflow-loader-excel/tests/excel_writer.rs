@@ -202,6 +202,8 @@ fn writes_string_cell_and_preserves_neighbors() {
     write_seed_workbook(&path).expect("seed");
 
     let schema = CftContainer::new();
+
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("New Sword".to_string());
@@ -211,7 +213,7 @@ fn writes_string_cell_and_preserves_neighbors() {
         .write_field(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &WriteCellRequest {
@@ -220,7 +222,7 @@ fn writes_string_cell_and_preserves_neighbors() {
                 actual_type: "Item",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -241,6 +243,8 @@ fn writes_numeric_cell_as_text() {
     write_seed_workbook(&path).expect("seed");
 
     let schema = CftContainer::new();
+
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::Int(99);
@@ -250,7 +254,7 @@ fn writes_numeric_cell_as_text() {
         .write_field(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &WriteCellRequest {
@@ -259,7 +263,7 @@ fn writes_numeric_cell_as_text() {
                 actual_type: "Item",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -277,6 +281,8 @@ fn writes_record_key_cell() {
     write_seed_workbook(&path).expect("seed");
 
     let schema = CftContainer::new();
+
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("blade".to_string());
@@ -286,7 +292,7 @@ fn writes_record_key_cell() {
         .write_field(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &WriteCellRequest {
@@ -295,7 +301,7 @@ fn writes_record_key_cell() {
                 actual_type: "Item",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -311,6 +317,8 @@ fn writes_collection_element_by_rewriting_owning_cell() {
     write_tagged_workbook(&path).expect("seed");
 
     let schema = schema_for_tagged_items();
+
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let origin = RecordOrigin::Table {
         document: SourceDocument::Local(path.clone()),
@@ -345,7 +353,7 @@ fn writes_collection_element_by_rewriting_owning_cell() {
         .write_field(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &schema,
+                schema: &schema_view,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -354,7 +362,7 @@ fn writes_collection_element_by_rewriting_owning_cell() {
                 actual_type: "Item",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -369,12 +377,13 @@ fn writes_expanded_object_fields_to_child_columns() {
     write_terrain_workbook_with_expand(&path).expect("seed");
 
     let schema = schema_for_terrain();
+
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let source_def = coflow_loader_excel::ExcelSource::new(
         &path,
         vec![coflow_loader_excel::ExcelSheet::new("Terrain")],
     );
-    let schema_view = CftSchemaView::new(&schema);
     let loaded = coflow_loader_excel::collect_input_records(&schema_view, &[source_def])
         .expect("load records");
     let origin = loaded.records[0].origin.clone();
@@ -385,7 +394,7 @@ fn writes_expanded_object_fields_to_child_columns() {
         .write_field(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &WriteCellRequest {
@@ -394,7 +403,7 @@ fn writes_expanded_object_fields_to_child_columns() {
                 actual_type: "Terrain",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &schema,
+                schema: &schema_view,
                 source: &source,
             },
         )
@@ -415,6 +424,7 @@ fn rejects_missing_file_with_friendly_error() {
         std::fs::remove_file(&path).expect("rm pre-existing");
     }
     let schema = CftContainer::new();
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("X".to_string());
@@ -423,7 +433,7 @@ fn rejects_missing_file_with_friendly_error() {
     let Err(diag) = writer.write_field(
         WriteContext {
             project_root: &std::env::temp_dir(),
-            schema: &schema,
+            schema: &schema_view,
             model: None,
         },
         &WriteCellRequest {
@@ -432,7 +442,7 @@ fn rejects_missing_file_with_friendly_error() {
             actual_type: "Item",
             field_path: &segments,
             new_value: &new_value,
-            schema: &schema,
+            schema: &schema_view,
             source: &source,
         },
     ) else {
@@ -454,6 +464,8 @@ fn refuses_field_write_when_row_key_changed() {
     umya_spreadsheet::writer::xlsx::write(&workbook, &path).expect("save workbook");
 
     let schema = CftContainer::new();
+
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("New Sword".to_string());
@@ -462,7 +474,7 @@ fn refuses_field_write_when_row_key_changed() {
     let Err(diag) = writer.write_field(
         WriteContext {
             project_root: &std::env::temp_dir(),
-            schema: &schema,
+            schema: &schema_view,
             model: None,
         },
         &WriteCellRequest {
@@ -471,7 +483,7 @@ fn refuses_field_write_when_row_key_changed() {
             actual_type: "Item",
             field_path: &segments,
             new_value: &new_value,
-            schema: &schema,
+            schema: &schema_view,
             source: &source,
         },
     ) else {
@@ -489,6 +501,8 @@ fn inserts_record_row_and_loader_can_read_it() {
     write_seed_workbook(&path).expect("seed");
 
     let schema = schema_for_items();
+
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let writer = ExcelWriter::new();
     let fields = BTreeMap::from([
@@ -499,7 +513,7 @@ fn inserts_record_row_and_loader_can_read_it() {
         .insert_record(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &InsertRecordRequest {
@@ -508,7 +522,7 @@ fn inserts_record_row_and_loader_can_read_it() {
                 record_key: "potion",
                 actual_type: "Item",
                 fields: &fields,
-                schema: &schema,
+                schema: &schema_view,
             },
         )
         .expect("insert succeeds");
@@ -537,6 +551,8 @@ fn inserts_record_with_expanded_object_into_child_columns() {
     write_terrain_workbook_with_expand(&path).expect("seed");
 
     let schema = schema_for_terrain();
+
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let writer = ExcelWriter::new();
     let fields = BTreeMap::from([
@@ -547,7 +563,7 @@ fn inserts_record_with_expanded_object_into_child_columns() {
         .insert_record(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &InsertRecordRequest {
@@ -556,7 +572,7 @@ fn inserts_record_with_expanded_object_into_child_columns() {
                 record_key: "Sand",
                 actual_type: "Terrain",
                 fields: &fields,
-                schema: &schema,
+                schema: &schema_view,
             },
         )
         .expect("insert expanded record succeeds");
@@ -581,6 +597,8 @@ fn deletes_record_row() {
     write_seed_workbook(&path).expect("seed");
 
     let schema = CftContainer::new();
+
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let writer = ExcelWriter::new();
@@ -588,7 +606,7 @@ fn deletes_record_row() {
         .delete_record(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &schema,
+                schema: &schema_view,
                 model: None,
             },
             &DeleteRecordRequest {
@@ -610,13 +628,15 @@ fn refuses_delete_when_row_key_changed() {
     write_seed_workbook(&path).expect("seed");
 
     let schema = CftContainer::new();
+
+    let schema_view = CftSchemaView::new(&schema);
     let source = empty_source(&path);
     let origin = origin_for_shield(&path);
     let writer = ExcelWriter::new();
     let Err(diag) = writer.delete_record(
         WriteContext {
             project_root: &std::env::temp_dir(),
-            schema: &schema,
+            schema: &schema_view,
             model: None,
         },
         &DeleteRecordRequest {

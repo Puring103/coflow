@@ -307,6 +307,24 @@ fn api_writer_contract_is_split_by_responsibility() {
         );
     }
     assert!(
+        requests.contains("use coflow_cft::CftSchemaView;"),
+        "API writer requests should depend on the schema query facade"
+    );
+    for forbidden in [
+        "CftContainer",
+        "pub schema: &'a CftContainer",
+        "pub schema: &'a mut CftContainer",
+    ] {
+        assert!(
+            !requests.contains(forbidden),
+            "API writer requests should not expose full schema container `{forbidden}`"
+        );
+    }
+    assert!(
+        requests.contains("pub schema: &'a CftSchemaView"),
+        "writer schema-bearing requests should expose schema view"
+    );
+    assert!(
         writer.contains("pub trait SourceWriter"),
         "API writer trait should remain in writer.rs"
     );
@@ -4297,6 +4315,15 @@ fn table_loader_core_table_rs_is_split_by_responsibility() {
     assert!(
         table.lines().count() < 800,
         "coflow-loader-table-core table.rs should stay below the 800-line large-module threshold"
+    );
+    assert!(
+        table.contains("pub fn resolve_table_write_layout(\r\n    schema: &CftSchemaView")
+            || table.contains("pub fn resolve_table_write_layout(\n    schema: &CftSchemaView"),
+        "table write layout should receive the shared schema view instead of rebuilding it"
+    );
+    assert!(
+        !table.contains("CftSchemaView::new(schema)"),
+        "table write layout should not rebuild schema view internally"
     );
 }
 
