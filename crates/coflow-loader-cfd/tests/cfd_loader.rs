@@ -18,7 +18,7 @@ use coflow_loader_cfd::{
     CFD_LOADER_DESCRIPTOR,
 };
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -626,6 +626,41 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
         primary.location,
         SourceLocation::FileSpan {
             path: source_path,
+            start_line: 2,
+            start_character: 0,
+            end_line: 3,
+            end_character: 1,
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn direct_model_errors_keep_record_text_spans() -> TestResult {
+    let schema = compile_schema("type Item { value: int; }");
+    let err = load_cfd_model(
+        &schema,
+        "first: Item { value: 1 }\n\nsecond: Item {\n}\n",
+    )
+    .expect_err("second record is missing value");
+    let CfdTextLoadError::DataModel {
+        diagnostics,
+        origins,
+    } = err
+    else {
+        return Err("expected data-model diagnostics".into());
+    };
+    let mapped = coflow_api::map_diagnostics_with_origins(diagnostics, &origins);
+    let primary = mapped
+        .diagnostics
+        .first()
+        .and_then(|diagnostic| diagnostic.primary.as_ref())
+        .ok_or("expected mapped primary label")?;
+
+    assert_eq!(
+        primary.location,
+        SourceLocation::FileSpan {
+            path: PathBuf::new(),
             start_line: 2,
             start_character: 0,
             end_line: 3,

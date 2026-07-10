@@ -32,7 +32,7 @@ pub use diagnostics::{
 };
 use parser::{ParsedCfdInputRecord, Parser};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 pub use writer::{CfdWriter, CFD_WRITER_DESCRIPTOR};
 
 /// Parses `.cfd` text into source-neutral input records.
@@ -75,12 +75,24 @@ pub fn load_cfd_model(
     schema: &CftContainer,
     source: &str,
 ) -> Result<CfdDataModel, CfdTextLoadError> {
-    let records = parse_cfd_input_records(schema, source)?;
+    let schema_view = CftSchemaView::new(schema);
+    let records = parse_cfd_input_records_with_spans(&schema_view, source)?;
     let mut builder = CfdDataModel::builder(schema);
+    let mut origins = Vec::with_capacity(records.len());
     for record in records {
-        builder.add_input_record(record);
+        let origin = RecordOrigin::File {
+            path: PathBuf::new(),
+            span: Some(text_span(source, record.span)),
+        };
+        origins.push(origin.clone());
+        builder.add_input_record(record.record.with_origin(origin));
     }
-    builder.build().map_err(CfdTextLoadError::DataModel)
+    builder
+        .build()
+        .map_err(|diagnostics| CfdTextLoadError::DataModel {
+            diagnostics,
+            origins,
+        })
 }
 
 #[derive(Debug, Default, Clone, Copy)]

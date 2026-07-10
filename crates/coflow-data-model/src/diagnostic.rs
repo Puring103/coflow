@@ -252,72 +252,55 @@ pub enum CfdErrorCode {
 
 impl CfdErrorCode {
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    const fn entry(self) -> (CfdStage, &'static str) {
         match self {
-            Self::UnknownType => "CFD-DATA-001",
-            Self::AbstractRecordType => "CFD-DATA-002",
-            Self::MissingObjectType => "CFD-DATA-003",
-            Self::ObjectTypeMismatch => "CFD-DATA-004",
-            Self::UnknownField => "CFD-DATA-005",
-            Self::MissingRequiredField => "CFD-DATA-006",
-            Self::TypeMismatch => "CFD-DATA-007",
-            Self::InvalidEnumVariant => "CFD-DATA-008",
-            Self::DuplicateDictKey => "CFD-DATA-009",
-            Self::MissingIdField => "CFD-DATA-010",
-            Self::DuplicateId => "CFD-DATA-011",
-            Self::DuplicatePolymorphicId => "CFD-DATA-012",
-            Self::InvalidRecordKey => "CFD-DATA-013",
-            Self::SingletonRecordCountInvalid => "CFD-DATA-015",
-            Self::SingletonKeyMissingOrInvalid => "CFD-DATA-016",
-            Self::SingletonKeyCollision => "CFD-DATA-017",
-            Self::RefTargetNotFound => "CFD-REF-001",
-            Self::CheckFailed => "CFD-CHECK-001",
-            Self::CheckEvalTypeError => "CFD-CHECK-002",
-            Self::CheckNullAccess => "CFD-CHECK-003",
-            Self::CheckIndexOutOfBounds => "CFD-CHECK-004",
-            Self::CheckMissingDictKey => "CFD-CHECK-005",
-            Self::CheckEmptyMinMax => "CFD-CHECK-006",
-            Self::CheckComparisonFailed => "CFD-CHECK-007",
-            Self::CheckBoolExpectedTrue => "CFD-CHECK-008",
-            Self::CheckNegationFailed => "CFD-CHECK-009",
-            Self::CheckAndFailed => "CFD-CHECK-010",
-            Self::CheckOrFailed => "CFD-CHECK-011",
-            Self::CheckTypePredicateFailed => "CFD-CHECK-012",
-            Self::CheckNullPredicateFailed => "CFD-CHECK-013",
-            Self::CheckContainsFailed => "CFD-CHECK-014",
-            Self::CheckUniqueFailed => "CFD-CHECK-015",
-            Self::CheckMatchesFailed => "CFD-CHECK-016",
-            Self::CheckAnyQuantifierFailed => "CFD-CHECK-017",
-            Self::CheckNoneQuantifierFailed => "CFD-CHECK-018",
-            Self::CheckAllQuantifierFailed => "CFD-CHECK-019",
+            Self::UnknownType => (CfdStage::DataModel, "CFD-DATA-001"),
+            Self::AbstractRecordType => (CfdStage::DataModel, "CFD-DATA-002"),
+            Self::MissingObjectType => (CfdStage::DataModel, "CFD-DATA-003"),
+            Self::ObjectTypeMismatch => (CfdStage::DataModel, "CFD-DATA-004"),
+            Self::UnknownField => (CfdStage::DataModel, "CFD-DATA-005"),
+            Self::MissingRequiredField => (CfdStage::DataModel, "CFD-DATA-006"),
+            Self::TypeMismatch => (CfdStage::DataModel, "CFD-DATA-007"),
+            Self::InvalidEnumVariant => (CfdStage::DataModel, "CFD-DATA-008"),
+            Self::DuplicateDictKey => (CfdStage::DataModel, "CFD-DATA-009"),
+            Self::MissingIdField => (CfdStage::DataModel, "CFD-DATA-010"),
+            Self::DuplicateId => (CfdStage::DataModel, "CFD-DATA-011"),
+            Self::DuplicatePolymorphicId => (CfdStage::DataModel, "CFD-DATA-012"),
+            Self::InvalidRecordKey => (CfdStage::DataModel, "CFD-DATA-013"),
+            Self::SingletonRecordCountInvalid => (CfdStage::DataModel, "CFD-DATA-015"),
+            Self::SingletonKeyMissingOrInvalid => (CfdStage::DataModel, "CFD-DATA-016"),
+            Self::SingletonKeyCollision => (CfdStage::DataModel, "CFD-DATA-017"),
+            Self::RefTargetNotFound => (CfdStage::Reference, "CFD-REF-001"),
+            Self::CheckFailed => (CfdStage::Check, "CFD-CHECK-001"),
+            Self::CheckEvalTypeError => (CfdStage::Check, "CFD-CHECK-002"),
+            Self::CheckNullAccess => (CfdStage::Check, "CFD-CHECK-003"),
+            Self::CheckIndexOutOfBounds => (CfdStage::Check, "CFD-CHECK-004"),
+            Self::CheckMissingDictKey => (CfdStage::Check, "CFD-CHECK-005"),
+            Self::CheckEmptyMinMax => (CfdStage::Check, "CFD-CHECK-006"),
+            Self::CheckComparisonFailed => (CfdStage::Check, "CFD-CHECK-007"),
+            Self::CheckBoolExpectedTrue => (CfdStage::Check, "CFD-CHECK-008"),
+            Self::CheckNegationFailed => (CfdStage::Check, "CFD-CHECK-009"),
+            Self::CheckAndFailed => (CfdStage::Check, "CFD-CHECK-010"),
+            Self::CheckOrFailed => (CfdStage::Check, "CFD-CHECK-011"),
+            Self::CheckTypePredicateFailed => (CfdStage::Check, "CFD-CHECK-012"),
+            Self::CheckNullPredicateFailed => (CfdStage::Check, "CFD-CHECK-013"),
+            Self::CheckContainsFailed => (CfdStage::Check, "CFD-CHECK-014"),
+            Self::CheckUniqueFailed => (CfdStage::Check, "CFD-CHECK-015"),
+            Self::CheckMatchesFailed => (CfdStage::Check, "CFD-CHECK-016"),
+            Self::CheckAnyQuantifierFailed => (CfdStage::Check, "CFD-CHECK-017"),
+            Self::CheckNoneQuantifierFailed => (CfdStage::Check, "CFD-CHECK-018"),
+            Self::CheckAllQuantifierFailed => (CfdStage::Check, "CFD-CHECK-019"),
         }
     }
 
     #[must_use]
-    pub fn stage(self) -> CfdStage {
-        match self {
-            Self::RefTargetNotFound => CfdStage::Reference,
-            Self::CheckFailed
-            | Self::CheckEvalTypeError
-            | Self::CheckNullAccess
-            | Self::CheckIndexOutOfBounds
-            | Self::CheckMissingDictKey
-            | Self::CheckEmptyMinMax
-            | Self::CheckComparisonFailed
-            | Self::CheckBoolExpectedTrue
-            | Self::CheckNegationFailed
-            | Self::CheckAndFailed
-            | Self::CheckOrFailed
-            | Self::CheckTypePredicateFailed
-            | Self::CheckNullPredicateFailed
-            | Self::CheckContainsFailed
-            | Self::CheckUniqueFailed
-            | Self::CheckMatchesFailed
-            | Self::CheckAnyQuantifierFailed
-            | Self::CheckNoneQuantifierFailed
-            | Self::CheckAllQuantifierFailed => CfdStage::Check,
-            _ => CfdStage::DataModel,
-        }
+    pub const fn as_str(self) -> &'static str {
+        self.entry().1
+    }
+
+    #[must_use]
+    pub const fn stage(self) -> CfdStage {
+        self.entry().0
     }
 }
 

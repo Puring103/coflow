@@ -1,6 +1,7 @@
-use coflow_api::{byte_range, Diagnostic, DiagnosticSet, Label, SourceLocation};
-use coflow_data_model::TextSpan;
-use coflow_data_model::CfdDiagnostics;
+use coflow_api::{
+    byte_range, map_diagnostics_with_origins, Diagnostic, DiagnosticSet, Label, SourceLocation,
+};
+use coflow_data_model::{CfdDiagnostics, RecordOrigin, TextSpan};
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
@@ -8,14 +9,17 @@ use std::path::Path;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CfdTextLoadError {
     Text(CfdTextDiagnostics),
-    DataModel(CfdDiagnostics),
+    DataModel {
+        diagnostics: CfdDiagnostics,
+        origins: Vec<RecordOrigin>,
+    },
 }
 
 impl fmt::Display for CfdTextLoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Text(diagnostics) => diagnostics.fmt(f),
-            Self::DataModel(diagnostics) => {
+            Self::DataModel { diagnostics, .. } => {
                 let first = diagnostics
                     .diagnostics
                     .first()
@@ -133,18 +137,25 @@ pub(super) fn cfd_error_to_diagnostics(
                 })
                 .collect(),
         },
-        CfdTextLoadError::DataModel(diagnostics) => DiagnosticSet {
-            diagnostics: diagnostics
-                .diagnostics
+        CfdTextLoadError::DataModel {
+            diagnostics,
+            origins,
+        } => {
+            let origins = origins
                 .into_iter()
-                .map(|diagnostic| {
-                    Diagnostic::error(
-                        diagnostic.code.as_str().to_string(),
-                        diagnostic.stage.to_string(),
-                        diagnostic.message,
-                    )
-                })
-                .collect(),
+                .map(|origin| origin_with_file(file, origin))
+                .collect::<Vec<_>>();
+            map_diagnostics_with_origins(diagnostics, &origins)
+        }
+    }
+}
+
+fn origin_with_file(file: &Path, origin: RecordOrigin) -> RecordOrigin {
+    match origin {
+        RecordOrigin::File { path, span } if path.as_os_str().is_empty() => RecordOrigin::File {
+            path: file.to_path_buf(),
+            span,
         },
+        other => other,
     }
 }
