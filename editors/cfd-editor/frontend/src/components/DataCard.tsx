@@ -46,7 +46,8 @@ import {
 import { Icon } from './Icon'
 import { DiagBadge } from './DiagBadge'
 import { typeColor, enumColor } from '../utils/typeColor'
-import { buildDefaultObject, loadEnumVariants, loadRefTargets } from '../utils/editContext'
+import { loadEnumVariants, loadRefTargets } from '../utils/editContext'
+import { useObjectDraft } from './ObjectDraftHost'
 
 export function CardHeader({
   recordKey,
@@ -630,27 +631,76 @@ function NullableControls({
   // scalars/collections we materialize locally, refs/enums pull first option
   // via the async helper, and abstract objects prompt for a concrete type.
   const canCreate = isNull && (
-    defaultForKind(declaredType) !== null
+    scalarDefaultForKind(declaredType) !== null
     || isPolymorphic
     || !!enumType
     || !!refTargetType
     || !!declaredType
   )
 
+  const { openObjectDraft } = useObjectDraft()
+
   if (!canClear && !canCreate && !canSwitchType) return null
+
+  function openSwitchDialog() {
+    if (value.kind !== 'object') return
+    openObjectDraft({
+      title: '切换类型',
+      actualType: value.value.actual_type,
+      polymorphicTypes,
+      confirmLabel: '确认切换',
+      onConfirm: next => onCommit(next),
+    })
+  }
+
+  function openCreateDialog(chosenType: string) {
+    openObjectDraft({
+      title: `创建 ${chosenType}`,
+      actualType: chosenType,
+      polymorphicTypes: isPolymorphic ? polymorphicTypes : [],
+      confirmLabel: '创建',
+      onConfirm: next => onCommit(next),
+    })
+  }
+
+  async function handleCreate() {
+    // Scalars and collections stay local — cheap default + no user input needed.
+    const scalarDefault = defaultForScalarLike({
+      declaredType,
+      enumType,
+      refTargetType,
+    })
+    if (scalarDefault) {
+      const resolved = await scalarDefault()
+      if (resolved) onCommit(resolved)
+      return
+    }
+    // Object materialization needs the draft dialog so required + abstract
+    // sub-fields can be filled explicitly instead of hoping the runtime
+    // hands back a writable shape.
+    if (isPolymorphic) {
+      // No default — user picks concrete type inside the dialog.
+      openCreateDialog(polymorphicTypes[0])
+      return
+    }
+    if (declaredType) {
+      const stripped = declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
+      openCreateDialog(stripped)
+    }
+  }
 
   return (
     <span className="dc-null-controls" onClick={e => e.stopPropagation()}>
       {canSwitchType && (
-        <TypeSwitcher
-          currentType={value.kind === 'object' ? value.value.actual_type : ''}
-          polymorphicTypes={polymorphicTypes}
-          onSwitch={async chosen => {
-            if (!window.confirm(`切换类型将重置该字段的值，是否继续？`)) return
-            const next = await buildDefaultObject(chosen)
-            if (next) onCommit(next)
-          }}
-        />
+        <button
+          type="button"
+          className="dc-null-btn dc-null-btn-switch"
+          title="切换类型"
+          aria-label="切换类型"
+          onClick={openSwitchDialog}
+        >
+          <Icon name="edit" size={11} />
+        </button>
       )}
       {canClear && (
         <button
@@ -669,15 +719,7 @@ function NullableControls({
           className="dc-null-btn dc-null-btn-create"
           title="创建默认值"
           aria-label="创建默认值"
-          onClick={async () => {
-            const next = await materializeDefault({
-              declaredType,
-              enumType,
-              refTargetType,
-              polymorphicTypes,
-            })
-            if (next) onCommit(next)
-          }}
+          onClick={handleCreate}
         >
           <Icon name="plus" size={11} />
         </button>
@@ -686,39 +728,46 @@ function NullableControls({
   )
 }
 
-function TypeSwitcher({
-  currentType,
-  polymorphicTypes,
-  onSwitch,
+/** Return a synchronous or ref/enum-fetching thunk producing a starter
+ *  value for scalars, refs, enums, arrays and dicts. Object types return
+ *  null — those need the object-draft dialog so required and abstract
+ *  sub-fields can be filled explicitly. */
+function defaultForScalarLike({
+  declaredType,
+  enumType,
+  refTargetType,
 }: {
-  currentType: string
-  polymorphicTypes: string[]
-  onSwitch: (chosen: string) => void
-}) {
-  return (
-    <select
-      className="dc-type-switcher"
-      value={currentType}
-      onChange={e => {
-        const next = e.target.value
-        if (next && next !== currentType) onSwitch(next)
-      }}
-      title="切换类型"
-      aria-label="切换类型"
-    >
-      {!polymorphicTypes.includes(currentType) && currentType && (
-        <option value={currentType}>{currentType}</option>
-      )}
-      {polymorphicTypes.map(t => (
-        <option key={t} value={t}>{t}</option>
-      ))}
-    </select>
-  )
+  declaredType?: string
+  enumType?: string
+  refTargetType?: string
+}): (() => Promise<FieldValue | null>) | null {
+  if (enumType) {
+    return async () => {
+      const variants = await loadEnumVariants(enumType)
+      if (variants.ok && variants.variants.length > 0) {
+        return enumValue(enumType, variants.variants[0], 0n)
+      }
+      return null
+    }
+  }
+  if (refTargetType) {
+    return async () => {
+      const targets = await loadRefTargets(refTargetType)
+      if (targets.ok && targets.targets.length > 0) {
+        return refValue(targets.targets[0].coordinate.key)
+      }
+      // No known ref targets — the user needs to create one first.
+      alert(`&${refTargetType} 类型没有可用的记录，请先在对应的表中创建一条。`)
+      return null
+    }
+  }
+  const scalar = scalarDefaultForKind(declaredType)
+  if (scalar) return async () => scalar
+  return null
 }
 
-/** Cheap same-shape default value for scalar fields. Returns null when the
- *  declared type isn't recognizable or requires an async fetch (object). */
-function defaultForKind(declaredType?: string): FieldValue | null {
+/** Cheap same-shape default value for scalar / collection declared types. */
+function scalarDefaultForKind(declaredType?: string): FieldValue | null {
   if (!declaredType) return null
   const stripped = declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
   switch (stripped) {
@@ -732,52 +781,6 @@ function defaultForKind(declaredType?: string): FieldValue | null {
       return null
     }
   }
-}
-
-/** Produce a starter value when the user asks to materialize a null field.
- *  Scalars/collections are cheap and local; enums/refs pick the first option
- *  the schema knows about; polymorphic objects prompt for a concrete type;
- *  everything else falls through to the backend default builder. */
-async function materializeDefault({
-  declaredType,
-  enumType,
-  refTargetType,
-  polymorphicTypes,
-}: {
-  declaredType?: string
-  enumType?: string
-  refTargetType?: string
-  polymorphicTypes: string[]
-}): Promise<FieldValue | null> {
-  if (enumType) {
-    const variants = await loadEnumVariants(enumType)
-    if (variants.ok && variants.variants.length > 0) {
-      return enumValue(enumType, variants.variants[0], 0n)
-    }
-  }
-  if (refTargetType) {
-    const targets = await loadRefTargets(refTargetType)
-    if (targets.ok && targets.targets.length > 0) {
-      return refValue(targets.targets[0].coordinate.key)
-    }
-    // no known ref targets — commit an empty-key ref so the pill select opens
-    return refValue('')
-  }
-  const shallow = defaultForKind(declaredType)
-  if (shallow) return shallow
-  if (polymorphicTypes.length >= 2) {
-    const chosen = window.prompt(
-      `请选择要创建的类型（可选项：${polymorphicTypes.join(', ')}）`,
-      polymorphicTypes[0],
-    )
-    if (!chosen || !polymorphicTypes.includes(chosen)) return null
-    return buildDefaultObject(chosen)
-  }
-  if (declaredType) {
-    const stripped = declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
-    return buildDefaultObject(stripped)
-  }
-  return null
 }
 
 function ScalarFieldRow({

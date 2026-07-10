@@ -1583,6 +1583,10 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
 }
+.dc-null-btn-switch:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+}
 .dc-type-switcher {
   height: 20px;
   padding: 0 4px;

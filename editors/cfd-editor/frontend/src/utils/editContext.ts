@@ -18,7 +18,11 @@ export async function buildDefaultObject(typeName: string): Promise<FieldValue |
   if (activeSessionId === null) return null
   try {
     return await api.makeDefaultObject(activeSessionId, typeName)
-  } catch {
+  } catch (err) {
+    // Surface schema-materialization errors so the user knows why a
+    // type switch didn't produce a value (abstract fields without a
+    // default, singleton nesting, etc.).
+    alert(`无法创建 ${typeName} 的默认值：${errorMessage(err)}`)
     return null
   }
 }

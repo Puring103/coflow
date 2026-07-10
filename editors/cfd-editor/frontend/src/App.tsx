@@ -6,6 +6,7 @@ import { GraphView } from './components/GraphView'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { InspectorPanel } from './components/InspectorPanel'
 import { Icon } from './components/Icon'
+import { ObjectDraftHost } from './components/ObjectDraftHost'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
@@ -967,6 +968,7 @@ export default function App() {
   }
 
   return (
+    <ObjectDraftHost sessionId={project?.session_id ?? null}>
     <div className="app">
       <div className="topbar">
         <span className="app-title">CFD Editor</span>
@@ -1342,6 +1344,7 @@ export default function App() {
         </div>
       )}
     </div>
+    </ObjectDraftHost>
   )
 }
 
