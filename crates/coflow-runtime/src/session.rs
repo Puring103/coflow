@@ -63,6 +63,11 @@ impl ProjectSession {
     }
 
     #[must_use]
+    pub fn schema_view(&self) -> CftSchemaView {
+        CftSchemaView::new(&self.schema)
+    }
+
+    #[must_use]
     pub const fn model(&self) -> &CfdDataModel {
         &self.model
     }
@@ -153,7 +158,7 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub fn dimensions(&self) -> Vec<DimensionInfo> {
-        let view = CftSchemaView::new(&self.schema);
+        let view = self.schema_view();
         let fields = dimensions::dimension_fields(&view);
         dimensions_for_project(&self.project, &fields)
     }
@@ -164,7 +169,7 @@ impl ProjectSession {
     /// without re-deriving the naming convention themselves.
     #[must_use]
     pub fn dimension_synthesized_types(&self) -> BTreeSet<String> {
-        let view = CftSchemaView::new(&self.schema);
+        let view = self.schema_view();
         dimensions::dimension_fields(&view)
             .into_iter()
             .map(|field| field.synthesized_type)
@@ -385,6 +390,11 @@ impl ProjectSchemaSession {
     #[must_use]
     pub const fn schema(&self) -> &CftContainer {
         &self.schema
+    }
+
+    #[must_use]
+    pub fn schema_view(&self) -> CftSchemaView {
+        CftSchemaView::new(&self.schema)
     }
 
     #[must_use]

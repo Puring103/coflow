@@ -108,7 +108,7 @@ pub fn build_project(
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let schema_view = CftSchemaView::new(session.schema());
+    let schema_view = session.schema_view();
 
     let mut preflight_diagnostics =
         build_codegen_preflight_diagnostics(registry, &session, &schema_view, &plan)?;
@@ -181,7 +181,7 @@ pub fn export_project_data(
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let schema_view = CftSchemaView::new(session.schema());
+    let schema_view = session.schema_view();
     let artifact_diagnostics = artifact_safety_diagnostics(
         session.project(),
         &[ArtifactOutputPlan::new("outputs.data.dir", dir.clone())],
@@ -250,7 +250,7 @@ pub fn generate_project_code(
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let schema_view = CftSchemaView::new(session.schema());
+    let schema_view = session.schema_view();
     let codegen_diagnostics = preflight_codegen(
         registry,
         &schema_view,

@@ -688,8 +688,8 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
         "root CLI Lark helper should use the typed table option facade"
     );
     assert!(
-        lark.contains("CftSchemaView::new(session.schema())"),
-        "root CLI Lark helper should use the schema query facade"
+        lark.contains("session.schema_view()"),
+        "root CLI Lark helper should request the schema query facade from the session"
     );
     for forbidden in [
         "serde_json::Value",
@@ -697,6 +697,7 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
         ".as_array()",
         "Value::as_object",
         "filter_map(serde_json::Value::as_object)",
+        "CftSchemaView::new(session.schema())",
         "resolve_type(&actual_type)",
         "schema_type.all_fields",
     ] {
@@ -740,6 +741,39 @@ fn root_cli_session_builders_use_runtime_facade() {
                 "{path} should not call runtime session builder `{forbidden}` directly"
             );
         }
+    }
+}
+
+#[test]
+fn root_cli_schema_queries_go_through_session_facade() {
+    let command_modules = [
+        (
+            "src/commands.rs",
+            std::fs::read_to_string("src/commands.rs").expect("read root CLI commands"),
+        ),
+        (
+            "src/data_commands/lark.rs",
+            std::fs::read_to_string("src/data_commands/lark.rs")
+                .expect("read root CLI Lark data command helpers"),
+        ),
+    ];
+
+    let session = std::fs::read_to_string("crates/coflow-runtime/src/session.rs")
+        .expect("read runtime session");
+    assert!(
+        session.contains("pub fn schema_view(&self) -> CftSchemaView"),
+        "runtime session should own construction of the schema query facade"
+    );
+
+    for (path, source) in command_modules {
+        assert!(
+            source.contains("session.schema_view()"),
+            "{path} should request schema queries through the runtime session facade"
+        );
+        assert!(
+            !source.contains("CftSchemaView::new(session.schema())"),
+            "{path} should not reconstruct schema views from the raw schema getter"
+        );
     }
 }
 

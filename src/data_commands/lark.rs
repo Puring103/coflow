@@ -2,7 +2,6 @@ use coflow_api::{
     CreateTableRequest, DiagnosticSet, ProviderRegistry, SourceLocationSpec, SyncHeaderRequest,
     TableContext,
 };
-use coflow_cft::CftSchemaView;
 use coflow_loader_table_core::{TableSheetConfig, TableSourceOptions};
 use coflow_runtime::{configured_project_source, DataFileReport};
 
@@ -154,7 +153,7 @@ fn lark_table_layout(
                 "`--type` is required for lark table creation",
             ))
         })?;
-    let schema_view = CftSchemaView::new(session.schema());
+    let schema_view = session.schema_view();
     let Some(schema_fields) = schema_view.full_fields(&actual_type) else {
         return Err(DiagnosticSet::one(coflow_api::Diagnostic::error(
             "DATA-FILE-TYPE",
