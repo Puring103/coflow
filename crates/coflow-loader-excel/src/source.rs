@@ -98,6 +98,17 @@ impl From<ExcelSheet> for TableSheetConfig {
     }
 }
 
+impl From<TableSheetConfig> for ExcelSheet {
+    fn from(sheet: TableSheetConfig) -> Self {
+        Self {
+            sheet: sheet.sheet,
+            type_name: sheet.type_name,
+            key: sheet.key,
+            columns: sheet.columns,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExcelInputRecords {
     pub records: Vec<CfdInputRecord>,

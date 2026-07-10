@@ -886,8 +886,9 @@ fn excel_loader_options_do_not_live_in_lib_rs() {
 
     for expected in [
         "pub(super) fn excel_sheets_from_options",
-        "fn excel_sheet_from_value",
-        "fn optional_string_field",
+        "pub(crate) fn excel_sheet_config_from_options",
+        "pub(crate) fn excel_sheet_for_type_from_options",
+        "TableSourceOptions::decode(options, \"excel source\")",
     ] {
         assert!(
             options.contains(expected),
@@ -896,6 +897,17 @@ fn excel_loader_options_do_not_live_in_lib_rs() {
         assert!(
             !lib.contains(expected),
             "Excel option parser item `{expected}` should not live in lib.rs"
+        );
+    }
+    for forbidden in [
+        "fn excel_sheet_from_value",
+        "fn optional_string_field",
+        "options.get(\"sheets\")",
+        ".as_array()",
+    ] {
+        assert!(
+            !options.contains(forbidden),
+            "Excel options should use the shared table options decoder instead of `{forbidden}`"
         );
     }
     for expected in [
@@ -1064,8 +1076,8 @@ fn csv_loader_helpers_do_not_live_in_lib_rs() {
     }
     for expected in [
         "pub(super) fn csv_sheets_from_options",
-        "fn csv_sheet_from_value",
-        "fn optional_string_field",
+        "pub(crate) fn csv_sheet_config_from_options",
+        "TableSourceOptions::decode(options, \"csv source\")",
     ] {
         assert!(
             options.contains(expected),
@@ -1074,6 +1086,17 @@ fn csv_loader_helpers_do_not_live_in_lib_rs() {
         assert!(
             !lib.contains(expected),
             "CSV option parser item `{expected}` should not live in lib.rs"
+        );
+    }
+    for forbidden in [
+        "fn csv_sheet_from_value",
+        "fn optional_string_field",
+        "options.get(\"sheets\")",
+        ".as_array()",
+    ] {
+        assert!(
+            !options.contains(forbidden),
+            "CSV options should use the shared table options decoder instead of `{forbidden}`"
         );
     }
     for expected in [
@@ -4014,8 +4037,10 @@ fn lark_loader_source_parsing_does_not_live_in_lib_rs() {
         "pub struct LarkSheetSource",
         "pub enum LarkSheetLocator",
         "pub(crate) fn lark_source_from_spec",
-        "fn table_sheet_config_from_value",
         "pub(crate) fn sheet_config_from_options",
+        "pub(crate) fn sheet_for_type_from_options",
+        "fn lark_table_options_from_options",
+        "TableSourceOptions::decode(options, \"lark source\")",
         "pub(crate) fn lark_document",
         "pub(crate) fn lark_document_spreadsheet_token",
     ] {
@@ -4027,6 +4052,61 @@ fn lark_loader_source_parsing_does_not_live_in_lib_rs() {
             !lib.contains(expected),
             "Lark source helper `{expected}` should not live in lib.rs"
         );
+    }
+    for forbidden in [
+        "fn table_sheet_config_from_value",
+        "fn optional_string_field",
+        "options.get(\"sheets\")",
+        ".as_array()",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "Lark source should use the shared table options decoder instead of `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn table_source_options_decode_lives_in_table_core() {
+    let table_options = std::fs::read_to_string("crates/coflow-loader-table-core/src/options.rs")
+        .expect("read table options");
+    let table_lib = std::fs::read_to_string("crates/coflow-loader-table-core/src/lib.rs")
+        .expect("read table core lib");
+    let csv_writer = std::fs::read_to_string("crates/coflow-loader-csv/src/writer.rs")
+        .expect("read csv writer");
+    let excel_writer = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
+        .expect("read excel writer");
+    let lark_write = std::fs::read_to_string("crates/coflow-loader-lark/src/write.rs")
+        .expect("read lark writer");
+
+    for expected in [
+        "pub struct TableSourceOptions",
+        "pub fn decode(",
+        "pub fn sheet_config(",
+        "pub fn sheet_for_type(",
+        "fn table_sheet_config_from_value",
+        "fn optional_string_field",
+    ] {
+        assert!(
+            table_options.contains(expected),
+            "shared table option helper `{expected}` should live in table-core options.rs"
+        );
+    }
+    assert!(
+        table_lib.contains("pub use options::{TableOptionsError, TableSourceOptions};"),
+        "table-core should expose the typed table source options facade"
+    );
+    for (name, writer) in [
+        ("CSV writer", csv_writer.as_str()),
+        ("Excel writer", excel_writer.as_str()),
+        ("Lark writer", lark_write.as_str()),
+    ] {
+        for forbidden in ["options.get(\"sheets\")", ".as_array()", "Value::as_object"] {
+            assert!(
+                !writer.contains(forbidden),
+                "{name} should not parse table source option JSON with `{forbidden}`"
+            );
+        }
     }
 }
 

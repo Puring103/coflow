@@ -86,6 +86,17 @@ impl From<CsvSheet> for TableSheetConfig {
     }
 }
 
+impl From<TableSheetConfig> for CsvSheet {
+    fn from(sheet: TableSheetConfig) -> Self {
+        Self {
+            sheet: sheet.sheet,
+            type_name: sheet.type_name,
+            key: sheet.key,
+            columns: sheet.columns,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CsvInputRecords {
     pub records: Vec<CfdInputRecord>,

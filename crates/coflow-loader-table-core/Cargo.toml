@@ -16,4 +16,5 @@ workspace = true
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
+serde_json = "1"
 unicode-ident = "1"

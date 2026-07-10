@@ -170,24 +170,25 @@ where
         let auth = self.lark_write_auth(request.source)?;
         let spreadsheet_token =
             self.lark_spreadsheet_token_from_source(request.source, &auth.token)?;
-        let sheet = request
-            .sheet
-            .or_else(|| sheet_for_type_from_options(&request.source.options, request.actual_type))
-            .unwrap_or(request.actual_type);
-        let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet, &auth.token)?;
+        let sheet = match request.sheet {
+            Some(sheet) => sheet.to_string(),
+            None => sheet_for_type_from_options(&request.source.options, request.actual_type)?
+                .unwrap_or_else(|| request.actual_type.to_string()),
+        };
+        let sheet_id = self.cached_sheet_id(&spreadsheet_token, &sheet, &auth.token)?;
         let layout = lark_insert_layout(&LarkInsertLayoutRequest {
             ctx,
             writer: self,
             source: request.source,
             spreadsheet_token: &spreadsheet_token,
             sheet_id: &sheet_id,
-            sheet,
+            sheet: &sheet,
             actual_type: request.actual_type,
             token: &auth.token,
         })?;
         let plan = plan_insert_record(&TableInsertRecord {
             document: SourceDocument::Remote(format!("lark:{spreadsheet_token}")),
-            sheet,
+            sheet: &sheet,
             record_key: request.record_key,
             actual_type: request.actual_type,
             fields: request.fields,
@@ -225,7 +226,7 @@ where
             touched_record_origins: Vec::new(),
             inserted_record_origin: Some(RecordOrigin::Table {
                 document: SourceDocument::Remote(format!("lark:{spreadsheet_token}")),
-                sheet: sheet.to_string(),
+                sheet,
                 row: 0,
                 id_column: layout.id_column,
                 field_columns: layout.field_columns,

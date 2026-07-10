@@ -1,5 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec};
-use coflow_loader_table_core::TableSheetConfig;
+use coflow_loader_table_core::{TableSheetConfig, TableSourceOptions};
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,7 +77,7 @@ pub(crate) fn lark_source_from_spec(
         app_id,
         app_secret,
         locator,
-        table_sheet_configs_from_options(options)?,
+        lark_table_options_from_options(options)?.into_sheets(),
     ))
 }
 
@@ -105,141 +105,21 @@ fn option_string(options: &Value, key: &str) -> Option<String> {
     options.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
-fn table_sheet_configs_from_options(
-    options: &Value,
-) -> Result<Vec<TableSheetConfig>, DiagnosticSet> {
-    let Some(sheets) = options.get("sheets") else {
-        return Ok(Vec::new());
-    };
-    let Some(sheets) = sheets.as_array() else {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "LARK-SOURCE",
-            "LARK",
-            "lark source option `sheets` must be an array",
-        )));
-    };
-    sheets
-        .iter()
-        .map(table_sheet_config_from_value)
-        .collect::<Result<Vec<_>, _>>()
-}
-
-fn table_sheet_config_from_value(value: &Value) -> Result<TableSheetConfig, DiagnosticSet> {
-    let Some(object) = value.as_object() else {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "LARK-SOURCE",
-            "LARK",
-            "lark source sheet config must be an object",
-        )));
-    };
-    let Some(sheet_name) = object.get("sheet").and_then(Value::as_str) else {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "LARK-SOURCE",
-            "LARK",
-            "lark source sheet config requires `sheet`",
-        )));
-    };
-    if sheet_name.trim().is_empty() {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "LARK-SOURCE",
-            "LARK",
-            "lark source sheet `sheet` is empty",
-        )));
-    }
-    let mut sheet = TableSheetConfig::new(sheet_name);
-    if let Some(type_name) = optional_string_field(object, "type", "lark source sheet `type`")? {
-        if type_name.trim().is_empty() {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "LARK-SOURCE",
-                "LARK",
-                "lark source sheet `type` is empty",
-            )));
-        }
-        sheet = sheet.with_type(type_name);
-    }
-    if let Some(key) = optional_string_field(object, "key", "lark source sheet `key`")? {
-        if key.trim().is_empty() {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "LARK-SOURCE",
-                "LARK",
-                "lark source sheet `key` is empty",
-            )));
-        }
-        sheet = sheet.with_key(key);
-    }
-    if let Some(columns) = object.get("columns") {
-        let Some(columns) = columns.as_object() else {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "LARK-SOURCE",
-                "LARK",
-                "lark source sheet `columns` must be an object",
-            )));
-        };
-        let mut parsed_columns = Vec::new();
-        for (source, field) in columns {
-            let Some(field) = field.as_str() else {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "LARK-SOURCE",
-                    "LARK",
-                    format!("lark source sheet column `{source}` must map to a string field"),
-                )));
-            };
-            if source.trim().is_empty() {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "LARK-SOURCE",
-                    "LARK",
-                    "lark source sheet column name is empty",
-                )));
-            }
-            if field.trim().is_empty() {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "LARK-SOURCE",
-                    "LARK",
-                    format!("lark source sheet column `{source}` maps to an empty field"),
-                )));
-            }
-            parsed_columns.push((source.as_str(), field));
-        }
-        sheet = sheet.with_columns(parsed_columns);
-    }
-    Ok(sheet)
-}
-
 pub(crate) fn sheet_config_from_options(
     options: &Value,
     sheet: &str,
     actual_type: &str,
 ) -> Result<TableSheetConfig, DiagnosticSet> {
-    for config in table_sheet_configs_from_options(options)? {
-        let matches_sheet = config.sheet == sheet;
-        let matches_type = config
-            .type_name
-            .as_deref()
-            .is_some_and(|candidate| candidate == actual_type);
-        if matches_sheet || matches_type {
-            return Ok(config);
-        }
-    }
-    Ok(TableSheetConfig::new(sheet).with_type(actual_type))
+    Ok(lark_table_options_from_options(options)?.sheet_config(sheet, actual_type))
 }
 
-pub(crate) fn sheet_for_type_from_options<'a>(
-    options: &'a Value,
+pub(crate) fn sheet_for_type_from_options(
+    options: &Value,
     actual_type: &str,
-) -> Option<&'a str> {
-    options
-        .get("sheets")
-        .and_then(Value::as_array)?
-        .iter()
-        .filter_map(Value::as_object)
-        .find(|object| {
-            object
-                .get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|candidate| candidate == actual_type)
-        })?
-        .get("sheet")
-        .and_then(Value::as_str)
+) -> Result<Option<String>, DiagnosticSet> {
+    Ok(lark_table_options_from_options(options)?
+        .sheet_for_type(actual_type)
+        .map(ToOwned::to_owned))
 }
 
 pub(crate) fn lark_document(source: &LarkSheetSource) -> String {
@@ -249,20 +129,9 @@ pub(crate) fn lark_document(source: &LarkSheetSource) -> String {
     }
 }
 
-fn optional_string_field<'a>(
-    object: &'a serde_json::Map<String, Value>,
-    key: &str,
-    label: &str,
-) -> Result<Option<&'a str>, DiagnosticSet> {
-    let Some(value) = object.get(key) else {
-        return Ok(None);
-    };
-    value.as_str().map(Some).ok_or_else(|| {
-        DiagnosticSet::one(Diagnostic::error(
-            "LARK-SOURCE",
-            "LARK",
-            format!("{label} must be a string"),
-        ))
+fn lark_table_options_from_options(options: &Value) -> Result<TableSourceOptions, DiagnosticSet> {
+    TableSourceOptions::decode(options, "lark source").map_err(|err| {
+        DiagnosticSet::one(Diagnostic::error("LARK-SOURCE", "LARK", err.message))
     })
 }
 

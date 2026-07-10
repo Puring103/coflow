@@ -36,6 +36,12 @@ impl TableSheetConfig {
     }
 
     #[must_use]
+    pub fn with_sheet_name(mut self, sheet: impl Into<String>) -> Self {
+        self.sheet = sheet.into();
+        self
+    }
+
+    #[must_use]
     pub fn with_columns(
         mut self,
         columns: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,

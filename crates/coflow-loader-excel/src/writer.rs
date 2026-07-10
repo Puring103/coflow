@@ -18,10 +18,10 @@ use coflow_loader_table_core::writer::{
     TableFieldWrite, TableInsertRecord, TableSetCell, TableWriteDiagnostics, TableWritePlan,
     WriteFieldPathSegment as TableWriteFieldPathSegment,
 };
-use coflow_loader_table_core::{resolve_table_write_layout, TableDiagnostics, TableSheetConfig};
-use serde_json::Value;
+use coflow_loader_table_core::{resolve_table_write_layout, TableDiagnostics};
 use std::collections::BTreeMap;
 use std::path::Path;
+use crate::options::{excel_sheet_config_from_options, excel_sheet_for_type_from_options};
 
 pub static EXCEL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "excel",
@@ -95,20 +95,24 @@ impl SourceWriter for ExcelWriter {
                 "excel writer requires a local path source",
             )));
         };
-        let sheet = request
-            .sheet
-            .or_else(|| sheet_for_type_from_options(&request.source.options, request.actual_type))
-            .unwrap_or(request.actual_type);
+        let sheet = match request.sheet {
+            Some(sheet) => sheet.to_string(),
+            None => excel_sheet_for_type_from_options(
+                &request.source.options,
+                request.actual_type,
+            )?
+            .unwrap_or_else(|| request.actual_type.to_string()),
+        };
         let layout = read_sheet_layout(
             path,
-            sheet,
+            &sheet,
             request.actual_type,
             &request.source.options,
             request.schema,
         )?;
         let plan = plan_insert_record(&TableInsertRecord {
             document: SourceDocument::Local(path.clone()),
-            sheet,
+            sheet: &sheet,
             record_key: request.record_key,
             actual_type: request.actual_type,
             fields: request.fields,
@@ -445,10 +449,10 @@ fn read_sheet_layout(
     path: &Path,
     sheet: &str,
     actual_type: &str,
-    options: &Value,
+    options: &serde_json::Value,
     schema: &coflow_cft::CftSchemaView,
 ) -> Result<SheetLayout, DiagnosticSet> {
-    let config = sheet_config_from_options(options, sheet, actual_type);
+    let config = excel_sheet_config_from_options(options, sheet, actual_type)?;
     let mut workbook = calamine::open_workbook_auto(path).map_err(|err| {
         DiagnosticSet::one(diag(
             "EXCEL-WRITE",
@@ -477,71 +481,6 @@ fn read_sheet_layout(
         id_column: layout.id_column,
         field_columns: layout.field_columns,
     })
-}
-
-fn sheet_config_from_options(options: &Value, sheet: &str, actual_type: &str) -> TableSheetConfig {
-    let Some(sheets) = options.get("sheets").and_then(Value::as_array) else {
-        return TableSheetConfig::new(sheet).with_type(actual_type);
-    };
-    for item in sheets {
-        let Some(object) = item.as_object() else {
-            continue;
-        };
-        let matches_sheet = object
-            .get("sheet")
-            .and_then(Value::as_str)
-            .is_some_and(|candidate| candidate == sheet);
-        let matches_type = object
-            .get("type")
-            .and_then(Value::as_str)
-            .is_some_and(|candidate| candidate == actual_type);
-        if !matches_sheet && !matches_type {
-            continue;
-        }
-        let mut config = TableSheetConfig::new(sheet).with_type(
-            object
-                .get("type")
-                .and_then(Value::as_str)
-                .unwrap_or(actual_type),
-        );
-        if let Some(key) = object.get("key").and_then(Value::as_str) {
-            config = config.with_key(key);
-        }
-        let columns = object
-            .get("columns")
-            .and_then(Value::as_object)
-            .map_or_else(BTreeMap::new, |columns| {
-                columns
-                    .iter()
-                    .filter_map(|(source, field)| {
-                        field
-                            .as_str()
-                            .map(|field| (source.clone(), field.to_string()))
-                    })
-                    .collect()
-            });
-        if !columns.is_empty() {
-            config = config.with_columns(columns);
-        }
-        return config;
-    }
-    TableSheetConfig::new(sheet).with_type(actual_type)
-}
-
-fn sheet_for_type_from_options<'a>(options: &'a Value, actual_type: &str) -> Option<&'a str> {
-    options
-        .get("sheets")
-        .and_then(Value::as_array)?
-        .iter()
-        .filter_map(Value::as_object)
-        .find(|object| {
-            object
-                .get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|candidate| candidate == actual_type)
-        })?
-        .get("sheet")
-        .and_then(Value::as_str)
 }
 
 fn excel_cell_to_text(cell: &calamine::Data) -> String {

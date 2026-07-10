@@ -20,13 +20,14 @@ use coflow_loader_table_core::writer::{
     plan_delete_record, plan_field_write, plan_insert_record, TableFieldWrite, TableInsertRecord,
     TableWriteDiagnostics, WriteFieldPathSegment as TableWriteFieldPathSegment,
 };
-use coflow_loader_table_core::{resolve_table_write_layout, TableDiagnostics, TableSheetConfig};
+use coflow_loader_table_core::{resolve_table_write_layout, TableDiagnostics};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use crate::parse;
+use crate::options::csv_sheet_config_from_options;
 use plan::apply_plan;
 
 pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
@@ -204,62 +205,13 @@ fn read_csv_layout(
             format!("csv file `{}` is empty", path.display()),
         )));
     };
-    let config = sheet_config_from_options(options, sheet, actual_type);
+    let config = csv_sheet_config_from_options(options, sheet, actual_type)?;
     let layout = resolve_table_write_layout(schema, path, &config, header)
         .map_err(table_diagnostics_to_api)?;
     Ok(CsvLayout {
         id_column: layout.id_column,
         field_columns: layout.field_columns,
     })
-}
-
-fn sheet_config_from_options(options: &Value, sheet: &str, actual_type: &str) -> TableSheetConfig {
-    let Some(sheets) = options.get("sheets").and_then(Value::as_array) else {
-        return TableSheetConfig::new(sheet).with_type(actual_type);
-    };
-    for item in sheets {
-        let Some(object) = item.as_object() else {
-            continue;
-        };
-        let matches_sheet = object
-            .get("sheet")
-            .and_then(Value::as_str)
-            .is_some_and(|candidate| candidate == sheet);
-        let matches_type = object
-            .get("type")
-            .and_then(Value::as_str)
-            .is_some_and(|candidate| candidate == actual_type);
-        if !matches_sheet && !matches_type {
-            continue;
-        }
-        let mut config = TableSheetConfig::new(sheet).with_type(
-            object
-                .get("type")
-                .and_then(Value::as_str)
-                .unwrap_or(actual_type),
-        );
-        if let Some(key) = object.get("key").and_then(Value::as_str) {
-            config = config.with_key(key);
-        }
-        let columns = object
-            .get("columns")
-            .and_then(Value::as_object)
-            .map_or_else(BTreeMap::new, |columns| {
-                columns
-                    .iter()
-                    .filter_map(|(source, field)| {
-                        field
-                            .as_str()
-                            .map(|field| (source.clone(), field.to_string()))
-                    })
-                    .collect()
-            });
-        if !columns.is_empty() {
-            config = config.with_columns(columns);
-        }
-        return config;
-    }
-    TableSheetConfig::new(sheet).with_type(actual_type)
 }
 
 fn default_sheet_name(path: &Path) -> &str {

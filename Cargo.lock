@@ -753,6 +753,7 @@ version = "0.5.0"
 dependencies = [
  "coflow-cft",
  "coflow-data-model",
+ "serde_json",
  "unicode-ident",
 ]
 
