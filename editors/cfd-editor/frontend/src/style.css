@@ -1511,15 +1511,23 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 .dc-row-foldout:hover .dc-fold-arrow { color: var(--text); }
 
-/* Striped rows for nested levels — gives depth without per-row borders.
- * Top-level rows (depth=0) keep the panel bg; nested rows tint via
- * color-mix on --text so the stripe direction follows the theme (darker
- * on light, lighter on dark) instead of always darkening. */
-.dc-row[data-depth="1"] { background: color-mix(in srgb, var(--text) 6%, transparent); }
-.dc-row[data-depth="2"] { background: color-mix(in srgb, var(--text) 10%, transparent); }
-.dc-row[data-depth="3"] { background: color-mix(in srgb, var(--text) 14%, transparent); }
-.dc-row[data-depth="4"] { background: color-mix(in srgb, var(--text) 17%, transparent); }
-.dc-row[data-depth="5"] { background: color-mix(in srgb, var(--text) 20%, transparent); }
+/* Nested rows: use a very subtle background shift + a vertical guide line
+ * anchored to the indent, so hierarchy reads without piling up a bright
+ * white overlay on dark themes. Top-level (depth=0) stays on the panel bg. */
+.dc-row[data-depth="1"],
+.dc-row[data-depth="2"],
+.dc-row[data-depth="3"],
+.dc-row[data-depth="4"],
+.dc-row[data-depth="5"] {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+.dc-row[data-depth="1"] .dc-row-label,
+.dc-row[data-depth="2"] .dc-row-label,
+.dc-row[data-depth="3"] .dc-row-label,
+.dc-row[data-depth="4"] .dc-row-label,
+.dc-row[data-depth="5"] .dc-row-label {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--text) 12%, transparent);
+}
 .dc-row[data-depth="1"]:hover,
 .dc-row[data-depth="2"]:hover,
 .dc-row[data-depth="3"]:hover,

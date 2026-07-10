@@ -84,6 +84,11 @@ export default function App() {
   const router = useRouter()
   const { theme, toggle: toggleTheme } = useTheme()
   const [activeType, setActiveType] = useState<string>('')
+  // The last view the user actively picked. `openFile` pushes a table
+  // placeholder because record view needs a coordinate we don't yet have;
+  // once the file data lands, the effect below upgrades the route to
+  // `preferredView` if that's not what we currently show.
+  const [preferredView, setPreferredView] = useState<'table' | 'record' | 'graph'>('table')
   const [globalSearch, setGlobalSearch] = useState('')
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
@@ -339,6 +344,15 @@ export default function App() {
   const openFile = useCallback(
     (filePath: string) => {
       setGlobalSearch('')
+      // Preserve the current view mode so the user doesn't get bounced back
+      // to table on every file click. Record view needs a coordinate — push
+      // table for now; the effect below promotes the route to record view
+      // (with the first record's coordinate) as soon as file data lands.
+      const currentView = router.current?.view ?? 'table'
+      if (currentView === 'graph') {
+        router.push({ view: 'graph', file: filePath })
+        return
+      }
       router.push({ view: 'table', file: filePath })
     },
     [router]
@@ -346,6 +360,11 @@ export default function App() {
 
   const openRecord = useCallback(
     (filePath: string, coordinate: RecordCoordinate) => {
+      setPreferredView('record')
+      // Keep the type tab in sync with the record the user is opening, so
+      // the record-view sidebar (filtered by activeType) actually contains
+      // it and the tab highlight matches.
+      setActiveType(coordinate.actual_type)
       router.push({ view: 'record', file: filePath, coordinate })
     },
     [router]
@@ -958,14 +977,47 @@ export default function App() {
 
   function switchView(view: 'table' | 'record' | 'graph') {
     if (!currentRoute) return
+    setPreferredView(view)
     if (view === 'record') {
-      const firstCoordinate = activeFileData?.records[0]?.coordinate
+      const firstCoordinate =
+        (activeType
+          ? activeFileData?.records.find(r => recordActualType(r) === activeType)
+          : activeFileData?.records[0])?.coordinate
+        ?? activeFileData?.records[0]?.coordinate
       if (!firstCoordinate) return
       router.replace({ view, file: currentRoute.file, coordinate: firstCoordinate })
     } else {
       router.replace({ view, file: currentRoute.file } as typeof currentRoute)
     }
   }
+
+  // When the user opens a file while `preferredView` is 'record', the initial
+  // route was pushed as 'table' (record view needs a coordinate). Upgrade it
+  // as soon as file data resolves and there's at least one record. Same
+  // dance when the user picks a different type tab while in record view —
+  // jump to the first record of the new type instead of stranding them on
+  // the previous coordinate.
+  useEffect(() => {
+    if (!currentRoute) return
+    if (activeFileData?.file_path !== currentRoute.file) return
+    if (currentRoute.view === 'table' && preferredView === 'record') {
+      const firstCoord = activeFileData.records[0]?.coordinate
+      if (firstCoord) {
+        router.replace({ view: 'record', file: currentRoute.file, coordinate: firstCoord })
+      }
+      return
+    }
+    if (currentRoute.view === 'record' && activeType) {
+      if (currentRoute.coordinate.actual_type !== activeType) {
+        const firstOfType = activeFileData.records.find(
+          r => recordActualType(r) === activeType,
+        )?.coordinate
+        if (firstOfType) {
+          router.replace({ view: 'record', file: currentRoute.file, coordinate: firstOfType })
+        }
+      }
+    }
+  }, [currentRoute, preferredView, activeType, activeFileData, router])
 
   return (
     <ObjectDraftHost sessionId={project?.session_id ?? null}>
