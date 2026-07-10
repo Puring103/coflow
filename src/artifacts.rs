@@ -94,9 +94,10 @@ pub fn stage_codegen_artifacts(
         dir: request.dir.to_path_buf(),
         options: codegen_output_options(request.output_config, request.id_as_enum_variants),
     };
+    let schema_view = CftSchemaView::new(request.schema);
     let artifacts = codegen.generate(
         CodegenContext {
-            schema: request.schema,
+            schema: &schema_view,
             model: request.model,
             data_format: request.data_format,
         },
@@ -125,9 +126,10 @@ pub fn preflight_codegen(
         dir: PathBuf::new(),
         options: codegen_output_options(output_config, &Value::Null),
     };
+    let schema_view = CftSchemaView::new(schema);
     Ok(codegen.preflight(
         CodegenContext {
-            schema,
+            schema: &schema_view,
             model,
             data_format,
         },

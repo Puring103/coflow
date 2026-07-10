@@ -1,10 +1,10 @@
 use crate::{ArtifactSet, DiagnosticSet, OutputSpec};
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchemaView;
 use coflow_data_model::CfdDataModel;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CodegenContext<'a> {
-    pub schema: &'a CftContainer,
+    pub schema: &'a CftSchemaView,
     pub model: Option<&'a CfdDataModel>,
     pub data_format: &'a str,
 }

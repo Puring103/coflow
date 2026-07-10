@@ -1,8 +1,6 @@
 use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
-use coflow_cft::{
-    CftContainer, CftEnumMeta, CftFieldMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta,
-};
+use coflow_cft::{CftEnumMeta, CftFieldMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -16,9 +14,8 @@ pub struct CsharpSchemaContext {
 }
 
 impl CsharpSchemaContext {
-    pub fn new(schema: &CftContainer) -> Self {
-        let cft = CftSchemaView::new(schema);
-
+    pub fn new(schema: &CftSchemaView) -> Self {
+        let cft = schema.clone();
         let csharp_types = cft
             .type_names()
             .map(|name| (name.clone(), csharp_type_name(name)))

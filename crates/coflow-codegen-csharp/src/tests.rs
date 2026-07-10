@@ -8,7 +8,7 @@
 )]
 
 use super::*;
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -92,8 +92,9 @@ fn generate_json(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    let schema_view = CftSchemaView::new(schema);
     generate_csharp(
-        schema,
+        &schema_view,
         options,
         CsharpDataFormat::Json,
         &json_database_templates(),
@@ -104,8 +105,9 @@ fn generate_messagepack(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    let schema_view = CftSchemaView::new(schema);
     generate_csharp(
-        schema,
+        &schema_view,
         options,
         CsharpDataFormat::MessagePack,
         &messagepack_database_templates(),
@@ -117,8 +119,9 @@ fn generate_json_with_id_as_enum_variants(
     options: &CsharpCodegenOptions,
     variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    let schema_view = CftSchemaView::new(schema);
     generate_csharp_with_id_as_enum_variants(
-        schema,
+        &schema_view,
         options,
         CsharpDataFormat::Json,
         &json_database_templates(),

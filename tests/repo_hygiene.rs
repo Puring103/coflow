@@ -136,6 +136,27 @@ fn api_export_context_uses_schema_view_not_full_container() {
     );
 }
 
+#[test]
+fn api_codegen_context_uses_schema_view_not_full_container() {
+    let codegen =
+        std::fs::read_to_string("crates/coflow-api/src/codegen.rs").expect("read API codegen");
+    let codegen_context =
+        struct_block(&codegen, "pub struct CodegenContext").expect("find CodegenContext");
+
+    assert!(
+        codegen.contains("use coflow_cft::CftSchemaView;"),
+        "codegen context should depend on the schema query facade"
+    );
+    assert!(
+        codegen_context.contains("pub schema: &'a CftSchemaView"),
+        "codegen context should expose schema view"
+    );
+    assert!(
+        !codegen_context.contains("CftContainer"),
+        "codegen context should not expose full schema container"
+    );
+}
+
 fn struct_block<'a>(source: &'a str, marker: &str) -> Option<&'a str> {
     let start = source.find(marker)?;
     let tail = &source[start..];
@@ -2294,15 +2315,20 @@ fn csharp_codegen_schema_projection_uses_cft_schema_context() {
         std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_context.rs")
             .expect("read C# codegen schema context");
     let ir = std::fs::read_to_string("crates/coflow-codegen-csharp/src/ir.rs").expect("read C# IR");
+    let lib =
+        std::fs::read_to_string("crates/coflow-codegen-csharp/src/lib.rs").expect("read C# lib");
     let emit =
         std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit.rs").expect("read C# emit");
-    let codegen = format!("{schema_context}\n{ir}\n{emit}");
+    let codegen = format!("{schema_context}\n{ir}\n{lib}\n{emit}");
 
     assert!(
-        schema_context.contains("CftSchemaView::new(schema)"),
-        "C# codegen schema projection should be built from coflow-cft CftSchemaView"
+        schema_context.contains("pub fn new(schema: &CftSchemaView)")
+            && ir.contains("schema: &CftSchemaView")
+            && lib.contains("schema: &CftSchemaView"),
+        "C# codegen should receive coflow-cft CftSchemaView instead of full schema container"
     );
     for forbidden in [
+        "CftContainer",
         "schema.all_types()",
         "schema.all_enums()",
         "pub fn all_types",

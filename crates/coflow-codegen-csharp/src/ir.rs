@@ -6,7 +6,7 @@ use crate::names::{
 };
 use crate::schema_context::CsharpSchemaContext;
 use crate::CsharpCodegenError;
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchemaView;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -71,7 +71,7 @@ impl CsharpCodegenOptions {
 }
 
 pub fn build_project(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
@@ -156,7 +156,7 @@ fn build_csharp_singletons(view: &CsharpSchemaContext) -> Vec<crate::model::Csha
 
 #[must_use]
 pub fn preflight_csharp_codegen(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     options: &CsharpCodegenOptions,
     id_as_enum_variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Vec<CsharpCodegenDiagnostic> {
