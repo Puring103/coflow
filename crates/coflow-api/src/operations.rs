@@ -1,5 +1,5 @@
 use crate::{Diagnostic, DiagnosticSet, ResolvedSource};
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchemaView;
 use coflow_data_model::CfdValue;
 use serde_json::Value;
 use std::path::Path;
@@ -7,7 +7,6 @@ use std::path::Path;
 #[derive(Debug, Clone, Copy)]
 pub struct TableContext<'a> {
     pub project_root: &'a Path,
-    pub schema: Option<&'a CftContainer>,
 }
 
 #[derive(Debug, Clone)]
@@ -16,7 +15,6 @@ pub struct CreateTableRequest<'a> {
     pub sheet: &'a str,
     pub actual_type: &'a str,
     pub headers: &'a [String],
-    pub schema: &'a CftContainer,
 }
 
 #[derive(Debug, Clone)]
@@ -25,7 +23,7 @@ pub struct SyncHeaderRequest<'a> {
     pub sheet: Option<&'a str>,
     pub actual_type: &'a str,
     pub headers: &'a [String],
-    pub schema: &'a CftContainer,
+    pub schema: Option<&'a CftSchemaView>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

@@ -26,10 +26,9 @@ pub(super) fn rewrite_cfd_records(
     source: &str,
     records: &[AstRecord],
     actual_type: &str,
-    schema: &CftContainer,
+    schema: &CftSchemaView,
 ) -> Result<String, DiagnosticSet> {
-    let view = CftSchemaView::new(schema);
-    let schema_fields = view.fields(actual_type).ok_or_else(|| {
+    let schema_fields = schema.fields(actual_type).ok_or_else(|| {
         DiagnosticSet::one(diag(
             "CFD-TABLE",
             format!("unknown CFT type `{actual_type}`"),
@@ -54,7 +53,7 @@ pub(super) fn rewrite_cfd_records(
 fn render_cfd_record(
     source: &str,
     record: &AstRecord,
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     fields: &BTreeMap<String, &CftFieldMeta>,
 ) -> String {
     let existing = record
@@ -98,16 +97,16 @@ fn format_record_key(key: &str) -> String {
     }
 }
 
-fn default_cfd_value(schema: &CftContainer, field: &CftFieldMeta) -> String {
+fn default_cfd_value(schema: &CftSchemaView, field: &CftFieldMeta) -> String {
     let value = field.default.as_ref().map_or_else(
         || value_from_type_default(schema, &field.ty_ref),
         |default| value_from_schema_default(schema, &field.ty_ref, default),
     );
-    serialize_value_for_type(&value, Some(schema), Some(&field.ty_ref), 2)
+    serialize_value_for_type(&value, None, Some(&field.ty_ref), 2)
 }
 
 fn value_from_schema_default(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     ty: &CftSchemaTypeRef,
     default: &CftSchemaDefaultValue,
 ) -> CfdValue {
@@ -131,7 +130,7 @@ fn value_from_schema_default(
     }
 }
 
-fn value_from_type_default(schema: &CftContainer, ty: &CftSchemaTypeRef) -> CfdValue {
+fn value_from_type_default(schema: &CftSchemaView, ty: &CftSchemaTypeRef) -> CfdValue {
     match ty {
         CftSchemaTypeRef::Int => CfdValue::Int(0),
         CftSchemaTypeRef::Float => CfdValue::Float(0.0),
@@ -140,9 +139,9 @@ fn value_from_type_default(schema: &CftContainer, ty: &CftSchemaTypeRef) -> CfdV
         CftSchemaTypeRef::Ref(_) | CftSchemaTypeRef::Nullable(_) => CfdValue::Null,
         CftSchemaTypeRef::Array(_) => CfdValue::Array(Vec::new()),
         CftSchemaTypeRef::Dict(_, _) => CfdValue::Dict(Vec::new()),
-        CftSchemaTypeRef::Named(name) if schema.has_enum(name) => schema
-            .resolve_enum(name)
-            .and_then(|enm| enm.variants.first())
+        CftSchemaTypeRef::Named(name) if schema.is_schema_enum(name) => schema
+            .enum_meta(name)
+            .and_then(|enm| enm.all_variants.first())
             .map_or_else(
                 || {
                     CfdValue::Enum(CfdEnumValue {
@@ -160,8 +159,7 @@ fn value_from_type_default(schema: &CftContainer, ty: &CftSchemaTypeRef) -> CfdV
                 },
             ),
         CftSchemaTypeRef::Named(name) => {
-            let view = CftSchemaView::new(schema);
-            let fields = view
+            let fields = schema
                 .fields(name)
                 .map(|fields| {
                     fields

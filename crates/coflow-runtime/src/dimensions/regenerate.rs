@@ -141,7 +141,6 @@ pub(crate) fn commit_dimension_generation(
         let result = manager.sync_dimension_source(
             TableContext {
                 project_root: &project.root_dir,
-                schema: None,
             },
             &DimensionSourceRequest {
                 source: &operation.source,

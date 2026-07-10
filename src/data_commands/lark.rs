@@ -41,14 +41,12 @@ pub(super) fn create_lark_table(
     let result = table_manager.create_table(
         TableContext {
             project_root: &session.project().root_dir,
-            schema: Some(session.schema()),
         },
         &CreateTableRequest {
             source: &resolved_source,
             sheet: &layout.sheet,
             actual_type: &layout.actual_type,
             headers: &layout.headers,
-            schema: session.schema(),
         },
     )?;
     Ok(DataFileReport {
@@ -83,14 +81,13 @@ pub(super) fn sync_lark_header(
     let result = table_manager.sync_header(
         TableContext {
             project_root: &session.project().root_dir,
-            schema: Some(session.schema()),
         },
         &SyncHeaderRequest {
             source: &resolved_source,
             sheet: Some(&layout.sheet),
             actual_type: &layout.actual_type,
             headers: &layout.headers,
-            schema: session.schema(),
+            schema: None,
         },
     )?;
     Ok(DataFileReport {

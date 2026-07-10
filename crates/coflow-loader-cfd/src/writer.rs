@@ -374,8 +374,14 @@ impl TableManager for CfdWriter {
         let old_fields = cfd_top_level_fields(&ast.records, request.actual_type);
         let added = added_columns(request.headers, &old_fields);
         let removed = removed_columns(request.headers, &old_fields);
+        let schema = request.schema.ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CFD-TABLE",
+                "cfd header sync requires schema metadata",
+            ))
+        })?;
         let new_source =
-            rewrite_cfd_records(&source, &ast.records, request.actual_type, request.schema)?;
+            rewrite_cfd_records(&source, &ast.records, request.actual_type, schema)?;
         self.write_source(path, new_source)?;
         Ok(TableOperationResult {
             headers: request.headers.to_vec(),

@@ -81,7 +81,6 @@ pub fn create_data_file(
             headers: layout
                 .as_ref()
                 .map_or_else(|| [].as_slice(), |layout| layout.headers.as_slice()),
-            schema: &session.schema,
         },
     )?;
     Ok(report(
@@ -125,6 +124,7 @@ pub fn sync_data_header(
         options.sheet,
     )?;
     let source = table_operation_source(&options.file, &provider_id, path);
+    let schema_view = CftSchemaView::new(&session.schema);
     let result = table_manager(registry, &provider_id)?.sync_header(
         table_context(session),
         &SyncHeaderRequest {
@@ -134,7 +134,7 @@ pub fn sync_data_header(
                 .then_some(layout.sheet.as_str()),
             actual_type: &layout.actual_type,
             headers: &layout.headers,
-            schema: &session.schema,
+            schema: Some(&schema_view),
         },
     )?;
     Ok(report(
@@ -151,7 +151,6 @@ pub fn sync_data_header(
 fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
     TableContext {
         project_root: &session.project.root_dir,
-        schema: Some(&session.schema),
     }
 }
 

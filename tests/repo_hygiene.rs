@@ -327,6 +327,45 @@ fn api_writer_contract_is_split_by_responsibility() {
 }
 
 #[test]
+fn api_table_operations_do_not_expose_schema_owner() {
+    let operations =
+        std::fs::read_to_string("crates/coflow-api/src/operations.rs").expect("read operations");
+    let table_context =
+        struct_block(&operations, "pub struct TableContext").expect("find TableContext");
+    let create_request =
+        struct_block(&operations, "pub struct CreateTableRequest").expect("find CreateTableRequest");
+    let sync_request =
+        struct_block(&operations, "pub struct SyncHeaderRequest").expect("find SyncHeaderRequest");
+
+    for expected in [
+        "pub struct TableContext",
+        "pub struct CreateTableRequest",
+        "pub struct SyncHeaderRequest",
+    ] {
+        assert!(
+            operations.contains(expected),
+            "table operation item `{expected}` should remain in operations.rs"
+        );
+    }
+    assert!(
+        operations.contains("use coflow_cft::CftSchemaView;"),
+        "sync header should depend on the schema query facade"
+    );
+    assert!(
+        sync_request.contains("pub schema: Option<&'a CftSchemaView>"),
+        "sync header should expose only optional schema view metadata"
+    );
+    assert!(
+        !table_context.contains("schema") && !create_request.contains("schema"),
+        "table context and create table request should receive planned headers, not schema"
+    );
+    assert!(
+        !operations.contains("CftContainer"),
+        "table operations should not expose full schema container"
+    );
+}
+
+#[test]
 fn cli_diagnostic_json_does_not_live_in_coflow_project() {
     let project = std::fs::read_to_string("crates/coflow-project/src/lib.rs")
         .expect("read coflow-project source");

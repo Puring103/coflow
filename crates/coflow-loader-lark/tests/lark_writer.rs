@@ -540,7 +540,6 @@ fn creates_lark_sheet_and_writes_header() {
         ),
     ]);
     let table_manager = LarkSheetWriter::new(client.clone());
-    let schema = item_schema();
     let source = lark_source();
     let headers = vec!["id".to_string(), "name".to_string(), "power".to_string()];
     let request = coflow_api::CreateTableRequest {
@@ -548,11 +547,9 @@ fn creates_lark_sheet_and_writes_header() {
         sheet: "Items",
         actual_type: "Item",
         headers: &headers,
-        schema: &schema,
     };
     let ctx = TableContext {
         project_root: std::path::Path::new("."),
-        schema: Some(&schema),
     };
 
     table_manager
@@ -596,7 +593,6 @@ fn syncs_lark_sheet_header() {
         ),
     ]);
     let table_manager = LarkSheetWriter::new(client.clone());
-    let schema = item_schema();
     let source = lark_source();
     let headers = vec!["id".to_string(), "name".to_string(), "power".to_string()];
     let request = coflow_api::SyncHeaderRequest {
@@ -604,11 +600,10 @@ fn syncs_lark_sheet_header() {
         sheet: Some("Items"),
         actual_type: "Item",
         headers: &headers,
-        schema: &schema,
+        schema: None,
     };
     let ctx = TableContext {
         project_root: std::path::Path::new("."),
-        schema: Some(&schema),
     };
 
     let result = table_manager
