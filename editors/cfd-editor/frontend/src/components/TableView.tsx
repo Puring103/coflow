@@ -29,7 +29,7 @@ import {
   type FieldPathSegment,
   type FieldValue,
 } from '../wire'
-import { DataCardCompact, EnumDirectSelect, RefDirectSelect, summaryOf } from './DataCard'
+import { DataCardCompact, EnumDirectSelect, RefDirectSelect, summaryOf as valueSummary } from './DataCard'
 import { CreateRecordDialog } from './CreateRecordDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
@@ -130,22 +130,46 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   )
 
   const columnSizeHints = useMemo(() => {
-    const hints: Record<string, number> = { key: 140 }
-    const CHAR_W = 7.5, MIN = 80, MAX = 420
-    // Pill cells drop td padding but the pill itself owns 10+10 padding,
-    // 2px border and 22px chevron. Ref pills also carry the "&" prefix
-    // (~14px). Plain-text cells only need the td's horizontal padding.
+    // Measure the actual pixel width of every cell in this file/type via a
+    // shared 2D canvas so CJK, punctuation, and full-length string summaries
+    // all get sized correctly. `max_summary_len` from the backend is a byte
+    // length (CJK triples) and it also caps strings at 40 bytes — computing
+    // widths on the frontend from the summaries we render sidesteps both.
+    const measure = makeTextMeasurer()
+    // Chrome around the content per cell type.
     const PILL_CHROME = 46
     const REF_PREFIX = 14
     const PLAIN_CHROME = 24
+    const BADGE_ROOM = 16 // reserve space for the corner diag badge
+    const MIN = 90
+    // Only value columns are capped, so a rogue 5000-char string doesn't
+    // stretch its column across the whole viewport. The user can still drag
+    // wider. Key column is never capped — keys must render in full.
+    const VALUE_MAX = 600
+    // Key column: measure the longest key so it never truncates unless the
+    // user shrinks it manually. No cap.
+    let keyWidth = measure('Key') + PLAIN_CHROME + 12 /* sort caret */
+    for (const record of data.records) {
+      if (recordActualType(record) !== activeType) continue
+      keyWidth = Math.max(keyWidth, measure(recordKey(record)) + PLAIN_CHROME + BADGE_ROOM)
+    }
+    const hints: Record<string, number> = { key: Math.max(MIN, Math.ceil(keyWidth)) }
     for (const column of data.columns) {
       if (!column.type_names.includes(activeType)) continue
       const kind = columnDropdownKind(data, column.name, activeType)
       const isPill = kind !== null
-      const chrome = isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME
-      const summary = column.max_summary_len * CHAR_W + chrome
-      const header = column.name.length * CHAR_W + PLAIN_CHROME + 12 /* sort caret */
-      hints[column.name] = Math.min(MAX, Math.max(MIN, Math.max(summary, header)))
+      const chrome = (isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME) + BADGE_ROOM
+      let maxContent = 0
+      for (const record of data.records) {
+        if (recordActualType(record) !== activeType) continue
+        const cell = fieldCell(record, column.name)
+        if (!cell) continue
+        const w = measure(valueSummary(cell.value))
+        if (w > maxContent) maxContent = w
+      }
+      const summaryWidth = maxContent + chrome
+      const headerWidth = measure(column.name) + PLAIN_CHROME + 12 /* sort caret */
+      hints[column.name] = Math.min(VALUE_MAX, Math.max(MIN, Math.ceil(Math.max(summaryWidth, headerWidth))))
     }
     return hints
   }, [data.columns, data.records, activeType])
@@ -447,6 +471,27 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   )
 })
 
+
+/** Cheap accurate string-width measurer. Uses a single OffscreenCanvas (or
+ *  DOM canvas) sized to the table's actual font, so widths respect CJK,
+ *  ligatures and punctuation instead of a fudged char*px estimate. */
+function makeTextMeasurer(): (text: string) => number {
+  if (typeof document === 'undefined') return text => text.length * 8
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return text => text.length * 8
+  const body = getComputedStyle(document.body)
+  const family = body.fontFamily || 'system-ui, sans-serif'
+  ctx.font = `13px ${family}` // matches --fs-ui-ish; tables use this size
+  const cache = new Map<string, number>()
+  return text => {
+    const hit = cache.get(text)
+    if (hit !== undefined) return hit
+    const w = ctx.measureText(text).width
+    cache.set(text, w)
+    return w
+  }
+}
 
 function fieldCell(record: RecordRow, fieldName: string) {
   const index = record.field_index[fieldName]

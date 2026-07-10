@@ -15,6 +15,7 @@ import {
 } from '../wire'
 import { DataCardExpanded, CardHeader } from './DataCard'
 import { CreateRecordDialog } from './CreateRecordDialog'
+import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import { RECORD_HIGHLIGHT_SENTINEL } from '../App'
@@ -144,8 +145,18 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
                   }
                 }}
               >
-                <span className="rv-item-type" style={{ color: typeColor(recordActualType(r)) }}>{recordActualType(r)}</span>
                 <span className="rv-item-key">{recordKey(r)}</span>
+                {firstScalarSummary(r) && (
+                  <span className="rv-item-subtitle">{firstScalarSummary(r)}</span>
+                )}
+                {(sev === 'error' || sev === 'warning') && (
+                  <DiagBadge
+                    severity={sev}
+                    onClick={onDiagnosticBadgeClick
+                      ? () => { onOpenRecord(r.coordinate); onDiagnosticBadgeClick(r.coordinate, null) }
+                      : undefined}
+                  />
+                )}
               </div>
             )
           })}
@@ -215,5 +226,20 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
 function cssEscape(s: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s)
   return s.replace(/["\\]/g, '\\$&')
+}
+
+/** First scalar field's summary — used as the sidebar row subtitle so the
+ *  user can eyeball each record without opening it. Scalar = bool/int/float/
+ *  string/enum/ref; nested collections/objects don't produce a useful preview. */
+function firstScalarSummary(row: RecordRow): string | null {
+  for (const field of row.fields) {
+    const kind = field.value.kind
+    if (kind === 'bool' || kind === 'int' || kind === 'float'
+        || kind === 'string' || kind === 'enum' || kind === 'ref') {
+      const summary = row.field_summaries[field.name]
+      if (summary) return summary
+    }
+  }
+  return null
 }
 

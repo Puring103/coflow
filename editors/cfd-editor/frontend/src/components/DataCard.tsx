@@ -185,7 +185,7 @@ export function summaryOf(v: FieldValue): string {
     case 'bool': return v.value ? 'true' : 'false'
     case 'int': return String(v.value)
     case 'float': return String(v.value)
-    case 'string': return v.value.length > 40 ? v.value.slice(0, 38) + '…' : v.value
+    case 'string': return v.value
     case 'enum': return enumVariantText(v)
     case 'ref': return v.value
     case 'object': return v.value.actual_type

@@ -783,6 +783,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   text-overflow: ellipsis;
   background: var(--bg-1);
   height: var(--h-row);
+  position: relative;
 }
 .data-table td:last-child {
   border-right: none;
@@ -1185,6 +1186,18 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .rv-item-key {
   font-size: var(--fs-ui);
   color: var(--text);
+  font-weight: 500;
+  font-family: 'JetBrains Mono', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rv-item-subtitle {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rv-main {
@@ -1620,8 +1633,8 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 
 /* Corner badge shown on any element with a record- or field-level diagnostic.
- * The parent must be `position: relative` (dc-row-diag, gn-header, cell-key-wrap
- * and dc-cell-diag* wrappers all set this). The badge is a tiny pill in the
+ * The nearest positioned ancestor (a table td, a dc-row, the gn-header, a
+ * rv-sidebar-item, etc.) provides the anchor. The badge is a tiny pill in the
  * upper-right so it sits above the row's value column without pushing content. */
 .diag-corner-badge {
   position: absolute;
@@ -1656,18 +1669,29 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .diag-corner-warning { background: var(--yellow); color: #221; }
 
 /* Cells / rows / headers that host a corner badge. `cell-key-wrap` and
- * `dc-null-wrap` are added by TableView; the others are pre-existing. */
+ * `dc-null-wrap` are added by TableView; the others are pre-existing.
+ * They no longer own the badge's positioning context — the enclosing td /
+ * dc-row / gn-header does — so the badge always lands at the container's
+ * upper-right corner instead of trailing the visible text. */
 .cell-key-wrap,
 .dc-null-wrap {
-  position: relative;
   display: inline-flex;
   align-items: center;
-  padding-right: 12px;
+  min-width: 0;
+  max-width: 100%;
+}
+.cell-key-wrap > .cell-key,
+.cell-key-wrap > .inline-editor {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 .dc-cell-diag {
-  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
 }
-.dc-null-wrap.dc-cell-diag { padding: 1px 12px 1px 5px; }
 .dc-null-wrap .dc-null { flex: 0 1 auto; }
 
 /* Focused item in the diagnostics panel (post-click flash). */
@@ -1689,23 +1713,13 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 
 /* TableView cell tinting */
-.dc-cell-diag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 5px;
-  border-radius: 2px;
-  max-width: 100%;
-}
 .dc-cell-diag-error {
   background: color-mix(in srgb, var(--red) 18%, transparent);
   color: var(--red);
-  box-shadow: inset 2px 0 0 0 var(--red);
 }
 .dc-cell-diag-warning {
   background: color-mix(in srgb, var(--yellow) 14%, transparent);
   color: var(--yellow);
-  box-shadow: inset 2px 0 0 0 var(--yellow);
 }
 .table-row-error td:first-child {
   box-shadow: inset 2px 0 0 0 var(--red);
@@ -1714,23 +1728,9 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   box-shadow: inset 2px 0 0 0 var(--yellow);
 }
 
-/* RecordView sidebar dot */
-.rv-sidebar-error .rv-item-key,
-.rv-sidebar-warning .rv-item-key {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.rv-sidebar-error .rv-item-key::before,
-.rv-sidebar-warning .rv-item-key::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.rv-sidebar-error .rv-item-key::before { background: var(--red); }
-.rv-sidebar-warning .rv-item-key::before { background: var(--yellow); }
+/* RecordView sidebar diagnostic corner badge — matches the shared style used
+ * by every other diag-annotated container. The dot fallback is gone. */
+.rv-sidebar-item { padding-right: 22px; }
 .btn-tiny {
   background: var(--bg-3);
   border: 1px solid var(--border);
