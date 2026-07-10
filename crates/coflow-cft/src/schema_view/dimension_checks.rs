@@ -9,11 +9,7 @@ pub(super) fn dimension_checks_for_type(
     schema: &CftSchemaView,
     type_name: &str,
 ) -> BTreeMap<String, CftSchemaCheckBlock> {
-    let Some(check) = schema
-        .types
-        .get(type_name)
-        .and_then(|meta| meta.check.as_ref())
-    else {
+    let Some(check) = schema.type_meta(type_name).and_then(|meta| meta.check.as_ref()) else {
         return BTreeMap::new();
     };
     let mut by_dimension: BTreeMap<String, Vec<CftSchemaCheckStmt>> = BTreeMap::new();
@@ -201,26 +197,24 @@ impl<'a> DimensionCheckAnalyzer<'a> {
         {
             return ExprUsage::new(ty);
         }
-        if let Some(meta) = self.schema.types.get(&self.current_type) {
-            if let Some(field) = meta.dimension_fields.get(name) {
-                let mut dimensions = BTreeSet::new();
-                dimensions.insert(field.dimension.clone());
-                return ExprUsage {
-                    ty: meta
-                        .fields
-                        .get(name)
-                        .map_or(CheckTy::Unknown, type_ref_to_check_ty),
-                    dimensions,
-                };
-            }
-            if let Some(ty) = meta.fields.get(name) {
-                return ExprUsage::new(type_ref_to_check_ty(ty));
-            }
+        if let Some(field) = self.schema.dimension_field(&self.current_type, name) {
+            let mut dimensions = BTreeSet::new();
+            dimensions.insert(field.dimension.clone());
+            return ExprUsage {
+                ty: self
+                    .schema
+                    .field_type(&self.current_type, name)
+                    .map_or(CheckTy::Unknown, type_ref_to_check_ty),
+                dimensions,
+            };
         }
-        if let Some(value) = self.schema.consts.get(name) {
+        if let Some(ty) = self.schema.field_type(&self.current_type, name) {
+            return ExprUsage::new(type_ref_to_check_ty(ty));
+        }
+        if let Some(value) = self.schema.const_value(name) {
             return ExprUsage::new(const_to_check_ty(value));
         }
-        if self.schema.enums.contains_key(name) {
+        if self.schema.is_schema_enum(name) {
             return ExprUsage::new(CheckTy::Enum(name.to_string()));
         }
         ExprUsage::new(CheckTy::Unknown)
@@ -233,12 +227,10 @@ impl<'a> DimensionCheckAnalyzer<'a> {
             CheckTy::Type(type_name) => {
                 if name == "id" {
                     CheckTy::String
-                } else if let Some(meta) = self.schema.types.get(type_name) {
-                    meta.fields
-                        .get(name)
-                        .map_or(CheckTy::Unknown, type_ref_to_check_ty)
                 } else {
-                    CheckTy::Unknown
+                    self.schema
+                        .field_type(type_name, name)
+                        .map_or(CheckTy::Unknown, type_ref_to_check_ty)
                 }
             }
             CheckTy::Entry(key, value) => match name {
@@ -257,7 +249,7 @@ impl<'a> DimensionCheckAnalyzer<'a> {
         for usage in &arg_usages {
             dimensions.extend(usage.dimensions.iter().cloned());
         }
-        let ty = if self.schema.enums.contains_key(name) {
+        let ty = if self.schema.is_schema_enum(name) {
             CheckTy::Enum(name.to_string())
         } else {
             match name {

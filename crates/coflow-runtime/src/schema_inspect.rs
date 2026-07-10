@@ -177,8 +177,7 @@ pub fn inspect_schema(
         .collect();
 
     let mut enums = view
-        .enums
-        .values()
+        .enum_metas()
         .map(|schema_enum| SchemaEnumInfo {
             module: schema_enum.module.clone(),
             name: schema_enum.name.clone(),

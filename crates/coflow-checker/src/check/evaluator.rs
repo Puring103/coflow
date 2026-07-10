@@ -183,7 +183,7 @@ impl<'a> CheckEvaluator<'a> {
             }
             return Ok(value);
         }
-        if let Some(value) = self.schema.consts.get(name) {
+        if let Some(value) = self.schema.const_value(name) {
             return Ok(LocatedCheckValue::value(CheckValue::from_const(value)));
         }
         if self.schema.is_schema_enum(name) {

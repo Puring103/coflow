@@ -104,9 +104,7 @@ pub fn build_project(
 
     let mut id_as_enum_variants = build_id_as_enums(&view, &id_as_enum_names, id_as_enum_variants);
     let enums = view
-        .cft
-        .enums
-        .values()
+        .cft_enum_metas()
         .map(|schema_enum| {
             id_as_enum_variants
                 .remove(&schema_enum.name)
@@ -115,9 +113,7 @@ pub fn build_project(
         .collect::<Vec<_>>();
 
     let types = view
-        .cft
-        .types
-        .values()
+        .type_metas()
         .map(|schema_type| build_csharp_type(schema_type, &view))
         .collect::<Result<Vec<_>, _>>()?;
 

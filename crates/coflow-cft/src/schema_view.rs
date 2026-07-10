@@ -9,9 +9,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
 pub struct CftSchemaView {
-    pub consts: BTreeMap<String, CftConstValue>,
-    pub types: BTreeMap<String, CftTypeMeta>,
-    pub enums: BTreeMap<String, CftEnumMeta>,
+    consts: BTreeMap<String, CftConstValue>,
+    types: BTreeMap<String, CftTypeMeta>,
+    enums: BTreeMap<String, CftEnumMeta>,
     children_by_parent: BTreeMap<String, BTreeSet<String>>,
 }
 
@@ -91,6 +91,19 @@ impl CftSchemaView {
 
     pub fn type_metas(&self) -> impl Iterator<Item = &CftTypeMeta> {
         self.types.values()
+    }
+
+    pub fn const_names(&self) -> impl Iterator<Item = &String> {
+        self.consts.keys()
+    }
+
+    pub fn const_values(&self) -> impl Iterator<Item = &CftConstValue> {
+        self.consts.values()
+    }
+
+    #[must_use]
+    pub fn const_value(&self, const_name: &str) -> Option<&CftConstValue> {
+        self.consts.get(const_name)
     }
 
     pub fn enum_names(&self) -> impl Iterator<Item = &String> {

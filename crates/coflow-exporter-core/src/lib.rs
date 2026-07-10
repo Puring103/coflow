@@ -145,8 +145,7 @@ where
         let mut out = BTreeMap::new();
         let table_names = self
             .schema
-            .types
-            .values()
+            .type_metas()
             .filter(|schema_type| !schema_type.is_abstract)
             .map(|schema_type| schema_type.name.clone())
             .collect::<Vec<_>>();

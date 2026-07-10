@@ -2057,6 +2057,12 @@ fn cft_schema_view_dimension_check_analysis_is_split_out() {
         schema_view.lines().count() < 500,
         "coflow-cft schema_view.rs should stay focused on schema view metadata/query"
     );
+    for forbidden in ["pub consts:", "pub types:", "pub enums:"] {
+        assert!(
+            !schema_view.contains(forbidden),
+            "CFT schema view should expose query methods instead of public map field `{forbidden}`"
+        );
+    }
     for expected in [
         "pub fn type_is_struct",
         "pub fn type_id_as_enum",
