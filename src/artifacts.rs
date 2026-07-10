@@ -5,9 +5,11 @@ pub use staging::{
 };
 
 use coflow_api::{
-    CfdDataModel, CftContainer, CodegenContext, Diagnostic, DiagnosticSet, ExportContext, Label,
-    OutputSpec, ProviderRegistry, Severity, SourceLocation,
+    CodegenContext, Diagnostic, DiagnosticSet, ExportContext, Label, OutputSpec, ProviderRegistry,
+    Severity, SourceLocation,
 };
+use coflow_cft::CftContainer;
+use coflow_data_model::CfdDataModel;
 use coflow_project::{OutputConfig, Project};
 use serde::Serialize;
 use serde_json::Value;

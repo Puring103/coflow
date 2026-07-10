@@ -9,12 +9,12 @@
 )]
 
 use coflow_api::{
-    CfdValue, DeleteRecordRequest, InsertRecordRequest, RecordOrigin, ResolvedSource,
-    RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, SpreadRewriteTarget,
-    TextSpan, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    DeleteRecordRequest, InsertRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
+    SourceLocationSpec, SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment,
 };
 use coflow_cft::{CftContainer, ModuleId};
-use coflow_data_model::CfdDataModel;
+use coflow_data_model::{CfdDataModel, CfdObject, CfdValue, RecordOrigin, TextSpan};
 use coflow_loader_cfd::{load_cfd_model, parse_cfd_input_records, CfdWriter};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -599,7 +599,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
     )]);
     let fields = std::collections::BTreeMap::from([(
         "slot".to_string(),
-        CfdValue::Object(Box::new(coflow_api::CfdObject::new("Slot", slot_fields))),
+        CfdValue::Object(Box::new(CfdObject::new("Slot", slot_fields))),
     )]);
 
     writer

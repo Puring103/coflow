@@ -1,12 +1,14 @@
 use coflow_api::{
-    map_diagnostics_with_origins, origins_of, CfdInputRecord, CftContainer, Diagnostic,
-    DiagnosticSet, Label, LoadedSource, ProjectSourceRef, ProviderRegistry, RecordOrigin,
-    ResolvedSource, Severity, SourceLoadContext, SourceLocation, SourceLocationSpec,
-    SourceProviderSelectionError, SourceResolveContext,
+    map_diagnostics_with_origins, origins_of, Diagnostic, DiagnosticSet, Label, LoadedSource,
+    ProjectSourceRef, ProviderRegistry, ResolvedSource, Severity, SourceLoadContext,
+    SourceLocation, SourceLocationSpec, SourceProviderSelectionError, SourceResolveContext,
 };
-use coflow_cft::CftSchemaView;
+use coflow_cft::{CftContainer, CftSchemaView};
 use coflow_checker::{run_checks_for_dimensions, DimensionCheckPlan, DimensionCheckRound};
-use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId};
+use coflow_data_model::{
+    CfdDataModel, CfdDiagnostics, CfdInputRecord, CfdPath, CfdPathSegment, CfdRecordId,
+    RecordOrigin,
+};
 use coflow_project::{path_to_slash, DimensionConfig, Project, SourceConfig};
 use serde_json::Value;
 use std::collections::BTreeMap;

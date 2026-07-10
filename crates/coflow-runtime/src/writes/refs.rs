@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use coflow_api::{
-    DiagnosticSet, ProviderRegistry, RecordOrigin, ResolvedSource, RewriteRecordReferencesRequest,
-    SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteFieldPathSegment,
+    DiagnosticSet, ProviderRegistry, ResolvedSource, RewriteRecordReferencesRequest, SourceWriter,
+    SpreadRewriteTarget, WriteCellRequest, WriteFieldPathSegment,
 };
-use coflow_data_model::{CfdRecordId, CfdValue};
+use coflow_cft::CftContainer;
+use coflow_data_model::{CfdRecordId, CfdValue, RecordOrigin};
 
 use super::{lookup_source_writer, source_for_file};
 use crate::writes::path::{cfd_path_to_write_path, value_at_path, write_path_from_cfd_path};
@@ -33,7 +34,7 @@ pub(super) struct OwnedWriteCellRequest {
 impl OwnedWriteCellRequest {
     pub(super) fn as_request<'a>(
         &'a self,
-        schema: &'a coflow_api::CftContainer,
+        schema: &'a CftContainer,
     ) -> WriteCellRequest<'a> {
         WriteCellRequest {
             origin: &self.origin,
@@ -68,7 +69,7 @@ pub(super) struct OwnedRewriteRecordReferencesRequest {
 impl OwnedRewriteRecordReferencesRequest {
     pub(super) fn as_request<'a>(
         &'a self,
-        schema: &'a coflow_api::CftContainer,
+        schema: &'a CftContainer,
     ) -> RewriteRecordReferencesRequest<'a> {
         RewriteRecordReferencesRequest {
             source: &self.source,

@@ -8,11 +8,11 @@ mod table_manager;
 
 use calamine::Reader;
 use coflow_api::{
-    DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RecordOrigin,
-    RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
-    SourceWriter, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
-    WriterDescriptor,
+    DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
+    RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, WriteCellRequest,
+    WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
+use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{
     plan_delete_record, plan_field_write, plan_insert_record, TableAppendRow, TableDeleteRow,
     TableFieldWrite, TableInsertRecord, TableSetCell, TableWriteDiagnostics, TableWritePlan,
@@ -131,7 +131,7 @@ impl SourceWriter for ExcelWriter {
         request: &RenameRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let path = [coflow_api::WriteFieldPathSegment::Field("id".to_string())];
-        let value = coflow_api::CfdValue::String(request.new_key.to_string());
+        let value = CfdValue::String(request.new_key.to_string());
         self.write_field(
             ctx,
             &WriteCellRequest {

@@ -1,4 +1,4 @@
-use coflow_api::{CftContainer, CftSchemaTypeRef};
+use coflow_cft::{CftContainer, CftSchemaTypeRef};
 use coflow_cft::CftSchemaView;
 
 pub(super) fn type_after_field_segment(

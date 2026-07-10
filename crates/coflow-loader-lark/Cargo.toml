@@ -15,6 +15,7 @@ workspace = true
 
 [dependencies]
 coflow-api = { path = "../coflow-api" }
+coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
 coflow-loader-table-core = { path = "../coflow-loader-table-core" }
 percent-encoding = "2"

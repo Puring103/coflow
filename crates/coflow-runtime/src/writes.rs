@@ -14,10 +14,10 @@ mod writer;
 
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, ProviderRegistry,
-    RecordOrigin, RenameRecordRequest, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    RenameRecordRequest, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::CftSchemaView;
-use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue};
+use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RecordOrigin};
 
 use super::records::WriteOutcome;
 use super::write_rules;

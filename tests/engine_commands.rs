@@ -2,13 +2,12 @@
 
 use coflow::commands::{check_project, CommandOutcome};
 use coflow_api::{
-    CfdInputRecord, CfdInputValue, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult,
-    ProjectSourceRef, ProviderRegistry, RecordOrigin, RenameRecordRequest, ResolvedSource,
-    RewriteRecordReferencesRequest,
-    SourceDocument, SourceLoadContext, SourceLocationSpec, SourceProvider,
-    SourceProviderDescriptor, SourceWriter, WriteCellRequest, WriteContext, WriteOutcome,
-    WriterCapabilities, WriterDescriptor,
+    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, ProviderRegistry,
+    RenameRecordRequest, ResolvedSource, RewriteRecordReferencesRequest, SourceLoadContext,
+    SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceWriter, WriteCellRequest,
+    WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
+use coflow_data_model::{CfdInputRecord, CfdInputValue, RecordOrigin, SourceDocument};
 use coflow_project::Project;
 use coflow_runtime::{ProjectSession, RecordCoordinate, Runtime};
 use std::collections::BTreeMap;

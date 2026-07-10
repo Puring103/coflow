@@ -1,4 +1,5 @@
-use coflow_api::{DiagnosticSet, RecordOrigin, SourceDocument};
+use coflow_api::DiagnosticSet;
+use coflow_data_model::{RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{
     TableAppendRow, TableDeleteRow, TableSetCell, TableWritePlan,
 };

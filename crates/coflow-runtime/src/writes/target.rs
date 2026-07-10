@@ -1,4 +1,5 @@
-use coflow_api::{Diagnostic, DiagnosticSet, RecordOrigin, WriteFieldPathSegment};
+use coflow_api::{Diagnostic, DiagnosticSet, WriteFieldPathSegment};
+use coflow_data_model::RecordOrigin;
 use coflow_data_model::CfdValue;
 
 use super::path::{cfd_path_from_write_path, cfd_path_to_write_path};

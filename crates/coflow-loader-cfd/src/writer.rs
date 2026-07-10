@@ -13,13 +13,14 @@ mod target;
 
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
-    RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec,
-    SourceWriter, SyncHeaderRequest, TableAddressing, TableContext, TableManager,
-    TableManagerDescriptor, TableOperationResult, TextSpan, WriteCellRequest, WriteContext,
-    WriteOutcome, WriterCapabilities, WriterDescriptor,
+    RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter,
+    SyncHeaderRequest, TableAddressing, TableContext, TableManager, TableManagerDescriptor,
+    TableOperationResult, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
+    WriterDescriptor,
 };
 use coflow_cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
 use coflow_cft::Span;
+use coflow_data_model::{RecordOrigin, TextSpan};
 use patch::{
     append_record_source, apply_patch, collect_spread_ref_key_spans, delete_record_span,
     find_record, replace_spans, serialize_record, validate_record_key, validate_values,

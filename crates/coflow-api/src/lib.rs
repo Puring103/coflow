@@ -49,12 +49,3 @@ pub use writer::{
     WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 
-pub use coflow_cft::{
-    CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaEnum, CftSchemaField, CftSchemaType,
-    CftSchemaTypeRef, ModuleId,
-};
-pub use coflow_data_model::{
-    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdDictKey, CfdInputRecord, CfdInputValue,
-    CfdLabel, CfdObject, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdTable, CfdValue,
-    RecordOrigin, SourceDocument, TextSpan,
-};

@@ -1,5 +1,5 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Label, RecordOrigin, Severity, SourceLocation};
-use coflow_data_model::{CfdDiagnostic, CfdLabel, CfdRecordId};
+use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_data_model::{CfdDiagnostic, CfdLabel, CfdRecordId, RecordOrigin};
 use coflow_loader_table_core::{
     map_label_to_table, TableDiagnostic, TableDiagnostics, TableLabel, TableLocation,
 };

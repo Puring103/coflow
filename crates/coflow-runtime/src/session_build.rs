@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use coflow_api::{CftContainer, DiagnosticSet, ProviderRegistry};
-use coflow_cft::CftSchemaView;
+use coflow_api::{DiagnosticSet, ProviderRegistry};
+use coflow_cft::{CftContainer, CftSchemaView};
 use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 

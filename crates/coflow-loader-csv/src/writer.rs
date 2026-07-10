@@ -12,9 +12,10 @@ mod table_manager;
 
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec, SourceWriter,
-    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, WriteCellRequest,
+    WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
+use coflow_data_model::{CfdValue, SourceDocument};
 use coflow_loader_table_core::writer::{
     plan_delete_record, plan_field_write, plan_insert_record, TableFieldWrite, TableInsertRecord,
     TableWriteDiagnostics, WriteFieldPathSegment as TableWriteFieldPathSegment,
@@ -133,7 +134,7 @@ impl SourceWriter for CsvWriter {
         request: &RenameRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let path = [coflow_api::WriteFieldPathSegment::Field("id".to_string())];
-        let value = coflow_api::CfdValue::String(request.new_key.to_string());
+        let value = CfdValue::String(request.new_key.to_string());
         self.write_field(
             ctx,
             &WriteCellRequest {

@@ -9,11 +9,13 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
-    CfdInputRecord, CfdInputValue, CfdValue, DeleteRecordRequest, InsertRecordRequest,
-    RecordOrigin, ResolvedSource, SourceDocument, SourceLocationSpec, SourceWriter,
+    DeleteRecordRequest, InsertRecordRequest, ResolvedSource, SourceLocationSpec, SourceWriter,
     WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::CftContainer;
+use coflow_data_model::{
+    CfdDataModel, CfdInputRecord, CfdInputValue, CfdObject, CfdValue, RecordOrigin, SourceDocument,
+};
 use coflow_loader_excel::ExcelWriter;
 use rust_xlsxwriter::{Workbook, XlsxError};
 use std::collections::BTreeMap;
@@ -184,7 +186,7 @@ fn write_terrain_workbook_with_expand(path: &PathBuf) -> Result<(), XlsxError> {
 }
 
 fn expanded_env_value(shc: f64, temperature: f64, diffusion: f64) -> CfdValue {
-    CfdValue::Object(Box::new(coflow_api::CfdObject::new(
+    CfdValue::Object(Box::new(CfdObject::new(
         "EnvCfg",
         BTreeMap::from([
             ("shc".to_string(), CfdValue::Float(shc)),
@@ -329,7 +331,7 @@ fn writes_collection_element_by_rewriting_owning_cell() {
         )],
     )
     .with_origin(origin.clone());
-    let mut builder = coflow_api::CfdDataModel::builder(&schema);
+    let mut builder = CfdDataModel::builder(&schema);
     builder.add_input_record(input);
     let model = builder.build().expect("model");
 

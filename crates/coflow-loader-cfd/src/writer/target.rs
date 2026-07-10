@@ -1,4 +1,5 @@
-use coflow_api::{CftContainer, CftSchemaTypeRef, DiagnosticSet, WriteFieldPathSegment};
+use coflow_api::{DiagnosticSet, WriteFieldPathSegment};
+use coflow_cft::{CftContainer, CftSchemaTypeRef};
 use coflow_cfd::ast::{CfdBlock, CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
 use coflow_cft::Span;
 

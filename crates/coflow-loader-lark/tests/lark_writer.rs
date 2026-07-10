@@ -10,11 +10,12 @@
 )]
 
 use coflow_api::{
-    CfdValue, DeleteRecordRequest, InsertRecordRequest, RecordOrigin, ResolvedSource,
-    RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec, SourceWriter, TableContext,
-    TableManager, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    DeleteRecordRequest, InsertRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
+    SourceLocationSpec, SourceWriter, TableContext, TableManager, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment,
 };
-use coflow_api::{CftContainer, ModuleId};
+use coflow_cft::{CftContainer, ModuleId};
+use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};

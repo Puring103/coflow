@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_api::{DiagnosticSet, RecordOrigin, ResolvedSource, SourceLocation};
+use coflow_api::{DiagnosticSet, ResolvedSource, SourceLocation};
+use coflow_data_model::RecordOrigin;
 use coflow_data_model::{CfdDataModel, CfdRecordId};
 use coflow_project::path_to_slash;
 

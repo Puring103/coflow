@@ -1,4 +1,4 @@
-use crate::{CfdDiagnostics, CfdInputRecord, RecordOrigin};
+use coflow_data_model::{CfdDiagnostics, CfdInputRecord, RecordOrigin};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::{Path, PathBuf};

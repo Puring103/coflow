@@ -1,4 +1,6 @@
-use crate::{ArtifactSet, CfdDataModel, CftContainer, DiagnosticSet, OutputSpec};
+use crate::{ArtifactSet, DiagnosticSet, OutputSpec};
+use coflow_cft::CftContainer;
+use coflow_data_model::CfdDataModel;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CodegenContext<'a> {

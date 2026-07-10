@@ -16,16 +16,16 @@
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
 use coflow_api::{
-    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, RecordOrigin,
-    ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
-    SourceProviderDescriptor, SourceResolveContext,
+    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, ResolvedSource,
+    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
+    SourceResolveContext,
 };
 
 mod diagnostics;
 mod parser;
 pub mod writer;
 use coflow_cft::CftContainer;
-use coflow_data_model::{CfdDataModel, CfdInputRecord};
+use coflow_data_model::{CfdDataModel, CfdInputRecord, RecordOrigin};
 use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,

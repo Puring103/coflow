@@ -1,10 +1,11 @@
 use coflow_api::{
-    CreateTableRequest, DeleteRecordRequest, DiagnosticSet, InsertRecordRequest, RecordOrigin,
-    RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
-    SourceWriter, SyncHeaderRequest, TableAddressing, TableContext, TableManager,
+    CreateTableRequest, DeleteRecordRequest, DiagnosticSet, InsertRecordRequest,
+    RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter,
+    SyncHeaderRequest, TableAddressing, TableContext, TableManager,
     TableManagerDescriptor, TableOperationResult, WriteCellRequest, WriteContext,
     WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
+use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::cell_value::render_cell_value;
 use coflow_loader_table_core::writer::{plan_insert_record, TableInsertRecord, TableWritePlan};
 use serde_json::json;
@@ -146,7 +147,7 @@ where
         request: &RenameRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let path = [WriteFieldPathSegment::Field("id".to_string())];
-        let value = coflow_api::CfdValue::String(request.new_key.to_string());
+        let value = CfdValue::String(request.new_key.to_string());
         self.write_field(
             ctx,
             &WriteCellRequest {

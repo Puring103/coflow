@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_api::{CftContainer, DiagnosticSet};
-use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView};
+use coflow_api::DiagnosticSet;
+use coflow_cft::{
+    CftContainer, CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView,
+};
 use coflow_data_model::{CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordOrigin};
 
 use super::{

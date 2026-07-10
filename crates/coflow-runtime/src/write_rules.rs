@@ -266,7 +266,7 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
         self.session
             .model
             .record(id)
-            .map(coflow_api::CfdRecord::actual_type)
+            .map(coflow_data_model::CfdRecord::actual_type)
     }
 }
 

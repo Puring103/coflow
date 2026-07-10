@@ -1,4 +1,6 @@
-use crate::{CfdInputRecord, CftContainer, DiagnosticSet};
+use crate::DiagnosticSet;
+use coflow_cft::CftContainer;
+use coflow_data_model::CfdInputRecord;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 

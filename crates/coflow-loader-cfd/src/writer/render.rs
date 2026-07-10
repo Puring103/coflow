@@ -1,7 +1,7 @@
-use coflow_api::{CfdObject, CfdValue, CftContainer, CftSchemaTypeRef, DiagnosticSet};
+use coflow_api::DiagnosticSet;
 use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord};
-use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaView};
-use coflow_data_model::CfdEnumValue;
+use coflow_cft::{CftContainer, CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView};
+use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::schema_nav::{non_nullable, object_type_name, type_after_field_segment};
@@ -278,9 +278,9 @@ pub(super) fn serialize_value_for_type(
                 .iter()
                 .map(|(k, v)| {
                     let key = match k {
-                        coflow_api::CfdDictKey::String(s) => format!("{s:?}"),
-                        coflow_api::CfdDictKey::Int(n) => n.to_string(),
-                        coflow_api::CfdDictKey::Enum(e) => e
+                        CfdDictKey::String(s) => format!("{s:?}"),
+                        CfdDictKey::Int(n) => n.to_string(),
+                        CfdDictKey::Enum(e) => e
                             .variant
                             .clone()
                             .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),

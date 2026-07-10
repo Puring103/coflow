@@ -3,6 +3,7 @@ use coflow_api::{
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
     SourceLocationSpec, TableContext,
 };
+use coflow_data_model::{CfdDictKey, CfdValue};
 use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
@@ -167,7 +168,7 @@ fn csv_variant_cell(value: &str) -> String {
     }
 }
 
-fn render_dimension_csv_value(value: &coflow_api::CfdValue) -> String {
+fn render_dimension_csv_value(value: &CfdValue) -> String {
     match render_cell_value(value) {
         Ok(value) => value,
         Err(CellRenderError::NestedObject | CellRenderError::AnonymousEnum) => {
@@ -176,18 +177,18 @@ fn render_dimension_csv_value(value: &coflow_api::CfdValue) -> String {
     }
 }
 
-fn render_fallback_cell_value(value: &coflow_api::CfdValue) -> String {
+fn render_fallback_cell_value(value: &CfdValue) -> String {
     match value {
-        coflow_api::CfdValue::Null => String::new(),
-        coflow_api::CfdValue::Bool(value) => value.to_string(),
-        coflow_api::CfdValue::Int(value) => value.to_string(),
-        coflow_api::CfdValue::Float(value) => value.to_string(),
-        coflow_api::CfdValue::String(value) => value.clone(),
-        coflow_api::CfdValue::Enum(value) => value.variant.as_deref().map_or_else(
+        CfdValue::Null => String::new(),
+        CfdValue::Bool(value) => value.to_string(),
+        CfdValue::Int(value) => value.to_string(),
+        CfdValue::Float(value) => value.to_string(),
+        CfdValue::String(value) => value.clone(),
+        CfdValue::Enum(value) => value.variant.as_deref().map_or_else(
             || format!("{}({})", value.enum_name, value.value),
             |variant| format!("{}.{}", value.enum_name, variant),
         ),
-        coflow_api::CfdValue::Object(record) => {
+        CfdValue::Object(record) => {
             let inner = record
                 .fields()
                 .iter()
@@ -196,8 +197,8 @@ fn render_fallback_cell_value(value: &coflow_api::CfdValue) -> String {
                 .join(", ");
             format!("{{{inner}}}")
         }
-        coflow_api::CfdValue::Ref(target_key) => format!("&{target_key}"),
-        coflow_api::CfdValue::Array(items) => {
+        CfdValue::Ref(target_key) => format!("&{target_key}"),
+        CfdValue::Array(items) => {
             let inner = items
                 .iter()
                 .map(render_fallback_cell_value)
@@ -205,7 +206,7 @@ fn render_fallback_cell_value(value: &coflow_api::CfdValue) -> String {
                 .join(", ");
             format!("[{inner}]")
         }
-        coflow_api::CfdValue::Dict(entries) => {
+        CfdValue::Dict(entries) => {
             let inner = entries
                 .iter()
                 .map(|(key, value)| {
@@ -222,11 +223,11 @@ fn render_fallback_cell_value(value: &coflow_api::CfdValue) -> String {
     }
 }
 
-fn render_fallback_dict_key(key: &coflow_api::CfdDictKey) -> String {
+fn render_fallback_dict_key(key: &CfdDictKey) -> String {
     match key {
-        coflow_api::CfdDictKey::String(value) => format!("{value:?}"),
-        coflow_api::CfdDictKey::Int(value) => value.to_string(),
-        coflow_api::CfdDictKey::Enum(value) => value.variant.as_deref().map_or_else(
+        CfdDictKey::String(value) => format!("{value:?}"),
+        CfdDictKey::Int(value) => value.to_string(),
+        CfdDictKey::Enum(value) => value.variant.as_deref().map_or_else(
             || format!("{}({})", value.enum_name, value.value),
             |variant| format!("{}.{}", value.enum_name, variant),
         ),

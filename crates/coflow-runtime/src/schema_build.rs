@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_api::{CftContainer, Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
-use coflow_cft::CftSchemaView;
+use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_cft::{CftContainer, CftSchemaView};
 use coflow_project::{
     compile_schema_project, dedupe_cft_diagnostics, diagnostic_set_from_cft, Project, SchemaBuild,
 };

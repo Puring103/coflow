@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use coflow_api::{CftContainer, DiagnosticSet};
-use coflow_cft::CftSchemaView;
+use coflow_api::DiagnosticSet;
+use coflow_cft::{CftContainer, CftSchemaView};
 use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::{path_to_slash, Project};
 use serde::{Deserialize, Serialize};

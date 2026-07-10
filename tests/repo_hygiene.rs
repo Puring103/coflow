@@ -75,6 +75,11 @@ fn provider_shared_algorithms_do_not_live_in_coflow_api() {
         "pub mod export",
         "export_model_with_encoder",
         "ExportEncoder",
+        "pub use coflow_cft::",
+        "pub use coflow_data_model::",
+        "CftContainer",
+        "CfdDataModel",
+        "CfdValue",
     ] {
         assert!(
             !api.contains(forbidden),

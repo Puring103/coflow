@@ -1,4 +1,6 @@
-use crate::{CfdDataModel, CfdValue, CftContainer, DiagnosticSet, RecordOrigin, ResolvedSource};
+use crate::{DiagnosticSet, ResolvedSource};
+use coflow_cft::CftContainer;
+use coflow_data_model::{CfdDataModel, CfdValue, RecordOrigin};
 use std::collections::BTreeMap;
 use std::path::Path;
 

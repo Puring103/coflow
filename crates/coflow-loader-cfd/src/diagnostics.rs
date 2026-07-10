@@ -1,4 +1,5 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Label, SourceLocation, TextSpan};
+use coflow_api::{Diagnostic, DiagnosticSet, Label, SourceLocation};
+use coflow_data_model::TextSpan;
 use coflow_data_model::CfdDiagnostics;
 use std::error::Error;
 use std::fmt;

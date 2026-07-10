@@ -1,6 +1,7 @@
 use crate::artifacts::{stage_json_file, StagedArtifactFile};
 use crate::commands::artifact_safety::artifact_diagnostic_set;
-use coflow_api::{CfdDataModel, DiagnosticSet};
+use coflow_api::DiagnosticSet;
+use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 use serde::Serialize;
 use serde_json::Value;

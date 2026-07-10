@@ -61,6 +61,7 @@ clap = { version = "4", features = ["derive"] }
 coflow-api = { path = "crates/coflow-api" }
 coflow-builtins = { path = "crates/coflow-builtins" }
 coflow-cft = { path = "crates/coflow-cft" }
+coflow-data-model = { path = "crates/coflow-data-model" }
 coflow-lsp = { path = "crates/coflow-lsp" }
 coflow-project = { path = "crates/coflow-project" }
 coflow-runtime = { path = "crates/coflow-runtime" }

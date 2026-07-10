@@ -130,9 +130,10 @@ mod tests {
     use super::*;
     use crate::source::lark_source_from_spec;
     use coflow_api::{
-        CftContainer, ModuleId, ProbeResult, ProjectSourceRef, ResolvedSource, SourceLoadContext,
-        SourceLocationSpec, SourceProvider, SourceResolveContext,
+        ProbeResult, ProjectSourceRef, ResolvedSource, SourceLoadContext, SourceLocationSpec,
+        SourceProvider, SourceResolveContext,
     };
+    use coflow_cft::{CftContainer, ModuleId};
     use serde_json::{json, Value};
     use std::path::Path;
 

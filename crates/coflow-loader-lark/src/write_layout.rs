@@ -1,7 +1,5 @@
-use coflow_api::{
-    DiagnosticSet, RecordOrigin, ResolvedSource, SourceDocument, WriteContext,
-    WriteFieldPathSegment,
-};
+use coflow_api::{DiagnosticSet, ResolvedSource, WriteContext, WriteFieldPathSegment};
+use coflow_data_model::{RecordOrigin, SourceDocument};
 use coflow_loader_table_core::{resolve_table_write_layout, TableWriteLayout};
 
 use crate::diagnostics::table_diagnostics_to_api;
