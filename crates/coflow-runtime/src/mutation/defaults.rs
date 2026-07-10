@@ -4,7 +4,10 @@ use coflow_api::{CftContainer, DiagnosticSet};
 use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView};
 use coflow_data_model::{CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordOrigin};
 
-use super::{non_nullable, one_mutation_error, DefaultMaterialization};
+use super::{
+    non_nullable, one_mutation_error, CreateFieldSource, CreateRecordDraft,
+    CreateRecordFieldDraft, CreateRequiredInput, DefaultMaterialization,
+};
 
 pub(super) fn default_record_for_type(
     schema: &CftContainer,
@@ -48,6 +51,30 @@ pub(super) fn default_missing_fields_for_type(
         &mut stack,
         Some(provided_names),
     )
+}
+
+pub(super) fn create_record_draft_for_type(
+    schema: &CftContainer,
+    type_name: &str,
+) -> Result<CreateRecordDraft, DiagnosticSet> {
+    let schema = CftSchemaView::new(schema);
+    ensure_type_can_materialize(&schema, type_name)?;
+    let Some(schema_type) = schema.type_meta(type_name) else {
+        return Err(one_mutation_error(
+            "MUTATION-TYPE",
+            format!("unknown type `{type_name}`"),
+        ));
+    };
+    let mut stack = BTreeSet::new();
+    stack.insert(type_name.to_string());
+    let mut fields = Vec::new();
+    for field in schema.full_fields(&schema_type.name).unwrap_or(&[]) {
+        fields.push(create_field_draft(&schema, field, &mut stack));
+    }
+    Ok(CreateRecordDraft {
+        actual_type: type_name.to_string(),
+        fields,
+    })
 }
 
 fn default_fields_for_type_inner(
@@ -116,7 +143,8 @@ fn default_minimal_for_field(
     if field.default.is_some() {
         return Ok(None);
     }
-    match non_nullable(&field.ty_ref) {
+    match &field.ty_ref {
+        CftSchemaTypeRef::Nullable(_) => Ok(Some(CfdValue::Null)),
         CftSchemaTypeRef::Ref(name) => Err(one_mutation_error(
             "MUTATION-DEFAULT",
             format!(
@@ -138,6 +166,9 @@ fn default_minimal_for_field(
                 fields,
             )))))
         }
+        CftSchemaTypeRef::Named(name) if schema.is_schema_enum(name) => {
+            default_zero_for_ty_inner(schema, &field.ty_ref, stack).map(Some)
+        }
         CftSchemaTypeRef::Named(name) => Err(one_mutation_error(
             "MUTATION-DEFAULT",
             format!(
@@ -146,6 +177,107 @@ fn default_minimal_for_field(
             ),
         )),
         _ => default_zero_for_ty_inner(schema, &field.ty_ref, stack).map(Some),
+    }
+}
+
+fn create_field_draft(
+    schema: &CftSchemaView,
+    field: &CftFieldMeta,
+    stack: &mut BTreeSet<String>,
+) -> CreateRecordFieldDraft {
+    if let Some(default) = field.default.as_ref() {
+        return match default_from_schema_default(
+            schema,
+            &field.ty_ref,
+            default,
+            DefaultMaterialization::EditableShape,
+            stack,
+        ) {
+            Ok(value) => CreateRecordFieldDraft {
+                name: field.name.clone(),
+                value: Some(value),
+                source: CreateFieldSource::SchemaDefault,
+                required: None,
+            },
+            Err(err) => required_field_draft(
+                schema,
+                field,
+                Some(err),
+                Some(CfdValue::Null),
+            ),
+        };
+    }
+
+    match default_minimal_for_field(schema, field, stack) {
+        Ok(Some(value)) => CreateRecordFieldDraft {
+            name: field.name.clone(),
+            value: Some(value),
+            source: CreateFieldSource::TypeSeed,
+            required: None,
+        },
+        Ok(None) => CreateRecordFieldDraft {
+            name: field.name.clone(),
+            value: None,
+            source: CreateFieldSource::TypeSeed,
+            required: None,
+        },
+        Err(err) => required_field_draft(schema, field, Some(err), Some(CfdValue::Null)),
+    }
+}
+
+fn required_field_draft(
+    schema: &CftSchemaView,
+    field: &CftFieldMeta,
+    err: Option<DiagnosticSet>,
+    value: Option<CfdValue>,
+) -> CreateRecordFieldDraft {
+    CreateRecordFieldDraft {
+        name: field.name.clone(),
+        value,
+        source: CreateFieldSource::RequiredInput,
+        required: Some(required_input_for_field(schema, field, err.as_ref())),
+    }
+}
+
+fn required_input_for_field(
+    schema: &CftSchemaView,
+    field: &CftFieldMeta,
+    err: Option<&DiagnosticSet>,
+) -> CreateRequiredInput {
+    match non_nullable(&field.ty_ref) {
+        CftSchemaTypeRef::Ref(target_type) => CreateRequiredInput::Ref {
+            target_type: target_type.clone(),
+        },
+        CftSchemaTypeRef::Named(expected_type)
+            if schema
+                .type_meta(expected_type)
+                .is_some_and(|meta| meta.is_abstract) =>
+        {
+            CreateRequiredInput::AbstractObject {
+                expected_type: expected_type.clone(),
+                concrete_types: schema
+                    .concrete_assignable_types(expected_type)
+                    .unwrap_or_default(),
+            }
+        }
+        CftSchemaTypeRef::Named(type_name)
+            if err.is_some_and(|err| {
+                err.iter()
+                    .any(|diagnostic| diagnostic.message.contains("recursive"))
+            }) =>
+        {
+            CreateRequiredInput::RecursiveObject {
+                type_name: type_name.clone(),
+            }
+        }
+        _ => CreateRequiredInput::Unsupported {
+            message: err
+                .and_then(|err| err.iter().next())
+                .map_or_else(
+                    || format!("field `{}` requires an explicit value", field.name),
+                    |diagnostic| diagnostic.message.clone(),
+                ),
+        },
     }
 }
 

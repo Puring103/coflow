@@ -2,9 +2,9 @@
 
 use coflow_project::Project;
 use coflow_runtime::{
-    build_project_session_for_build, DataPatchOp, DataPatchRequest, DefaultMaterialization,
-    MutationOp, MutationRequest, MutationValue, PatchPathSegment, PatchRecordSelector,
-    RecordCoordinate,
+    build_project_session_for_build, CreateFieldSource, CreateRequiredInput, DataPatchOp,
+    DataPatchRequest, DefaultMaterialization, MutationOp, MutationRequest, MutationValue,
+    PatchPathSegment, PatchRecordSelector, RecordCoordinate,
 };
 use serde_json::json;
 
@@ -611,6 +611,136 @@ fn patch_insert_minimal_requires_explicit_values_for_required_ref_fields() {
         .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(!text.contains("starter_loot"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn create_record_draft_marks_required_refs_and_keeps_schema_defaults_separate() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-create-draft-required-ref-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            enum Rarity { Common = 0, Rare = 1 }
+            type Item { name: string; }
+            type Loot {
+                owner: &Item;
+                backup: &Item? = null;
+                rarity: Rarity = Rarity.Common;
+                count: int;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"sword: Item { name: "Sword" }"#,
+    )
+    .expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (session, _) = session(&root);
+
+    let draft = session.create_record_draft("Loot").expect("create draft");
+    let owner = draft
+        .fields
+        .iter()
+        .find(|field| field.name == "owner")
+        .expect("owner field");
+    assert_eq!(owner.source, CreateFieldSource::RequiredInput);
+    assert_eq!(owner.value, Some(coflow_data_model::CfdValue::Null));
+    assert!(matches!(
+        owner.required.as_ref(),
+        Some(CreateRequiredInput::Ref { target_type }) if target_type == "Item"
+    ));
+
+    let backup = draft
+        .fields
+        .iter()
+        .find(|field| field.name == "backup")
+        .expect("backup field");
+    assert_eq!(backup.source, CreateFieldSource::SchemaDefault);
+    assert_eq!(backup.value, Some(coflow_data_model::CfdValue::Null));
+
+    let count = draft
+        .fields
+        .iter()
+        .find(|field| field.name == "count")
+        .expect("count field");
+    assert_eq!(count.source, CreateFieldSource::TypeSeed);
+    assert_eq!(count.value, Some(coflow_data_model::CfdValue::Int(0)));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn patch_insert_minimal_seeds_nullable_refs_and_required_enums_without_defaults() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-minimal-nullable-enum-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            enum Rarity { Common = 0, Rare = 1 }
+            type Item { name: string; }
+            type Holder {
+                backup: &Item?;
+                rarity: Rarity;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"sword: Item { name: "Sword" }"#,
+    )
+    .expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/items.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Holder".to_string(),
+                    key: "holder".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({})).expect("fields map"),
+                }],
+            },
+        )
+        .expect("nullable ref and enum seeds should write");
+
+    assert!(report.write_ok);
+    let view = session.record_view("Holder", "holder").expect("holder");
+    assert_eq!(
+        view.record.fields().get("backup"),
+        Some(&coflow_data_model::CfdValue::Null)
+    );
+    let Some(coflow_data_model::CfdValue::Enum(value)) = view.record.fields().get("rarity") else {
+        panic!("rarity should be enum seeded");
+    };
+    assert_eq!(value.variant.as_deref(), Some("Common"));
 
     let _ = std::fs::remove_dir_all(root);
 }

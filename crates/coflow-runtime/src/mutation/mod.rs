@@ -11,6 +11,7 @@ mod prepare;
 mod types;
 
 pub use types::{
+    CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
     MutationReport, MutationRequest, MutationValue, PreparedMutation,
 };

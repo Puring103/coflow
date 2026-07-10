@@ -9,12 +9,14 @@ use crate::{ProjectSession, RecordCoordinate};
 
 use super::coercion::{coerce_cfd_field_value, coerce_json_field_value, coerce_mutation_value};
 use super::defaults::{
-    default_missing_fields_for_type, default_record_for_type, default_value_for_type_ref,
+    create_record_draft_for_type, default_missing_fields_for_type, default_record_for_type,
+    default_value_for_type_ref,
 };
 use super::types::PreparedMutationOp;
 use super::{one_mutation_error, one_path_error, schema_field};
 use super::{
-    DefaultMaterialization, MutationFields, MutationOp, MutationRequest, PreparedMutation,
+    CreateRecordDraft, DefaultMaterialization, MutationFields, MutationOp, MutationRequest,
+    PreparedMutation,
 };
 
 impl ProjectSession {
@@ -58,6 +60,24 @@ impl ProjectSession {
     ) -> Result<CfdValue, DiagnosticSet> {
         let record = default_record_for_type(&self.schema, type_name, materialization)?;
         Ok(CfdValue::Object(Box::new(record.object)))
+    }
+
+    /// Build a field-by-field draft for creating a new top-level record.
+    ///
+    /// The returned draft distinguishes schema defaults (shown in the editor
+    /// but not persisted unless changed), type seeds (safe values that keep a
+    /// new record loadable), and required inputs (values the host must collect
+    /// from the user before calling insert).
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when `type_name` is unknown or cannot be inserted
+    /// as a concrete top-level record draft.
+    pub fn create_record_draft(
+        &self,
+        type_name: &str,
+    ) -> Result<CreateRecordDraft, DiagnosticSet> {
+        create_record_draft_for_type(&self.schema, type_name)
     }
 
     /// Build a default value for an item of the collection at `path`.

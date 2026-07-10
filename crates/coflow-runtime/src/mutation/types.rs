@@ -75,6 +75,48 @@ pub enum DefaultMaterialization {
     EditableShape,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateRecordDraft {
+    pub actual_type: String,
+    pub fields: Vec<CreateRecordFieldDraft>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateRecordFieldDraft {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<CfdValue>,
+    pub source: CreateFieldSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<CreateRequiredInput>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CreateFieldSource {
+    SchemaDefault,
+    TypeSeed,
+    RequiredInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CreateRequiredInput {
+    Ref {
+        target_type: String,
+    },
+    AbstractObject {
+        expected_type: String,
+        concrete_types: Vec<String>,
+    },
+    RecursiveObject {
+        type_name: String,
+    },
+    Unsupported {
+        message: String,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct PreparedMutation {
     pub(super) stop_on_write_error: bool,

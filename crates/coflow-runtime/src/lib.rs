@@ -56,6 +56,7 @@ pub use indexes::{
 // engine data to a wire format so they don't diverge in path formatting.
 pub use load::{configured_project_source, format_cfd_path as format_field_path};
 pub use mutation::{
+    CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
     MutationReport, MutationRequest, MutationValue, PreparedMutation,
 };
