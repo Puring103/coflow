@@ -21,7 +21,8 @@ use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue};
 
 use super::records::WriteOutcome;
 use super::write_rules;
-use super::{build_project_session_for_build, ProjectSession, RecordCoordinate};
+use super::session_build::build_project_session_for_build;
+use super::{ProjectSession, RecordCoordinate};
 use refs::{reference_update_actions, source_rewrite_actions};
 use target::{guess_new_coordinate, is_id_path, write_target_for_path};
 use transaction::LocalFileTransaction;

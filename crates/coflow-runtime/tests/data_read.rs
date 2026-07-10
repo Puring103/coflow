@@ -5,8 +5,8 @@ use std::fmt::Write as _;
 use coflow_data_model::CfdErrorCode;
 use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
-    build_project_session_for_build, create_data_file, data_get, data_list, data_sources,
-    DataCreateFileOptions, DataGetQuery, DataListQuery, RecordCoordinate,
+    create_data_file, data_get, data_list, data_sources, DataCreateFileOptions, DataGetQuery,
+    DataListQuery, ProjectSchemaSession, ProjectSession, RecordCoordinate, Runtime,
 };
 
 fn write_project(root: &std::path::Path) {
@@ -68,6 +68,21 @@ fn registry() -> coflow_api::ProviderRegistry {
     coflow_builtins::default_provider_registry().expect("default provider registry")
 }
 
+fn build_session(
+    project: Project,
+    registry: &coflow_api::ProviderRegistry,
+) -> Result<ProjectSession, coflow_api::DiagnosticSet> {
+    Runtime::new(registry.clone())
+        .build_project_session(project)
+        .map(coflow_runtime::BuildProjectSession::into_session)
+}
+
+fn schema_session(
+    project: Project,
+) -> Result<ProjectSchemaSession, coflow_api::DiagnosticSet> {
+    Runtime::build_schema_session(project)
+}
+
 #[test]
 fn data_sources_report_provider_capabilities_and_types() {
     let root = std::env::temp_dir().join(format!("coflow-data-sources-{}", std::process::id()));
@@ -75,7 +90,7 @@ fn data_sources_report_provider_capabilities_and_types() {
     write_project(&root);
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
-    let session = build_project_session_for_build(project, &registry).expect("session");
+    let session = build_session(project, &registry).expect("session");
 
     let report = data_sources(&session, &registry);
     let source = report
@@ -103,7 +118,7 @@ fn data_file_provider_inference_uses_table_manager_descriptor_capabilities() {
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
     let schema_session =
-        coflow_runtime::build_project_schema_session(project).expect("schema session");
+        schema_session(project).expect("schema session");
 
     let inferred = create_data_file(
         &schema_session,
@@ -152,7 +167,7 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
     .expect("write duplicate cfd");
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
-    let session = build_project_session_for_build(project, &registry).expect("session");
+    let session = build_session(project, &registry).expect("session");
 
     let duplicate_index = session
         .diagnostics()
@@ -225,7 +240,7 @@ fn data_list_filters_and_paginates_record_summaries() {
     write_project(&root);
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
-    let session = build_project_session_for_build(project, &registry).expect("session");
+    let session = build_session(project, &registry).expect("session");
 
     let list = data_list(
         &session,
@@ -252,7 +267,7 @@ fn data_get_supports_selector_and_key_filters() {
     write_project(&root);
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
-    let session = build_project_session_for_build(project, &registry).expect("session");
+    let session = build_session(project, &registry).expect("session");
 
     let selected = data_get(
         &session,
@@ -301,7 +316,7 @@ fn data_get_applies_file_filter_to_selected_record() {
     write_project(&root);
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
-    let session = build_project_session_for_build(project, &registry).expect("session");
+    let session = build_session(project, &registry).expect("session");
 
     let report = data_get(
         &session,
@@ -329,7 +344,7 @@ fn data_get_returns_diagnostic_for_missing_selector() {
     write_project(&root);
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
-    let session = build_project_session_for_build(project, &registry).expect("session");
+    let session = build_session(project, &registry).expect("session");
 
     let diagnostics = data_get(
         &session,
@@ -360,7 +375,7 @@ fn data_get_requires_limit_or_all_for_large_unselected_results() {
     write_large_project(&root, 101);
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
-    let session = build_project_session_for_build(project, &registry).expect("session");
+    let session = build_session(project, &registry).expect("session");
 
     let diagnostics = data_get(
         &session,

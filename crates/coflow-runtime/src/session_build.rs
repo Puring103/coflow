@@ -27,7 +27,7 @@ use crate::session::{ProjectSchemaSession, ProjectSession};
 /// Returns unrecoverable project/config/schema I/O errors. User-fixable
 /// project, schema, loader, model, and check problems are captured in the
 /// returned session diagnostics.
-pub fn build_project_session_for_build(
+pub(crate) fn build_project_session_for_build(
     project: Project,
     registry: &ProviderRegistry,
 ) -> Result<ProjectSession, DiagnosticSet> {
@@ -42,7 +42,7 @@ pub fn build_project_session_for_build(
 /// Returns unrecoverable project/config/schema I/O errors. User-fixable
 /// project, schema, loader, model, and check problems are captured in the
 /// returned session diagnostics.
-pub fn open_project_session_read_only(
+pub(crate) fn open_project_session_read_only(
     project: Project,
     registry: &ProviderRegistry,
 ) -> Result<ProjectSession, DiagnosticSet> {

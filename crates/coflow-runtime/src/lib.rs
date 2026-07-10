@@ -66,7 +66,6 @@ pub use records::{
     RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime};
-pub use schema_build::build_project_schema_session;
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,
     SchemaConstValueInfo, SchemaDefaultValueInfo, SchemaEnumInfo, SchemaEnumVariantInfo,
@@ -74,4 +73,3 @@ pub use schema_inspect::{
     SchemaTypeRefInfo,
 };
 pub use session::{ProjectSchemaSession, ProjectSession, RecordCoordinate};
-pub use session_build::{build_project_session_for_build, open_project_session_read_only};

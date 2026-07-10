@@ -17,7 +17,9 @@ use crate::session::ProjectSchemaSession;
 ///
 /// Returns unrecoverable project/schema I/O errors. User-fixable project and
 /// schema diagnostics are captured in the returned session diagnostics.
-pub fn build_project_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
+pub(crate) fn build_project_schema_session(
+    project: Project,
+) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let diagnostics = project.schema_diagnostic_set();
     build_project_schema_with_diagnostics(project, diagnostics)
 }

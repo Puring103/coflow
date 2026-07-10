@@ -3,18 +3,27 @@
 use coflow::commands::{check_project, CommandOutcome};
 use coflow_api::{
     CfdInputRecord, CfdInputValue, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult,
-    ProjectSourceRef, RecordOrigin, RenameRecordRequest, ResolvedSource,
+    ProjectSourceRef, ProviderRegistry, RecordOrigin, RenameRecordRequest, ResolvedSource,
     RewriteRecordReferencesRequest,
     SourceDocument, SourceLoadContext, SourceLocationSpec, SourceProvider,
     SourceProviderDescriptor, SourceWriter, WriteCellRequest, WriteContext, WriteOutcome,
     WriterCapabilities, WriterDescriptor,
 };
 use coflow_project::Project;
-use coflow_runtime::{build_project_session_for_build, RecordCoordinate};
+use coflow_runtime::{ProjectSession, RecordCoordinate, Runtime};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 mod common;
+
+fn build_session(
+    project: Project,
+    registry: &ProviderRegistry,
+) -> Result<ProjectSession, DiagnosticSet> {
+    Runtime::new(registry.clone())
+        .build_project_session(project)
+        .map(coflow_runtime::BuildProjectSession::into_session)
+}
 
 #[test]
 fn engine_builds_record_and_source_indexes() {
@@ -25,7 +34,7 @@ fn engine_builds_record_and_source_indexes() {
     let project = Project::open_schema_only(Some(&config)).expect("open project");
     let registry = coflow_builtins::default_provider_registry().expect("default registry");
 
-    let session = build_project_session_for_build(project, &registry).expect("build session");
+    let session = build_session(project, &registry).expect("build session");
 
     assert!(
         session.has_diagnostics(),
@@ -89,7 +98,7 @@ fn rename_record_key_updates_cross_source_references() {
 
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open project");
     let registry = coflow_builtins::default_provider_registry().expect("default registry");
-    let mut session = build_project_session_for_build(project, &registry).expect("build session");
+    let mut session = build_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics before rename: {:?}",
@@ -161,7 +170,7 @@ fn rename_record_key_does_not_scan_remote_sources_without_spread_provenance() {
         .expect("register fake remote writer");
 
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open project");
-    let mut session = build_project_session_for_build(project, &registry).expect("build session");
+    let mut session = build_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics before rename: {:?}",
@@ -201,7 +210,7 @@ fn rename_record_key_rolls_back_local_files_when_reference_write_fails() {
         .expect("register fake local writer");
 
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open project");
-    let mut session = build_project_session_for_build(project, &registry).expect("build session");
+    let mut session = build_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics before rename: {:?}",

@@ -1404,7 +1404,7 @@ fn engine_schema_build_pipeline_does_not_live_in_lib_rs() {
         .expect("read engine schema build source");
 
     for expected in [
-        "pub fn build_project_schema_session",
+        "pub(crate) fn build_project_schema_session",
         "fn validate_dimension_schema_config",
         "fn compile_project_schema",
         "fn diagnostics_from_schema_build",
@@ -1455,8 +1455,8 @@ fn engine_load_pipeline_does_not_live_in_lib_rs() {
         "coflow-runtime lib.rs should stay below the 300-line orchestration threshold"
     );
     for expected in [
-        "pub fn build_project_session_for_build",
-        "pub fn open_project_session_read_only",
+        "pub(crate) fn build_project_session_for_build",
+        "pub(crate) fn open_project_session_read_only",
         "fn build_project_session_with_mode",
         "fn build_schema_session",
         "fn build_data_pipeline",
