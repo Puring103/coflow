@@ -24,6 +24,7 @@ mod indexes;
 mod load;
 mod mutation;
 mod records;
+mod runtime;
 mod schema_build;
 mod schema_inspect;
 mod session;
@@ -64,6 +65,7 @@ pub use records::{
     dict_key_path_text, value_summary, EffectiveFieldWrite, RecordTarget, RecordView,
     RefTargetInfo, WriteOutcome,
 };
+pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime};
 pub use schema_build::build_project_schema_session;
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,

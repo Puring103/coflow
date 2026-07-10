@@ -1253,6 +1253,35 @@ fn engine_runtime_indexes_do_not_live_in_lib_rs() {
 }
 
 #[test]
+fn engine_runtime_facade_does_not_live_in_lib_rs() {
+    let engine =
+        std::fs::read_to_string("crates/coflow-runtime/src/lib.rs").expect("read engine source");
+    let runtime = std::fs::read_to_string("crates/coflow-runtime/src/runtime.rs")
+        .expect("read engine runtime facade source");
+
+    for expected in [
+        "pub struct Runtime",
+        "pub struct ReadOnlyProjectSession",
+        "pub struct BuildProjectSession",
+        "pub fn open_read_only_session",
+        "pub fn build_project_session",
+    ] {
+        assert!(
+            runtime.contains(expected),
+            "engine runtime facade item `{expected}` should live in runtime.rs"
+        );
+        assert!(
+            !engine.contains(expected),
+            "engine runtime facade item `{expected}` should not live in lib.rs"
+        );
+    }
+    assert!(
+        engine.contains("pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime};"),
+        "coflow-runtime should re-export the runtime facade from lib.rs"
+    );
+}
+
+#[test]
 fn engine_session_api_does_not_live_in_lib_rs() {
     let engine =
         std::fs::read_to_string("crates/coflow-runtime/src/lib.rs").expect("read engine source");
