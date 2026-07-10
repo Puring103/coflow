@@ -1,4 +1,4 @@
-use coflow_cft::{CftContainer, CftSchemaTypeRef, CftSchemaView};
+use coflow_cft::{CftSchemaTypeRef, CftSchemaView};
 
 use crate::model::{CfdDictKey, CfdDomainId, CfdEnumValue, CfdRecordId, CfdValue};
 
@@ -40,14 +40,13 @@ pub trait CfdValueSemanticContext {
 /// enum/object/ref semantics are invalid, or when a referenced record cannot be
 /// resolved from the semantic context.
 pub fn validate_value_for_schema<C: CfdValueSemanticContext>(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     context: &C,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
 ) -> Result<(), CfdValueSemanticError> {
-    let view = CftSchemaView::new(schema);
-    validate_value_inner(&view, context, expected, value, pending_insert)
+    validate_value_inner(schema, context, expected, value, pending_insert)
 }
 
 /// Validates that an object type can be instantiated where another type is expected.
@@ -57,12 +56,11 @@ pub fn validate_value_for_schema<C: CfdValueSemanticContext>(
 /// Returns an error when the actual type is unknown, abstract, singleton-only, or
 /// not assignable to the expected type.
 pub fn validate_object_type_assignable(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     expected_type: &str,
     actual_type: &str,
 ) -> Result<(), CfdValueSemanticError> {
-    let view = CftSchemaView::new(schema);
-    validate_object_type_assignable_in_view(&view, expected_type, actual_type)
+    validate_object_type_assignable_in_view(schema, expected_type, actual_type)
 }
 
 fn validate_object_type_assignable_in_view(

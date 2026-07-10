@@ -66,15 +66,28 @@ pub fn ensure_record_key_available(
     ))
 }
 
-pub fn expected_type_for_write_path(
-    schema: &CftContainer,
+pub(crate) fn expected_type_for_write_path_in_view(
+    schema: &CftSchemaView,
     actual_type: &str,
     path: &[WriteFieldPathSegment],
     code: &'static str,
     stage: &'static str,
 ) -> Result<CftSchemaTypeRef, DiagnosticSet> {
     let cfd_path = write_path_to_cfd_path(path, code, stage)?;
-    expected_type_for_cfd_path(schema, actual_type, &cfd_path.segments, code, stage)
+    expected_type_for_cfd_path_in_view(schema, actual_type, &cfd_path.segments, code, stage)
+}
+
+pub(crate) fn validate_value_at_write_path(
+    session: &ProjectSession,
+    actual_type: &str,
+    path: &[WriteFieldPathSegment],
+    value: &CfdValue,
+    code: &'static str,
+    stage: &'static str,
+) -> Result<(), DiagnosticSet> {
+    let schema = CftSchemaView::new(&session.schema);
+    let expected = expected_type_for_write_path_in_view(&schema, actual_type, path, code, stage)?;
+    validate_value_for_write_in_view(session, &schema, &expected, value, code, stage)
 }
 
 pub fn expected_type_for_cfd_path(
@@ -88,7 +101,7 @@ pub fn expected_type_for_cfd_path(
     expected_type_for_cfd_path_in_view(&view, actual_type, path, code, stage)
 }
 
-fn expected_type_for_cfd_path_in_view(
+pub(crate) fn expected_type_for_cfd_path_in_view(
     schema: &CftSchemaView,
     actual_type: &str,
     path: &[CfdPathSegment],
@@ -155,11 +168,24 @@ pub fn validate_value_for_write(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    validate_value_semantics(session, expected, value, None, code, stage)
+    let schema = CftSchemaView::new(&session.schema);
+    validate_value_for_write_in_view(session, &schema, expected, value, code, stage)
 }
 
-pub fn validate_value_for_insert(
+pub(crate) fn validate_value_for_write_in_view(
     session: &ProjectSession,
+    schema: &CftSchemaView,
+    expected: &CftSchemaTypeRef,
+    value: &CfdValue,
+    code: &'static str,
+    stage: &'static str,
+) -> Result<(), DiagnosticSet> {
+    validate_value_semantics(session, schema, expected, value, None, code, stage)
+}
+
+pub(crate) fn validate_value_for_insert_in_view(
+    session: &ProjectSession,
+    schema: &CftSchemaView,
     inserted_actual_type: &str,
     inserted_key: &str,
     expected: &CftSchemaTypeRef,
@@ -169,6 +195,7 @@ pub fn validate_value_for_insert(
 ) -> Result<(), DiagnosticSet> {
     validate_value_semantics(
         session,
+        schema,
         expected,
         value,
         Some(PendingInsertRef {
@@ -182,6 +209,7 @@ pub fn validate_value_for_insert(
 
 fn validate_value_semantics(
     session: &ProjectSession,
+    schema: &CftSchemaView,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
@@ -190,7 +218,7 @@ fn validate_value_semantics(
 ) -> Result<(), DiagnosticSet> {
     let context = ProjectValueSemanticContext { session };
     coflow_data_model::validate_value_for_schema(
-        &session.schema,
+        schema,
         &context,
         expected,
         value,
@@ -201,6 +229,17 @@ fn validate_value_semantics(
 
 pub fn ensure_object_type_assignable(
     schema: &CftContainer,
+    expected_type: &str,
+    actual_type: &str,
+    code: &'static str,
+    stage: &'static str,
+) -> Result<(), DiagnosticSet> {
+    let view = CftSchemaView::new(schema);
+    ensure_object_type_assignable_in_view(&view, expected_type, actual_type, code, stage)
+}
+
+pub(crate) fn ensure_object_type_assignable_in_view(
+    schema: &CftSchemaView,
     expected_type: &str,
     actual_type: &str,
     code: &'static str,

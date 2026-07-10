@@ -78,14 +78,14 @@ impl ProjectSession {
         };
         let coordinate = record_ref.coordinate.clone();
         let target = write_target_for_path(self, record_ref, path)?;
-        let expected = write_rules::expected_type_for_write_path(
-            &self.schema,
+        write_rules::validate_value_at_write_path(
+            self,
             &target.coordinate.actual_type,
             &target.field_path,
+            new_value,
             "WRITE-SHAPE",
             "WRITE",
         )?;
-        write_rules::validate_value_for_write(self, &expected, new_value, "WRITE-SHAPE", "WRITE")?;
         let source = source_for_file(self, &target.display_path)?;
         let writer = lookup_source_writer(registry, &source)?;
         let yaml_path = self.project.config_path.clone();
@@ -423,8 +423,9 @@ fn validate_insert_fields(
                 format!("unknown field `{name}` on type `{actual_type}`"),
             )));
         };
-        write_rules::validate_value_for_insert(
+        write_rules::validate_value_for_insert_in_view(
             session,
+            &schema_view,
             actual_type,
             record_key,
             field_ty,

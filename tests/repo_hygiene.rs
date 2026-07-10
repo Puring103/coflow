@@ -1627,10 +1627,11 @@ fn data_model_value_semantics_uses_cft_compiler_context() {
             .expect("read data-model value semantics");
 
     assert!(
-        value_semantics.contains("CftSchemaView::new(schema)"),
-        "data-model value semantics should use coflow-cft CftSchemaView as its schema query"
+        value_semantics.contains("schema: &CftSchemaView"),
+        "data-model value semantics should accept coflow-cft CftSchemaView as its schema query"
     );
     for forbidden in [
+        "CftSchemaView::new(schema)",
         ".resolve_type(",
         ".has_enum(",
         ".all_fields",
