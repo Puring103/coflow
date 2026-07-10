@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_core::{export_model_with_encoder, ExportEncoder};
 use std::collections::BTreeMap;
@@ -84,7 +84,7 @@ fn export_tables(
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, TestValue>, String> {
     let mut encoder = TestEncoder;
-    export_model_with_encoder(schema, model, &mut encoder)
+    export_model_with_encoder(&CftSchemaView::new(schema), model, &mut encoder)
         .map_err(|err| format!("export core: {err:?}"))
 }
 
@@ -338,7 +338,7 @@ fn converts_encoder_errors_to_export_error_display_string() -> TestResult {
     builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
     let model = build_model(builder)?;
     let mut encoder = FailingEncoder;
-    let err = export_model_with_encoder(&schema, &model, &mut encoder)
+    let err = export_model_with_encoder(&CftSchemaView::new(&schema), &model, &mut encoder)
         .expect_err("encoder error should become export error");
 
     assert_eq!(err.to_string(), "encoder string failed");

@@ -115,6 +115,27 @@ fn api_source_contexts_use_schema_view_not_full_container() {
     }
 }
 
+#[test]
+fn api_export_context_uses_schema_view_not_full_container() {
+    let data_output = std::fs::read_to_string("crates/coflow-api/src/data_output.rs")
+        .expect("read API data output");
+    let export_context =
+        struct_block(&data_output, "pub struct ExportContext").expect("find ExportContext");
+
+    assert!(
+        data_output.contains("use coflow_cft::CftSchemaView;"),
+        "export context should depend on the schema query facade"
+    );
+    assert!(
+        export_context.contains("pub schema: &'a CftSchemaView"),
+        "export context should expose schema view"
+    );
+    assert!(
+        !export_context.contains("CftContainer"),
+        "export context should not expose full schema container"
+    );
+}
+
 fn struct_block<'a>(source: &'a str, marker: &str) -> Option<&'a str> {
     let start = source.find(marker)?;
     let tail = &source[start..];
@@ -2497,10 +2518,11 @@ fn exporter_core_schema_projection_uses_cft_compiler_context() {
         std::fs::read_to_string("crates/coflow-exporter-core/src/lib.rs").expect("read exporter");
 
     assert!(
-        exporter.contains("CftSchemaView::new(schema)"),
-        "exporter core schema traversal should be built from coflow-cft CftSchemaView"
+        exporter.contains("schema: &CftSchemaView"),
+        "exporter core schema traversal should receive coflow-cft CftSchemaView"
     );
     for forbidden in [
+        "CftContainer",
         "schema.all_types()",
         "schema.all_enums()",
         "schema.resolve_type(",

@@ -8,7 +8,7 @@ use coflow_api::{
     CodegenContext, Diagnostic, DiagnosticSet, ExportContext, Label, OutputSpec, ProviderRegistry,
     Severity, SourceLocation,
 };
-use coflow_cft::CftContainer;
+use coflow_cft::{CftContainer, CftSchemaView};
 use coflow_data_model::CfdDataModel;
 use coflow_project::{OutputConfig, Project};
 use serde::Serialize;
@@ -57,7 +57,14 @@ pub fn stage_data_tables(
         dir: dir.to_path_buf(),
         options: output_options(output_config),
     };
-    let artifacts = exporter.export(ExportContext { schema, model }, &output)?;
+    let schema_view = CftSchemaView::new(schema);
+    let artifacts = exporter.export(
+        ExportContext {
+            schema: &schema_view,
+            model,
+        },
+        &output,
+    )?;
     stage_artifact_set(dir, artifacts)
 }
 

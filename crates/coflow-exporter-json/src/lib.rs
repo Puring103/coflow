@@ -21,7 +21,7 @@ use coflow_api::{
     ArtifactContentKind, ArtifactFile, ArtifactSet, DataExporter, Diagnostic, DiagnosticSet,
     ExportContext, ExporterDescriptor, OutputSpec,
 };
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchemaView;
 use coflow_data_model::CfdDataModel;
 use coflow_exporter_core::{export_model_with_encoder, ExportEncoder, ExportError};
 use serde_json::{Map, Number, Value};
@@ -64,10 +64,10 @@ impl From<ExportError> for JsonExportError {
 /// # Errors
 ///
 /// Returns an error when a model record or field cannot be matched back to the
-/// compiled schema. A `CfdDataModel` built from the same `CftContainer` should
+/// compiled schema. A `CfdDataModel` built from the same schema should
 /// not hit these errors.
 pub fn export_json_model(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, Value>, JsonExportError> {
     export_model_with_encoder(schema, model, &mut JsonEncoder).map_err(JsonExportError::from)

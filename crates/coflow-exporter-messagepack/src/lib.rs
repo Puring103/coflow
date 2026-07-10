@@ -21,7 +21,7 @@ use coflow_api::{
     ArtifactContentKind, ArtifactFile, ArtifactSet, DataExporter, Diagnostic, DiagnosticSet,
     ExportContext, ExporterDescriptor, OutputSpec,
 };
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchemaView;
 use coflow_data_model::CfdDataModel;
 use coflow_exporter_core::{export_model_with_encoder, ExportEncoder, ExportError};
 use std::collections::BTreeMap;
@@ -66,7 +66,7 @@ impl From<ExportError> for MessagePackExportError {
 /// Returns an error when a model record or field cannot be matched back to the
 /// compiled schema, or when a value cannot be encoded as `MessagePack`.
 pub fn export_messagepack_model(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, Vec<u8>>, MessagePackExportError> {
     export_model_with_encoder(schema, model, &mut MessagePackEncoder)

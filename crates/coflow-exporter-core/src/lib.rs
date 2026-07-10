@@ -20,7 +20,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use coflow_cft::{CftContainer, CftFieldMeta, CftSchemaTypeRef, CftSchemaView};
+use coflow_cft::{CftFieldMeta, CftSchemaTypeRef, CftSchemaView};
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdObject, CfdRecord, CfdTable, CfdValue};
 
 /// Constructs output values for a concrete export format.
@@ -113,7 +113,7 @@ impl std::error::Error for ExportError {}
 /// Returns an error when a model record or field cannot be matched back to the
 /// compiled schema, or when the encoder rejects a value.
 pub fn export_model_with_encoder<E>(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     model: &CfdDataModel,
     encoder: &mut E,
 ) -> Result<BTreeMap<String, E::Value>, ExportError>
@@ -124,7 +124,7 @@ where
 }
 
 struct Exporter<'a, E> {
-    schema: CftSchemaView,
+    schema: &'a CftSchemaView,
     model: &'a CfdDataModel,
     encoder: &'a mut E,
 }
@@ -133,9 +133,9 @@ impl<'a, E> Exporter<'a, E>
 where
     E: ExportEncoder,
 {
-    fn new(schema: &'a CftContainer, model: &'a CfdDataModel, encoder: &'a mut E) -> Self {
+    fn new(schema: &'a CftSchemaView, model: &'a CfdDataModel, encoder: &'a mut E) -> Self {
         Self {
-            schema: CftSchemaView::new(schema),
+            schema,
             model,
             encoder,
         }
