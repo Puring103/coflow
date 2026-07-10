@@ -5,9 +5,9 @@ use coflow_api::{
     SourceProviderSelectionError, SourceResolveContext,
 };
 use coflow_cft::CftSchemaView;
-use coflow_checker::run_checks_for_dimensions;
+use coflow_checker::{run_checks_for_dimensions, DimensionCheckPlan, DimensionCheckRound};
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId};
-use coflow_project::{path_to_slash, Project, SourceConfig};
+use coflow_project::{path_to_slash, DimensionConfig, Project, SourceConfig};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -253,7 +253,8 @@ fn run_project_checks(
     model: &CfdDataModel,
     origins: &[RecordOrigin],
 ) -> CheckOutput {
-    let check_result = run_checks_for_dimensions(schema, model, &project.config.dimensions);
+    let plan = dimension_check_plan(&project.config.dimensions);
+    let check_result = run_checks_for_dimensions(schema, model, &plan);
     let (diagnostics, logical_locations) = if let Err(checks) = check_result {
         let logical_locations = logical_locations_from_cfd(&checks, |id| {
             model
@@ -269,6 +270,17 @@ fn run_project_checks(
         diagnostics,
         logical_locations,
     }
+}
+
+fn dimension_check_plan(
+    dimensions: &BTreeMap<String, DimensionConfig>,
+) -> DimensionCheckPlan {
+    DimensionCheckPlan::new(dimensions.iter().flat_map(|(dimension, config)| {
+        config
+            .variants
+            .iter()
+            .map(|variant| DimensionCheckRound::new(dimension.clone(), variant.clone()))
+    }))
 }
 
 fn resolve_sources(

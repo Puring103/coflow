@@ -35,7 +35,6 @@ mod check;
 use check::CheckRunner;
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdRecordId};
-use coflow_project::DimensionConfig;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +52,54 @@ pub fn run_checks(schema: &CftContainer, model: &CfdDataModel) -> Result<(), Cfd
     CheckRunner::new(schema, model).run()
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DimensionCheckPlan {
+    rounds: Vec<DimensionCheckRound>,
+}
+
+impl DimensionCheckPlan {
+    #[must_use]
+    pub fn new(rounds: impl IntoIterator<Item = DimensionCheckRound>) -> Self {
+        Self {
+            rounds: rounds.into_iter().collect(),
+        }
+    }
+
+    #[must_use]
+    pub fn from_variants(
+        dimension: impl Into<String>,
+        variants: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        let dimension = dimension.into();
+        Self::new(
+            variants
+                .into_iter()
+                .map(|variant| DimensionCheckRound::new(dimension.clone(), variant)),
+        )
+    }
+
+    #[must_use]
+    pub fn rounds(&self) -> &[DimensionCheckRound] {
+        &self.rounds
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DimensionCheckRound {
+    pub dimension: String,
+    pub variant: String,
+}
+
+impl DimensionCheckRound {
+    #[must_use]
+    pub fn new(dimension: impl Into<String>, variant: impl Into<String>) -> Self {
+        Self {
+            dimension: dimension.into(),
+            variant: variant.into(),
+        }
+    }
+}
+
 /// Runs `check` blocks for the default data plus every configured dimension
 /// variant.
 ///
@@ -63,21 +110,19 @@ pub fn run_checks(schema: &CftContainer, model: &CfdDataModel) -> Result<(), Cfd
 pub fn run_checks_for_dimensions(
     schema: &CftContainer,
     model: &CfdDataModel,
-    dimensions: &BTreeMap<String, DimensionConfig>,
+    plan: &DimensionCheckPlan,
 ) -> Result<(), CfdDiagnostics> {
     let mut all = Vec::new();
     if let Err(diagnostics) = run_checks(schema, model) {
         all.extend(diagnostics.diagnostics);
     }
-    for (dimension, config) in dimensions {
-        for variant in &config.variants {
-            let context = DimensionCheckContext {
-                dimension: dimension.clone(),
-                variant: Some(variant.clone()),
-            };
-            let runner = CheckRunner::with_dimension_context(schema, model, context);
-            push_dimension_diagnostics(&mut all, dimension, variant, runner.run());
-        }
+    for round in plan.rounds() {
+        let context = DimensionCheckContext {
+            dimension: round.dimension.clone(),
+            variant: Some(round.variant.clone()),
+        };
+        let runner = CheckRunner::with_dimension_context(schema, model, context);
+        push_dimension_diagnostics(&mut all, &round.dimension, &round.variant, runner.run());
     }
     diagnostics_result(all)
 }
@@ -92,24 +137,22 @@ pub fn run_checks_for_dimensions(
 pub fn run_checks_for_dimensions_with_deps(
     schema: &CftContainer,
     model: &CfdDataModel,
-    dimensions: &BTreeMap<String, DimensionConfig>,
+    plan: &DimensionCheckPlan,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
     let mut all = Vec::new();
     let (default_result, mut graph) = run_checks_with_deps(schema, model);
     if let Err(diagnostics) = default_result {
         all.extend(diagnostics.diagnostics);
     }
-    for (dimension, config) in dimensions {
-        for variant in &config.variants {
-            let context = DimensionCheckContext {
-                dimension: dimension.clone(),
-                variant: Some(variant.clone()),
-            };
-            let runner = CheckRunner::with_dimension_context(schema, model, context);
-            let (result, variant_graph) = runner.run_with_deps();
-            merge_dependency_graph(&mut graph, variant_graph);
-            push_dimension_diagnostics(&mut all, dimension, variant, result);
-        }
+    for round in plan.rounds() {
+        let context = DimensionCheckContext {
+            dimension: round.dimension.clone(),
+            variant: Some(round.variant.clone()),
+        };
+        let runner = CheckRunner::with_dimension_context(schema, model, context);
+        let (result, variant_graph) = runner.run_with_deps();
+        merge_dependency_graph(&mut graph, variant_graph);
+        push_dimension_diagnostics(&mut all, &round.dimension, &round.variant, result);
     }
     (diagnostics_result(all), graph)
 }

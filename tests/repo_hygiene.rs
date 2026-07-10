@@ -84,6 +84,30 @@ fn provider_shared_algorithms_do_not_live_in_coflow_api() {
 }
 
 #[test]
+fn checker_does_not_depend_on_project_config() {
+    let manifest = std::fs::read_to_string("crates/coflow-checker/Cargo.toml")
+        .expect("read checker manifest");
+    let checker = std::fs::read_to_string("crates/coflow-checker/src/lib.rs")
+        .expect("read checker source");
+
+    assert!(
+        !manifest.contains("coflow-project"),
+        "coflow-checker should accept a check plan, not depend on project config"
+    );
+    for forbidden in ["coflow_project", "DimensionConfig"] {
+        assert!(
+            !checker.contains(forbidden),
+            "coflow-checker should not know project config item `{forbidden}`"
+        );
+    }
+    assert!(
+        checker.contains("pub struct DimensionCheckPlan")
+            && checker.contains("pub struct DimensionCheckRound"),
+        "coflow-checker should expose its own dimension check plan interface"
+    );
+}
+
+#[test]
 fn api_registry_is_split_by_responsibility() {
     let registry =
         std::fs::read_to_string("crates/coflow-api/src/registry.rs").expect("read API registry");

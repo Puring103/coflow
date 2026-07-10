@@ -3,9 +3,9 @@
 mod common;
 use common::*;
 
-use coflow_checker::{run_checks, run_checks_for_dimensions, run_checks_for_dimensions_with_deps};
-use coflow_project::DimensionConfig;
-use std::collections::BTreeMap;
+use coflow_checker::{
+    run_checks, run_checks_for_dimensions, run_checks_for_dimensions_with_deps, DimensionCheckPlan,
+};
 
 fn build_simple_model(schema: &CftContainer) -> CfdDataModel {
     let mut builder = CfdDataModel::builder(schema);
@@ -451,15 +451,15 @@ fn dimension_dependency_graph_includes_variant_records() {
     );
 }
 
-fn language_dimensions() -> BTreeMap<String, DimensionConfig> {
-    BTreeMap::from([(
-        "language".to_string(),
-        DimensionConfig {
-            variants: vec!["zh".to_string(), "en".to_string()],
-            out_dir: None,
-            display_name: None,
-        },
-    )])
+fn language_dimensions() -> DimensionCheckPlan {
+    dimension_plan("language", ["zh", "en"])
+}
+
+fn dimension_plan(
+    dimension: impl Into<String>,
+    variants: impl IntoIterator<Item = impl Into<String>>,
+) -> DimensionCheckPlan {
+    DimensionCheckPlan::from_variants(dimension, variants)
 }
 
 #[test]
@@ -474,7 +474,8 @@ fn empty_dimensions_map_runs_default_round() {
         "#,
     );
     let model = build_simple_model(&schema);
-    run_checks_for_dimensions(&schema, &model, &BTreeMap::new()).expect("default round passes");
+    run_checks_for_dimensions(&schema, &model, &DimensionCheckPlan::default())
+        .expect("default round passes");
 }
 
 #[test]
@@ -516,14 +517,7 @@ fn unknown_dimensions_are_accepted_but_do_not_run_extra_check_rounds() {
         [("name", CfdInputValue::from(""))],
     ));
     let model = builder.build().expect("model builds");
-    let dimensions = BTreeMap::from([(
-        "platform".to_string(),
-        DimensionConfig {
-            variants: vec!["pc".to_string(), "mobile".to_string()],
-            out_dir: None,
-            display_name: None,
-        },
-    )]);
+    let dimensions = dimension_plan("platform", ["pc", "mobile"]);
 
     let err = run_checks_for_dimensions(&schema, &model, &dimensions)
         .expect_err("default check still fails once");
@@ -570,14 +564,7 @@ fn variant_rounds_run_for_every_configured_dimension() {
         ],
     ));
     let model = builder.build().expect("model builds");
-    let dimensions = BTreeMap::from([(
-        "platform".to_string(),
-        DimensionConfig {
-            variants: vec!["pc".to_string(), "mobile".to_string()],
-            out_dir: None,
-            display_name: None,
-        },
-    )]);
+    let dimensions = dimension_plan("platform", ["pc", "mobile"]);
 
     let err = run_checks_for_dimensions(&schema, &model, &dimensions)
         .expect_err("empty pc variant should fail check");
