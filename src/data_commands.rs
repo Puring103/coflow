@@ -352,16 +352,19 @@ fn duplicate_table_column_diagnostics(diagnostics: &DiagnosticSet) -> Diagnostic
         diagnostics: diagnostics
             .diagnostics
             .iter()
-            .filter(|diagnostic| {
-                diagnostic.code == "TABLE-COLUMN"
-                    && diagnostic.stage == "TABLE"
-                    && (diagnostic.message.contains("appears more than once")
-                        || diagnostic.message.contains("is mapped by both")
-                        || diagnostic.message.contains("mapped more than once"))
-            })
+            .filter(|diagnostic| is_duplicate_table_column_code(&diagnostic.code))
             .cloned()
             .collect(),
     }
+}
+
+fn is_duplicate_table_column_code(code: &str) -> bool {
+    matches!(
+        code,
+        "TABLE-COLUMN-DUPLICATE-FIELD"
+            | "TABLE-COLUMN-DUPLICATE-HEADER"
+            | "TABLE-COLUMN-DUPLICATE-KEY"
+    )
 }
 
 /// Writes a configured local CFD data file from stdin.

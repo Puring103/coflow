@@ -148,7 +148,7 @@
 | `EXCEL-OPEN` | `EXCEL` | workbook 无法打开 |
 | `EXCEL-SHEET` | `EXCEL` | sheet 不存在、为空或无法读取 |
 | `EXCEL-TYPE` | `EXCEL` | sheet 映射到未知 CFT type |
-| `EXCEL-COLUMN` | `EXCEL` | 表头映射错误，例如未知字段、重复字段、`@expand` 相邻列不合法 |
+| `EXCEL-COLUMN` | `EXCEL` | 表头映射错误，例如未知字段、缺失字段、`@expand` 相邻列不合法 |
 | `EXCEL-ID` | `EXCEL` | key 列缺失、key 为空或 key 非法 |
 | `EXCEL-CELL` | `EXCEL` | 不支持的 Excel 原生单元格值或结构，例如 formula、merged cell、error、date/time、duration |
 | `EXCEL-WRITE` | `EXCEL` | Excel writer 写回失败 |
@@ -162,7 +162,7 @@
 | `CSV-PARSE` | `CSV` | CSV 内容解析失败 |
 | `CSV-SHEET` | `CSV` | CSV 表格映射失败 |
 | `CSV-TYPE` | `CSV` | CSV source 映射到未知 CFT type |
-| `CSV-COLUMN` | `CSV` | 表头映射错误，例如未知字段、重复字段、`@expand` 相邻列不合法 |
+| `CSV-COLUMN` | `CSV` | 表头映射错误，例如未知字段、缺失字段、`@expand` 相邻列不合法 |
 | `CSV-ID` | `CSV` | key 列缺失、key 为空或 key 非法 |
 | `CSV-WRITE` | `CSV` | CSV writer 写回失败 |
 | `CSV-DIMENSION` | `CSV` | CSV 维度文件生成/同步失败，例如维度表存在重复或未管理的 id |
@@ -176,7 +176,10 @@ provider 专属阶段；需要跨 provider 保持稳定语义的诊断会保留 
 | --- | --- | --- |
 | `TABLE-SHEET` | `TABLE` | sheet/table 缺失或为空 |
 | `TABLE-TYPE` | `TABLE` | sheet/table 映射到未知 CFT type |
-| `TABLE-COLUMN` | `TABLE` | 表头映射错误，例如未知字段、重复字段、重复表头或 `@expand` 相邻列不合法 |
+| `TABLE-COLUMN` | `TABLE` | 表头映射错误，例如未知字段、缺失字段或 `@expand` 相邻列不合法 |
+| `TABLE-COLUMN-DUPLICATE-FIELD` | `TABLE` | 多个表头映射到同一个字段 |
+| `TABLE-COLUMN-DUPLICATE-HEADER` | `TABLE` | 同一个 sheet/table 出现重复表头 |
+| `TABLE-COLUMN-DUPLICATE-KEY` | `TABLE` | key 列被重复映射 |
 | `TABLE-ID` | `TABLE` | key 列缺失、key 为空或 key 非法 |
 | `TABLE-WRITE` | `TABLE` | 共享表格 writer 无法渲染或定位要写入的单元格 |
 | `TABLE-UNSUPPORTED` | `TABLE` | 当前 table manager 不支持创建表或同步表头等操作 |

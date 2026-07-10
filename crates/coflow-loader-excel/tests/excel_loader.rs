@@ -1365,7 +1365,7 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
     let Err(err) = build_model_from_excel_records(&schema, &[duplicate_source]) else {
         return Err("expected duplicate mapped column error".to_string());
     };
-    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "TABLE-COLUMN")?;
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "TABLE-COLUMN-DUPLICATE-KEY")?;
     assert!(diagnostic.message.contains("key column `id`"));
     let location = &diagnostic
         .primary
@@ -1414,7 +1414,7 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
         .diagnostics
         .iter()
         .find(|diag| {
-            diag.code == "TABLE-COLUMN"
+            diag.code == "TABLE-COLUMN-DUPLICATE-HEADER"
                 && diag
                     .message
                     .contains("column header `level` appears more than once")

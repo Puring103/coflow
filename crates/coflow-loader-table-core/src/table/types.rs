@@ -188,10 +188,10 @@ impl TableDiagnosticKind {
             Self::UnknownType => "TABLE-TYPE",
             Self::UnknownColumn
             | Self::MissingColumn
-            | Self::DuplicateFieldColumn
-            | Self::DuplicateHeaderColumn
-            | Self::DuplicateKeyColumn
             | Self::UnexpectedExpandHeader => "TABLE-COLUMN",
+            Self::DuplicateFieldColumn => "TABLE-COLUMN-DUPLICATE-FIELD",
+            Self::DuplicateHeaderColumn => "TABLE-COLUMN-DUPLICATE-HEADER",
+            Self::DuplicateKeyColumn => "TABLE-COLUMN-DUPLICATE-KEY",
             Self::MissingKeyColumn | Self::EmptyIdCell | Self::InvalidIdCell => "TABLE-ID",
             Self::CellParse | Self::DataModel | Self::Uncategorized => "",
         }

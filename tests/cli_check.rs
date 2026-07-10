@@ -176,7 +176,7 @@ outputs:
     let diagnostic = diagnostics
         .iter()
         .find(|diagnostic| {
-            diagnostic["code"] == "TABLE-COLUMN"
+            diagnostic["code"] == "TABLE-COLUMN-DUPLICATE-HEADER"
                 && diagnostic["message"]
                     .as_str()
                     .is_some_and(|message| {
@@ -239,7 +239,7 @@ outputs:
     let diagnostic = diagnostics
         .iter()
         .find(|diagnostic| {
-            diagnostic["code"] == "TABLE-COLUMN"
+            diagnostic["code"] == "TABLE-COLUMN-DUPLICATE-KEY"
                 && diagnostic["message"].as_str().is_some_and(|message| {
                     message.contains("key column `id`")
                         || message.contains("field `id` is mapped by both")

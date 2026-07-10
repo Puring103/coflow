@@ -1593,7 +1593,7 @@ fn data_sync_header_rejects_duplicate_csv_headers_without_writing() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        output_text.contains(r#""code":"TABLE-COLUMN""#)
+        output_text.contains(r#""code":"TABLE-COLUMN-DUPLICATE-HEADER""#)
             && output_text.contains(r#""stage":"TABLE""#),
         "output: {output_text}"
     );
@@ -1669,7 +1669,7 @@ fn data_sync_header_rejects_duplicate_excel_headers_without_writing() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        output_text.contains(r#""code":"TABLE-COLUMN""#)
+        output_text.contains(r#""code":"TABLE-COLUMN-DUPLICATE-HEADER""#)
             && output_text.contains(r#""stage":"TABLE""#),
         "output: {output_text}"
     );
