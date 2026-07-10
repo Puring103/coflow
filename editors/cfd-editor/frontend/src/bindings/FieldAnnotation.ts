@@ -38,4 +38,11 @@ read_only: boolean,
  * new element or when the collection is empty. `None` for non-collection
  * fields.
  */
-item_annotation: FieldAnnotation | null, children: { [key in string]?: FieldAnnotation }, };
+item_annotation: FieldAnnotation | null, 
+/**
+ * Concrete types that could occupy this field when the declared type is
+ * an abstract object. Empty for non-polymorphic fields. The editor uses
+ * this to expose a type-switch control on object cells and to prompt for
+ * a concrete type when materializing a null polymorphic field.
+ */
+polymorphic_types: Array<string>, children: { [key in string]?: FieldAnnotation }, };

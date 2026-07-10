@@ -235,6 +235,7 @@ fn annotation_for_value(
         annotation.ref_target_type = ref_target_type(ty).map(str::to_string);
         annotation.enum_type = enum_type_name(ty, &ctx.session.schema).map(str::to_string);
         annotation.nullable = matches!(ty, CftSchemaTypeRef::Nullable(_));
+        annotation.polymorphic_types = polymorphic_types_for(ty, &ctx.schema);
         // Preload the element template when the declared type is a
         // collection. Filled here (not only in the Array/Dict arms below) so
         // a nullable / empty collection still carries the template the
@@ -318,6 +319,7 @@ fn element_template(
         ref_target_type: ref_target_type(item_type).map(str::to_string),
         enum_type: enum_type_name(item_type, &ctx.session.schema).map(str::to_string),
         nullable: matches!(item_type, CftSchemaTypeRef::Nullable(_)),
+        polymorphic_types: polymorphic_types_for(item_type, &ctx.schema),
         ..FieldAnnotation::default()
     };
     if let Some(inner) =
@@ -387,6 +389,31 @@ fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
         CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
         _ => ty,
     }
+}
+
+/// Concrete types the editor may materialize into a polymorphic field.
+///
+/// Non-empty only when the declared type resolves to an abstract Named type
+/// with at least two concrete descendants — a single-concrete case can't be
+/// "switched" so we save the wire bytes and skip. Ref / enum / collection
+/// / non-abstract object all return empty.
+fn polymorphic_types_for(ty: &CftSchemaTypeRef, schema: &CftSchemaView) -> Vec<String> {
+    let CftSchemaTypeRef::Named(name) = non_nullable(ty) else {
+        return Vec::new();
+    };
+    let Some(meta) = schema.type_meta(name) else {
+        return Vec::new();
+    };
+    if !meta.is_abstract {
+        return Vec::new();
+    }
+    let concrete = schema
+        .concrete_assignable_types(name)
+        .unwrap_or_default();
+    if concrete.len() < 2 {
+        return Vec::new();
+    }
+    concrete
 }
 
 fn spread_info_for_source(

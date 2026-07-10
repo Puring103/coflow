@@ -220,6 +220,7 @@ function annotationForDraft(field: CreateRecordFieldDraft): FieldAnnotation | nu
     nullable: base?.nullable ?? false,
     read_only: base?.read_only ?? false,
     item_annotation: base?.item_annotation ?? null,
+    polymorphic_types: base?.polymorphic_types ?? [],
     children: base?.children ?? {},
   }
 }

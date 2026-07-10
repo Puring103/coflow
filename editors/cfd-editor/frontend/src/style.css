@@ -755,6 +755,32 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 .th-sort-btn:disabled { cursor: default; }
 .th-sort-btn:hover:not(:disabled) { color: var(--text); }
+.th-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.th-label-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-label-type {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-mute);
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
 .th-sort-icon { opacity: 0.7; }
 .th-sort-icon.asc { transform: rotate(180deg); }
 .th-resizer {
@@ -1503,6 +1529,78 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .dc-row-empty .dc-row-label {
   color: var(--text-mute);
   font-style: italic;
+}
+
+/* Declared-type chip next to a top-level field name. Small mono label
+ * that reads as annotation rather than a value. */
+.dc-row-type {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-mute);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+/* Trailing controls for nullable / polymorphic fields. Sit right of the
+ * value; each button is a small square icon so multiple can fit inline. */
+.dc-null-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.dc-null-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-mute);
+  cursor: pointer;
+  transition: color 80ms, background 80ms, border-color 80ms;
+}
+.dc-null-btn:hover {
+  color: var(--text);
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+}
+.dc-null-btn-clear:hover {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 50%, var(--border-strong));
+}
+.dc-null-btn-create:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+}
+.dc-type-switcher {
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  outline: none;
+}
+.dc-type-switcher:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.dc-type-switcher:focus-visible {
+  border-color: var(--accent);
 }
 
 /* ─── Expandable cell (TableView) ─── */

@@ -265,6 +265,12 @@ pub struct FieldAnnotation {
     /// fields.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_annotation: Option<Box<Self>>,
+    /// Concrete types that could occupy this field when the declared type is
+    /// an abstract object. Empty for non-polymorphic fields. The editor uses
+    /// this to expose a type-switch control on object cells and to prompt for
+    /// a concrete type when materializing a null polymorphic field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub polymorphic_types: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub children: BTreeMap<String, Self>,
 }
@@ -281,6 +287,7 @@ impl FieldAnnotation {
             && !self.nullable
             && !self.read_only
             && self.item_annotation.is_none()
+            && self.polymorphic_types.is_empty()
             && self.children.is_empty()
     }
 }

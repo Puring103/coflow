@@ -129,6 +129,23 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     [data.columns, activeType]
   )
 
+  // Declared schema type per column, sampled from the first record that
+  // carries an annotation for this field. Different records normally
+  // agree on the declared type for a shared field name; if they don't
+  // (e.g. a rename mid-migration) we show whatever we saw first.
+  const columnDeclaredTypes = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const name of allFieldNames) {
+      for (const record of data.records) {
+        if (recordActualType(record) !== activeType) continue
+        const cell = fieldCell(record, name)
+        const declared = cell?.annotation?.declared_type
+        if (declared) { map[name] = declared; break }
+      }
+    }
+    return map
+  }, [allFieldNames, data.records, activeType])
+
   const columnSizeHints = useMemo(() => {
     // Measure the actual pixel width of every cell in this file/type via a
     // shared 2D canvas so CJK, punctuation, and full-length string summaries
@@ -162,15 +179,18 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       const isPill = kind !== null
       const chrome = (isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME) + BADGE_ROOM
       let maxContent = 0
+      let declaredForHeader: string | undefined
       for (const record of data.records) {
         if (recordActualType(record) !== activeType) continue
         const cell = fieldCell(record, column.name)
         if (!cell) continue
         const w = measure(valueSummary(cell.value))
         if (w > maxContent) maxContent = w
+        if (!declaredForHeader) declaredForHeader = cell.annotation?.declared_type ?? undefined
       }
       const summaryWidth = maxContent + chrome
-      const headerWidth = measure(column.name) + PLAIN_CHROME + 12 /* sort caret */
+      const typeChipWidth = declaredForHeader ? measureMono(declaredForHeader) + 16 : 0
+      const headerWidth = measure(column.name) + PLAIN_CHROME + 12 /* sort caret */ + typeChipWidth
       hints[column.name] = Math.min(VALUE_MAX, Math.max(MIN, Math.ceil(Math.max(summaryWidth, headerWidth))))
     }
     return hints
@@ -206,10 +226,18 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         },
         size: columnSizeHints.key ?? 140,
       }),
-      ...allFieldNames.map(name =>
-        helper.display({
+      ...allFieldNames.map(name => {
+        const declared = columnDeclaredTypes[name]
+        return helper.display({
           id: name,
-          header: name,
+          header: () => (
+            <span className="th-label">
+              <span className="th-label-name">{name}</span>
+              {declared && (
+                <span className="th-label-type" title={`类型：${declared}`}>{declared}</span>
+              )}
+            </span>
+          ),
           size: columnSizeHints[name] ?? 120,
           cell: ({ row }) => {
             const f = fieldCell(row.original, name)
@@ -249,10 +277,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               </span>
             )
           },
-        }),
-      ),
+        })
+      }),
     ]
-  }, [allFieldNames, columnSizeHints, canEdit, canRename, onWriteField, onRenameRecord, cellDiagIndex, diagnostics, data.file_path, diagnostics, onDiagnosticBadgeClick])
+  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, canEdit, canRename, onWriteField, onRenameRecord, cellDiagIndex, diagnostics, data.file_path, diagnostics, onDiagnosticBadgeClick])
 
   // Global filter: match key or any scalar field value (via summaryOf).
   const globalFilterFn = useMemo(

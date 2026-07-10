@@ -22,6 +22,7 @@ import {
   annotationEnumType,
   annotationItem,
   annotationNullable,
+  annotationPolymorphicTypes,
   annotationRefTargetType,
   boolValue,
   cellDeclaredType,
@@ -45,7 +46,7 @@ import {
 import { Icon } from './Icon'
 import { DiagBadge } from './DiagBadge'
 import { typeColor, enumColor } from '../utils/typeColor'
-import { loadEnumVariants, loadRefTargets } from '../utils/editContext'
+import { buildDefaultObject, loadEnumVariants, loadRefTargets } from '../utils/editContext'
 
 export function CardHeader({
   recordKey,
@@ -537,6 +538,26 @@ function FieldRow({
   const nullCollectionShape = value.kind === 'null' ? collectionShapeFromDeclared(declaredType) : null
   const displayValue = nullCollectionShape ?? value
   const canExpand = (isComplex || nullCollectionShape !== null) && depth < MAX_DEPTH
+  const polyTypes = annotationPolymorphicTypes(valueAnnotation)
+
+  // Extra trailing controls for nullable / polymorphic fields. Enum and ref
+  // scalars already expose a "(null)" option in their pill selects, so we
+  // don't double up there. Bool doesn't get a clear button unless nullable.
+  const commit = onEdit ? (next: FieldValue) => onEdit(fieldPath, next) : undefined
+  const nullControls = !isSpread && commit ? (
+    <NullableControls
+      value={value}
+      nullable={!!nullable}
+      declaredType={declaredType}
+      enumType={enumType}
+      refTargetType={refTargetType}
+      polymorphicTypes={polyTypes}
+      onCommit={commit}
+    />
+  ) : null
+  const mergedTrailing = nullControls
+    ? <>{trailing}{nullControls}</>
+    : trailing
 
   if (canExpand) {
     return (
@@ -555,7 +576,7 @@ function FieldRow({
         pathKey={pathKey}
         onRowToggle={onRowToggle}
         leading={leading}
-        trailing={trailing}
+        trailing={mergedTrailing}
         dragProps={dragProps}
       />
     )
@@ -565,7 +586,7 @@ function FieldRow({
       label={label}
       value={value}
       depth={depth}
-      onCommit={onEdit ? next => onEdit(fieldPath, next) : undefined}
+      onCommit={commit}
       isSpread={isSpread}
       spreadInfo={spreadInfo}
       declaredType={declaredType}
@@ -574,10 +595,189 @@ function FieldRow({
       nullable={nullable}
       pathKey={pathKey}
       leading={leading}
-      trailing={trailing}
+      trailing={mergedTrailing}
       dragProps={dragProps}
     />
   )
+}
+
+function NullableControls({
+  value,
+  nullable,
+  declaredType,
+  enumType,
+  refTargetType,
+  polymorphicTypes,
+  onCommit,
+}: {
+  value: FieldValue
+  nullable: boolean
+  declaredType?: string
+  enumType?: string
+  refTargetType?: string
+  polymorphicTypes: string[]
+  onCommit: (next: FieldValue) => void
+}) {
+  const isNull = value.kind === 'null'
+  const isObject = value.kind === 'object'
+  const isPolymorphic = polymorphicTypes.length >= 2
+  const canSwitchType = isObject && isPolymorphic && !isNull
+  // Clear button on any nullable, currently non-null field — including enum
+  // and ref, whose own dropdowns hide the "(null)" option behind an extra
+  // click. A dedicated ✕ next to the value is faster.
+  const canClear = nullable && !isNull
+  // Create button on any null field where we can produce something useful:
+  // scalars/collections we materialize locally, refs/enums pull first option
+  // via the async helper, and abstract objects prompt for a concrete type.
+  const canCreate = isNull && (
+    defaultForKind(declaredType) !== null
+    || isPolymorphic
+    || !!enumType
+    || !!refTargetType
+    || !!declaredType
+  )
+
+  if (!canClear && !canCreate && !canSwitchType) return null
+
+  return (
+    <span className="dc-null-controls" onClick={e => e.stopPropagation()}>
+      {canSwitchType && (
+        <TypeSwitcher
+          currentType={value.kind === 'object' ? value.value.actual_type : ''}
+          polymorphicTypes={polymorphicTypes}
+          onSwitch={async chosen => {
+            if (!window.confirm(`切换类型将重置该字段的值，是否继续？`)) return
+            const next = await buildDefaultObject(chosen)
+            if (next) onCommit(next)
+          }}
+        />
+      )}
+      {canClear && (
+        <button
+          type="button"
+          className="dc-null-btn dc-null-btn-clear"
+          title="清除为 null"
+          aria-label="清除为 null"
+          onClick={() => onCommit(nullValue())}
+        >
+          <Icon name="close" size={11} />
+        </button>
+      )}
+      {canCreate && (
+        <button
+          type="button"
+          className="dc-null-btn dc-null-btn-create"
+          title="创建默认值"
+          aria-label="创建默认值"
+          onClick={async () => {
+            const next = await materializeDefault({
+              declaredType,
+              enumType,
+              refTargetType,
+              polymorphicTypes,
+            })
+            if (next) onCommit(next)
+          }}
+        >
+          <Icon name="plus" size={11} />
+        </button>
+      )}
+    </span>
+  )
+}
+
+function TypeSwitcher({
+  currentType,
+  polymorphicTypes,
+  onSwitch,
+}: {
+  currentType: string
+  polymorphicTypes: string[]
+  onSwitch: (chosen: string) => void
+}) {
+  return (
+    <select
+      className="dc-type-switcher"
+      value={currentType}
+      onChange={e => {
+        const next = e.target.value
+        if (next && next !== currentType) onSwitch(next)
+      }}
+      title="切换类型"
+      aria-label="切换类型"
+    >
+      {!polymorphicTypes.includes(currentType) && currentType && (
+        <option value={currentType}>{currentType}</option>
+      )}
+      {polymorphicTypes.map(t => (
+        <option key={t} value={t}>{t}</option>
+      ))}
+    </select>
+  )
+}
+
+/** Cheap same-shape default value for scalar fields. Returns null when the
+ *  declared type isn't recognizable or requires an async fetch (object). */
+function defaultForKind(declaredType?: string): FieldValue | null {
+  if (!declaredType) return null
+  const stripped = declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
+  switch (stripped) {
+    case 'string': return { kind: 'string', value: '' }
+    case 'int': return { kind: 'int', value: 0n }
+    case 'float': return { kind: 'float', value: 0 }
+    case 'bool': return { kind: 'bool', value: false }
+    default: {
+      if (stripped.startsWith('[') && stripped.endsWith(']')) return { kind: 'array', value: [] }
+      if (stripped.startsWith('{') && stripped.endsWith('}')) return { kind: 'dict', value: [] }
+      return null
+    }
+  }
+}
+
+/** Produce a starter value when the user asks to materialize a null field.
+ *  Scalars/collections are cheap and local; enums/refs pick the first option
+ *  the schema knows about; polymorphic objects prompt for a concrete type;
+ *  everything else falls through to the backend default builder. */
+async function materializeDefault({
+  declaredType,
+  enumType,
+  refTargetType,
+  polymorphicTypes,
+}: {
+  declaredType?: string
+  enumType?: string
+  refTargetType?: string
+  polymorphicTypes: string[]
+}): Promise<FieldValue | null> {
+  if (enumType) {
+    const variants = await loadEnumVariants(enumType)
+    if (variants.ok && variants.variants.length > 0) {
+      return enumValue(enumType, variants.variants[0], 0n)
+    }
+  }
+  if (refTargetType) {
+    const targets = await loadRefTargets(refTargetType)
+    if (targets.ok && targets.targets.length > 0) {
+      return refValue(targets.targets[0].coordinate.key)
+    }
+    // no known ref targets — commit an empty-key ref so the pill select opens
+    return refValue('')
+  }
+  const shallow = defaultForKind(declaredType)
+  if (shallow) return shallow
+  if (polymorphicTypes.length >= 2) {
+    const chosen = window.prompt(
+      `请选择要创建的类型（可选项：${polymorphicTypes.join(', ')}）`,
+      polymorphicTypes[0],
+    )
+    if (!chosen || !polymorphicTypes.includes(chosen)) return null
+    return buildDefaultObject(chosen)
+  }
+  if (declaredType) {
+    const stripped = declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
+    return buildDefaultObject(stripped)
+  }
+  return null
 }
 
 function ScalarFieldRow({
@@ -625,6 +825,9 @@ function ScalarFieldRow({
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 12 }}>
         {leading}
         <span className="dc-row-label-text">{label}</span>
+        {depth === 0 && declaredType && (
+          <span className="dc-row-type" title={`类型：${declaredType}`}>{declaredType}</span>
+        )}
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
@@ -1205,6 +1408,9 @@ function ExpandableRow({
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
           </span>
           <span className="dc-row-label-text">{label}</span>
+          {depth === 0 && declaredType && (
+            <span className="dc-row-type" title={`类型：${declaredType}`}>{declaredType}</span>
+          )}
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">

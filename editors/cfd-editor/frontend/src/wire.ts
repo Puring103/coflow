@@ -106,6 +106,10 @@ export function annotationItem(annotation: FieldAnnotation | null | undefined): 
   return annotation?.item_annotation ?? undefined
 }
 
+export function annotationPolymorphicTypes(annotation: FieldAnnotation | null | undefined): string[] {
+  return annotation?.polymorphic_types ?? []
+}
+
 export function cellEnumType(cell: FieldCell): string | undefined {
   return cell.annotation?.enum_type ?? undefined
 }
