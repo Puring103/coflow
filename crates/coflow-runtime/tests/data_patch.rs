@@ -682,6 +682,61 @@ fn create_record_draft_marks_required_refs_and_keeps_schema_defaults_separate() 
 }
 
 #[test]
+fn create_record_draft_field_errors_do_not_pollute_following_fields() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-create-draft-independent-fields-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item { name: string; }
+            type Child { item: &Item; }
+            type Parent {
+                first: Child;
+                second: Child;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"sword: Item { name: "Sword" }"#,
+    )
+    .expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (session, _) = session(&root);
+
+    let draft = session.create_record_draft("Parent").expect("create draft");
+    let first = draft
+        .fields
+        .iter()
+        .find(|field| field.name == "first")
+        .expect("first field");
+    let second = draft
+        .fields
+        .iter()
+        .find(|field| field.name == "second")
+        .expect("second field");
+    for field in [first, second] {
+        assert_eq!(field.source, CreateFieldSource::RequiredInput);
+        assert!(matches!(
+            field.required.as_ref(),
+            Some(CreateRequiredInput::Unsupported { message })
+                if message.contains("field `item` of type `&Item`")
+        ));
+    }
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn patch_insert_minimal_seeds_nullable_refs_and_required_enums_without_defaults() {
     let root = std::env::temp_dir().join(format!(
         "coflow-data-patch-minimal-nullable-enum-{}",

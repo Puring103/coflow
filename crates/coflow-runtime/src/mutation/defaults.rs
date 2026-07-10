@@ -65,10 +65,10 @@ pub(super) fn create_record_draft_for_type(
             format!("unknown type `{type_name}`"),
         ));
     };
-    let mut stack = BTreeSet::new();
-    stack.insert(type_name.to_string());
     let mut fields = Vec::new();
     for field in schema.full_fields(&schema_type.name).unwrap_or(&[]) {
+        let mut stack = BTreeSet::new();
+        stack.insert(type_name.to_string());
         fields.push(create_field_draft(&schema, field, &mut stack));
     }
     Ok(CreateRecordDraft {

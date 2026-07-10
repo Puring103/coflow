@@ -819,6 +819,11 @@ export function EnumDirectSelect({
       value={current}
       onChange={e => commit(e.target.value)}
     >
+      {(nullable || value.kind === 'null') && (
+        <option value={NULL_SENTINEL} disabled={!nullable}>
+          {nullable ? '(null)' : '选择枚举...'}
+        </option>
+      )}
       {value.kind === 'enum' && !variants.includes(current) && <option value={current}>{current}</option>}
       {variants.map(v => <option key={v} value={v}>{v}</option>)}
     </select>
