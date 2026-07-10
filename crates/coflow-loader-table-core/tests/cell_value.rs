@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputValue, CfdValue,
 };
@@ -30,7 +30,7 @@ fn compile_schema(source: &str) -> Result<CftContainer, String> {
 }
 
 fn parse_ok(schema: &CftContainer, declared_type: &str, text: &str) -> Result<ParsedCell, String> {
-    parse_cell(schema, declared_type, text)
+    parse_cell(&CftSchemaView::new(schema), declared_type, text)
         .map_err(|err| format!("expected `{text}` as `{declared_type}` to parse: {err:?}"))
 }
 
@@ -52,7 +52,7 @@ fn parse_err(
     declared_type: &str,
     text: &str,
 ) -> Result<CellValueDiagnostics, String> {
-    match parse_cell(schema, declared_type, text) {
+    match parse_cell(&CftSchemaView::new(schema), declared_type, text) {
         Ok(value) => Err(format!(
             "expected `{text}` as `{declared_type}` to fail, got {value:?}"
         )),

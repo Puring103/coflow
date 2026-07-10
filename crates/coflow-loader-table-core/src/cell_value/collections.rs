@@ -1,4 +1,4 @@
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdInputDictKey, CfdInputValue};
 
 use super::diagnostics::{missing_boundary, syntax, type_mismatch, CellValueDiagnostics};
@@ -8,7 +8,7 @@ use super::types::CellType;
 use super::{parse_enum, parse_value, ValueContext};
 
 pub(super) fn parse_array(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     inner: &CellType,
     text: &str,
     context: ValueContext,
@@ -43,7 +43,7 @@ fn reject_comma_array_item(inner: &CellType, item: &str) -> Result<(), CellValue
 }
 
 pub(super) fn parse_dict(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     key: &CellType,
     value: &CellType,
     text: &str,
@@ -74,7 +74,7 @@ pub(super) fn parse_dict(
 }
 
 fn parse_dict_key(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     key: &CellType,
     text: &str,
 ) -> Result<CfdInputDictKey, CellValueDiagnostics> {

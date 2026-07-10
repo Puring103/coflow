@@ -31,7 +31,9 @@ impl Parser<'_> {
             CftSchemaTypeRef::Float => self.parse_float(),
             CftSchemaTypeRef::Bool => self.parse_bool(),
             CftSchemaTypeRef::String => self.parse_string_value(),
-            CftSchemaTypeRef::Named(name) if self.schema.has_enum(name) => self.parse_enum(name),
+            CftSchemaTypeRef::Named(name) if self.schema.is_schema_enum(name) => {
+                self.parse_enum(name)
+            }
             CftSchemaTypeRef::Named(name) => self.parse_object_value(name),
             CftSchemaTypeRef::Ref(name) => self.parse_ref_value(name),
             CftSchemaTypeRef::Array(inner) => self.parse_array(inner),
@@ -100,7 +102,7 @@ impl Parser<'_> {
             .strip_prefix(enum_name)
             .and_then(|rest| rest.strip_prefix('.'))
             .map_or(raw.as_str(), |variant| variant);
-        let Some(schema_enum) = self.schema.resolve_enum(enum_name) else {
+        let Some(schema_enum) = self.schema.enum_meta(enum_name) else {
             return Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
                 CfdTextErrorCode::TypeMismatch,
                 format!("expected enum `{enum_name}`"),
@@ -108,7 +110,7 @@ impl Parser<'_> {
             )));
         };
         if schema_enum
-            .variants
+            .all_variants
             .iter()
             .any(|schema_variant| schema_variant.name == variant)
         {
@@ -217,7 +219,7 @@ impl Parser<'_> {
                 })?;
                 Ok(CfdInputDictKey::Int(value))
             }
-            CftSchemaTypeRef::Named(enum_name) if self.schema.has_enum(enum_name) => {
+            CftSchemaTypeRef::Named(enum_name) if self.schema.is_schema_enum(enum_name) => {
                 let CfdInputValue::EnumVariant { variant, .. } = self.parse_enum(enum_name)? else {
                     return Err(self.error(CfdTextErrorCode::TypeMismatch, "expected enum key"));
                 };

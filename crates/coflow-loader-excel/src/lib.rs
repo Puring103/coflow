@@ -203,6 +203,7 @@ mod tests {
     fn explicit_excel_loader_rejects_url_source() {
         let loader = ExcelLoader;
         let schema = CftContainer::new();
+        let schema_view = coflow_cft::CftSchemaView::new(&schema);
         let source = ResolvedSource {
             provider_id: EXCEL_LOADER_DESCRIPTOR.id.to_string(),
             location: SourceLocationSpec::Uri("https://example.test/configs.xlsx".to_string()),
@@ -213,7 +214,7 @@ mod tests {
         let Err(err) = loader.resolve(
             SourceResolveContext {
                 project_root: Path::new("."),
-                schema: &schema,
+                schema: &schema_view,
             },
             &source,
         ) else {

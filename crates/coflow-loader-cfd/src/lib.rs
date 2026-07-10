@@ -24,7 +24,7 @@ use coflow_api::{
 mod diagnostics;
 mod parser;
 pub mod writer;
-use coflow_cft::CftContainer;
+use coflow_cft::{CftContainer, CftSchemaView};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, RecordOrigin};
 use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
@@ -47,7 +47,8 @@ pub fn parse_cfd_input_records(
     schema: &CftContainer,
     source: &str,
 ) -> Result<Vec<CfdInputRecord>, CfdTextLoadError> {
-    parse_cfd_input_records_with_spans(schema, source).map(|records| {
+    let schema_view = CftSchemaView::new(schema);
+    parse_cfd_input_records_with_spans(&schema_view, source).map(|records| {
         records
             .into_iter()
             .map(|record| record.record)
@@ -56,7 +57,7 @@ pub fn parse_cfd_input_records(
 }
 
 fn parse_cfd_input_records_with_spans(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     source: &str,
 ) -> Result<Vec<ParsedCfdInputRecord>, CfdTextLoadError> {
     Parser::new(schema, source)

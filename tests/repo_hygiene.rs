@@ -89,6 +89,27 @@ fn provider_shared_algorithms_do_not_live_in_coflow_api() {
 }
 
 #[test]
+fn api_source_contexts_use_schema_view_not_full_container() {
+    let provider =
+        std::fs::read_to_string("crates/coflow-api/src/provider.rs").expect("read API provider");
+
+    assert!(
+        provider.contains("use coflow_cft::CftSchemaView;"),
+        "source provider contexts should depend on the schema query facade"
+    );
+    for forbidden in [
+        "use coflow_cft::CftContainer",
+        "pub schema: &'a CftContainer",
+        "pub schema: &'a mut CftContainer",
+    ] {
+        assert!(
+            !provider.contains(forbidden),
+            "source provider contexts should not expose full schema container `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn checker_does_not_depend_on_project_config() {
     let manifest = std::fs::read_to_string("crates/coflow-checker/Cargo.toml")
         .expect("read checker manifest");

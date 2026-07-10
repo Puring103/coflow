@@ -36,7 +36,7 @@ const SKIP_IMPORT_ROW_MARKER: &str = "##";
 /// according to the schema.
 #[allow(clippy::too_many_lines)]
 pub fn collect_table_input_records(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     sources: &[TableSource],
 ) -> Result<TableInputRecords, TableDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
@@ -226,8 +226,9 @@ pub fn resolve_table_write_layout(
     sheet: &TableSheetConfig,
     header_row: &[String],
 ) -> Result<TableWriteLayout, TableDiagnostics> {
+    let view = CftSchemaView::new(schema);
     let type_name = sheet.type_name();
-    let Some(fields) = full_field_types(schema, type_name) else {
+    let Some(fields) = full_field_types(&view, type_name) else {
         return Err(TableDiagnostics {
             diagnostics: table_load_error_diagnostics(TableLoadError::UnknownType {
                 location: Box::new(
@@ -238,7 +239,7 @@ pub fn resolve_table_write_layout(
         });
     };
     let resolved = resolve_columns(
-        schema,
+        &view,
         source_name,
         sheet,
         type_name,
@@ -338,7 +339,7 @@ pub fn map_label_to_table(label: &CfdLabel, origins: &[RecordOrigin]) -> Option<
 
 #[allow(clippy::too_many_arguments)]
 fn build_expanded_object(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     source_name: &Path,
     sheet: &TableSheetConfig,
     parent_type: &str,
@@ -381,9 +382,8 @@ fn build_expanded_object(
     }
 }
 
-fn full_field_types(schema: &CftContainer, type_name: &str) -> Option<BTreeMap<String, String>> {
-    let view = CftSchemaView::new(schema);
-    let fields = view
+fn full_field_types(schema: &CftSchemaView, type_name: &str) -> Option<BTreeMap<String, String>> {
+    let fields = schema
         .fields(type_name)?
         .map(|field| (field.name.clone(), field.raw_type.clone()))
         .collect();

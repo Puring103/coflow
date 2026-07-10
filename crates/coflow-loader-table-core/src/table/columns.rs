@@ -1,4 +1,4 @@
-use coflow_cft::{CftContainer, CftSchemaView};
+use coflow_cft::CftSchemaView;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -58,7 +58,7 @@ pub(super) fn field_columns_from_resolved(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn resolve_columns(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     source_name: &Path,
     sheet: &TableSheetConfig,
     type_name: &str,
@@ -103,7 +103,7 @@ struct ColumnResolution<'a> {
 impl<'a> ColumnResolution<'a> {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        schema: &CftContainer,
+        schema: &CftSchemaView,
         source_name: &'a Path,
         sheet: &'a TableSheetConfig,
         type_name: &'a str,
@@ -423,12 +423,11 @@ fn is_key_column(column_text: &str, field: &str, key_column: &str, has_explicit_
 }
 
 fn expand_field_index(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     type_name: &str,
 ) -> BTreeMap<String, BTreeMap<String, String>> {
     let mut out = BTreeMap::new();
-    let view = CftSchemaView::new(schema);
-    let Some(fields) = view.fields(type_name) else {
+    let Some(fields) = schema.fields(type_name) else {
         return out;
     };
     for field in fields {
@@ -439,7 +438,7 @@ fn expand_field_index(
         {
             continue;
         }
-        let Some(inner_fields) = view.fields(&field.raw_type) else {
+        let Some(inner_fields) = schema.fields(&field.raw_type) else {
             continue;
         };
         let inner_fields = inner_fields
@@ -451,12 +450,11 @@ fn expand_field_index(
 }
 
 fn expand_field_order_index(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     type_name: &str,
 ) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();
-    let view = CftSchemaView::new(schema);
-    let Some(fields) = view.fields(type_name) else {
+    let Some(fields) = schema.fields(type_name) else {
         return out;
     };
     for field in fields {
@@ -467,7 +465,7 @@ fn expand_field_order_index(
         {
             continue;
         }
-        let Some(inner_fields) = view.fields(&field.raw_type) else {
+        let Some(inner_fields) = schema.fields(&field.raw_type) else {
             continue;
         };
         let order = inner_fields.map(|inner| inner.name.clone()).collect();

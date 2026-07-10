@@ -2,7 +2,7 @@ mod lexer;
 mod schema;
 mod value;
 
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdInputRecord, CfdInputValue};
 
 use crate::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};
@@ -13,7 +13,7 @@ use schema::{
 };
 
 pub(super) struct Parser<'a> {
-    schema: &'a CftContainer,
+    schema: &'a CftSchemaView,
     source: &'a str,
     pos: usize,
 }
@@ -25,7 +25,7 @@ pub(super) struct ParsedCfdInputRecord {
 }
 
 impl<'a> Parser<'a> {
-    pub(super) fn new(schema: &'a CftContainer, source: &'a str) -> Self {
+    pub(super) fn new(schema: &'a CftSchemaView, source: &'a str) -> Self {
         Self {
             schema,
             source,

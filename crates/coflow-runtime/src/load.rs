@@ -68,11 +68,12 @@ pub(crate) fn load_project_data(
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
     let mut diagnostics = DiagnosticSet::empty();
+    let schema_view = CftSchemaView::new(schema);
 
     for source in &project.config.sources {
         let configured = configured_source(project, source);
-        let resolved_sources = match resolve_sources(project, schema, registry, source, &configured)
-        {
+        let resolved_sources =
+            match resolve_sources(project, &schema_view, registry, source, &configured) {
             Ok(resolved_sources) => resolved_sources,
             Err(err) => {
                 diagnostics.extend(err);
@@ -82,7 +83,7 @@ pub(crate) fn load_project_data(
 
         diagnostics.extend(load_resolved_sources(
             project,
-            schema,
+            &schema_view,
             sources,
             records_index,
             files,
@@ -92,11 +93,10 @@ pub(crate) fn load_project_data(
     }
 
     if options.include_implicit_dimension_sources {
-        let view = CftSchemaView::new(schema);
-        let dimension_fields = dimensions::dimension_fields(&view);
+        let dimension_fields = dimensions::dimension_fields(&schema_view);
         for configured in dimensions::dimension_sources(project, &dimension_fields) {
             let resolved_sources =
-                match resolve_implicit_source(project, schema, registry, &configured) {
+                match resolve_implicit_source(project, &schema_view, registry, &configured) {
                     Ok(resolved_sources) => resolved_sources,
                     Err(err) => {
                         diagnostics.extend(err);
@@ -105,7 +105,7 @@ pub(crate) fn load_project_data(
                 };
             diagnostics.extend(load_resolved_sources(
                 project,
-                schema,
+                &schema_view,
                 sources,
                 records_index,
                 files,
@@ -161,7 +161,7 @@ pub(crate) fn load_project_data(
 
 fn load_resolved_sources(
     project: &Project,
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     sources: &mut SourceIndex,
     records_index: &mut RecordIndex,
     files: &mut FileIndex,
@@ -218,7 +218,7 @@ fn load_resolved_sources(
 
 fn resolve_implicit_source(
     project: &Project,
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     registry: &ProviderRegistry,
     configured: &ResolvedSource,
 ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
@@ -287,7 +287,7 @@ fn dimension_check_plan(
 
 fn resolve_sources(
     project: &Project,
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     registry: &ProviderRegistry,
     source: &SourceConfig,
     configured: &ResolvedSource,

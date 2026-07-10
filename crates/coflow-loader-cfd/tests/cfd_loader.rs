@@ -10,7 +10,7 @@ use coflow_api::{
     ResolvedSource, SourceLoadContext, SourceLocation, SourceLocationSpec, SourceProvider,
     SourceResolveContext,
 };
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
 use coflow_data_model::CfdDataModel;
 use coflow_data_model::{CfdInputValue, CfdValue};
 use coflow_loader_cfd::{
@@ -553,6 +553,7 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
 #[test]
 fn explicit_cfd_loader_rejects_url_source() -> TestResult {
     let schema = CftContainer::new();
+    let schema_view = CftSchemaView::new(&schema);
     let source = ResolvedSource {
         provider_id: CFD_LOADER_DESCRIPTOR.id.to_string(),
         location: SourceLocationSpec::Uri("https://example.test/items.cfd".to_string()),
@@ -564,7 +565,7 @@ fn explicit_cfd_loader_rejects_url_source() -> TestResult {
         .resolve(
             SourceResolveContext {
                 project_root: Path::new("."),
-                schema: &schema,
+                schema: &schema_view,
             },
             &source,
         )
@@ -584,6 +585,7 @@ fn explicit_cfd_loader_rejects_url_source() -> TestResult {
 #[test]
 fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let schema = compile_schema("type Item { value: int; }");
+    let schema_view = CftSchemaView::new(&schema);
     let root = std::env::temp_dir().join("coflow-cfd-loader-origin-spans");
     if root.exists() {
         fs::remove_dir_all(&root)?;
@@ -600,7 +602,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
         .load(
             SourceLoadContext {
                 project_root: &root,
-                schema: &schema,
+                schema: &schema_view,
             },
             &ResolvedSource {
                 provider_id: "cfd".to_string(),

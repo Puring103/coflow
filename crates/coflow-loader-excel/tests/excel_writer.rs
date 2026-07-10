@@ -12,7 +12,7 @@ use coflow_api::{
     DeleteRecordRequest, InsertRecordRequest, ResolvedSource, SourceLocationSpec, SourceWriter,
     WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
-use coflow_cft::CftContainer;
+use coflow_cft::{CftContainer, CftSchemaView};
 use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdObject, CfdValue, RecordOrigin, SourceDocument,
 };
@@ -374,8 +374,9 @@ fn writes_expanded_object_fields_to_child_columns() {
         &path,
         vec![coflow_loader_excel::ExcelSheet::new("Terrain")],
     );
-    let loaded =
-        coflow_loader_excel::collect_input_records(&schema, &[source_def]).expect("load records");
+    let schema_view = CftSchemaView::new(&schema);
+    let loaded = coflow_loader_excel::collect_input_records(&schema_view, &[source_def])
+        .expect("load records");
     let origin = loaded.records[0].origin.clone();
     let new_value = expanded_env_value(6.0, 21.5, 0.75);
     let segments = vec![WriteFieldPathSegment::Field("env".to_string())];
@@ -524,8 +525,9 @@ fn inserts_record_row_and_loader_can_read_it() {
         path,
         vec![coflow_loader_excel::ExcelSheet::new("Items").with_type("Item")],
     );
-    let loaded =
-        coflow_loader_excel::collect_input_records(&schema, &[source_def]).expect("reload records");
+    let schema_view = CftSchemaView::new(&schema);
+    let loaded = coflow_loader_excel::collect_input_records(&schema_view, &[source_def])
+        .expect("reload records");
     assert!(loaded.records.iter().any(|record| record.key == "potion"));
 }
 

@@ -1,6 +1,6 @@
 #![allow(clippy::panic_in_result_fn)]
 
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdInputValue, CfdValue, RecordOrigin, SourceLocation, TextSpan,
 };
@@ -45,8 +45,8 @@ fn loads_table_source_with_excel_style_sheet_config() -> TestResult {
             .with_columns([("名称", "name"), ("稀有度", "rarity")])],
     );
 
-    let loaded =
-        collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let loaded = collect_table_input_records(&CftSchemaView::new(&schema), &[source])
+        .map_err(|err| format!("{err:?}"))?;
     assert_eq!(loaded.records.len(), 1);
     assert!(matches!(
         loaded.records[0].origin,
@@ -55,7 +55,7 @@ fn loads_table_source_with_excel_style_sheet_config() -> TestResult {
     assert_eq!(loaded.records[0].key, "sword_01");
 
     let loaded = collect_table_input_records(
-        &schema,
+        &CftSchemaView::new(&schema),
         &[TableSource::new(
             "remote:sht_test",
             vec![TableSheet::new(
@@ -117,8 +117,8 @@ fn recognizes_default_id_header_aliases_as_record_key_columns() -> TestResult {
             vec![TableSheetConfig::new("Item")],
         );
 
-        let loaded =
-            collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+        let loaded = collect_table_input_records(&CftSchemaView::new(&schema), &[source])
+            .map_err(|err| format!("{err:?}"))?;
 
         assert_eq!(loaded.records.len(), 1, "{header}");
         assert_eq!(loaded.records[0].key, key, "{header}");
@@ -147,8 +147,8 @@ fn maps_remote_table_data_model_diagnostics_to_remote_cells() -> TestResult {
             .with_columns([("名称", "name")])],
     );
 
-    let loaded =
-        collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let loaded = collect_table_input_records(&CftSchemaView::new(&schema), &[source])
+        .map_err(|err| format!("{err:?}"))?;
     let origins = loaded
         .records
         .iter()

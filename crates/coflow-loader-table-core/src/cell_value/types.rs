@@ -1,4 +1,4 @@
-use coflow_cft::{CftContainer, CftFieldMeta, CftSchemaView};
+use coflow_cft::{CftFieldMeta, CftSchemaView};
 
 use super::diagnostics::{
     invalid_declared_type, CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode,
@@ -19,7 +19,7 @@ pub(super) enum CellType {
 }
 
 impl CellType {
-    pub(super) fn parse(schema: &CftContainer, text: &str) -> Result<Self, CellValueDiagnostics> {
+    pub(super) fn parse(schema: &CftSchemaView, text: &str) -> Result<Self, CellValueDiagnostics> {
         let mut parser = TypeParser::new(schema, text);
         let ty = parser.parse_type()?;
         parser.skip_ws();
@@ -46,13 +46,13 @@ impl CellType {
 }
 
 struct TypeParser<'a> {
-    schema: &'a CftContainer,
+    schema: &'a CftSchemaView,
     text: &'a str,
     pos: usize,
 }
 
 impl<'a> TypeParser<'a> {
-    fn new(schema: &'a CftContainer, text: &'a str) -> Self {
+    fn new(schema: &'a CftSchemaView, text: &'a str) -> Self {
         Self {
             schema,
             text,
@@ -118,7 +118,7 @@ impl<'a> TypeParser<'a> {
             "float" => CellType::Float,
             "bool" => CellType::Bool,
             "string" => CellType::String,
-            other if self.schema.has_enum(other) => CellType::Enum(other.to_string()),
+            other if self.schema.is_schema_enum(other) => CellType::Enum(other.to_string()),
             other => CellType::Type(other.to_string()),
         })
     }
@@ -173,11 +173,10 @@ pub(super) struct FieldMeta {
 }
 
 pub(super) fn full_fields(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     type_name: &str,
 ) -> Result<Vec<FieldMeta>, CellValueDiagnostics> {
-    let view = CftSchemaView::new(schema);
-    let Some(fields) = view.fields(type_name) else {
+    let Some(fields) = schema.fields(type_name) else {
         return Err(CellValueDiagnostics {
             diagnostics: vec![CellValueDiagnostic {
                 code: CellValueErrorCode::UnknownType,
@@ -189,7 +188,7 @@ pub(super) fn full_fields(
 }
 
 fn field_meta(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     field: &CftFieldMeta,
 ) -> Result<FieldMeta, CellValueDiagnostics> {
     Ok(FieldMeta {

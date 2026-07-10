@@ -1,6 +1,4 @@
-use coflow_cft::{
-    record_key_ident_error, CftContainer, CftFieldMeta, CftSchemaTypeRef, CftSchemaView,
-};
+use coflow_cft::{record_key_ident_error, CftFieldMeta, CftSchemaTypeRef, CftSchemaView};
 use coflow_data_model::CfdInputValue;
 use std::collections::BTreeMap;
 
@@ -30,11 +28,11 @@ pub(super) fn validate_record_key(key: &str, pos: usize) -> Result<(), CfdTextDi
 }
 
 pub(super) fn validate_group_type(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     type_name: &str,
     pos: usize,
 ) -> Result<(), CfdTextDiagnostics> {
-    if schema.resolve_type(type_name).is_none() {
+    if !schema.has_type(type_name) {
         return Err(error_at(
             pos,
             CfdTextErrorCode::UnknownType,
@@ -45,11 +43,11 @@ pub(super) fn validate_group_type(
 }
 
 pub(super) fn validate_record_type(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     actual_type: &str,
     pos: usize,
 ) -> Result<(), CfdTextDiagnostics> {
-    let Some(schema_type) = schema.resolve_type(actual_type) else {
+    let Some(schema_type) = schema.type_meta(actual_type) else {
         return Err(error_at(
             pos,
             CfdTextErrorCode::UnknownType,
@@ -67,12 +65,12 @@ pub(super) fn validate_record_type(
 }
 
 pub(super) fn validate_actual_type(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     expected_type: &str,
     actual_type: &str,
     pos: usize,
 ) -> Result<(), CfdTextDiagnostics> {
-    let Some(schema_type) = schema.resolve_type(actual_type) else {
+    let Some(schema_type) = schema.type_meta(actual_type) else {
         return Err(error_at(
             pos,
             CfdTextErrorCode::UnknownType,
@@ -97,11 +95,10 @@ pub(super) fn validate_actual_type(
 }
 
 pub(super) fn full_fields(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     type_name: &str,
 ) -> Result<Vec<FieldMeta>, CfdTextDiagnostics> {
-    let view = CftSchemaView::new(schema);
-    let Some(fields) = view.fields(type_name) else {
+    let Some(fields) = schema.fields(type_name) else {
         return Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
             CfdTextErrorCode::UnknownType,
             format!("unknown type `{type_name}`"),
