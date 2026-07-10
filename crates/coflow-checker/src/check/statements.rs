@@ -68,7 +68,7 @@ fn eval_expr_stmt(evaluator: &mut CheckEvaluator<'_>, expr: &CftSchemaCheckExpr)
                 })
                 .with_context(&evaluator.contexts);
             let message = explanation.message();
-            evaluator.diag_at(explanation.code, explanation.path, message);
+            evaluator.diag_at_preformatted(explanation.code, explanation.path, message);
             EvalFlow::Continue
         }
         Ok((value, _)) => {
@@ -279,7 +279,7 @@ fn emit_any_failure(
     .with_actual(format!("0 / {} 个元素匹配", items.len()))
     .with_expected("至少 1 个元素满足")
     .with_context(&context);
-    evaluator.diag_at(
+    evaluator.diag_at_preformatted(
         explanation.code,
         explanation.path.clone(),
         explanation.message(),
@@ -306,6 +306,6 @@ fn emit_none_failures(
         .with_expected("没有元素满足")
         .with_context(&evaluator.contexts);
         let message = explanation.message();
-        evaluator.diag_at(explanation.code, explanation.path, message);
+        evaluator.diag_at_preformatted(explanation.code, explanation.path, message);
     }
 }

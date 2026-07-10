@@ -469,18 +469,25 @@ impl<'a> CheckEvaluator<'a> {
         path: Option<CfdPath>,
         message: impl Into<String>,
     ) {
+        let mut message = message.into();
+        for context in &self.contexts {
+            message.push_str("\n上下文: ");
+            message.push_str(context);
+        }
+        self.diag_at_preformatted(code, path, message);
+    }
+
+    pub(super) fn diag_at_preformatted(
+        &mut self,
+        code: CfdErrorCode,
+        path: Option<CfdPath>,
+        message: impl Into<String>,
+    ) {
         let path = match path {
             Some(path) => path,
             None => self.root_path.clone(),
         };
-        let mut message = message.into();
-        if !self.contexts.is_empty() && !message.contains("\n上下文: ") {
-            for context in &self.contexts {
-                message.push_str("\n上下文: ");
-                message.push_str(context);
-            }
-        }
         self.diagnostics
-            .push(CfdDiagnostic::error(code, message).with_primary(self.root_record, path));
+            .push(CfdDiagnostic::error(code, message.into()).with_primary(self.root_record, path));
     }
 }
