@@ -157,8 +157,9 @@ fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
         DataCommand::Patch(args) => data_commands::patch(
             args.config_or_dir.as_deref(),
             data_commands::DataPatchInput {
-                json: args.patch_json.clone(),
-                file: args.patch_file.clone().or_else(|| args.patch.clone()),
+                json: args.patch.clone(),
+                file: args.patch_file.clone(),
+                stdin: args.stdin,
             },
             args.human,
         ),

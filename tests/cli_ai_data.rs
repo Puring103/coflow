@@ -651,8 +651,8 @@ fn data_patch_cli_supports_rename_and_dict_key_paths() {
 }
 
 #[test]
-fn data_patch_accepts_json_string_argument() {
-    let root = temp_project_dir("cli-data-patch-json-string");
+fn data_patch_accepts_patch_string_argument() {
+    let root = temp_project_dir("cli-data-patch-string");
     let _cleanup = TempDirCleanup(root.clone());
     write_project(&root);
     let patch = serde_json::to_string(&json!({
@@ -670,7 +670,7 @@ fn data_patch_accepts_json_string_argument() {
             "data",
             "patch",
             root.to_str().expect("utf8 path"),
-            "--patch-json",
+            "--patch",
             &patch,
         ])
         .output()
@@ -685,6 +685,87 @@ fn data_patch_accepts_json_string_argument() {
     let json: Value = serde_json::from_slice(&output.stdout).expect("data patch json");
     assert_eq!(json["write_ok"], true);
     assert_eq!(json["applied"].as_array().expect("applied").len(), 1);
+}
+
+#[test]
+fn data_patch_accepts_large_patch_from_stdin() {
+    let root = temp_project_dir("cli-data-patch-stdin-large");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_project(&root);
+    let ops = (1..=200)
+        .map(|price| {
+            json!({
+                "op": "set_field",
+                "record": { "type": "Item", "key": "sword" },
+                "path": [{ "kind": "field", "value": "price" }],
+                "value": price
+            })
+        })
+        .collect::<Vec<_>>();
+    let patch = serde_json::to_string(&json!({ "ops": ops })).expect("patch json");
+
+    let output = run_stdin_command(
+        &["data", "patch", root.to_str().expect("utf8 path"), "--stdin"],
+        &patch,
+    );
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("data patch json");
+    assert_eq!(json["write_ok"], true);
+    assert_eq!(json["applied"].as_array().expect("applied").len(), 200);
+    let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
+    assert!(text.contains("price: 200"), "items.cfd:\n{text}");
+}
+
+#[test]
+fn data_patch_does_not_treat_patch_argument_as_file_path() {
+    let root = temp_project_dir("cli-data-patch-no-file-fallback");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_project(&root);
+    let patch_path = root.join("patch.json");
+    std::fs::write(
+        &patch_path,
+        serde_json::to_string(&json!({
+            "ops": [{
+                "op": "set_field",
+                "record": { "type": "Item", "key": "sword" },
+                "path": [{ "kind": "field", "value": "price" }],
+                "value": 125
+            }]
+        }))
+        .expect("patch json"),
+    )
+    .expect("write patch");
+
+    let output = coflow()
+        .args([
+            "data",
+            "patch",
+            root.to_str().expect("utf8 path"),
+            "--patch",
+            patch_path.to_str().expect("utf8 patch path"),
+        ])
+        .output()
+        .expect("run data patch");
+
+    assert!(
+        !output.status.success(),
+        "--patch must parse its argument as JSON, not read a file\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("failed to parse patch request from --patch"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
+    assert!(text.contains("price: 100"), "items.cfd:\n{text}");
 }
 
 #[test]

@@ -11,6 +11,7 @@ use output::{
     write_get_human, write_json, write_list_human, write_patch_human, write_sources_human,
 };
 use serde::Serialize;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 mod files;
@@ -78,6 +79,7 @@ pub struct DataWriteFileReport {
 pub struct DataPatchInput {
     pub json: Option<String>,
     pub file: Option<PathBuf>,
+    pub stdin: bool,
 }
 
 /// Lists resolved data sources and provider writer capabilities.
@@ -188,9 +190,9 @@ pub fn patch(
     input: DataPatchInput,
     human: bool,
 ) -> Result<bool, DiagnosticSet> {
-    let (patch_text, source_label) = match (input.json, input.file) {
-        (Some(json), None) => (json, "--patch-json".to_string()),
-        (None, Some(path)) => {
+    let (patch_text, source_label) = match (input.json, input.file, input.stdin) {
+        (Some(json), None, false) => (json, "--patch".to_string()),
+        (None, Some(path), false) => {
             let text = std::fs::read_to_string(&path).map_err(|err| {
                 cli_file_error(
                     &path,
@@ -200,18 +202,19 @@ pub fn patch(
             })?;
             (text, path.display().to_string())
         }
-        (None, None) => {
+        (None, None, true) => (read_patch_stdin()?, "--stdin".to_string()),
+        (None, None, false) => {
             return Err(DiagnosticSet::one(coflow_api::Diagnostic::error(
                 "CLI-PATCH-INPUT",
                 "CLI",
-                "data patch requires --patch-json JSON or --patch-file PATCH_FILE",
+                "data patch requires --patch JSON, --patch-file PATCH_FILE, or --stdin",
             )));
         }
-        (Some(_), Some(_)) => {
+        _ => {
             return Err(DiagnosticSet::one(coflow_api::Diagnostic::error(
                 "CLI-PATCH-INPUT",
                 "CLI",
-                "use only one of --patch-json or --patch-file",
+                "use only one of --patch, --patch-file, or --stdin",
             )));
         }
     };
@@ -342,6 +345,14 @@ pub fn sync_header(
     Ok(ok)
 }
 
+fn read_patch_stdin() -> Result<String, DiagnosticSet> {
+    let mut source = String::new();
+    std::io::stdin()
+        .read_to_string(&mut source)
+        .map_err(|err| cli_error("CLI-STDIN", format!("failed to read stdin: {err}")))?;
+    Ok(source)
+}
+
 fn duplicate_table_column_diagnostics(diagnostics: &DiagnosticSet) -> DiagnosticSet {
     DiagnosticSet {
         diagnostics: diagnostics
@@ -396,7 +407,7 @@ fn open_session(
 
 fn open_schema_session(
     config_or_dir: Option<&Path>,
-) -> Result<coflow_runtime::ProjectSchemaSession, DiagnosticSet> {
+) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     build_project_schema_session(project)
 }
