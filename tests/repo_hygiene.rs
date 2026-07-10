@@ -1495,6 +1495,46 @@ fn editor_backend_does_not_depend_on_checker_runtime_directly() {
 }
 
 #[test]
+fn editor_backend_schema_queries_use_runtime_facade() {
+    let convert = std::fs::read_to_string(
+        "editors/cfd-editor/src-tauri/src/editor/convert.rs",
+    )
+    .expect("read editor convert");
+    let session = std::fs::read_to_string(
+        "editors/cfd-editor/src-tauri/src/editor/session/mod.rs",
+    )
+    .expect("read editor session");
+    let runtime_session = std::fs::read_to_string("crates/coflow-runtime/src/session.rs")
+        .expect("read runtime session");
+
+    assert!(
+        runtime_session.contains("pub fn enum_variants(&self, enum_name: &str) -> Vec<String>"),
+        "runtime session should expose enum variant queries for hosts"
+    );
+    assert!(
+        convert.contains("schema: session.schema_view()")
+            && convert.contains("enum_type_name(ty, &ctx.schema)")
+            && convert.contains("schema.is_schema_enum(name)"),
+        "editor convert should use CftSchemaView supplied by the runtime session"
+    );
+    assert!(
+        session.contains("session.engine.enum_variants(enum_name)"),
+        "editor session should query enum variants through runtime session"
+    );
+    for forbidden in [
+        "CftSchemaView::new(session.schema())",
+        "ctx.session.schema()",
+        "coflow_cft::CftContainer",
+        ".schema().resolve_enum(",
+    ] {
+        assert!(
+            !convert.contains(forbidden) && !session.contains(forbidden),
+            "editor backend should not bypass runtime schema facades with `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn hosts_depend_on_runtime_boundary_not_engine_implementation() {
     let root_manifest = std::fs::read_to_string("Cargo.toml").expect("read root manifest");
     let editor_manifest = std::fs::read_to_string("editors/cfd-editor/src-tauri/Cargo.toml")

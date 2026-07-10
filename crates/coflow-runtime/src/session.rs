@@ -155,6 +155,19 @@ impl ProjectSession {
             .map(|v| v.value)
     }
 
+    #[must_use]
+    pub fn enum_variants(&self, enum_name: &str) -> Vec<String> {
+        self.schema_view()
+            .enum_meta(enum_name)
+            .map(|meta| {
+                meta.all_variants
+                    .iter()
+                    .map(|variant| variant.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub fn dimensions(&self) -> Vec<DimensionInfo> {

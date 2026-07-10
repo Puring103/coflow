@@ -266,12 +266,7 @@ impl SessionStore {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        Ok(session
-            .engine
-            .schema()
-            .resolve_enum(enum_name)
-            .map(|e| e.variants.iter().map(|v| v.name.clone()).collect())
-            .unwrap_or_default())
+        Ok(session.engine.enum_variants(enum_name))
     }
 
     /// Records assignable to `expected_type`, surfaced as `RefTarget`s so

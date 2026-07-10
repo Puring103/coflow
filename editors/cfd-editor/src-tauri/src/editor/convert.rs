@@ -34,7 +34,7 @@ impl<'a> WireContext<'a> {
     pub fn new(session: &'a ProjectSession, diagnostics: Vec<FlatDiagnostic>) -> Self {
         Self {
             session,
-            schema: CftSchemaView::new(session.schema()),
+            schema: session.schema_view(),
             diagnostics,
             dimension_synth_types: session.dimension_synthesized_types(),
         }
@@ -233,7 +233,7 @@ fn annotation_for_value(
     if let Some(ty) = declared_type {
         annotation.declared_type = Some(ty.display_label());
         annotation.ref_target_type = ref_target_type(ty).map(str::to_string);
-        annotation.enum_type = enum_type_name(ty, ctx.session.schema()).map(str::to_string);
+        annotation.enum_type = enum_type_name(ty, &ctx.schema).map(str::to_string);
         annotation.nullable = matches!(ty, CftSchemaTypeRef::Nullable(_));
         annotation.polymorphic_types = polymorphic_types_for(ty, &ctx.schema);
         // Preload the element template when the declared type is a
@@ -317,7 +317,7 @@ fn element_template(
     let mut ann = FieldAnnotation {
         declared_type: Some(item_type.display_label()),
         ref_target_type: ref_target_type(item_type).map(str::to_string),
-        enum_type: enum_type_name(item_type, ctx.session.schema()).map(str::to_string),
+        enum_type: enum_type_name(item_type, &ctx.schema).map(str::to_string),
         nullable: matches!(item_type, CftSchemaTypeRef::Nullable(_)),
         polymorphic_types: polymorphic_types_for(item_type, &ctx.schema),
         ..FieldAnnotation::default()
@@ -348,10 +348,10 @@ fn ref_target_type(ty: &CftSchemaTypeRef) -> Option<&str> {
 
 fn enum_type_name<'a>(
     ty: &'a CftSchemaTypeRef,
-    schema: &coflow_cft::CftContainer,
+    schema: &CftSchemaView,
 ) -> Option<&'a str> {
     match ty {
-        CftSchemaTypeRef::Named(name) if schema.has_enum(name) => Some(name),
+        CftSchemaTypeRef::Named(name) if schema.is_schema_enum(name) => Some(name),
         CftSchemaTypeRef::Nullable(inner) => enum_type_name(inner, schema),
         _ => None,
     }
