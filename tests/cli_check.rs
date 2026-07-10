@@ -125,6 +125,132 @@ fn full_project_check_failure_uses_check_diagnostics_in_json_output() {
 }
 
 #[test]
+fn full_project_check_rejects_duplicate_csv_headers_and_mappings() {
+    let root = temp_project_dir("check-duplicate-csv-headers");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                name: string;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.csv"),
+        "id,name,name\nsword,Sword,Wrong\n",
+    )
+    .expect("write csv");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: Item
+        type: Item
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path"), "--json"])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).is_empty(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("diagnostics json");
+    let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
+    let diagnostic = diagnostics
+        .iter()
+        .find(|diagnostic| {
+            diagnostic["code"] == "TABLE-COLUMN"
+                && diagnostic["message"]
+                    .as_str()
+                    .is_some_and(|message| {
+                        message.contains("column header `name` appears more than once")
+                    })
+    })
+    .unwrap_or_else(|| panic!("expected duplicate header diagnostic: {diagnostics:?}"));
+    assert_eq!(diagnostic["stage"], "TABLE");
+    assert_eq!(diagnostic["cell"], "C1");
+
+    let root = temp_project_dir("check-duplicate-csv-mapped-headers");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                name: string;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.csv"),
+        "id,alias\nsword,wrong_key\n",
+    )
+    .expect("write csv");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: Item
+        type: Item
+        columns:
+          alias: id
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path"), "--json"])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).is_empty(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("diagnostics json");
+    let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
+    let diagnostic = diagnostics
+        .iter()
+        .find(|diagnostic| {
+            diagnostic["code"] == "TABLE-COLUMN"
+                && diagnostic["message"].as_str().is_some_and(|message| {
+                    message.contains("key column `id`")
+                        || message.contains("field `id` is mapped by both")
+                })
+        })
+        .unwrap_or_else(|| panic!("expected duplicate mapped header diagnostic: {diagnostics:?}"));
+    assert_eq!(diagnostic["stage"], "TABLE");
+    assert_eq!(diagnostic["cell"], "B1");
+}
+
+#[test]
 fn config_validation_rejects_unknown_fields_and_invalid_outputs() {
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-config-validation-test-{suffix}"));

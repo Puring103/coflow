@@ -32,6 +32,10 @@ pub(super) enum TableLoadError {
         first_column: String,
         duplicate_column: String,
     },
+    DuplicateHeaderColumn {
+        location: Box<TableLocation>,
+        header: String,
+    },
     MissingKeyColumn {
         location: Box<TableLocation>,
         type_name: String,
@@ -122,6 +126,14 @@ pub(super) fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiag
             format!("field `{field}` is mapped by both `{first_column}` and `{duplicate_column}`"),
             *location,
         )],
+        TableLoadError::DuplicateHeaderColumn { location, header } => {
+            vec![TableDiagnostic::table(
+                "TABLE-COLUMN",
+                "TABLE",
+                format!("column header `{header}` appears more than once"),
+                *location,
+            )]
+        }
         TableLoadError::MissingKeyColumn {
             location,
             type_name,

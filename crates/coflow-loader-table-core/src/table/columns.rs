@@ -93,6 +93,7 @@ struct ColumnResolution<'a> {
     columns: Vec<ResolvedColumn>,
     id_column: Option<IdColumn>,
     control_column: Option<usize>,
+    seen_headers: BTreeMap<String, String>,
     seen_fields: BTreeMap<String, String>,
     key_column: String,
     has_explicit_key: bool,
@@ -130,6 +131,7 @@ impl<'a> ColumnResolution<'a> {
             columns: Vec::new(),
             id_column: None,
             control_column: None,
+            seen_headers: BTreeMap::new(),
             seen_fields: BTreeMap::new(),
             key_column: sheet.key_column().to_string(),
             has_explicit_key: sheet.key.is_some(),
@@ -151,6 +153,9 @@ impl<'a> ColumnResolution<'a> {
         let column_text = column_text.clone();
         *cursor += 1;
         if column_text.is_empty() {
+            return;
+        }
+        if !self.record_header_column(excel_column, &column_text) {
             return;
         }
         if column_text == IMPORT_CONTROL_COLUMN {
@@ -207,6 +212,23 @@ impl<'a> ColumnResolution<'a> {
             field_type,
             expand,
         });
+    }
+
+    fn record_header_column(&mut self, excel_column: usize, column_text: &str) -> bool {
+        if self
+            .seen_headers
+            .insert(column_text.to_string(), column_text.to_string())
+            .is_some()
+        {
+            self.diagnostics.extend(table_load_error_diagnostics(
+                TableLoadError::DuplicateHeaderColumn {
+                    location: Box::new(self.location().cell(self.header_excel_row, excel_column)),
+                    header: column_text.to_string(),
+                },
+            ));
+            return false;
+        }
+        true
     }
 
     fn record_id_column(

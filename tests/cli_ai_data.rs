@@ -1475,6 +1475,137 @@ fn data_sync_header_adds_and_removes_csv_columns_while_preserving_rows() {
 }
 
 #[test]
+fn data_sync_header_rejects_duplicate_csv_headers_without_writing() {
+    let root = temp_project_dir("cli-data-sync-header-duplicate-csv");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_table_project(
+        &root,
+        "                name: string;\n                rarity: string;",
+        "data/items.csv",
+    );
+    let path = root.join("data").join("items.csv");
+    let original = "id,name,name\nsword,Sword,Wrong\n";
+    std::fs::write(&path, original).expect("write csv");
+
+    let output = coflow()
+        .args([
+            "data",
+            "sync-header",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/items.csv",
+            "--type",
+            "Item",
+        ])
+        .output()
+        .expect("run data sync-header");
+
+    assert!(
+        !output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output_text.contains(r#""code":"TABLE-COLUMN""#)
+            && output_text.contains(r#""stage":"TABLE""#),
+        "output: {output_text}"
+    );
+    assert!(
+        output_text.contains("column header `name` appears more than once"),
+        "output: {output_text}"
+    );
+    let text = std::fs::read_to_string(path).expect("read csv");
+    assert_eq!(text, original);
+}
+
+#[test]
+fn data_sync_header_rejects_duplicate_excel_headers_without_writing() {
+    let root = temp_project_dir("cli-data-sync-header-duplicate-xlsx");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                name: string;
+                rarity: string;
+            }
+        ",
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("tables.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet = workbook.add_worksheet().set_name("Items").expect("sheet");
+    sheet.write_string(0, 0, "id").expect("write id");
+    sheet.write_string(0, 1, "name").expect("write name");
+    sheet
+        .write_string(0, 2, "name")
+        .expect("write duplicate name");
+    sheet.write_string(1, 0, "sword").expect("write key");
+    sheet.write_string(1, 1, "Sword").expect("write name value");
+    sheet
+        .write_string(1, 2, "Wrong")
+        .expect("write duplicate value");
+    workbook.save(&workbook_path).expect("write workbook");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/tables.xlsx\n    type: excel\n    sheets:\n      - sheet: Items\n        type: Item\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args([
+            "data",
+            "sync-header",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/tables.xlsx",
+            "--type",
+            "Item",
+            "--provider",
+            "excel",
+            "--sheet",
+            "Items",
+        ])
+        .output()
+        .expect("run data sync-header");
+
+    assert!(
+        !output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output_text.contains(r#""code":"TABLE-COLUMN""#)
+            && output_text.contains(r#""stage":"TABLE""#),
+        "output: {output_text}"
+    );
+    assert!(
+        output_text.contains("column header `name` appears more than once"),
+        "output: {output_text}"
+    );
+    let mut workbook = calamine::open_workbook_auto(&workbook_path).expect("read workbook");
+    let range = workbook.worksheet_range("Items").expect("items sheet");
+    let rows = range.rows().collect::<Vec<_>>();
+    assert_eq!(rows[0][0].to_string(), "id");
+    assert_eq!(rows[0][1].to_string(), "name");
+    assert_eq!(rows[0][2].to_string(), "name");
+    assert_eq!(rows[1][2].to_string(), "Wrong");
+}
+
+#[test]
 fn data_create_file_creates_empty_cfd_file() {
     let root = temp_project_dir("cli-data-create-file-cfd");
     let _cleanup = TempDirCleanup(root.clone());

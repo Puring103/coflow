@@ -767,6 +767,7 @@ fn rejects_unknown_header_columns_before_model_build() -> TestResult {
         .location;
     assert_eq!(location.row, Some(1));
     assert_eq!(location.column, Some(2));
+
     Ok(())
 }
 
@@ -1268,7 +1269,7 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
     let Err(err) = build_model_from_excel_records(&schema, &[duplicate_source]) else {
         return Err("expected duplicate mapped column error".to_string());
     };
-    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "TABLE-COLUMN")?;
     assert!(diagnostic.message.contains("key column `id`"));
     let location = &diagnostic
         .primary
@@ -1277,6 +1278,59 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
         .location;
     assert_eq!(location.row, Some(1));
     assert_eq!(location.column, Some(2));
+
+    let duplicate_header_path = temp_xlsx_path("duplicate-raw-header");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 2, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 1, 1.0)
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 2, 999.0)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook
+        .save(&duplicate_header_path)
+        .map_err(|err| format!("{err:?}"))?;
+
+    let duplicate_header_source = ExcelSource::new(
+        &duplicate_header_path,
+        vec![ExcelSheet::new("Item").with_type("Item")],
+    );
+    let Err(err) = build_model_from_excel_records(&schema, &[duplicate_header_source]) else {
+        return Err("expected duplicate raw header error".to_string());
+    };
+    let diagnostic = err
+        .diagnostics
+        .iter()
+        .find(|diag| {
+            diag.code == "TABLE-COLUMN"
+                && diag
+                    .message
+                    .contains("column header `level` appears more than once")
+        })
+        .ok_or_else(|| format!("expected duplicate header diagnostic: {:?}", err.diagnostics))?;
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
+    assert_eq!(location.row, Some(1));
+    assert_eq!(location.column, Some(3));
     Ok(())
 }
 

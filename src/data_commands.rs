@@ -3,12 +3,12 @@ use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
 use coflow_project::Project;
 use coflow_runtime::{
     build_project_schema_session, build_project_session_for_build, data_get, data_list,
-    data_sources, DataGetQuery, DataGetReport, DataListQuery, DataPatchReport, DataPatchRequest,
-    ProjectSession, RecordCoordinate,
+    data_sources, open_project_session_read_only, DataGetQuery, DataGetReport, DataListQuery,
+    DataPatchReport, DataPatchRequest, ProjectSchemaSession, ProjectSession, RecordCoordinate,
 };
 use output::{
-    flat_diagnostics, write_data_write_file_human, write_file_report_human, write_get_human,
-    write_json, write_list_human, write_patch_human, write_sources_human,
+    file_error_report, flat_diagnostics, write_data_write_file_human, write_file_report_human,
+    write_get_human, write_json, write_list_human, write_patch_human, write_sources_human,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -313,8 +313,25 @@ pub fn sync_header(
     sheet: Option<String>,
     human: bool,
 ) -> Result<bool, DiagnosticSet> {
-    let session = open_schema_session(config_or_dir)?;
+    let project = Project::open_schema_only(config_or_dir)?;
     let registry = default_provider_registry()?;
+    let session = open_project_session_read_only(project, &registry)?;
+    let duplicate_header_diagnostics =
+        duplicate_table_column_diagnostics(session.diagnostics.as_set());
+    if !duplicate_header_diagnostics.is_empty() {
+        let report = file_error_report(&duplicate_header_diagnostics);
+        if human {
+            write_file_report_human(&report)?;
+        } else {
+            write_json(&report)?;
+        }
+        return Ok(false);
+    }
+    let session = ProjectSchemaSession {
+        project: session.project,
+        schema: session.schema,
+        diagnostics: session.diagnostics,
+    };
     let report = files::sync_header_report(&session, &registry, file, actual_type, provider, sheet);
     let ok = report.diagnostics.is_empty();
     if human {
@@ -323,6 +340,23 @@ pub fn sync_header(
         write_json(&report)?;
     }
     Ok(ok)
+}
+
+fn duplicate_table_column_diagnostics(diagnostics: &DiagnosticSet) -> DiagnosticSet {
+    DiagnosticSet {
+        diagnostics: diagnostics
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.code == "TABLE-COLUMN"
+                    && diagnostic.stage == "TABLE"
+                    && (diagnostic.message.contains("appears more than once")
+                        || diagnostic.message.contains("is mapped by both")
+                        || diagnostic.message.contains("mapped more than once"))
+            })
+            .cloned()
+            .collect(),
+    }
 }
 
 /// Writes a configured local CFD data file from stdin.

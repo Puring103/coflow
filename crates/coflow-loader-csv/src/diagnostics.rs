@@ -54,15 +54,32 @@ impl CsvDiagnostic {
 
 impl From<TableDiagnostic> for CsvDiagnostic {
     fn from(diagnostic: TableDiagnostic) -> Self {
+        let keep_table_diagnostic = is_duplicate_table_column_diagnostic(&diagnostic);
         Self {
-            code: table_code_to_csv(&diagnostic.code),
-            stage: table_stage_to_csv(&diagnostic.stage),
+            code: if keep_table_diagnostic {
+                diagnostic.code.clone()
+            } else {
+                table_code_to_csv(&diagnostic.code)
+            },
+            stage: if keep_table_diagnostic {
+                diagnostic.stage.clone()
+            } else {
+                table_stage_to_csv(&diagnostic.stage)
+            },
             message: diagnostic.message,
             source: diagnostic.source,
             primary: diagnostic.primary.map(CsvLabel::from),
             related: diagnostic.related.into_iter().map(CsvLabel::from).collect(),
         }
     }
+}
+
+fn is_duplicate_table_column_diagnostic(diagnostic: &TableDiagnostic) -> bool {
+    diagnostic.code == "TABLE-COLUMN"
+        && diagnostic.stage == "TABLE"
+        && (diagnostic.message.contains("appears more than once")
+            || diagnostic.message.contains("is mapped by both")
+            || diagnostic.message.contains("mapped more than once"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
