@@ -152,12 +152,78 @@ pub struct TableWriteLayout {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableDiagnostic {
+    pub kind: TableDiagnosticKind,
     pub code: String,
     pub stage: String,
     pub message: String,
     pub source: Option<CfdDiagnostic>,
     pub primary: Option<TableLabel>,
     pub related: Vec<TableLabel>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TableDiagnosticKind {
+    Uncategorized,
+    MissingSheet,
+    EmptySheet,
+    UnknownType,
+    UnknownColumn,
+    MissingColumn,
+    DuplicateFieldColumn,
+    DuplicateHeaderColumn,
+    MissingKeyColumn,
+    DuplicateKeyColumn,
+    UnexpectedExpandHeader,
+    EmptyIdCell,
+    InvalidIdCell,
+    CellParse,
+    DataModel,
+}
+
+impl TableDiagnosticKind {
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::MissingSheet | Self::EmptySheet => "TABLE-SHEET",
+            Self::UnknownType => "TABLE-TYPE",
+            Self::UnknownColumn
+            | Self::MissingColumn
+            | Self::DuplicateFieldColumn
+            | Self::DuplicateHeaderColumn
+            | Self::DuplicateKeyColumn
+            | Self::UnexpectedExpandHeader => "TABLE-COLUMN",
+            Self::MissingKeyColumn | Self::EmptyIdCell | Self::InvalidIdCell => "TABLE-ID",
+            Self::CellParse | Self::DataModel | Self::Uncategorized => "",
+        }
+    }
+
+    #[must_use]
+    pub const fn stage(self) -> &'static str {
+        match self {
+            Self::CellParse => "CELL",
+            Self::MissingSheet
+            | Self::EmptySheet
+            | Self::UnknownType
+            | Self::UnknownColumn
+            | Self::MissingColumn
+            | Self::DuplicateFieldColumn
+            | Self::DuplicateHeaderColumn
+            | Self::MissingKeyColumn
+            | Self::DuplicateKeyColumn
+            | Self::UnexpectedExpandHeader
+            | Self::EmptyIdCell
+            | Self::InvalidIdCell => "TABLE",
+            Self::DataModel | Self::Uncategorized => "",
+        }
+    }
+
+    #[must_use]
+    pub const fn preserves_provider_neutral_code(self) -> bool {
+        matches!(
+            self,
+            Self::DuplicateFieldColumn | Self::DuplicateHeaderColumn | Self::DuplicateKeyColumn
+        )
+    }
 }
 
 impl TableDiagnostic {
@@ -169,6 +235,7 @@ impl TableDiagnostic {
         location: TableLocation,
     ) -> Self {
         Self {
+            kind: TableDiagnosticKind::Uncategorized,
             code: code.into(),
             stage: stage.into(),
             message: message.into(),
@@ -178,6 +245,55 @@ impl TableDiagnostic {
                 message: None,
             }),
             related: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn table_kind(
+        kind: TableDiagnosticKind,
+        message: impl Into<String>,
+        location: TableLocation,
+    ) -> Self {
+        Self {
+            kind,
+            code: kind.code().to_string(),
+            stage: kind.stage().to_string(),
+            message: message.into(),
+            source: None,
+            primary: Some(TableLabel {
+                location,
+                message: None,
+            }),
+            related: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_kind(mut self, kind: TableDiagnosticKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    #[must_use]
+    pub fn provider_code(&self, provider_prefix: &str) -> String {
+        if self.kind.preserves_provider_neutral_code() {
+            return self.code.clone();
+        }
+        self.code.strip_prefix("TABLE-").map_or_else(
+            || self.code.clone(),
+            |suffix| format!("{provider_prefix}-{suffix}"),
+        )
+    }
+
+    #[must_use]
+    pub fn provider_stage(&self, provider_stage: &str) -> String {
+        if self.kind.preserves_provider_neutral_code() {
+            return self.stage.clone();
+        }
+        if self.stage == "TABLE" {
+            provider_stage.to_string()
+        } else {
+            self.stage.clone()
         }
     }
 }

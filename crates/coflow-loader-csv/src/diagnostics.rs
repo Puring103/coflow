@@ -54,32 +54,15 @@ impl CsvDiagnostic {
 
 impl From<TableDiagnostic> for CsvDiagnostic {
     fn from(diagnostic: TableDiagnostic) -> Self {
-        let keep_table_diagnostic = is_duplicate_table_column_diagnostic(&diagnostic);
         Self {
-            code: if keep_table_diagnostic {
-                diagnostic.code.clone()
-            } else {
-                table_code_to_csv(&diagnostic.code)
-            },
-            stage: if keep_table_diagnostic {
-                diagnostic.stage.clone()
-            } else {
-                table_stage_to_csv(&diagnostic.stage)
-            },
+            code: diagnostic.provider_code("CSV"),
+            stage: diagnostic.provider_stage("CSV"),
             message: diagnostic.message,
             source: diagnostic.source,
             primary: diagnostic.primary.map(CsvLabel::from),
             related: diagnostic.related.into_iter().map(CsvLabel::from).collect(),
         }
     }
-}
-
-fn is_duplicate_table_column_diagnostic(diagnostic: &TableDiagnostic) -> bool {
-    diagnostic.code == "TABLE-COLUMN"
-        && diagnostic.stage == "TABLE"
-        && (diagnostic.message.contains("appears more than once")
-            || diagnostic.message.contains("is mapped by both")
-            || diagnostic.message.contains("mapped more than once"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,26 +158,5 @@ fn csv_label_to_api(label: CsvLabel) -> Label {
             column: label.location.column.unwrap_or(1),
         },
         message: label.message,
-    }
-}
-
-fn table_code_to_csv(code: &str) -> String {
-    code.strip_prefix("TABLE-").map_or_else(
-        || code.to_string(),
-        |suffix| match suffix {
-            "TYPE" => "CSV-TYPE".to_string(),
-            "ID" => "CSV-ID".to_string(),
-            "SHEET" => "CSV-SHEET".to_string(),
-            "COLUMN" => "CSV-COLUMN".to_string(),
-            other => format!("CSV-{other}"),
-        },
-    )
-}
-
-fn table_stage_to_csv(stage: &str) -> String {
-    if stage == "TABLE" {
-        "CSV".to_string()
-    } else {
-        stage.to_string()
     }
 }

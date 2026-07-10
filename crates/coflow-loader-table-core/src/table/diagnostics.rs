@@ -1,5 +1,5 @@
 use crate::cell_value::CellValueDiagnostics;
-use crate::table::{TableDiagnostic, TableLocation};
+use crate::table::{TableDiagnostic, TableDiagnosticKind, TableLocation};
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -70,27 +70,24 @@ pub(super) enum TableLoadError {
 #[allow(clippy::too_many_lines)]
 pub(super) fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiagnostic> {
     match err {
-        TableLoadError::MissingSheet { file, sheet } => vec![TableDiagnostic::table(
-            "TABLE-SHEET",
-            "TABLE",
+        TableLoadError::MissingSheet { file, sheet } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::MissingSheet,
             format!(
                 "table source `{}` is missing sheet `{sheet}`",
                 file.display()
             ),
             TableLocation::new(file).sheet(sheet),
         )],
-        TableLoadError::EmptySheet { location } => vec![TableDiagnostic::table(
-            "TABLE-SHEET",
-            "TABLE",
+        TableLoadError::EmptySheet { location } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::EmptySheet,
             "sheet is empty",
             *location,
         )],
         TableLoadError::UnknownType {
             location,
             type_name,
-        } => vec![TableDiagnostic::table(
-            "TABLE-TYPE",
-            "TABLE",
+        } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::UnknownType,
             format!("unknown CFT type `{type_name}`"),
             *location,
         )],
@@ -99,9 +96,8 @@ pub(super) fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiag
             type_name,
             column,
             field,
-        } => vec![TableDiagnostic::table(
-            "TABLE-COLUMN",
-            "TABLE",
+        } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::UnknownColumn,
             format!("column `{column}` maps to unknown field `{field}` on type `{type_name}`"),
             *location,
         )],
@@ -109,9 +105,8 @@ pub(super) fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiag
             location,
             type_name,
             field,
-        } => vec![TableDiagnostic::table(
-            "TABLE-COLUMN",
-            "TABLE",
+        } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::MissingColumn,
             format!("sheet for type `{type_name}` is missing column for field `{field}`"),
             *location,
         )],
@@ -120,16 +115,14 @@ pub(super) fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiag
             field,
             first_column,
             duplicate_column,
-        } => vec![TableDiagnostic::table(
-            "TABLE-COLUMN",
-            "TABLE",
+        } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::DuplicateFieldColumn,
             format!("field `{field}` is mapped by both `{first_column}` and `{duplicate_column}`"),
             *location,
         )],
         TableLoadError::DuplicateHeaderColumn { location, header } => {
-            vec![TableDiagnostic::table(
-                "TABLE-COLUMN",
-                "TABLE",
+            vec![TableDiagnostic::table_kind(
+                TableDiagnosticKind::DuplicateHeaderColumn,
                 format!("column header `{header}` appears more than once"),
                 *location,
             )]
@@ -138,15 +131,13 @@ pub(super) fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiag
             location,
             type_name,
             key,
-        } => vec![TableDiagnostic::table(
-            "TABLE-ID",
-            "TABLE",
+        } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::MissingKeyColumn,
             format!("sheet for type `{type_name}` must contain key column `{key}`"),
             *location,
         )],
-        TableLoadError::DuplicateKeyColumn { location, key } => vec![TableDiagnostic::table(
-            "TABLE-COLUMN",
-            "TABLE",
+        TableLoadError::DuplicateKeyColumn { location, key } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::DuplicateKeyColumn,
             format!("key column `{key}` is mapped more than once"),
             *location,
         )],
@@ -155,18 +146,16 @@ pub(super) fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiag
             parent_field,
             expected_field,
             header,
-        } => vec![TableDiagnostic::table(
-            "TABLE-COLUMN",
-            "TABLE",
+        } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::UnexpectedExpandHeader,
             format!(
                 "@expand field `{parent_field}` expected adjacent column for `{expected_field}` \
                  to have an empty header, found `{header}`"
             ),
             *location,
         )],
-        TableLoadError::EmptyIdCell { location } => vec![TableDiagnostic::table(
-            "TABLE-ID",
-            "TABLE",
+        TableLoadError::EmptyIdCell { location } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::EmptyIdCell,
             "record key cell is empty",
             *location,
         )],
@@ -174,9 +163,8 @@ pub(super) fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiag
             location,
             key,
             reason,
-        } => vec![TableDiagnostic::table(
-            "TABLE-ID",
-            "TABLE",
+        } => vec![TableDiagnostic::table_kind(
+            TableDiagnosticKind::InvalidIdCell,
             format!("invalid record key `{key}`: {reason}"),
             *location,
         )],
@@ -190,11 +178,12 @@ pub(super) fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiag
             .iter()
             .map(|diagnostic| {
                 TableDiagnostic::table(
-                    format!("CELL-{:?}", diagnostic.code),
+                    format!("CELL-{}", diagnostic.code.as_str()),
                     "CELL",
                     format!("{} while parsing `{type_name}.{field}`", diagnostic.message),
                     (*location).clone(),
                 )
+                .with_kind(TableDiagnosticKind::CellParse)
             })
             .collect(),
     }

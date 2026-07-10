@@ -56,23 +56,10 @@ impl ExcelDiagnostic {
 
 impl From<TableDiagnostic> for ExcelDiagnostic {
     fn from(diagnostic: TableDiagnostic) -> Self {
-        let keep_table_diagnostic = is_duplicate_table_column_diagnostic(&diagnostic);
         Self {
-            code: if keep_table_diagnostic {
-                diagnostic.code.clone()
-            } else {
-                table_code_to_excel(&diagnostic.code)
-            },
-            stage: if keep_table_diagnostic {
-                diagnostic.stage.clone()
-            } else {
-                table_stage_to_excel(&diagnostic.stage)
-            },
-            message: if keep_table_diagnostic {
-                diagnostic.message.clone()
-            } else {
-                table_message_to_excel(&diagnostic.message)
-            },
+            code: diagnostic.provider_code("EXCEL"),
+            stage: diagnostic.provider_stage("EXCEL"),
+            message: table_message_to_excel(&diagnostic.message),
             source: diagnostic.source,
             primary: diagnostic.primary.map(ExcelLabel::from),
             related: diagnostic
@@ -82,14 +69,6 @@ impl From<TableDiagnostic> for ExcelDiagnostic {
                 .collect(),
         }
     }
-}
-
-fn is_duplicate_table_column_diagnostic(diagnostic: &TableDiagnostic) -> bool {
-    diagnostic.code == "TABLE-COLUMN"
-        && diagnostic.stage == "TABLE"
-        && (diagnostic.message.contains("appears more than once")
-            || diagnostic.message.contains("is mapped by both")
-            || diagnostic.message.contains("mapped more than once"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,27 +198,6 @@ fn excel_label_to_api(label: ExcelLabel) -> Label {
             column: label.location.column.unwrap_or(1),
         },
         message: label.message,
-    }
-}
-
-fn table_code_to_excel(code: &str) -> String {
-    code.strip_prefix("TABLE-").map_or_else(
-        || code.to_string(),
-        |suffix| match suffix {
-            "TYPE" => "EXCEL-TYPE".to_string(),
-            "ID" => "EXCEL-ID".to_string(),
-            "SHEET" => "EXCEL-SHEET".to_string(),
-            "COLUMN" => "EXCEL-COLUMN".to_string(),
-            other => format!("EXCEL-{other}"),
-        },
-    )
-}
-
-fn table_stage_to_excel(stage: &str) -> String {
-    if stage == "TABLE" {
-        "EXCEL".to_string()
-    } else {
-        stage.to_string()
     }
 }
 

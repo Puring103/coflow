@@ -1009,7 +1009,6 @@ fn excel_loader_options_do_not_live_in_lib_rs() {
         "pub struct ExcelLocation",
         "pub fn map_label_with_record_offset",
         "pub(crate) fn excel_diagnostics_to_api",
-        "fn table_code_to_excel",
         "fn excel_label_to_api",
     ] {
         assert!(
@@ -1197,7 +1196,6 @@ fn csv_loader_helpers_do_not_live_in_lib_rs() {
         "pub struct CsvLocation",
         "pub fn csv_diagnostics_to_api",
         "fn csv_label_to_api",
-        "fn table_code_to_csv",
     ] {
         assert!(
             diagnostics.contains(expected),

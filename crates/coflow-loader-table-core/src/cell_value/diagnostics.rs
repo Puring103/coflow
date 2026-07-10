@@ -26,6 +26,27 @@ pub enum CellValueErrorCode {
     ReferenceNeedsMarker,
 }
 
+impl CellValueErrorCode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Syntax => "Syntax",
+            Self::InvalidDeclaredType => "InvalidDeclaredType",
+            Self::UnknownType => "UnknownType",
+            Self::UnknownField => "UnknownField",
+            Self::DuplicateField => "DuplicateField",
+            Self::MissingBoundary => "MissingBoundary",
+            Self::TypeMismatch => "TypeMismatch",
+            Self::ObjectTypeMismatch => "ObjectTypeMismatch",
+            Self::AbstractObjectType => "AbstractObjectType",
+            Self::InvalidEnumVariant => "InvalidEnumVariant",
+            Self::MixedObjectStyle => "MixedObjectStyle",
+            Self::StringNeedsQuotes => "StringNeedsQuotes",
+            Self::ReferenceNeedsMarker => "ReferenceNeedsMarker",
+        }
+    }
+}
+
 pub(super) fn syntax(message: impl Into<String>) -> CellValueDiagnostics {
     CellValueDiagnostics {
         diagnostics: vec![CellValueDiagnostic {

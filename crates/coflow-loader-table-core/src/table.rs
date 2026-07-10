@@ -22,8 +22,8 @@ use columns::{
 };
 use diagnostics::{table_load_error_diagnostics, TableLoadError};
 pub use types::{
-    TableDiagnostic, TableDiagnostics, TableInputRecords, TableLabel, TableLocation, TableSheet,
-    TableSheetConfig, TableSource, TableWriteLayout,
+    TableDiagnostic, TableDiagnosticKind, TableDiagnostics, TableInputRecords, TableLabel,
+    TableLocation, TableSheet, TableSheetConfig, TableSource, TableWriteLayout,
 };
 
 const SKIP_IMPORT_ROW_MARKER: &str = "##";
@@ -294,6 +294,7 @@ pub fn map_table_diagnostics(
                     .filter_map(|label| map_label_to_table(label, origins))
                     .collect();
                 TableDiagnostic {
+                    kind: TableDiagnosticKind::DataModel,
                     code: diagnostic.code.as_str().to_string(),
                     stage: diagnostic.stage.to_string(),
                     message: diagnostic.message.clone(),
