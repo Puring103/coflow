@@ -318,7 +318,7 @@ pub fn sync_header(
     let runtime = Runtime::new(registry.clone());
     let session = runtime.open_read_only_session(project)?.into_session();
     let duplicate_header_diagnostics =
-        duplicate_table_column_diagnostics(session.diagnostics.as_set());
+        duplicate_table_column_diagnostics(session.diagnostics().as_set());
     if !duplicate_header_diagnostics.is_empty() {
         let report = file_error_report(&duplicate_header_diagnostics);
         if human {
@@ -328,11 +328,7 @@ pub fn sync_header(
         }
         return Ok(false);
     }
-    let session = ProjectSchemaSession {
-        project: session.project,
-        schema: session.schema,
-        diagnostics: session.diagnostics,
-    };
+    let session = session.into_schema_session();
     let report = files::sync_header_report(&session, &registry, file, actual_type, provider, sheet);
     let ok = report.diagnostics.is_empty();
     if human {

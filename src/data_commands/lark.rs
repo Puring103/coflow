@@ -29,7 +29,7 @@ pub(super) fn create_lark_table(
     sheet: Option<String>,
 ) -> Result<DataFileReport, DiagnosticSet> {
     let source_config = configured_lark_source(session, source)?;
-    let resolved_source = configured_project_source(&session.project, source_config);
+    let resolved_source = configured_project_source(session.project(), source_config);
     let layout = lark_table_layout(session, source_config, actual_type, sheet)?;
     let table_manager = registry.table_manager("lark-sheet").ok_or_else(|| {
         DiagnosticSet::one(coflow_api::Diagnostic::error(
@@ -40,15 +40,15 @@ pub(super) fn create_lark_table(
     })?;
     let result = table_manager.create_table(
         TableContext {
-            project_root: &session.project.root_dir,
-            schema: Some(&session.schema),
+            project_root: &session.project().root_dir,
+            schema: Some(session.schema()),
         },
         &CreateTableRequest {
             source: &resolved_source,
             sheet: &layout.sheet,
             actual_type: &layout.actual_type,
             headers: &layout.headers,
-            schema: &session.schema,
+            schema: session.schema(),
         },
     )?;
     Ok(DataFileReport {
@@ -71,7 +71,7 @@ pub(super) fn sync_lark_header(
     sheet: Option<String>,
 ) -> Result<DataFileReport, DiagnosticSet> {
     let source_config = configured_lark_source(session, source)?;
-    let resolved_source = configured_project_source(&session.project, source_config);
+    let resolved_source = configured_project_source(session.project(), source_config);
     let layout = lark_table_layout(session, source_config, Some(actual_type), sheet)?;
     let table_manager = registry.table_manager("lark-sheet").ok_or_else(|| {
         DiagnosticSet::one(coflow_api::Diagnostic::error(
@@ -82,15 +82,15 @@ pub(super) fn sync_lark_header(
     })?;
     let result = table_manager.sync_header(
         TableContext {
-            project_root: &session.project.root_dir,
-            schema: Some(&session.schema),
+            project_root: &session.project().root_dir,
+            schema: Some(session.schema()),
         },
         &SyncHeaderRequest {
             source: &resolved_source,
             sheet: Some(&layout.sheet),
             actual_type: &layout.actual_type,
             headers: &layout.headers,
-            schema: &session.schema,
+            schema: session.schema(),
         },
     )?;
     Ok(DataFileReport {
@@ -110,7 +110,7 @@ fn configured_lark_source<'a>(
     source: &str,
 ) -> Result<&'a coflow_project::SourceConfig, DiagnosticSet> {
     session
-        .project
+        .project()
         .config
         .sources
         .iter()
@@ -155,7 +155,7 @@ fn lark_table_layout(
                 "`--type` is required for lark table creation",
             ))
         })?;
-    let schema_type = session.schema.resolve_type(&actual_type).ok_or_else(|| {
+    let schema_type = session.schema().resolve_type(&actual_type).ok_or_else(|| {
         DiagnosticSet::one(coflow_api::Diagnostic::error(
             "DATA-FILE-TYPE",
             "DATA-FILE",

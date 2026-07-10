@@ -77,7 +77,7 @@ pub fn check_project(
     let runtime = Runtime::new(registry.clone());
     let session = runtime.build_project_session(project)?.into_session();
     if session.has_diagnostics() {
-        Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()))
+        Ok(CommandOutcome::Diagnostics(session.into_diagnostics()))
     } else {
         Ok(CommandOutcome::Success(CheckReport))
     }
@@ -105,12 +105,12 @@ pub fn build_project(
     let runtime = Runtime::new(registry.clone());
     let session = runtime.build_project_session(project)?.into_session();
     if session.has_diagnostics() {
-        return Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()));
+        return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
 
     let mut preflight_diagnostics = build_codegen_preflight_diagnostics(registry, &session, &plan)?;
     preflight_diagnostics.extend(artifact_safety_diagnostics(
-        &session.project,
+        session.project(),
         &plan.artifact_outputs,
     ));
     if !preflight_diagnostics.is_empty() {
@@ -119,8 +119,8 @@ pub fn build_project(
 
     let staged_data = match stage_data_tables(
         registry,
-        &session.schema,
-        &session.model,
+        session.schema(),
+        session.model(),
         &plan.data.exporter_id,
         &plan.data.output,
         &plan.data.dir,
@@ -176,10 +176,10 @@ pub fn export_project_data(
     let runtime = Runtime::new(registry.clone());
     let session = runtime.build_project_session(project)?.into_session();
     if session.has_diagnostics() {
-        return Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()));
+        return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
     let artifact_diagnostics = artifact_safety_diagnostics(
-        &session.project,
+        session.project(),
         &[ArtifactOutputPlan::new("outputs.data.dir", dir.clone())],
     );
     if !artifact_diagnostics.is_empty() {
@@ -187,8 +187,8 @@ pub fn export_project_data(
     }
     if let Err(diagnostics) = write_data_tables(
         registry,
-        &session.schema,
-        &session.model,
+        session.schema(),
+        session.model(),
         exporter_id,
         &output,
         &dir,
@@ -244,11 +244,11 @@ pub fn generate_project_code(
     let dir = output_dir(&project, &output, options.out_dir);
     let session = Runtime::build_schema_session(project)?;
     if session.has_diagnostics() {
-        return Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()));
+        return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
     let codegen_diagnostics = preflight_codegen(
         registry,
-        &session.schema,
+        session.schema(),
         None,
         codegen_id,
         &data_format,
@@ -258,20 +258,20 @@ pub fn generate_project_code(
         return Ok(CommandOutcome::Diagnostics(codegen_diagnostics));
     }
     let artifact_diagnostics = artifact_safety_diagnostics(
-        &session.project,
+        session.project(),
         &[ArtifactOutputPlan::new("outputs.code.dir", dir.clone())],
     );
     if !artifact_diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(artifact_diagnostics));
     }
-    let id_as_enum_variants = match id_as_enum_variants_for_schema_only(&session.project) {
+    let id_as_enum_variants = match id_as_enum_variants_for_schema_only(session.project()) {
         Ok(variants) => variants,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
     let staged_code = match stage_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
-            schema: &session.schema,
+            schema: session.schema(),
             model: None,
             codegen_id,
             data_format: &data_format,
@@ -412,8 +412,8 @@ fn build_codegen_preflight_diagnostics(
     };
     preflight_codegen(
         registry,
-        &session.schema,
-        code.needs_model_for_build.then_some(&session.model),
+        session.schema(),
+        code.needs_model_for_build.then_some(session.model()),
         &code.codegen_id,
         &plan.data.exporter_id,
         &code.output,
@@ -432,12 +432,12 @@ fn commit_build_artifacts(
     };
 
     let id_as_enum_artifacts =
-        stage_id_as_enum_lockfile_for_build(&session.project, &session.schema, &session.model)?;
+        stage_id_as_enum_lockfile_for_build(session.project(), session.schema(), session.model())?;
     let staged_code = stage_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
-            schema: &session.schema,
-            model: code.needs_model_for_build.then_some(&session.model),
+            schema: session.schema(),
+            model: code.needs_model_for_build.then_some(session.model()),
             codegen_id: &code.codegen_id,
             data_format: &plan.data.exporter_id,
             output_config: &code.output,

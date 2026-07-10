@@ -552,6 +552,45 @@ fn root_cli_session_builders_use_runtime_facade() {
 }
 
 #[test]
+fn root_cli_uses_session_accessors_instead_of_fields() {
+    let command_modules = [
+        (
+            "src/commands.rs",
+            std::fs::read_to_string("src/commands.rs").expect("read root CLI commands"),
+        ),
+        (
+            "src/data_commands.rs",
+            std::fs::read_to_string("src/data_commands.rs").expect("read root CLI data commands"),
+        ),
+        (
+            "src/data_commands/lark.rs",
+            std::fs::read_to_string("src/data_commands/lark.rs")
+                .expect("read root CLI Lark data command helpers"),
+        ),
+    ];
+    let forbidden = [
+        "session.project.",
+        "session.schema.",
+        "session.model.",
+        "session.diagnostics.",
+        "session.sources.",
+        "session.records.",
+        "session.files.",
+        "&session.schema",
+        "&session.model",
+    ];
+
+    for (path, source) in command_modules {
+        for field_access in forbidden {
+            assert!(
+                !source.contains(field_access),
+                "{path} should use ProjectSession accessors instead of `{field_access}`"
+            );
+        }
+    }
+}
+
+#[test]
 fn project_config_deserialization_does_not_live_in_project_lib_rs() {
     let project =
         std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");

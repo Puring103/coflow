@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use coflow_api::CftContainer;
+use coflow_api::{CftContainer, DiagnosticSet};
 use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::{path_to_slash, Project};
@@ -52,6 +52,55 @@ pub struct ProjectSession {
 }
 
 impl ProjectSession {
+    #[must_use]
+    pub const fn project(&self) -> &Project {
+        &self.project
+    }
+
+    #[must_use]
+    pub const fn schema(&self) -> &CftContainer {
+        &self.schema
+    }
+
+    #[must_use]
+    pub const fn model(&self) -> &CfdDataModel {
+        &self.model
+    }
+
+    #[must_use]
+    pub const fn diagnostics(&self) -> &DiagnosticsStore {
+        &self.diagnostics
+    }
+
+    #[must_use]
+    pub const fn sources(&self) -> &SourceIndex {
+        &self.sources
+    }
+
+    #[must_use]
+    pub const fn records(&self) -> &RecordIndex {
+        &self.records
+    }
+
+    #[must_use]
+    pub const fn files(&self) -> &FileIndex {
+        &self.files
+    }
+
+    #[must_use]
+    pub fn into_diagnostics(self) -> DiagnosticSet {
+        self.diagnostics.into_set()
+    }
+
+    #[must_use]
+    pub fn into_schema_session(self) -> ProjectSchemaSession {
+        ProjectSchemaSession {
+            project: self.project,
+            schema: self.schema,
+            diagnostics: self.diagnostics,
+        }
+    }
+
     #[must_use]
     pub fn has_diagnostics(&self) -> bool {
         !self.diagnostics.is_empty()
@@ -328,6 +377,26 @@ pub struct ProjectSchemaSession {
 }
 
 impl ProjectSchemaSession {
+    #[must_use]
+    pub const fn project(&self) -> &Project {
+        &self.project
+    }
+
+    #[must_use]
+    pub const fn schema(&self) -> &CftContainer {
+        &self.schema
+    }
+
+    #[must_use]
+    pub const fn diagnostics(&self) -> &DiagnosticsStore {
+        &self.diagnostics
+    }
+
+    #[must_use]
+    pub fn into_diagnostics(self) -> DiagnosticSet {
+        self.diagnostics.into_set()
+    }
+
     #[must_use]
     pub fn has_diagnostics(&self) -> bool {
         !self.diagnostics.is_empty()
