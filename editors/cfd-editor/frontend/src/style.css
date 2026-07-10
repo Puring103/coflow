@@ -852,9 +852,11 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   max-width: none;
 }
 /* Ref / enum pill cells: drop the td padding so the pill fills the cell
- * edge-to-edge and the border reads as the column separator. */
-.data-table td:has(> .cell-edit-wrap > .dc-pill-select),
-.data-table td:has(> .cell-edit-wrap > .dc-pill-wrap) {
+ * edge-to-edge. The `.pill-cell` class is set by the cell renderer up-front
+ * (rather than by a :has() selector reading the child tree) so a re-render
+ * that briefly swaps in a wrapper span — e.g. diagnostic wrap — doesn't
+ * make the td padding toggle mid-flight and shift the whole column. */
+.data-table td.pill-cell {
   padding: 0;
 }
 

@@ -129,14 +129,42 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     [data.columns, activeType]
   )
 
+  // Ref to the latest `data` so structural memos below (pill columns,
+  // declared-type map, column widths) can read the current annotations
+  // without listing `data.records` in their deps — that would rebuild the
+  // memo on every edit and cascade into a react-table column-defs replay.
+  const dataForCellsRef = useRef(data)
+  dataForCellsRef.current = data
+
+  // Which columns render as pill cells (ref/enum). Freezing this once per
+  // column set means the `pill-cell` class on the td stays stable across
+  // writes; without it, a briefly-mounted wrapper span (e.g. diagnostics)
+  // would flip a :has() rule and shift the whole column's padding.
+  const pillColumns = useMemo(() => {
+    const set = new Set<string>()
+    for (const column of data.columns) {
+      if (!column.type_names.includes(activeType)) continue
+      if (columnDropdownKind(data, column.name, activeType) !== null) {
+        set.add(column.name)
+      }
+    }
+    return set
+  }, [data.file_path, activeType, columnKeySignature(data)])
+
   // Declared schema type per column, sampled from the first record that
   // carries an annotation for this field. Different records normally
   // agree on the declared type for a shared field name; if they don't
   // (e.g. a rename mid-migration) we show whatever we saw first.
+  // Depending on `data.records` here would rebuild the map — and via the
+  // columns memo, every columnDef — on every edit, causing react-table to
+  // replay column sizes and briefly flash the row layout. Freezing on the
+  // structural signature (file + active type + column set) keeps the
+  // memo stable across writes.
   const columnDeclaredTypes = useMemo(() => {
     const map: Record<string, string> = {}
+    const snapshot = dataForCellsRef.current
     for (const name of allFieldNames) {
-      for (const record of data.records) {
+      for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
         const cell = fieldCell(record, name)
         const declared = cell?.annotation?.declared_type
@@ -144,14 +172,17 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       }
     }
     return map
-  }, [allFieldNames, data.records, activeType])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.file_path, activeType, columnKeySignature(data)])
 
+  // Compute column widths once per (file, activeType, column set) and freeze
+  // them for the session. Recomputing on every `data.records` update meant a
+  // ref-cell edit could change the column's max-summary length by a few px
+  // and snap the whole column to a new width — visible as jitter. Editing a
+  // value shouldn't reflow the layout; the user can drag-resize if a newly
+  // added cell needs more room.
   const columnSizeHints = useMemo(() => {
-    // Measure the actual pixel width of every cell in this file/type via a
-    // shared 2D canvas so CJK, punctuation, and full-length string summaries
-    // all get sized correctly. `max_summary_len` from the backend is a byte
-    // length (CJK triples) and it also caps strings at 40 bytes — computing
-    // widths on the frontend from the summaries we render sidesteps both.
+    const snapshot = dataForCellsRef.current
     const measure = (text: string) => estimateTextWidth(text, false)
     const measureMono = (text: string) => estimateTextWidth(text, true)
     // Chrome around the content per cell type.
@@ -167,20 +198,20 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     // Key column: measure the longest key so it never truncates unless the
     // user shrinks it manually. No cap.
     let keyWidth = measure('Key') + PLAIN_CHROME + 12 /* sort caret */
-    for (const record of data.records) {
+    for (const record of snapshot.records) {
       if (recordActualType(record) !== activeType) continue
       keyWidth = Math.max(keyWidth, measureMono(recordKey(record)) + PLAIN_CHROME + BADGE_ROOM)
     }
     const KEY_MAX = 500
     const hints: Record<string, number> = { key: Math.min(KEY_MAX, Math.max(MIN, Math.ceil(keyWidth))) }
-    for (const column of data.columns) {
+    for (const column of snapshot.columns) {
       if (!column.type_names.includes(activeType)) continue
-      const kind = columnDropdownKind(data, column.name, activeType)
+      const kind = columnDropdownKind(snapshot, column.name, activeType)
       const isPill = kind !== null
       const chrome = (isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME) + BADGE_ROOM
       let maxContent = 0
       let declaredForHeader: string | undefined
-      for (const record of data.records) {
+      for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
         const cell = fieldCell(record, column.name)
         if (!cell) continue
@@ -194,10 +225,29 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       hints[column.name] = Math.min(VALUE_MAX, Math.max(MIN, Math.ceil(Math.max(summaryWidth, headerWidth))))
     }
     return hints
-  }, [data.columns, data.records, activeType])
+    // Deps intentionally stable: file, active type, column identity/count,
+    // and record count. Content edits don't move the layout.
+  }, [data.file_path, activeType, columnKeySignature(data), data.records.length])
 
   const canEdit = !readOnly && !!onWriteField
   const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
+
+  // Cell renderers read these through refs so writes (which change
+  // diagnostics + record identity every time) don't rebuild the `columns`
+  // memo. A rebuilt memo → new columnDef identities → react-table replays
+  // its column-size default from the memo's `size`, and if the user hasn't
+  // dragged the column that briefly re-snaps to the new hint, showing up
+  // as jitter when the ref column's summary width just changed.
+  const diagnosticsRef = useRef(diagnostics)
+  diagnosticsRef.current = diagnostics
+  const cellDiagIndexRef = useRef(cellDiagIndex)
+  cellDiagIndexRef.current = cellDiagIndex
+  const onWriteFieldRef = useRef(onWriteField)
+  onWriteFieldRef.current = onWriteField
+  const onRenameRecordRef = useRef(onRenameRecord)
+  onRenameRecordRef.current = onRenameRecord
+  const onDiagnosticBadgeClickRef = useRef(onDiagnosticBadgeClick)
+  onDiagnosticBadgeClickRef.current = onDiagnosticBadgeClick
   const columns = useMemo(() => {
     const helper = createColumnHelper<RecordRow>()
     return [
@@ -205,19 +255,22 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         id: 'key',
         header: 'Key',
         cell: info => {
-          const rowSev = severityForCoordinate(diagnostics, data.file_path, info.row.original.coordinate)
+          const filePath = dataForCellsRef.current.file_path
+          const rowSev = severityForCoordinate(diagnosticsRef.current, filePath, info.row.original.coordinate)
+          const badgeClick = onDiagnosticBadgeClickRef.current
+          const renameFn = onRenameRecordRef.current
           return (
             <span className={`cell-key-wrap${rowSev ? ' has-diag' : ''}`}>
               <EditableKeyCell
                 value={info.getValue()}
                 editable={canRename}
-                onCommit={canRename ? next => onRenameRecord!(info.row.original.coordinate, next) : undefined}
+                onCommit={canRename && renameFn ? next => renameFn(info.row.original.coordinate, next) : undefined}
               />
               {(rowSev === 'error' || rowSev === 'warning') && (
                 <DiagBadge
                   severity={rowSev}
-                  onClick={onDiagnosticBadgeClick
-                    ? () => onDiagnosticBadgeClick(info.row.original.coordinate, null)
+                  onClick={badgeClick
+                    ? () => badgeClick(info.row.original.coordinate, null)
                     : undefined}
                 />
               )}
@@ -240,13 +293,16 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           ),
           size: columnSizeHints[name] ?? 120,
           cell: ({ row }) => {
+            const filePath = dataForCellsRef.current.file_path
             const f = fieldCell(row.original, name)
-            const sev = cellDiagIndex.get(`${coordinateId(row.original.coordinate)}::${name}`)
+            const sev = cellDiagIndexRef.current.get(`${coordinateId(row.original.coordinate)}::${name}`)
+            const badgeClick = onDiagnosticBadgeClickRef.current
+            const writeFn = onWriteFieldRef.current
             const cellBadge = (sev === 'error' || sev === 'warning') ? (
               <DiagBadge
                 severity={sev}
-                onClick={onDiagnosticBadgeClick
-                  ? () => onDiagnosticBadgeClick(row.original.coordinate, name)
+                onClick={badgeClick
+                  ? () => badgeClick(row.original.coordinate, name)
                   : undefined}
               />
             ) : null
@@ -262,7 +318,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             const cellEditable = canEdit && !readOnlyFromSchema
             const title = readOnlyFromSchema
               ? '由源记录决定，不可编辑'
-              : sev ? findDiagMessage(diagnostics, data.file_path, row.original.coordinate, name) : undefined
+              : sev ? findDiagMessage(diagnosticsRef.current, filePath, row.original.coordinate, name) : undefined
             return (
               <span className={sev ? `dc-cell-diag dc-cell-diag-${sev}` : undefined} title={title}>
                 <EditableCell
@@ -271,7 +327,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   refTargetType={cellRefTargetType(f)}
                   enumType={cellEnumType(f)}
                   nullable={cellNullable(f)}
-                  onCommit={cellEditable ? next => onWriteField!(row.original.coordinate, [fieldPathField(name)], next) : undefined}
+                  onCommit={cellEditable && writeFn ? next => writeFn(row.original.coordinate, [fieldPathField(name)], next) : undefined}
                 />
                 {cellBadge}
               </span>
@@ -280,7 +336,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         })
       }),
     ]
-  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, canEdit, canRename, onWriteField, onRenameRecord, cellDiagIndex, diagnostics, data.file_path, diagnostics, onDiagnosticBadgeClick])
+    // Only structural changes (column set, active type, computed widths,
+    // permission flags) rebuild the column defs. Edit-time state
+    // (diagnostics, records, callbacks) is read via refs above.
+  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, canEdit, canRename])
 
   // Global filter: match key or any scalar field value (via summaryOf).
   const globalFilterFn = useMemo(
@@ -412,7 +471,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     }}
                   >
                     {row.getVisibleCells().map(cell => (
-                      <td key={cell.id} style={{ width: cell.column.getSize() }}>
+                      <td
+                        key={cell.id}
+                        className={pillColumns.has(cell.column.id) ? 'pill-cell' : undefined}
+                        style={{ width: cell.column.getSize() }}
+                      >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -542,6 +605,13 @@ function fieldCell(record: RecordRow, fieldName: string) {
 }
 
 
+
+/** Stable identity for the column set: file path + column names joined.
+ *  Used as a memo key so column widths only recompute when the schema-
+ *  determined column set changes, not when a cell value updates. */
+function columnKeySignature(data: FileRecords): string {
+  return data.columns.map(c => c.name).join('')
+}
 
 function columnDropdownKind(
   data: FileRecords,

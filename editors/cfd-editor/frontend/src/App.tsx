@@ -497,12 +497,16 @@ export default function App() {
         // Stale guard: a newer edit superseded this one; drop our refresh so
         // we don't clobber the newer state with older data.
         if (mySeq !== writeSeqRef.current) return outcome.row
-        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
         const refreshFiles = outcome.affected_files.length > 0 ? outcome.affected_files : [filePath]
         const refreshedFiles = await Promise.all(
           refreshFiles.map(async file => [file, await api.getFileRecords(project.session_id, file)] as const),
         )
         if (mySeq !== writeSeqRef.current) return outcome.row
+        // Batch: apply diagnostics + refreshed file data + graph reset in a
+        // single React commit so the table doesn't render an intermediate
+        // frame with new diagnostics but old records (which briefly wraps
+        // cells in diagnostic-tinted spans and shifts column widths).
+        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
         setFileDataCache(c => {
           const next = { ...c }
           for (const [file, records] of refreshedFiles) next[file] = records
