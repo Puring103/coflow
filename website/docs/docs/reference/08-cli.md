@@ -158,6 +158,10 @@ coflow check examples/rpg --json
 
 建议在提交 schema 或数据变更前运行该命令。
 
+`check` 不执行 exporter 或 codegen preflight。启用了 C# codegen、MessagePack loader
+或其他产物输出的项目，提交前应运行 `coflow build`，让数据校验和产物
+preflight 在同一流程里完成。
+
 ## `build`
 
 `build` 运行完整校验，然后导出数据，并按项目配置可选生成代码。
@@ -369,6 +373,7 @@ Get-Content schema/main.cft | coflow schema write-file examples/rpg --file schem
 - 不能写入数据文件、输出目录或未配置的任意路径。
 - `--dry-run` 不落盘，只报告差异和检查结果。
 - `--check` 会在写入后编译 schema；dry-run 模式下会用标准输入内容在内存中检查。
+  它不加载数据源、不同步表头，也不执行项目级 DataModel / `check {}` 校验。
 
 非 dry-run 模式下，如果 `--check` 发现诊断，文件已经写入，调用方需要根据报告继续修正。
 
@@ -516,6 +521,8 @@ Get-Content data/items.cfd | coflow data write-file examples/rpg --file data/ite
 - 只接受精确小写 `.cfd` 文件。
 - `--file` 必须位于项目配置中的本地 CFD source 覆盖范围内。
 - 不能写入表格文件、远端 source、输出目录、显式非 CFD provider source 或未配置路径。
+- `data write-file` 不创建新 source。新增 CFD 文件应先用 `data create-file --provider cfd`
+  创建并纳入可写范围，再用 `data write-file` 重写内容。
 - `--dry-run` 不落盘，只比较目标文件内容并输出报告。
 - `--check` 在非 dry-run 写入后运行完整项目校验。
 
@@ -526,16 +533,20 @@ Get-Content data/items.cfd | coflow data write-file examples/rpg --file data/ite
 通过 provider writer 应用批量数据补丁。
 
 ```powershell
-coflow data patch [CONFIG_OR_DIR] --patch PATCH_FILE [--human]
+coflow data patch [CONFIG_OR_DIR] --patch JSON [--human]
+coflow data patch [CONFIG_OR_DIR] --patch-file PATCH_FILE [--human]
+coflow data patch [CONFIG_OR_DIR] --stdin [--human]
 ```
 
 示例：
 
 ```powershell
-coflow data patch examples/rpg --patch patch.json
+coflow data patch examples/rpg --patch '{"ops":[{"op":"set_field","record":{"type":"Item","key":"sword"},"path":[{"kind":"field","value":"price"}],"value":125}]}'
+coflow data patch examples/rpg --patch-file patch.json
+Get-Content patch.json | coflow data patch examples/rpg --stdin
 ```
 
-patch 文件示例：
+patch JSON 示例：
 
 ```json
 {
