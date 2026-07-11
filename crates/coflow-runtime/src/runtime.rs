@@ -80,6 +80,16 @@ impl Runtime {
     }
 }
 
+/// Read capability for a built project.
+///
+/// The owning runtime session is intentionally sealed. Hosts can query this
+/// capability but cannot unwrap it or reach mutation methods.
+///
+/// ```compile_fail
+/// fn escape_session(session: coflow_runtime::ReadOnlyProjectSession) {
+///     let _ = session.into_session();
+/// }
+/// ```
 #[derive(Debug)]
 pub struct ReadOnlyProjectSession {
     session: ProjectSession,
