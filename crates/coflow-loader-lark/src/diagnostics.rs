@@ -1,5 +1,4 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Label, SourceLocation};
-use coflow_loader_table_core::cell_value::CellRenderError;
 use coflow_loader_table_core::writer::TableWriteDiagnostics;
 use coflow_loader_table_core::{TableDiagnostic, TableDiagnostics, TableLabel};
 
@@ -124,14 +123,3 @@ pub(crate) fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic
     Diagnostic::error(code, "LARK", message)
 }
 
-pub(crate) fn lark_render_error(err: CellRenderError) -> DiagnosticSet {
-    let message = match err {
-        CellRenderError::AnonymousEnum => {
-            "writing anonymous enum values into lark cells is not supported"
-        }
-        CellRenderError::NestedObject => {
-            "writing nested object values into lark cells is not supported"
-        }
-    };
-    DiagnosticSet::one(diag("LARK-WRITE", message))
-}

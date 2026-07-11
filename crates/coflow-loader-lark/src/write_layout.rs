@@ -1,4 +1,4 @@
-use coflow_api::{DiagnosticSet, ResolvedSource, WriteContext, WriteFieldPathSegment};
+use coflow_api::{DiagnosticSet, ResolvedSource, WriteContext};
 use coflow_data_model::{RecordOrigin, SourceDocument};
 use coflow_loader_table_core::{resolve_table_write_layout, TableWriteLayout};
 
@@ -64,34 +64,4 @@ where
         &header,
     )
     .map_err(table_diagnostics_to_api)
-}
-
-pub(crate) fn resolve_lark_column(
-    field_path: &[WriteFieldPathSegment],
-    field_columns: &std::collections::BTreeMap<Vec<String>, usize>,
-    id_column: usize,
-) -> Option<usize> {
-    if field_path.is_empty() {
-        return Some(id_column);
-    }
-    let mut prefix: Vec<String> = Vec::new();
-    let mut found = None;
-    for segment in field_path {
-        let WriteFieldPathSegment::Field(name) = segment else {
-            break;
-        };
-        prefix.push(name.clone());
-        if let Some(column) = field_columns.get(&prefix) {
-            found = Some(*column);
-        }
-    }
-    if found.is_some() {
-        return found;
-    }
-    if let Some(WriteFieldPathSegment::Field(name)) = field_path.first() {
-        if name == "id" {
-            return Some(id_column);
-        }
-    }
-    None
 }

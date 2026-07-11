@@ -6,19 +6,21 @@ use coflow_api::{
     WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
-use coflow_loader_table_core::cell_value::render_cell_value;
 use coflow_loader_table_core::TableSheetConfig;
-use coflow_loader_table_core::writer::{plan_insert_record, TableInsertRecord, TableWritePlan};
+use coflow_loader_table_core::writer::{
+    plan_field_write, plan_insert_record, TableFieldWrite, TableInsertRecord, TableWritePlan,
+    WriteFieldPathSegment as TableWriteFieldPathSegment,
+};
 use serde_json::json;
 
-use crate::diagnostics::{diag, lark_render_error, table_write_diagnostics_to_api};
+use crate::diagnostics::{diag, table_write_diagnostics_to_api};
 use crate::http::LarkHttpClient;
 use crate::source::{
     lark_document_spreadsheet_token, required_option_string, sheet_config_from_options,
     sheet_for_type_from_options, type_for_sheet_from_options,
 };
 use crate::write_http::LarkWriteFailure;
-use crate::write_layout::{lark_insert_layout, resolve_lark_column, LarkInsertLayoutRequest};
+use crate::write_layout::{lark_insert_layout, LarkInsertLayoutRequest};
 use crate::{column_name, url_component, LarkSheetWriter, API_BASE};
 
 /// Writer descriptor for Lark sheets.
@@ -54,40 +56,41 @@ where
 
     fn write_field(
         &self,
-        _ctx: WriteContext<'_>,
+        ctx: WriteContext<'_>,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let RecordOrigin::Table {
+        let field_path = request
+            .field_path
+            .iter()
+            .map(api_path_segment_to_table)
+            .collect::<Vec<_>>();
+        let plan = plan_field_write(&TableFieldWrite {
+            origin: request.origin,
+            record_key: request.record_key,
+            actual_type: request.actual_type,
+            field_path: &field_path,
+            new_value: request.new_value,
+            model: ctx.model,
+        })
+        .map_err(table_write_diagnostics_to_api)?;
+        let TableWritePlan::SetCells {
             document,
             sheet,
-            row,
-            id_column,
-            field_columns,
-        } = request.origin
+            cells,
+            ..
+        } = plan
         else {
             return Err(DiagnosticSet::one(diag(
                 "LARK-WRITE",
-                "lark writer requires a Table origin",
+                "lark field writes must produce table cell updates",
             )));
         };
-        let SourceDocument::Remote(doc) = document else {
+        let SourceDocument::Remote(doc) = &document else {
             return Err(DiagnosticSet::one(diag(
                 "LARK-WRITE",
                 "lark writer requires a remote table document",
             )));
         };
-
-        let column = resolve_lark_column(request.field_path, field_columns, *id_column)
-            .ok_or_else(|| {
-                DiagnosticSet::one(diag(
-                    "LARK-WRITE",
-                    format!(
-                        "field path {:?} does not map to any column in the source row",
-                        request.field_path
-                    ),
-                ))
-            })?;
-        let cell_value = render_cell_value(request.new_value).map_err(lark_render_error)?;
 
         let app_id = required_option_string(&request.source.options, "app_id")?;
         let app_secret = required_option_string(&request.source.options, "app_secret")?;
@@ -104,17 +107,24 @@ where
             )));
         }
 
-        let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet, &token)?;
-        let column_letters = column_name(column);
-        let range = format!("{sheet_id}!{column_letters}{row}:{column_letters}{row}");
+        let sheet_id = self.cached_sheet_id(&spreadsheet_token, &sheet, &token)?;
+        let value_ranges = cells
+            .iter()
+            .map(|cell| {
+                let column_letters = column_name(cell.column);
+                let range = format!(
+                    "{sheet_id}!{column_letters}{}:{column_letters}{}",
+                    cell.row, cell.row
+                );
+                json!({ "range": range, "values": [[cell.value.clone()]] })
+            })
+            .collect::<Vec<_>>();
         let endpoint = format!(
             "{API_BASE}/sheets/v2/spreadsheets/{}/values_batch_update",
             url_component(&spreadsheet_token)
         );
         let body = json!({
-            "valueRanges": [
-                { "range": range, "values": [[cell_value]] }
-            ]
+            "valueRanges": value_ranges
         });
         let outcome = match self.send_values_batch_update(&endpoint, &body, &token) {
             Ok(()) => Ok(()),
@@ -397,6 +407,14 @@ where
             removed,
             diagnostics: DiagnosticSet::empty(),
         })
+    }
+}
+
+fn api_path_segment_to_table(segment: &WriteFieldPathSegment) -> TableWriteFieldPathSegment {
+    match segment {
+        WriteFieldPathSegment::Field(field) => TableWriteFieldPathSegment::Field(field.clone()),
+        WriteFieldPathSegment::Index(index) => TableWriteFieldPathSegment::Index(*index),
+        WriteFieldPathSegment::DictKey(key) => TableWriteFieldPathSegment::DictKey(key.clone()),
     }
 }
 

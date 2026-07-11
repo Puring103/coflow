@@ -15,10 +15,10 @@ use coflow_api::{
     WriteFieldPathSegment,
 };
 use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
-use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
+use coflow_data_model::{CfdObject, CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};
 use serde_json::Value;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
@@ -298,6 +298,85 @@ fn writes_cell_from_wiki_url_origin() {
     assert_eq!(calls.len(), 4);
     assert!(calls[1].1.contains("/wiki/v2/spaces/get_node"));
     assert!(calls[3].1.contains("values_batch_update"));
+}
+
+#[test]
+fn writes_expanded_object_with_table_core_field_plan() {
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":4}}]}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
+            r#"{"code":0,"data":{}}"#,
+        ),
+    ]);
+    let writer = LarkSheetWriter::new(client.clone());
+    let schema = CftContainer::new();
+    let schema_view = CftSchemaView::new(&schema);
+    let source = lark_source();
+    let mut field_columns = BTreeMap::new();
+    field_columns.insert(vec!["stats".to_string()], 2);
+    field_columns.insert(vec!["stats".to_string(), "hp".to_string()], 2);
+    field_columns.insert(vec!["stats".to_string(), "attack".to_string()], 3);
+    let origin = RecordOrigin::Table {
+        document: SourceDocument::Remote("lark:sht_test".to_string()),
+        sheet: "Items".to_string(),
+        row: 2,
+        id_column: 1,
+        field_columns,
+    };
+    let new_value = CfdValue::Object(Box::new(CfdObject::new(
+        "Stats",
+        BTreeMap::from([
+            ("hp".to_string(), CfdValue::Int(100)),
+            ("attack".to_string(), CfdValue::Int(9)),
+        ]),
+    )));
+    let segments = vec![WriteFieldPathSegment::Field("stats".to_string())];
+    let request = WriteCellRequest {
+        origin: &origin,
+        record_key: "sword",
+        actual_type: "Item",
+        field_path: &segments,
+        new_value: &new_value,
+        schema: &schema_view,
+        source: &source,
+    };
+    let ctx = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &schema_view,
+        model: None,
+    };
+
+    writer
+        .write_field(ctx, &request)
+        .expect("write expanded object cells");
+
+    let calls = client.calls();
+    let body = calls
+        .iter()
+        .find(|(_, url, _)| url.contains("values_batch_update"))
+        .and_then(|(_, _, body)| body.as_ref())
+        .expect("batch update body");
+    let ranges = body["valueRanges"].as_array().expect("value ranges");
+    let written = ranges
+        .iter()
+        .map(|range| {
+            (
+                range["range"].as_str().expect("range").to_string(),
+                range["values"][0][0].as_str().expect("cell value").to_string(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(ranges.len(), 2);
+    assert!(written.contains(&("shtid_items!B2:B2".to_string(), "100".to_string())));
+    assert!(written.contains(&("shtid_items!C2:C2".to_string(), "9".to_string())));
 }
 
 #[test]

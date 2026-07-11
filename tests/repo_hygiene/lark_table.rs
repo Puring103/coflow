@@ -80,8 +80,6 @@ fn lark_loader_diagnostics_do_not_live_in_lib_rs() {
 
         "pub(crate) fn table_write_diagnostics_to_api",
 
-        "pub(crate) fn lark_render_error",
-
     ] {
 
         assert!(
@@ -536,8 +534,6 @@ fn lark_loader_write_operations_do_not_live_in_lib_rs() {
 
         "fn lark_insert_layout",
 
-        "fn resolve_lark_column",
-
     ] {
 
         assert!(
@@ -557,6 +553,15 @@ fn lark_loader_write_operations_do_not_live_in_lib_rs() {
         );
 
     }
+
+    assert!(
+        write.contains("plan_field_write"),
+        "Lark field writes should reuse the shared table-core field write planner"
+    );
+    assert!(
+        !write.contains("resolve_lark_column"),
+        "Lark field writes should not duplicate table-core column resolution"
+    );
 
 }
 
@@ -602,9 +607,9 @@ fn table_writers_use_shared_cell_renderer() {
 
     assert!(
 
-        lark.contains("render_cell_value(request.new_value)"),
+        lark.contains("plan_field_write") && lark.contains("table_write_diagnostics_to_api"),
 
-        "Lark writer should use the shared table-core cell renderer"
+        "Lark writer should use the shared table-core field planner and renderer"
 
     );
 
