@@ -5,6 +5,19 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaSource {
+    pub module_id: String,
+    pub path: PathBuf,
+    pub canonical_path: PathBuf,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SchemaSourceSet {
+    pub modules: Vec<SchemaSource>,
+}
+
 #[derive(Debug, Default)]
 struct SchemaDiscovery {
     files: Vec<SchemaFile>,
@@ -40,6 +53,26 @@ pub(super) fn schema_files(
         .files
         .sort_by(|left, right| left.module_id.cmp(&right.module_id));
     Ok(discovery.files)
+}
+
+pub(super) fn schema_sources(
+    schema: &SchemaConfig,
+    root_dir: &Path,
+) -> Result<SchemaSourceSet, DiagnosticSet> {
+    let files = schema_files(schema, root_dir)?;
+    let mut modules = Vec::with_capacity(files.len());
+    for file in files {
+        let source = fs::read_to_string(&file.path).map_err(|err| {
+            SchemaPathPolicy::new(root_dir).read_file_error(&file.path, err)
+        })?;
+        modules.push(SchemaSource {
+            module_id: file.module_id,
+            path: file.path,
+            canonical_path: file.canonical_path,
+            source,
+        });
+    }
+    Ok(SchemaSourceSet { modules })
 }
 
 fn push_schema_path(

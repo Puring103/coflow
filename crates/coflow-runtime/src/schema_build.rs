@@ -1,14 +1,109 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
-use coflow_cft::{CftContainer, CftSchemaView};
+use coflow_cft::{CftContainer, CftDiagnostic, CftSchemaView, ModuleId};
 use coflow_project::{
-    compile_schema_project, dedupe_cft_diagnostics, diagnostic_set_from_cft, Project, SchemaBuild,
+    dedupe_cft_diagnostics, diagnostic_set_from_cft, normalize_path, Project,
 };
+use std::path::PathBuf;
 
 use crate::dimensions;
 use crate::indexes::DiagnosticsStore;
 use crate::session::ProjectSchemaSession;
+
+#[derive(Debug)]
+pub struct SchemaBuild {
+    pub container: Option<CftContainer>,
+    pub diagnostics: Vec<CftDiagnostic>,
+    pub sources: BTreeMap<String, String>,
+    pub paths: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SchemaSourceOverride {
+    pub requested_module: Option<String>,
+    pub normalized_path: PathBuf,
+    pub source: String,
+}
+
+/// Compiles project schema sources with optional in-memory host overrides.
+///
+/// # Errors
+///
+/// Returns diagnostics when sources cannot be read or an override does not
+/// identify a configured schema module.
+pub fn compile_schema_project_with_overrides(
+    project: &Project,
+    overrides: &[SchemaSourceOverride],
+) -> Result<SchemaBuild, DiagnosticSet> {
+    let source_set = project.schema_sources()?;
+    let mut matched_overrides = vec![false; overrides.len()];
+    let mut sources = BTreeMap::new();
+    let mut paths = BTreeMap::new();
+    let mut container = CftContainer::new();
+    let mut diagnostics = Vec::new();
+
+    for module in source_set.modules {
+        let source = if let Some((index, source_override)) = overrides
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, source_override)| {
+                source_override
+                    .requested_module
+                    .as_deref()
+                    .is_some_and(|requested| requested == module.module_id)
+                    || normalize_path(&module.canonical_path) == source_override.normalized_path
+            }) {
+            matched_overrides[index] = true;
+            source_override.source.clone()
+        } else {
+            module.source
+        };
+        sources.insert(module.module_id.clone(), source.clone());
+        paths.insert(
+            module.module_id.clone(),
+            module.canonical_path.display().to_string(),
+        );
+        if let Err(errors) = container.add_module(ModuleId::new(module.module_id), source) {
+            diagnostics.extend(errors.diagnostics);
+        }
+    }
+
+    for (index, matched) in matched_overrides.into_iter().enumerate() {
+        if !matched {
+            let source_override = &overrides[index];
+            let requested = source_override.requested_module.as_deref().map_or_else(
+                || source_override.normalized_path.display().to_string(),
+                str::to_string,
+            );
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "SCHEMA-STDIN-PATH",
+                "SCHEMA",
+                format!("`--stdin-path {requested}` is not part of the configured schema"),
+            )));
+        }
+    }
+
+    let compiled = if diagnostics.is_empty() {
+        match container.compile() {
+            Ok(()) => Some(container),
+            Err(errors) => {
+                diagnostics.extend(errors.diagnostics);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    Ok(SchemaBuild {
+        container: compiled,
+        diagnostics,
+        sources,
+        paths,
+    })
+}
 
 /// Opens and compiles a project schema without validating or loading data
 /// sources.
@@ -103,7 +198,7 @@ fn compile_project_schema(
     if !project_diagnostics.is_empty() {
         return Ok(Err(project_diagnostics));
     }
-    let build = compile_schema_project(project, None)?;
+    let build = compile_schema_project_with_overrides(project, &[])?;
     let diagnostics = diagnostics_from_schema_build(&build);
     if diagnostics.is_empty() {
         build

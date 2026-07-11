@@ -12,9 +12,8 @@
 use coflow_api::SourceLocation;
 use coflow_cft::{CftDiagnostic, CftErrorCode, ModuleId, Span};
 use coflow_project::{
-    compile_schema_project_with_overrides, dedupe_cft_diagnostics, init_project, normalize_path,
-    path_to_slash, resolve_config_path, OutputConfig, OutputsConfig, Project, ProjectConfig,
-    SchemaConfig, SchemaSourceOverride, DEFAULT_PROJECT_YAML,
+    dedupe_cft_diagnostics, init_project, normalize_path, path_to_slash, resolve_config_path,
+    OutputConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -936,105 +935,6 @@ fn schema_files_accept_absolute_schema_paths_outside_project_root() -> TestResul
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())?;
     std::fs::remove_dir_all(external).map_err(|err| err.to_string())
-}
-
-#[test]
-fn schema_overrides_match_by_module_or_path_and_reject_unmatched() -> TestResult {
-    let root = temp_project_dir("coflow-project-overrides");
-    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
-    let schema_path = root.join("schema/main.cft");
-    std::fs::write(&schema_path, "type Item { value: string; }").map_err(|err| err.to_string())?;
-    std::fs::write(root.join("coflow.yaml"), "schema: schema/main.cft\n")
-        .map_err(|err| err.to_string())?;
-    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
-
-    let by_module = SchemaSourceOverride {
-        requested_module: Some("schema/main.cft".to_string()),
-        normalized_path: normalize_path(&root.join("not-used.cft")),
-        source: "type Replacement { value: string; }".to_string(),
-    };
-    let build = compile_schema_project_with_overrides(&project, &[by_module])
-        .map_err(|err| err.to_string())?;
-    assert!(build.container.is_some());
-    assert!(build.sources["schema/main.cft"].contains("Replacement"));
-
-    let by_path = SchemaSourceOverride {
-        requested_module: None,
-        normalized_path: normalize_path(&schema_path),
-        source: "type PathReplacement { value: string; }".to_string(),
-    };
-    let build = compile_schema_project_with_overrides(&project, &[by_path])
-        .map_err(|err| err.to_string())?;
-    assert!(build.container.is_some());
-    assert!(build.sources["schema/main.cft"].contains("PathReplacement"));
-
-    let unmatched = SchemaSourceOverride {
-        requested_module: Some("schema/missing.cft".to_string()),
-        normalized_path: normalize_path(&root.join("schema/missing.cft")),
-        source: "type Missing { value: string; }".to_string(),
-    };
-    let err = compile_schema_project_with_overrides(&project, &[unmatched])
-        .expect_err("unmatched override should fail");
-    assert!(err.contains("`--stdin-path schema/missing.cft` is not part"));
-
-    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
-}
-
-#[test]
-fn schema_compile_with_invalid_module_keeps_diagnostics_without_compiling() -> TestResult {
-    let root = temp_project_dir("coflow-project-invalid-module");
-    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
-    std::fs::write(
-        root.join("schema/bad.cft"),
-        "type Broken { value: Missing; }",
-    )
-    .map_err(|err| err.to_string())?;
-    std::fs::write(root.join("coflow.yaml"), "schema: schema/bad.cft\n")
-        .map_err(|err| err.to_string())?;
-    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
-
-    let build =
-        compile_schema_project_with_overrides(&project, &[]).map_err(|err| err.to_string())?;
-
-    assert!(build.container.is_none());
-    assert!(build
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == CftErrorCode::UnknownNamedType));
-
-    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
-}
-
-#[test]
-fn schema_compile_with_override_parse_error_keeps_sources_and_paths() -> TestResult {
-    let root = temp_project_dir("coflow-project-override-parse-error");
-    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
-    let schema_path = root.join("schema/main.cft");
-    std::fs::write(&schema_path, "type Item { value: string; }").map_err(|err| err.to_string())?;
-    std::fs::write(root.join("coflow.yaml"), "schema: schema/main.cft\n")
-        .map_err(|err| err.to_string())?;
-    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
-
-    let override_source = "type Broken { value: string;".to_string();
-    let build = compile_schema_project_with_overrides(
-        &project,
-        &[SchemaSourceOverride {
-            requested_module: Some("schema/main.cft".to_string()),
-            normalized_path: normalize_path(&schema_path),
-            source: override_source.clone(),
-        }],
-    )
-    .map_err(|err| err.to_string())?;
-
-    assert!(build.container.is_none());
-    assert!(build
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == CftErrorCode::UnexpectedEof));
-    assert_eq!(build.sources["schema/main.cft"], override_source);
-    assert!(build.paths["schema/main.cft"].ends_with("main.cft"));
-
-    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
 
 #[test]

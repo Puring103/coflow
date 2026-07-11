@@ -27,9 +27,11 @@ use coflow::commands::{
 use coflow::diagnostics::DiagnosticJson;
 use coflow::{data_commands, schema_commands};
 use coflow_api::DiagnosticSet;
-use coflow_project::{compile_schema_project, dedupe_cft_diagnostics, Project};
+use coflow_project::{dedupe_cft_diagnostics, normalize_path, path_to_slash, Project};
+use coflow_runtime::{compile_schema_project_with_overrides, SchemaSourceOverride};
 use data_get_target::parse_data_get_target;
 use serde_json::Value;
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -239,7 +241,25 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
             .map_err(output_error)?;
         return Ok(false);
     }
-    let build = compile_schema_project(&project, args.stdin_path.as_deref())?;
+    let overrides = if let Some(path) = args.stdin_path.as_deref() {
+        let mut source = String::new();
+        std::io::stdin()
+            .read_to_string(&mut source)
+            .map_err(|err| cli_error("CLI-STDIN", format!("failed to read stdin: {err}")))?;
+        let absolute = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            project.root_dir.join(path)
+        };
+        vec![SchemaSourceOverride {
+            requested_module: Some(path_to_slash(path)),
+            normalized_path: normalize_path(&absolute),
+            source,
+        }]
+    } else {
+        Vec::new()
+    };
+    let build = compile_schema_project_with_overrides(&project, &overrides)?;
     let diagnostics = dedupe_cft_diagnostics(build.diagnostics);
     if args.json {
         write_json_diagnostics(

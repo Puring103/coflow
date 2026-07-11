@@ -766,6 +766,7 @@ dependencies = [
  "coflow-cfd",
  "coflow-cft",
  "coflow-project",
+ "coflow-runtime",
  "serde_json",
 ]
 

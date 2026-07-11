@@ -77,6 +77,15 @@ impl<'a> SchemaPathPolicy<'a> {
         )
     }
 
+    pub(super) fn read_file_error(&self, path: &Path, err: impl std::fmt::Display) -> DiagnosticSet {
+        file_error(
+            path,
+            "PROJECT-SCHEMA-READ",
+            "PROJECT",
+            format!("failed to read schema `{}`: {err}", path.display()),
+        )
+    }
+
     pub(super) fn canonicalize(&self, path: &Path) -> Result<PathBuf, DiagnosticSet> {
         fs::canonicalize(path).map_err(|err| {
             file_error(

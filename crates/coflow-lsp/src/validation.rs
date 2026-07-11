@@ -2,9 +2,9 @@ use coflow_api::{DiagnosticSet, SourceLocationSpec};
 use coflow_cfd::{parse_cfd, CfdAst};
 use coflow_cft::CftContainer;
 use coflow_project::{
-    compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
-    normalize_path, Project, SchemaSourceOverride,
+    dedupe_cft_diagnostics, diagnostic_set_from_cft, normalize_path, Project,
 };
+use coflow_runtime::{compile_schema_project_with_overrides, SchemaSourceOverride};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

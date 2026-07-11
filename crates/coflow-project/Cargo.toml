@@ -2,7 +2,7 @@
 name = "coflow-project"
 version = "0.5.0"
 edition = "2021"
-description = "Project configuration and CFT schema compilation for Coflow."
+description = "Project configuration, path resolution, and schema source discovery for Coflow."
 license = "Apache-2.0"
 repository = "https://github.com/wtlll/ScriptForGame"
 publish = false

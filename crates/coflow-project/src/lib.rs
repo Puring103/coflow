@@ -27,6 +27,7 @@ pub use diagnostics::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
 pub use paths::{normalize_path, path_to_slash, resolve_config_path};
 pub use schema_path_policy::SchemaFile;
+pub use schema_sources::{SchemaSource, SchemaSourceSet};
 
 use validation::{
     validate_for_codegen_collecting, validate_project_config_schema_only_collecting,
@@ -34,10 +35,7 @@ use validation::{
 };
 
 use coflow_api::DiagnosticSet;
-use coflow_cft::{CftContainer, CftDiagnostic, ModuleId};
-use std::collections::BTreeMap;
 use std::fs;
-use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -184,153 +182,17 @@ impl Project {
     pub fn schema_files(&self) -> Result<Vec<SchemaFile>, DiagnosticSet> {
         schema_sources::schema_files(&self.config.schema, &self.root_dir)
     }
+
+    /// Reads configured schema modules without compiling CFT semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when schema discovery or source reads fail.
+    pub fn schema_sources(&self) -> Result<SchemaSourceSet, DiagnosticSet> {
+        schema_sources::schema_sources(&self.config.schema, &self.root_dir)
+    }
 }
 
 fn resolve_project_relative(root_dir: &Path, path: &Path) -> PathBuf {
     paths::resolve_project_relative(root_dir, path)
-}
-
-#[derive(Debug)]
-pub struct SchemaBuild {
-    pub container: Option<CftContainer>,
-    pub diagnostics: Vec<CftDiagnostic>,
-    pub sources: BTreeMap<String, String>,
-    pub paths: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SchemaSourceOverride {
-    pub requested_module: Option<String>,
-    pub normalized_path: PathBuf,
-    pub source: String,
-}
-
-/// Compiles the project's configured CFT schema files.
-///
-/// # Errors
-///
-/// Compile the schema for a project.
-///
-/// # Errors
-///
-/// Returns an error when project schema paths cannot be read or when stdin
-/// schema input cannot be consumed.
-pub fn compile_schema_project(
-    project: &Project,
-    stdin_path: Option<&Path>,
-) -> Result<SchemaBuild, DiagnosticSet> {
-    let overrides = if let Some(path) = stdin_path {
-        let mut source = String::new();
-        io::stdin()
-            .read_to_string(&mut source)
-            .map_err(|err| {
-                diagnostics::plain_error(
-                    "CLI-STDIN",
-                    "CLI",
-                    format!("failed to read stdin: {err}"),
-                )
-            })?;
-        let requested = path_to_slash(path);
-        let absolute = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            project.root_dir.join(path)
-        };
-        vec![SchemaSourceOverride {
-            requested_module: Some(requested),
-            normalized_path: normalize_path(&absolute),
-            source,
-        }]
-    } else {
-        Vec::new()
-    };
-    compile_schema_project_with_overrides(project, &overrides)
-}
-
-/// Compiles the project's schema files with in-memory source overrides.
-///
-/// # Errors
-///
-/// Returns an error when schema files cannot be discovered/read, an override
-/// does not match any schema module, or schema compilation reports diagnostics
-/// without a previously compiled container.
-pub fn compile_schema_project_with_overrides(
-    project: &Project,
-    overrides: &[SchemaSourceOverride],
-) -> Result<SchemaBuild, DiagnosticSet> {
-    let schema_files = project.schema_files()?;
-    let mut matched_overrides = vec![false; overrides.len()];
-    let mut sources = BTreeMap::new();
-    let mut paths = BTreeMap::new();
-    let mut container = CftContainer::new();
-    let mut diagnostics = Vec::new();
-
-    for schema_file in schema_files {
-        let source = if let Some((index, source_override)) = overrides
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, source_override)| {
-                source_override
-                    .requested_module
-                    .as_deref()
-                    .is_some_and(|module| module == schema_file.module_id)
-                    || normalize_path(&schema_file.canonical_path)
-                        == source_override.normalized_path
-            }) {
-            matched_overrides[index] = true;
-            source_override.source.clone()
-        } else {
-            fs::read_to_string(&schema_file.path).map_err(|err| {
-                diagnostics::file_error(
-                    &schema_file.path,
-                    "PROJECT-SCHEMA-READ",
-                    "PROJECT",
-                    format!("failed to read `{}`: {err}", schema_file.path.display()),
-                )
-            })?
-        };
-        sources.insert(schema_file.module_id.clone(), source.clone());
-        paths.insert(
-            schema_file.module_id.clone(),
-            schema_file.canonical_path.display().to_string(),
-        );
-        if let Err(errors) = container.add_module(ModuleId::new(schema_file.module_id), source) {
-            diagnostics.extend(errors.diagnostics);
-        }
-    }
-
-    for (index, matched) in matched_overrides.into_iter().enumerate() {
-        if !matched {
-            let source_override = &overrides[index];
-            let requested = source_override.requested_module.as_deref().map_or_else(
-                || source_override.normalized_path.display().to_string(),
-                str::to_string,
-            );
-            return Err(diagnostics::plain_error(
-                "SCHEMA-STDIN-PATH",
-                "SCHEMA",
-                format!("`--stdin-path {requested}` is not part of the configured schema"),
-            ));
-        }
-    }
-
-    let compiled = if diagnostics.is_empty() {
-        match container.compile() {
-            Ok(()) => Some(container),
-            Err(errors) => {
-                diagnostics.extend(errors.diagnostics);
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    Ok(SchemaBuild {
-        container: compiled,
-        diagnostics,
-        sources,
-        paths,
-    })
 }

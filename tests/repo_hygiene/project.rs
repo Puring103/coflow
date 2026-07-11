@@ -349,5 +349,56 @@ fn project_initialization_is_an_atomic_module() {
     }
 }
 
+#[test]
+fn project_returns_schema_sources_without_owning_compilation_or_stdin() {
+    let project =
+        std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
+    let sources = std::fs::read_to_string("crates/coflow-project/src/schema_sources.rs")
+        .expect("read project schema sources");
+    let runtime = std::fs::read_to_string("crates/coflow-runtime/src/schema_build.rs")
+        .expect("read runtime schema build");
+    let cli = std::fs::read_to_string("src/main.rs").expect("read CLI main");
+
+    for expected in [
+        "pub struct SchemaSource",
+        "pub struct SchemaSourceSet",
+        "pub(super) fn schema_sources",
+    ] {
+        assert!(
+            sources.contains(expected),
+            "project schema source module should own `{expected}`"
+        );
+    }
+    for forbidden in [
+        "pub struct SchemaBuild",
+        "pub struct SchemaSourceOverride",
+        "compile_schema_project_with_overrides",
+        "io::stdin()",
+        "CftContainer",
+        "ModuleId",
+    ] {
+        assert!(
+            !project.contains(forbidden),
+            "project must not own runtime/CLI schema item `{forbidden}`"
+        );
+    }
+    for expected in [
+        "pub struct SchemaBuild",
+        "pub struct SchemaSourceOverride",
+        "pub fn compile_schema_project_with_overrides",
+        "project.schema_sources()",
+        "container.compile()",
+    ] {
+        assert!(
+            runtime.contains(expected),
+            "runtime schema build should own `{expected}`"
+        );
+    }
+    assert!(
+        cli.contains("std::io::stdin()") && cli.contains("SchemaSourceOverride"),
+        "CLI should own stdin reading and translate it into a runtime override"
+    );
+}
+
 
 

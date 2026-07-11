@@ -66,6 +66,9 @@ pub use records::{
     RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime};
+pub use schema_build::{
+    compile_schema_project_with_overrides, SchemaBuild, SchemaSourceOverride,
+};
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,
     SchemaConstValueInfo, SchemaDefaultValueInfo, SchemaEnumInfo, SchemaEnumVariantInfo,

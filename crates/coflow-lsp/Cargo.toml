@@ -15,4 +15,5 @@ coflow-api = { path = "../coflow-api" }
 coflow-cft = { path = "../coflow-cft" }
 coflow-cfd = { path = "../coflow-cfd" }
 coflow-project = { path = "../coflow-project" }
+coflow-runtime = { path = "../coflow-runtime" }
 serde_json = { version = "1", features = ["preserve_order"] }

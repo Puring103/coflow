@@ -2,7 +2,8 @@ use coflow_cft::ast::{CheckStmt, Item};
 use coflow_cft::{
     CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaType, CftSchemaTypeRef, ModuleId,
 };
-use coflow_project::{normalize_path, SchemaBuild};
+use coflow_project::normalize_path;
+use coflow_runtime::SchemaBuild;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
