@@ -175,6 +175,8 @@ fn api_registry_supports_shared_role_registration() {
         std::fs::read_to_string("crates/coflow-api/src/registry.rs").expect("read API registry");
     let registration = std::fs::read_to_string("crates/coflow-api/src/registry/registration.rs")
         .expect("read API registry registration");
+    let bundle = std::fs::read_to_string("crates/coflow-api/src/registry/bundle.rs")
+        .expect("read API provider bundle");
 
     for expected in [
         "pub fn register_source_writer_arc",
@@ -202,6 +204,18 @@ fn api_registry_supports_shared_role_registration() {
             "API registry should route role storage through shared Arc registration, not `{forbidden}`"
         );
     }
+
+    for expected in [
+        "pub struct ProviderBundle",
+        "pub fn register_bundle(",
+        "ensure_available(",
+        "self.source_providers.extend(bundle.source_providers)",
+    ] {
+        assert!(
+            bundle.contains(expected),
+            "provider bundle should validate all roles before atomic registration via `{expected}`"
+        );
+    }
 }
 
 #[test]
@@ -214,10 +228,11 @@ fn builtins_share_provider_role_instances() {
         "let csv_writer = Arc::new(coflow_loader_csv::CsvWriter::new())",
         "let lark_writer = Arc::new(coflow_loader_lark::LarkSheetWriter::default())",
         "let cfd_writer = Arc::new(coflow_loader_cfd::CfdWriter::new())",
-        "registry.register_source_writer_arc(Arc::clone(&excel_writer))",
-        "registry.register_table_manager_arc(Arc::clone(&excel_writer))",
-        "registry.register_dimension_source_manager_arc(Arc::clone(&csv_writer))",
-        "registry.register_dimension_source_manager_arc(Arc::clone(&cfd_writer))",
+        "bundle.add_source_writer_arc(Arc::clone(&excel_writer))",
+        "bundle.add_table_manager_arc(Arc::clone(&excel_writer))",
+        "bundle.add_dimension_source_manager_arc(Arc::clone(&csv_writer))",
+        "bundle.add_dimension_source_manager_arc(Arc::clone(&cfd_writer))",
+        "registry.register_bundle(bundle)",
     ] {
         assert!(
             builtins.contains(expected),

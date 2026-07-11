@@ -15,7 +15,7 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
-use coflow_api::{ProviderRegistrationError, ProviderRegistry};
+use coflow_api::{ProviderBundle, ProviderRegistrationError, ProviderRegistry};
 use std::sync::Arc;
 
 /// Creates the built-in provider registry used by host applications.
@@ -38,27 +38,28 @@ pub fn default_provider_registry() -> Result<ProviderRegistry, ProviderRegistrat
 pub fn register_default_providers(
     registry: &mut ProviderRegistry,
 ) -> Result<(), ProviderRegistrationError> {
+    let mut bundle = ProviderBundle::default();
     let excel_writer = Arc::new(coflow_loader_excel::ExcelWriter::new());
     let csv_writer = Arc::new(coflow_loader_csv::CsvWriter::new());
     let lark_writer = Arc::new(coflow_loader_lark::LarkSheetWriter::default());
     let cfd_writer = Arc::new(coflow_loader_cfd::CfdWriter::new());
 
-    registry.register_source_provider(coflow_loader_excel::ExcelLoader)?;
-    registry.register_source_provider(coflow_loader_csv::CsvLoader)?;
-    registry.register_source_provider(coflow_loader_lark::LarkSheetLoader::default())?;
-    registry.register_source_provider(coflow_loader_cfd::CfdLoader)?;
-    registry.register_source_writer_arc(Arc::clone(&excel_writer))?;
-    registry.register_source_writer_arc(Arc::clone(&lark_writer))?;
-    registry.register_source_writer_arc(Arc::clone(&cfd_writer))?;
-    registry.register_source_writer_arc(Arc::clone(&csv_writer))?;
-    registry.register_table_manager_arc(Arc::clone(&excel_writer))?;
-    registry.register_table_manager_arc(Arc::clone(&csv_writer))?;
-    registry.register_table_manager_arc(Arc::clone(&cfd_writer))?;
-    registry.register_table_manager_arc(Arc::clone(&lark_writer))?;
-    registry.register_dimension_source_manager_arc(Arc::clone(&csv_writer))?;
-    registry.register_dimension_source_manager_arc(Arc::clone(&cfd_writer))?;
-    registry.register_exporter(coflow_exporter_json::JsonExporter)?;
-    registry.register_exporter(coflow_exporter_messagepack::MessagePackExporter)?;
-    registry.register_codegen(coflow_codegen_csharp::CsharpCodeGenerator)?;
-    Ok(())
+    bundle.add_source_provider(coflow_loader_excel::ExcelLoader)?;
+    bundle.add_source_provider(coflow_loader_csv::CsvLoader)?;
+    bundle.add_source_provider(coflow_loader_lark::LarkSheetLoader::default())?;
+    bundle.add_source_provider(coflow_loader_cfd::CfdLoader)?;
+    bundle.add_source_writer_arc(Arc::clone(&excel_writer))?;
+    bundle.add_source_writer_arc(Arc::clone(&lark_writer))?;
+    bundle.add_source_writer_arc(Arc::clone(&cfd_writer))?;
+    bundle.add_source_writer_arc(Arc::clone(&csv_writer))?;
+    bundle.add_table_manager_arc(Arc::clone(&excel_writer))?;
+    bundle.add_table_manager_arc(Arc::clone(&csv_writer))?;
+    bundle.add_table_manager_arc(Arc::clone(&cfd_writer))?;
+    bundle.add_table_manager_arc(Arc::clone(&lark_writer))?;
+    bundle.add_dimension_source_manager_arc(Arc::clone(&csv_writer))?;
+    bundle.add_dimension_source_manager_arc(Arc::clone(&cfd_writer))?;
+    bundle.add_exporter(coflow_exporter_json::JsonExporter)?;
+    bundle.add_exporter(coflow_exporter_messagepack::MessagePackExporter)?;
+    bundle.add_codegen(coflow_codegen_csharp::CsharpCodeGenerator)?;
+    registry.register_bundle(bundle)
 }

@@ -1,7 +1,9 @@
+mod bundle;
 mod errors;
 mod registration;
 mod selection;
 
+pub use bundle::ProviderBundle;
 pub use errors::{ProviderRegistrationError, SourceProviderSelectionError};
 
 use crate::{

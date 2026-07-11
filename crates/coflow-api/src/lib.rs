@@ -43,7 +43,9 @@ pub use provider::{
     SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
     SourceResolveContext,
 };
-pub use registry::{ProviderRegistrationError, ProviderRegistry, SourceProviderSelectionError};
+pub use registry::{
+    ProviderBundle, ProviderRegistrationError, ProviderRegistry, SourceProviderSelectionError,
+};
 pub use writer::{
     DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest,
     SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteContext, WriteFieldPathSegment,

@@ -193,6 +193,38 @@ fn registry_rejects_duplicate_provider_ids() -> Result<(), String> {
     Ok(())
 }
 
+#[test]
+fn provider_bundle_registration_is_atomic() -> Result<(), String> {
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_source_writer(coflow_loader_csv::CsvWriter::new())
+        .map_err(|err| err.to_string())?;
+
+    let mut bundle = coflow_api::ProviderBundle::default();
+    bundle
+        .add_source_provider(coflow_loader_csv::CsvLoader)
+        .map_err(|err| err.to_string())?;
+    bundle
+        .add_source_writer(coflow_loader_csv::CsvWriter::new())
+        .map_err(|err| err.to_string())?;
+
+    let err = registry
+        .register_bundle(bundle)
+        .err()
+        .ok_or_else(|| "bundle with a conflicting final role should fail".to_string())?;
+    ensure_eq(err.provider_kind(), "source writer", "conflicting bundle role")?;
+    ensure_eq(err.id(), "csv", "conflicting bundle id")?;
+    ensure(
+        registry.source_provider("csv").is_none(),
+        "failed bundle leaked an earlier source provider role",
+    )?;
+    ensure(
+        registry.source_writer("csv").is_some(),
+        "failed bundle changed the existing source writer",
+    )?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy)]
 struct FakeTableManager;
 
