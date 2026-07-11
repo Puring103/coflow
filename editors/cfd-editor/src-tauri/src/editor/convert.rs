@@ -5,7 +5,6 @@
 //! (spread-source, ref target file hint, enum integer value) is
 //! collected into `FieldAnnotation` on the side.
 
-use coflow_api::FlatDiagnostic;
 use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
 use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite};
 use coflow_runtime::{
@@ -14,12 +13,13 @@ use coflow_runtime::{
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow, SpreadInfo};
+use crate::editor::session::Diagnostics;
 
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
     pub queries: ProjectQueries<'a>,
     pub schema: &'a CompiledSchema,
-    pub diagnostics: Vec<FlatDiagnostic>,
+    pub diagnostics: &'a Diagnostics,
     /// Set of dimension-synthesized type names (e.g. `Item_nameVariants`).
     /// Passed in once per snapshot so the annotator can flag the derived
     /// `default` slot as read-only without recomputing per record.
@@ -31,7 +31,7 @@ impl<'a> WireContext<'a> {
     /// type set. Callers that build many rows in a row should reuse the
     /// same context to avoid re-walking the dimension list.
     #[must_use]
-    pub fn new(queries: ProjectQueries<'a>, diagnostics: Vec<FlatDiagnostic>) -> Self {
+    pub fn new(queries: ProjectQueries<'a>, diagnostics: &'a Diagnostics) -> Self {
         Self {
             queries,
             schema: queries.compiled_schema(),
@@ -46,22 +46,16 @@ impl<'a> WireContext<'a> {
 pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> RecordRow {
     let fields = record_fields(view.record, ctx);
     let (field_index, field_summaries) = field_indexes(&fields);
+    let (field_diagnostics, diagnostic_severity) =
+        diagnostics_for_record(ctx.diagnostics, view.display_path, &view.coordinate);
     RecordRow {
         coordinate: view.coordinate.clone(),
         display_path: view.display_path.to_string(),
         fields,
         field_index,
         field_summaries,
-        field_diagnostics: field_diagnostics_for_record(
-            &ctx.diagnostics,
-            view.display_path,
-            &view.coordinate,
-        ),
-        diagnostic_severity: diagnostic_severity_for_record(
-            &ctx.diagnostics,
-            view.display_path,
-            &view.coordinate,
-        ),
+        field_diagnostics,
+        diagnostic_severity,
     }
 }
 
@@ -70,76 +64,42 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
 pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'_>) -> RecordRow {
     let fields = record_fields(record, ctx);
     let (field_index, field_summaries) = field_indexes(&fields);
+    let coordinate = RecordCoordinate::new(record.actual_type(), record.key.clone());
+    let (field_diagnostics, diagnostic_severity) =
+        diagnostics_for_record(ctx.diagnostics, display_path, &coordinate);
     RecordRow {
-        coordinate: RecordCoordinate::new(record.actual_type(), record.key.clone()),
+        coordinate,
         display_path: display_path.to_string(),
         fields,
         field_index,
         field_summaries,
-        field_diagnostics: field_diagnostics_for_record(
-            &ctx.diagnostics,
-            display_path,
-            &RecordCoordinate::new(record.actual_type(), record.key.clone()),
-        ),
-        diagnostic_severity: diagnostic_severity_for_record(
-            &ctx.diagnostics,
-            display_path,
-            &RecordCoordinate::new(record.actual_type(), record.key.clone()),
-        ),
+        field_diagnostics,
+        diagnostic_severity,
     }
 }
 
-fn field_diagnostics_for_record(
-    diagnostics: &[FlatDiagnostic],
+fn diagnostics_for_record(
+    diagnostics: &Diagnostics,
     file_path: &str,
     coordinate: &RecordCoordinate,
-) -> Vec<FieldDiagnostic> {
-    diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic_matches_record(diagnostic, file_path, coordinate))
-        .filter_map(|diagnostic| {
-            diagnostic
-                .field_path
-                .as_ref()
-                .map(|field_path| FieldDiagnostic {
-                    severity: normalized_severity(&diagnostic.severity).to_string(),
-                    field_path: field_path.clone(),
-                    message: diagnostic.message.clone(),
-                })
-        })
-        .collect()
-}
-
-fn diagnostic_severity_for_record(
-    diagnostics: &[FlatDiagnostic],
-    file_path: &str,
-    coordinate: &RecordCoordinate,
-) -> Option<String> {
+) -> (Vec<FieldDiagnostic>, Option<String>) {
+    let mut fields = Vec::new();
     let mut best = None;
-    for diagnostic in diagnostics {
-        if !diagnostic_matches_record(diagnostic, file_path, coordinate) {
-            continue;
+    for diagnostic in diagnostics.for_record(file_path, coordinate) {
+        if let Some(field_path) = &diagnostic.field_path {
+            fields.push(FieldDiagnostic {
+                severity: normalized_severity(&diagnostic.severity).to_string(),
+                field_path: field_path.clone(),
+                message: diagnostic.message.clone(),
+            });
         }
         match diagnostic.severity.as_str() {
-            "error" => return Some("error".to_string()),
-            "warning" => best = Some("warning".to_string()),
+            "error" => best = Some("error"),
+            "warning" if best.is_none() => best = Some("warning"),
             _ => {}
         }
     }
-    best
-}
-
-fn diagnostic_matches_record(
-    diagnostic: &FlatDiagnostic,
-    file_path: &str,
-    coordinate: &RecordCoordinate,
-) -> bool {
-    diagnostic.file_path.as_deref() == Some(file_path)
-        && diagnostic.record_key.as_deref() == Some(coordinate.key.as_str())
-        && diagnostic
-            .actual_type
-            .as_deref()
-            .is_none_or(|actual_type| actual_type == coordinate.actual_type)
+    (fields, best.map(str::to_string))
 }
 
 fn normalized_severity(severity: &str) -> &'static str {

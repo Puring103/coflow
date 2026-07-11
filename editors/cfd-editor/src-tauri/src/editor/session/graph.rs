@@ -49,7 +49,7 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
     }
 
     let queries = session.queries();
-    let ctx = WireContext::new(queries, session.diagnostics.flatten());
+    let ctx = WireContext::new(queries, &session.diagnostics);
 
     while let Some((id, depth)) = queue.pop_front() {
         let Some(record) = queries.model().record(id) else {

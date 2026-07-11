@@ -245,7 +245,7 @@ impl SessionStore {
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
         let queries = session.queries();
-        let ctx = WireContext::new(queries, session.diagnostics.flatten());
+        let ctx = WireContext::new(queries, &session.diagnostics);
         let mut records = Vec::new();
         let mut columns = BTreeMap::<String, ColumnStats>::new();
         let mut type_seen = Vec::new();
@@ -308,7 +308,7 @@ impl SessionStore {
             .engine
             .create_record_draft(actual_type)
             .map_err(api_diagnostics_to_editor_error)?;
-        let ctx = WireContext::new(session.queries(), session.diagnostics.flatten());
+        let ctx = WireContext::new(session.queries(), &session.diagnostics);
         Ok(create_record_draft_to_wire(&draft, &ctx))
     }
 
@@ -461,12 +461,12 @@ impl SessionStore {
                 field_path,
             )
             .cloned();
-        let ctx = WireContext::new(session.queries(), session.diagnostics.flatten());
+        let ctx = WireContext::new(session.queries(), &session.diagnostics);
         let row = record_view_to_row(&view, &ctx);
         Ok(WriteFieldOutcome {
             revision: session.revisions.current(),
             row,
-            diagnostics: session.diagnostics.flatten(),
+            diagnostics: session.diagnostics.to_wire(),
             old_value,
             new_value,
             affected_files,
@@ -575,7 +575,7 @@ impl SessionStore {
         Ok(InsertRecordOutcome {
             revision: session.revisions.current(),
             file_records,
-            diagnostics: session.diagnostics.flatten(),
+            diagnostics: session.diagnostics.to_wire(),
         })
     }
 
@@ -639,12 +639,12 @@ impl SessionStore {
                     renamed.actual_type, renamed.key
                 ))
             })?;
-        let ctx = WireContext::new(session.queries(), session.diagnostics.flatten());
+        let ctx = WireContext::new(session.queries(), &session.diagnostics);
         let row = record_view_to_row(&view, &ctx);
         Ok(RenameRecordOutcome {
             revision: session.revisions.current(),
             row,
-            diagnostics: session.diagnostics.flatten(),
+            diagnostics: session.diagnostics.to_wire(),
             renamed,
         })
     }
@@ -705,7 +705,7 @@ impl SessionStore {
         Ok(DeleteRecordOutcome {
             revision: session.revisions.current(),
             file_records,
-            diagnostics: session.diagnostics.flatten(),
+            diagnostics: session.diagnostics.to_wire(),
             deleted_snapshot,
         })
     }
@@ -773,7 +773,7 @@ fn project_snapshot(
         project_root: strip_unc_prefix(&session.project_root.display().to_string()),
         first_source_file: first_source_file(&snapshot.file_tree),
         file_tree: snapshot.file_tree,
-        diagnostics: session.diagnostics.flatten(),
+        diagnostics: session.diagnostics.to_wire(),
     }
 }
 

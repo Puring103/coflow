@@ -3,17 +3,48 @@
 
 use coflow_api::{path_to_slash, FlatDiagnostic};
 use coflow_runtime::DiagnosticsStore;
+use std::collections::HashMap;
 use std::path::Path;
+
+use coflow_runtime::RecordCoordinate;
 
 #[derive(Debug, Default, Clone)]
 pub struct Diagnostics {
     items: Vec<FlatDiagnostic>,
+    by_file_record: HashMap<String, HashMap<String, Vec<usize>>>,
 }
 
 impl Diagnostics {
     #[must_use]
-    pub const fn from_items(items: Vec<FlatDiagnostic>) -> Self {
-        Self { items }
+    pub fn from_items(items: Vec<FlatDiagnostic>) -> Self {
+        let mut borrowed = HashMap::<&str, HashMap<&str, Vec<usize>>>::new();
+        for (index, diagnostic) in items.iter().enumerate() {
+            let (Some(file_path), Some(record_key)) =
+                (&diagnostic.file_path, &diagnostic.record_key)
+            else {
+                continue;
+            };
+            borrowed
+                .entry(file_path)
+                .or_default()
+                .entry(record_key)
+                .or_default()
+                .push(index);
+        }
+        let by_file_record = borrowed
+            .into_iter()
+            .map(|(file_path, by_record)| {
+                let by_record = by_record
+                    .into_iter()
+                    .map(|(record_key, indexes)| (record_key.to_string(), indexes))
+                    .collect();
+                (file_path.to_string(), by_record)
+            })
+            .collect();
+        Self {
+            items,
+            by_file_record,
+        }
     }
 
     #[must_use]
@@ -22,8 +53,27 @@ impl Diagnostics {
     }
 
     #[must_use]
-    pub fn flatten(&self) -> Vec<FlatDiagnostic> {
+    pub fn to_wire(&self) -> Vec<FlatDiagnostic> {
         self.items.clone()
+    }
+
+    pub fn for_record<'a>(
+        &'a self,
+        file_path: &str,
+        coordinate: &'a RecordCoordinate,
+    ) -> impl Iterator<Item = &'a FlatDiagnostic> + 'a {
+        self.by_file_record
+            .get(file_path)
+            .and_then(|by_record| by_record.get(coordinate.key.as_str()))
+            .into_iter()
+            .flatten()
+            .filter_map(|index| self.items.get(*index))
+            .filter(move |diagnostic| {
+                diagnostic
+                    .actual_type
+                    .as_deref()
+                    .is_none_or(|actual_type| actual_type == coordinate.actual_type)
+            })
     }
 }
 
@@ -76,4 +126,46 @@ fn project_relative_path(project_root: &Path, path: &str) -> String {
 
 fn normalize(path: &Path) -> String {
     path_to_slash(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_index_preserves_order_and_matches_untyped_diagnostics() {
+        let diagnostics = Diagnostics::from_items(vec![
+            diagnostic("other.cfd", "sword", Some("Item"), "unrelated file"),
+            diagnostic("items.cfd", "shield", Some("Item"), "unrelated record"),
+            diagnostic("items.cfd", "sword", None, "untyped"),
+            diagnostic("items.cfd", "sword", Some("Npc"), "other type"),
+            diagnostic("items.cfd", "sword", Some("Item"), "typed"),
+        ]);
+
+        let coordinate = RecordCoordinate::new("Item", "sword");
+        let messages = diagnostics
+            .for_record("items.cfd", &coordinate)
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(messages, vec!["untyped", "typed"]);
+    }
+
+    fn diagnostic(
+        file_path: &str,
+        record_key: &str,
+        actual_type: Option<&str>,
+        message: &str,
+    ) -> FlatDiagnostic {
+        FlatDiagnostic {
+            severity: "warning".to_string(),
+            code: "TEST".to_string(),
+            stage: "test".to_string(),
+            message: message.to_string(),
+            file_path: Some(file_path.to_string()),
+            actual_type: actual_type.map(str::to_string),
+            record_key: Some(record_key.to_string()),
+            field_path: Some("name".to_string()),
+        }
+    }
 }
