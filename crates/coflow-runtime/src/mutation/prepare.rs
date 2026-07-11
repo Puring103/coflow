@@ -78,7 +78,7 @@ impl ProjectSession {
         path: &[CfdPathSegment],
     ) -> Result<CfdValue, DiagnosticSet> {
         let ty = write_rules::expected_type_for_cfd_path(
-            &self.schema,
+            self.compiled_schema(),
             actual_type,
             path,
             "MUTATION-PATH",
@@ -238,7 +238,7 @@ pub(super) fn prepare_set_on_pending_insert(
         file_guard,
     )?;
     let expected = write_rules::expected_type_for_cfd_path(
-        &session.schema,
+        session.compiled_schema(),
         actual_type,
         path,
         "MUTATION-PATH",
@@ -298,9 +298,9 @@ pub(super) fn rename_pending_insert_references(
 ) -> Result<(), DiagnosticSet> {
     let schema = session.compiled_schema();
     for (name, value) in fields {
-        let field = schema_field(&schema, host_actual_type, name)?;
+        let field = schema_field(schema, host_actual_type, name)?;
         rename_pending_value_references(
-            &schema,
+            schema,
             target_actual_type,
             &field.ty_ref,
             value,
@@ -321,15 +321,15 @@ pub(super) fn rename_prepared_field_references(
     new_key: &str,
 ) -> Result<(), DiagnosticSet> {
     let schema = session.compiled_schema();
-    let expected = write_rules::expected_type_for_cfd_path_in_view(
-        &schema,
+    let expected = write_rules::expected_type_for_cfd_path(
+        schema,
         host_actual_type,
         path,
         "MUTATION-PATH",
         "MUTATION",
     )?;
     rename_pending_value_references(
-        &schema,
+        schema,
         target_actual_type,
         &expected,
         value,
@@ -468,10 +468,10 @@ fn prepare_insert_fields(
     out.extend(provided);
     let schema = session.compiled_schema();
     for (name, value) in &out {
-        let field = schema_field(&schema, actual_type, name)?;
-        write_rules::validate_value_for_insert_in_view(
+        let field = schema_field(schema, actual_type, name)?;
+        write_rules::validate_value_for_insert(
             session,
-            &schema,
+            schema,
             actual_type,
             key,
             &field.ty_ref,
@@ -495,7 +495,7 @@ fn prepare_provided_insert_fields(
         MutationFields::Empty => {}
         MutationFields::Json(fields) => {
             for (name, value) in fields {
-                let field = schema_field(&schema, actual_type, &name)?;
+                let field = schema_field(schema, actual_type, &name)?;
                 out.insert(
                     name,
                     coerce_json_field_value(session, &field.ty_ref, &value)?,
@@ -504,7 +504,7 @@ fn prepare_provided_insert_fields(
         }
         MutationFields::Cfd(fields) => {
             for (name, value) in fields {
-                let field = schema_field(&schema, actual_type, &name)?;
+                let field = schema_field(schema, actual_type, &name)?;
                 out.insert(name, coerce_cfd_field_value(session, &field.ty_ref, value)?);
             }
         }
@@ -523,7 +523,7 @@ fn expected_value_for_path(
     path: &[CfdPathSegment],
 ) -> Result<ExpectedValue, DiagnosticSet> {
     let current = write_rules::expected_type_for_cfd_path(
-        &session.schema,
+        session.compiled_schema(),
         &coordinate.actual_type,
         path,
         "MUTATION-PATH",

@@ -200,12 +200,8 @@ impl CftContainer {
             reflection.types.insert(name, ty);
         }
         let mut budget = StructuralBudget::new(structural_limits);
-        self.compiled = CompiledSchema::from_reflection(
-            reflection,
-            sources,
-            structural_limits,
-            &mut budget,
-        )?;
+        self.compiled =
+            CompiledSchema::from_reflection(reflection, sources, structural_limits, &mut budget)?;
         Ok(())
     }
 
@@ -258,60 +254,6 @@ impl CftContainer {
 
     #[must_use]
     pub fn source(&self, id: &ModuleId) -> Option<&str> {
-        self.compiled
-            .sources()
-            .get(id)
-            .map(String::as_str)
-    }
-
-    /// Returns true when `actual_type` is `expected_type` itself or a
-    /// descendant via single inheritance. Both must be names of known types.
-    /// Used by data-model construction (record references and polymorphic
-    /// field assignment) and by the runtime check evaluator (`is` predicate).
-    #[must_use]
-    pub fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
-        let mut current = Some(actual_type);
-        while let Some(name) = current {
-            if name == expected_type {
-                return true;
-            }
-            current = self.resolve_type(name).and_then(|ty| ty.parent.as_deref());
-        }
-        false
-    }
-
-    /// Returns true when `type_name` is abstract or has at least one
-    /// descendant type.
-    #[must_use]
-    pub fn range_is_polymorphic(&self, type_name: &str) -> bool {
-        self.resolve_type(type_name).is_some_and(|ty| {
-            ty.is_abstract
-                || self.all_types().any(|candidate| {
-                    self.is_assignable(&candidate.name, type_name) && candidate.name != type_name
-                })
-        })
-    }
-
-    /// Type names whose polymorphic ranges include `actual_type`.
-    #[must_use]
-    pub fn assignable_target_names(&self, actual_type: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        let mut current = Some(actual_type);
-        while let Some(name) = current {
-            out.push(name.to_string());
-            current = self.resolve_type(name).and_then(|ty| ty.parent.as_deref());
-        }
-        out
-    }
-
-    /// Resolves the integer value of a single enum variant. Returns `None`
-    /// when the enum or variant is unknown.
-    #[must_use]
-    pub fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
-        self.resolve_enum(enum_name)?
-            .variants
-            .iter()
-            .find(|v| v.name == variant)
-            .map(|v| v.value)
+        self.compiled.sources().get(id).map(String::as_str)
     }
 }

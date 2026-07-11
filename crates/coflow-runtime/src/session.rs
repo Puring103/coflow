@@ -142,12 +142,8 @@ impl ProjectSession {
     /// Returns `None` for unknown enum names or variants.
     #[must_use]
     pub fn enum_int_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
-        let resolved = self.schema.resolve_enum(enum_name)?;
-        resolved
-            .variants
-            .iter()
-            .find(|v| v.name == variant)
-            .map(|v| v.value)
+        self.compiled_schema()
+            .enum_variant_value(enum_name, variant)
     }
 
     #[must_use]
@@ -263,6 +259,7 @@ impl ProjectSession {
     #[must_use]
     pub fn ref_targets(&self, expected_type: &str) -> Vec<RefTargetInfo> {
         let mut targets = Vec::new();
+        let schema = self.compiled_schema();
         let Some(domain_id) = self.model.type_domain_id(expected_type) else {
             return targets;
         };
@@ -273,7 +270,7 @@ impl ProjectSession {
             let Some(type_name) = self.model.type_name(*type_id) else {
                 continue;
             };
-            if !self.schema.is_assignable(type_name, expected_type) {
+            if !schema.is_assignable(type_name, expected_type) {
                 continue;
             }
             for (_, record) in self.model.records_of_type(type_name) {
@@ -393,11 +390,6 @@ impl ProjectSchemaSession {
     #[must_use]
     pub const fn project(&self) -> &Project {
         &self.project
-    }
-
-    #[must_use]
-    pub const fn schema(&self) -> &CftContainer {
-        &self.schema
     }
 
     #[must_use]

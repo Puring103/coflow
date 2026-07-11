@@ -2,7 +2,7 @@
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
-use coflow_runtime::Runtime;
+use coflow_runtime::{ProjectQueries, Runtime};
 
 struct TempProject {
     root: std::path::PathBuf,
@@ -16,11 +16,8 @@ impl TempProject {
         ));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("data")).expect("create data directory");
-        std::fs::write(
-            root.join("schema.cft"),
-            "type Item { name: string; }\n",
-        )
-        .expect("write schema");
+        std::fs::write(root.join("schema.cft"), "type Item { name: string; }\n")
+            .expect("write schema");
         std::fs::write(
             root.join("data/items.cfd"),
             "sword: Item { name: \"Sword\" }\n",
@@ -51,6 +48,24 @@ fn runtime() -> Runtime {
     )
 }
 
+fn assert_same_generation_corpus(left: ProjectQueries<'_>, right: ProjectQueries<'_>) {
+    assert_eq!(left.revision(), right.revision());
+    assert!(std::ptr::eq(left.project(), right.project()));
+    assert!(std::ptr::eq(
+        left.compiled_schema(),
+        right.compiled_schema()
+    ));
+    assert!(std::ptr::eq(left.model(), right.model()));
+    assert!(std::ptr::eq(left.diagnostics(), right.diagnostics()));
+    assert!(std::ptr::eq(left.sources(), right.sources()));
+    assert!(std::ptr::eq(left.records(), right.records()));
+    assert!(std::ptr::eq(left.files(), right.files()));
+    assert!(std::ptr::eq(
+        left.loader_extensions(),
+        right.loader_extensions()
+    ));
+}
+
 #[test]
 fn read_and_build_sessions_expose_generation_queries() {
     let fixture = TempProject::new("queries");
@@ -59,13 +74,21 @@ fn read_and_build_sessions_expose_generation_queries() {
         .open_read_only_session(fixture.open())
         .expect("open read session");
     assert_eq!(read_session.queries().revision(), 0);
-    assert!(read_session.queries().record_view("Item", "sword").is_some());
+    assert!(read_session
+        .queries()
+        .record_view("Item", "sword")
+        .is_some());
+    assert_same_generation_corpus(read_session.queries(), read_session.queries());
 
     let build_session = runtime()
         .build_project_session(fixture.open())
         .expect("open build session");
     assert_eq!(build_session.queries().revision(), 0);
-    assert!(build_session.queries().record_view("Item", "sword").is_some());
+    assert!(build_session
+        .queries()
+        .record_view("Item", "sword")
+        .is_some());
+    assert_same_generation_corpus(build_session.queries(), build_session.queries());
 }
 
 #[test]
@@ -97,6 +120,7 @@ fn write_session_owns_registry_and_publishes_successful_generation() {
 
     assert_eq!(session.revision(), 1);
     assert_eq!(session.queries().revision(), 1);
+    assert_same_generation_corpus(session.queries(), session.queries());
     assert_eq!(
         session
             .queries()

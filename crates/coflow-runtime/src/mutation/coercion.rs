@@ -169,7 +169,7 @@ fn coerce_cfd_object_fields(
     fields
         .into_iter()
         .map(|(name, value)| {
-            let field = schema_field(&schema, actual_type, &name)?;
+            let field = schema_field(schema, actual_type, &name)?;
             Ok((name, coerce_cfd_field_value(session, &field.ty_ref, value)?))
         })
         .collect()
@@ -182,9 +182,9 @@ fn validate_value_for_write(
     pending_records: &[crate::RecordCoordinate],
 ) -> Result<(), DiagnosticSet> {
     let schema = session.compiled_schema();
-    write_rules::validate_value_for_write_with_pending_in_view(
+    write_rules::validate_value_for_write_with_pending(
         session,
-        &schema,
+        schema,
         expected,
         value,
         pending_records,
@@ -372,7 +372,7 @@ fn ensure_object_type_assignable(
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
     write_rules::ensure_object_type_assignable(
-        &session.schema,
+        session.compiled_schema(),
         expected_type,
         actual_type,
         "MUTATION-VALUE",
@@ -401,7 +401,7 @@ fn coerce_json_object_fields(
                 "unsupported object form key `{field_name}`"
             )));
         }
-        let field = schema_field(&schema, actual_type, field_name)?;
+        let field = schema_field(schema, actual_type, field_name)?;
         fields.insert(
             field_name.clone(),
             coerce_json_field_value(session, &field.ty_ref, field_value)?,
