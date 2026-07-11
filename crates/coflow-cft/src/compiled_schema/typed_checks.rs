@@ -1,31 +1,48 @@
-use super::{CftTypeMeta, CompiledSchema};
-use crate::CftSchemaCheckBlock;
+use super::{CftTypeMeta, CompiledSchema, LocatedBudgetError};
+use crate::{CftSchemaCheckBlock, ModuleId};
+use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TypedCheckPlan {
     owners_by_actual: BTreeMap<String, Vec<String>>,
 }
 
 impl TypedCheckPlan {
-    pub(super) fn compile(types: &BTreeMap<String, CftTypeMeta>) -> Self {
-        let owners_by_actual = types
-            .keys()
-            .map(|actual_type| {
-                let mut owners = Vec::new();
-                let mut current = Some(actual_type.as_str());
-                while let Some(type_name) = current {
-                    let Some(meta) = types.get(type_name) else {
-                        break;
-                    };
-                    owners.push(meta.name.clone());
-                    current = meta.parent.as_deref();
-                }
-                owners.reverse();
-                (actual_type.clone(), owners)
-            })
-            .collect();
-        Self { owners_by_actual }
+    pub(super) fn compile(
+        types: &BTreeMap<String, CftTypeMeta>,
+        budget: &mut StructuralBudget,
+    ) -> Result<Self, LocatedBudgetError> {
+        let mut owners_by_actual = BTreeMap::new();
+        for actual_type in types.keys() {
+            let mut owners = Vec::new();
+            let mut current = Some(actual_type.as_str());
+            while let Some(type_name) = current {
+                let Some(meta) = types.get(type_name) else {
+                    break;
+                };
+                let depth = u64::try_from(owners.len())
+                    .unwrap_or(u64::MAX)
+                    .saturating_add(1);
+                budget
+                    .check_additional_depth(
+                        TraversalCursor::root(),
+                        StructureKind::SchemaDependency,
+                        depth,
+                    )
+                    .and_then(|()| budget.charge_work(StructureKind::SchemaDependency, 1))
+                    .map_err(|error| LocatedBudgetError {
+                        error,
+                        module: ModuleId::new(meta.module.clone()),
+                        span: meta.span,
+                    })?;
+                owners.push(meta.name.clone());
+                current = meta.parent.as_deref();
+            }
+            owners.reverse();
+            owners_by_actual.insert(actual_type.clone(), owners);
+        }
+        Ok(Self { owners_by_actual })
     }
 
     pub(super) fn owners(&self, actual_type: &str) -> &[String] {

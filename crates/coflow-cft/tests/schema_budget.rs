@@ -2,6 +2,7 @@
 
 use coflow_cft::{
     CftCompileOptions, CftContainer, CftDiagnostic, CftErrorCode, ModuleId, Span, StructuralLimits,
+    ValueDependencyMode,
 };
 
 fn options(max_depth: u64, max_nodes: u64, max_work: u64) -> CftCompileOptions {
@@ -45,17 +46,17 @@ fn default_entry_matches_explicit_default_options() {
 #[test]
 fn flat_schema_nodes_and_work_have_exact_boundaries() {
     let source = "type Item { value: int; }";
-    compile(source, options(10, 3, 3)).expect("item, field, and type ref fit");
+    compile(source, options(10, 3, 7)).expect("complete schema pipeline fits");
 
     let node_error = structural_error(source, options(10, 2, 10));
     assert_eq!(
         node_error.message,
         "type ref exceeds structural nodes limit 2 (observed 3)"
     );
-    let work_error = structural_error(source, options(10, 10, 2));
+    let work_error = structural_error(source, options(10, 10, 6));
     assert_eq!(
         work_error.message,
-        "type ref exceeds structural work limit 2 (observed 3)"
+        "schema dependency exceeds structural work limit 6 (observed 7)"
     );
 }
 
@@ -160,4 +161,25 @@ fn failed_strict_compile_keeps_the_last_published_reflection() {
         .compile_with_options(options(3, 100, 100))
         .expect_err("strict recompile fails");
     assert!(container.resolve_type("Item").is_some());
+}
+
+#[test]
+fn value_dependency_plans_share_the_compile_depth_budget() {
+    let chain = "type A { next: B = {}; } type B { next: C = {}; } type C {}";
+    compile(chain, options(3, 100, 1_000)).expect("dependency depth three fits");
+    let error = structural_error(chain, options(2, 100, 1_000));
+    assert_eq!(
+        error.message,
+        "schema dependency exceeds structural depth limit 2 (observed 3)"
+    );
+
+    let self_cycle = compile("type A { next: A = {}; }", options(1, 100, 1_000))
+        .expect("known back edge wins at depth one");
+    let cycle = self_cycle
+        .compiled_schema()
+        .value_dependencies()
+        .materialization_order("A", ValueDependencyMode::SchemaDefaults)
+        .expect("known root")
+        .expect_err("self cycle is cached as a semantic result");
+    assert_eq!(cycle.steps().len(), 1);
 }

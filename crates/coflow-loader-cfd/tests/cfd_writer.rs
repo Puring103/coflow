@@ -13,7 +13,7 @@ use coflow_api::{
     SourceLocationSpec, SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteContext,
     WriteFieldPathSegment,
 };
-use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
+use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdObject, CfdValue, RecordOrigin, TextSpan};
 use coflow_loader_cfd::{load_cfd_model, parse_cfd_input_records, CfdWriter};
 use std::fs;
@@ -90,7 +90,7 @@ shield: Item {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let writer = CfdWriter::new();
     let request_value = CfdValue::Int(42);
     let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
@@ -164,7 +164,7 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let writer = CfdWriter::new();
     let request_value = CfdValue::Ref("blade".to_string());
     let segments = vec![
@@ -225,7 +225,7 @@ shared: Skill {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let writer = CfdWriter::new();
     let request_value = CfdValue::String("New Skill".to_string());
     let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
@@ -297,7 +297,7 @@ picker: Holder {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
     let _ = model
@@ -374,7 +374,7 @@ picker: Holder {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
 
     let writer = CfdWriter::new();
     let new_value = CfdValue::Ref("ghost".to_string());
@@ -432,7 +432,7 @@ fn rejects_empty_ref_key() {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
 
     let writer = CfdWriter::new();
     let new_value = CfdValue::Ref(String::new());
@@ -487,7 +487,7 @@ fn inserts_record_at_end_of_cfd_file() {
         }
         ",
     );
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&file);
     let writer = CfdWriter::new();
     let fields = std::collections::BTreeMap::from([
@@ -540,7 +540,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
         type Skill { name: string; }
         ",
     );
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&file);
     let writer = CfdWriter::new();
     let fields = std::collections::BTreeMap::from([(
@@ -605,7 +605,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
         }
         ",
     );
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&file);
     let writer = CfdWriter::new();
     let slot_fields = std::collections::BTreeMap::from([(
@@ -667,7 +667,7 @@ shield: Item {
         }
         ",
     );
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&file);
     let origin = origin_for(&file);
     let writer = CfdWriter::new();
@@ -718,7 +718,7 @@ shared: Skill {
         type Skill { name: string; }
         ",
     );
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&file);
     let origin = origin_for(&file);
     let writer = CfdWriter::new();
@@ -785,7 +785,7 @@ elite_monster: Monster {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
 
@@ -889,7 +889,7 @@ other_copy: OtherHolder {
         }
         ",
     );
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let writer = CfdWriter::new();
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -968,7 +968,7 @@ host: Loadout {
         }
         ",
     );
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let writer = CfdWriter::new();
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -1056,7 +1056,7 @@ elite: Monster {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
 
     let writer = CfdWriter::new();
     let new_value = CfdValue::Int(42);
@@ -1116,7 +1116,7 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
 
@@ -1189,7 +1189,7 @@ fn writes_group_record_without_required_commas() {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
 
@@ -1253,7 +1253,7 @@ sword: Item {
         ",
     );
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let writer = CfdWriter::new();
     let new_value = CfdValue::Int(2);
     let segments = vec![WriteFieldPathSegment::Field("value".to_string())];

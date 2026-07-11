@@ -1,5 +1,6 @@
-use super::CftTypeMeta;
-use crate::{CftSchemaDefaultValue, CftSchemaTypeRef};
+use super::{CftTypeMeta, LocatedBudgetError};
+use crate::{CftSchemaDefaultValue, CftSchemaTypeRef, ModuleId, Span};
+use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -15,6 +16,8 @@ pub struct ValueDependencyStep {
     pub owner_type: String,
     pub field: String,
     pub target_type: String,
+    module: ModuleId,
+    span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,7 +61,7 @@ impl fmt::Display for ValueDependencyCycle {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ValueDependencyPlan {
     roots: BTreeMap<
         ValueDependencyMode,
@@ -67,26 +70,31 @@ pub struct ValueDependencyPlan {
 }
 
 impl ValueDependencyPlan {
-    pub(super) fn compile(types: &BTreeMap<String, CftTypeMeta>) -> Self {
+    pub(super) fn compile(
+        types: &BTreeMap<String, CftTypeMeta>,
+        budget: &mut StructuralBudget,
+    ) -> Result<Self, LocatedBudgetError> {
         let mut roots = BTreeMap::new();
         for mode in [
             ValueDependencyMode::SchemaDefaults,
             ValueDependencyMode::Minimal,
             ValueDependencyMode::EditableShape,
         ] {
-            let graph = dependency_graph(types, mode);
+            let graph = dependency_graph(types, mode, budget)?;
             let compiled = graph
                 .keys()
                 .map(|root| {
-                    let result = compile_root(root, &graph).map(|order| {
-                        order.into_iter().map(str::to_string).collect::<Vec<_>>()
-                    });
-                    (root.clone(), result)
+                    compile_root(root, &graph, budget).map(|result| {
+                        let result = result.map(|order| {
+                            order.into_iter().map(str::to_string).collect::<Vec<_>>()
+                        });
+                        (root.clone(), result)
+                    })
                 })
-                .collect();
+                .collect::<Result<BTreeMap<_, _>, _>>()?;
             roots.insert(mode, compiled);
         }
-        Self { roots }
+        Ok(Self { roots })
     }
 
     #[must_use]
@@ -106,25 +114,33 @@ impl ValueDependencyPlan {
 fn dependency_graph(
     types: &BTreeMap<String, CftTypeMeta>,
     mode: ValueDependencyMode,
-) -> BTreeMap<String, Vec<ValueDependencyStep>> {
-    types
-        .iter()
-        .map(|(type_name, meta)| {
-            let dependencies = meta
-                .all_fields
-                .iter()
-                .filter_map(|field| {
-                    let target_type = dependency_target(field, mode, types)?;
-                    Some(ValueDependencyStep {
-                        owner_type: type_name.clone(),
-                        field: field.name.clone(),
-                        target_type: target_type.to_string(),
-                    })
-                })
-                .collect();
-            (type_name.clone(), dependencies)
-        })
-        .collect()
+    budget: &mut StructuralBudget,
+) -> Result<BTreeMap<String, Vec<ValueDependencyStep>>, LocatedBudgetError> {
+    let mut graph = BTreeMap::new();
+    for (type_name, meta) in types {
+        let mut dependencies = Vec::new();
+        for field in &meta.all_fields {
+            budget
+                .charge_work(StructureKind::SchemaDependency, 1)
+                .map_err(|error| LocatedBudgetError {
+                    error,
+                    module: ModuleId::new(field.module.clone()),
+                    span: field.span,
+                })?;
+            let Some(target_type) = dependency_target(field, mode, types) else {
+                continue;
+            };
+            dependencies.push(ValueDependencyStep {
+                owner_type: type_name.clone(),
+                field: field.name.clone(),
+                target_type: target_type.to_string(),
+                module: ModuleId::new(field.module.clone()),
+                span: field.span,
+            });
+        }
+        graph.insert(type_name.clone(), dependencies);
+    }
+    Ok(graph)
 }
 
 fn dependency_target<'a>(
@@ -165,7 +181,8 @@ fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
 fn compile_root<'a>(
     root: &'a str,
     graph: &'a BTreeMap<String, Vec<ValueDependencyStep>>,
-) -> Result<Vec<&'a str>, ValueDependencyCycle> {
+    budget: &mut StructuralBudget,
+) -> Result<Result<Vec<&'a str>, ValueDependencyCycle>, LocatedBudgetError> {
     let mut states = BTreeMap::<&str, VisitState>::new();
     let mut nodes = Vec::new();
     let mut incoming = Vec::new();
@@ -189,10 +206,27 @@ fn compile_root<'a>(
                         .unwrap_or(0);
                     let mut steps = incoming[cycle_start..].to_vec();
                     steps.push(edge.clone());
-                    return Err(ValueDependencyCycle::canonical(steps));
+                    return Ok(Err(ValueDependencyCycle::canonical(steps)));
                 }
-                Some(VisitState::Complete) => {}
+                Some(VisitState::Complete) => {
+                    charge_edge(budget, edge)?;
+                }
                 None => {
+                    charge_edge(budget, edge)?;
+                    let depth = u64::try_from(nodes.len())
+                        .unwrap_or(u64::MAX)
+                        .saturating_add(1);
+                    budget
+                        .check_additional_depth(
+                            TraversalCursor::root(),
+                            StructureKind::SchemaDependency,
+                            depth,
+                        )
+                        .map_err(|error| LocatedBudgetError {
+                            error,
+                            module: edge.module.clone(),
+                            span: edge.span,
+                        })?;
                     let target = graph
                         .get_key_value(edge.target_type.as_str())
                         .map_or(edge.target_type.as_str(), |(name, _)| name.as_str());
@@ -217,7 +251,20 @@ fn compile_root<'a>(
         states.insert(completed, VisitState::Complete);
         order.push(completed);
     }
-    Ok(order)
+    Ok(Ok(order))
+}
+
+fn charge_edge(
+    budget: &mut StructuralBudget,
+    edge: &ValueDependencyStep,
+) -> Result<(), LocatedBudgetError> {
+    budget
+        .charge_work(StructureKind::SchemaDependency, 1)
+        .map_err(|error| LocatedBudgetError {
+            error,
+            module: edge.module.clone(),
+            span: edge.span,
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,13 +294,22 @@ mod tests {
                         owner_type: owner.clone(),
                         field: "next".to_string(),
                         target_type: format!("T{}", index + 1),
+                        module: ModuleId::from("test"),
+                        span: Span::new(index, index + 1),
                     }]
                 })
                 .unwrap_or_default();
             graph.insert(owner, edges);
         }
 
-        let order = compile_root("T0", &graph).expect("acyclic chain");
+        let mut budget = StructuralBudget::new(coflow_structure::StructuralLimits::new(
+            NODE_COUNT as u64,
+            1,
+            NODE_COUNT as u64,
+        ));
+        let order = compile_root("T0", &graph, &mut budget)
+            .expect("within budget")
+            .expect("acyclic chain");
         assert_eq!(order.len(), NODE_COUNT);
         assert_eq!(order.first().copied(), Some("T9999"));
         assert_eq!(order.last().copied(), Some("T0"));

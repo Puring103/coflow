@@ -6,6 +6,7 @@ use crate::schema::{
 };
 use crate::span::Span;
 use crate::CompiledSchema;
+use coflow_structure::StructuralBudget;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -137,13 +138,18 @@ impl CftContainer {
         &mut self,
         options: CftCompileOptions,
     ) -> Result<(), CftDiagnostics> {
-        let reflection = compile_container(self, options)?;
+        let (reflection, mut budget) = compile_container(self, options)?;
         let sources = self
             .modules
             .iter()
             .map(|(id, module)| (id.clone(), module.source.clone()))
             .collect();
-        let compiled = CompiledSchema::from_reflection(reflection, sources);
+        let compiled = CompiledSchema::from_reflection(
+            reflection,
+            sources,
+            options.structural_limits,
+            &mut budget,
+        )?;
         self.compiled = compiled;
         Ok(())
     }
@@ -161,6 +167,7 @@ impl CftContainer {
     ) -> Result<(), CftDiagnostics> {
         let mut reflection = self.compiled.reflection().clone();
         let sources = self.compiled.sources().clone();
+        let structural_limits = self.compiled.structural_limits();
         let runtime_module = ModuleId::from(Self::RUNTIME_MODULE_ID);
         for mut ty in types {
             if reflection.types.contains_key(&ty.name) {
@@ -192,7 +199,13 @@ impl CftContainer {
                 .push(ty.clone());
             reflection.types.insert(name, ty);
         }
-        self.compiled = CompiledSchema::from_reflection(reflection, sources);
+        let mut budget = StructuralBudget::new(structural_limits);
+        self.compiled = CompiledSchema::from_reflection(
+            reflection,
+            sources,
+            structural_limits,
+            &mut budget,
+        )?;
         Ok(())
     }
 

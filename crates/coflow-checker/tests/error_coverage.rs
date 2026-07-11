@@ -42,7 +42,7 @@ fn diagnostics_for(case: &Case) -> CfdDiagnostics {
         Phase::Check(build, check) => {
             let schema = compile_schema(case.schema);
             let model = build(&schema).expect("check coverage model should build");
-            let compiled = CompiledSchema::new(&schema);
+            let compiled = schema.compiled_schema();
             check(&compiled, &model).expect_err(case.name)
         }
     }
@@ -783,7 +783,7 @@ fn assert_builds(
 fn assert_checks(schema_source: &str, records: impl IntoIterator<Item = CfdInputRecord>) {
     let schema = compile_schema(schema_source);
     let model = model_from_records(&schema, records).expect("adjacent-valid model should build");
-    let compiled = CompiledSchema::new(&schema);
+    let compiled = schema.compiled_schema();
     model
         .run_checks(&compiled)
         .expect("adjacent-valid checks should pass");
@@ -852,7 +852,7 @@ fn check_budget_exceeded() -> CfdDiagnostics {
     )
     .expect("budget coverage model builds");
     run_checks_with_options(
-        &CompiledSchema::new(&schema),
+        schema.compiled_schema(),
         &model,
         CheckOptions {
             structural_limits: StructuralLimits::new(100, 100, 1),
@@ -876,7 +876,7 @@ fn adjacent_check_budget_valid() {
     )
     .expect("adjacent budget model builds");
     run_checks_with_options(
-        &CompiledSchema::new(&schema),
+        schema.compiled_schema(),
         &model,
         CheckOptions {
             structural_limits: StructuralLimits::new(100, 100, 2),

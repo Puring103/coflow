@@ -999,6 +999,11 @@ fn cft_compiled_schema_dimension_check_analysis_is_split_out() {
 
     }
 
+    assert!(
+        !compiled_schema.contains("pub fn new("),
+        "CompiledSchema must only be published by CftContainer compilation"
+    );
+
     for forbidden in [
 
         "pub fields: BTreeMap",

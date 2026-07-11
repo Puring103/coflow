@@ -8,7 +8,7 @@
 )]
 
 use coflow_api::{DataExporter, ExportContext, OutputSpec};
-use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
+use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_json::export_json_model;
 use serde_json::json;
@@ -38,7 +38,7 @@ fn export_tables(
     schema: &CftContainer,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, Value>, String> {
-    export_json_model(&CompiledSchema::new(schema), model)
+    export_json_model(schema.compiled_schema(), model)
         .map_err(|err| format!("export json: {err:?}"))
 }
 
@@ -130,7 +130,7 @@ fn json_exporter_skips_empty_table_files() -> TestResult {
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
     let model = build_model(builder)?;
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let artifacts = coflow_exporter_json::JsonExporter
         .export(
             ExportContext {

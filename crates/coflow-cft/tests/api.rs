@@ -10,7 +10,7 @@
 mod common;
 use coflow_cft::{
     is_cft_identifier, record_key_ident_error, CftSchemaField, CftSchemaType, CftSchemaTypeRef,
-    CompiledSchema, Span, ValueDependencyMode,
+    Span, ValueDependencyMode,
 };
 use common::*;
 
@@ -49,7 +49,7 @@ fn record_key_identifier_helper_accepts_only_cft_identifiers() {
 #[test]
 fn value_dependency_plan_reports_direct_default_cycle() {
     let schema = compile_one("type Node { child: Node = {}; }").expect("schema compiles");
-    let compiled = CompiledSchema::new(&schema);
+    let compiled = schema.compiled_schema();
     let cycle = compiled
         .value_dependencies()
         .materialization_order("Node", ValueDependencyMode::SchemaDefaults)
@@ -69,7 +69,7 @@ fn value_dependency_plan_reports_indirect_default_cycle_stably() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = CompiledSchema::new(&schema);
+    let compiled = schema.compiled_schema();
     let cycle = compiled
         .value_dependencies()
         .materialization_order("A", ValueDependencyMode::SchemaDefaults)
@@ -89,7 +89,7 @@ fn value_dependency_plan_memoizes_shared_subgraphs_in_topological_order() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = CompiledSchema::new(&schema);
+    let compiled = schema.compiled_schema();
     let order = compiled
         .value_dependencies()
         .materialization_order("Root", ValueDependencyMode::SchemaDefaults)
@@ -114,7 +114,7 @@ fn typed_check_schedule_borrows_inherited_blocks_in_parent_first_order() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = CompiledSchema::new(&schema);
+    let compiled = schema.compiled_schema();
     let checks = compiled.check_schedule("Child", None).collect::<Vec<_>>();
 
     assert_eq!(checks.len(), 2);
@@ -151,7 +151,7 @@ fn dimension_check_schedule_includes_inherited_dimension_checks() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = CompiledSchema::new(&schema);
+    let compiled = schema.compiled_schema();
 
     assert_eq!(
         compiled.check_schedule("Child", Some("language")).count(),
@@ -174,7 +174,7 @@ fn dimension_check_analysis_respects_quantifier_binding_shadowing() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = CompiledSchema::new(&schema);
+    let compiled = schema.compiled_schema();
 
     assert_eq!(
         compiled
@@ -195,7 +195,7 @@ fn compiled_schema_indexes_dimension_storage_types() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = CompiledSchema::new(&schema);
+    let compiled = schema.compiled_schema();
 
     assert_eq!(
         compiled.dimension_storage_type("language", "Item", "name"),

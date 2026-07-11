@@ -6,7 +6,7 @@ use self::compiler::SchemaCompiler;
 use crate::container::{CftContainer, ModuleId};
 use crate::error::CftDiagnostics;
 use crate::span::Span;
-use coflow_structure::StructuralLimits;
+use coflow_structure::{StructuralBudget, StructuralLimits};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -331,7 +331,8 @@ pub(crate) struct SchemaReflection {
 pub(crate) fn compile_container(
     container: &CftContainer,
     options: CftCompileOptions,
-) -> Result<SchemaReflection, CftDiagnostics> {
+) -> Result<(SchemaReflection, StructuralBudget), CftDiagnostics> {
     let mut compiler = SchemaCompiler::new(container, options);
-    compiler.compile()
+    let reflection = compiler.compile()?;
+    Ok((reflection, compiler.budget))
 }

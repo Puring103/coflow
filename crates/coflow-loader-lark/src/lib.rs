@@ -244,7 +244,7 @@ mod tests {
             }),
             display_name: "https://example.feishu.cn/wiki/wiki_token".to_string(),
         };
-        let compiled_schema = coflow_cft::CompiledSchema::new(&schema);
+        let compiled_schema = schema.compiled_schema();
         let ctx = SourceLoadContext {
             project_root: Path::new("."),
             schema: &compiled_schema,

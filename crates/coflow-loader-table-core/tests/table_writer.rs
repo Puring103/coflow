@@ -5,7 +5,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
+use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue, RecordOrigin, SourceDocument,
 };
@@ -371,7 +371,7 @@ fn write_layout_resolves_expand_child_columns_from_header() {
         }
         ",
     );
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let header = vec![
         "id".to_string(),
         "name".to_string(),

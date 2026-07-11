@@ -9,12 +9,31 @@ pub use value_dependencies::{
 };
 
 use crate::{
-    CftAnnotation, CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaEnum, CftSchemaType,
-    CftSchemaTypeRef,
+    CftAnnotation, CftConstValue, CftDiagnostic, CftDiagnostics, CftErrorCode, CftSchemaCheckBlock,
+    CftSchemaEnum, CftSchemaType, CftSchemaTypeRef, Span,
 };
 use crate::container::ModuleId;
 use crate::schema::SchemaReflection;
+use coflow_structure::{BudgetExceeded, StructuralBudget, StructuralLimits};
 use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Debug)]
+pub(super) struct LocatedBudgetError {
+    pub(super) error: BudgetExceeded,
+    pub(super) module: ModuleId,
+    pub(super) span: Span,
+}
+
+impl LocatedBudgetError {
+    fn into_diagnostics(self) -> CftDiagnostics {
+        CftDiagnostics::one(CftDiagnostic::error(
+            CftErrorCode::SchemaStructureLimitExceeded,
+            self.module,
+            self.span,
+            self.error.to_string(),
+        ))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct CompiledSchema {
@@ -27,23 +46,16 @@ pub struct CompiledSchema {
     dimension_storage_types: BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>,
     typed_checks: TypedCheckPlan,
     value_dependencies: ValueDependencyPlan,
+    structural_limits: StructuralLimits,
 }
 
 impl CompiledSchema {
-    /// Transitional constructor for callers that have not migrated to the
-    /// container-owned canonical snapshot yet. This never recompiles schema;
-    /// it only clones the already-published product.
-    #[must_use]
-    pub fn new(schema: &CftContainer) -> Self {
-        schema
-            .compiled_schema()
-            .clone()
-    }
-
     pub(crate) fn from_reflection(
         reflection: SchemaReflection,
         sources: BTreeMap<ModuleId, String>,
-    ) -> Self {
+        structural_limits: StructuralLimits,
+        budget: &mut StructuralBudget,
+    ) -> Result<Self, CftDiagnostics> {
         let consts = reflection
             .modules
             .values()
@@ -85,8 +97,10 @@ impl CompiledSchema {
         );
 
         let dimension_storage_types = Self::build_dimension_storage_index(&types);
-        let typed_checks = TypedCheckPlan::compile(&types);
-        let value_dependencies = ValueDependencyPlan::compile(&types);
+        let typed_checks = TypedCheckPlan::compile(&types, budget)
+            .map_err(LocatedBudgetError::into_diagnostics)?;
+        let value_dependencies = ValueDependencyPlan::compile(&types, budget)
+            .map_err(LocatedBudgetError::into_diagnostics)?;
         let mut view = Self {
             reflection,
             sources,
@@ -97,13 +111,25 @@ impl CompiledSchema {
             dimension_storage_types,
             typed_checks,
             value_dependencies,
+            structural_limits,
         };
         view.populate_dimension_checks();
-        view
+        Ok(view)
     }
 
     pub(crate) fn empty() -> Self {
-        Self::from_reflection(SchemaReflection::default(), BTreeMap::new())
+        Self {
+            reflection: SchemaReflection::default(),
+            sources: BTreeMap::new(),
+            consts: BTreeMap::new(),
+            types: BTreeMap::new(),
+            enums: BTreeMap::new(),
+            children_by_parent: BTreeMap::new(),
+            dimension_storage_types: BTreeMap::new(),
+            typed_checks: TypedCheckPlan::default(),
+            value_dependencies: ValueDependencyPlan::default(),
+            structural_limits: StructuralLimits::default(),
+        }
     }
 
     pub(crate) const fn reflection(&self) -> &SchemaReflection {
@@ -112,6 +138,10 @@ impl CompiledSchema {
 
     pub(crate) const fn sources(&self) -> &BTreeMap<ModuleId, String> {
         &self.sources
+    }
+
+    pub(crate) const fn structural_limits(&self) -> StructuralLimits {
+        self.structural_limits
     }
 
     fn build_dimension_storage_index(
@@ -397,6 +427,7 @@ pub struct CftTypeMeta {
     pub is_abstract: bool,
     pub is_sealed: bool,
     pub is_singleton: bool,
+    pub span: Span,
     pub annotations: Vec<CftAnnotation>,
     pub check: Option<CftSchemaCheckBlock>,
     pub dimension_checks: BTreeMap<String, CftSchemaCheckBlock>,
@@ -408,6 +439,7 @@ pub struct CftTypeMeta {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftFieldMeta {
+    pub module: String,
     pub name: String,
     pub raw_type: String,
     pub ty_ref: CftSchemaTypeRef,
@@ -415,6 +447,7 @@ pub struct CftFieldMeta {
     pub default: Option<crate::CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
     pub dimension: Option<CftDimensionFieldMeta>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -446,18 +479,19 @@ impl CftTypeMeta {
             is_abstract: schema_type.is_abstract,
             is_sealed: schema_type.is_sealed,
             is_singleton: schema_type.is_singleton,
+            span: schema_type.span,
             annotations: schema_type.annotations.clone(),
             check: schema_type.check.clone(),
             dimension_checks: BTreeMap::new(),
             own_fields: schema_type
                 .fields
                 .iter()
-                .map(CftFieldMeta::from_schema)
+                .map(|field| CftFieldMeta::from_schema(field, &schema_type.module))
                 .collect(),
             all_fields: schema_type
                 .all_fields
                 .iter()
-                .map(CftFieldMeta::from_schema)
+                .map(|field| CftFieldMeta::from_schema(field, &schema_type.module))
                 .collect(),
             fields: schema_type
                 .all_fields
@@ -470,8 +504,9 @@ impl CftTypeMeta {
 }
 
 impl CftFieldMeta {
-    fn from_schema(field: &crate::CftSchemaField) -> Self {
+    fn from_schema(field: &crate::CftSchemaField, module: &ModuleId) -> Self {
         Self {
+            module: module.to_string(),
             name: field.name.clone(),
             raw_type: field.ty.clone(),
             ty_ref: field.ty_ref.clone(),
@@ -485,6 +520,7 @@ impl CftFieldMeta {
                     dimension: dimension.kind.name().to_string(),
                     bucket: dimension.bucket.clone(),
                 }),
+            span: field.span,
         }
     }
 }

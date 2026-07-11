@@ -12,7 +12,7 @@ use coflow_api::{
     DeleteRecordRequest, InsertRecordRequest, ResolvedSource, SourceLocationSpec, SourceWriter,
     WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
-use coflow_cft::{CftContainer, CompiledSchema};
+use coflow_cft::{CftContainer};
 use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdObject, CfdValue, RecordOrigin, SourceDocument,
 };
@@ -203,7 +203,7 @@ fn writes_string_cell_and_preserves_neighbors() {
 
     let schema = CftContainer::new();
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("New Sword".to_string());
@@ -244,7 +244,7 @@ fn writes_numeric_cell_as_text() {
 
     let schema = CftContainer::new();
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::Int(99);
@@ -282,7 +282,7 @@ fn writes_record_key_cell() {
 
     let schema = CftContainer::new();
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("blade".to_string());
@@ -318,7 +318,7 @@ fn writes_collection_element_by_rewriting_owning_cell() {
 
     let schema = schema_for_tagged_items();
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let origin = RecordOrigin::Table {
         document: SourceDocument::Local(path.clone()),
@@ -378,7 +378,7 @@ fn writes_expanded_object_fields_to_child_columns() {
 
     let schema = schema_for_terrain();
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let source_def = coflow_loader_excel::ExcelSource::new(
         &path,
@@ -424,7 +424,7 @@ fn rejects_missing_file_with_friendly_error() {
         std::fs::remove_file(&path).expect("rm pre-existing");
     }
     let schema = CftContainer::new();
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("X".to_string());
@@ -465,7 +465,7 @@ fn refuses_field_write_when_row_key_changed() {
 
     let schema = CftContainer::new();
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("New Sword".to_string());
@@ -502,7 +502,7 @@ fn inserts_record_row_and_loader_can_read_it() {
 
     let schema = schema_for_items();
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let writer = ExcelWriter::new();
     let fields = BTreeMap::from([
@@ -539,7 +539,7 @@ fn inserts_record_row_and_loader_can_read_it() {
         path,
         vec![coflow_loader_excel::ExcelSheet::new("Items").with_type("Item")],
     );
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let loaded = coflow_loader_excel::collect_input_records(&compiled_schema, &[source_def])
         .expect("reload records");
     assert!(loaded.records.iter().any(|record| record.key == "potion"));
@@ -552,7 +552,7 @@ fn inserts_record_with_expanded_object_into_child_columns() {
 
     let schema = schema_for_terrain();
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let writer = ExcelWriter::new();
     let fields = BTreeMap::from([
@@ -598,7 +598,7 @@ fn deletes_record_row() {
 
     let schema = CftContainer::new();
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let writer = ExcelWriter::new();
@@ -629,7 +629,7 @@ fn refuses_delete_when_row_key_changed() {
 
     let schema = CftContainer::new();
 
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = empty_source(&path);
     let origin = origin_for_shield(&path);
     let writer = ExcelWriter::new();

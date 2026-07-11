@@ -231,7 +231,7 @@ fn dimension_field_lookup_reads_variant_storage_without_exposing_storage_to_call
 
     let resolved = model
         .dimension_field_value(
-            &CompiledSchema::new(&schema),
+            schema.compiled_schema(),
             item_id,
             "name",
             "platform",
@@ -290,7 +290,7 @@ fn dimension_field_lookup_uses_field_name_for_singleton_storage_records() {
 
     let resolved = model
         .dimension_field_value(
-            &CompiledSchema::new(&schema),
+            schema.compiled_schema(),
             singleton_id,
             "welcome",
             "language",

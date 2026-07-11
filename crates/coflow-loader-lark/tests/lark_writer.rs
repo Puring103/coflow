@@ -14,7 +14,7 @@ use coflow_api::{
     SourceLocationSpec, SourceWriter, TableContext, TableManager, WriteCellRequest, WriteContext,
     WriteFieldPathSegment,
 };
-use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
+use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdObject, CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};
 use serde_json::Value;
@@ -216,7 +216,7 @@ fn writes_cell_with_full_handshake_then_caches() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = CftContainer::new();
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = lark_source();
     let origin = lark_origin();
     let new_value = CfdValue::String("New".to_string());
@@ -271,7 +271,7 @@ fn writes_cell_from_wiki_url_origin() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = CftContainer::new();
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = lark_wiki_source();
     let origin = lark_wiki_origin();
     let new_value = CfdValue::String("New".to_string());
@@ -318,7 +318,7 @@ fn writes_expanded_object_with_table_core_field_plan() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = CftContainer::new();
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = lark_source();
     let mut field_columns = BTreeMap::new();
     field_columns.insert(vec!["stats".to_string()], 2);
@@ -397,7 +397,7 @@ fn surfaces_business_error_on_failure() {
     ]);
     let writer = LarkSheetWriter::new(client);
     let schema = CftContainer::new();
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = lark_source();
     let origin = lark_origin();
     let new_value = CfdValue::String("X".to_string());
@@ -450,7 +450,7 @@ fn retries_once_after_token_expired() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = CftContainer::new();
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = lark_source();
     let origin = lark_origin();
     let new_value = CfdValue::String("Retry".to_string());
@@ -507,7 +507,7 @@ fn inserts_record_by_appending_lark_row() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = item_schema();
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = lark_source();
     let fields = BTreeMap::from([
         ("name".to_string(), CfdValue::String("Blade".to_string())),
@@ -575,7 +575,7 @@ fn inserts_record_from_wiki_url_source() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = item_schema();
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = lark_wiki_source();
     let fields = BTreeMap::from([
         ("name".to_string(), CfdValue::String("Blade".to_string())),
@@ -741,7 +741,7 @@ fn deletes_record_after_remote_key_guard() {
     ]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = CftContainer::new();
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = lark_source();
     let origin = lark_origin();
     let request = DeleteRecordRequest {
@@ -785,7 +785,7 @@ fn rewrite_record_references_does_not_scan_lark_cells() {
     let client = ScriptedClient::new([]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = item_schema();
-    let compiled_schema = CompiledSchema::new(&schema);
+    let compiled_schema = schema.compiled_schema();
     let source = lark_source();
     let targets = [];
     let request = RewriteRecordReferencesRequest {
