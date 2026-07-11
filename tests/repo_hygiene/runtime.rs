@@ -90,9 +90,11 @@ fn engine_runtime_facade_does_not_live_in_lib_rs() {
         "pub struct Runtime",
         "pub struct ReadOnlyProjectSession",
         "pub struct BuildProjectSession",
+        "pub struct WriteProjectSession",
         "pub fn build_schema_session",
         "pub fn open_read_only_session",
         "pub fn build_project_session",
+        "pub fn open_write_session",
     ] {
         assert!(
             runtime.contains(expected),
@@ -104,8 +106,14 @@ fn engine_runtime_facade_does_not_live_in_lib_rs() {
         );
     }
     assert!(
-        engine.contains("pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime};"),
+        engine.contains(
+            "pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime, WriteProjectSession};"
+        ),
         "coflow-runtime should re-export the runtime facade from lib.rs"
+    );
+    assert!(
+        engine.contains("pub use query::ProjectQueries;"),
+        "coflow-runtime should re-export the read-only query capability from lib.rs"
     );
 }
 

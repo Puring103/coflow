@@ -23,6 +23,7 @@ mod files;
 mod indexes;
 mod load;
 mod mutation;
+mod query;
 mod records;
 mod runtime;
 mod schema_build;
@@ -66,7 +67,8 @@ pub use records::{
     dict_key_path_text, value_summary, EffectiveFieldWrite, RecordTarget, RecordView,
     RefTargetInfo, WriteOutcome,
 };
-pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime};
+pub use query::ProjectQueries;
+pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime, WriteProjectSession};
 pub use schema_build::{
     compile_schema_project_with_overrides, SchemaBuild, SchemaSourceOverride,
 };
