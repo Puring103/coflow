@@ -10,6 +10,7 @@ use crate::semantic_tokens::{
 };
 use crate::text::{is_after_line_comment, is_inside_string};
 use crate::uri::{hex_value, percent_decode};
+use coflow_cfd::parse_cfd;
 use coflow_cft::Span;
 
 #[test]

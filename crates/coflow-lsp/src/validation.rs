@@ -1,5 +1,6 @@
-use coflow_api::DiagnosticSet;
-use coflow_cfd::parse_cfd;
+use coflow_api::{DiagnosticSet, SourceLocationSpec};
+use coflow_cfd::{parse_cfd, CfdAst};
+use coflow_cft::CftContainer;
 use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
     normalize_path, Project, SchemaSourceOverride,
@@ -11,7 +12,8 @@ use std::path::{Path, PathBuf};
 use crate::diagnostics::{
     label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
 };
-use crate::state::LspBuild;
+use crate::state::{LspBuild, LspDocument};
+use crate::uri::path_to_file_uri;
 use crate::{cfd, path_from_file_uri};
 
 pub(crate) struct LspValidationCore {
@@ -32,6 +34,28 @@ pub(crate) struct DiagnosticPublication {
     pub(crate) diagnostics: Vec<Value>,
 }
 
+pub(crate) enum LspRequestDocument<'a> {
+    Cfd(CfdRequestDocument<'a>),
+    Cft {
+        build: &'a LspBuild,
+        document: &'a LspDocument,
+    },
+    Missing,
+}
+
+pub(crate) struct CfdRequestDocument<'a> {
+    pub(crate) source: String,
+    pub(crate) ast: CfdAst,
+    pub(crate) schema: Option<&'a CftContainer>,
+    pub(crate) build: Option<&'a LspBuild>,
+}
+
+pub(crate) struct CfdProjectSource {
+    path: PathBuf,
+    pub(crate) uri: String,
+    pub(crate) text: String,
+}
+
 impl LspValidationCore {
     pub(crate) fn new(project: Project) -> Self {
         Self {
@@ -42,10 +66,7 @@ impl LspValidationCore {
         }
     }
 
-    pub(crate) const fn project(&self) -> &Project {
-        &self.project
-    }
-
+    #[cfg(test)]
     pub(crate) const fn open_documents(&self) -> &BTreeMap<PathBuf, OpenDocument> {
         &self.open_documents
     }
@@ -54,7 +75,7 @@ impl LspValidationCore {
         self.build.as_ref()
     }
 
-    pub(crate) fn schema(&self) -> Option<&coflow_cft::CftContainer> {
+    pub(crate) fn schema(&self) -> Option<&CftContainer> {
         self.build
             .as_ref()
             .and_then(|build| build.schema.container.as_ref())
@@ -214,7 +235,71 @@ impl LspValidationCore {
         Ok(Vec::new())
     }
 
-    pub(crate) fn cfd_source_by_uri(&self, uri: &str) -> Option<String> {
+    pub(crate) fn prepare_request_document(
+        &mut self,
+        _uri: &str,
+    ) -> Result<Vec<DiagnosticPublication>, String> {
+        self.ensure_build_publications()
+    }
+
+    pub(crate) fn request_document(&self, uri: &str) -> LspRequestDocument<'_> {
+        if let Some(source) = self.cfd_source_by_uri(uri) {
+            let (ast, _) = parse_cfd(&source);
+            return LspRequestDocument::Cfd(CfdRequestDocument {
+                source,
+                ast,
+                schema: self.schema(),
+                build: self.build.as_ref(),
+            });
+        }
+        let Some(build) = self.build.as_ref() else {
+            return LspRequestDocument::Missing;
+        };
+        let Some(document) = build.document_by_uri(uri) else {
+            return LspRequestDocument::Missing;
+        };
+        LspRequestDocument::Cft { build, document }
+    }
+
+    pub(crate) fn cfd_project_sources(&self) -> Vec<CfdProjectSource> {
+        let mut sources = Vec::new();
+        for source in &self.project.config.sources {
+            let SourceLocationSpec::Path(path) = source.location() else {
+                continue;
+            };
+            let resolved = self.project.resolve_path(path);
+            if resolved.is_dir() {
+                sources.extend(cfd_sources_in_dir(&resolved));
+            } else if is_cfd_path(&resolved) {
+                if let Some(source) = cfd_source_from_path(&resolved) {
+                    sources.push(source);
+                }
+            }
+        }
+        let mut project_paths = sources
+            .iter()
+            .map(|source| source.path.clone())
+            .collect::<BTreeSet<_>>();
+        for source in &mut sources {
+            if let Some(document) = self.open_documents.get(&source.path) {
+                source.uri.clone_from(&document.uri);
+                source.text.clone_from(&document.text);
+            }
+        }
+        for (path, document) in &self.open_documents {
+            if is_cfd_path(path) && project_paths.insert(path.clone()) {
+                sources.push(CfdProjectSource {
+                    path: path.clone(),
+                    uri: document.uri.clone(),
+                    text: document.text.clone(),
+                });
+            }
+        }
+        sources.sort_by(|left, right| left.path.cmp(&right.path));
+        sources
+    }
+
+    fn cfd_source_by_uri(&self, uri: &str) -> Option<String> {
         let path = path_from_file_uri(uri)?;
         if !is_cfd_path(&path) {
             return None;
@@ -273,6 +358,36 @@ impl LspValidationCore {
         self.published_uris.insert(uri.clone());
         DiagnosticPublication { uri, diagnostics }
     }
+}
+
+fn cfd_sources_in_dir(dir: &Path) -> Vec<CfdProjectSource> {
+    let mut sources = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return sources;
+    };
+    let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
+    entries.sort_by_key(std::fs::DirEntry::path);
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            sources.extend(cfd_sources_in_dir(&path));
+        } else if is_cfd_path(&path) {
+            if let Some(source) = cfd_source_from_path(&path) {
+                sources.push(source);
+            }
+        }
+    }
+    sources
+}
+
+fn cfd_source_from_path(path: &Path) -> Option<CfdProjectSource> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let normalized = normalize_path(path);
+    Some(CfdProjectSource {
+        uri: path_to_file_uri(&normalized),
+        path: normalized,
+        text,
+    })
 }
 
 pub(crate) fn is_cfd_path(path: &Path) -> bool {

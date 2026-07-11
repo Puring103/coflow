@@ -164,13 +164,21 @@ fn lsp_validation_core_does_not_live_in_lib_rs() {
 
         "pub(crate) struct DiagnosticPublication",
 
+        "pub(crate) enum LspRequestDocument",
+
+        "pub(crate) struct CfdProjectSource",
+
         "pub(crate) fn open_document",
 
         "pub(crate) fn validate_project",
 
         "pub(crate) fn ensure_build_publications",
 
-        "pub(crate) fn cfd_source_by_uri",
+        "pub(crate) fn prepare_request_document",
+
+        "pub(crate) fn request_document",
+
+        "pub(crate) fn cfd_project_sources",
 
         "pub(crate) fn is_cfd_path",
 
@@ -203,6 +211,13 @@ fn lsp_validation_core_does_not_live_in_lib_rs() {
         "LspServer should keep validation state behind LspValidationCore"
 
     );
+
+    for forbidden in ["parse_cfd", "cfd_source_by_uri"] {
+        assert!(
+            !lib.contains(forbidden),
+            "LSP request handlers should use validation request context instead of `{forbidden}`"
+        );
+    }
 
 }
 
@@ -436,12 +451,6 @@ fn lsp_definition_helpers_do_not_live_in_lib_rs() {
 
         "fn cfd_record_definition_location_in_source",
 
-        "fn cfd_project_sources",
-
-        "fn cfd_sources_in_dir",
-
-        "fn cfd_source_from_path",
-
     ] {
 
         assert!(
@@ -460,6 +469,13 @@ fn lsp_definition_helpers_do_not_live_in_lib_rs() {
 
         );
 
+    }
+
+    for forbidden in ["SourceLocationSpec", "OpenDocument", "normalize_path"] {
+        assert!(
+            !definition.contains(forbidden),
+            "LSP definition helpers should consume CFD source snapshots instead of project/open-document adapter `{forbidden}`"
+        );
     }
 
 }

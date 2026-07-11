@@ -28,7 +28,6 @@ mod text;
 mod uri;
 mod validation;
 
-use coflow_cfd::parse_cfd;
 use coflow_project::Project;
 #[cfg(test)]
 use coflow_project::{compile_schema_project_with_overrides, normalize_path};
@@ -76,7 +75,9 @@ pub(crate) use text::{
 use uri::path_from_file_uri;
 #[cfg(test)]
 pub(crate) use uri::path_to_file_uri;
-pub(crate) use validation::{is_cfd_path, DiagnosticPublication, LspValidationCore, OpenDocument};
+pub(crate) use validation::{
+    CfdProjectSource, DiagnosticPublication, LspRequestDocument, LspValidationCore,
+};
 
 /// Runs the CFT language server over stdio.
 ///
@@ -265,111 +266,90 @@ impl<W: Write> LspServer<W> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
-        if let Some(source) = self.core.cfd_source_by_uri(&request.uri) {
-            let (ast, _) = parse_cfd(&source);
-            let offset = byte_offset_from_position(&source, request.position);
-            let schema = self.core.schema();
-            let result = cfd::completion(&source, &ast, schema, offset);
-            return self.write_response(id, &result);
-        }
-        let Some(build) = self.ensure_build()? else {
-            return self.write_response(id, &json!([]));
+        let result = match self.request_document(&request.uri)? {
+            LspRequestDocument::Cfd(document) => {
+                let offset = byte_offset_from_position(&document.source, request.position);
+                cfd::completion(&document.source, &document.ast, document.schema, offset)
+            }
+            LspRequestDocument::Cft { build, document } => {
+                json!(completion_items(build, document, &request.position))
+            }
+            LspRequestDocument::Missing => json!([]),
         };
-        let Some(document) = build.document_by_uri(&request.uri) else {
-            return self.write_response(id, &json!([]));
-        };
-        let items = completion_items(build, document, &request.position);
-        self.write_response(id, &json!(items))
+        self.write_response(id, &result)
     }
 
     fn hover(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
-        if let Some(source) = self.core.cfd_source_by_uri(&request.uri) {
-            let (ast, _) = parse_cfd(&source);
-            let offset = byte_offset_from_position(&source, request.position);
-            let schema = self.core.schema();
-            let result = cfd::hover(&source, &ast, schema, offset);
-            return self.write_response(id, &result);
-        }
-        let Some(build) = self.ensure_build()? else {
-            return self.write_response(id, &Value::Null);
+        let result = match self.request_document(&request.uri)? {
+            LspRequestDocument::Cfd(document) => {
+                let offset = byte_offset_from_position(&document.source, request.position);
+                cfd::hover(&document.source, &document.ast, document.schema, offset)
+            }
+            LspRequestDocument::Cft { build, document } => {
+                hover_at(build, document, &request.position).unwrap_or(Value::Null)
+            }
+            LspRequestDocument::Missing => Value::Null,
         };
-        let Some(document) = build.document_by_uri(&request.uri) else {
-            return self.write_response(id, &Value::Null);
-        };
-        let hover = hover_at(build, document, &request.position);
-        self.write_response(id, &hover.unwrap_or(Value::Null))
+        self.write_response(id, &result)
     }
 
     fn definition(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
-        if let Some(source) = self.core.cfd_source_by_uri(&request.uri) {
-            let (ast, _) = parse_cfd(&source);
-            let offset = byte_offset_from_position(&source, request.position);
-            if let Some(type_name) = cfd::definition_type_name(&ast, offset) {
-                let type_name = type_name.to_string();
-                self.ensure_build()?;
-                if let Some(build) = self.core.build() {
-                    if let Some(location) = cft_type_definition_location(build, &type_name) {
-                        return self.write_response(id, &json!(location));
-                    }
-                }
-            }
-            if let Some((type_name, field_name)) =
-                cfd::definition_field_name(&ast, self.core.schema(), offset)
-            {
-                self.ensure_build()?;
-                if let Some(build) = self.core.build() {
-                    if let Some(location) =
-                        cft_schema_field_definition_location(build, &type_name, field_name)
-                    {
-                        return self.write_response(id, &json!(location));
-                    }
-                }
-            }
-            if let Some(ref_key) = cfd::definition_ref_key(&ast, offset) {
-                let ref_key = ref_key.to_string();
-                if let Some(location) = cfd_record_definition_location(
-                    self.core.project(),
-                    self.core.open_documents(),
-                    &ref_key,
-                )
+        let result = match self.request_document(&request.uri)? {
+            LspRequestDocument::Cfd(document) => {
+                let offset = byte_offset_from_position(&document.source, request.position);
+                if let Some(location) = cfd::definition_type_name(&document.ast, offset).and_then(
+                    |type_name| {
+                        document
+                            .build
+                            .and_then(|build| cft_type_definition_location(build, type_name))
+                    },
+                ) {
+                    json!(location)
+                } else if let Some(location) =
+                    cfd::definition_field_name(&document.ast, document.schema, offset).and_then(
+                        |(type_name, field_name)| {
+                            document.build.and_then(|build| {
+                                cft_schema_field_definition_location(
+                                    build, &type_name, field_name,
+                                )
+                            })
+                        },
+                    )
                 {
-                    return self.write_response(id, &json!(location));
+                    json!(location)
+                } else if let Some(ref_key) = cfd::definition_ref_key(&document.ast, offset) {
+                    let sources = self.core.cfd_project_sources();
+                    cfd_record_definition_location(&sources, ref_key).map_or(Value::Null, |location| {
+                        json!(location)
+                    })
+                } else {
+                    Value::Null
                 }
             }
-            return self.write_response(id, &Value::Null);
-        }
-        let Some(build) = self.ensure_build()? else {
-            return self.write_response(id, &Value::Null);
+            LspRequestDocument::Cft { build, document } => {
+                json!(definitions_at(build, document, &request.position))
+            }
+            LspRequestDocument::Missing => Value::Null,
         };
-        let Some(document) = build.document_by_uri(&request.uri) else {
-            return self.write_response(id, &Value::Null);
-        };
-        let definitions = definitions_at(build, document, &request.position);
-        self.write_response(id, &json!(definitions))
+        self.write_response(id, &result)
     }
 
     fn document_symbol(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &json!([]));
         };
-        if let Some(source) = self.core.cfd_source_by_uri(&uri) {
-            let (ast, _) = parse_cfd(&source);
-            return self.write_response(id, &cfd::document_symbols(&source, &ast));
-        }
-        let result = {
-            let Some(build) = self.ensure_build()? else {
-                return self.write_response(id, &json!([]));
-            };
-            let Some(document) = build.document_by_uri(&uri) else {
-                return self.write_response(id, &json!([]));
-            };
-            json!(document_symbols(document))
+        let result = match self.request_document(&uri)? {
+            LspRequestDocument::Cfd(document) => {
+                cfd::document_symbols(&document.source, &document.ast)
+            }
+            LspRequestDocument::Cft { document, .. } => json!(document_symbols(document)),
+            LspRequestDocument::Missing => json!([]),
         };
         self.write_response(id, &result)
     }
@@ -402,22 +382,24 @@ impl<W: Write> LspServer<W> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &json!({"data": []}));
         };
-        if let Some(source) = self.core.cfd_source_by_uri(&uri) {
-            let (ast, _) = parse_cfd(&source);
-            return self.write_response(id, &cfd::semantic_tokens(&source, &ast));
-        }
-        let result = {
-            let Some(build) = self.ensure_build()? else {
-                return self.write_response(id, &json!({"data": []}));
-            };
-            let Some(document) = build.document_by_uri(&uri) else {
-                return self.write_response(id, &json!({"data": []}));
-            };
-            json!({
-                "data": semantic_token_data(build, document)
-            })
+        let result = match self.request_document(&uri)? {
+            LspRequestDocument::Cfd(document) => {
+                cfd::semantic_tokens(&document.source, &document.ast)
+            }
+            LspRequestDocument::Cft { build, document } => {
+                json!({
+                    "data": semantic_token_data(build, document)
+                })
+            }
+            LspRequestDocument::Missing => json!({"data": []}),
         };
         self.write_response(id, &result)
+    }
+
+    fn request_document(&mut self, uri: &str) -> Result<LspRequestDocument<'_>, String> {
+        let publications = self.core.prepare_request_document(uri)?;
+        self.publish_diagnostic_publications(publications)?;
+        Ok(self.core.request_document(uri))
     }
 
     fn ensure_build(&mut self) -> Result<Option<&LspBuild>, String> {
