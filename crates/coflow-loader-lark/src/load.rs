@@ -1,7 +1,7 @@
 use coflow_api::{
-    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, ResolvedSource,
-    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
-    SourceResolveContext,
+    DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
+    ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    SourceProviderDescriptor, SourceResolveContext,
 };
 use coflow_loader_table_core::{
     collect_table_input_records, TableSheet, TableSheetConfig, TableSource,
@@ -15,8 +15,8 @@ use crate::dto::{
 };
 use crate::http::{LarkHttpClient, UreqLarkHttpClient};
 use crate::source::{
-    is_lark_uri, lark_document, lark_source_from_spec, token_after_path_marker, LarkSheetLocator,
-    LarkSheetSource,
+    decode_lark_source_options, is_lark_uri, lark_document, lark_source_from_spec,
+    token_after_path_marker, LarkSheetLocator, LarkSheetSource,
 };
 use crate::{
     api_error_message, column_name, json_cell_text, url_component, LarkDiagnostic, LarkDiagnostics,
@@ -436,6 +436,10 @@ where
             }
         }
         ProbeResult::none()
+    }
+
+    fn decode_options(&self, options: &Value) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        decode_lark_source_options(options)
     }
 
     fn resolve(

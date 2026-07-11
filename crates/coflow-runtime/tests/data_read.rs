@@ -417,3 +417,50 @@ fn data_get_requires_limit_or_all_for_large_unselected_results() {
 
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn provider_option_diagnostics_keep_the_project_key_path() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-provider-option-location-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(root.join("schema.cft"), "type Item {}\n").expect("write schema");
+    std::fs::write(root.join("data").join("items.xlsx"), "").expect("write source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - type: excel\n    path: data/items.xlsx\n    rogue: true\n",
+    )
+    .expect("write config");
+
+    let config_path = root.join("coflow.yaml");
+    let project = Project::open_schema_only(Some(&config_path)).expect("open project");
+    let canonical_config_path = project.config_path.clone();
+    let session = Runtime::new(registry())
+        .build_project_session(project)
+        .expect("project diagnostics should be retained in a session")
+        .into_session();
+    let diagnostic = session
+        .diagnostics()
+        .as_set()
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.message == "unknown excel source option `rogue`")
+        .expect("provider option diagnostic");
+    let Some(coflow_api::Label {
+        location:
+            coflow_api::SourceLocation::ProjectConfig {
+                path,
+                key_path,
+            },
+        ..
+    }) = &diagnostic.primary
+    else {
+        panic!("expected project config primary: {diagnostic:?}");
+    };
+    assert_eq!(path, &canonical_config_path);
+    assert_eq!(key_path, &["sources", "0", "rogue"]);
+
+    let _ = std::fs::remove_dir_all(root);
+}

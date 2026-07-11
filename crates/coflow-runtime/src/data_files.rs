@@ -5,7 +5,6 @@ use coflow_api::{
 };
 use coflow_project::{path_to_slash, Project, SourceConfig};
 use serde::Serialize;
-use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use crate::ProjectSchemaSession;
@@ -61,7 +60,13 @@ pub fn create_data_file(
     let provider_id = resolve_provider_id(registry, options.provider.as_deref(), &options.file)?;
     let descriptor = table_manager_descriptor(registry, &provider_id)?;
     let path = resolve_project_file(&session.project, &options.file);
-    let source = table_operation_source(session.project(), &options.file, &provider_id, path);
+    let source = table_operation_source(
+        session.project(),
+        registry,
+        &options.file,
+        &provider_id,
+        path,
+    )?;
     let manager = table_manager(registry, &provider_id)?;
     let actual_type = options.actual_type;
     let layout = descriptor
@@ -125,7 +130,13 @@ pub fn sync_data_header(
             format!("file `{}` does not exist", options.file),
         ));
     }
-    let source = table_operation_source(session.project(), &options.file, &provider_id, path);
+    let source = table_operation_source(
+        session.project(),
+        registry,
+        &options.file,
+        &provider_id,
+        path,
+    )?;
     let manager = table_manager(registry, &provider_id)?;
     let layout = table_header_layout(
         session,
@@ -167,17 +178,25 @@ fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
 
 fn table_operation_source(
     project: &Project,
+    registry: &ProviderRegistry,
     file: &str,
     provider_id: &str,
     path: PathBuf,
-) -> ResolvedSource {
-    ResolvedSource {
+) -> Result<ResolvedSource, DiagnosticSet> {
+    let provider = registry.source_provider(provider_id).ok_or_else(|| {
+        one_data_file_error(
+            "DATA-FILE-PROVIDER",
+            format!("source provider `{provider_id}` is not registered"),
+        )
+    })?;
+    let raw_options = configured_table_source(project, file)
+        .map_or(serde_json::Value::Null, |source| source.options().clone());
+    Ok(ResolvedSource {
         provider_id: provider_id.to_string(),
         location: SourceLocationSpec::Path(path),
-        options: configured_table_source(project, file)
-            .map_or(Value::Null, |source| source.options().clone()),
+        options: provider.decode_options(&raw_options)?,
         display_name: file.to_string(),
-    }
+    })
 }
 
 trait TableManagerDescriptorExt {

@@ -142,10 +142,10 @@ mod tests {
         let source = ResolvedSource {
             provider_id: LARK_SHEET_LOADER_DESCRIPTOR.id.to_string(),
             location: SourceLocationSpec::Uri("lark:sht_direct".to_string()),
-            options: json!({
+            options: test_lark_options(json!({
                 "app_id": "cli_test",
                 "app_secret": "secret_test"
-            }),
+            })),
             display_name: "lark:sht_direct".to_string(),
         };
 
@@ -165,10 +165,10 @@ mod tests {
         let source = ResolvedSource {
             provider_id: LARK_SHEET_LOADER_DESCRIPTOR.id.to_string(),
             location: SourceLocationSpec::Path(Path::new("data.xlsx").to_path_buf()),
-            options: json!({
+            options: test_lark_options(json!({
                 "app_id": "cli_test",
                 "app_secret": "secret_test"
-            }),
+            })),
             display_name: "data.xlsx".to_string(),
         };
 
@@ -237,11 +237,11 @@ mod tests {
             location: SourceLocationSpec::Uri(
                 "https://example.feishu.cn/wiki/wiki_token".to_string(),
             ),
-            options: json!({
+            options: test_lark_options(json!({
                 "app_id": "cli_test",
                 "app_secret": "secret_test",
                 "sheets": [{ "sheet": "Items", "type": "Item" }]
-            }),
+            })),
             display_name: "https://example.feishu.cn/wiki/wiki_token".to_string(),
         };
         let compiled_schema = schema.compiled_schema();
@@ -265,6 +265,14 @@ mod tests {
     }
 
     struct NoopClient;
+
+    fn test_lark_options(raw: Value) -> coflow_api::DecodedSourceOptions {
+        let loader = LarkSheetLoader::new(NoopClient);
+        let Ok(options) = loader.decode_options(&raw) else {
+            panic!("test lark options should decode");
+        };
+        options
+    }
 
     impl LarkHttpClient for NoopClient {
         fn post_json(

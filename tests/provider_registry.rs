@@ -84,20 +84,28 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
         .source_options(&coflow_api::DimensionSourceOptionsRequest {
             sheet: "Item_name",
             actual_type: "Item_nameVariants",
-        });
+        })
+        .map_err(|err| format!("csv dimension options: {err:?}"))?;
     ensure_eq(
-        csv_options["sheets"][0]["sheet"]
-            .as_str()
-            .unwrap_or_default(),
-        "Item_name",
-        "csv dimension source sheet option",
+        csv_options.provider_id(),
+        "csv",
+        "csv dimension source provider identity",
     )?;
+    let csv_source = coflow_api::ResolvedSource {
+        provider_id: "csv".to_string(),
+        location: coflow_api::SourceLocationSpec::Path("Item_name.csv".into()),
+        options: csv_options,
+        display_name: "Item_name.csv".to_string(),
+    };
+    let csv_table = registry.table_manager("csv").expect("csv table manager");
     ensure_eq(
-        csv_options["sheets"][0]["type"]
-            .as_str()
+        csv_table
+            .type_for_sheet(&csv_source, Some("Item_name"))
+            .map_err(|err| format!("csv dimension type lookup: {err:?}"))?
+            .as_deref()
             .unwrap_or_default(),
         "Item_nameVariants",
-        "csv dimension source type option",
+        "csv dimension source typed options",
     )?;
     ensure(registry.exporter("json").is_some(), "missing json exporter")?;
     ensure(

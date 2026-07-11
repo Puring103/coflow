@@ -24,6 +24,15 @@ use crate::session::RecordCoordinate;
 
 type ResolvedLoaderSource = (Arc<dyn coflow_api::SourceProvider>, ResolvedSource);
 
+#[derive(Clone)]
+pub(crate) struct ConfiguredSource {
+    pub(crate) provider_id: String,
+    pub(crate) location: SourceLocationSpec,
+    pub(crate) options: Value,
+    pub(crate) display_name: String,
+    pub(crate) source_index: Option<usize>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ProjectLoadOutput {
     pub(crate) model: CfdDataModel,
@@ -69,8 +78,8 @@ pub(crate) fn load_project_data(
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
     let mut diagnostics = DiagnosticSet::empty();
-    for source in &project.config.sources {
-        let configured = configured_source(project, source);
+    for (source_index, source) in project.config.sources.iter().enumerate() {
+        let configured = configured_source(project, source, Some(source_index));
         let resolved_sources = match resolve_sources(project, registry, source, &configured) {
             Ok(resolved_sources) => resolved_sources,
             Err(err) => {
@@ -216,7 +225,7 @@ fn load_resolved_sources(
 fn resolve_implicit_source(
     project: &Project,
     registry: &ProviderRegistry,
-    configured: &ResolvedSource,
+    configured: &ConfiguredSource,
 ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
     let ctx = SourceResolveContext {
         project_root: &project.root_dir,
@@ -237,8 +246,9 @@ fn resolve_implicit_source(
             return Err(diagnostics);
         }
     };
+    let decoded = decode_configured_source(loader.as_ref(), configured, &project.config_path)?;
     Ok(loader
-        .resolve(ctx, configured)?
+        .resolve(ctx, &decoded)?
         .into_iter()
         .map(|source| (Arc::clone(&loader), source))
         .collect())
@@ -282,7 +292,7 @@ fn resolve_sources(
     project: &Project,
     registry: &ProviderRegistry,
     source: &SourceConfig,
-    configured: &ResolvedSource,
+    configured: &ConfiguredSource,
 ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
     let ctx = SourceResolveContext {
         project_root: &project.root_dir,
@@ -291,8 +301,37 @@ fn resolve_sources(
         && matches!(configured.location, SourceLocationSpec::Path(ref path) if path.is_dir())
     {
         let mut resolved = Vec::new();
-        for loader in registry.source_providers() {
-            for source in loader.resolve(ctx, configured)? {
+        let SourceLocationSpec::Path(directory) = &configured.location else {
+            return Ok(resolved);
+        };
+        for path in discover_source_files(directory, &project.config_path)? {
+            let mut file_source = ConfiguredSource {
+                provider_id: String::new(),
+                display_name: path.display().to_string(),
+                location: SourceLocationSpec::Path(path),
+                options: configured.options.clone(),
+                source_index: configured.source_index,
+            };
+            let option_keys = source_option_keys(&file_source.options);
+            let source_ref = source_ref(&file_source, None, &option_keys);
+            let loader = match registry.select_source_provider(&source_ref) {
+                Ok(loader) => loader,
+                Err(SourceProviderSelectionError::NoSourceProvider) => continue,
+                Err(err) => {
+                    return Err(DiagnosticSet::one(loader_selection_diagnostic(
+                        &project.config_path,
+                        &file_source,
+                        err,
+                    )))
+                }
+            };
+            file_source.options = options_for_provider(
+                &file_source.options,
+                loader.descriptor().option_keys,
+            );
+            let decoded =
+                decode_configured_source(loader.as_ref(), &file_source, &project.config_path)?;
+            for source in loader.resolve(ctx, &decoded)? {
                 resolved.push((Arc::clone(&loader), source));
             }
         }
@@ -313,15 +352,68 @@ fn resolve_sources(
             return Err(diagnostics);
         }
     };
+    let decoded = decode_configured_source(loader.as_ref(), configured, &project.config_path)?;
     Ok(loader
-        .resolve(ctx, configured)?
+        .resolve(ctx, &decoded)?
         .into_iter()
         .map(|source| (Arc::clone(&loader), source))
         .collect())
 }
 
+fn options_for_provider(options: &Value, keys: &[&str]) -> Value {
+    let Some(object) = options.as_object() else {
+        return options.clone();
+    };
+    Value::Object(
+        object
+            .iter()
+            .filter(|(key, _)| keys.contains(&key.as_str()))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    )
+}
+
+fn discover_source_files(
+    directory: &Path,
+    config_path: &Path,
+) -> Result<Vec<std::path::PathBuf>, DiagnosticSet> {
+    let entries = std::fs::read_dir(directory).map_err(|err| {
+        DiagnosticSet::one(project_diagnostic(
+            config_path,
+            format!(
+                "failed to read data source directory `{}`: {err}",
+                directory.display()
+            ),
+        ))
+    })?;
+    let mut paths = entries
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| {
+            DiagnosticSet::one(project_diagnostic(
+                config_path,
+                format!(
+                    "failed to read data source directory `{}`: {err}",
+                    directory.display()
+                ),
+            ))
+        })?
+        .into_iter()
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    paths.sort();
+    let mut files = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            files.extend(discover_source_files(&path, config_path)?);
+        } else {
+            files.push(path);
+        }
+    }
+    Ok(files)
+}
+
 const fn source_ref<'a>(
-    source: &'a ResolvedSource,
+    source: &'a ConfiguredSource,
     source_type: Option<&'a str>,
     option_keys: &'a [&'a str],
 ) -> ProjectSourceRef<'a> {
@@ -352,7 +444,11 @@ fn push_loaded_records(
     }
 }
 
-fn configured_source(project: &Project, source: &SourceConfig) -> ResolvedSource {
+fn configured_source(
+    project: &Project,
+    source: &SourceConfig,
+    source_index: Option<usize>,
+) -> ConfiguredSource {
     let location = match source.location() {
         SourceLocationSpec::Path(path) => SourceLocationSpec::Path(project.resolve_path(path)),
         SourceLocationSpec::Uri(uri) => SourceLocationSpec::Uri(uri.clone()),
@@ -361,17 +457,90 @@ fn configured_source(project: &Project, source: &SourceConfig) -> ResolvedSource
         SourceLocationSpec::Path(path) => path.display().to_string(),
         SourceLocationSpec::Uri(uri) => uri.clone(),
     };
-    ResolvedSource {
+    ConfiguredSource {
         provider_id: source.source_type.clone().unwrap_or_default(),
         location,
         options: source.options().clone(),
         display_name,
+        source_index,
     }
 }
 
-#[must_use]
-pub fn configured_project_source(project: &Project, source: &SourceConfig) -> ResolvedSource {
-    configured_source(project, source)
+/// Decode a configured project source through its selected provider.
+///
+/// # Errors
+///
+/// Returns diagnostics when provider selection or typed option decoding fails.
+pub fn configured_project_source(
+    project: &Project,
+    registry: &ProviderRegistry,
+    source: &SourceConfig,
+) -> Result<ResolvedSource, DiagnosticSet> {
+    let source_index = project
+        .config
+        .sources
+        .iter()
+        .position(|candidate| std::ptr::eq(candidate, source));
+    let configured = configured_source(project, source, source_index);
+    let option_keys = source_option_keys(&configured.options);
+    let source_ref = source_ref(&configured, source.source_type.as_deref(), &option_keys);
+    let loader = registry.select_source_provider(&source_ref).map_err(|err| {
+        DiagnosticSet::one(loader_selection_diagnostic(
+            &project.config_path,
+            &configured,
+            err,
+        ))
+    })?;
+    decode_configured_source(loader.as_ref(), &configured, &project.config_path)
+}
+
+fn decode_configured_source(
+    provider: &dyn coflow_api::SourceProvider,
+    source: &ConfiguredSource,
+    config_path: &Path,
+) -> Result<ResolvedSource, DiagnosticSet> {
+    let options = provider
+        .decode_options(&source.options)
+        .map_err(|diagnostics| source_option_diagnostics(diagnostics, config_path, source))?;
+    Ok(ResolvedSource {
+        provider_id: provider.descriptor().id.to_string(),
+        location: source.location.clone(),
+        options,
+        display_name: source.display_name.clone(),
+    })
+}
+
+fn source_option_diagnostics(
+    mut diagnostics: DiagnosticSet,
+    config_path: &Path,
+    source: &ConfiguredSource,
+) -> DiagnosticSet {
+    for diagnostic in &mut diagnostics.diagnostics {
+        let mut option_path = match diagnostic.primary.take() {
+            Some(Label {
+                location: SourceLocation::ProjectConfig { key_path, .. },
+                ..
+            }) => key_path,
+            Some(primary) => {
+                diagnostic.primary = Some(primary);
+                continue;
+            }
+            None => Vec::new(),
+        };
+        let mut key_path = Vec::new();
+        if let Some(index) = source.source_index {
+            key_path.extend(["sources".to_string(), index.to_string()]);
+        }
+        key_path.append(&mut option_path);
+        diagnostic.primary = Some(Label {
+            location: SourceLocation::ProjectConfig {
+                path: config_path.to_path_buf(),
+                key_path,
+            },
+            message: None,
+        });
+    }
+    diagnostics
 }
 
 fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
@@ -395,7 +564,7 @@ fn source_option_keys(options: &Value) -> Vec<&str> {
 
 fn loader_selection_diagnostic(
     config_path: &Path,
-    spec: &ResolvedSource,
+    spec: &ConfiguredSource,
     err: SourceProviderSelectionError,
 ) -> Diagnostic {
     let source = match &spec.location {

@@ -124,15 +124,17 @@ fn lark_loader_source_parsing_does_not_live_in_lib_rs() {
 
         "pub enum LarkSheetLocator",
 
+        "pub(crate) fn decode_lark_source_options",
+
+        "pub(crate) fn lark_source_options",
+
         "pub(crate) fn lark_source_from_spec",
 
         "pub(crate) fn sheet_config_from_options",
 
         "pub(crate) fn sheet_for_type_from_options",
 
-        "fn lark_table_options_from_options",
-
-        "TableSourceOptions::decode(options, \"lark source\")",
+        "TableSourceOptions::decode(raw, \"lark source\")",
 
         "pub(crate) fn lark_document",
 

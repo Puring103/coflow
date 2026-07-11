@@ -1,4 +1,5 @@
-use coflow_api::{ResolvedSource, SourceLocationSpec};
+use crate::load::ConfiguredSource;
+use coflow_api::SourceLocationSpec;
 use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaType,
     CftSchemaTypeRef, CompiledSchema, ModuleId, Span,
@@ -45,7 +46,10 @@ pub fn inject_dimension_types(
     Ok(fields)
 }
 
-pub fn dimension_sources(project: &Project, fields: &[DimensionField]) -> Vec<ResolvedSource> {
+pub(crate) fn dimension_sources(
+    project: &Project,
+    fields: &[DimensionField],
+) -> Vec<ConfiguredSource> {
     let mut sources = Vec::new();
     for (dimension, config) in &project.config.dimensions {
         let Some(out_dir) = config.out_dir.as_ref() else {
@@ -179,7 +183,7 @@ fn source_for_dimension_file(
     dir: &Path,
     fields: &[&DimensionField],
     path: PathBuf,
-) -> Option<ResolvedSource> {
+) -> Option<ConfiguredSource> {
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -195,7 +199,7 @@ fn source_for_dimension_file(
         |_| path.display().to_string(),
         coflow_project::path_to_slash,
     );
-    Some(ResolvedSource {
+    Some(ConfiguredSource {
         provider_id: provider_id.to_string(),
         location: SourceLocationSpec::Path(path),
         options: source_options(field, &extension),
@@ -204,6 +208,7 @@ fn source_for_dimension_file(
         } else {
             display_name
         },
+        source_index: None,
     })
 }
 

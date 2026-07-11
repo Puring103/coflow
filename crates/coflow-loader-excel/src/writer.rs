@@ -20,7 +20,10 @@ use coflow_loader_table_core::writer::{
 use coflow_loader_table_core::{resolve_table_write_layout, TableDiagnostics};
 use std::collections::BTreeMap;
 use std::path::Path;
-use crate::options::{excel_sheet_config_from_options, excel_sheet_for_type_from_options};
+use crate::options::{
+    excel_sheet_config_from_options, excel_sheet_for_type_from_options, excel_source_options,
+    ExcelSourceOptions,
+};
 
 pub static EXCEL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "excel",
@@ -93,7 +96,7 @@ impl SourceWriter for ExcelWriter {
         let sheet = match request.sheet {
             Some(sheet) => sheet.to_string(),
             None => excel_sheet_for_type_from_options(
-                &request.source.options,
+                excel_source_options(request.source)?,
                 request.actual_type,
             )?
             .unwrap_or_else(|| request.actual_type.to_string()),
@@ -102,7 +105,7 @@ impl SourceWriter for ExcelWriter {
             path,
             &sheet,
             request.actual_type,
-            &request.source.options,
+            excel_source_options(request.source)?,
             request.schema,
         )?;
         let plan = plan_insert_record(&TableInsertRecord {
@@ -444,7 +447,7 @@ fn read_sheet_layout(
     path: &Path,
     sheet: &str,
     actual_type: &str,
-    options: &serde_json::Value,
+    options: &ExcelSourceOptions,
     schema: &coflow_cft::CompiledSchema,
 ) -> Result<SheetLayout, DiagnosticSet> {
     let config = excel_sheet_config_from_options(options, sheet, actual_type)?;

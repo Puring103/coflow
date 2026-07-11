@@ -39,9 +39,9 @@ pub use operations::{
     TableManager, TableManagerDescriptor, TableOperationResult,
 };
 pub use provider::{
-    LoadedSource, OutputSpec, ProbeConfidence, ProbeResult, ProjectSourceRef, ResolvedSource,
-    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
-    SourceResolveContext,
+    DecodedSourceOptions, LoadedSource, OutputSpec, ProbeConfidence, ProbeResult,
+    ProjectSourceRef, ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    SourceProviderDescriptor, SourceResolveContext,
 };
 pub use registry::{
     ProviderBundle, ProviderRegistrationError, ProviderRegistry, SourceProviderSelectionError,

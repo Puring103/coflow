@@ -16,13 +16,14 @@
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
 use coflow_api::{
-    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, ResolvedSource,
-    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
-    SourceResolveContext,
+    DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
+    ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    SourceProviderDescriptor, SourceResolveContext,
 };
 
 mod diagnostics;
 mod lower;
+mod options;
 pub mod writer;
 use coflow_cfd::parse_cfd;
 use coflow_cft::{CftContainer, CompiledSchema};
@@ -32,6 +33,7 @@ pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
 };
 use lower::{lower_records, syntax_diagnostics, ParsedCfdInputRecord};
+use options::decode_cfd_source_options;
 use std::fs;
 use std::path::{Path, PathBuf};
 pub use writer::{CfdWriter, CFD_WRITER_DESCRIPTOR};
@@ -127,6 +129,13 @@ impl SourceProvider for CfdLoader {
         }
     }
 
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        decode_cfd_source_options(options)
+    }
+
     fn resolve(
         &self,
         _ctx: SourceResolveContext<'_>,
@@ -146,16 +155,6 @@ impl SourceProvider for CfdLoader {
             return collect_cfd_sources(path, source);
         }
         if is_cfd_path(path) {
-            if source.options.get("sheets").is_some() {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "CFD-SOURCE",
-                    "CFD",
-                    format!(
-                        "CFD source `{}` cannot define `sheets`",
-                        source.display_name
-                    ),
-                )));
-            }
             return Ok(vec![source.clone()]);
         }
         Err(DiagnosticSet::one(Diagnostic::error(

@@ -155,8 +155,9 @@ where
         &self,
         source: &ResolvedSource,
     ) -> Result<LarkWriteAuth, DiagnosticSet> {
-        let app_id = crate::source::required_option_string(&source.options, "app_id")?;
-        let app_secret = crate::source::required_option_string(&source.options, "app_secret")?;
+        let options = crate::source::lark_source_options(source)?;
+        let app_id = options.app_id.clone();
+        let app_secret = options.app_secret.clone();
         let token = self.cached_tenant_token(&app_id, &app_secret)?;
         Ok(LarkWriteAuth {
             app_id,

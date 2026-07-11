@@ -2,10 +2,10 @@
 
 use coflow::commands::{check_project, CommandOutcome};
 use coflow_api::{
-    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, ProviderRegistry,
-    RenameRecordRequest, ResolvedSource, RewriteRecordReferencesRequest, SourceLoadContext,
-    SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceWriter, WriteCellRequest,
-    WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
+    ProviderRegistry, RenameRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
+    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceWriter,
+    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdInputRecord, CfdInputValue, RecordOrigin, SourceDocument};
 use coflow_project::Project;
@@ -416,6 +416,16 @@ impl SourceProvider for FakeLocalFailLoader {
         }
     }
 
+    fn decode_options(
+        &self,
+        _options: &serde_json::Value,
+    ) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        Ok(DecodedSourceOptions::new(
+            FAKE_LOCAL_FAIL_LOADER_DESCRIPTOR.id,
+            (),
+        ))
+    }
+
     fn load(
         &self,
         _ctx: SourceLoadContext<'_>,
@@ -518,6 +528,16 @@ impl SourceProvider for FakeRemoteLoader {
         } else {
             ProbeResult::none()
         }
+    }
+
+    fn decode_options(
+        &self,
+        _options: &serde_json::Value,
+    ) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        Ok(DecodedSourceOptions::new(
+            FAKE_REMOTE_LOADER_DESCRIPTOR.id,
+            (),
+        ))
     }
 
     fn load(

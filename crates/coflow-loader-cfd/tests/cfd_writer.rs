@@ -10,12 +10,12 @@
 
 use coflow_api::{
     DeleteRecordRequest, InsertRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
-    SourceLocationSpec, SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment,
+    SourceLocationSpec, SourceProvider, SourceWriter, SpreadRewriteTarget, WriteCellRequest,
+    WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdObject, CfdValue, RecordOrigin, TextSpan};
-use coflow_loader_cfd::{load_cfd_model, parse_cfd_input_records, CfdWriter};
+use coflow_loader_cfd::{load_cfd_model, parse_cfd_input_records, CfdLoader, CfdWriter};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -45,7 +45,9 @@ fn empty_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "cfd".to_string(),
         location: SourceLocationSpec::Path(path.to_path_buf()),
-        options: serde_json::Value::default(),
+        options: CfdLoader
+            .decode_options(&serde_json::Value::Null)
+            .expect("decode cfd options"),
         display_name: path.display().to_string(),
     }
 }

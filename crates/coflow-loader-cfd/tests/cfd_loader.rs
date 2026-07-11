@@ -555,7 +555,9 @@ fn explicit_cfd_loader_rejects_url_source() -> TestResult {
     let source = ResolvedSource {
         provider_id: CFD_LOADER_DESCRIPTOR.id.to_string(),
         location: SourceLocationSpec::Uri("https://example.test/items.cfd".to_string()),
-        options: serde_json::Value::default(),
+        options: CfdLoader
+            .decode_options(&serde_json::Value::Null)
+            .expect("decode cfd options"),
         display_name: "https://example.test/items.cfd".to_string(),
     };
 
@@ -604,7 +606,9 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
             &ResolvedSource {
                 provider_id: "cfd".to_string(),
                 location: SourceLocationSpec::Path(source_path.clone()),
-                options: serde_json::Value::default(),
+                options: CfdLoader
+                    .decode_options(&serde_json::Value::Null)
+                    .expect("decode cfd options"),
                 display_name: source_path.display().to_string(),
             },
         )

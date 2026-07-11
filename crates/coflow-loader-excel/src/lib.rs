@@ -19,9 +19,9 @@
 #![allow(clippy::missing_const_for_fn, clippy::multiple_crate_versions)]
 
 use coflow_api::{
-    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, ResolvedSource,
-    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
-    SourceResolveContext,
+    DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
+    ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    SourceProviderDescriptor, SourceResolveContext,
 };
 use std::fs;
 use std::path::Path;
@@ -34,7 +34,8 @@ use diagnostics::excel_diagnostics_to_api;
 pub use diagnostics::{
     map_label_with_record_offset, ExcelDiagnostic, ExcelDiagnostics, ExcelLabel, ExcelLocation,
 };
-use options::excel_sheets_from_options;
+use options::{decode_excel_source_options, excel_sheets, excel_source_options};
+use serde_json::Value;
 pub use source::{collect_input_records, ExcelInputRecords, ExcelSheet, ExcelSource};
 pub use writer::{ExcelWriter, EXCEL_WRITER_DESCRIPTOR};
 
@@ -70,6 +71,10 @@ impl SourceProvider for ExcelLoader {
         } else {
             ProbeResult::none()
         }
+    }
+
+    fn decode_options(&self, options: &Value) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        decode_excel_source_options(options)
     }
 
     fn resolve(
@@ -115,7 +120,7 @@ impl SourceProvider for ExcelLoader {
                 "excel source requires `path`",
             )));
         };
-        let sheets = excel_sheets_from_options(&source.options)?;
+        let sheets = excel_sheets(excel_source_options(source)?);
         let excel_source = ExcelSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[excel_source])
             .map(|loaded| LoadedSource {
@@ -180,7 +185,8 @@ mod tests {
 
     #[test]
     fn rejects_empty_sheet_name_in_options() {
-        let Err(err) = excel_sheets_from_options(&json!({
+        let loader = ExcelLoader;
+        let Err(err) = loader.decode_options(&json!({
             "sheets": [
                 {
                     "sheet": "",
@@ -201,10 +207,13 @@ mod tests {
     #[test]
     fn explicit_excel_loader_rejects_url_source() {
         let loader = ExcelLoader;
+        let Ok(options) = loader.decode_options(&json!({})) else {
+            panic!("empty excel options should decode");
+        };
         let source = ResolvedSource {
             provider_id: EXCEL_LOADER_DESCRIPTOR.id.to_string(),
             location: SourceLocationSpec::Uri("https://example.test/configs.xlsx".to_string()),
-            options: json!({}),
+            options,
             display_name: "https://example.test/configs.xlsx".to_string(),
         };
 

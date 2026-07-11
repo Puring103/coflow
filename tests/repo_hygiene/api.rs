@@ -28,6 +28,31 @@ fn api_source_contexts_use_compiled_schema_not_full_container() {
 }
 
 #[test]
+fn resolved_sources_expose_only_decoded_provider_options() {
+    let provider =
+        std::fs::read_to_string("crates/coflow-api/src/provider.rs").expect("read provider API");
+    let options = std::fs::read_to_string("crates/coflow-api/src/provider/options.rs")
+        .expect("read decoded source options");
+    let resolved = struct_block(&provider, "pub struct ResolvedSource")
+        .expect("find ResolvedSource contract");
+
+    assert!(
+        resolved.contains("pub options: DecodedSourceOptions"),
+        "resolved sources should carry provider-decoded options"
+    );
+    assert!(
+        !resolved.contains("serde_json::Value") && !resolved.contains("Value"),
+        "resolved sources should not expose raw JSON options"
+    );
+    assert!(
+        provider.contains("fn decode_options(")
+            && options.contains("pub struct DecodedSourceOptions")
+            && options.contains("pub fn require<T>"),
+        "source providers should decode options once behind an opaque typed contract"
+    );
+}
+
+#[test]
 fn api_export_context_uses_compiled_schema_not_full_container() {
     let data_output = std::fs::read_to_string("crates/coflow-api/src/data_output.rs")
         .expect("read API data output");

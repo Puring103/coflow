@@ -11,12 +11,12 @@
 
 use coflow_api::{
     DeleteRecordRequest, InsertRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
-    SourceLocationSpec, SourceWriter, TableContext, TableManager, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment,
+    SourceLocationSpec, SourceProvider, SourceWriter, TableContext, TableManager, WriteCellRequest,
+    WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdObject, CfdValue, RecordOrigin, SourceDocument};
-use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};
+use coflow_loader_lark::{LarkHttpClient, LarkSheetLoader, LarkSheetWriter};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -159,10 +159,7 @@ fn lark_source() -> ResolvedSource {
     ResolvedSource {
         provider_id: "lark-sheet".to_string(),
         location: SourceLocationSpec::Uri("lark:sht_test".to_string()),
-        options: serde_json::json!({
-            "app_id": "cli_test",
-            "app_secret": "secret_test"
-        }),
+        options: lark_options(),
         display_name: "lark:sht_test".to_string(),
     }
 }
@@ -171,12 +168,18 @@ fn lark_wiki_source() -> ResolvedSource {
     ResolvedSource {
         provider_id: "lark-sheet".to_string(),
         location: SourceLocationSpec::Uri("https://example.feishu.cn/wiki/wiki_token".to_string()),
-        options: serde_json::json!({
-            "app_id": "cli_test",
-            "app_secret": "secret_test"
-        }),
+        options: lark_options(),
         display_name: "https://example.feishu.cn/wiki/wiki_token".to_string(),
     }
+}
+
+fn lark_options() -> coflow_api::DecodedSourceOptions {
+    LarkSheetLoader::default()
+        .decode_options(&serde_json::json!({
+            "app_id": "cli_test",
+            "app_secret": "secret_test"
+        }))
+        .expect("decode lark options")
 }
 
 fn lark_wiki_origin() -> RecordOrigin {

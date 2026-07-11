@@ -9,7 +9,7 @@ use std::path::Path;
 
 use super::{diag, excel_cell_to_text, ExcelWriter};
 use crate::options::{
-    excel_sheet_config_from_options, excel_sheet_for_type_from_options,
+    excel_sheet_config_from_options, excel_sheet_for_type_from_options, excel_source_options,
     excel_type_for_sheet_from_options,
 };
 
@@ -34,7 +34,7 @@ impl TableManager for ExcelWriter {
         source: &coflow_api::ResolvedSource,
         sheet: Option<&str>,
     ) -> Result<Option<String>, DiagnosticSet> {
-        excel_type_for_sheet_from_options(&source.options, sheet)
+        excel_type_for_sheet_from_options(excel_source_options(source)?, sheet)
     }
 
     fn sheet_for_type(
@@ -42,7 +42,7 @@ impl TableManager for ExcelWriter {
         source: &coflow_api::ResolvedSource,
         actual_type: &str,
     ) -> Result<Option<String>, DiagnosticSet> {
-        excel_sheet_for_type_from_options(&source.options, actual_type)
+        excel_sheet_for_type_from_options(excel_source_options(source)?, actual_type)
     }
 
     fn header_options(
@@ -52,7 +52,7 @@ impl TableManager for ExcelWriter {
         actual_type: &str,
     ) -> Result<TableHeaderOptions, DiagnosticSet> {
         Ok(table_header_options(excel_sheet_config_from_options(
-            &source.options,
+            excel_source_options(source)?,
             sheet,
             actual_type,
         )?))

@@ -10,13 +10,13 @@
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
     DeleteRecordRequest, InsertRecordRequest, ResolvedSource, SourceLocationSpec, SourceWriter,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    SourceProvider, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::{CftContainer};
 use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdObject, CfdValue, RecordOrigin, SourceDocument,
 };
-use coflow_loader_excel::ExcelWriter;
+use coflow_loader_excel::{ExcelLoader, ExcelWriter};
 use rust_xlsxwriter::{Workbook, XlsxError};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -81,7 +81,9 @@ fn empty_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "excel".to_string(),
         location: SourceLocationSpec::Path(path.to_path_buf()),
-        options: serde_json::Value::default(),
+        options: ExcelLoader
+            .decode_options(&serde_json::Value::Null)
+            .expect("decode excel options"),
         display_name: path.display().to_string(),
     }
 }

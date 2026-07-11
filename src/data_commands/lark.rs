@@ -30,7 +30,7 @@ pub(super) fn create_lark_table(
     sheet: Option<String>,
 ) -> Result<DataFileReport, DiagnosticSet> {
     let source_config = configured_lark_source(session, source)?;
-    let resolved_source = configured_project_source(session.project(), source_config);
+    let resolved_source = configured_project_source(session.project(), registry, source_config)?;
     let table_manager = lark_table_manager(registry)?;
     let layout = table_header_layout(
         session,
@@ -71,7 +71,7 @@ pub(super) fn sync_lark_header(
     sheet: Option<String>,
 ) -> Result<DataFileReport, DiagnosticSet> {
     let source_config = configured_lark_source(session, source)?;
-    let resolved_source = configured_project_source(session.project(), source_config);
+    let resolved_source = configured_project_source(session.project(), registry, source_config)?;
     let table_manager = lark_table_manager(registry)?;
     let layout = table_header_layout(
         session,

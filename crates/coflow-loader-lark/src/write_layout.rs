@@ -4,7 +4,9 @@ use coflow_loader_table_core::{resolve_table_write_layout, TableWriteLayout};
 
 use crate::diagnostics::table_diagnostics_to_api;
 use crate::http::LarkHttpClient;
-use crate::source::{lark_document_spreadsheet_token, sheet_config_from_options};
+use crate::source::{
+    lark_document_spreadsheet_token, lark_source_options, sheet_config_from_options,
+};
 use crate::LarkSheetWriter;
 
 pub(crate) struct LarkInsertLayoutRequest<'a, C> {
@@ -55,8 +57,11 @@ where
         request.sheet_id,
         request.token,
     )?;
-    let config =
-        sheet_config_from_options(&request.source.options, request.sheet, request.actual_type)?;
+    let config = sheet_config_from_options(
+        lark_source_options(request.source)?,
+        request.sheet,
+        request.actual_type,
+    )?;
     resolve_table_write_layout(
         request.ctx.schema,
         std::path::Path::new(request.spreadsheet_token),

@@ -33,10 +33,12 @@ fn excel_loader_options_do_not_live_in_lib_rs() {
         .expect("read excel source");
 
     for expected in [
-        "pub(super) fn excel_sheets_from_options",
+        "pub(crate) fn decode_excel_source_options",
+        "pub(super) fn excel_sheets",
+        "pub(crate) fn excel_source_options",
         "pub(crate) fn excel_sheet_config_from_options",
         "pub(crate) fn excel_sheet_for_type_from_options",
-        "TableSourceOptions::decode(options, \"excel source\")",
+        "TableSourceOptions::decode(raw, \"excel source\")",
     ] {
         assert!(
             options.contains(expected),
@@ -222,9 +224,11 @@ fn csv_loader_helpers_do_not_live_in_lib_rs() {
         );
     }
     for expected in [
-        "pub(super) fn csv_sheets_from_options",
+        "pub(crate) fn decode_csv_source_options",
+        "pub(super) fn csv_sheets",
+        "pub(crate) fn csv_source_options",
         "pub(crate) fn csv_sheet_config_from_options",
-        "TableSourceOptions::decode(options, \"csv source\")",
+        "TableSourceOptions::decode(raw, \"csv source\")",
     ] {
         assert!(
             options.contains(expected),

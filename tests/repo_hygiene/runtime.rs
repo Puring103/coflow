@@ -444,8 +444,8 @@ fn engine_data_file_headers_use_cft_compiler_context() {
         );
     }
     assert!(
-        data_files.contains("source.options().clone()"),
-        "data file table operations should preserve configured source options without reusing configured source location"
+        data_files.contains("provider.decode_options(&raw_options)"),
+        "data file table operations should decode configured options through the selected provider"
     );
     assert!(
         data_files.contains(".table_manager_descriptors()"),

@@ -21,13 +21,12 @@ use coflow_loader_table_core::writer::{
     TableWriteDiagnostics,
 };
 use coflow_loader_table_core::{resolve_table_write_layout, TableDiagnostics};
-use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use crate::parse;
-use crate::options::csv_sheet_config_from_options;
+use crate::options::{csv_sheet_config_from_options, csv_source_options, CsvSourceOptions};
 use plan::apply_plan;
 
 pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
@@ -103,7 +102,7 @@ impl SourceWriter for CsvWriter {
             path,
             sheet,
             request.actual_type,
-            &request.source.options,
+            csv_source_options(request.source)?,
             request.schema,
         )?;
         let plan = plan_insert_record(&TableInsertRecord {
@@ -180,7 +179,7 @@ fn read_csv_layout(
     path: &Path,
     sheet: &str,
     actual_type: &str,
-    options: &Value,
+    options: &CsvSourceOptions,
     schema: &coflow_cft::CompiledSchema,
 ) -> Result<CsvLayout, DiagnosticSet> {
     let text = fs::read_to_string(path).map_err(|err| {

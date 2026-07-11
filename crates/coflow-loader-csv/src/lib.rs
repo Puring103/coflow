@@ -31,11 +31,12 @@ pub use source::{collect_input_records, CsvInputRecords, CsvSheet, CsvSource};
 pub use writer::CsvWriter;
 
 use coflow_api::{
-    Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef, ResolvedSource,
-    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor,
-    SourceResolveContext,
+    DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
+    ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    SourceProviderDescriptor, SourceResolveContext,
 };
-use options::csv_sheets_from_options;
+use options::{csv_sheets, csv_source_options, decode_csv_source_options};
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
@@ -71,6 +72,10 @@ impl SourceProvider for CsvLoader {
         } else {
             ProbeResult::none()
         }
+    }
+
+    fn decode_options(&self, options: &Value) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        decode_csv_source_options(options)
     }
 
     fn resolve(
@@ -118,7 +123,7 @@ impl SourceProvider for CsvLoader {
                 "csv source requires `path`",
             )));
         };
-        let sheets = csv_sheets_from_options(&source.options)?;
+        let sheets = csv_sheets(csv_source_options(source)?);
         let csv_source = CsvSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[csv_source])
             .map(|loaded| LoadedSource {

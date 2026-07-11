@@ -8,7 +8,8 @@ use std::fs;
 
 use super::{diag, CsvWriter};
 use crate::options::{
-    csv_sheet_config_from_options, csv_sheet_for_type_from_options, csv_type_for_sheet_from_options,
+    csv_sheet_config_from_options, csv_sheet_for_type_from_options, csv_source_options,
+    csv_type_for_sheet_from_options,
 };
 use crate::{parse, write};
 
@@ -30,7 +31,7 @@ impl TableManager for CsvWriter {
         source: &coflow_api::ResolvedSource,
         sheet: Option<&str>,
     ) -> Result<Option<String>, DiagnosticSet> {
-        csv_type_for_sheet_from_options(&source.options, sheet)
+        csv_type_for_sheet_from_options(csv_source_options(source)?, sheet)
     }
 
     fn sheet_for_type(
@@ -38,7 +39,7 @@ impl TableManager for CsvWriter {
         source: &coflow_api::ResolvedSource,
         actual_type: &str,
     ) -> Result<Option<String>, DiagnosticSet> {
-        csv_sheet_for_type_from_options(&source.options, actual_type)
+        csv_sheet_for_type_from_options(csv_source_options(source)?, actual_type)
     }
 
     fn header_options(
@@ -48,7 +49,7 @@ impl TableManager for CsvWriter {
         actual_type: &str,
     ) -> Result<TableHeaderOptions, DiagnosticSet> {
         Ok(table_header_options(csv_sheet_config_from_options(
-            &source.options,
+            csv_source_options(source)?,
             sheet,
             actual_type,
         )?))

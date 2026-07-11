@@ -2,7 +2,12 @@ use crate::DiagnosticSet;
 use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdInputRecord;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
+
+mod options;
+
+pub use options::DecodedSourceOptions;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -23,19 +28,34 @@ pub struct SourceResolveContext<'a> {
     pub project_root: &'a Path,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ResolvedSource {
     pub provider_id: String,
     pub location: SourceLocationSpec,
-    pub options: serde_json::Value,
+    pub options: DecodedSourceOptions,
     pub display_name: String,
+}
+
+impl ResolvedSource {
+    /// Return the provider-owned typed source options.
+    ///
+    /// # Errors
+    ///
+    /// Returns a provider contract diagnostic when the source was paired with
+    /// options decoded by another provider or with an unexpected option type.
+    pub fn options<T>(&self, provider_id: &str) -> Result<&T, DiagnosticSet>
+    where
+        T: std::fmt::Debug + Send + Sync + 'static,
+    {
+        self.options.require(provider_id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputSpec {
     pub output_type: String,
     pub dir: PathBuf,
-    pub options: serde_json::Value,
+    pub options: Value,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +123,17 @@ pub trait SourceProvider: Send + Sync {
     fn descriptor(&self) -> &'static SourceProviderDescriptor;
 
     fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult;
+
+    /// Decode project-facing JSON options into a provider-owned typed value.
+    ///
+    /// Raw JSON is confined to the project/provider adapter. Resolve, load,
+    /// write, and table operations consume the decoded value stored in the
+    /// [`ResolvedSource`].
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when an option is missing, unknown, or malformed.
+    fn decode_options(&self, options: &Value) -> Result<DecodedSourceOptions, DiagnosticSet>;
 
     /// Resolves a project source into concrete provider sources to load.
     ///

@@ -155,7 +155,7 @@ impl DiagnosticLogicalLocation {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct SourceIndex {
     pub(crate) entries: Vec<ResolvedSourceEntry>,
 }
@@ -171,7 +171,7 @@ impl SourceIndex {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ResolvedSourceEntry {
     pub id: SourceId,
     pub provider_id: String,

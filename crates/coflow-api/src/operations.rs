@@ -1,7 +1,6 @@
-use crate::{Diagnostic, DiagnosticSet, ResolvedSource};
+use crate::{DecodedSourceOptions, Diagnostic, DiagnosticSet, ResolvedSource};
 use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdValue;
-use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -206,8 +205,11 @@ pub struct DimensionSourceResult {
 pub trait DimensionSourceManager: Send + Sync {
     fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor;
 
-    fn source_options(&self, _request: &DimensionSourceOptionsRequest<'_>) -> Value {
-        Value::Object(serde_json::Map::new())
+    fn source_options(
+        &self,
+        _request: &DimensionSourceOptionsRequest<'_>,
+    ) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        Ok(DecodedSourceOptions::new(self.descriptor().id, ()))
     }
 
     /// Synchronize a generated dimension source while preserving configured

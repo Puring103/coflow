@@ -121,6 +121,15 @@ Source resolve 由 `coflow-runtime` 通过 `ProviderRegistry` 执行。
 
 Resolve 之后得到具体 `ResolvedSource`。例如一个目录 source 可能展开为多个 Excel、CSV 或 CFD 文件。
 
+项目配置中的 provider options 只在 provider 选择边界保留为 raw JSON。选中
+provider 后，runtime 调用一次 provider decoder，将其转换为带 provider identity
+的 typed options；后续 resolve、load、write、table 和 dimension operation 都复用
+同一份 decoded options。未知 key、错误类型和歧义映射会在读取数据前报告，并
+定位到 `coflow.yaml` 对应的 `sources.<index>.<key>`。
+
+目录 source 由 runtime 统一按 canonical 路径顺序遍历，并按文件 probe provider；
+每个文件只由选中的 provider 解码和处理，不会让所有 provider 重复扫描目录。
+
 ## Load 与 input records
 
 Loader 负责把具体来源读成 input records：

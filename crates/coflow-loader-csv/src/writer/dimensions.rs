@@ -1,7 +1,7 @@
 use coflow_api::{
-    DiagnosticSet, DimensionSourceManager, DimensionSourceManagerDescriptor,
-    DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    SourceLocationSpec, TableContext,
+    DecodedSourceOptions, DiagnosticSet, DimensionSourceManager,
+    DimensionSourceManagerDescriptor, DimensionSourceOptionsRequest, DimensionSourceRequest,
+    DimensionSourceResult, SourceLocationSpec, TableContext,
 };
 use coflow_data_model::{CfdDictKey, CfdValue};
 use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
@@ -24,13 +24,16 @@ impl DimensionSourceManager for CsvWriter {
         &CSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
     }
 
-    fn source_options(&self, request: &DimensionSourceOptionsRequest<'_>) -> serde_json::Value {
-        json!({
+    fn source_options(
+        &self,
+        request: &DimensionSourceOptionsRequest<'_>,
+    ) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        crate::options::decode_csv_source_options(&json!({
             "sheets": [{
                 "sheet": request.sheet,
                 "type": request.actual_type,
             }]
-        })
+        }))
     }
 
     fn sync_dimension_source(

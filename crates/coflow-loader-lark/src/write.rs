@@ -15,7 +15,7 @@ use serde_json::json;
 use crate::diagnostics::{diag, table_write_diagnostics_to_api};
 use crate::http::LarkHttpClient;
 use crate::source::{
-    lark_document_spreadsheet_token, required_option_string, sheet_config_from_options,
+    lark_document_spreadsheet_token, lark_source_options, sheet_config_from_options,
     sheet_for_type_from_options, type_for_sheet_from_options,
 };
 use crate::write_http::LarkWriteFailure;
@@ -86,9 +86,8 @@ where
             )));
         };
 
-        let app_id = required_option_string(&request.source.options, "app_id")?;
-        let app_secret = required_option_string(&request.source.options, "app_secret")?;
-        let token = self.cached_tenant_token(&app_id, &app_secret)?;
+        let options = lark_source_options(request.source)?;
+        let token = self.cached_tenant_token(&options.app_id, &options.app_secret)?;
         let spreadsheet_token = self.lark_spreadsheet_token_from_source(request.source, &token)?;
         let same_source_uri =
             matches!(&request.source.location, SourceLocationSpec::Uri(uri) if uri == doc);
@@ -123,8 +122,8 @@ where
         let outcome = match self.send_values_batch_update(&endpoint, &body, &token) {
             Ok(()) => Ok(()),
             Err(LarkWriteFailure::TokenExpired(diag_set)) => {
-                self.invalidate_caches(Some(&app_id), None);
-                let fresh = self.cached_tenant_token(&app_id, &app_secret)?;
+                self.invalidate_caches(Some(&options.app_id), None);
+                let fresh = self.cached_tenant_token(&options.app_id, &options.app_secret)?;
                 self.send_values_batch_update(&endpoint, &body, &fresh)
                     .map_err(|err| match err {
                         LarkWriteFailure::TokenExpired(d) | LarkWriteFailure::Other(d) => d,
@@ -178,7 +177,10 @@ where
             self.lark_spreadsheet_token_from_source(request.source, &auth.token)?;
         let sheet = match request.sheet {
             Some(sheet) => sheet.to_string(),
-            None => sheet_for_type_from_options(&request.source.options, request.actual_type)?
+            None => sheet_for_type_from_options(
+                lark_source_options(request.source)?,
+                request.actual_type,
+            )?
                 .unwrap_or_else(|| request.actual_type.to_string()),
         };
         let sheet_id = self.cached_sheet_id(&spreadsheet_token, &sheet, &auth.token)?;
@@ -329,7 +331,7 @@ where
         source: &coflow_api::ResolvedSource,
         sheet: Option<&str>,
     ) -> Result<Option<String>, DiagnosticSet> {
-        type_for_sheet_from_options(&source.options, sheet)
+        type_for_sheet_from_options(lark_source_options(source)?, sheet)
     }
 
     fn sheet_for_type(
@@ -337,7 +339,7 @@ where
         source: &coflow_api::ResolvedSource,
         actual_type: &str,
     ) -> Result<Option<String>, DiagnosticSet> {
-        sheet_for_type_from_options(&source.options, actual_type)
+        sheet_for_type_from_options(lark_source_options(source)?, actual_type)
     }
 
     fn header_options(
@@ -347,7 +349,7 @@ where
         actual_type: &str,
     ) -> Result<TableHeaderOptions, DiagnosticSet> {
         Ok(table_header_options(sheet_config_from_options(
-            &source.options,
+            lark_source_options(source)?,
             sheet,
             actual_type,
         )?))

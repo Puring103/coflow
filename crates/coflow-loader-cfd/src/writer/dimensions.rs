@@ -1,6 +1,7 @@
 use coflow_api::{
-    DiagnosticSet, DimensionSourceManager, DimensionSourceManagerDescriptor,
-    DimensionSourceRequest, DimensionSourceResult, SourceLocationSpec, TableContext,
+    DecodedSourceOptions, DiagnosticSet, DimensionSourceManager,
+    DimensionSourceManagerDescriptor, DimensionSourceOptionsRequest, DimensionSourceRequest,
+    DimensionSourceResult, SourceLocationSpec, TableContext,
 };
 use coflow_cfd::ast::CfdBlockEntry;
 use coflow_cfd::parse_cfd;
@@ -20,6 +21,13 @@ pub(super) static CFD_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: DimensionSourceManage
 impl DimensionSourceManager for CfdWriter {
     fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor {
         &CFD_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
+    }
+
+    fn source_options(
+        &self,
+        _request: &DimensionSourceOptionsRequest<'_>,
+    ) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        crate::options::decode_cfd_source_options(&serde_json::Value::Null)
     }
 
     fn sync_dimension_source(
