@@ -613,3 +613,57 @@ fn non_identifier_record_keys_are_rejected() {
         assert_has_code(&err, CfdErrorCode::InvalidRecordKey);
     }
 }
+
+#[test]
+fn record_value_lookup_traverses_object_array_and_dict_paths() {
+    let schema = compile_schema(
+        r#"
+            type Nested { value: int; }
+            type Item {
+                nested: Nested;
+                items: [Nested];
+                entries: {string: Nested};
+            }
+        "#,
+    );
+    let nested = |value| {
+        CfdInputValue::object_with_declared_type([("value", CfdInputValue::from(value))])
+    };
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [
+            ("nested", nested(1_i64)),
+            ("items", CfdInputValue::Array(vec![nested(2_i64)])),
+            (
+                "entries",
+                CfdInputValue::dict([(CfdInputDictKey::from("slot"), nested(3_i64))]),
+            ),
+        ],
+    );
+    let model = builder.build().expect("model builds");
+    let record = model.record(record_id_at(&model, 0)).expect("record exists");
+
+    assert_eq!(
+        record.value_at_path(&CfdPath::root().field("nested").field("value")),
+        Some(&CfdValue::Int(1))
+    );
+    assert_eq!(
+        record.value_at_path(&CfdPath::root().field("items").index(0).field("value")),
+        Some(&CfdValue::Int(2))
+    );
+    assert_eq!(
+        record.value_at_path(
+            &CfdPath::root()
+                .field("entries")
+                .dict_key_value(&CfdDictKey::String("slot".to_string()))
+                .field("value")
+        ),
+        Some(&CfdValue::Int(3))
+    );
+    assert_eq!(
+        record.value_at_path(&CfdPath::root().field("items").index(1)),
+        None
+    );
+}

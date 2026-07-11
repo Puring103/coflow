@@ -6,7 +6,6 @@
 //! registered writer, then rebuilds itself in place so subsequent queries
 //! see the post-write state.
 
-mod path;
 mod plan;
 mod rebuild;
 mod refs;
@@ -34,7 +33,7 @@ pub(crate) fn record_value_at_path<'a>(
     record: &'a CfdRecord,
     path: &CfdPath,
 ) -> Option<&'a CfdValue> {
-    path::value_at_path(record, path)
+    record.value_at_path(path)
 }
 
 pub(crate) fn effective_write_target_for_path(

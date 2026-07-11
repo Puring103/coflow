@@ -42,7 +42,7 @@ impl CheckValue {
         ty: Option<&CftSchemaTypeRef>,
         path: Option<CfdPath>,
         model: &CfdDataModel,
-        ref_host: Option<CfdRecordId>,
+        site: Option<RefSite>,
     ) -> Self {
         match value {
             CfdValue::Null => Self::Null,
@@ -51,16 +51,14 @@ impl CheckValue {
             CfdValue::Float(value) => Self::Float(*value),
             CfdValue::String(value) => Self::String(value.clone()),
             CfdValue::Enum(value) => Self::Enum(value.clone()),
-            CfdValue::Object(record) => Self::Record(CheckRecordRef::Inline {
-                object: Box::new(record.as_ref().clone()),
-                path,
-                host: ref_host,
-            }),
+            CfdValue::Object(_) => site.map_or_else(
+                || Self::Record(CheckRecordRef::Unresolved),
+                |site| Self::Record(CheckRecordRef::Inline { site, path }),
+            ),
             CfdValue::Ref(_) => {
-                let resolved = ref_host.and_then(|host| {
-                    let site_path = path.clone().unwrap_or_else(CfdPath::root);
-                    model.resolve_effective_ref(&RefSite::new(host, site_path))
-                });
+                let resolved = site
+                    .as_ref()
+                    .and_then(|site| model.resolve_effective_ref(site));
                 resolved.map_or_else(
                     || Self::Record(CheckRecordRef::Unresolved),
                     |id| Self::Record(CheckRecordRef::Top(id)),
@@ -78,7 +76,9 @@ impl CheckValue {
                                 array_element_type(ty),
                                 path.clone().map(|path| path.index(index)),
                                 model,
-                                ref_host,
+                                site.clone().map(|site| {
+                                    RefSite::new(site.host, site.path.index(index))
+                                }),
                             )
                         })
                         .collect(),
@@ -95,7 +95,9 @@ impl CheckValue {
                             dict_value_type(ty),
                             path.clone().map(|path| path.dict_key_value(key)),
                             model,
-                            ref_host,
+                            site.clone().map(|site| {
+                                RefSite::new(site.host, site.path.dict_key_value(key))
+                            }),
                         ),
                     })
                     .collect(),
@@ -141,13 +143,8 @@ impl LocatedCheckValue {
 pub(super) enum CheckRecordRef {
     Top(CfdRecordId),
     Inline {
-        object: Box<CfdObject>,
+        site: RefSite,
         path: Option<CfdPath>,
-        /// The original top-level record this inline object lives inside.
-        /// Needed so refs encountered inside `object.fields` can be resolved
-        /// through the model's `RefSite` index, which is keyed by `(host, path)`
-        /// relative to the top-level record.
-        host: Option<CfdRecordId>,
     },
     /// A `CfdValue::Ref` whose target could not be resolved (target type/key
     /// missing from the model). Reads through this ref return `None`, so
@@ -162,7 +159,7 @@ impl CheckRecordRef {
     ) -> Option<&'a BTreeMap<String, CfdValue>> {
         match self {
             Self::Top(id) => model.record(*id).map(CfdRecord::fields),
-            Self::Inline { object, .. } => Some(object.fields()),
+            Self::Inline { site, .. } => inline_object(model, site).map(CfdObject::fields),
             Self::Unresolved => None,
         }
     }
@@ -170,7 +167,7 @@ impl CheckRecordRef {
     pub(super) fn actual_type<'a>(&'a self, model: &'a CfdDataModel) -> Option<&'a str> {
         match self {
             Self::Top(id) => model.record(*id).map(CfdRecord::actual_type),
-            Self::Inline { object, .. } => Some(object.actual_type()),
+            Self::Inline { site, .. } => inline_object(model, site).map(CfdObject::actual_type),
             Self::Unresolved => None,
         }
     }
@@ -191,9 +188,11 @@ impl CheckRecordRef {
     ) -> Option<LocatedCheckValue> {
         let value = self.fields(model)?.get(name)?;
         let path = self.path().map(|path| path.field(name.to_string()));
-        let ref_host = self.ref_host();
+        let site = self
+            .value_site()
+            .map(|site| RefSite::new(site.host, site.path.field(name)));
         Some(LocatedCheckValue::new(
-            CheckValue::from_cfd_value_with_path(value, field_type, path.clone(), model, ref_host),
+            CheckValue::from_cfd_value_with_path(value, field_type, path.clone(), model, site),
             path,
         ))
     }
@@ -205,16 +204,19 @@ impl CheckRecordRef {
         }
     }
 
-    /// Returns the top-level record id refs nested inside this object should
-    /// resolve against. Top-level records carry their own id; inline objects
-    /// (`...` inside another record) carry the host id of the originating
-    /// top-level record so the model's ref edge indexes can look them up.
-    pub(super) fn ref_host(&self) -> Option<CfdRecordId> {
+    fn value_site(&self) -> Option<RefSite> {
         match self {
-            Self::Top(id) => Some(*id),
-            Self::Inline { host, .. } => *host,
+            Self::Top(id) => Some(RefSite::new(*id, CfdPath::root())),
+            Self::Inline { site, .. } => Some(site.clone()),
             Self::Unresolved => None,
         }
+    }
+}
+
+fn inline_object<'a>(model: &'a CfdDataModel, site: &RefSite) -> Option<&'a CfdObject> {
+    match model.record(site.host)?.value_at_path(&site.path)? {
+        CfdValue::Object(object) => Some(object),
+        _ => None,
     }
 }
 

@@ -5,7 +5,7 @@ use super::value::{CheckRecordRef, CheckValue};
 use crate::{DependencyGraph, DimensionCheckContext};
 use coflow_cft::CompiledSchema;
 use coflow_data_model::{
-    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdPath, CfdRecordId, CfdValue,
+    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdPath, CfdRecordId, CfdValue, RefSite,
 };
 use std::collections::BTreeMap;
 
@@ -147,11 +147,13 @@ impl<'a> CheckRunner<'a> {
     ) {
         match value {
             CfdValue::Object(record) => {
+                let Some(host) = root_record else {
+                    return;
+                };
                 self.run_record_checks(
                     CheckRecordRef::Inline {
-                        object: Box::new(record.as_ref().clone()),
+                        site: RefSite::new(host, path.clone()),
                         path: Some(path.clone()),
-                        host: root_record,
                     },
                     root_record,
                     path.clone(),

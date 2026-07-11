@@ -507,6 +507,77 @@ fn dimension_plan(
 }
 
 #[test]
+fn dimension_variant_inline_objects_resolve_refs_from_storage_paths() {
+    let schema = compile_schema(
+        r#"
+            type Target { value: int; }
+            type Snapshot { target: &Target; }
+            type Item {
+                @localized
+                copy: Snapshot;
+                check { copy.target.value > 0; }
+            }
+
+            @__coflow_dimension_storage("language", "Item", "copy")
+            type Item_copyVariants {
+                default: Snapshot?;
+                zh: Snapshot?;
+            }
+        "#,
+    );
+    let snapshot = |target| {
+        CfdInputValue::object_with_declared_type([(
+            "target",
+            CfdInputValue::record_ref(target),
+        )])
+    };
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "good",
+        "Target",
+        [("value", CfdInputValue::from(1_i64))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "bad",
+        "Target",
+        [("value", CfdInputValue::from(0_i64))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item",
+        [("copy", snapshot("good"))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item_copyVariants",
+        [
+            ("default", snapshot("good")),
+            ("zh", snapshot("bad")),
+        ],
+    ));
+    let model = builder.build().expect("model builds");
+
+    let err = run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &DimensionCheckPlan::from_variants("language", ["zh"]),
+    )
+    .expect_err("zh storage object points at the failing target");
+
+    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
+    assert!(
+        err.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("copy.target.value = 0")),
+        "diagnostics: {err:?}"
+    );
+    assert!(!err
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == CfdErrorCode::CheckEvalTypeError));
+}
+
+#[test]
 fn empty_dimensions_map_runs_default_round() {
     let schema = compile_schema(
         r#"

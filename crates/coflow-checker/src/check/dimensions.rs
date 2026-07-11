@@ -1,5 +1,5 @@
 use coflow_cft::CompiledSchema;
-use coflow_data_model::{CfdDataModel, CfdErrorCode, CfdPath, CfdRecordId};
+use coflow_data_model::{CfdDataModel, CfdErrorCode, CfdPath, CfdRecordId, RefSite};
 
 use super::diagnostics::dimension_lookup_error_message;
 use super::value::{CheckRecordRef, CheckValue, LocatedCheckValue};
@@ -59,12 +59,15 @@ pub(super) fn apply_dimension_variant(
         })?;
 
     let path = located.path.clone();
+    let site = resolved
+        .record
+        .map(|record| RefSite::new(record, CfdPath::root().field(&variant)));
     located.value = CheckValue::from_cfd_value_with_path(
         resolved.value,
         resolved.field_type.as_ref(),
         path.clone(),
         model,
-        resolved.record,
+        site,
     );
     if matches!(located.value, CheckValue::Null) {
         return Err(DimensionVariantAbort::Skipped);

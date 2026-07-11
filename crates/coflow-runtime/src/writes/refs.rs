@@ -8,7 +8,6 @@ use coflow_cft::CompiledSchema;
 use coflow_data_model::{CfdRecordId, CfdValue, RecordOrigin};
 
 use super::{lookup_source_writer, source_for_file};
-use crate::writes::path::value_at_path;
 use crate::ProjectSession;
 
 pub(super) struct ReferenceUpdateAction {
@@ -96,7 +95,7 @@ pub(super) fn reference_update_actions(
             continue;
         };
         if !matches!(
-            value_at_path(host_record, &edge.path),
+            host_record.value_at_path(&edge.path),
             Some(CfdValue::Ref(_))
         ) {
             continue;

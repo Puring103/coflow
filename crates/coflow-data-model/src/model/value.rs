@@ -1,4 +1,5 @@
 use super::ids::CfdRecordId;
+use crate::diagnostic::{format_cfd_dict_key, CfdPath, CfdPathSegment};
 use crate::origin::RecordOrigin;
 use coflow_cft::CftEnumValueMeta;
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,30 @@ impl CfdRecord {
     #[must_use]
     pub fn field(&self, name: &str) -> Option<&CfdValue> {
         self.object.field(name)
+    }
+
+    /// Resolves a value by its absolute path within this record.
+    #[must_use]
+    pub fn value_at_path(&self, path: &CfdPath) -> Option<&CfdValue> {
+        let mut segments = path.segments.iter();
+        let CfdPathSegment::Field(field) = segments.next()? else {
+            return None;
+        };
+        let mut current = self.fields().get(field)?;
+        for segment in segments {
+            current = match (segment, current) {
+                (CfdPathSegment::Field(field), CfdValue::Object(record)) => {
+                    record.fields().get(field)?
+                }
+                (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
+                (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => entries
+                    .iter()
+                    .find(|(entry_key, _)| format_cfd_dict_key(entry_key) == *key)
+                    .map(|(_, value)| value)?,
+                _ => return None,
+            };
+        }
+        Some(current)
     }
 }
 
