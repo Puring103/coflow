@@ -748,9 +748,10 @@ fn root_cli_schema_queries_go_through_session_facade() {
 
     assert!(
 
-        session.contains("pub fn schema_view(&self) -> CftSchemaView"),
+        session.contains("pub const fn schema_view(&self) -> &CftSchemaView")
+            && session.contains("pub(crate) schema_view: CftSchemaView"),
 
-        "runtime session should own construction of the schema query facade"
+        "runtime session should retain and lend the schema query facade"
 
     );
 

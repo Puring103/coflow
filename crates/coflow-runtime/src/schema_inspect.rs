@@ -137,7 +137,7 @@ pub fn inspect_schema(
     type_filter: Option<&str>,
     include_derived: bool,
 ) -> SchemaInspectReport {
-    let view = CftSchemaView::new(&session.schema);
+    let view = session.schema_view();
     let mut type_names = view.type_names().cloned().collect::<Vec<_>>();
     type_names.sort();
     if let Some(filter) = type_filter {

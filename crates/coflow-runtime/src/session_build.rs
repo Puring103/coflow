@@ -81,14 +81,15 @@ fn build_project_session_with_options(
     let ProjectSchemaSession {
         project,
         schema,
+        schema_view,
         mut diagnostics,
     } = build_schema_session(project)?;
 
-    let schema_view = CftSchemaView::new(&schema);
     let dimension_fields = dimensions::dimension_fields(&schema_view);
     let ctx = SessionBuildContext {
         project,
         schema,
+        schema_view,
         registry,
         dimension_mode: options.dimension_mode(),
         dimension_fields,
@@ -112,6 +113,7 @@ fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, Diagno
 struct SessionBuildContext<'a> {
     project: Project,
     schema: CftContainer,
+    schema_view: CftSchemaView,
     registry: &'a ProviderRegistry,
     dimension_mode: DimensionBuildMode,
     dimension_fields: Vec<DimensionField>,
@@ -283,6 +285,7 @@ fn assemble_session(
     ProjectSession {
         project: ctx.project,
         schema: ctx.schema,
+        schema_view: ctx.schema_view,
         model,
         diagnostics,
         sources: indexes.sources,

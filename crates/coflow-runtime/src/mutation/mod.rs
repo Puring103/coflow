@@ -43,7 +43,7 @@ pub(super) fn enum_value(
         .strip_prefix(enum_name)
         .and_then(|rest| rest.strip_prefix('.'))
         .unwrap_or(raw_variant);
-    let schema = CftSchemaView::new(&session.schema);
+    let schema = session.schema_view();
     let int_value = schema
         .enum_variant_value(enum_name, variant)
         .ok_or_else(|| one_value_error(format!("unknown enum variant `{enum_name}.{variant}`")))?;
@@ -55,7 +55,7 @@ pub(super) fn enum_value(
 }
 
 pub(super) fn is_schema_enum(session: &ProjectSession, name: &str) -> bool {
-    CftSchemaView::new(&session.schema).is_schema_enum(name)
+    session.schema_view().is_schema_enum(name)
 }
 
 fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {

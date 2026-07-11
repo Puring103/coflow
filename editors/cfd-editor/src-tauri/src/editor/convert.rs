@@ -18,7 +18,7 @@ use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRo
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
     pub session: &'a ProjectSession,
-    pub schema: CftSchemaView,
+    pub schema: &'a CftSchemaView,
     pub diagnostics: Vec<FlatDiagnostic>,
     /// Set of dimension-synthesized type names (e.g. `Item_nameVariants`).
     /// Passed in once per snapshot so the annotator can flag the derived

@@ -148,9 +148,11 @@ pub(crate) fn build_project_schema_with_diagnostics(
     } else {
         CftContainer::new()
     };
+    let schema_view = CftSchemaView::new(&schema);
     Ok(ProjectSchemaSession {
         project,
         schema,
+        schema_view,
         diagnostics,
     })
 }

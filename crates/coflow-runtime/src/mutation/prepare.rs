@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::DiagnosticSet;
-use coflow_cft::{CftSchemaTypeRef, CftSchemaView};
+use coflow_cft::CftSchemaTypeRef;
 use coflow_api::WriteFieldPathSegment;
 use coflow_data_model::{CfdPathSegment, CfdValue};
 
@@ -212,7 +212,7 @@ fn prepare_provided_insert_fields(
     fields: MutationFields,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
     let mut out = BTreeMap::new();
-    let schema = CftSchemaView::new(&session.schema);
+    let schema = session.schema_view();
     match fields {
         MutationFields::Empty => {}
         MutationFields::Json(fields) => {
@@ -349,7 +349,7 @@ fn ensure_type_can_insert(
     session: &ProjectSession,
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
-    let schema = CftSchemaView::new(&session.schema);
+    let schema = session.schema_view();
     let Some(schema_type) = schema.type_meta(actual_type) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",

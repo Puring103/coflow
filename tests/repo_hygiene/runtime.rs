@@ -146,6 +146,15 @@ fn engine_session_api_does_not_live_in_lib_rs() {
             "ProjectSession should expose `{forbidden}` through accessors, not public fields"
         );
     }
+
+    assert!(
+        session.matches("pub(crate) schema_view: CftSchemaView").count() == 2,
+        "schema-only and full sessions should each retain one compiled schema view"
+    );
+    assert!(
+        session.contains("pub const fn schema_view(&self) -> &CftSchemaView"),
+        "session schema queries should borrow the retained view"
+    );
 }
 
 #[test]
@@ -365,8 +374,8 @@ fn engine_schema_inspect_uses_cft_compiler_context_for_schema_traversal() {
         .expect("read schema inspect");
 
     assert!(
-        schema_inspect.contains("CftSchemaView::new(&session.schema)"),
-        "schema inspect should use coflow-cft CftSchemaView for schema traversal"
+        schema_inspect.contains("session.schema_view()"),
+        "schema inspect should borrow the session's compiled schema view"
     );
     for forbidden in [
         ".schema\n        .all_types()",
@@ -503,8 +512,8 @@ fn engine_writes_use_cft_compiler_context_for_insert_schema_checks() {
         std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
 
     assert!(
-        writes.contains("CftSchemaView::new(&session.schema)"),
-        "engine writes should use CftSchemaView for insert schema checks"
+        writes.contains("session.schema_view()") || writes.contains("self.schema_view()"),
+        "engine writes should borrow the session's compiled schema view"
     );
     for forbidden in [
         "session.schema.resolve_type",
@@ -707,8 +716,8 @@ fn engine_mutation_field_coercion_uses_cft_compiler_context() {
         .replace("\r\n", "\n");
 
     assert!(
-        coercion.contains("CftSchemaView::new(&session.schema)"),
-        "mutation field coercion should use coflow-cft CftSchemaView for field lookup"
+        coercion.contains("session.schema_view()"),
+        "mutation field coercion should borrow the session's compiled schema view"
     );
     for forbidden in [
         "CftSchemaField",
@@ -731,9 +740,7 @@ fn engine_mutation_uses_cft_compiler_context_for_schema_queries() {
         .expect("read mutation coercion");
 
     assert!(
-        mutation.contains("CftSchemaView::new(&session.schema)")
-            || mutation.contains("CftSchemaView::new(schema)")
-            || coercion.contains("CftSchemaView::new(&session.schema)"),
+        mutation.contains("session.schema_view()") || coercion.contains("session.schema_view()"),
         "mutation schema queries should go through coflow-cft CftSchemaView"
     );
     for forbidden in [

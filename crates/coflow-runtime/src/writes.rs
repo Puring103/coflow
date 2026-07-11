@@ -18,7 +18,6 @@ use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, ProviderRegistry,
     RenameRecordRequest, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
-use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RecordOrigin};
 
 use super::records::WriteOutcome;
@@ -83,7 +82,7 @@ impl ProjectSession {
             return self.rename_record_key(registry, actual_type, key, new_key);
         }
         let plan = prepare_write_field(self, registry, actual_type, key, path, new_value)?;
-        let schema_view = CftSchemaView::new(&self.schema);
+        let schema_view = self.schema_view();
 
         let write_request = WriteCellRequest {
             origin: &plan.target.origin,
@@ -154,7 +153,7 @@ impl ProjectSession {
         let target_display_path = target_ref.display_path.clone();
         let target_source = source_for_file(self, &target_display_path)?;
         let target_writer = lookup_source_writer(registry, &target_source)?;
-        let schema_view = CftSchemaView::new(&self.schema);
+        let schema_view = self.schema_view();
         let ctx = WriteContext {
             project_root: &self.project.root_dir,
             schema: &schema_view,
@@ -238,7 +237,7 @@ impl ProjectSession {
             .map(ToOwned::to_owned)
             .or_else(|| sheet_for_file_type(self, file, actual_type));
         let writer = lookup_source_writer(registry, &source)?;
-        let schema_view = CftSchemaView::new(&self.schema);
+        let schema_view = self.schema_view();
         let request = InsertRecordRequest {
             source: &source,
             sheet: sheet.as_deref(),
@@ -290,7 +289,7 @@ impl ProjectSession {
         let origin = record.origin.clone();
         let source = source_for_file(self, &display_path)?;
         let writer = lookup_source_writer(registry, &source)?;
-        let schema_view = CftSchemaView::new(&self.schema);
+        let schema_view = self.schema_view();
         let request = DeleteRecordRequest {
             origin: &origin,
             record_key: key,
@@ -365,7 +364,7 @@ fn ensure_insert_type_can_insert(
     session: &ProjectSession,
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
-    let schema_view = CftSchemaView::new(&session.schema);
+    let schema_view = session.schema_view();
     let Some(schema_type) = schema_view.type_meta(actual_type) else {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-INSERT",
@@ -396,7 +395,7 @@ fn validate_insert_fields(
     record_key: &str,
     fields: &std::collections::BTreeMap<String, CfdValue>,
 ) -> Result<(), DiagnosticSet> {
-    let schema_view = CftSchemaView::new(&session.schema);
+    let schema_view = session.schema_view();
     if !schema_view.has_type(actual_type) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-INSERT",

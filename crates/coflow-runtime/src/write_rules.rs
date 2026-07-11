@@ -105,7 +105,7 @@ pub(crate) fn validate_value_at_write_path(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    let schema = CftSchemaView::new(&session.schema);
+    let schema = session.schema_view();
     let expected = expected_type_for_write_path_in_view(&schema, actual_type, path, code, stage)?;
     validate_value_for_write_in_view(session, &schema, &expected, value, code, stage)
 }
@@ -188,7 +188,7 @@ pub fn validate_value_for_write(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    let schema = CftSchemaView::new(&session.schema);
+    let schema = session.schema_view();
     validate_value_for_write_in_view(session, &schema, expected, value, code, stage)
 }
 
