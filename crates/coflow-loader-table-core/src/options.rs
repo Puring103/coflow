@@ -1,9 +1,13 @@
 use crate::TableSheetConfig;
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSourceOptions {
+    source_label: &'static str,
     sheets: Vec<TableSheetConfig>,
+    sheets_by_name: BTreeMap<String, usize>,
+    sheets_by_type: BTreeMap<String, Vec<usize>>,
 }
 
 impl TableSourceOptions {
@@ -17,14 +21,39 @@ impl TableSourceOptions {
     /// Returns an error when `sheets` or any nested sheet field has the wrong
     /// shape.
     pub fn decode(options: &Value, source_label: &'static str) -> Result<Self, TableOptionsError> {
+        let sheets = table_sheet_configs_from_options(options, source_label)?;
+        let mut sheets_by_name = BTreeMap::new();
+        let mut sheets_by_type = BTreeMap::<String, Vec<usize>>::new();
+        for (index, sheet) in sheets.iter().enumerate() {
+            if sheets_by_name.insert(sheet.sheet.clone(), index).is_some() {
+                return Err(TableOptionsError::new(format!(
+                    "{source_label} defines duplicate sheet `{}`",
+                    sheet.sheet
+                )));
+            }
+            if let Some(type_name) = &sheet.type_name {
+                sheets_by_type
+                    .entry(type_name.clone())
+                    .or_default()
+                    .push(index);
+            }
+        }
         Ok(Self {
-            sheets: table_sheet_configs_from_options(options, source_label)?,
+            source_label,
+            sheets,
+            sheets_by_name,
+            sheets_by_type,
         })
     }
 
     #[must_use]
     pub fn empty() -> Self {
-        Self { sheets: Vec::new() }
+        Self {
+            source_label: "table source",
+            sheets: Vec::new(),
+            sheets_by_name: BTreeMap::new(),
+            sheets_by_type: BTreeMap::new(),
+        }
     }
 
     #[must_use]
@@ -37,35 +66,76 @@ impl TableSourceOptions {
         self.sheets
     }
 
-    #[must_use]
-    pub fn matching_sheet(&self, sheet: &str, actual_type: &str) -> Option<&TableSheetConfig> {
-        self.sheets.iter().find(|config| {
-            config.sheet == sheet
-                || config
-                    .type_name
-                    .as_deref()
-                    .is_some_and(|candidate| candidate == actual_type)
-        })
+    /// Resolve options for an explicitly addressed sheet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the sheet is configured for a different type.
+    pub fn sheet_config(
+        &self,
+        sheet: &str,
+        actual_type: &str,
+    ) -> Result<TableSheetConfig, TableOptionsError> {
+        let Some(index) = self.sheets_by_name.get(sheet) else {
+            return Ok(TableSheetConfig::new(sheet).with_type(actual_type));
+        };
+        let config = &self.sheets[*index];
+        if let Some(configured_type) = &config.type_name {
+            if configured_type != actual_type {
+                return Err(TableOptionsError::new(format!(
+                    "{} sheet `{sheet}` is configured for type `{configured_type}`, not `{actual_type}`",
+                    self.source_label
+                )));
+            }
+        }
+        Ok(config.clone())
     }
 
-    #[must_use]
-    pub fn sheet_config(&self, sheet: &str, actual_type: &str) -> TableSheetConfig {
-        self.matching_sheet(sheet, actual_type)
-            .cloned()
-            .unwrap_or_else(|| TableSheetConfig::new(sheet).with_type(actual_type))
-    }
-
-    #[must_use]
-    pub fn sheet_for_type(&self, actual_type: &str) -> Option<&str> {
-        self.sheets
+    /// Resolve the only configured sheet for a type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the type is mapped to multiple sheets and an
+    /// explicit sheet is required to select one.
+    pub fn sheet_for_type(&self, actual_type: &str) -> Result<Option<&str>, TableOptionsError> {
+        let Some(indexes) = self.sheets_by_type.get(actual_type) else {
+            return Ok(None);
+        };
+        if let [index] = indexes.as_slice() {
+            return Ok(Some(self.sheets[*index].sheet.as_str()));
+        }
+        let names = indexes
             .iter()
-            .find(|config| {
-                config
-                    .type_name
-                    .as_deref()
-                    .is_some_and(|candidate| candidate == actual_type)
-            })
-            .map(|config| config.sheet.as_str())
+            .map(|index| self.sheets[*index].sheet.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        Err(TableOptionsError::new(format!(
+            "{} type `{actual_type}` is configured for multiple sheets ({names}); specify a sheet",
+            self.source_label
+        )))
+    }
+
+    /// Resolve the configured type for an explicitly addressed sheet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no sheet was specified and the source contains
+    /// multiple candidate sheets.
+    pub fn type_for_sheet(&self, sheet: Option<&str>) -> Result<Option<&str>, TableOptionsError> {
+        if let Some(sheet) = sheet {
+            return Ok(self
+                .sheets_by_name
+                .get(sheet)
+                .and_then(|index| self.sheets[*index].type_name.as_deref()));
+        }
+        match self.sheets.as_slice() {
+            [] => Ok(None),
+            [config] => Ok(config.type_name.as_deref()),
+            _ => Err(TableOptionsError::new(format!(
+                "{} defines multiple sheets; specify a sheet",
+                self.source_label
+            ))),
+        }
     }
 }
 
@@ -146,6 +216,7 @@ fn table_sheet_config_from_value(
             )));
         };
         let mut parsed_columns = Vec::new();
+        let mut target_fields = BTreeSet::new();
         for (source, field) in columns {
             let Some(field) = field.as_str() else {
                 return Err(TableOptionsError::new(format!(
@@ -160,6 +231,11 @@ fn table_sheet_config_from_value(
             if field.trim().is_empty() {
                 return Err(TableOptionsError::new(format!(
                     "{source_label} sheet column `{source}` maps to an empty field"
+                )));
+            }
+            if !target_fields.insert(field) {
+                return Err(TableOptionsError::new(format!(
+                    "{source_label} sheet `{sheet_name}` maps multiple columns to field `{field}`"
                 )));
             }
             parsed_columns.push((source.as_str(), field));

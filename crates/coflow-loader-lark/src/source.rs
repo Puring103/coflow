@@ -110,7 +110,9 @@ pub(crate) fn sheet_config_from_options(
     sheet: &str,
     actual_type: &str,
 ) -> Result<TableSheetConfig, DiagnosticSet> {
-    Ok(lark_table_options_from_options(options)?.sheet_config(sheet, actual_type))
+    lark_table_options_from_options(options)?
+        .sheet_config(sheet, actual_type)
+        .map_err(lark_options_diagnostics)
 }
 
 pub(crate) fn sheet_for_type_from_options(
@@ -119,6 +121,7 @@ pub(crate) fn sheet_for_type_from_options(
 ) -> Result<Option<String>, DiagnosticSet> {
     Ok(lark_table_options_from_options(options)?
         .sheet_for_type(actual_type)
+        .map_err(lark_options_diagnostics)?
         .map(ToOwned::to_owned))
 }
 
@@ -127,10 +130,9 @@ pub(crate) fn type_for_sheet_from_options(
     sheet: Option<&str>,
 ) -> Result<Option<String>, DiagnosticSet> {
     Ok(lark_table_options_from_options(options)?
-        .sheets()
-        .iter()
-        .find(|config| sheet.is_none_or(|expected| config.sheet == expected))
-        .and_then(|config| config.type_name.clone()))
+        .type_for_sheet(sheet)
+        .map_err(lark_options_diagnostics)?
+        .map(ToOwned::to_owned))
 }
 
 pub(crate) fn lark_document(source: &LarkSheetSource) -> String {
@@ -141,9 +143,11 @@ pub(crate) fn lark_document(source: &LarkSheetSource) -> String {
 }
 
 fn lark_table_options_from_options(options: &Value) -> Result<TableSourceOptions, DiagnosticSet> {
-    TableSourceOptions::decode(options, "lark source").map_err(|err| {
-        DiagnosticSet::one(Diagnostic::error("LARK-SOURCE", "LARK", err.message))
-    })
+    TableSourceOptions::decode(options, "lark source").map_err(lark_options_diagnostics)
+}
+
+fn lark_options_diagnostics(err: coflow_loader_table_core::TableOptionsError) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic::error("LARK-SOURCE", "LARK", err.message))
 }
 
 pub(crate) fn token_after_path_marker(url: &str, marker: &str) -> Option<String> {
