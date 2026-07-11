@@ -23,7 +23,6 @@ mod validation;
 pub use config::{
     DimensionConfig, OutputConfig, OutputsConfig, ProjectConfig, SchemaConfig, SourceConfig,
 };
-pub use diagnostics::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
 pub use paths::{normalize_path, path_to_slash, resolve_config_path};
 pub use schema_path_policy::SchemaFile;

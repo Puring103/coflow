@@ -26,6 +26,7 @@ mod mutation;
 mod records;
 mod runtime;
 mod schema_build;
+mod schema_diagnostics;
 mod schema_inspect;
 mod session;
 mod session_build;
@@ -69,6 +70,7 @@ pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime};
 pub use schema_build::{
     compile_schema_project_with_overrides, SchemaBuild, SchemaSourceOverride,
 };
+pub use schema_diagnostics::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,
     SchemaConstValueInfo, SchemaDefaultValueInfo, SchemaEnumInfo, SchemaEnumVariantInfo,

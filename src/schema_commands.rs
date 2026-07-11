@@ -1,11 +1,10 @@
 use crate::diagnostics::{cli_error, cli_file_error};
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
-use coflow_project::{
-    dedupe_cft_diagnostics, diagnostic_set_from_cft, path_to_slash, Project,
-};
+use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
-    compile_schema_project_with_overrides, inspect_schema, schema_files, Runtime,
-    SchemaFilesReport, SchemaInspectReport, SchemaSourceOverride,
+    compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
+    inspect_schema, schema_files, Runtime, SchemaFilesReport, SchemaInspectReport,
+    SchemaSourceOverride,
 };
 use serde::Serialize;
 use std::io::{self, Read, Write};

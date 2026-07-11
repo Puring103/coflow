@@ -2,13 +2,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_cft::{CftContainer, CftDiagnostic, CftSchemaView, ModuleId};
-use coflow_project::{
-    dedupe_cft_diagnostics, diagnostic_set_from_cft, normalize_path, Project,
-};
+use coflow_project::{normalize_path, Project};
 use std::path::PathBuf;
 
 use crate::dimensions;
 use crate::indexes::DiagnosticsStore;
+use crate::schema_diagnostics::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
 use crate::session::ProjectSchemaSession;
 
 #[derive(Debug)]

@@ -27,8 +27,10 @@ use coflow::commands::{
 use coflow::diagnostics::DiagnosticJson;
 use coflow::{data_commands, schema_commands};
 use coflow_api::DiagnosticSet;
-use coflow_project::{dedupe_cft_diagnostics, normalize_path, path_to_slash, Project};
-use coflow_runtime::{compile_schema_project_with_overrides, SchemaSourceOverride};
+use coflow_project::{normalize_path, path_to_slash, Project};
+use coflow_runtime::{
+    compile_schema_project_with_overrides, dedupe_cft_diagnostics, SchemaSourceOverride,
+};
 use data_get_target::parse_data_get_target;
 use serde_json::Value;
 use std::io::Read;

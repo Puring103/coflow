@@ -276,7 +276,7 @@ fn project_path_helpers_do_not_live_in_project_lib_rs() {
 
 #[test]
 
-fn project_diagnostic_conversion_does_not_live_in_project_lib_rs() {
+fn diagnostic_conversion_follows_project_and_runtime_ownership() {
 
     let project =
 
@@ -286,19 +286,13 @@ fn project_diagnostic_conversion_does_not_live_in_project_lib_rs() {
 
         .expect("read project diagnostics");
 
+    let schema_diagnostics =
+        std::fs::read_to_string("crates/coflow-runtime/src/schema_diagnostics.rs")
+            .expect("read runtime schema diagnostics");
+
 
 
     for expected in [
-
-        "pub fn dedupe_cft_diagnostics",
-
-        "fn cft_diagnostic_key",
-
-        "pub fn diagnostic_set_from_cft",
-
-        "fn diagnostic_from_cft",
-
-        "fn cft_label_range",
 
         "pub(super) fn project_diagnostics_to_set",
 
@@ -320,6 +314,23 @@ fn project_diagnostic_conversion_does_not_live_in_project_lib_rs() {
 
         );
 
+    }
+
+    for expected in [
+        "pub fn dedupe_cft_diagnostics",
+        "fn cft_diagnostic_key",
+        "pub fn diagnostic_set_from_cft",
+        "fn diagnostic_from_cft",
+        "fn cft_label_range",
+    ] {
+        assert!(
+            schema_diagnostics.contains(expected),
+            "runtime schema diagnostics should own `{expected}`"
+        );
+        assert!(
+            !diagnostics.contains(expected),
+            "project diagnostics should not own CFT conversion `{expected}`"
+        );
     }
 
 }
@@ -347,6 +358,7 @@ fn project_initialization_is_an_atomic_module() {
             "project lib should delegate initialization item `{expected}`"
         );
     }
+
 }
 
 #[test]

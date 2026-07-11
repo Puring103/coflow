@@ -10,10 +10,9 @@
 )]
 
 use coflow_api::SourceLocation;
-use coflow_cft::{CftDiagnostic, CftErrorCode, ModuleId, Span};
 use coflow_project::{
-    dedupe_cft_diagnostics, init_project, normalize_path, path_to_slash, resolve_config_path,
-    OutputConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
+    init_project, normalize_path, path_to_slash, resolve_config_path, OutputConfig, OutputsConfig,
+    Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -935,91 +934,6 @@ fn schema_files_accept_absolute_schema_paths_outside_project_root() -> TestResul
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())?;
     std::fs::remove_dir_all(external).map_err(|err| err.to_string())
-}
-
-#[test]
-fn cft_diagnostic_set_uses_utf16_ranges_and_dedup_keys() {
-    let source = "type 表 {\n  名: string;\n}\n";
-    let start = source.find('名').expect("field name");
-    let end = start + "名".len();
-    let diagnostic = CftDiagnostic::error(
-        CftErrorCode::UnknownNamedType,
-        ModuleId::new("schema/main.cft"),
-        Span::new(start, end),
-        "bad type",
-    )
-    .with_primary_message("primary")
-    .with_related(
-        ModuleId::new("schema/other.cft"),
-        Span::new(0, 4),
-        "related",
-    );
-    let duplicate = diagnostic.clone();
-    let distinct = diagnostic.clone().with_related(
-        ModuleId::new("schema/other.cft"),
-        Span::new(5, 9),
-        "related",
-    );
-
-    let deduped = dedupe_cft_diagnostics(vec![diagnostic.clone(), duplicate, distinct]);
-    assert_eq!(deduped.len(), 2);
-
-    let mut sources = BTreeMap::new();
-    sources.insert("schema/main.cft".to_string(), source.to_string());
-    sources.insert("schema/other.cft".to_string(), "enum E {}".to_string());
-    let mut paths = BTreeMap::new();
-    paths.insert(
-        "schema/main.cft".to_string(),
-        "C:/project/schema/main.cft".to_string(),
-    );
-    paths.insert(
-        "schema/other.cft".to_string(),
-        "C:/project/schema/other.cft".to_string(),
-    );
-
-    let diagnostic_set =
-        coflow_project::diagnostic_set_from_cft(vec![diagnostic], &sources, &paths);
-    let diagnostic = diagnostic_set
-        .diagnostics
-        .first()
-        .expect("canonical diagnostic");
-    let primary = diagnostic.primary.as_ref().expect("primary label");
-    assert!(matches!(
-        &primary.location,
-        SourceLocation::FileSpan {
-            path,
-            start_line: 1,
-            start_character: 2,
-            end_line: 1,
-            end_character: 3,
-        } if path == &PathBuf::from("C:/project/schema/main.cft")
-    ));
-    assert_eq!(diagnostic.related.len(), 1);
-    let related = &diagnostic.related[0];
-    assert_eq!(related.message.as_deref(), Some("related"));
-    assert!(matches!(
-        &related.location,
-        SourceLocation::FileSpan { path, .. }
-            if path == &PathBuf::from("C:/project/schema/other.cft")
-    ));
-}
-
-#[test]
-fn dedupe_cft_diagnostics_handles_diagnostics_without_primary_labels() {
-    let diagnostic = CftDiagnostic {
-        code: CftErrorCode::UnexpectedEof,
-        stage: CftErrorCode::UnexpectedEof.stage(),
-        severity: coflow_cft::CftSeverity::Error,
-        message: "missing token".to_string(),
-        primary: None,
-        related: Vec::new(),
-    };
-    let duplicate = diagnostic.clone();
-
-    let deduped = dedupe_cft_diagnostics(vec![diagnostic, duplicate]);
-
-    assert_eq!(deduped.len(), 1);
-    assert!(deduped[0].primary.is_none());
 }
 
 #[test]
