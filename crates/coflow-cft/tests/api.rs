@@ -160,6 +160,31 @@ fn dimension_check_schedule_includes_inherited_dimension_checks() {
 }
 
 #[test]
+fn dimension_check_analysis_respects_quantifier_binding_shadowing() {
+    let schema = compile_one(
+        r#"
+            type Item {
+                @localized
+                item: string;
+                items: [string];
+                check {
+                    all item in items { item != ""; }
+                }
+            }
+        "#,
+    )
+    .expect("schema compiles");
+    let compiled = CompiledSchema::new(&schema);
+
+    assert_eq!(
+        compiled
+            .check_schedule("Item", Some("language"))
+            .count(),
+        0
+    );
+}
+
+#[test]
 fn compiled_schema_indexes_dimension_storage_types() {
     let schema = compile_one(
         r#"

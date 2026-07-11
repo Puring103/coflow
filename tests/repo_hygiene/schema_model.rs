@@ -962,9 +962,9 @@ fn cft_compiled_schema_dimension_check_analysis_is_split_out() {
 
         "fn stmt_dimensions",
 
-        "fn expr_usage",
+        "fn expr_dimensions",
 
-        "fn type_ref_to_check_ty",
+        "fn name_dimensions",
 
     ] {
 

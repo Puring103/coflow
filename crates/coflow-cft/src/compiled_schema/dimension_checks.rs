@@ -1,7 +1,6 @@
 use super::CompiledSchema;
 use crate::{
-    CftConstValue, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
-    CftSchemaCheckStmt, CftSchemaTypeRef,
+    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,82 +35,32 @@ pub(super) fn dimension_checks_for_type(
         .collect()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum CheckTy {
-    Int,
-    Float,
-    Bool,
-    String,
-    Null,
-    Type(String),
-    Enum(String),
-    Array(Box<CheckTy>),
-    Dict(Box<CheckTy>, Box<CheckTy>),
-    Nullable(Box<CheckTy>),
-    Entry(Box<CheckTy>, Box<CheckTy>),
-    Unknown,
-}
-
-impl CheckTy {
-    fn unwrap_nullable(&self) -> &Self {
-        match self {
-            Self::Nullable(inner) => inner,
-            other => other,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ExprUsage {
-    ty: CheckTy,
-    dimensions: BTreeSet<String>,
-}
-
-impl ExprUsage {
-    fn new(ty: CheckTy) -> Self {
-        Self {
-            ty,
-            dimensions: BTreeSet::new(),
-        }
-    }
-}
-
 struct DimensionCheckAnalyzer<'a> {
     schema: &'a CompiledSchema,
-    current_type: String,
-    scopes: Vec<BTreeMap<String, CheckTy>>,
+    current_type: &'a str,
+    scopes: Vec<BTreeSet<String>>,
 }
 
 impl<'a> DimensionCheckAnalyzer<'a> {
-    fn new(schema: &'a CompiledSchema, current_type: &str) -> Self {
+    fn new(schema: &'a CompiledSchema, current_type: &'a str) -> Self {
         Self {
             schema,
-            current_type: current_type.to_string(),
+            current_type,
             scopes: Vec::new(),
         }
     }
 
     fn stmt_dimensions(&mut self, stmt: &CftSchemaCheckStmt) -> BTreeSet<String> {
         match stmt {
-            CftSchemaCheckStmt::Expr(expr) => self.expr_usage(expr).dimensions,
+            CftSchemaCheckStmt::Expr(expr) => self.expr_dimensions(expr),
             CftSchemaCheckStmt::Quantifier {
                 binding,
                 collection,
                 body,
                 ..
             } => {
-                let collection = self.expr_usage(collection);
-                let mut out = collection.dimensions;
-                let item_ty = match collection.ty.unwrap_nullable() {
-                    CheckTy::Array(inner) => inner.as_ref().clone(),
-                    CheckTy::Dict(key, value) => {
-                        CheckTy::Entry(Box::new(key.as_ref().clone()), value.clone())
-                    }
-                    _ => CheckTy::Unknown,
-                };
-                let mut scope = BTreeMap::new();
-                scope.insert(binding.clone(), item_ty);
-                self.scopes.push(scope);
+                let mut out = self.expr_dimensions(collection);
+                self.scopes.push(BTreeSet::from([binding.clone()]));
                 for stmt in body {
                     out.extend(self.stmt_dimensions(stmt));
                 }
@@ -121,7 +70,7 @@ impl<'a> DimensionCheckAnalyzer<'a> {
             CftSchemaCheckStmt::When {
                 condition, body, ..
             } => {
-                let mut out = self.expr_usage(condition).dimensions;
+                let mut out = self.expr_dimensions(condition);
                 for stmt in body {
                     out.extend(self.stmt_dimensions(stmt));
                 }
@@ -130,200 +79,63 @@ impl<'a> DimensionCheckAnalyzer<'a> {
         }
     }
 
-    fn expr_usage(&mut self, expr: &CftSchemaCheckExpr) -> ExprUsage {
+    fn expr_dimensions(&mut self, expr: &CftSchemaCheckExpr) -> BTreeSet<String> {
         match &expr.kind {
-            CftSchemaCheckExprKind::Int(_) => ExprUsage::new(CheckTy::Int),
-            CftSchemaCheckExprKind::Float(_) => ExprUsage::new(CheckTy::Float),
-            CftSchemaCheckExprKind::Bool(_) => ExprUsage::new(CheckTy::Bool),
-            CftSchemaCheckExprKind::Null => ExprUsage::new(CheckTy::Null),
-            CftSchemaCheckExprKind::String(_) => ExprUsage::new(CheckTy::String),
-            CftSchemaCheckExprKind::Name(name) => self.name_usage(name),
-            CftSchemaCheckExprKind::Field { expr, name } => self.field_usage(expr, name),
+            CftSchemaCheckExprKind::Int(_)
+            | CftSchemaCheckExprKind::Float(_)
+            | CftSchemaCheckExprKind::Bool(_)
+            | CftSchemaCheckExprKind::Null
+            | CftSchemaCheckExprKind::String(_) => BTreeSet::new(),
+            CftSchemaCheckExprKind::Name(name) => self.name_dimensions(name),
+            CftSchemaCheckExprKind::Field { expr, .. }
+            | CftSchemaCheckExprKind::Is { expr, .. }
+            | CftSchemaCheckExprKind::Unary { expr, .. } => self.expr_dimensions(expr),
             CftSchemaCheckExprKind::Index { expr, index } => {
-                let target = self.expr_usage(expr);
-                let index = self.expr_usage(index);
-                let mut dimensions = target.dimensions;
-                dimensions.extend(index.dimensions);
-                let ty = match target.ty.unwrap_nullable() {
-                    CheckTy::Array(inner) => inner.as_ref().clone(),
-                    CheckTy::Dict(_, value) => value.as_ref().clone(),
-                    _ => CheckTy::Unknown,
-                };
-                ExprUsage { ty, dimensions }
+                let mut out = self.expr_dimensions(expr);
+                out.extend(self.expr_dimensions(index));
+                out
             }
-            CftSchemaCheckExprKind::Is { expr, .. } => {
-                let mut usage = self.expr_usage(expr);
-                usage.ty = CheckTy::Bool;
-                usage
+            CftSchemaCheckExprKind::Call { args, .. } => self.args_dimensions(args),
+            CftSchemaCheckExprKind::MethodCall { receiver, args, .. } => {
+                let mut out = self.expr_dimensions(receiver);
+                out.extend(self.args_dimensions(args));
+                out
             }
-            CftSchemaCheckExprKind::Call { name, args } => self.call_usage(name, args),
-            CftSchemaCheckExprKind::MethodCall {
-                receiver,
-                name,
-                args,
-            } => self.method_usage(receiver, name, args),
-            CftSchemaCheckExprKind::BinOp { op: _, lhs, rhs } => {
-                let lhs = self.expr_usage(lhs);
-                let rhs = self.expr_usage(rhs);
-                let mut dimensions = lhs.dimensions;
-                dimensions.extend(rhs.dimensions);
-                ExprUsage {
-                    ty: CheckTy::Unknown,
-                    dimensions,
-                }
-            }
-            CftSchemaCheckExprKind::Unary { expr, .. } => {
-                let mut usage = self.expr_usage(expr);
-                usage.ty = CheckTy::Unknown;
-                usage
+            CftSchemaCheckExprKind::BinOp { lhs, rhs, .. } => {
+                let mut out = self.expr_dimensions(lhs);
+                out.extend(self.expr_dimensions(rhs));
+                out
             }
             CftSchemaCheckExprKind::CmpChain { first, rest } => {
-                let mut usage = self.expr_usage(first);
+                let mut out = self.expr_dimensions(first);
                 for (_, expr) in rest {
-                    usage.dimensions.extend(self.expr_usage(expr).dimensions);
+                    out.extend(self.expr_dimensions(expr));
                 }
-                usage.ty = CheckTy::Bool;
-                usage
+                out
             }
         }
     }
 
-    fn name_usage(&self, name: &str) -> ExprUsage {
-        if let Some(ty) = self
+    fn name_dimensions(&self, name: &str) -> BTreeSet<String> {
+        if self
             .scopes
             .iter()
             .rev()
-            .find_map(|scope| scope.get(name).cloned())
+            .any(|scope| scope.contains(name))
         {
-            return ExprUsage::new(ty);
+            return BTreeSet::new();
         }
-        if let Some(field) = self.schema.dimension_field(&self.current_type, name) {
-            let mut dimensions = BTreeSet::new();
-            dimensions.insert(field.dimension.clone());
-            return ExprUsage {
-                ty: self
-                    .schema
-                    .field_type(&self.current_type, name)
-                    .map_or(CheckTy::Unknown, type_ref_to_check_ty),
-                dimensions,
-            };
-        }
-        if let Some(ty) = self.schema.field_type(&self.current_type, name) {
-            return ExprUsage::new(type_ref_to_check_ty(ty));
-        }
-        if let Some(value) = self.schema.const_value(name) {
-            return ExprUsage::new(const_to_check_ty(value));
-        }
-        if self.schema.is_schema_enum(name) {
-            return ExprUsage::new(CheckTy::Enum(name.to_string()));
-        }
-        ExprUsage::new(CheckTy::Unknown)
+        self.schema
+            .dimension_field(self.current_type, name)
+            .map(|field| BTreeSet::from([field.dimension.clone()]))
+            .unwrap_or_default()
     }
 
-    fn field_usage(&mut self, expr: &CftSchemaCheckExpr, name: &str) -> ExprUsage {
-        let target = self.expr_usage(expr);
-        let dimensions = target.dimensions;
-        let ty = match target.ty.unwrap_nullable() {
-            CheckTy::Type(type_name) => {
-                if name == "id" {
-                    CheckTy::String
-                } else {
-                    self.schema
-                        .field_type(type_name, name)
-                        .map_or(CheckTy::Unknown, type_ref_to_check_ty)
-                }
-            }
-            CheckTy::Entry(key, value) => match name {
-                "key" => key.as_ref().clone(),
-                "value" => value.as_ref().clone(),
-                _ => CheckTy::Unknown,
-            },
-            _ => CheckTy::Unknown,
-        };
-        ExprUsage { ty, dimensions }
-    }
-
-    fn call_usage(&mut self, name: &str, args: &[CftSchemaCheckExpr]) -> ExprUsage {
-        let arg_usages: Vec<ExprUsage> = args.iter().map(|arg| self.expr_usage(arg)).collect();
-        let mut dimensions = BTreeSet::new();
-        for usage in &arg_usages {
-            dimensions.extend(usage.dimensions.iter().cloned());
-        }
-        let ty = if self.schema.is_schema_enum(name) {
-            CheckTy::Enum(name.to_string())
-        } else {
-            match name {
-                "len" => CheckTy::Int,
-                "contains" | "isUnique" | "matches" => CheckTy::Bool,
-                "keys" => arg_usages.first().map_or(CheckTy::Unknown, |usage| {
-                    match usage.ty.unwrap_nullable() {
-                        CheckTy::Dict(key, _) => CheckTy::Array(key.clone()),
-                        _ => CheckTy::Unknown,
-                    }
-                }),
-                "values" => arg_usages.first().map_or(CheckTy::Unknown, |usage| {
-                    match usage.ty.unwrap_nullable() {
-                        CheckTy::Dict(_, value) => CheckTy::Array(value.clone()),
-                        _ => CheckTy::Unknown,
-                    }
-                }),
-                _ => CheckTy::Unknown,
-            }
-        };
-        ExprUsage { ty, dimensions }
-    }
-
-    fn method_usage(
-        &mut self,
-        receiver: &CftSchemaCheckExpr,
-        name: &str,
-        args: &[CftSchemaCheckExpr],
-    ) -> ExprUsage {
-        let receiver = self.expr_usage(receiver);
-        let mut dimensions = receiver.dimensions;
+    fn args_dimensions(&mut self, args: &[CftSchemaCheckExpr]) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
         for arg in args {
-            dimensions.extend(self.expr_usage(arg).dimensions);
+            out.extend(self.expr_dimensions(arg));
         }
-        let ty = match name {
-            "len" => CheckTy::Int,
-            "contains" | "isUnique" | "matches" => CheckTy::Bool,
-            "keys" => match receiver.ty.unwrap_nullable() {
-                CheckTy::Dict(key, _) => CheckTy::Array(key.clone()),
-                _ => CheckTy::Unknown,
-            },
-            "values" => match receiver.ty.unwrap_nullable() {
-                CheckTy::Dict(_, value) => CheckTy::Array(value.clone()),
-                _ => CheckTy::Unknown,
-            },
-            _ => CheckTy::Unknown,
-        };
-        ExprUsage { ty, dimensions }
-    }
-}
-
-fn type_ref_to_check_ty(ty: &CftSchemaTypeRef) -> CheckTy {
-    match ty {
-        CftSchemaTypeRef::Int => CheckTy::Int,
-        CftSchemaTypeRef::Float => CheckTy::Float,
-        CftSchemaTypeRef::Bool => CheckTy::Bool,
-        CftSchemaTypeRef::String => CheckTy::String,
-        CftSchemaTypeRef::Named(name) | CftSchemaTypeRef::Ref(name) => CheckTy::Type(name.clone()),
-        CftSchemaTypeRef::Array(inner) => CheckTy::Array(Box::new(type_ref_to_check_ty(inner))),
-        CftSchemaTypeRef::Dict(key, value) => CheckTy::Dict(
-            Box::new(type_ref_to_check_ty(key)),
-            Box::new(type_ref_to_check_ty(value)),
-        ),
-        CftSchemaTypeRef::Nullable(inner) => {
-            CheckTy::Nullable(Box::new(type_ref_to_check_ty(inner)))
-        }
-    }
-}
-
-fn const_to_check_ty(value: &CftConstValue) -> CheckTy {
-    match value {
-        CftConstValue::Int(_) => CheckTy::Int,
-        CftConstValue::Float(_) => CheckTy::Float,
-        CftConstValue::Bool(_) => CheckTy::Bool,
-        CftConstValue::String(_) => CheckTy::String,
+        out
     }
 }
