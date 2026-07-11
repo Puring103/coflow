@@ -22,6 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) struct Validator<'s> {
     pub(super) schema: &'s DataModelCompilerContext,
     pub(super) diagnostics: &'s mut Vec<CfdDiagnostic>,
+    pub(super) default_objects: BTreeMap<String, RecordDraft>,
 }
 
 impl<'s> Validator<'s> {
@@ -32,6 +33,7 @@ impl<'s> Validator<'s> {
         Self {
             schema,
             diagnostics,
+            default_objects: BTreeMap::new(),
         }
     }
 

@@ -58,6 +58,73 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
 }
 
 #[test]
+fn data_model_reports_direct_schema_default_cycle() {
+    let schema = compile_schema("type Node { child: Node = {}; }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("root", "Node", std::iter::empty::<(&str, CfdInputValue)>());
+
+    let err = builder.build().expect_err("default cycle must be rejected");
+    let diagnostic = diagnostic_with_code(&err, CfdErrorCode::ValueDependencyCycle);
+    assert_eq!(
+        diagnostic.message,
+        "schema default dependency cycle: Node.child -> Node"
+    );
+    assert_eq!(
+        primary_path_segments(diagnostic),
+        [CfdPathSegment::Field("child".to_string())]
+    );
+}
+
+#[test]
+fn data_model_reports_indirect_schema_default_cycle() {
+    let schema = compile_schema(
+        r#"
+            type A { b: B = {}; }
+            type B { c: C = {}; }
+            type C { a: A = {}; }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("root", "A", std::iter::empty::<(&str, CfdInputValue)>());
+
+    let err = builder.build().expect_err("default cycle must be rejected");
+    let diagnostic = diagnostic_with_code(&err, CfdErrorCode::ValueDependencyCycle);
+    assert_eq!(
+        diagnostic.message,
+        "schema default dependency cycle: A.b -> B.c -> C.a -> A"
+    );
+}
+
+#[test]
+fn data_model_reuses_shared_schema_default_subgraphs() {
+    let schema = compile_schema(
+        r#"
+            type Leaf { value: int = 7; }
+            type Branch { leaf: Leaf = {}; }
+            type Root { left: Branch = {}; right: Branch = {}; }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("root", "Root", std::iter::empty::<(&str, CfdInputValue)>());
+
+    let model = builder.build().expect("shared default graph builds");
+    let root = model
+        .records()
+        .next()
+        .map(|(_, record)| record)
+        .expect("root record");
+    for field in ["left", "right"] {
+        let Some(CfdValue::Object(branch)) = root.field(field) else {
+            panic!("{field} branch");
+        };
+        let Some(CfdValue::Object(leaf)) = branch.field("leaf") else {
+            panic!("leaf object");
+        };
+        assert_eq!(leaf.field("value"), Some(&CfdValue::Int(7)));
+    }
+}
+
+#[test]
 fn dimension_field_lookup_reads_variant_storage_without_exposing_storage_to_callers() {
     let schema = compile_schema(
         r#"

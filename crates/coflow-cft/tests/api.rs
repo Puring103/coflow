@@ -10,7 +10,7 @@
 mod common;
 use coflow_cft::{
     is_cft_identifier, record_key_ident_error, CftSchemaField, CftSchemaType, CftSchemaTypeRef,
-    Span,
+    CompiledSchema, Span, ValueDependencyMode,
 };
 use common::*;
 
@@ -44,6 +44,59 @@ fn record_key_identifier_helper_accepts_only_cft_identifiers() {
             "expected an error for `{key}`"
         );
     }
+}
+
+#[test]
+fn value_dependency_plan_reports_direct_default_cycle() {
+    let schema = compile_one("type Node { child: Node = {}; }").expect("schema compiles");
+    let compiled = CompiledSchema::new(&schema);
+    let cycle = compiled
+        .value_dependencies()
+        .materialization_order("Node", ValueDependencyMode::SchemaDefaults)
+        .expect("known type")
+        .expect_err("self default must be cyclic");
+
+    assert_eq!(cycle.to_string(), "Node.child -> Node");
+}
+
+#[test]
+fn value_dependency_plan_reports_indirect_default_cycle_stably() {
+    let schema = compile_one(
+        r#"
+            type A { b: B = {}; }
+            type B { c: C = {}; }
+            type C { a: A = {}; }
+        "#,
+    )
+    .expect("schema compiles");
+    let compiled = CompiledSchema::new(&schema);
+    let cycle = compiled
+        .value_dependencies()
+        .materialization_order("A", ValueDependencyMode::SchemaDefaults)
+        .expect("known type")
+        .expect_err("indirect default must be cyclic");
+
+    assert_eq!(cycle.to_string(), "A.b -> B.c -> C.a -> A");
+}
+
+#[test]
+fn value_dependency_plan_memoizes_shared_subgraphs_in_topological_order() {
+    let schema = compile_one(
+        r#"
+            type Leaf { value: int = 1; }
+            type Branch { leaf: Leaf = {}; }
+            type Root { left: Branch = {}; right: Branch = {}; }
+        "#,
+    )
+    .expect("schema compiles");
+    let compiled = CompiledSchema::new(&schema);
+    let order = compiled
+        .value_dependencies()
+        .materialization_order("Root", ValueDependencyMode::SchemaDefaults)
+        .expect("known type")
+        .expect("graph is acyclic");
+
+    assert_eq!(order, ["Leaf", "Branch", "Root"]);
 }
 
 #[test]

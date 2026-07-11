@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::DiagnosticSet;
-use coflow_cft::CftSchemaTypeRef;
 use coflow_api::WriteFieldPathSegment;
+use coflow_cft::CftSchemaTypeRef;
 use coflow_data_model::{CfdPathSegment, CfdValue};
 
 use crate::write_rules;
@@ -48,7 +48,7 @@ impl ProjectSession {
         type_name: &str,
         materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
-        let record = default_record_for_type(&self.schema, type_name, materialization)?;
+        let record = default_record_for_type(self.compiled_schema(), type_name, materialization)?;
         Ok(CfdValue::Object(Box::new(record.object)))
     }
 
@@ -63,11 +63,8 @@ impl ProjectSession {
     ///
     /// Returns diagnostics when `type_name` is unknown or cannot be inserted
     /// as a concrete top-level record draft.
-    pub fn create_record_draft(
-        &self,
-        type_name: &str,
-    ) -> Result<CreateRecordDraft, DiagnosticSet> {
-        create_record_draft_for_type(&self.schema, type_name)
+    pub fn create_record_draft(&self, type_name: &str) -> Result<CreateRecordDraft, DiagnosticSet> {
+        create_record_draft_for_type(self.compiled_schema(), type_name)
     }
 
     /// Build a default value for an item of the collection at `path`.
@@ -111,7 +108,7 @@ impl ProjectSession {
                     )
                 }),
             _ => default_value_for_type_ref(
-                &self.schema,
+                self.compiled_schema(),
                 item_ty,
                 DefaultMaterialization::EditableShape,
             ),
@@ -197,7 +194,7 @@ fn prepare_insert_fields(
     let provided = prepare_provided_insert_fields(session, actual_type, fields)?;
     let provided_names = provided.keys().cloned().collect::<BTreeSet<_>>();
     let mut out = default_missing_fields_for_type(
-        &session.schema,
+        session.compiled_schema(),
         actual_type,
         materialization,
         &provided_names,

@@ -1,7 +1,8 @@
 use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
-    CftAnnotationValue, CftContainer, CftFieldMeta, CftSchemaTypeRef, CompiledSchema, CftTypeMeta,
+    CftAnnotationValue, CftContainer, CftFieldMeta, CftSchemaTypeRef, CftTypeMeta, CompiledSchema,
+    ValueDependencyCycle, ValueDependencyMode,
 };
 use std::collections::BTreeMap;
 
@@ -214,6 +215,13 @@ impl DataModelCompilerContext {
 
     pub(crate) fn singleton_types(&self) -> impl Iterator<Item = &CftTypeMeta> {
         self.cft.singleton_types()
+    }
+
+    pub(crate) fn schema_default_cycle(&self, type_name: &str) -> Option<ValueDependencyCycle> {
+        self.cft
+            .value_dependencies()
+            .materialization_order(type_name, ValueDependencyMode::SchemaDefaults)?
+            .err()
     }
 
     pub(crate) fn domain_index(&self) -> &CfdDomainIndex {

@@ -1,5 +1,10 @@
 mod dimension_checks;
 mod queries;
+mod value_dependencies;
+
+pub use value_dependencies::{
+    ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
+};
 
 use crate::{
     CftAnnotation, CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaEnum, CftSchemaType,
@@ -13,6 +18,7 @@ pub struct CompiledSchema {
     types: BTreeMap<String, CftTypeMeta>,
     enums: BTreeMap<String, CftEnumMeta>,
     children_by_parent: BTreeMap<String, BTreeSet<String>>,
+    value_dependencies: ValueDependencyPlan,
 }
 
 impl CompiledSchema {
@@ -56,14 +62,21 @@ impl CompiledSchema {
             },
         );
 
+        let value_dependencies = ValueDependencyPlan::compile(&types);
         let mut view = Self {
             consts,
             types,
             enums,
             children_by_parent,
+            value_dependencies,
         };
         view.populate_dimension_checks();
         view
+    }
+
+    #[must_use]
+    pub const fn value_dependencies(&self) -> &ValueDependencyPlan {
+        &self.value_dependencies
     }
 
     fn populate_dimension_checks(&mut self) {

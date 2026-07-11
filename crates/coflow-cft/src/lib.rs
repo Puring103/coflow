@@ -31,15 +31,20 @@
 )]
 
 pub mod ast;
+mod compiled_schema;
 mod container;
 mod error;
 mod identifier;
 pub mod lexer;
 pub mod parser;
 mod schema;
-mod compiled_schema;
 mod span;
 
+pub use compiled_schema::{
+    CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftEnumVariantMeta, CftFieldMeta,
+    CftTypeMeta, CompiledSchema, ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan,
+    ValueDependencyStep,
+};
 pub use container::{CftContainer, ModuleId};
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
@@ -49,9 +54,5 @@ pub use schema::{
     CftSchemaCmpOp, CftSchemaConst, CftSchemaDefaultValue, CftSchemaEnum, CftSchemaEnumVariant,
     CftSchemaField, CftSchemaModule, CftSchemaQuantifierKind, CftSchemaType,
     CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp, Dimension, DimensionSpec,
-};
-pub use compiled_schema::{
-    CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftEnumVariantMeta, CftFieldMeta,
-    CompiledSchema, CftTypeMeta,
 };
 pub use span::Span;

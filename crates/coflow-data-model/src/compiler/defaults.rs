@@ -100,6 +100,19 @@ impl Validator<'_> {
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
+        if let Some(draft) = self.default_objects.get(type_name) {
+            return Some(CfdValueDraft::Object(Box::new(draft.clone())));
+        }
+        if let Some(cycle) = self.schema.schema_default_cycle(type_name) {
+            self.push(
+                CfdDiagnostic::error(
+                    CfdErrorCode::ValueDependencyCycle,
+                    format!("schema default dependency cycle: {cycle}"),
+                )
+                .with_primary(record, path),
+            );
+            return None;
+        }
         let fields = BTreeMap::new();
         let draft = self.validate_record(
             Some(type_name),
@@ -111,6 +124,8 @@ impl Validator<'_> {
             path,
             /*top_level=*/ false,
         )?;
+        self.default_objects
+            .insert(type_name.to_string(), draft.clone());
         Some(CfdValueDraft::Object(Box::new(draft)))
     }
 

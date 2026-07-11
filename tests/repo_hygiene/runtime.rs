@@ -690,10 +690,16 @@ fn engine_mutation_defaults_use_cft_compiler_context() {
         .replace("\r\n", "\n");
 
     assert!(
-        defaults.contains("CompiledSchema::new(schema)"),
-        "mutation default materialization should use coflow-cft CompiledSchema"
+        defaults.contains("schema: &CompiledSchema"),
+        "mutation default materialization should borrow the session CompiledSchema"
+    );
+    assert!(
+        defaults.contains(".value_dependencies()"),
+        "mutation default materialization should execute the compiled value dependency plan"
     );
     for forbidden in [
+        "CompiledSchema::new(",
+        "CftContainer",
         ".resolve_type(",
         ".resolve_enum(",
         ".has_enum(",
@@ -828,8 +834,9 @@ fn engine_mutation_defaults_do_not_live_in_mutation_mod_rs() {
     for expected in [
         "fn default_record_for_type",
         "fn default_missing_fields_for_type",
-        "fn default_fields_for_type_inner",
-        "fn default_from_schema_default",
+        "struct DefaultValueMaterializer",
+        "fn fields_for_type",
+        "fn from_schema_default",
     ] {
         assert!(
             defaults.contains(expected),

@@ -388,9 +388,8 @@ fn patch_rejects_insert_and_delete_on_dimension_variant_tables() {
             .any(|diagnostic| diagnostic.code == "MUTATION-DIMENSION")
     }));
 
-    let generated =
-        std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
-            .expect("read dimension csv");
+    let generated = std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+        .expect("read dimension csv");
     assert_eq!(generated, "id,default,zh\npotion,Potion,null\n");
 
     let _ = std::fs::remove_dir_all(root);
@@ -435,7 +434,10 @@ fn rename_record_updates_refs_inside_polymorphic_cfd_values() {
     let items = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read items");
     let stages =
         std::fs::read_to_string(root.join("data").join("stages.cfd")).expect("read stages");
-    assert!(items.contains("blade: Item"), "item key not renamed: {items}");
+    assert!(
+        items.contains("blade: Item"),
+        "item key not renamed: {items}"
+    );
     assert!(
         stages.contains("ItemReward { item: &blade, count: 1 }"),
         "polymorphic ref not renamed: {stages}"
@@ -1522,7 +1524,7 @@ fn insert_allows_same_key_for_unrelated_type() {
 }
 
 #[test]
-fn editable_shape_does_not_recursively_expand_self_referential_types() {
+fn editable_shape_reports_self_referential_dependency_cycle() {
     let root = std::env::temp_dir().join(format!(
         "coflow-data-patch-editable-recursive-{}",
         std::process::id()
@@ -1542,19 +1544,46 @@ fn editable_shape_does_not_recursively_expand_self_referential_types() {
     .expect("write config");
     let (session, _) = session(&root);
 
-    let value = session
+    let err = session
         .default_record_value("Node", DefaultMaterialization::EditableShape)
-        .expect("default value");
-    let coflow_data_model::CfdValue::Object(record) = value else {
-        panic!("default should be object");
-    };
-    let Some(coflow_data_model::CfdValue::Object(child)) = record.fields.get("child") else {
-        panic!("child should be object");
-    };
-    assert!(
-        !child.fields.contains_key("child"),
-        "recursive field should stop after one nested level"
-    );
+        .expect_err("recursive editable shape must be rejected");
+    assert!(err.iter().any(|diagnostic| {
+        diagnostic.code == "MUTATION-DEFAULT"
+            && diagnostic.message == "default materialization dependency cycle: Node.child -> Node"
+    }));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn editable_shape_reports_indirect_dependency_cycle_stably() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-editable-indirect-recursive-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type A { b: B; }\ntype B { c: C; }\ntype C { a: A; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data").join("records.cfd"), "").expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (session, _) = session(&root);
+
+    let err = session
+        .default_record_value("B", DefaultMaterialization::EditableShape)
+        .expect_err("indirect cycle must be rejected");
+    assert!(err.iter().any(|diagnostic| {
+        diagnostic.code == "MUTATION-DEFAULT"
+            && diagnostic.message
+                == "default materialization dependency cycle: A.b -> B.c -> C.a -> A"
+    }));
 
     let _ = std::fs::remove_dir_all(root);
 }

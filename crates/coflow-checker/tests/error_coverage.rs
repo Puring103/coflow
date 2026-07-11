@@ -123,6 +123,13 @@ fn cases() -> Vec<Case> {
             adjacent: adjacent_required_field_present,
         },
         Case {
+            name: "schema default dependency cycle",
+            schema: "type Node { child: Node = {}; }",
+            phase: Phase::Build(build_schema_default_dependency_cycle),
+            code: CfdErrorCode::ValueDependencyCycle,
+            adjacent: adjacent_acyclic_schema_default,
+        },
+        Case {
             name: "type mismatch",
             schema: "type Item { value: int; }",
             phase: Phase::Build(build_type_mismatch),
@@ -464,6 +471,12 @@ fn build_missing_required_field(schema: &CftContainer) -> Result<CfdDataModel, C
     model_from_records(schema, [one_record("item", "Item", [])])
 }
 
+fn build_schema_default_dependency_cycle(
+    schema: &CftContainer,
+) -> Result<CfdDataModel, CfdDiagnostics> {
+    model_from_records(schema, [one_record("root", "Node", [])])
+}
+
 fn build_type_mismatch(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
@@ -789,6 +802,13 @@ fn adjacent_known_field() {
 
 fn adjacent_required_field_present() {
     adjacent_known_record_type();
+}
+
+fn adjacent_acyclic_schema_default() {
+    assert_builds(
+        "type Leaf { value: int = 1; } type Root { child: Leaf = {}; }",
+        [one_record("root", "Root", [])],
+    );
 }
 
 fn adjacent_matching_value_type() {
