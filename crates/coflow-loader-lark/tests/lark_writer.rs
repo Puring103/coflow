@@ -156,10 +156,14 @@ fn lark_origin() -> RecordOrigin {
 }
 
 fn lark_source() -> ResolvedSource {
+    lark_source_with_secret("secret_test")
+}
+
+fn lark_source_with_secret(app_secret: &str) -> ResolvedSource {
     ResolvedSource {
         provider_id: "lark-sheet".to_string(),
         location: SourceLocationSpec::Uri("lark:sht_test".to_string()),
-        options: lark_options(),
+        options: lark_options_with_secret(app_secret),
         display_name: "lark:sht_test".to_string(),
     }
 }
@@ -174,10 +178,14 @@ fn lark_wiki_source() -> ResolvedSource {
 }
 
 fn lark_options() -> coflow_api::DecodedSourceOptions {
+    lark_options_with_secret("secret_test")
+}
+
+fn lark_options_with_secret(app_secret: &str) -> coflow_api::DecodedSourceOptions {
     LarkSheetLoader::default()
         .decode_options(&serde_json::json!({
             "app_id": "cli_test",
-            "app_secret": "secret_test"
+            "app_secret": app_secret
         }))
         .expect("decode lark options")
 }
@@ -250,6 +258,77 @@ fn writes_cell_with_full_handshake_then_caches() {
     assert!(calls[1].1.contains("/sheets/query"));
     assert!(calls[2].1.contains("values_batch_update"));
     assert!(calls[3].1.contains("values_batch_update"));
+}
+
+#[test]
+fn same_app_id_with_different_secrets_does_not_share_remote_cache() {
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk_first","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
+            r#"{"code":0,"data":{}}"#,
+        ),
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk_second","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
+            r#"{"code":0,"data":{}}"#,
+        ),
+    ]);
+    let writer = LarkSheetWriter::new(client.clone());
+    let schema = CftContainer::new();
+    let compiled_schema = schema.compiled_schema();
+    let origin = lark_origin();
+    let new_value = CfdValue::String("New".to_string());
+    let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
+    let first_source = lark_source_with_secret("secret_one");
+    let second_source = lark_source_with_secret("secret_two");
+    let context = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &compiled_schema,
+        model: None,
+    };
+
+    for source in [&first_source, &second_source] {
+        writer
+            .write_field(
+                context,
+                &WriteCellRequest {
+                    origin: &origin,
+                    record_key: "sword",
+                    actual_type: "Item",
+                    field_path: &segments,
+                    new_value: &new_value,
+                    schema: &compiled_schema,
+                    source,
+                },
+            )
+            .expect("write with isolated credentials");
+    }
+
+    assert_eq!(client.remaining(), 0, "all responses consumed");
+    let auth_bodies = client
+        .calls()
+        .into_iter()
+        .filter(|(_, url, _)| url.contains("tenant_access_token"))
+        .filter_map(|(_, _, body)| body)
+        .collect::<Vec<_>>();
+    assert_eq!(auth_bodies.len(), 2);
+    assert_eq!(auth_bodies[0]["app_secret"], "secret_one");
+    assert_eq!(auth_bodies[1]["app_secret"], "secret_two");
 }
 
 #[test]
