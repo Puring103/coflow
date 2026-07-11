@@ -132,6 +132,13 @@ fn cases() -> Vec<Case> {
             adjacent: adjacent_acyclic_schema_default,
         },
         Case {
+            name: "data structure limit exceeded",
+            schema: "type Item { value: [[int]]; }",
+            phase: Phase::Build(build_data_structure_limit_exceeded),
+            code: CfdErrorCode::DataStructureLimitExceeded,
+            adjacent: adjacent_data_structure_at_limit,
+        },
+        Case {
             name: "type mismatch",
             schema: "type Item { value: int; }",
             phase: Phase::Build(build_type_mismatch),
@@ -484,6 +491,22 @@ fn build_schema_default_dependency_cycle(
     schema: &CftContainer,
 ) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(schema, [one_record("root", "Node", [])])
+}
+
+fn build_data_structure_limit_exceeded(
+    schema: &CftContainer,
+) -> Result<CfdDataModel, CfdDiagnostics> {
+    let mut builder =
+        CfdDataModel::builder(schema).with_structural_limits(StructuralLimits::new(3, 100, 100));
+    builder.add_record(
+        "item",
+        "Item",
+        [(
+            "value",
+            CfdInputValue::Array(vec![CfdInputValue::Array(vec![1_i64.into()])]),
+        )],
+    );
+    builder.build()
 }
 
 fn build_type_mismatch(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
@@ -867,6 +890,23 @@ fn adjacent_acyclic_schema_default() {
         "type Leaf { value: int = 1; } type Root { child: Leaf = {}; }",
         [one_record("root", "Root", [])],
     );
+}
+
+fn adjacent_data_structure_at_limit() {
+    let schema = compile_schema("type Item { value: [[int]]; }");
+    let mut builder =
+        CfdDataModel::builder(&schema).with_structural_limits(StructuralLimits::new(4, 100, 100));
+    builder.add_record(
+        "item",
+        "Item",
+        [(
+            "value",
+            CfdInputValue::Array(vec![CfdInputValue::Array(vec![1_i64.into()])]),
+        )],
+    );
+    builder
+        .build()
+        .expect("data structure exactly at the limit should build");
 }
 
 fn adjacent_matching_value_type() {

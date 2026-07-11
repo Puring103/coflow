@@ -1,6 +1,7 @@
 use crate::compiler_context::{CfdValueDraft, DataModelCompilerContext, RecordDraft};
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
 use crate::model::{CfdDictKey, CfdDomainId, CfdObject, CfdRecordId, CfdValue};
+use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -8,6 +9,18 @@ struct ValueNode {
     record: CfdRecordId,
     path: CfdPath,
     branch: Vec<usize>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MaterializedShape {
+    nodes: u64,
+    depth: u64,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedMemo {
+    value: CfdValue,
+    shape: MaterializedShape,
 }
 
 impl ValueNode {
@@ -51,10 +64,13 @@ pub(super) struct ValueResolver<'a> {
     drafts: &'a [RecordDraft],
     record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
     diagnostics: &'a mut Vec<CfdDiagnostic>,
-    memo: BTreeMap<ValueNode, CfdValue>,
+    memo: BTreeMap<ValueNode, ResolvedMemo>,
     active: BTreeMap<ValueNode, usize>,
     stack: Vec<ValueNode>,
     reported_cycles: BTreeSet<Vec<ValueNode>>,
+    structural_limits: StructuralLimits,
+    budget: StructuralBudget,
+    budget_exhausted: bool,
 }
 
 impl<'a> ValueResolver<'a> {
@@ -63,6 +79,7 @@ impl<'a> ValueResolver<'a> {
         drafts: &'a [RecordDraft],
         record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
         diagnostics: &'a mut Vec<CfdDiagnostic>,
+        structural_limits: StructuralLimits,
     ) -> Self {
         Self {
             schema,
@@ -73,6 +90,9 @@ impl<'a> ValueResolver<'a> {
             active: BTreeMap::new(),
             stack: Vec::new(),
             reported_cycles: BTreeSet::new(),
+            structural_limits,
+            budget: StructuralBudget::new(structural_limits),
+            budget_exhausted: false,
         }
     }
 
@@ -80,28 +100,34 @@ impl<'a> ValueResolver<'a> {
         &mut self,
         record: CfdRecordId,
     ) -> Option<BTreeMap<String, CfdValue>> {
+        self.budget = StructuralBudget::new(self.structural_limits);
+        self.budget_exhausted = false;
+        self.memo.clear();
+        self.active.clear();
+        self.stack.clear();
         let drafts = self.drafts;
         let fields = &drafts.get(record.index())?.fields;
-        self.resolve_fields(
-            fields,
-            &ValueNode {
-                record,
-                path: CfdPath::root(),
-                branch: Vec::new(),
-            },
-        )
+        let root = ValueNode {
+            record,
+            path: CfdPath::root(),
+            branch: Vec::new(),
+        };
+        let cursor = self.enter_node(TraversalCursor::root(), &root, StructureKind::DataValue)?;
+        self.resolve_fields(fields, &root, cursor)
     }
 
     fn resolve_fields(
         &mut self,
         fields: &BTreeMap<String, CfdValueDraft>,
         parent: &ValueNode,
+        cursor: TraversalCursor,
     ) -> Option<BTreeMap<String, CfdValue>> {
         let diagnostic_start = self.diagnostics.len();
         let mut out = BTreeMap::new();
         let mut complete = true;
         for (name, value) in fields {
-            let Some(value) = self.resolve_node(value, parent.field(name.clone())) else {
+            let Some(value) = self.resolve_node(value, parent.field(name.clone()), cursor, false)
+            else {
                 complete = false;
                 continue;
             };
@@ -110,19 +136,37 @@ impl<'a> ValueResolver<'a> {
         (complete && self.diagnostics.len() == diagnostic_start).then_some(out)
     }
 
-    fn resolve_node(&mut self, value: &CfdValueDraft, node: ValueNode) -> Option<CfdValue> {
-        if let Some(value) = self.memo.get(&node) {
-            return Some(value.clone());
-        }
+    fn resolve_node(
+        &mut self,
+        value: &CfdValueDraft,
+        node: ValueNode,
+        parent: TraversalCursor,
+        memoize: bool,
+    ) -> Option<CfdValue> {
         if let Some(cycle_start) = self.active.get(&node).copied() {
             self.push_cycle(cycle_start);
             return None;
+        }
+        let kind = if matches!(
+            value,
+            CfdValueDraft::PendingSpreadField { .. } | CfdValueDraft::DictSpread { .. }
+        ) {
+            StructureKind::SpreadResolution
+        } else {
+            StructureKind::DataValue
+        };
+        let cursor = self.enter_node(parent, &node, kind)?;
+        if memoize {
+            if let Some(shape) = self.memo.get(&node).map(|memo| memo.shape) {
+                self.charge_cached_shape(cursor, &node, shape)?;
+                return self.memo.get(&node).map(|memo| memo.value.clone());
+            }
         }
 
         let diagnostic_start = self.diagnostics.len();
         self.active.insert(node.clone(), self.stack.len());
         self.stack.push(node.clone());
-        let resolved = self.resolve_value(value, &node);
+        let resolved = self.resolve_value(value, &node, cursor);
         self.stack.pop();
         self.active.remove(&node);
 
@@ -130,14 +174,28 @@ impl<'a> ValueResolver<'a> {
             return None;
         }
         if let Some(resolved) = resolved {
-            self.memo.insert(node, resolved.clone());
+            if !memoize {
+                return Some(resolved);
+            }
+            self.memo.insert(
+                node,
+                ResolvedMemo {
+                    shape: materialized_shape(&resolved),
+                    value: resolved.clone(),
+                },
+            );
             Some(resolved)
         } else {
             None
         }
     }
 
-    fn resolve_value(&mut self, value: &CfdValueDraft, node: &ValueNode) -> Option<CfdValue> {
+    fn resolve_value(
+        &mut self,
+        value: &CfdValueDraft,
+        node: &ValueNode,
+        cursor: TraversalCursor,
+    ) -> Option<CfdValue> {
         match value {
             CfdValueDraft::Value(value) => Some(value.clone()),
             CfdValueDraft::PendingRef { expected_type, key } => {
@@ -148,9 +206,9 @@ impl<'a> ValueResolver<'a> {
                 source_type,
                 key,
                 field,
-            } => self.resolve_spread_field(source_type, key, field, node),
+            } => self.resolve_spread_field(source_type, key, field, node, cursor),
             CfdValueDraft::Object(record_draft) => {
-                let fields = self.resolve_fields(&record_draft.fields, node)?;
+                let fields = self.resolve_fields(&record_draft.fields, node, cursor)?;
                 Some(CfdValue::Object(Box::new(CfdObject {
                     actual_type: record_draft.actual_type.clone(),
                     fields,
@@ -160,7 +218,8 @@ impl<'a> ValueResolver<'a> {
                 let mut out = Vec::with_capacity(items.len());
                 let mut complete = true;
                 for (index, item) in items.iter().enumerate() {
-                    let Some(value) = self.resolve_node(item, node.index(index)) else {
+                    let Some(value) = self.resolve_node(item, node.index(index), cursor, false)
+                    else {
                         complete = false;
                         continue;
                     };
@@ -168,11 +227,11 @@ impl<'a> ValueResolver<'a> {
                 }
                 complete.then_some(CfdValue::Array(out))
             }
-            CfdValueDraft::Dict(entries) => {
-                self.resolve_dict_entries(entries, node).map(CfdValue::Dict)
-            }
+            CfdValueDraft::Dict(entries) => self
+                .resolve_dict_entries(entries, node, cursor)
+                .map(CfdValue::Dict),
             CfdValueDraft::DictSpread { spreads, entries } => self
-                .resolve_dict_spread(spreads, entries, node)
+                .resolve_dict_spread(spreads, entries, node, cursor)
                 .map(CfdValue::Dict),
         }
     }
@@ -225,12 +284,13 @@ impl<'a> ValueResolver<'a> {
         &mut self,
         entries: &[(CfdDictKey, CfdValueDraft)],
         node: &ValueNode,
+        cursor: TraversalCursor,
     ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
         let diagnostic_start = self.diagnostics.len();
         let mut out = Vec::with_capacity(entries.len());
         let mut complete = true;
         for (key, value) in entries {
-            let Some(value) = self.resolve_node(value, node.dict_key(key)) else {
+            let Some(value) = self.resolve_node(value, node.dict_key(key), cursor, false) else {
                 complete = false;
                 continue;
             };
@@ -244,13 +304,14 @@ impl<'a> ValueResolver<'a> {
         spreads: &[CfdValueDraft],
         entries: &[(CfdDictKey, CfdValueDraft)],
         node: &ValueNode,
+        cursor: TraversalCursor,
     ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
         let diagnostic_start = self.diagnostics.len();
         let mut merged = BTreeMap::<CfdDictKey, CfdValue>::new();
         let mut complete = true;
         for (index, spread) in spreads.iter().enumerate() {
             let Some(CfdValue::Dict(entries)) =
-                self.resolve_node(spread, node.spread_branch(index))
+                self.resolve_node(spread, node.spread_branch(index), cursor, false)
             else {
                 if self.diagnostics.len() == diagnostic_start {
                     self.diagnostics.push(
@@ -270,7 +331,7 @@ impl<'a> ValueResolver<'a> {
         }
 
         for (key, value) in entries {
-            let Some(value) = self.resolve_node(value, node.dict_key(key)) else {
+            let Some(value) = self.resolve_node(value, node.dict_key(key), cursor, false) else {
                 complete = false;
                 continue;
             };
@@ -287,6 +348,7 @@ impl<'a> ValueResolver<'a> {
         key: &str,
         field: &str,
         node: &ValueNode,
+        cursor: TraversalCursor,
     ) -> Option<CfdValue> {
         let source_id = self.resolve_ref_target(source_type, key, node)?;
         let drafts = self.drafts;
@@ -309,7 +371,67 @@ impl<'a> ValueResolver<'a> {
                 path: CfdPath::root().field(field),
                 branch: Vec::new(),
             },
+            cursor,
+            true,
         )
+    }
+
+    fn enter_node(
+        &mut self,
+        parent: TraversalCursor,
+        node: &ValueNode,
+        kind: StructureKind,
+    ) -> Option<TraversalCursor> {
+        if self.budget_exhausted {
+            return None;
+        }
+        let result = self
+            .budget
+            .enter(parent, kind, 1)
+            .and_then(|cursor| self.budget.charge_work(kind, 1).map(|()| cursor));
+        match result {
+            Ok(cursor) => Some(cursor),
+            Err(error) => {
+                self.push_budget_error(error.to_string(), node);
+                None
+            }
+        }
+    }
+
+    fn charge_cached_shape(
+        &mut self,
+        cursor: TraversalCursor,
+        node: &ValueNode,
+        shape: MaterializedShape,
+    ) -> Option<()> {
+        let additional_depth = shape.depth.saturating_sub(1);
+        let additional_nodes = shape.nodes.saturating_sub(1);
+        let result = self
+            .budget
+            .check_additional_depth(cursor, StructureKind::SpreadResolution, additional_depth)
+            .and_then(|()| {
+                self.budget
+                    .charge_nodes(StructureKind::SpreadResolution, additional_nodes)
+            })
+            .and_then(|()| {
+                self.budget
+                    .charge_work(StructureKind::SpreadResolution, additional_nodes)
+            });
+        match result {
+            Ok(()) => Some(()),
+            Err(error) => {
+                self.push_budget_error(error.to_string(), node);
+                None
+            }
+        }
+    }
+
+    fn push_budget_error(&mut self, message: String, node: &ValueNode) {
+        self.budget_exhausted = true;
+        self.diagnostics.push(
+            CfdDiagnostic::error(CfdErrorCode::DataStructureLimitExceeded, message)
+                .with_primary(Some(node.record), node.path.clone()),
+        );
     }
 
     fn push_cycle(&mut self, cycle_start: usize) {
@@ -380,4 +502,34 @@ impl<'a> ValueResolver<'a> {
         }
         out
     }
+}
+
+fn materialized_shape(root: &CfdValue) -> MaterializedShape {
+    let mut nodes = 0_u64;
+    let mut depth = 0_u64;
+    let mut pending = vec![(root, 1_u64)];
+    while let Some((value, value_depth)) = pending.pop() {
+        nodes = nodes.saturating_add(1);
+        depth = depth.max(value_depth);
+        let child_depth = value_depth.saturating_add(1);
+        match value {
+            CfdValue::Object(object) => {
+                pending.extend(object.fields().values().map(|value| (value, child_depth)));
+            }
+            CfdValue::Array(items) => {
+                pending.extend(items.iter().map(|value| (value, child_depth)));
+            }
+            CfdValue::Dict(entries) => {
+                pending.extend(entries.iter().map(|(_, value)| (value, child_depth)));
+            }
+            CfdValue::Null
+            | CfdValue::Bool(_)
+            | CfdValue::Int(_)
+            | CfdValue::Float(_)
+            | CfdValue::String(_)
+            | CfdValue::Enum(_)
+            | CfdValue::Ref(_) => {}
+        }
+    }
+    MaterializedShape { nodes, depth }
 }

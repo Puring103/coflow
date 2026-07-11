@@ -36,6 +36,7 @@ mod origin;
 pub mod serde_i64;
 mod value_semantics;
 
+pub use coflow_structure::StructuralLimits;
 pub use diagnostic::{
     format_cfd_dict_key, CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdLabel, CfdPath,
     CfdPathSegment, CfdSeverity, CfdStage,

@@ -2,6 +2,7 @@ use crate::compiler_context::CfdValueDraft;
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdDictKey, CfdInputDictKey, CfdInputValue, CfdRecordId};
 use coflow_cft::CftSchemaTypeRef;
+use coflow_structure::TraversalCursor;
 
 use super::Validator;
 
@@ -13,6 +14,7 @@ impl Validator<'_> {
         entries: &[(CfdInputDictKey, CfdInputValue)],
         record: Option<CfdRecordId>,
         path: &CfdPath,
+        cursor: TraversalCursor,
     ) -> Vec<(CfdDictKey, CfdValueDraft)> {
         let mut seen = std::collections::BTreeMap::<CfdDictKey, CfdPath>::new();
         let mut out = Vec::with_capacity(entries.len());
@@ -31,7 +33,8 @@ impl Validator<'_> {
                 continue;
             }
             seen.insert(key.clone(), value_path.clone());
-            let Some(value) = self.validate_value(value_ty, value, record, value_path) else {
+            let Some(value) = self.validate_value(value_ty, value, record, value_path, cursor)
+            else {
                 continue;
             };
             out.push((key, value));

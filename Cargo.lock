@@ -662,6 +662,7 @@ name = "coflow-data-model"
 version = "0.5.0"
 dependencies = [
  "coflow-cft",
+ "coflow-structure",
  "serde",
  "serde_json",
  "ts-rs",

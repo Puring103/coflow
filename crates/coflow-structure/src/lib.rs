@@ -174,6 +174,24 @@ impl StructuralBudget {
         })
     }
 
+    pub fn check_additional_depth(
+        &self,
+        cursor: TraversalCursor,
+        kind: StructureKind,
+        additional_depth: u64,
+    ) -> Result<(), BudgetExceeded> {
+        let observed = cursor.depth.saturating_add(additional_depth);
+        if observed > self.limits.max_depth {
+            return Err(BudgetExceeded {
+                axis: BudgetAxis::Depth,
+                limit: self.limits.max_depth,
+                observed,
+                kind,
+            });
+        }
+        Ok(())
+    }
+
     pub fn charge_nodes(&mut self, kind: StructureKind, nodes: u64) -> Result<(), BudgetExceeded> {
         let observed = self.nodes_used.saturating_add(nodes);
         if observed > self.limits.max_nodes {
@@ -283,6 +301,28 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "schema dependency exceeds structural nodes limit 18446744073709551614 (observed 18446744073709551615)"
+        );
+    }
+
+    #[test]
+    fn cached_subtree_depth_can_be_checked_without_charging_nodes() {
+        let mut budget = StructuralBudget::new(StructuralLimits::new(3, 10, 10));
+        let root = budget
+            .enter(TraversalCursor::root(), StructureKind::DataValue, 1)
+            .expect("root");
+
+        budget
+            .check_additional_depth(root, StructureKind::SpreadResolution, 2)
+            .expect("boundary depth");
+        assert_eq!(budget.nodes_used(), 1);
+        assert_eq!(
+            budget.check_additional_depth(root, StructureKind::SpreadResolution, 3),
+            Err(BudgetExceeded {
+                axis: BudgetAxis::Depth,
+                limit: 3,
+                observed: 4,
+                kind: StructureKind::SpreadResolution,
+            })
         );
     }
 }

@@ -17,6 +17,7 @@ pub use value::{CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdValue};
 use crate::diagnostic::CfdPath;
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
 use coflow_cft::CftContainer;
+use coflow_structure::StructuralLimits;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -378,6 +379,7 @@ impl CfdDataModel {
 pub struct CfdModelBuilder<'a> {
     schema: &'a CftContainer,
     records: Vec<CfdInputRecord>,
+    structural_limits: StructuralLimits,
 }
 
 impl<'a> CfdModelBuilder<'a> {
@@ -386,7 +388,16 @@ impl<'a> CfdModelBuilder<'a> {
         Self {
             schema,
             records: Vec::new(),
+            structural_limits: StructuralLimits::default(),
         }
+    }
+
+    /// Configures the structural limits used while validating and materializing
+    /// each top-level record.
+    #[must_use]
+    pub fn with_structural_limits(mut self, structural_limits: StructuralLimits) -> Self {
+        self.structural_limits = structural_limits;
+        self
     }
 
     pub fn add_record(
@@ -412,6 +423,6 @@ impl<'a> CfdModelBuilder<'a> {
     /// Returns data-model diagnostics for schema/type mismatches, missing
     /// fields, duplicate keys, duplicate dict keys, or unresolved references.
     pub fn build(self) -> Result<CfdDataModel, CfdDiagnostics> {
-        ModelCompiler::new(self.schema, self.records).build()
+        ModelCompiler::new(self.schema, self.records, self.structural_limits).build()
     }
 }

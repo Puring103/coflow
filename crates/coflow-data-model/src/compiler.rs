@@ -8,6 +8,7 @@ use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdPath};
 use crate::edge_index::{build_ref_indexes, build_spread_indexes};
 use crate::model::{CfdDataModel, CfdInputRecord, CfdObject, CfdRecord, CfdRecordId};
 use coflow_cft::CftContainer;
+use coflow_structure::StructuralLimits;
 use resolve::ValueResolver;
 use validate::Validator;
 
@@ -15,14 +16,20 @@ pub(crate) struct ModelCompiler {
     schema: DataModelCompilerContext,
     input: Vec<CfdInputRecord>,
     diagnostics: Vec<CfdDiagnostic>,
+    structural_limits: StructuralLimits,
 }
 
 impl ModelCompiler {
-    pub(crate) fn new(schema_source: &CftContainer, input: Vec<CfdInputRecord>) -> Self {
+    pub(crate) fn new(
+        schema_source: &CftContainer,
+        input: Vec<CfdInputRecord>,
+        structural_limits: StructuralLimits,
+    ) -> Self {
         Self {
             schema: DataModelCompilerContext::new(schema_source),
             input,
             diagnostics: Vec::new(),
+            structural_limits,
         }
     }
 
@@ -32,10 +39,10 @@ impl ModelCompiler {
         let mut drafts = Vec::new();
         let input = std::mem::take(&mut self.input);
         {
-            let mut v = Validator::new(&self.schema, &mut self.diagnostics);
+            let mut v = Validator::new(&self.schema, &mut self.diagnostics, self.structural_limits);
             for (input_index, record) in input.into_iter().enumerate() {
                 let id = CfdRecordId::new(input_index);
-                if let Some(mut draft) = v.validate_record(
+                if let Some(mut draft) = v.validate_top_level_record(
                     None,
                     &record.key,
                     &record.actual_type,
@@ -43,7 +50,6 @@ impl ModelCompiler {
                     &record.fields,
                     Some(id),
                     CfdPath::root(),
-                    /*top_level=*/ true,
                 ) {
                     // Top-level draft inherits the input's origin.
                     draft.origin = record.origin;
@@ -87,6 +93,7 @@ impl ModelCompiler {
                 &drafts,
                 &indexes.record_by_domain_key,
                 &mut self.diagnostics,
+                self.structural_limits,
             );
             for (index, draft) in drafts.iter().enumerate() {
                 let record_id = CfdRecordId::new(index);
