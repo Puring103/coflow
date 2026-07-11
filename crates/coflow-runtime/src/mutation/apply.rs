@@ -137,9 +137,7 @@ fn blocking_rebuild_diagnostics(session: &ProjectSession) -> DiagnosticSet {
         .diagnostics
         .as_set()
         .iter()
-        .filter(|diagnostic| {
-            diagnostic.severity == Severity::Error && diagnostic.stage != "CHECK"
-        })
+        .filter(|diagnostic| diagnostic.severity == Severity::Error && diagnostic.stage != "CHECK")
         .cloned()
         .collect::<Vec<_>>()
         .into()
@@ -160,10 +158,7 @@ fn applied_op(
             Some(RecordCoordinate::new(actual_type, key)),
             Some(file.clone()),
         ),
-        PreparedMutationOp::CancelledInsert {
-            record,
-            write_file,
-        } => (
+        PreparedMutationOp::CancelledInsert { record, write_file } => (
             "insert_record",
             Some(record.clone()),
             Some(write_file.clone()),
@@ -171,10 +166,9 @@ fn applied_op(
         PreparedMutationOp::SetField {
             record, write_file, ..
         }
-        | PreparedMutationOp::FoldedSetField {
-            record,
-            write_file,
-        } => ("set_field", Some(record.clone()), Some(write_file.clone())),
+        | PreparedMutationOp::FoldedSetField { record, write_file } => {
+            ("set_field", Some(record.clone()), Some(write_file.clone()))
+        }
         PreparedMutationOp::RenameRecord {
             record,
             new_key,
@@ -197,10 +191,7 @@ fn applied_op(
             record,
             report_file,
         } => ("delete_record", Some(record.clone()), report_file.clone()),
-        PreparedMutationOp::FoldedDeleteRecord {
-            record,
-            write_file,
-        } => (
+        PreparedMutationOp::FoldedDeleteRecord { record, write_file } => (
             "delete_record",
             Some(record.clone()),
             Some(write_file.clone()),
@@ -254,9 +245,11 @@ fn prepared_op_name(op: &PreparedMutationOp) -> &'static str {
         PreparedMutationOp::SetField { .. } | PreparedMutationOp::FoldedSetField { .. } => {
             "set_field"
         }
-        PreparedMutationOp::RenameRecord { .. }
-        | PreparedMutationOp::FoldedRenameRecord { .. } => "rename_record",
-        PreparedMutationOp::DeleteRecord { .. }
-        | PreparedMutationOp::FoldedDeleteRecord { .. } => "delete_record",
+        PreparedMutationOp::RenameRecord { .. } | PreparedMutationOp::FoldedRenameRecord { .. } => {
+            "rename_record"
+        }
+        PreparedMutationOp::DeleteRecord { .. } | PreparedMutationOp::FoldedDeleteRecord { .. } => {
+            "delete_record"
+        }
     }
 }

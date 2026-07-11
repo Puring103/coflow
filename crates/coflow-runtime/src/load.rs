@@ -325,10 +325,8 @@ fn resolve_sources(
                     )))
                 }
             };
-            file_source.options = options_for_provider(
-                &file_source.options,
-                loader.descriptor().option_keys,
-            );
+            file_source.options =
+                options_for_provider(&file_source.options, loader.descriptor().option_keys);
             let decoded =
                 decode_configured_source(loader.as_ref(), &file_source, &project.config_path)?;
             for source in loader.resolve(ctx, &decoded)? {
@@ -484,13 +482,15 @@ pub fn configured_project_source(
     let configured = configured_source(project, source, source_index);
     let option_keys = source_option_keys(&configured.options);
     let source_ref = source_ref(&configured, source.source_type.as_deref(), &option_keys);
-    let loader = registry.select_source_provider(&source_ref).map_err(|err| {
-        DiagnosticSet::one(loader_selection_diagnostic(
-            &project.config_path,
-            &configured,
-            err,
-        ))
-    })?;
+    let loader = registry
+        .select_source_provider(&source_ref)
+        .map_err(|err| {
+            DiagnosticSet::one(loader_selection_diagnostic(
+                &project.config_path,
+                &configured,
+                err,
+            ))
+        })?;
     decode_configured_source(loader.as_ref(), &configured, &project.config_path)
 }
 

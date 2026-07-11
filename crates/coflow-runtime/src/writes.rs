@@ -19,8 +19,8 @@ use std::sync::Arc;
 use super::{ProjectSession, RecordCoordinate, RecordRef};
 use rebuild::rebuild_session_after_write;
 use refs::{reference_update_actions, source_rewrite_actions};
-use target::not_found;
 pub(crate) use stage::{preflight_mutation_op, stage_mutation_op};
+use target::not_found;
 pub(crate) use transaction::MutationTransaction;
 use writer::{lookup_source_writer, source_for_file};
 
@@ -37,10 +37,7 @@ pub(crate) fn effective_write_target_for_path(
     session: &ProjectSession,
     host_ref: &RecordRef,
     path: &[WriteFieldPathSegment],
-) -> Result<
-    (RecordCoordinate, String, Vec<WriteFieldPathSegment>),
-    DiagnosticSet,
-> {
+) -> Result<(RecordCoordinate, String, Vec<WriteFieldPathSegment>), DiagnosticSet> {
     let target = target::write_target_for_path(session, host_ref, path)?;
     Ok((target.coordinate, target.display_path, target.field_path))
 }
@@ -56,7 +53,13 @@ pub(crate) fn mutation_sources(
     session: &ProjectSession,
     registry: &ProviderRegistry,
     op: &PreparedMutationOp,
-) -> Result<Vec<(coflow_api::ResolvedSource, Arc<dyn coflow_api::SourceWriter>)>, DiagnosticSet> {
+) -> Result<
+    Vec<(
+        coflow_api::ResolvedSource,
+        Arc<dyn coflow_api::SourceWriter>,
+    )>,
+    DiagnosticSet,
+> {
     match op {
         PreparedMutationOp::InsertRecord { file, .. }
         | PreparedMutationOp::SetField {
@@ -95,15 +98,9 @@ pub(crate) fn mutation_sources(
                     .map(|action| (action.source().clone(), action.writer)),
             );
             sources.extend(
-                source_rewrite_actions(
-                    session,
-                    registry,
-                    target_ref.id,
-                    &record.key,
-                    new_key,
-                )?
-                .into_iter()
-                .map(|action| (action.source().clone(), action.writer)),
+                source_rewrite_actions(session, registry, target_ref.id, &record.key, new_key)?
+                    .into_iter()
+                    .map(|action| (action.source().clone(), action.writer)),
             );
             Ok(sources)
         }

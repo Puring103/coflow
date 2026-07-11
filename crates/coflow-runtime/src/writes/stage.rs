@@ -89,23 +89,10 @@ pub(crate) fn stage_mutation_op(
             path,
             value,
             ..
-        } => stage_write_field(
-            session,
-            registry,
-            record,
-            write_record,
-            path,
-            value,
-        ),
+        } => stage_write_field(session, registry, record, write_record, path, value),
         PreparedMutationOp::RenameRecord {
             record, new_key, ..
-        } => stage_rename_record_key(
-            session,
-            registry,
-            &record.actual_type,
-            &record.key,
-            new_key,
-        ),
+        } => stage_rename_record_key(session, registry, &record.actual_type, &record.key, new_key),
         PreparedMutationOp::DeleteRecord { record, .. } => {
             stage_delete_record(session, registry, &record.actual_type, &record.key)
         }
@@ -241,8 +228,7 @@ fn stage_rename_record_key(
         source: &target_source,
         schema: &compiled_schema,
     };
-    let reference_actions =
-        reference_update_actions(session, registry, target_ref.id, new_key)?;
+    let reference_actions = reference_update_actions(session, registry, target_ref.id, new_key)?;
     let rewrite_actions =
         source_rewrite_actions(session, registry, target_ref.id, old_key, new_key)?;
 

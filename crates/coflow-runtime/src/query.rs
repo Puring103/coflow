@@ -85,7 +85,10 @@ impl<'a> ProjectQueries<'a> {
         self.session.file_for_record(actual_type, key)
     }
 
-    pub fn coordinates_in_file(self, file: &str) -> impl Iterator<Item = &'a RecordCoordinate> + 'a {
+    pub fn coordinates_in_file(
+        self,
+        file: &str,
+    ) -> impl Iterator<Item = &'a RecordCoordinate> + 'a {
         self.session.coordinates_in_file(file)
     }
 

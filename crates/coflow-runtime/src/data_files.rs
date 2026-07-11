@@ -205,12 +205,7 @@ fn table_operation_source(
         let mut source = if provider_id.is_empty() {
             crate::configured_project_source(project, registry, configured)?
         } else {
-            crate::load::configured_project_source_as(
-                project,
-                registry,
-                configured,
-                &provider_id,
-            )?
+            crate::load::configured_project_source_as(project, registry, configured, &provider_id)?
         };
         source.location = match configured.location() {
             SourceLocationSpec::Uri(_) => SourceLocationSpec::Uri(target.to_string()),
@@ -252,7 +247,9 @@ fn is_uri_target(target: &str) -> bool {
         return false;
     }
     let mut chars = scheme.chars();
-    chars.next().is_some_and(|first| first.is_ascii_alphabetic())
+    chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic())
         && chars.all(|character| {
             character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
         })
@@ -390,12 +387,14 @@ pub fn table_header_layout(
 ) -> Result<TableHeaderLayout, DiagnosticSet> {
     let actual_type = match actual_type {
         Some(actual_type) => actual_type,
-        None => manager.type_for_sheet(source, sheet.as_deref())?.ok_or_else(|| {
-            one_data_file_error(
-                "DATA-FILE-TYPE",
-                format!("`--type` is required for table file `{file}`"),
-            )
-        })?,
+        None => manager
+            .type_for_sheet(source, sheet.as_deref())?
+            .ok_or_else(|| {
+                one_data_file_error(
+                    "DATA-FILE-TYPE",
+                    format!("`--type` is required for table file `{file}`"),
+                )
+            })?,
     };
     let compiled_schema = session.compiled_schema();
     let schema_type = compiled_schema.type_meta(&actual_type).ok_or_else(|| {

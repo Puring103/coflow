@@ -31,10 +31,7 @@ pub(super) struct OwnedWriteCellRequest {
 }
 
 impl OwnedWriteCellRequest {
-    pub(super) fn as_request<'a>(
-        &'a self,
-        schema: &'a CompiledSchema,
-    ) -> WriteCellRequest<'a> {
+    pub(super) fn as_request<'a>(&'a self, schema: &'a CompiledSchema) -> WriteCellRequest<'a> {
         WriteCellRequest {
             origin: &self.origin,
             record_key: &self.record_key,

@@ -1,8 +1,8 @@
 use crate::dimensions::DimensionField;
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceEntry,
-    DimensionSourceOptionsRequest, DimensionSourceRequest, Label, ProviderRegistry,
-    ResolvedSource, Severity, SourceLocation, SourceLocationSpec, TableContext,
+    DimensionSourceOptionsRequest, DimensionSourceRequest, Label, ProviderRegistry, ResolvedSource,
+    Severity, SourceLocation, SourceLocationSpec, TableContext,
 };
 use coflow_data_model::{CfdDataModel, CfdValue};
 use coflow_project::Project;
@@ -142,12 +142,8 @@ pub(crate) fn commit_dimension_generation(
                 continue;
             }
         };
-        let source = dimension_resolved_source(
-            project,
-            &operation.path,
-            &operation.provider_id,
-            options,
-        );
+        let source =
+            dimension_resolved_source(project, &operation.path, &operation.provider_id, options);
         transaction.snapshot_file(&operation.path, &operation.dimension);
         let result = manager.sync_dimension_source(
             TableContext {

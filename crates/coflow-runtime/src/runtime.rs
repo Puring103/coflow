@@ -188,10 +188,7 @@ impl WriteProjectSession {
     /// # Errors
     ///
     /// Returns diagnostics when the type cannot be inserted.
-    pub fn create_record_draft(
-        &self,
-        type_name: &str,
-    ) -> Result<CreateRecordDraft, DiagnosticSet> {
+    pub fn create_record_draft(&self, type_name: &str) -> Result<CreateRecordDraft, DiagnosticSet> {
         self.session.create_record_draft(type_name)
     }
 

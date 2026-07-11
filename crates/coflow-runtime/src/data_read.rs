@@ -116,7 +116,10 @@ pub fn data_list(queries: ProjectQueries<'_>, query: &DataListQuery) -> DataList
 ///
 /// Returns diagnostics when an explicit selector cannot be found or when an
 /// unbounded query would return more than the default safety limit.
-pub fn data_get(queries: ProjectQueries<'_>, query: &DataGetQuery) -> Result<DataGetReport, DiagnosticSet> {
+pub fn data_get(
+    queries: ProjectQueries<'_>,
+    query: &DataGetQuery,
+) -> Result<DataGetReport, DiagnosticSet> {
     let mut summaries = selected_summaries(queries, query)?;
     apply_key_filter(&mut summaries, &query.keys);
 
@@ -254,7 +257,10 @@ const fn requires_explicit_large_get(query: &DataGetQuery, match_count: usize) -
         && match_count > DEFAULT_GET_LIMIT
 }
 
-fn writer_capabilities(registry: &ProviderRegistry, source: &coflow_api::ResolvedSource) -> WriterCapabilities {
+fn writer_capabilities(
+    registry: &ProviderRegistry,
+    source: &coflow_api::ResolvedSource,
+) -> WriterCapabilities {
     registry.source_writer(&source.provider_id).map_or_else(
         || WriterCapabilities::read_only().with_provider_id(source.provider_id.clone()),
         |writer| {
@@ -275,4 +281,3 @@ fn not_found(coordinate: &RecordCoordinate) -> Diagnostic {
         ),
     )
 }
-

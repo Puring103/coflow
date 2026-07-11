@@ -79,11 +79,8 @@ impl MutationTransaction {
         let Some((source, provider_diagnostics)) = failure else {
             return Ok(());
         };
-        let mut diagnostics = DiagnosticSet::one(transaction_error(
-            "WRITE-TXN-COMMIT",
-            &source,
-            "commit",
-        ));
+        let mut diagnostics =
+            DiagnosticSet::one(transaction_error("WRITE-TXN-COMMIT", &source, "commit"));
         diagnostics.extend(provider_diagnostics);
         self.compensate_into(&mut diagnostics);
         Err(diagnostics)

@@ -429,4 +429,3 @@ impl FileIndex {
         self.display_to_source.insert(display_path, source_id);
     }
 }
-

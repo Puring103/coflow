@@ -140,15 +140,14 @@ pub(super) fn prepare_one(
                 "MUTATION-INSERT",
                 "MUTATION-INSERT-CONFLICT",
             )?;
-            let fields =
-                prepare_insert_fields(
-                    session,
-                    &actual_type,
-                    &key,
-                    fields,
-                    materialization,
-                    pending_records,
-                )?;
+            let fields = prepare_insert_fields(
+                session,
+                &actual_type,
+                &key,
+                fields,
+                materialization,
+                pending_records,
+            )?;
             Ok(PreparedMutationOp::InsertRecord {
                 file,
                 sheet,
@@ -438,9 +437,7 @@ fn set_nested_value(
         return Ok(());
     };
     let next = match (current, segment) {
-        (CfdValue::Object(object), CfdPathSegment::Field(field)) => {
-            object.fields.get_mut(field)
-        }
+        (CfdValue::Object(object), CfdPathSegment::Field(field)) => object.fields.get_mut(field),
         (CfdValue::Array(items), CfdPathSegment::Index(index)) => items.get_mut(*index),
         (CfdValue::Dict(entries), CfdPathSegment::DictKey(key)) => entries
             .iter_mut()
@@ -548,10 +545,7 @@ fn effective_write_target_for_set_field(
     session: &ProjectSession,
     coordinate: &RecordCoordinate,
     path: &[WriteFieldPathSegment],
-) -> Result<
-    (RecordCoordinate, String, Vec<WriteFieldPathSegment>),
-    DiagnosticSet,
-> {
+) -> Result<(RecordCoordinate, String, Vec<WriteFieldPathSegment>), DiagnosticSet> {
     let record_ref = session
         .records
         .get_by_coordinate(&coordinate.actual_type, &coordinate.key)

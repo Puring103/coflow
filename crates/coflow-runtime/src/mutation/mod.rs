@@ -11,12 +11,12 @@ mod plan;
 mod prepare;
 mod types;
 
+pub(crate) use types::PreparedMutationOp;
 pub use types::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
     MutationReport, MutationRequest, MutationValue,
 };
-pub(crate) use types::PreparedMutationOp;
 
 pub(super) fn schema_field<'a>(
     schema: &'a CompiledSchema,

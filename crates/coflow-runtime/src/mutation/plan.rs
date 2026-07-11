@@ -174,13 +174,8 @@ fn fold_pending_insert_rename(
         ));
     };
     let insert_file = file.clone();
-    let folded = prepare_rename_on_pending_insert(
-        session,
-        &insert_file,
-        record,
-        file_guard,
-        new_key,
-    )?;
+    let folded =
+        prepare_rename_on_pending_insert(session, &insert_file, record, file_guard, new_key)?;
     let new_record = RecordCoordinate::new(&record.actual_type, new_key);
     if new_record != *record && pending_inserts.contains_key(&new_record) {
         return Err(DiagnosticSet::one(Diagnostic::error(
@@ -228,8 +223,7 @@ fn fold_pending_insert_rename(
             "pending rename index disappeared during planning",
         ));
     };
-    let PreparedMutationOp::InsertRecord { key, .. } = &mut pending_insert.op
-    else {
+    let PreparedMutationOp::InsertRecord { key, .. } = &mut pending_insert.op else {
         return Err(mutation_invariant_error(
             "pending rename target changed during planning",
         ));

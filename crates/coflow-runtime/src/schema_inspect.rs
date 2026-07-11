@@ -330,4 +330,3 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
         CftConstValue::String(value) => SchemaConstValueInfo::String(value.clone()),
     }
 }
-
