@@ -189,7 +189,8 @@ fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
     let normalized = normalize_path(&schema_path);
     assert_eq!(
         server
-            .open_documents
+            .core
+            .open_documents()
             .get(&normalized)
             .map(|document| document.text.as_str()),
         Some(changed)
@@ -209,7 +210,7 @@ fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
             "params": { "textDocument": { "uri": uri } }
         }))
         .expect("didClose removes document");
-    assert!(!server.open_documents.contains_key(&normalized));
+    assert!(!server.core.open_documents().contains_key(&normalized));
 }
 
 #[test]

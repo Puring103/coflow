@@ -26,13 +26,12 @@ mod semantic_tokens;
 mod state;
 mod text;
 mod uri;
+mod validation;
 
-use coflow_api::DiagnosticSet;
 use coflow_cfd::parse_cfd;
-use coflow_project::{
-    compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
-    normalize_path, Project, SchemaSourceOverride,
-};
+use coflow_project::Project;
+#[cfg(test)]
+use coflow_project::{compile_schema_project_with_overrides, normalize_path};
 use completion::completion_items;
 #[cfg(test)]
 pub(crate) use completion::{
@@ -45,13 +44,12 @@ use definition::{
     cfd_record_definition_location, cft_schema_field_definition_location,
     cft_type_definition_location, definitions_at,
 };
-use diagnostics::{
-    label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
-};
 use document_symbols::document_symbols;
 pub(crate) use documentation::is_builtin_name;
 use formatting::format_cft;
 use hover::hover_at;
+#[cfg(test)]
+use diagnostics::{label_uri, lsp_diagnostic, lsp_label_location};
 use position::{
     byte_offset_from_position, byte_range, full_document_range, range_from_span, LspPosition,
 };
@@ -61,14 +59,16 @@ use protocol::{
 };
 use semantic_tokens::{semantic_token_data, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES};
 use serde_json::{json, Value};
+#[cfg(test)]
+use std::collections::BTreeMap;
 pub(crate) use state::{
     current_field_at, current_type_at, enum_name_exists, enum_variant_by_chain,
     enum_variant_exists, field_by_chain, field_by_type, quantifier_bindings_at,
     type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, BufReader, Write};
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::PathBuf;
 pub(crate) use text::{
     dotted_chain_at, is_ident_continue, is_trivia_position, last_ident, line_prefix_at,
     parse_dotted_ident_chain, previous_char, word_at,
@@ -76,6 +76,7 @@ pub(crate) use text::{
 use uri::path_from_file_uri;
 #[cfg(test)]
 pub(crate) use uri::path_to_file_uri;
+pub(crate) use validation::{is_cfd_path, DiagnosticPublication, LspValidationCore, OpenDocument};
 
 /// Runs the CFT language server over stdio.
 ///
@@ -107,23 +108,17 @@ pub fn run(project: Project) -> Result<bool, String> {
 }
 
 struct LspServer<W> {
-    project: Project,
+    core: LspValidationCore,
     writer: W,
-    open_documents: BTreeMap<PathBuf, OpenDocument>,
-    published_uris: BTreeSet<String>,
-    build: Option<LspBuild>,
     shutdown_requested: bool,
     should_exit: bool,
 }
 
 impl<W: Write> LspServer<W> {
-    const fn new(project: Project, writer: W) -> Self {
+    fn new(project: Project, writer: W) -> Self {
         Self {
-            project,
+            core: LspValidationCore::new(project),
             writer,
-            open_documents: BTreeMap::new(),
-            published_uris: BTreeSet::new(),
-            build: None,
             shutdown_requested: false,
             should_exit: false,
         }
@@ -247,174 +242,33 @@ impl<W: Write> LspServer<W> {
     }
 
     fn open_document(&mut self, uri: String, text: String) -> Result<(), String> {
-        if let Some(path) = path_from_file_uri(&uri) {
-            self.open_documents
-                .insert(normalize_path(&path), OpenDocument { uri, text });
-            self.validate_project()?;
-        }
-        Ok(())
+        let publications = self.core.open_document(uri, text)?;
+        self.publish_diagnostic_publications(publications)
     }
 
     fn change_document(&mut self, uri: String, text: String) -> Result<(), String> {
-        if let Some(path) = path_from_file_uri(&uri) {
-            let normalized = normalize_path(&path);
-            self.open_documents
-                .entry(normalized)
-                .and_modify(|document| document.text.clone_from(&text))
-                .or_insert(OpenDocument { uri, text });
-            self.validate_project()?;
-        }
-        Ok(())
+        let publications = self.core.change_document(uri, text)?;
+        self.publish_diagnostic_publications(publications)
     }
 
     fn close_document(&mut self, uri: &str) -> Result<(), String> {
-        let Some(path) = path_from_file_uri(uri) else {
-            return Ok(());
-        };
-        self.open_documents.remove(&normalize_path(&path));
-        self.publish_diagnostics(uri, &[])?;
-        self.validate_project()
+        let publications = self.core.close_document(uri)?;
+        self.publish_diagnostic_publications(publications)
     }
 
     fn validate_project(&mut self) -> Result<(), String> {
-        let schema_files = match self.project.schema_files() {
-            Ok(files) => files,
-            Err(diagnostics) => {
-                self.publish_diagnostic_set(&diagnostics, &BTreeMap::new())?;
-                return Ok(());
-            }
-        };
-        let mut schema_by_path = BTreeMap::new();
-
-        for file in &schema_files {
-            schema_by_path.insert(
-                normalize_path(&file.canonical_path),
-                (file.module_id.clone(), file.canonical_path.clone()),
-            );
-        }
-
-        let mut overrides = Vec::new();
-        let mut non_schema_diagnostics = Vec::new();
-
-        for (normalized_path, document) in &self.open_documents {
-            if let Some((module_id, _)) = schema_by_path.get(normalized_path) {
-                overrides.push(SchemaSourceOverride {
-                    requested_module: Some(module_id.clone()),
-                    normalized_path: normalized_path.clone(),
-                    source: document.text.clone(),
-                });
-            } else if is_cfd_path(normalized_path) {
-                let (_, errors) = parse_cfd(&document.text);
-                let diags = cfd::syntax_diagnostics(&document.text, &errors);
-                non_schema_diagnostics.push((document.uri.clone(), diags));
-            } else {
-                non_schema_diagnostics.push((
-                    document.uri.clone(),
-                    vec![lsp_error_diagnostic(
-                        "CFT-LSP",
-                        "file is not part of the configured CFT schema",
-                    )],
-                ));
-            }
-        }
-
-        let preferred_uris = self.preferred_diagnostic_uris(&schema_by_path);
-        let raw_build = match compile_schema_project_with_overrides(&self.project, &overrides) {
-            Ok(build) => build,
-            Err(diagnostics) => {
-                self.publish_diagnostic_set(&diagnostics, &preferred_uris)?;
-                return Ok(());
-            }
-        };
-        let build = LspBuild::new(raw_build);
-        let diagnostics = dedupe_cft_diagnostics(build.schema.diagnostics.clone());
-        let mut by_uri: BTreeMap<String, Vec<Value>> = BTreeMap::new();
-
-        let diagnostic_set =
-            diagnostic_set_from_cft(diagnostics, &build.schema.sources, &build.schema.paths);
-        for diagnostic in &diagnostic_set {
-            let uri = diagnostic
-                .primary
-                .as_ref()
-                .map(|label| lsp_label_location(&label.location))
-                .map_or_else(
-                    || preferred_diagnostic_uri(&preferred_uris, Path::new("")),
-                    |location| label_uri(&location, &preferred_uris),
-                );
-            by_uri
-                .entry(uri)
-                .or_default()
-                .push(lsp_diagnostic(diagnostic));
-        }
-
-        let mut touched_uris = self.published_uris.clone();
-        for path in build.schema.paths.values() {
-            touched_uris.insert(preferred_diagnostic_uri(&preferred_uris, Path::new(path)));
-        }
-        for document in self.open_documents.values() {
-            touched_uris.insert(document.uri.clone());
-        }
-        for (uri, diagnostics) in non_schema_diagnostics {
-            by_uri.insert(uri.clone(), diagnostics);
-            touched_uris.insert(uri);
-        }
-
-        for uri in touched_uris {
-            let diagnostics = by_uri.remove(&uri).unwrap_or_default();
-            self.publish_diagnostics(&uri, &diagnostics)?;
-        }
-
-        self.build = Some(build);
-        Ok(())
-    }
-
-    fn preferred_diagnostic_uris(
-        &self,
-        schema_by_path: &BTreeMap<PathBuf, (String, PathBuf)>,
-    ) -> BTreeMap<PathBuf, String> {
-        let mut preferred = BTreeMap::new();
-        for (normalized_path, document) in &self.open_documents {
-            if schema_by_path.contains_key(normalized_path) {
-                preferred.insert(normalized_path.clone(), document.uri.clone());
-            }
-        }
-        preferred
-    }
-
-    fn publish_diagnostic_set(
-        &mut self,
-        diagnostics: &DiagnosticSet,
-        preferred_uris: &BTreeMap<PathBuf, String>,
-    ) -> Result<(), String> {
-        let mut by_uri: BTreeMap<String, Vec<Value>> = BTreeMap::new();
-        for diagnostic in diagnostics {
-            let uri = diagnostic
-                .primary
-                .as_ref()
-                .map(|label| lsp_label_location(&label.location))
-                .map_or_else(
-                    || preferred_diagnostic_uri(preferred_uris, &self.project.config_path),
-                    |location| label_uri(&location, preferred_uris),
-                );
-            by_uri
-                .entry(uri)
-                .or_default()
-                .push(lsp_diagnostic(diagnostic));
-        }
-        for (uri, diagnostics) in by_uri {
-            self.publish_diagnostics(&uri, &diagnostics)?;
-        }
-        Ok(())
+        let publications = self.core.validate_project()?;
+        self.publish_diagnostic_publications(publications)
     }
 
     fn completion(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
-        if let Some(source) = self.cfd_source_by_uri(&request.uri) {
+        if let Some(source) = self.core.cfd_source_by_uri(&request.uri) {
             let (ast, _) = parse_cfd(&source);
             let offset = byte_offset_from_position(&source, request.position);
-            let schema = self.schema();
+            let schema = self.core.schema();
             let result = cfd::completion(&source, &ast, schema, offset);
             return self.write_response(id, &result);
         }
@@ -432,10 +286,10 @@ impl<W: Write> LspServer<W> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
-        if let Some(source) = self.cfd_source_by_uri(&request.uri) {
+        if let Some(source) = self.core.cfd_source_by_uri(&request.uri) {
             let (ast, _) = parse_cfd(&source);
             let offset = byte_offset_from_position(&source, request.position);
-            let schema = self.schema();
+            let schema = self.core.schema();
             let result = cfd::hover(&source, &ast, schema, offset);
             return self.write_response(id, &result);
         }
@@ -453,23 +307,23 @@ impl<W: Write> LspServer<W> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
-        if let Some(source) = self.cfd_source_by_uri(&request.uri) {
+        if let Some(source) = self.core.cfd_source_by_uri(&request.uri) {
             let (ast, _) = parse_cfd(&source);
             let offset = byte_offset_from_position(&source, request.position);
             if let Some(type_name) = cfd::definition_type_name(&ast, offset) {
                 let type_name = type_name.to_string();
                 self.ensure_build()?;
-                if let Some(build) = &self.build {
+                if let Some(build) = self.core.build() {
                     if let Some(location) = cft_type_definition_location(build, &type_name) {
                         return self.write_response(id, &json!(location));
                     }
                 }
             }
             if let Some((type_name, field_name)) =
-                cfd::definition_field_name(&ast, self.schema(), offset)
+                cfd::definition_field_name(&ast, self.core.schema(), offset)
             {
                 self.ensure_build()?;
-                if let Some(build) = &self.build {
+                if let Some(build) = self.core.build() {
                     if let Some(location) =
                         cft_schema_field_definition_location(build, &type_name, field_name)
                     {
@@ -479,8 +333,11 @@ impl<W: Write> LspServer<W> {
             }
             if let Some(ref_key) = cfd::definition_ref_key(&ast, offset) {
                 let ref_key = ref_key.to_string();
-                if let Some(location) =
-                    cfd_record_definition_location(&self.project, &self.open_documents, &ref_key)
+                if let Some(location) = cfd_record_definition_location(
+                    self.core.project(),
+                    self.core.open_documents(),
+                    &ref_key,
+                )
                 {
                     return self.write_response(id, &json!(location));
                 }
@@ -501,7 +358,7 @@ impl<W: Write> LspServer<W> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &json!([]));
         };
-        if let Some(source) = self.cfd_source_by_uri(&uri) {
+        if let Some(source) = self.core.cfd_source_by_uri(&uri) {
             let (ast, _) = parse_cfd(&source);
             return self.write_response(id, &cfd::document_symbols(&source, &ast));
         }
@@ -545,7 +402,7 @@ impl<W: Write> LspServer<W> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &json!({"data": []}));
         };
-        if let Some(source) = self.cfd_source_by_uri(&uri) {
+        if let Some(source) = self.core.cfd_source_by_uri(&uri) {
             let (ast, _) = parse_cfd(&source);
             return self.write_response(id, &cfd::semantic_tokens(&source, &ast));
         }
@@ -564,34 +421,12 @@ impl<W: Write> LspServer<W> {
     }
 
     fn ensure_build(&mut self) -> Result<Option<&LspBuild>, String> {
-        if self.build.is_none() {
-            self.validate_project()?;
-        }
-        Ok(self.build.as_ref())
-    }
-
-    /// Return the source text of an open `.cfd` document by URI, or `None`
-    /// when the URI does not correspond to an open CFD file.
-    fn cfd_source_by_uri(&self, uri: &str) -> Option<String> {
-        let path = path_from_file_uri(uri)?;
-        if !is_cfd_path(&path) {
-            return None;
-        }
-        let normalized = normalize_path(&path);
-        self.open_documents
-            .get(&normalized)
-            .map(|doc| doc.text.clone())
-    }
-
-    /// Return the compiled schema from the current build, if available.
-    fn schema(&self) -> Option<&coflow_cft::CftContainer> {
-        self.build
-            .as_ref()
-            .and_then(|b| b.schema.container.as_ref())
+        let publications = self.core.ensure_build_publications()?;
+        self.publish_diagnostic_publications(publications)?;
+        Ok(self.core.build())
     }
 
     fn publish_diagnostics(&mut self, uri: &str, diagnostics: &[Value]) -> Result<(), String> {
-        self.published_uris.insert(uri.to_string());
         self.write_notification(
             "textDocument/publishDiagnostics",
             &json!({
@@ -599,6 +434,16 @@ impl<W: Write> LspServer<W> {
                 "diagnostics": diagnostics
             }),
         )
+    }
+
+    fn publish_diagnostic_publications(
+        &mut self,
+        publications: Vec<DiagnosticPublication>,
+    ) -> Result<(), String> {
+        for publication in publications {
+            self.publish_diagnostics(&publication.uri, &publication.diagnostics)?;
+        }
+        Ok(())
     }
 
     fn write_response(&mut self, id: &Value, result: &Value) -> Result<(), String> {
@@ -663,24 +508,12 @@ impl<W: Write> LspServer<W> {
     }
 }
 
-#[derive(Debug)]
-struct OpenDocument {
-    pub(crate) uri: String,
-    pub(crate) text: String,
-}
-
 const MAX_LSP_CONTENT_LENGTH: usize = 16 * 1024 * 1024;
 
 fn is_fatal_lsp_handler_error(message: &str) -> bool {
     message.starts_with("failed to write LSP")
         || message.starts_with("failed to flush LSP")
         || message.starts_with("failed to serialize LSP")
-}
-
-fn is_cfd_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e == "cfd")
 }
 
 #[cfg(test)]

@@ -4068,6 +4068,38 @@ fn lsp_state_helpers_do_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lsp_validation_core_does_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let validation = std::fs::read_to_string("crates/coflow-lsp/src/validation.rs")
+        .expect("read lsp validation");
+
+    for expected in [
+        "pub(crate) struct LspValidationCore",
+        "pub(crate) struct OpenDocument",
+        "pub(crate) struct DiagnosticPublication",
+        "pub(crate) fn open_document",
+        "pub(crate) fn validate_project",
+        "pub(crate) fn ensure_build_publications",
+        "pub(crate) fn cfd_source_by_uri",
+        "pub(crate) fn is_cfd_path",
+    ] {
+        assert!(
+            validation.contains(expected),
+            "LSP validation core item `{expected}` should live in validation.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP validation core item `{expected}` should not live in lib.rs"
+        );
+    }
+
+    assert!(
+        lib.contains("core: LspValidationCore"),
+        "LspServer should keep validation state behind LspValidationCore"
+    );
+}
+
+#[test]
 fn lsp_text_helpers_do_not_live_in_lib_rs() {
     let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
     let text = std::fs::read_to_string("crates/coflow-lsp/src/text.rs").expect("read lsp text");

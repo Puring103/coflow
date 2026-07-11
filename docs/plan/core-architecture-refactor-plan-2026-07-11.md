@@ -109,6 +109,8 @@ Commit boundary: `refactor: share provider role registrations`
 
 ### 6. LSP validation core
 
+Status: completed.
+
 Goal: keep `LspServer` as protocol adapter and move validation/publishing
 state into deeper modules.
 
