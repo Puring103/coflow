@@ -60,20 +60,33 @@ impl fmt::Display for ValueDependencyCycle {
 
 #[derive(Debug, Clone)]
 pub struct ValueDependencyPlan {
-    graphs: BTreeMap<ValueDependencyMode, BTreeMap<String, Vec<ValueDependencyStep>>>,
+    roots: BTreeMap<
+        ValueDependencyMode,
+        BTreeMap<String, Result<Vec<String>, ValueDependencyCycle>>,
+    >,
 }
 
 impl ValueDependencyPlan {
     pub(super) fn compile(types: &BTreeMap<String, CftTypeMeta>) -> Self {
-        let mut graphs = BTreeMap::new();
+        let mut roots = BTreeMap::new();
         for mode in [
             ValueDependencyMode::SchemaDefaults,
             ValueDependencyMode::Minimal,
             ValueDependencyMode::EditableShape,
         ] {
-            graphs.insert(mode, dependency_graph(types, mode));
+            let graph = dependency_graph(types, mode);
+            let compiled = graph
+                .keys()
+                .map(|root| {
+                    let result = compile_root(root, &graph).map(|order| {
+                        order.into_iter().map(str::to_string).collect::<Vec<_>>()
+                    });
+                    (root.clone(), result)
+                })
+                .collect();
+            roots.insert(mode, compiled);
         }
-        Self { graphs }
+        Self { roots }
     }
 
     #[must_use]
@@ -82,9 +95,11 @@ impl ValueDependencyPlan {
         type_name: &str,
         mode: ValueDependencyMode,
     ) -> Option<Result<Vec<&'a str>, ValueDependencyCycle>> {
-        let graph = self.graphs.get(&mode)?;
-        let (root, _) = graph.get_key_value(type_name)?;
-        Some(compile_root(root, graph))
+        let result = self.roots.get(&mode)?.get(type_name)?;
+        Some(match result {
+            Ok(order) => Ok(order.iter().map(String::as_str).collect()),
+            Err(cycle) => Err(cycle.clone()),
+        })
     }
 }
 
@@ -155,14 +170,53 @@ fn compile_root<'a>(
     let mut nodes = Vec::new();
     let mut incoming = Vec::new();
     let mut order = Vec::new();
-    visit(
-        root,
-        graph,
-        &mut states,
-        &mut nodes,
-        &mut incoming,
-        &mut order,
-    )?;
+    let mut stack = vec![VisitFrame {
+        type_name: root,
+        next_edge: 0,
+    }];
+    states.insert(root, VisitState::Visiting);
+    nodes.push(root);
+
+    while let Some(frame) = stack.last_mut() {
+        let edges = graph.get(frame.type_name).map_or(&[][..], Vec::as_slice);
+        if let Some(edge) = edges.get(frame.next_edge) {
+            frame.next_edge += 1;
+            match states.get(edge.target_type.as_str()) {
+                Some(VisitState::Visiting) => {
+                    let cycle_start = nodes
+                        .iter()
+                        .position(|node| *node == edge.target_type)
+                        .unwrap_or(0);
+                    let mut steps = incoming[cycle_start..].to_vec();
+                    steps.push(edge.clone());
+                    return Err(ValueDependencyCycle::canonical(steps));
+                }
+                Some(VisitState::Complete) => {}
+                None => {
+                    let target = graph
+                        .get_key_value(edge.target_type.as_str())
+                        .map_or(edge.target_type.as_str(), |(name, _)| name.as_str());
+                    incoming.push(edge.clone());
+                    states.insert(target, VisitState::Visiting);
+                    nodes.push(target);
+                    stack.push(VisitFrame {
+                        type_name: target,
+                        next_edge: 0,
+                    });
+                }
+            }
+            continue;
+        }
+
+        let completed = frame.type_name;
+        stack.pop();
+        nodes.pop();
+        if !stack.is_empty() {
+            incoming.pop();
+        }
+        states.insert(completed, VisitState::Complete);
+        order.push(completed);
+    }
     Ok(order)
 }
 
@@ -172,49 +226,36 @@ enum VisitState {
     Complete,
 }
 
-fn visit<'a>(
+struct VisitFrame<'a> {
     type_name: &'a str,
-    graph: &'a BTreeMap<String, Vec<ValueDependencyStep>>,
-    states: &mut BTreeMap<&'a str, VisitState>,
-    nodes: &mut Vec<&'a str>,
-    incoming: &mut Vec<ValueDependencyStep>,
-    order: &mut Vec<&'a str>,
-) -> Result<(), ValueDependencyCycle> {
-    if states.get(type_name) == Some(&VisitState::Complete) {
-        return Ok(());
-    }
-    states.insert(type_name, VisitState::Visiting);
-    nodes.push(type_name);
+    next_edge: usize,
+}
 
-    for edge in graph.get(type_name).into_iter().flatten() {
-        match states.get(edge.target_type.as_str()) {
-            Some(VisitState::Visiting) => {
-                let cycle_start = nodes
-                    .iter()
-                    .position(|node| *node == edge.target_type)
-                    .unwrap_or(0);
-                let mut steps = incoming[cycle_start..].to_vec();
-                steps.push(edge.clone());
-                return Err(ValueDependencyCycle::canonical(steps));
-            }
-            Some(VisitState::Complete) => {}
-            None => {
-                incoming.push(edge.clone());
-                visit(
-                    edge.target_type.as_str(),
-                    graph,
-                    states,
-                    nodes,
-                    incoming,
-                    order,
-                )?;
-                incoming.pop();
-            }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iterative_root_compilation_handles_a_ten_thousand_node_chain() {
+        const NODE_COUNT: usize = 10_000;
+        let mut graph = BTreeMap::new();
+        for index in 0..NODE_COUNT {
+            let owner = format!("T{index}");
+            let edges = (index + 1 < NODE_COUNT)
+                .then(|| {
+                    vec![ValueDependencyStep {
+                        owner_type: owner.clone(),
+                        field: "next".to_string(),
+                        target_type: format!("T{}", index + 1),
+                    }]
+                })
+                .unwrap_or_default();
+            graph.insert(owner, edges);
         }
-    }
 
-    nodes.pop();
-    states.insert(type_name, VisitState::Complete);
-    order.push(type_name);
-    Ok(())
+        let order = compile_root("T0", &graph).expect("acyclic chain");
+        assert_eq!(order.len(), NODE_COUNT);
+        assert_eq!(order.first().copied(), Some("T9999"));
+        assert_eq!(order.last().copied(), Some("T0"));
+    }
 }
