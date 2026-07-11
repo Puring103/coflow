@@ -169,7 +169,7 @@ pub enum CfdPathSegment {
 #[must_use]
 pub fn format_cfd_dict_key(key: &CfdDictKey) -> String {
     match key {
-        CfdDictKey::String(value) => format!("\"{value}\""),
+        CfdDictKey::String(value) => quote_cfd_string(value),
         CfdDictKey::Int(value) => value.to_string(),
         CfdDictKey::Enum(value) => value.variant.as_deref().map_or_else(
             || format!("{}({})", value.enum_name, value.value),
@@ -180,7 +180,7 @@ pub fn format_cfd_dict_key(key: &CfdDictKey) -> String {
 
 fn format_input_dict_key(key: &CfdInputDictKey) -> String {
     match key {
-        CfdInputDictKey::String(value) => format!("\"{value}\""),
+        CfdInputDictKey::String(value) => quote_cfd_string(value),
         CfdInputDictKey::Int(value) => value.to_string(),
         CfdInputDictKey::EnumVariant { enum_name, variant } => {
             format!("{enum_name}.{variant}")
@@ -308,6 +308,23 @@ impl CfdErrorCode {
     pub const fn stage(self) -> CfdStage {
         self.entry().0
     }
+}
+
+fn quote_cfd_string(value: &str) -> String {
+    let mut out = String::with_capacity(value.len().saturating_add(2));
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
 }
 
 impl fmt::Display for CfdErrorCode {
