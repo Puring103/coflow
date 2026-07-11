@@ -5,17 +5,18 @@ mod check_primary;
 mod defaults;
 mod definitions;
 mod literals;
+mod recovery;
 mod tokens;
 
 pub use self::budget::CftParseOptions;
 pub(super) use self::budget::Parsed;
 use self::tokens::{reserved_keyword_name, token_name};
-use crate::ast::{Item, ModuleAst, NameRef};
+use crate::ast::{ModuleAst, NameRef};
 use crate::container::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexer::{lex, Token, TokenKind};
 use crate::span::Span;
-use coflow_structure::{StructuralBudget, StructureKind};
+use coflow_structure::StructuralBudget;
 
 /// Parses one CFT module into its AST.
 ///
@@ -58,40 +59,6 @@ impl<'a> Parser<'a> {
             budget: StructuralBudget::new(options.structural_limits),
             open_nesting: 0,
         }
-    }
-
-    fn parse_module(&mut self) -> Result<ModuleAst, CftDiagnostics> {
-        let mut items = Vec::new();
-        let mut pending_annotations = Vec::new();
-        while !self.at(&TokenKind::Eof) {
-            while self.at(&TokenKind::At) {
-                pending_annotations.push(self.parse_annotation()?);
-            }
-            if self.at(&TokenKind::Eof) {
-                break;
-            }
-            let item = if self.at(&TokenKind::Const) {
-                Item::Const(self.parse_const(std::mem::take(&mut pending_annotations))?)
-            } else if self.at(&TokenKind::Enum) {
-                Item::Enum(self.parse_enum(std::mem::take(&mut pending_annotations))?)
-            } else if self.at(&TokenKind::Type)
-                || self.at(&TokenKind::Abstract)
-                || self.at(&TokenKind::Sealed)
-            {
-                Item::Type(self.parse_type(std::mem::take(&mut pending_annotations))?)
-            } else {
-                return self.err(
-                    CftErrorCode::InvalidTopLevelItem,
-                    "top level items must be const, enum, or type definitions",
-                );
-            };
-            self.charge_nodes(StructureKind::SyntaxAst, item.span(), 1)?;
-            items.push(item);
-        }
-        Ok(ModuleAst {
-            items,
-            dangling_annotations: pending_annotations,
-        })
     }
 
     pub(super) fn expect_ident(&mut self) -> Result<NameRef, CftDiagnostics> {

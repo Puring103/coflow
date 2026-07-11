@@ -135,6 +135,54 @@ fn parser_rejects_invalid_top_level_item() {
 }
 
 #[test]
+fn parser_recovers_at_the_next_top_level_declaration() {
+    let source = r"
+        type First {
+            value int;
+        }
+
+        type Valid {
+            value: int;
+        }
+
+        const = 1;
+
+        type Last {
+            name: string;
+        }
+    ";
+
+    let diagnostics = add_source(source).expect_err("two declarations are invalid");
+    let codes = diagnostics
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect::<Vec<_>>();
+    let offsets = diagnostics
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            diagnostic
+                .primary
+                .as_ref()
+                .expect("syntax diagnostic has a primary label")
+                .span
+                .start
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        codes,
+        vec![CftErrorCode::ExpectedToken, CftErrorCode::ExpectedIdentifier]
+    );
+    assert!(offsets[0] < offsets[1], "diagnostics stay in source order");
+    assert!(
+        offsets[1] > source.find("type Valid").expect("valid middle declaration"),
+        "the parser must pass a valid declaration before reporting the later error"
+    );
+}
+
+#[test]
 fn parser_rejects_invalid_chain_comparison() {
     let err = add_source("type A { value: int; check { 0 < value > 10; } }").unwrap_err();
     assert_has_code(&err, CftErrorCode::InvalidChainComparison);
