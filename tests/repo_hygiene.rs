@@ -264,6 +264,76 @@ fn api_registry_is_split_by_responsibility() {
 }
 
 #[test]
+fn api_registry_supports_shared_role_registration() {
+    let registry =
+        std::fs::read_to_string("crates/coflow-api/src/registry.rs").expect("read API registry");
+    let registration = std::fs::read_to_string("crates/coflow-api/src/registry/registration.rs")
+        .expect("read API registry registration");
+
+    for expected in [
+        "pub fn register_source_writer_arc",
+        "pub fn register_table_manager_arc",
+        "pub fn register_dimension_source_manager_arc",
+        "fn insert_provider<T: ?Sized>",
+    ] {
+        assert!(
+            registration.contains(expected),
+            "API registry shared role registration item `{expected}` should live in registry/registration.rs"
+        );
+        assert!(
+            !registry.contains(expected),
+            "API registry shared role registration item `{expected}` should not live in registry.rs"
+        );
+    }
+
+    for forbidden in [
+        "self.source_writers.insert(id, Arc::new(writer))",
+        "self.table_managers.insert(id, Arc::new(manager))",
+        "self.dimension_source_managers.insert(id, Arc::new(manager))",
+    ] {
+        assert!(
+            !registry.contains(forbidden),
+            "API registry should route role storage through shared Arc registration, not `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn builtins_share_provider_role_instances() {
+    let builtins = std::fs::read_to_string("crates/coflow-builtins/src/lib.rs")
+        .expect("read builtins registry");
+
+    for expected in [
+        "let excel_writer = Arc::new(coflow_loader_excel::ExcelWriter::new())",
+        "let csv_writer = Arc::new(coflow_loader_csv::CsvWriter::new())",
+        "let lark_writer = Arc::new(coflow_loader_lark::LarkSheetWriter::default())",
+        "let cfd_writer = Arc::new(coflow_loader_cfd::CfdWriter::new())",
+        "registry.register_source_writer_arc(Arc::clone(&excel_writer))",
+        "registry.register_table_manager_arc(Arc::clone(&excel_writer))",
+        "registry.register_dimension_source_manager_arc(Arc::clone(&csv_writer))",
+        "registry.register_dimension_source_manager_arc(Arc::clone(&cfd_writer))",
+    ] {
+        assert!(
+            builtins.contains(expected),
+            "builtins should share provider role instance via `{expected}`"
+        );
+    }
+
+    for (constructor, count) in [
+        ("ExcelWriter::new()", 1),
+        ("CsvWriter::new()", 1),
+        ("LarkSheetWriter::default()", 1),
+        ("CfdWriter::new()", 1),
+    ] {
+        assert_eq!(
+            builtins.matches(constructor).count(),
+            count,
+            "builtins should construct `{constructor}` exactly once"
+        );
+    }
+}
+
+#[test]
 fn api_writer_contract_is_split_by_responsibility() {
     let writer =
         std::fs::read_to_string("crates/coflow-api/src/writer.rs").expect("read API writer");

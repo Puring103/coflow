@@ -16,6 +16,7 @@
 #![allow(clippy::multiple_crate_versions)]
 
 use coflow_api::{ProviderRegistrationError, ProviderRegistry};
+use std::sync::Arc;
 
 /// Creates the built-in provider registry used by host applications.
 ///
@@ -37,20 +38,25 @@ pub fn default_provider_registry() -> Result<ProviderRegistry, ProviderRegistrat
 pub fn register_default_providers(
     registry: &mut ProviderRegistry,
 ) -> Result<(), ProviderRegistrationError> {
+    let excel_writer = Arc::new(coflow_loader_excel::ExcelWriter::new());
+    let csv_writer = Arc::new(coflow_loader_csv::CsvWriter::new());
+    let lark_writer = Arc::new(coflow_loader_lark::LarkSheetWriter::default());
+    let cfd_writer = Arc::new(coflow_loader_cfd::CfdWriter::new());
+
     registry.register_source_provider(coflow_loader_excel::ExcelLoader)?;
     registry.register_source_provider(coflow_loader_csv::CsvLoader)?;
     registry.register_source_provider(coflow_loader_lark::LarkSheetLoader::default())?;
     registry.register_source_provider(coflow_loader_cfd::CfdLoader)?;
-    registry.register_source_writer(coflow_loader_excel::ExcelWriter::new())?;
-    registry.register_source_writer(coflow_loader_lark::LarkSheetWriter::default())?;
-    registry.register_source_writer(coflow_loader_cfd::CfdWriter::new())?;
-    registry.register_source_writer(coflow_loader_csv::CsvWriter::new())?;
-    registry.register_table_manager(coflow_loader_excel::ExcelWriter::new())?;
-    registry.register_table_manager(coflow_loader_csv::CsvWriter::new())?;
-    registry.register_table_manager(coflow_loader_cfd::CfdWriter::new())?;
-    registry.register_table_manager(coflow_loader_lark::LarkSheetWriter::default())?;
-    registry.register_dimension_source_manager(coflow_loader_csv::CsvWriter::new())?;
-    registry.register_dimension_source_manager(coflow_loader_cfd::CfdWriter::new())?;
+    registry.register_source_writer_arc(Arc::clone(&excel_writer))?;
+    registry.register_source_writer_arc(Arc::clone(&lark_writer))?;
+    registry.register_source_writer_arc(Arc::clone(&cfd_writer))?;
+    registry.register_source_writer_arc(Arc::clone(&csv_writer))?;
+    registry.register_table_manager_arc(Arc::clone(&excel_writer))?;
+    registry.register_table_manager_arc(Arc::clone(&csv_writer))?;
+    registry.register_table_manager_arc(Arc::clone(&cfd_writer))?;
+    registry.register_table_manager_arc(Arc::clone(&lark_writer))?;
+    registry.register_dimension_source_manager_arc(Arc::clone(&csv_writer))?;
+    registry.register_dimension_source_manager_arc(Arc::clone(&cfd_writer))?;
     registry.register_exporter(coflow_exporter_json::JsonExporter)?;
     registry.register_exporter(coflow_exporter_messagepack::MessagePackExporter)?;
     registry.register_codegen(coflow_codegen_csharp::CsharpCodeGenerator)?;

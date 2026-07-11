@@ -1,4 +1,5 @@
 mod errors;
+mod registration;
 mod selection;
 
 pub use errors::{ProviderRegistrationError, SourceProviderSelectionError};
@@ -61,12 +62,7 @@ impl ProviderRegistry {
     where
         L: SourceProvider + 'static,
     {
-        let id = source_provider.descriptor().id;
-        if self.source_providers.contains_key(id) {
-            return Err(ProviderRegistrationError::duplicate("source provider", id));
-        }
-        self.source_providers.insert(id, Arc::new(source_provider));
-        Ok(())
+        self.register_source_provider_arc(Arc::new(source_provider))
     }
 
     /// Registers a source writer.
@@ -79,12 +75,7 @@ impl ProviderRegistry {
     where
         W: SourceWriter + 'static,
     {
-        let id = writer.descriptor().id;
-        if self.source_writers.contains_key(id) {
-            return Err(ProviderRegistrationError::duplicate("source writer", id));
-        }
-        self.source_writers.insert(id, Arc::new(writer));
-        Ok(())
+        self.register_source_writer_arc(Arc::new(writer))
     }
 
     /// Registers a table manager provider.
@@ -97,12 +88,7 @@ impl ProviderRegistry {
     where
         T: TableManager + 'static,
     {
-        let id = manager.descriptor().id;
-        if self.table_managers.contains_key(id) {
-            return Err(ProviderRegistrationError::duplicate("table manager", id));
-        }
-        self.table_managers.insert(id, Arc::new(manager));
-        Ok(())
+        self.register_table_manager_arc(Arc::new(manager))
     }
 
     /// Registers a dimension source manager provider.
@@ -118,15 +104,7 @@ impl ProviderRegistry {
     where
         D: DimensionSourceManager + 'static,
     {
-        let id = manager.descriptor().id;
-        if self.dimension_source_managers.contains_key(id) {
-            return Err(ProviderRegistrationError::duplicate(
-                "dimension source manager",
-                id,
-            ));
-        }
-        self.dimension_source_managers.insert(id, Arc::new(manager));
-        Ok(())
+        self.register_dimension_source_manager_arc(Arc::new(manager))
     }
 
     /// Registers an exporter provider.
@@ -139,12 +117,7 @@ impl ProviderRegistry {
     where
         E: DataExporter + 'static,
     {
-        let id = exporter.descriptor().id;
-        if self.exporters.contains_key(id) {
-            return Err(ProviderRegistrationError::duplicate("exporter", id));
-        }
-        self.exporters.insert(id, Arc::new(exporter));
-        Ok(())
+        self.register_exporter_arc(Arc::new(exporter))
     }
 
     /// Registers a code generator provider.
@@ -157,12 +130,7 @@ impl ProviderRegistry {
     where
         C: CodeGenerator + 'static,
     {
-        let id = codegen.descriptor().id;
-        if self.codegens.contains_key(id) {
-            return Err(ProviderRegistrationError::duplicate("codegen", id));
-        }
-        self.codegens.insert(id, Arc::new(codegen));
-        Ok(())
+        self.register_codegen_arc(Arc::new(codegen))
     }
 
     #[must_use]

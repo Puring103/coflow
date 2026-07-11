@@ -92,6 +92,8 @@ Commit boundary: `refactor: introduce runtime write field plan`
 
 ### 5. Provider role registration
 
+Status: completed.
+
 Goal: allow one provider implementation instance to satisfy multiple role
 interfaces without repeated construction.
 
