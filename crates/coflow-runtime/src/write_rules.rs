@@ -237,7 +237,7 @@ fn validate_value_semantics(
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
     let context = ProjectValueSemanticContext { session };
-    coflow_data_model::validate_value_for_schema(
+    coflow_data_model::validate_complete_value_for_schema(
         schema,
         &context,
         expected,

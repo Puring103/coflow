@@ -2081,6 +2081,75 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
 }
 
 #[test]
+fn mutation_complete_value_rejects_missing_nested_required_fields_before_write() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-cfd-nested-incomplete-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let insert = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/items.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Loot".to_string(),
+                    key: "starter_loot".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({ "rewards": [] })).expect("fields map"),
+                }],
+            },
+        )
+        .expect("insert loot");
+    assert!(insert.write_ok);
+    let before = std::fs::read_to_string(root.join("data/items.cfd")).expect("read cfd");
+
+    let incomplete_reward =
+        coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
+            "ItemReward",
+            std::collections::BTreeMap::from([(
+                "item".to_string(),
+                coflow_data_model::CfdValue::Ref("sword".to_string()),
+            )]),
+        )));
+    let report = session
+        .apply_mutation(
+            &registry,
+            MutationRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![MutationOp::SetField {
+                    record: RecordCoordinate::new("Loot", "starter_loot"),
+                    file: None,
+                    path: vec![PatchPathSegment::Field("rewards".to_string())],
+                    value: MutationValue::Cfd(coflow_data_model::CfdValue::Array(vec![
+                        incomplete_reward,
+                    ])),
+                }],
+            },
+        )
+        .expect("incomplete nested value should be reported");
+
+    assert!(!report.write_ok);
+    assert!(report.failed[0].diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "MUTATION-SHAPE"
+            && diagnostic
+                .message
+                .contains("missing required field `count` on object type `ItemReward`")
+    }));
+    let after = std::fs::read_to_string(root.join("data/items.cfd")).expect("read cfd");
+    assert_eq!(after, before, "provider must not see an incomplete value");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn patch_collects_validation_failures_when_stop_disabled() {
     let root = std::env::temp_dir().join(format!(
         "coflow-data-patch-validation-failures-{}",

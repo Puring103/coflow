@@ -399,6 +399,14 @@ fn engine_write_rules_use_cft_compiler_context_for_path_types() {
         write_rules.contains("CompiledSchema::new(schema)"),
         "engine write rules should use coflow-cft CompiledSchema for schema path lookup"
     );
+    assert!(
+        write_rules.contains("validate_complete_value_for_schema"),
+        "engine write preflight should require complete values"
+    );
+    assert!(
+        !write_rules.contains("validate_fragment_value_for_schema"),
+        "engine write preflight must not accept path fragments as complete values"
+    );
     for forbidden in [
         ".resolve_type(",
         ".all_fields",

@@ -32,21 +32,58 @@ pub trait CfdValueSemanticContext {
     fn record_actual_type(&self, id: CfdRecordId) -> Option<&str>;
 }
 
-/// Validates that a CFD value matches a schema type and semantic context.
+/// Validates that a complete CFD value matches a schema type and semantic context.
 ///
 /// # Errors
 ///
 /// Returns an error when the value shape does not match the schema type, when
-/// enum/object/ref semantics are invalid, or when a referenced record cannot be
-/// resolved from the semantic context.
-pub fn validate_value_for_schema<C: CfdValueSemanticContext>(
+/// an inline object omits a required field, when enum/object/ref semantics are
+/// invalid, or when a referenced record cannot be resolved from the semantic
+/// context.
+pub fn validate_complete_value_for_schema<C: CfdValueSemanticContext>(
     schema: &CompiledSchema,
     context: &C,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
 ) -> Result<(), CfdValueSemanticError> {
-    validate_value_inner(schema, context, expected, value, pending_insert)
+    validate_value_inner(
+        schema,
+        context,
+        expected,
+        value,
+        pending_insert,
+        ValueCompleteness::Complete,
+    )
+}
+
+/// Validates a path-local CFD fragment without requiring omitted object fields.
+///
+/// # Errors
+///
+/// Returns an error when a provided value has the wrong shape or invalid
+/// enum/object/ref semantics. Missing object fields are intentionally legal.
+pub fn validate_fragment_value_for_schema<C: CfdValueSemanticContext>(
+    schema: &CompiledSchema,
+    context: &C,
+    expected: &CftSchemaTypeRef,
+    value: &CfdValue,
+    pending_insert: Option<PendingInsertRef<'_>>,
+) -> Result<(), CfdValueSemanticError> {
+    validate_value_inner(
+        schema,
+        context,
+        expected,
+        value,
+        pending_insert,
+        ValueCompleteness::Fragment,
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ValueCompleteness {
+    Complete,
+    Fragment,
 }
 
 /// Validates that an object type can be instantiated where another type is expected.
@@ -97,11 +134,12 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
+    completeness: ValueCompleteness,
 ) -> Result<(), CfdValueSemanticError> {
     match expected {
         CftSchemaTypeRef::Nullable(_) if matches!(value, CfdValue::Null) => Ok(()),
         CftSchemaTypeRef::Nullable(inner) => {
-            validate_value_inner(schema, context, inner, value, pending_insert)
+            validate_value_inner(schema, context, inner, value, pending_insert, completeness)
         }
         CftSchemaTypeRef::Int => match value {
             CfdValue::Int(_) => Ok(()),
@@ -121,16 +159,22 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             _ => Err(type_mismatch("string", value)),
         },
         CftSchemaTypeRef::Array(inner) => {
-            validate_array(schema, context, inner, value, pending_insert)
+            validate_array(schema, context, inner, value, pending_insert, completeness)
         }
-        CftSchemaTypeRef::Dict(key, item) => {
-            validate_dict(schema, context, key, item, value, pending_insert)
-        }
+        CftSchemaTypeRef::Dict(key, item) => validate_dict(
+            schema,
+            context,
+            key,
+            item,
+            value,
+            pending_insert,
+            completeness,
+        ),
         CftSchemaTypeRef::Ref(expected_type) => {
             validate_ref_value(schema, context, expected_type, value, pending_insert)
         }
         CftSchemaTypeRef::Named(name) => {
-            validate_named_value(schema, context, name, value, pending_insert)
+            validate_named_value(schema, context, name, value, pending_insert, completeness)
         }
     }
 }
@@ -141,12 +185,13 @@ fn validate_array<C: CfdValueSemanticContext>(
     inner: &CftSchemaTypeRef,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
+    completeness: ValueCompleteness,
 ) -> Result<(), CfdValueSemanticError> {
     let CfdValue::Array(items) = value else {
         return Err(type_mismatch("array", value));
     };
     for item in items {
-        validate_value_inner(schema, context, inner, item, pending_insert)?;
+        validate_value_inner(schema, context, inner, item, pending_insert, completeness)?;
     }
     Ok(())
 }
@@ -158,13 +203,21 @@ fn validate_dict<C: CfdValueSemanticContext>(
     item: &CftSchemaTypeRef,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
+    completeness: ValueCompleteness,
 ) -> Result<(), CfdValueSemanticError> {
     let CfdValue::Dict(entries) = value else {
         return Err(type_mismatch("dict", value));
     };
     for (dict_key, item_value) in entries {
         validate_dict_key(schema, key, dict_key)?;
-        validate_value_inner(schema, context, item, item_value, pending_insert)?;
+        validate_value_inner(
+            schema,
+            context,
+            item,
+            item_value,
+            pending_insert,
+            completeness,
+        )?;
     }
     Ok(())
 }
@@ -196,6 +249,7 @@ fn validate_named_value<C: CfdValueSemanticContext>(
     name: &str,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
+    completeness: ValueCompleteness,
 ) -> Result<(), CfdValueSemanticError> {
     if schema.is_schema_enum(name) {
         return match value {
@@ -203,7 +257,7 @@ fn validate_named_value<C: CfdValueSemanticContext>(
             _ => Err(type_mismatch(&format!("enum `{name}`"), value)),
         };
     }
-    validate_object_value(schema, context, name, value, pending_insert)
+    validate_object_value(schema, context, name, value, pending_insert, completeness)
 }
 
 fn validate_object_value<C: CfdValueSemanticContext>(
@@ -212,6 +266,7 @@ fn validate_object_value<C: CfdValueSemanticContext>(
     expected_type: &str,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
+    completeness: ValueCompleteness,
 ) -> Result<(), CfdValueSemanticError> {
     match value {
         CfdValue::Object(record) => {
@@ -223,7 +278,25 @@ fn validate_object_value<C: CfdValueSemanticContext>(
                         record.actual_type()
                     )));
                 };
-                validate_value_inner(schema, context, field_ty, value, pending_insert)?;
+                validate_value_inner(
+                    schema,
+                    context,
+                    field_ty,
+                    value,
+                    pending_insert,
+                    completeness,
+                )?;
+            }
+            if completeness == ValueCompleteness::Complete {
+                for field in schema.full_fields(record.actual_type()).unwrap_or(&[]) {
+                    if field.default.is_none() && !record.fields().contains_key(&field.name) {
+                        return Err(CfdValueSemanticError::new(format!(
+                            "missing required field `{}` on object type `{}`",
+                            field.name,
+                            record.actual_type()
+                        )));
+                    }
+                }
             }
             Ok(())
         }

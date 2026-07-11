@@ -104,6 +104,24 @@ fn data_model_value_semantics_uses_cft_compiler_context() {
 
     );
 
+    for expected in [
+
+        "pub fn validate_complete_value_for_schema",
+
+        "pub fn validate_fragment_value_for_schema",
+
+    ] {
+
+        assert!(
+
+            value_semantics.contains(expected),
+
+            "data-model value semantics should expose explicit completeness interface `{expected}`"
+
+        );
+
+    }
+
     for forbidden in [
 
         "CompiledSchema::new(schema)",
