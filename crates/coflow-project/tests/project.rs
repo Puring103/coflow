@@ -838,6 +838,30 @@ fn schema_files_recurses_only_cft_files_and_sorts_module_ids() -> TestResult {
 }
 
 #[test]
+fn schema_files_deduplicate_canonical_file_identities() -> TestResult {
+    let root = temp_project_dir("coflow-project-schema-file-identities");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("schema/main.cft"),
+        "type Main { value: string; }",
+    )
+    .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema:\n  - schema\n  - schema/../schema/main.cft\n",
+    )
+    .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    let files = project.schema_files().map_err(|err| err.to_string())?;
+
+    assert_eq!(files.len(), 1, "the same canonical file must load once");
+    assert_eq!(files[0].module_id, "schema/main.cft");
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
 fn schema_files_ignores_uppercase_cft_extensions() -> TestResult {
     let root = temp_project_dir("coflow-project-schema-files-extension-case");
     std::fs::create_dir_all(root.join("schema/nested")).map_err(|err| err.to_string())?;

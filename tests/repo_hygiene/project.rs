@@ -114,6 +114,12 @@ fn project_schema_discovery_does_not_live_in_project_lib_rs() {
 
         "fn collect_cft_files",
 
+        "struct SchemaDiscovery",
+
+        "visited_directories: BTreeSet<PathBuf>",
+
+        "visited_files: BTreeSet<PathBuf>",
+
     ] {
 
         assert!(
@@ -178,7 +184,11 @@ fn project_schema_path_policy_owns_schema_path_rules() {
 
         "pub(super) fn is_cft_path",
 
-        "pub(super) fn schema_file",
+        "pub(super) fn schema_file_with_identity",
+
+        "pub(super) fn canonicalize",
+
+        "pub(super) fn outside_declared_root_error",
 
     ] {
 

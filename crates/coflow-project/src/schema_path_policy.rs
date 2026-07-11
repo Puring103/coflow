@@ -77,24 +77,50 @@ impl<'a> SchemaPathPolicy<'a> {
         )
     }
 
-    pub(super) fn schema_file(&self, path: PathBuf) -> Result<SchemaFile, DiagnosticSet> {
-        let canonical_path = fs::canonicalize(&path).map_err(|err| {
+    pub(super) fn canonicalize(&self, path: &Path) -> Result<PathBuf, DiagnosticSet> {
+        fs::canonicalize(path).map_err(|err| {
             file_error(
-                &path,
+                path,
                 "PROJECT-SCHEMA-PATH",
                 "PROJECT",
-                format!("failed to resolve schema `{}`: {err}", path.display()),
+                format!("failed to resolve schema path `{}`: {err}", path.display()),
             )
-        })?;
+        })
+    }
+
+    pub(super) fn outside_declared_root_error(
+        &self,
+        path: &Path,
+        declared_root: &Path,
+        canonical_path: &Path,
+    ) -> DiagnosticSet {
+        file_error(
+            path,
+            "PROJECT-SCHEMA-PATH",
+            "PROJECT",
+            format!(
+                "schema path `{}` resolves outside declared root `{}` to `{}`",
+                self.display_path(path),
+                self.display_path(declared_root),
+                canonical_path.display(),
+            ),
+        )
+    }
+
+    pub(super) fn schema_file_with_identity(
+        &self,
+        path: PathBuf,
+        canonical_path: PathBuf,
+    ) -> SchemaFile {
         let module_path = canonical_path
             .strip_prefix(self.root_dir)
             .unwrap_or(canonical_path.as_path());
         let module_id = path_to_slash(module_path);
-        Ok(SchemaFile {
+        SchemaFile {
             path,
             canonical_path,
             module_id,
-        })
+        }
     }
 
     fn display_path(&self, path: &Path) -> String {
