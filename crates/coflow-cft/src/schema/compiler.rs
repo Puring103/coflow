@@ -1,4 +1,5 @@
 mod annotations;
+mod budget;
 mod build;
 mod defaults;
 mod symbols;
@@ -6,11 +7,13 @@ mod types;
 
 use super::support::{ConstInfo, EnumInfo, FieldInfo, Symbol, TypeInfo};
 use super::type_checker::TypeChecker;
+use super::CftCompileOptions;
 use super::CompiledSchema;
 use crate::ast::{ConstLiteral, TypeRefKind};
 use crate::container::{CftContainer, ModuleId};
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::span::Span;
+use coflow_structure::StructuralBudget;
 use std::collections::BTreeMap;
 
 pub(super) struct SchemaCompiler<'a> {
@@ -21,10 +24,12 @@ pub(super) struct SchemaCompiler<'a> {
     pub(super) types: BTreeMap<String, TypeInfo<'a>>,
     pub(super) enums: BTreeMap<String, EnumInfo<'a>>,
     pub(super) full_fields: BTreeMap<String, BTreeMap<String, FieldInfo>>,
+    pub(super) inheritance_chains: BTreeMap<String, Vec<String>>,
+    pub(super) budget: StructuralBudget,
 }
 
 impl<'a> SchemaCompiler<'a> {
-    pub(super) fn new(container: &'a CftContainer) -> Self {
+    pub(super) fn new(container: &'a CftContainer, options: CftCompileOptions) -> Self {
         Self {
             container,
             diagnostics: Vec::new(),
@@ -33,17 +38,24 @@ impl<'a> SchemaCompiler<'a> {
             types: BTreeMap::new(),
             enums: BTreeMap::new(),
             full_fields: BTreeMap::new(),
+            inheritance_chains: BTreeMap::new(),
+            budget: StructuralBudget::new(options.structural_limits),
         }
     }
 
     pub(super) fn compile(&mut self) -> Result<CompiledSchema, CftDiagnostics> {
+        if !self.validate_structure() {
+            return Err(CftDiagnostics::new(std::mem::take(&mut self.diagnostics)));
+        }
         self.report_dangling_annotations();
         self.collect_symbols();
         self.validate_enums();
         self.validate_const_type_annotations();
         self.validate_type_headers();
         self.validate_field_shapes();
-        self.validate_inheritance();
+        if !self.validate_inheritance() {
+            return Err(CftDiagnostics::new(std::mem::take(&mut self.diagnostics)));
+        }
         self.validate_annotations();
         self.validate_defaults();
         self.build_full_fields();

@@ -6,7 +6,8 @@ use crate::schema::support::{
     has_annotation, is_valid_dict_key, FieldInfo, FieldOrigin, SymbolKind, Ty, TypeInfo,
 };
 use crate::span::Span;
-use std::collections::{BTreeMap, HashSet};
+use coflow_structure::{StructureKind, TraversalCursor};
+use std::collections::{BTreeMap, BTreeSet};
 
 impl<'a> SchemaCompiler<'a> {
     pub(super) fn validate_type_headers(&mut self) {
@@ -82,12 +83,90 @@ impl<'a> SchemaCompiler<'a> {
         });
     }
 
-    pub(super) fn validate_inheritance(&mut self) {
+    pub(super) fn validate_inheritance(&mut self) -> bool {
         let names = self.types.keys().cloned().collect::<Vec<_>>();
-        let mut visiting = HashSet::new();
-        let mut visited = HashSet::new();
+        let mut finished = BTreeSet::new();
+        let mut has_cycle = false;
         for name in &names {
-            self.detect_cycle(name, &mut visiting, &mut visited);
+            if finished.contains(name) {
+                continue;
+            }
+            let mut path = Vec::new();
+            let mut positions = BTreeMap::new();
+            let mut current = name.clone();
+            let mut path_has_cycle = false;
+            let terminal_parent = loop {
+                positions.insert(current.clone(), path.len());
+                path.push(current.clone());
+                let local_depth = u64::try_from(path.len()).unwrap_or(u64::MAX);
+                if let Err(error) = self.budget.check_additional_depth(
+                    TraversalCursor::root(),
+                    StructureKind::SchemaDependency,
+                    local_depth,
+                ) {
+                    let (module, span) = self.inheritance_edge_location(&current);
+                    self.push_budget_error(error, &module, span);
+                    return false;
+                }
+
+                let Some(parent) = self
+                    .types
+                    .get(&current)
+                    .and_then(|info| info.def.parent.as_ref())
+                    .filter(|parent| self.types.contains_key(&parent.name))
+                    .map(|parent| parent.name.clone())
+                else {
+                    break None;
+                };
+
+                // Semantic cycles take precedence over the resource budget. In
+                // particular, a self-cycle must remain an inheritance error at
+                // the smallest possible depth limit.
+                if let Some(cycle_start) = positions.get(&parent).copied() {
+                    self.report_inheritance_cycle(&path[cycle_start..]);
+                    has_cycle = true;
+                    path_has_cycle = true;
+                    break None;
+                }
+
+                let (module, span) = self.inheritance_edge_location(&current);
+                if let Err(error) = self.budget.charge_work(StructureKind::SchemaDependency, 1) {
+                    self.push_budget_error(error, &module, span);
+                    return false;
+                }
+                if finished.contains(&parent) {
+                    break Some(parent);
+                }
+                current = parent;
+            };
+
+            if path_has_cycle {
+                // A path that enters a cycle has no valid root-first ancestry
+                // chain. Mark it complete so the same cycle is not diagnosed
+                // again from a descendant.
+                finished.extend(path);
+                continue;
+            }
+
+            let mut chain = terminal_parent
+                .and_then(|parent| self.inheritance_chains.get(&parent).cloned())
+                .unwrap_or_default();
+            for current in path.iter().rev() {
+                chain.push(current.clone());
+                let depth = u64::try_from(chain.len()).unwrap_or(u64::MAX);
+                if let Err(error) = self.budget.check_additional_depth(
+                    TraversalCursor::root(),
+                    StructureKind::SchemaDependency,
+                    depth,
+                ) {
+                    let (module, span) = self.inheritance_edge_location(current);
+                    self.push_budget_error(error, &module, span);
+                    return false;
+                }
+                self.inheritance_chains
+                    .insert(current.clone(), chain.clone());
+                finished.insert(current.clone());
+            }
         }
 
         for name in &names {
@@ -132,46 +211,49 @@ impl<'a> SchemaCompiler<'a> {
                 }
             }
         }
+        !has_cycle
     }
 
-    fn detect_cycle(
-        &mut self,
-        name: &str,
-        visiting: &mut HashSet<String>,
-        visited: &mut HashSet<String>,
-    ) {
-        if visited.contains(name) {
+    fn inheritance_edge_location(&self, name: &str) -> (ModuleId, Span) {
+        let info = &self.types[name];
+        (
+            info.module.clone(),
+            info.def
+                .parent
+                .as_ref()
+                .map_or(info.def.name_span, |parent| parent.span),
+        )
+    }
+
+    fn report_inheritance_cycle(&mut self, cycle: &[String]) {
+        let Some((anchor_index, anchor)) = cycle.iter().enumerate().min_by_key(|(_, name)| {
+            let info = &self.types[*name];
+            let span = info
+                .def
+                .parent
+                .as_ref()
+                .map_or(info.def.name_span, |parent| parent.span);
+            (info.module.as_str(), span.start, name.as_str())
+        }) else {
             return;
-        }
-        if !visiting.insert(name.to_string()) {
-            if let Some(info) = self.types.get(name) {
-                let span = info
-                    .def
-                    .parent
-                    .as_ref()
-                    .map_or(info.def.name_span, |p| p.span);
-                let module = info.module.clone();
-                self.push_diag(
-                    CftErrorCode::InheritanceCycle,
-                    &module,
-                    span,
-                    "inheritance cycle detected",
-                );
-            }
-            return;
-        }
-        if let Some(parent) = self
-            .types
-            .get(name)
-            .and_then(|info| info.def.parent.as_ref())
-            .map(|parent| parent.name.clone())
+        };
+        let (module, span) = self.inheritance_edge_location(anchor);
+        let mut diagnostic = CftDiagnostic::error(
+            CftErrorCode::InheritanceCycle,
+            module,
+            span,
+            "inheritance cycle detected",
+        );
+        for name in cycle
+            .iter()
+            .cycle()
+            .skip(anchor_index + 1)
+            .take(cycle.len().saturating_sub(1))
         {
-            if self.types.contains_key(&parent) {
-                self.detect_cycle(&parent, visiting, visited);
-            }
+            let (module, span) = self.inheritance_edge_location(name);
+            diagnostic = diagnostic.with_related(module, span, "cycle continues here");
         }
-        visiting.remove(name);
-        visited.insert(name.to_string());
+        self.diagnostics.push(diagnostic);
     }
 
     pub(super) fn build_full_fields(&mut self) {
@@ -195,21 +277,12 @@ impl<'a> SchemaCompiler<'a> {
     /// the chain. Used by [`Self::build_full_fields`] and
     /// [`Self::collect_all_schema_fields`].
     pub(super) fn ancestry_chain(&self, type_name: &str) -> Vec<TypeInfo<'a>> {
-        let mut chain = Vec::new();
-        let mut current = Some(type_name.to_string());
-        let mut seen = HashSet::new();
-        while let Some(name) = current {
-            if !seen.insert(name.clone()) {
-                break;
-            }
-            let Some(info) = self.types.get(&name).cloned() else {
-                break;
-            };
-            current = info.def.parent.as_ref().map(|p| p.name.clone());
-            chain.push(info);
-        }
-        chain.reverse();
-        chain
+        self.inheritance_chains
+            .get(type_name)
+            .into_iter()
+            .flatten()
+            .filter_map(|name| self.types.get(name).cloned())
+            .collect()
     }
 
     /// Resolves a `TypeRef` to a `Ty` without emitting diagnostics. Errors
@@ -342,14 +415,17 @@ impl<'a> SchemaCompiler<'a> {
         parent_name: Option<&str>,
     ) -> BTreeMap<String, FieldOrigin> {
         let mut out = BTreeMap::new();
-        let mut current = parent_name.map(str::to_string);
-        let mut seen = HashSet::new();
-        while let Some(name) = current {
-            if !seen.insert(name.clone()) {
-                break;
-            }
-            let Some(info) = self.types.get(&name) else {
-                break;
+        let Some(parent_name) = parent_name else {
+            return out;
+        };
+        for name in self
+            .inheritance_chains
+            .get(parent_name)
+            .into_iter()
+            .flatten()
+        {
+            let Some(info) = self.types.get(name) else {
+                continue;
             };
             for field in &info.def.fields {
                 out.entry(field.name.clone())
@@ -358,7 +434,6 @@ impl<'a> SchemaCompiler<'a> {
                         span: field.name_span,
                     });
             }
-            current = info.def.parent.as_ref().map(|parent| parent.name.clone());
         }
         out
     }

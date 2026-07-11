@@ -1,8 +1,8 @@
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::parser::{parse_module_with_options, CftParseOptions};
 use crate::schema::{
-    compile_container, CftSchemaConst, CftSchemaEnum, CftSchemaModule, CftSchemaType,
-    CompiledSchema,
+    compile_container, CftCompileOptions, CftSchemaConst, CftSchemaEnum, CftSchemaModule,
+    CftSchemaType, CompiledSchema,
 };
 use crate::span::Span;
 use std::collections::BTreeMap;
@@ -114,7 +114,20 @@ impl CftContainer {
     /// published schema (if any) untouched, so consumers keep observing a stable
     /// reflection until the next successful call.
     pub fn compile(&mut self) -> Result<(), CftDiagnostics> {
-        let compiled = compile_container(self)?;
+        self.compile_with_options(CftCompileOptions::default())
+    }
+
+    /// Compiles all modules with explicit structural resource limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns schema/type diagnostics. Failed compilation leaves the last
+    /// successfully published reflection untouched.
+    pub fn compile_with_options(
+        &mut self,
+        options: CftCompileOptions,
+    ) -> Result<(), CftDiagnostics> {
+        let compiled = compile_container(self, options)?;
         self.compiled = Some(compiled);
         Ok(())
     }

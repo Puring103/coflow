@@ -772,7 +772,7 @@ fn cft_schema_compiler_symbols_are_split_out() {
 
         "pub(super) fn validate_inheritance",
 
-        "fn detect_cycle",
+        "fn report_inheritance_cycle",
 
         "pub(super) fn build_full_fields",
 

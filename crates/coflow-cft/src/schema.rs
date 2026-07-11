@@ -6,7 +6,21 @@ use self::compiler::SchemaCompiler;
 use crate::container::{CftContainer, ModuleId};
 use crate::error::CftDiagnostics;
 use crate::span::Span;
+use coflow_structure::StructuralLimits;
 use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CftCompileOptions {
+    pub structural_limits: StructuralLimits,
+}
+
+impl Default for CftCompileOptions {
+    fn default() -> Self {
+        Self {
+            structural_limits: StructuralLimits::default(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftSchemaModule {
@@ -316,7 +330,8 @@ pub(crate) struct CompiledSchema {
 
 pub(crate) fn compile_container(
     container: &CftContainer,
+    options: CftCompileOptions,
 ) -> Result<CompiledSchema, CftDiagnostics> {
-    let mut compiler = SchemaCompiler::new(container);
+    let mut compiler = SchemaCompiler::new(container, options);
     compiler.compile()
 }

@@ -114,6 +114,7 @@
 | `CFT-SCHEMA-035` | `LocalizedBucketNotIdentifier` | `@localized("...")` 参数不是合法 CFT 标识符 |
 | `CFT-SCHEMA-036` | `SingletonOnAbstractType` | `@singleton` 用在 `abstract type` 上 |
 | `CFT-SCHEMA-037` | `SingletonIdAsEnumConflict` | `@singleton` 与 `@idAsEnum` 同时使用 |
+| `CFT-SCHEMA-038` | `SchemaStructureLimitExceeded` | schema AST、继承链或 dependency 编译工作超过结构预算 |
 
 ## CFT Check 类型错误
 

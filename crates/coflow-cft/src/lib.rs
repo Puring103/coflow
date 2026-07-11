@@ -51,10 +51,10 @@ pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeveri
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
 pub use parser::CftParseOptions;
 pub use schema::{
-    format_schema_type_ref, CftAnnotation, CftAnnotationValue, CftConstValue, CftSchemaBinOp,
-    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
-    CftSchemaCmpOp, CftSchemaConst, CftSchemaDefaultValue, CftSchemaEnum, CftSchemaEnumVariant,
-    CftSchemaField, CftSchemaModule, CftSchemaQuantifierKind, CftSchemaType,
+    format_schema_type_ref, CftAnnotation, CftAnnotationValue, CftCompileOptions, CftConstValue,
+    CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
+    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaConst, CftSchemaDefaultValue, CftSchemaEnum,
+    CftSchemaEnumVariant, CftSchemaField, CftSchemaModule, CftSchemaQuantifierKind, CftSchemaType,
     CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp, Dimension, DimensionSpec,
 };
 pub use span::Span;
