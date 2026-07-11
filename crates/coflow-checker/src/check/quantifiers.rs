@@ -10,7 +10,13 @@ pub(super) fn quantifier_items(collection: LocatedCheckValue) -> OpsResult<Vec<L
             .into_iter()
             .enumerate()
             .map(|(index, item)| {
-                LocatedCheckValue::new(item, collection.path.clone().map(|path| path.index(index)))
+                LocatedCheckValue::new(
+                    item,
+                    collection
+                        .location
+                        .clone()
+                        .map(|location| location.index(index)),
+                )
             })
             .collect()),
         CheckValue::Dict { entries, .. } => Ok(entries
@@ -21,8 +27,11 @@ pub(super) fn quantifier_items(collection: LocatedCheckValue) -> OpsResult<Vec<L
                     Some(label) => label,
                     None => index.to_string(),
                 };
-                let path = collection.path.clone().map(|path| path.dict_key(key_label));
-                LocatedCheckValue::new(CheckValue::Entry(Box::new(entry)), path)
+                let location = collection
+                    .location
+                    .clone()
+                    .map(|location| location.dict_key(key_label));
+                LocatedCheckValue::new(CheckValue::Entry(Box::new(entry)), location)
             })
             .collect()),
         other => Err(OpsError::new(

@@ -1,11 +1,9 @@
-use coflow_cft::{
-    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaUnaryOp,
-};
-use coflow_data_model::{CfdErrorCode, CfdPath};
+use coflow_cft::{CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaUnaryOp};
+use coflow_data_model::CfdErrorCode;
 
 use super::diagnostics::{cmp_op_str, render_expr, CheckExplanation};
 use super::evaluation_trace::EvaluationTrace;
-use super::value::{CheckValue, LocatedCheckValue};
+use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
 
 pub(super) fn explain_false_value_expr(
     trace: &EvaluationTrace,
@@ -18,7 +16,7 @@ pub(super) fn explain_false_value_expr(
             CheckExplanation::new(
                 CfdErrorCode::CheckContainsFailed,
                 rendered,
-                value.path.clone(),
+                value.location.clone(),
             )
             .with_actual(value_expr_actual(trace, &args[0]))
             .with_expected(format!("包含 {}", render_expr(&args[1])))
@@ -30,25 +28,25 @@ pub(super) fn explain_false_value_expr(
         } if name == "contains" && args.len() == 1 => CheckExplanation::new(
             CfdErrorCode::CheckContainsFailed,
             rendered,
-            value.path.clone(),
+            value.location.clone(),
         )
         .with_actual(value_expr_actual(trace, receiver))
         .with_expected(format!("包含 {}", render_expr(&args[0]))),
         CftSchemaCheckExprKind::Call { name, args } if name == "isUnique" && args.len() == 1 => {
-            unique_failed_explanation(trace, &rendered, &args[0], value.path.clone())
+            unique_failed_explanation(trace, &rendered, &args[0], value.location.clone())
         }
         CftSchemaCheckExprKind::MethodCall {
             receiver,
             name,
             args,
         } if name == "isUnique" && args.is_empty() => {
-            unique_failed_explanation(trace, &rendered, receiver, value.path.clone())
+            unique_failed_explanation(trace, &rendered, receiver, value.location.clone())
         }
         CftSchemaCheckExprKind::Call { name, args } if name == "matches" && args.len() == 2 => {
             CheckExplanation::new(
                 CfdErrorCode::CheckMatchesFailed,
                 rendered,
-                value.path.clone(),
+                value.location.clone(),
             )
             .with_actual(value_expr_actual(trace, &args[0]))
             .with_expected(format!("匹配 {}", render_expr(&args[1])))
@@ -60,14 +58,14 @@ pub(super) fn explain_false_value_expr(
         } if name == "matches" && args.len() == 1 => CheckExplanation::new(
             CfdErrorCode::CheckMatchesFailed,
             rendered,
-            value.path.clone(),
+            value.location.clone(),
         )
         .with_actual(value_expr_actual(trace, receiver))
         .with_expected(format!("匹配 {}", render_expr(&args[0]))),
         _ => CheckExplanation::new(
             CfdErrorCode::CheckBoolExpectedTrue,
             rendered,
-            value.path.clone(),
+            value.location.clone(),
         )
         .with_actual("false")
         .with_expected("true"),
@@ -85,7 +83,7 @@ pub(super) fn explain_false_expr(
             CheckExplanation::new(
                 CfdErrorCode::CheckBoolExpectedTrue,
                 rendered,
-                value.path.clone(),
+                value.location.clone(),
             )
             .with_actual(format!("{name} = false"))
             .with_expected("true"),
@@ -94,7 +92,7 @@ pub(super) fn explain_false_expr(
             CheckExplanation::new(
                 CfdErrorCode::CheckBoolExpectedTrue,
                 rendered,
-                value.path.clone(),
+                value.location.clone(),
             )
             .with_actual("false")
             .with_expected("true"),
@@ -114,7 +112,7 @@ pub(super) fn explain_false_expr(
             CheckExplanation::new(
                 CfdErrorCode::CheckNegationFailed,
                 rendered,
-                value.path.clone(),
+                value.location.clone(),
             )
             .with_actual(format!("{} = true", render_expr(inner)))
             .with_expected("false"),
@@ -139,9 +137,13 @@ pub(super) fn explain_false_expr(
                 _ => "至少一个操作数为 false".to_string(),
             };
             Some(
-                CheckExplanation::new(CfdErrorCode::CheckAndFailed, rendered, value.path.clone())
-                    .with_actual(failed)
-                    .with_expected("两侧都为 true"),
+                CheckExplanation::new(
+                    CfdErrorCode::CheckAndFailed,
+                    rendered,
+                    value.location.clone(),
+                )
+                .with_actual(failed)
+                .with_expected("两侧都为 true"),
             )
         }
         CftSchemaCheckExprKind::BinOp {
@@ -149,13 +151,17 @@ pub(super) fn explain_false_expr(
             lhs,
             rhs,
         } => Some(
-            CheckExplanation::new(CfdErrorCode::CheckOrFailed, rendered, value.path.clone())
-                .with_actual(format!(
-                    "{} = false, {} = false",
-                    render_expr(lhs),
-                    render_expr(rhs)
-                ))
-                .with_expected("至少一侧为 true"),
+            CheckExplanation::new(
+                CfdErrorCode::CheckOrFailed,
+                rendered,
+                value.location.clone(),
+            )
+            .with_actual(format!(
+                "{} = false, {} = false",
+                render_expr(lhs),
+                render_expr(rhs)
+            ))
+            .with_expected("至少一侧为 true"),
         ),
         CftSchemaCheckExprKind::Is {
             expr: inner,
@@ -167,7 +173,7 @@ pub(super) fn explain_false_expr(
                     CheckExplanation::new(
                         CfdErrorCode::CheckNullPredicateFailed,
                         rendered,
-                        value.path.clone(),
+                        value.location.clone(),
                     )
                     .with_actual(actual)
                     .with_expected("null"),
@@ -182,7 +188,7 @@ pub(super) fn explain_false_expr(
                     CheckExplanation::new(
                         CfdErrorCode::CheckTypePredicateFailed,
                         rendered,
-                        value.path.clone(),
+                        value.location.clone(),
                     )
                     .with_actual(format!("实际类型 = {actual}"))
                     .with_expected(format!("类型为 {type_name}")),
@@ -190,7 +196,7 @@ pub(super) fn explain_false_expr(
             }
         },
         CftSchemaCheckExprKind::CmpChain { .. } => {
-            explain_failed_comparison(trace, &rendered, value.path.clone())
+            explain_failed_comparison(trace, &rendered, value.location.clone())
         }
         _ => None,
     }
@@ -199,10 +205,10 @@ pub(super) fn explain_false_expr(
 fn explain_failed_comparison(
     trace: &EvaluationTrace,
     rendered: &str,
-    fallback_path: Option<CfdPath>,
+    fallback_location: Option<ValueLocation>,
 ) -> Option<CheckExplanation> {
     let failure = trace.comparison_failure()?;
-    let path = failure.path.clone().or(fallback_path);
+    let location = failure.location.clone().or(fallback_location);
     let null_predicate = failure.lhs.is_null || failure.rhs.is_null;
     let code = if null_predicate
         && matches!(
@@ -213,13 +219,13 @@ fn explain_failed_comparison(
     } else {
         CfdErrorCode::CheckComparisonFailed
     };
-    let (actual_expr, actual_value) = if failure.lhs.path.is_some() {
+    let (actual_expr, actual_value) = if failure.lhs.location.is_some() {
         (&failure.lhs_expression, failure.lhs.display.as_deref())
     } else {
         (&failure.rhs_expression, failure.rhs.display.as_deref())
     };
     Some(
-        CheckExplanation::new(code, rendered.to_string(), path)
+        CheckExplanation::new(code, rendered.to_string(), location)
             .with_actual(format!(
                 "{actual_expr} = {}",
                 actual_value.unwrap_or("<unknown>")
@@ -232,10 +238,7 @@ fn explain_failed_comparison(
     )
 }
 
-pub(super) fn value_expr_actual(
-    trace: &EvaluationTrace,
-    expr: &CftSchemaCheckExpr,
-) -> String {
+pub(super) fn value_expr_actual(trace: &EvaluationTrace, expr: &CftSchemaCheckExpr) -> String {
     trace
         .fact(expr)
         .and_then(|fact| fact.display.as_ref())
@@ -249,12 +252,15 @@ fn unique_failed_explanation(
     trace: &EvaluationTrace,
     rendered: &str,
     collection: &CftSchemaCheckExpr,
-    path: Option<CfdPath>,
+    location: Option<ValueLocation>,
 ) -> CheckExplanation {
-    let explanation =
-        CheckExplanation::new(CfdErrorCode::CheckUniqueFailed, rendered.to_string(), path)
-            .with_actual(value_expr_actual(trace, collection))
-            .with_expected("所有元素唯一");
+    let explanation = CheckExplanation::new(
+        CfdErrorCode::CheckUniqueFailed,
+        rendered.to_string(),
+        location,
+    )
+    .with_actual(value_expr_actual(trace, collection))
+    .with_expected("所有元素唯一");
     match trace.unique_failure(collection) {
         Some(detail) => explanation.with_actual(detail),
         None => explanation,

@@ -14,14 +14,14 @@ pub(super) fn len_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
     match value.value {
         CheckValue::Array { items, .. } => Ok(LocatedCheckValue::new(
             CheckValue::Int(items.len() as i64),
-            value.path,
+            value.location,
         )),
         CheckValue::Dict { entries, .. } => Ok(LocatedCheckValue::new(
             CheckValue::Int(entries.len() as i64),
-            value.path,
+            value.location,
         )),
         other => Err(OpsError::eval_type(
-            value.path,
+            value.location,
             format!(
                 "len 需要 array 或 dict: 实际为 {}",
                 format_value_for_message(&other)
@@ -39,7 +39,7 @@ pub(super) fn contains_value(
         CheckValue::Dict { entries, .. } => {
             let Some(key) = dict_key_from_check_value(value) else {
                 return Err(OpsError::eval_type(
-                    collection.path.clone(),
+                    collection.location.clone(),
                     format!(
                         "contains 的 dict key 无效: 实际为 {}",
                         format_value_for_message(value)
@@ -51,7 +51,7 @@ pub(super) fn contains_value(
                 .any(|entry| entry.key_key() == Some(key.clone())))
         }
         other => Err(OpsError::eval_type(
-            collection.path.clone(),
+            collection.location.clone(),
             format!(
                 "contains 需要 array 或 dict: 实际为 {}",
                 format_value_for_message(other)
@@ -70,7 +70,7 @@ pub(super) fn unique_value(value: LocatedCheckValue) -> OpsResult<UniqueEvaluati
         CheckValue::Array { items, .. } => items,
         other => {
             return Err(OpsError::eval_type(
-                value.path,
+                value.location,
                 format!(
                     "isUnique 需要 array: 实际为 {}",
                     format_value_for_message(&other)
@@ -82,7 +82,7 @@ pub(super) fn unique_value(value: LocatedCheckValue) -> OpsResult<UniqueEvaluati
     for (index, item) in items.into_iter().enumerate() {
         let Some(key) = comparable_key(&item) else {
             return Err(OpsError::eval_type(
-                value.path.clone(),
+                value.location.clone(),
                 format!(
                     "isUnique 元素不可比较: 实际为 {}",
                     format_value_for_message(&item)
@@ -95,12 +95,12 @@ pub(super) fn unique_value(value: LocatedCheckValue) -> OpsResult<UniqueEvaluati
                     "重复值 {} 出现在索引 {first_index} 和 {index}",
                     format_value_for_message(&item)
                 )),
-                value: LocatedCheckValue::new(CheckValue::Bool(false), value.path),
+                value: LocatedCheckValue::new(CheckValue::Bool(false), value.location),
             });
         }
     }
     Ok(UniqueEvaluation {
-        value: LocatedCheckValue::new(CheckValue::Bool(true), value.path),
+        value: LocatedCheckValue::new(CheckValue::Bool(true), value.location),
         duplicate: None,
     })
 }
@@ -112,7 +112,7 @@ pub(super) fn keys_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValu
     } = value.value
     else {
         return Err(OpsError::eval_type(
-            value.path,
+            value.location,
             format!(
                 "keys 需要 dict: 实际为 {}",
                 format_value_for_message(&arg_kind)
@@ -124,7 +124,7 @@ pub(super) fn keys_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValu
             items: entries.into_iter().map(|entry| *entry.key).collect(),
             element_type: key_type,
         },
-        value.path,
+        value.location,
     ))
 }
 
@@ -137,7 +137,7 @@ pub(super) fn values_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckVa
     } = value.value
     else {
         return Err(OpsError::eval_type(
-            value.path,
+            value.location,
             format!(
                 "values 需要 dict: 实际为 {}",
                 format_value_for_message(&arg_kind)
@@ -149,7 +149,7 @@ pub(super) fn values_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckVa
             items: entries.into_iter().map(|entry| entry.value).collect(),
             element_type: value_type,
         },
-        value.path,
+        value.location,
     ))
 }
 
@@ -157,11 +157,11 @@ pub(super) fn matches_value(
     value: LocatedCheckValue,
     pattern: &str,
 ) -> OpsResult<LocatedCheckValue> {
-    let path = value.path.clone();
+    let location = value.location.clone();
     let value_kind = value.value.clone();
     let CheckValue::String(text) = value.value else {
         return Err(OpsError::eval_type(
-            path,
+            location,
             format!(
                 "matches 的值不是 string: 实际为 {}",
                 format_value_for_message(&value_kind)
@@ -173,7 +173,7 @@ pub(super) fn matches_value(
     })?;
     Ok(LocatedCheckValue::new(
         CheckValue::Bool(regex.is_match(&text)),
-        value.path,
+        value.location,
     ))
 }
 
@@ -181,11 +181,11 @@ pub(super) fn min_max_value(
     builtin: Builtin,
     value: LocatedCheckValue,
 ) -> OpsResult<LocatedCheckValue> {
-    let path = value.path.clone();
+    let location = value.location.clone();
     let arg_kind = value.value.clone();
     let CheckValue::Array { items, .. } = value.value else {
         return Err(OpsError::eval_type(
-            path,
+            location,
             format!(
                 "{} 需要 array: 实际为 {}",
                 builtin.name(),
@@ -196,7 +196,7 @@ pub(super) fn min_max_value(
     if items.is_empty() {
         return Err(OpsError::new(
             CfdErrorCode::CheckEmptyMinMax,
-            path,
+            location,
             format!("{} 不能作用于空数组", builtin.name()),
         ));
     }
@@ -206,7 +206,7 @@ pub(super) fn min_max_value(
     let Some(mut out) = non_null_items.next().cloned() else {
         return Err(OpsError::new(
             CfdErrorCode::CheckEmptyMinMax,
-            path,
+            location,
             format!(
                 "{} 不能作用于全 null 数组，长度为 {}",
                 builtin.name(),
@@ -215,16 +215,16 @@ pub(super) fn min_max_value(
         ));
     };
     for item in non_null_items {
-        let ord = ops::compare_order(&out, item, path.clone())?;
+        let ord = ops::compare_order(&out, item, location.clone())?;
         if (builtin == Builtin::Min && ord.is_gt()) || (builtin == Builtin::Max && ord.is_lt()) {
             out = item.clone();
         }
     }
-    Ok(LocatedCheckValue::new(out, path))
+    Ok(LocatedCheckValue::new(out, location))
 }
 
 pub(super) fn sum_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue> {
-    let path = value.path.clone();
+    let location = value.location.clone();
     let arg_kind = value.value.clone();
     let CheckValue::Array {
         items,
@@ -232,7 +232,7 @@ pub(super) fn sum_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
     } = value.value
     else {
         return Err(OpsError::eval_type(
-            value.path,
+            value.location,
             format!(
                 "sum 需要 array: 实际为 {}",
                 format_value_for_message(&arg_kind)
@@ -249,7 +249,7 @@ pub(super) fn sum_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
                 saw_numeric = true;
                 let Some(next) = int_sum.checked_add(value) else {
                     return Err(OpsError::eval_type(
-                        path,
+                        location,
                         format!("整数求和溢出: {int_sum} + {value}"),
                     ));
                 };
@@ -270,7 +270,7 @@ pub(super) fn sum_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
             CheckValue::Null => {}
             other => {
                 return Err(OpsError::eval_type(
-                    path,
+                    location,
                     format!(
                         "sum 元素不是数值: 实际为 {}",
                         format_value_for_message(&other)
@@ -280,8 +280,11 @@ pub(super) fn sum_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
         }
     }
     if saw_float || (!saw_numeric && type_ref_is_float(element_type.as_ref())) {
-        Ok(LocatedCheckValue::new(CheckValue::Float(float_sum), path))
+        Ok(LocatedCheckValue::new(
+            CheckValue::Float(float_sum),
+            location,
+        ))
     } else {
-        Ok(LocatedCheckValue::new(CheckValue::Int(int_sum), path))
+        Ok(LocatedCheckValue::new(CheckValue::Int(int_sum), location))
     }
 }

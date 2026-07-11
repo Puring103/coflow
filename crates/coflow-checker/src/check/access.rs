@@ -11,7 +11,7 @@ pub(super) fn index_value(
     if matches!(target.value, CheckValue::Null) {
         return Err(OpsError::new(
             CfdErrorCode::CheckNullAccess,
-            target.path,
+            target.location,
             format!(
                 "不能索引 null: 尝试在 null 上读取 [{}]",
                 format_value_for_message(&index.value)
@@ -20,11 +20,11 @@ pub(super) fn index_value(
     }
     match target.value {
         CheckValue::Array { items, .. } => {
-            let index_path = index.path.clone();
+            let index_location = index.location.clone();
             let index_kind = index.value.clone();
             let CheckValue::Int(idx) = index.value else {
                 return Err(OpsError::eval_type(
-                    index_path,
+                    index_location,
                     format!(
                         "数组索引不是 int: 实际为 {}",
                         format_value_for_message(&index_kind)
@@ -35,7 +35,7 @@ pub(super) fn index_value(
             let Ok(idx_us) = usize::try_from(idx) else {
                 return Err(OpsError::new(
                     CfdErrorCode::CheckIndexOutOfBounds,
-                    target.path,
+                    target.location,
                     format!("数组索引为负数: 实际为 {idx}，长度为 {len}"),
                 ));
             };
@@ -45,13 +45,16 @@ pub(super) fn index_value(
                 .map(|value| {
                     LocatedCheckValue::new(
                         value,
-                        target.path.clone().map(|path| path.index(idx_us)),
+                        target
+                            .location
+                            .clone()
+                            .map(|location| location.index(idx_us)),
                     )
                 })
                 .ok_or_else(|| {
                     OpsError::new(
                         CfdErrorCode::CheckIndexOutOfBounds,
-                        target.path,
+                        target.location,
                         format!("数组索引越界: 索引 {idx_us}，长度 {len}"),
                     )
                 })
@@ -59,7 +62,7 @@ pub(super) fn index_value(
         CheckValue::Dict { entries, .. } => {
             let Some(key) = dict_key_from_check_value(&index.value) else {
                 return Err(OpsError::eval_type(
-                    index.path,
+                    index.location,
                     format!(
                         "dict 索引不是有效 key: 实际为 {}",
                         format_value_for_message(&index.value)
@@ -67,20 +70,24 @@ pub(super) fn index_value(
                 ));
             };
             let key_label = format_value_for_message(&index.value);
+            let value_location = target
+                .location
+                .clone()
+                .map(|location| location.dict_key(key_label.clone()));
             entries
                 .into_iter()
                 .find(|entry| entry.key_key().is_some_and(|entry_key| entry_key == key))
-                .map(|entry| LocatedCheckValue::new(entry.value, target.path.clone()))
+                .map(|entry| LocatedCheckValue::new(entry.value, value_location))
                 .ok_or_else(|| {
                     OpsError::new(
                         CfdErrorCode::CheckMissingDictKey,
-                        target.path,
+                        target.location,
                         format!("dict key {key_label} 不存在"),
                     )
                 })
         }
         other => Err(OpsError::eval_type(
-            target.path,
+            target.location,
             format!(
                 "索引目标不是集合: 读取 [{}] 时实际为 {}",
                 format_value_for_message(&index.value),

@@ -9,12 +9,12 @@ use super::enum_values;
 use super::evaluation_trace::EvaluationTrace;
 use super::fields;
 use super::ops::{self, OpsResult};
-use super::value::{CheckValue, LocatedCheckValue};
+use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
 use crate::DimensionCheckContext;
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp, CompiledSchema,
 };
-use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdPath, CfdRecordId};
+use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId};
 use std::collections::BTreeMap;
 
 use super::value::CheckRecordRef;
@@ -22,8 +22,7 @@ use super::value::CheckRecordRef;
 pub(super) struct CheckEvaluator<'a> {
     pub(super) schema: &'a CompiledSchema,
     pub(super) model: &'a CfdDataModel,
-    pub(super) root_record: Option<CfdRecordId>,
-    pub(super) root_path: CfdPath,
+    pub(super) check_origin: ValueLocation,
     pub(super) current: CheckValue,
     pub(super) scopes: Vec<BTreeMap<String, LocatedCheckValue>>,
     pub(super) contexts: Vec<String>,
@@ -52,13 +51,12 @@ impl<'a> CheckEvaluator<'a> {
     pub(super) fn new(
         schema: &'a CompiledSchema,
         model: &'a CfdDataModel,
-        root_record: Option<CfdRecordId>,
-        root_path: CfdPath,
+        check_origin: ValueLocation,
         current: CheckValue,
         mut deps: DependencyCollector,
     ) -> Self {
         let initial_top = match &current {
-            CheckValue::Record(CheckRecordRef::Top(id)) => Some(*id),
+            CheckValue::Record(record) => record.top_record_id(),
             _ => None,
         };
         if let Some(record_id) = initial_top {
@@ -67,8 +65,7 @@ impl<'a> CheckEvaluator<'a> {
         Self {
             schema,
             model,
-            root_record,
-            root_path,
+            check_origin,
             current,
             scopes: Vec::new(),
             contexts: Vec::new(),
@@ -89,8 +86,8 @@ impl<'a> CheckEvaluator<'a> {
 
     pub(super) fn eval_ops<T>(&mut self, result: OpsResult<T>) -> EvalResult<T> {
         result.map_err(|err| {
-            let (code, path, message) = err.into_parts();
-            self.diag_at(code, path, message);
+            let (code, location, message) = err.into_parts();
+            self.diag_at(code, location, message);
             EvalAbort::Error
         })
     }
@@ -117,10 +114,10 @@ impl<'a> CheckEvaluator<'a> {
             Err(DimensionVariantAbort::Skipped) => Err(EvalAbort::Skipped),
             Err(DimensionVariantAbort::Error {
                 code,
-                path,
+                location,
                 message,
             }) => {
-                self.diag_at(code, path, message);
+                self.diag_at(code, location, message);
                 Err(EvalAbort::Error)
             }
         }
@@ -152,18 +149,14 @@ impl<'a> CheckEvaluator<'a> {
         lhs: &CftSchemaCheckExpr,
         op: CftSchemaCmpOp,
         rhs: &CftSchemaCheckExpr,
-        path: Option<CfdPath>,
+        location: Option<ValueLocation>,
     ) {
         if let Some(trace) = &mut self.trace {
-            trace.note_comparison_failure(lhs, op, rhs, path);
+            trace.note_comparison_failure(lhs, op, rhs, location);
         }
     }
 
-    pub(super) fn note_unique_failure(
-        &mut self,
-        collection: &CftSchemaCheckExpr,
-        detail: String,
-    ) {
+    pub(super) fn note_unique_failure(&mut self, collection: &CftSchemaCheckExpr, detail: String) {
         if let Some(trace) = &mut self.trace {
             trace.note_unique_failure(collection, detail);
         }
@@ -175,16 +168,12 @@ impl<'a> CheckEvaluator<'a> {
                 return Ok(value.clone());
             }
         }
-        if let Some(mut value) = fields::current_field(
-            self.schema,
-            self.model,
-            self.root_record,
-            &self.root_path,
-            &self.current,
-            name,
-        ) {
-            if let CheckValue::Record(CheckRecordRef::Top(id)) = &value.value {
-                self.note_read_from(*id);
+        if let Some(mut value) = fields::current_field(self.schema, self.model, &self.current, name)
+        {
+            if let CheckValue::Record(record) = &value.value {
+                if let Some(id) = record.top_record_id() {
+                    self.note_read_from(id);
+                }
             }
             if let CheckValue::Record(record) = self.current.clone() {
                 self.apply_dimension_variant(&record, name, &mut value)?;
@@ -215,16 +204,12 @@ impl<'a> CheckEvaluator<'a> {
             CheckValue::Record(record) => Some(record.clone()),
             _ => None,
         };
-        let mut result = self.eval_ops(fields::field_value(
-            self.schema,
-            self.model,
-            self.root_record,
-            &self.root_path,
-            target,
-            name,
-        ))?;
-        if let CheckValue::Record(CheckRecordRef::Top(id)) = &result.value {
-            self.note_read_from(*id);
+        let mut result =
+            self.eval_ops(fields::field_value(self.schema, self.model, target, name))?;
+        if let CheckValue::Record(record) = &result.value {
+            if let Some(id) = record.top_record_id() {
+                self.note_read_from(id);
+            }
         }
         if let Some(record) = target_record {
             self.apply_dimension_variant(&record, name, &mut result)?;
@@ -259,7 +244,7 @@ impl<'a> CheckEvaluator<'a> {
                 let CheckValue::Int(value) = arg_value.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
-                        arg_value.path,
+                        arg_value.location,
                         format!(
                             "枚举构造函数参数不是 int: 实际为 {}",
                             format_value_for_message(&arg_kind)
@@ -293,7 +278,7 @@ impl<'a> CheckEvaluator<'a> {
                     CheckValue::Bool(
                         self.eval_ops(builtin_values::contains_value(&collection, &value.value))?,
                     ),
-                    collection.path.clone(),
+                    collection.location.clone(),
                 ))
             }
             Builtin::Unique => {
@@ -348,7 +333,7 @@ impl<'a> CheckEvaluator<'a> {
                         &receiver_value,
                         &value.value,
                     ))?),
-                    receiver_value.path.clone(),
+                    receiver_value.location.clone(),
                 ))
             }
             Builtin::Unique => self.eval_unique(receiver, receiver_value),
@@ -455,13 +440,13 @@ impl<'a> CheckEvaluator<'a> {
             _ => {
                 let lhs = self.eval_expr(lhs)?;
                 let rhs = self.eval_expr(rhs)?;
-                let path = lhs.path.clone().or_else(|| rhs.path.clone());
+                let location = lhs.location.clone().or_else(|| rhs.location.clone());
                 self.eval_ops(ops::eager_bin_op(
                     self.schema,
                     op,
                     lhs.value,
                     rhs.value,
-                    path,
+                    location,
                 ))
             }
         }
@@ -474,7 +459,7 @@ impl<'a> CheckEvaluator<'a> {
     pub(super) fn diag_at(
         &mut self,
         code: CfdErrorCode,
-        path: Option<CfdPath>,
+        location: Option<ValueLocation>,
         message: impl Into<String>,
     ) {
         let mut message = message.into();
@@ -482,7 +467,7 @@ impl<'a> CheckEvaluator<'a> {
             message.push_str("\n上下文: ");
             message.push_str(context);
         }
-        self.diag_at_preformatted(code, path, message);
+        self.diag_at_preformatted(code, location, message);
     }
 
     fn eval_unique(
@@ -500,14 +485,26 @@ impl<'a> CheckEvaluator<'a> {
     pub(super) fn diag_at_preformatted(
         &mut self,
         code: CfdErrorCode,
-        path: Option<CfdPath>,
+        location: Option<ValueLocation>,
         message: impl Into<String>,
     ) {
-        let path = match path {
-            Some(path) => path,
-            None => self.root_path.clone(),
-        };
-        self.diagnostics
-            .push(CfdDiagnostic::error(code, message.into()).with_primary(self.root_record, path));
+        let location = location.unwrap_or_else(|| self.check_origin.clone());
+        let mut diagnostic = CfdDiagnostic::error(code, message.into())
+            .with_primary(Some(location.blame.record), location.blame.path.clone());
+        for reference in &location.references {
+            diagnostic = diagnostic.with_related(
+                Some(reference.record),
+                reference.path.clone(),
+                "referenced from here",
+            );
+        }
+        if location.storage != location.blame && !location.references.contains(&location.storage) {
+            diagnostic = diagnostic.with_related(
+                Some(location.storage.record),
+                location.storage.path,
+                "value stored here",
+            );
+        }
+        self.diagnostics.push(diagnostic);
     }
 }

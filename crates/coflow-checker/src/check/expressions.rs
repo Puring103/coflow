@@ -1,7 +1,7 @@
 use super::evaluator::{CheckEvaluator, EvalResult};
 use super::ops;
 use super::type_predicates;
-use super::value::{CheckRecordRef, CheckValue, LocatedCheckValue};
+use super::value::{CheckValue, LocatedCheckValue};
 use coflow_cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind};
 use coflow_data_model::CfdEnumValue;
 
@@ -75,8 +75,10 @@ fn eval_index_expr(
     let target = evaluator.eval_expr(inner)?;
     let index = evaluator.eval_expr(index)?;
     let result = evaluator.eval_index(target, index)?;
-    if let CheckValue::Record(CheckRecordRef::Top(id)) = &result.value {
-        evaluator.note_read_from(*id);
+    if let CheckValue::Record(record) = &result.value {
+        if let Some(id) = record.top_record_id() {
+            evaluator.note_read_from(id);
+        }
     }
     Ok(result)
 }
@@ -94,7 +96,7 @@ fn eval_is_expr(
             &value.value,
             predicate,
         )),
-        value.path,
+        value.location,
     ))
 }
 
@@ -107,10 +109,15 @@ fn eval_cmp_chain_expr(
     let mut lhs = evaluator.eval_expr(first)?;
     for (op, rhs_expr) in rest {
         let rhs = evaluator.eval_expr(rhs_expr)?;
-        let path = lhs.path.clone().or_else(|| rhs.path.clone());
-        if !evaluator.eval_ops(ops::compare(*op, &lhs.value, &rhs.value, rhs.path.clone()))? {
-            evaluator.note_comparison_failure(lhs_expr, *op, rhs_expr, path.clone());
-            return Ok(LocatedCheckValue::new(CheckValue::Bool(false), path));
+        let location = lhs.location.clone().or_else(|| rhs.location.clone());
+        if !evaluator.eval_ops(ops::compare(
+            *op,
+            &lhs.value,
+            &rhs.value,
+            rhs.location.clone(),
+        ))? {
+            evaluator.note_comparison_failure(lhs_expr, *op, rhs_expr, location.clone());
+            return Ok(LocatedCheckValue::new(CheckValue::Bool(false), location));
         }
         lhs_expr = rhs_expr;
         lhs = rhs;

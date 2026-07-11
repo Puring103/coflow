@@ -1,12 +1,10 @@
 use super::deps::{DependencyCollector, DependencyGraphBuilder};
 use super::evaluator::CheckEvaluator;
 use super::statements;
-use super::value::{CheckRecordRef, CheckValue};
+use super::value::{CheckRecordRef, CheckValue, ValueLocation};
 use crate::{DependencyGraph, DimensionCheckContext};
 use coflow_cft::CompiledSchema;
-use coflow_data_model::{
-    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdPath, CfdRecordId, CfdValue, RefSite,
-};
+use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdRecordId, CfdValue};
 use std::collections::BTreeMap;
 
 pub(crate) struct CheckRunner<'a> {
@@ -73,13 +71,13 @@ impl<'a> CheckRunner<'a> {
     }
 
     fn run_one_record(&mut self, record_id: CfdRecordId, record: &coflow_data_model::CfdRecord) {
-        let path = CfdPath::root();
+        let location = ValueLocation::root(record_id);
         self.run_record_checks(
-            CheckRecordRef::Top(record_id),
+            CheckRecordRef::Resolved(location.clone()),
             Some(record_id),
-            path.clone(),
+            location.clone(),
         );
-        self.run_nested_field_checks(Some(record_id), record.fields(), path);
+        self.run_nested_field_checks(Some(record_id), record.fields(), location);
     }
 
     fn into_result(self) -> Result<(), CfdDiagnostics> {
@@ -94,7 +92,7 @@ impl<'a> CheckRunner<'a> {
         &mut self,
         record: CheckRecordRef,
         root_record: Option<CfdRecordId>,
-        root_path: CfdPath,
+        root_location: ValueLocation,
     ) {
         let Some(actual_type) = record.actual_type(self.model).map(ToOwned::to_owned) else {
             return;
@@ -110,8 +108,7 @@ impl<'a> CheckRunner<'a> {
             || DependencyCollector::disabled(root_record),
             |deps| deps.collector_for(root_record),
         );
-        let mut evaluator =
-            CheckEvaluator::new(self.schema, self.model, root_record, root_path, root, deps);
+        let mut evaluator = CheckEvaluator::new(self.schema, self.model, root_location, root, deps);
         evaluator
             .dimension_context
             .clone_from(&self.dimension_context);
@@ -129,13 +126,13 @@ impl<'a> CheckRunner<'a> {
         &mut self,
         root_record: Option<CfdRecordId>,
         fields: &BTreeMap<String, CfdValue>,
-        root_path: CfdPath,
+        root_location: ValueLocation,
     ) {
         if self.dimension_context.is_some() {
             return;
         }
         for (name, value) in fields {
-            self.run_nested_value_checks(root_record, value, root_path.clone().field(name));
+            self.run_nested_value_checks(root_record, value, root_location.field(name));
         }
     }
 
@@ -143,35 +140,28 @@ impl<'a> CheckRunner<'a> {
         &mut self,
         root_record: Option<CfdRecordId>,
         value: &CfdValue,
-        path: CfdPath,
+        location: ValueLocation,
     ) {
         match value {
             CfdValue::Object(record) => {
-                let Some(host) = root_record else {
+                if root_record.is_none() {
                     return;
-                };
+                }
                 self.run_record_checks(
-                    CheckRecordRef::Inline {
-                        site: RefSite::new(host, path.clone()),
-                        path: Some(path.clone()),
-                    },
+                    CheckRecordRef::Resolved(location.clone()),
                     root_record,
-                    path.clone(),
+                    location.clone(),
                 );
-                self.run_nested_field_checks(root_record, record.fields(), path);
+                self.run_nested_field_checks(root_record, record.fields(), location);
             }
             CfdValue::Array(items) => {
                 for (index, item) in items.iter().enumerate() {
-                    self.run_nested_value_checks(root_record, item, path.clone().index(index));
+                    self.run_nested_value_checks(root_record, item, location.index(index));
                 }
             }
             CfdValue::Dict(entries) => {
                 for (key, item) in entries {
-                    self.run_nested_value_checks(
-                        root_record,
-                        item,
-                        path.clone().dict_key_value(key),
-                    );
+                    self.run_nested_value_checks(root_record, item, location.dict_key_value(key));
                 }
             }
             CfdValue::Ref(_)

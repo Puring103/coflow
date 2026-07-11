@@ -1,37 +1,37 @@
 use std::cmp::Ordering;
 
 use coflow_cft::{CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp, CompiledSchema};
-use coflow_data_model::{CfdErrorCode, CfdPath};
+use coflow_data_model::CfdErrorCode;
 
 use super::diagnostics::{bin_op_str, format_value_for_message, unary_op_str};
 use super::enum_values;
-use super::value::{values_equal, CheckValue, LocatedCheckValue};
+use super::value::{values_equal, CheckValue, LocatedCheckValue, ValueLocation};
 
 pub(super) struct OpsError {
     code: CfdErrorCode,
-    path: Option<CfdPath>,
+    location: Option<ValueLocation>,
     message: String,
 }
 
 impl OpsError {
     pub(super) fn new(
         code: CfdErrorCode,
-        path: Option<CfdPath>,
+        location: Option<ValueLocation>,
         message: impl Into<String>,
     ) -> Self {
         Self {
             code,
-            path,
+            location,
             message: message.into(),
         }
     }
 
-    pub(super) fn eval_type(path: Option<CfdPath>, message: impl Into<String>) -> Self {
-        Self::new(CfdErrorCode::CheckEvalTypeError, path, message)
+    pub(super) fn eval_type(location: Option<ValueLocation>, message: impl Into<String>) -> Self {
+        Self::new(CfdErrorCode::CheckEvalTypeError, location, message)
     }
 
-    pub(super) fn into_parts(self) -> (CfdErrorCode, Option<CfdPath>, String) {
-        (self.code, self.path, self.message)
+    pub(super) fn into_parts(self) -> (CfdErrorCode, Option<ValueLocation>, String) {
+        (self.code, self.location, self.message)
     }
 }
 
@@ -39,74 +39,74 @@ pub(super) type OpsResult<T> = Result<T, OpsError>;
 
 pub(super) fn checked_int(
     value: Option<i64>,
-    path: Option<CfdPath>,
+    location: Option<ValueLocation>,
     message: impl Into<String>,
 ) -> OpsResult<LocatedCheckValue> {
     value
-        .map(|value| LocatedCheckValue::new(CheckValue::Int(value), path.clone()))
-        .ok_or_else(|| OpsError::new(CfdErrorCode::CheckEvalTypeError, path, message))
+        .map(|value| LocatedCheckValue::new(CheckValue::Int(value), location.clone()))
+        .ok_or_else(|| OpsError::new(CfdErrorCode::CheckEvalTypeError, location, message))
 }
 
 pub(super) fn checked_shift(
     op: fn(i64, u32) -> Option<i64>,
     lhs: i64,
     rhs: i64,
-    path: Option<CfdPath>,
+    location: Option<ValueLocation>,
     message: impl Into<String>,
 ) -> OpsResult<LocatedCheckValue> {
     let Some(rhs) = rhs.try_into().ok() else {
         return Err(OpsError::new(
             CfdErrorCode::CheckEvalTypeError,
-            path,
+            location,
             message,
         ));
     };
-    checked_int(op(lhs, rhs), path, message)
+    checked_int(op(lhs, rhs), location, message)
 }
 
 pub(super) fn expect_bool_operand(
     value: LocatedCheckValue,
     side: &str,
-) -> OpsResult<(bool, Option<CfdPath>)> {
-    let path = value.path.clone();
+) -> OpsResult<(bool, Option<ValueLocation>)> {
+    let location = value.location.clone();
     let bad_value = value.value.clone();
     let CheckValue::Bool(value) = value.value else {
         return Err(OpsError::eval_type(
-            path,
+            location,
             format!(
                 "{side}操作数不是 bool: 实际为 {}",
                 format_value_for_message(&bad_value)
             ),
         ));
     };
-    Ok((value, path))
+    Ok((value, location))
 }
 
 pub(super) fn compare(
     op: CftSchemaCmpOp,
     lhs: &CheckValue,
     rhs: &CheckValue,
-    path: Option<CfdPath>,
+    location: Option<ValueLocation>,
 ) -> OpsResult<bool> {
     Ok(match op {
         CftSchemaCmpOp::Eq => values_equal(lhs, rhs),
         CftSchemaCmpOp::Ne => !values_equal(lhs, rhs),
-        CftSchemaCmpOp::Lt => compare_order(lhs, rhs, path)?.is_lt(),
-        CftSchemaCmpOp::Le => !compare_order(lhs, rhs, path)?.is_gt(),
-        CftSchemaCmpOp::Gt => compare_order(lhs, rhs, path)?.is_gt(),
-        CftSchemaCmpOp::Ge => !compare_order(lhs, rhs, path)?.is_lt(),
+        CftSchemaCmpOp::Lt => compare_order(lhs, rhs, location)?.is_lt(),
+        CftSchemaCmpOp::Le => !compare_order(lhs, rhs, location)?.is_gt(),
+        CftSchemaCmpOp::Gt => compare_order(lhs, rhs, location)?.is_gt(),
+        CftSchemaCmpOp::Ge => !compare_order(lhs, rhs, location)?.is_lt(),
     })
 }
 
 pub(super) fn compare_order(
     lhs: &CheckValue,
     rhs: &CheckValue,
-    path: Option<CfdPath>,
+    location: Option<ValueLocation>,
 ) -> OpsResult<Ordering> {
     if matches!(lhs, CheckValue::Null) || matches!(rhs, CheckValue::Null) {
         return Err(OpsError::new(
             CfdErrorCode::CheckNullAccess,
-            path,
+            location,
             format!(
                 "不能对 null 做有序比较: {} cmp {}",
                 format_value_for_message(lhs),
@@ -119,7 +119,7 @@ pub(super) fn compare_order(
         (CheckValue::Float(lhs), CheckValue::Float(rhs)) => lhs.partial_cmp(rhs).ok_or_else(|| {
             OpsError::new(
                 CfdErrorCode::CheckEvalTypeError,
-                path,
+                location,
                 format!("float 比较失败: {lhs} cmp {rhs}"),
             )
         }),
@@ -128,7 +128,7 @@ pub(super) fn compare_order(
         }
         _ => Err(OpsError::new(
             CfdErrorCode::CheckEvalTypeError,
-            path,
+            location,
             format!(
                 "值不可做有序比较: {} cmp {}",
                 format_value_for_message(lhs),
@@ -143,21 +143,21 @@ pub(super) fn unary_op(
     op: CftSchemaUnaryOp,
     value: LocatedCheckValue,
 ) -> OpsResult<LocatedCheckValue> {
-    let path = value.path;
+    let location = value.location;
     match (op, value.value) {
         (CftSchemaUnaryOp::Not, CheckValue::Bool(value)) => {
-            Ok(LocatedCheckValue::new(CheckValue::Bool(!value), path))
+            Ok(LocatedCheckValue::new(CheckValue::Bool(!value), location))
         }
         (CftSchemaUnaryOp::Neg, CheckValue::Int(value)) => checked_int(
             value.checked_neg(),
-            path,
+            location,
             format!("整数取负溢出: -({value})"),
         ),
         (CftSchemaUnaryOp::Neg, CheckValue::Float(value)) => {
-            Ok(LocatedCheckValue::new(CheckValue::Float(-value), path))
+            Ok(LocatedCheckValue::new(CheckValue::Float(-value), location))
         }
         (CftSchemaUnaryOp::BitNot, CheckValue::Int(value)) => {
-            Ok(LocatedCheckValue::new(CheckValue::Int(!value), path))
+            Ok(LocatedCheckValue::new(CheckValue::Int(!value), location))
         }
         (CftSchemaUnaryOp::BitNot, CheckValue::Enum(value)) => Ok(LocatedCheckValue::new(
             CheckValue::Enum(enum_values::enum_with_value(
@@ -165,10 +165,10 @@ pub(super) fn unary_op(
                 &value.enum_name,
                 !value.value,
             )),
-            path,
+            location,
         )),
         (op, value) => Err(OpsError::eval_type(
-            path,
+            location,
             format!(
                 "不支持的一元运算: {} 作用于 {}",
                 unary_op_str(op),
@@ -183,12 +183,12 @@ pub(super) fn eager_bin_op(
     op: CftSchemaBinOp,
     lhs: CheckValue,
     rhs: CheckValue,
-    path: Option<CfdPath>,
+    location: Option<ValueLocation>,
 ) -> OpsResult<LocatedCheckValue> {
     if matches!(lhs, CheckValue::Null) || matches!(rhs, CheckValue::Null) {
         return Err(OpsError::new(
             CfdErrorCode::CheckNullAccess,
-            path,
+            location,
             format!(
                 "不能对 null 执行二元运算: {} {} {}",
                 format_value_for_message(&lhs),
@@ -200,75 +200,75 @@ pub(super) fn eager_bin_op(
     match (op, lhs, rhs) {
         (CftSchemaBinOp::Add, CheckValue::Int(lhs), CheckValue::Int(rhs)) => checked_int(
             lhs.checked_add(rhs),
-            path,
+            location,
             format!("整数加法溢出: {lhs} + {rhs}"),
         ),
         (CftSchemaBinOp::Sub, CheckValue::Int(lhs), CheckValue::Int(rhs)) => checked_int(
             lhs.checked_sub(rhs),
-            path,
+            location,
             format!("整数减法溢出: {lhs} - {rhs}"),
         ),
         (CftSchemaBinOp::Mul, CheckValue::Int(lhs), CheckValue::Int(rhs)) => checked_int(
             lhs.checked_mul(rhs),
-            path,
+            location,
             format!("整数乘法溢出: {lhs} * {rhs}"),
         ),
         (CftSchemaBinOp::Div, CheckValue::Int(lhs), CheckValue::Int(rhs)) => checked_int(
             lhs.checked_div(rhs),
-            path,
+            location,
             format!("整数除法失败: {lhs} / {rhs}"),
         ),
         (CftSchemaBinOp::IntDiv, CheckValue::Int(lhs), CheckValue::Int(rhs)) => checked_int(
             lhs.checked_div(rhs),
-            path,
+            location,
             format!("整数整除失败: {lhs} // {rhs}"),
         ),
         (CftSchemaBinOp::Mod, CheckValue::Int(lhs), CheckValue::Int(rhs)) => checked_int(
             lhs.checked_rem(rhs),
-            path,
+            location,
             format!("整数取模失败: {lhs} % {rhs}"),
         ),
         (CftSchemaBinOp::Pow, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
             let value = rhs.try_into().ok().and_then(|rhs| lhs.checked_pow(rhs));
-            checked_int(value, path, format!("整数幂运算失败: {lhs} ** {rhs}"))
+            checked_int(value, location, format!("整数幂运算失败: {lhs} ** {rhs}"))
         }
         (CftSchemaBinOp::Shl, CheckValue::Int(lhs), CheckValue::Int(rhs)) => checked_shift(
             i64::checked_shl,
             lhs,
             rhs,
-            path,
+            location,
             format!("整数左移失败: {lhs} << {rhs}"),
         ),
         (CftSchemaBinOp::Shr, CheckValue::Int(lhs), CheckValue::Int(rhs)) => checked_shift(
             i64::checked_shr,
             lhs,
             rhs,
-            path,
+            location,
             format!("整数右移失败: {lhs} >> {rhs}"),
         ),
-        (CftSchemaBinOp::Add, CheckValue::Float(lhs), CheckValue::Float(rhs)) => {
-            Ok(LocatedCheckValue::new(CheckValue::Float(lhs + rhs), path))
-        }
-        (CftSchemaBinOp::Sub, CheckValue::Float(lhs), CheckValue::Float(rhs)) => {
-            Ok(LocatedCheckValue::new(CheckValue::Float(lhs - rhs), path))
-        }
-        (CftSchemaBinOp::Mul, CheckValue::Float(lhs), CheckValue::Float(rhs)) => {
-            Ok(LocatedCheckValue::new(CheckValue::Float(lhs * rhs), path))
-        }
-        (CftSchemaBinOp::Div, CheckValue::Float(lhs), CheckValue::Float(rhs)) => {
-            Ok(LocatedCheckValue::new(CheckValue::Float(lhs / rhs), path))
-        }
+        (CftSchemaBinOp::Add, CheckValue::Float(lhs), CheckValue::Float(rhs)) => Ok(
+            LocatedCheckValue::new(CheckValue::Float(lhs + rhs), location),
+        ),
+        (CftSchemaBinOp::Sub, CheckValue::Float(lhs), CheckValue::Float(rhs)) => Ok(
+            LocatedCheckValue::new(CheckValue::Float(lhs - rhs), location),
+        ),
+        (CftSchemaBinOp::Mul, CheckValue::Float(lhs), CheckValue::Float(rhs)) => Ok(
+            LocatedCheckValue::new(CheckValue::Float(lhs * rhs), location),
+        ),
+        (CftSchemaBinOp::Div, CheckValue::Float(lhs), CheckValue::Float(rhs)) => Ok(
+            LocatedCheckValue::new(CheckValue::Float(lhs / rhs), location),
+        ),
         (CftSchemaBinOp::Pow, CheckValue::Float(lhs), CheckValue::Float(rhs)) => Ok(
-            LocatedCheckValue::new(CheckValue::Float(lhs.powf(rhs)), path),
+            LocatedCheckValue::new(CheckValue::Float(lhs.powf(rhs)), location),
         ),
         (CftSchemaBinOp::BitOr, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-            Ok(LocatedCheckValue::new(CheckValue::Int(lhs | rhs), path))
+            Ok(LocatedCheckValue::new(CheckValue::Int(lhs | rhs), location))
         }
         (CftSchemaBinOp::BitXor, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-            Ok(LocatedCheckValue::new(CheckValue::Int(lhs ^ rhs), path))
+            Ok(LocatedCheckValue::new(CheckValue::Int(lhs ^ rhs), location))
         }
         (CftSchemaBinOp::BitAnd, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-            Ok(LocatedCheckValue::new(CheckValue::Int(lhs & rhs), path))
+            Ok(LocatedCheckValue::new(CheckValue::Int(lhs & rhs), location))
         }
         (CftSchemaBinOp::BitOr, CheckValue::Enum(lhs), CheckValue::Enum(rhs))
             if lhs.enum_name == rhs.enum_name =>
@@ -276,7 +276,7 @@ pub(super) fn eager_bin_op(
             let value = lhs.value | rhs.value;
             Ok(LocatedCheckValue::new(
                 CheckValue::Enum(enum_values::enum_with_value(schema, &lhs.enum_name, value)),
-                path,
+                location,
             ))
         }
         (CftSchemaBinOp::BitXor, CheckValue::Enum(lhs), CheckValue::Enum(rhs))
@@ -285,7 +285,7 @@ pub(super) fn eager_bin_op(
             let value = lhs.value ^ rhs.value;
             Ok(LocatedCheckValue::new(
                 CheckValue::Enum(enum_values::enum_with_value(schema, &lhs.enum_name, value)),
-                path,
+                location,
             ))
         }
         (CftSchemaBinOp::BitAnd, CheckValue::Enum(lhs), CheckValue::Enum(rhs))
@@ -294,11 +294,11 @@ pub(super) fn eager_bin_op(
             let value = lhs.value & rhs.value;
             Ok(LocatedCheckValue::new(
                 CheckValue::Enum(enum_values::enum_with_value(schema, &lhs.enum_name, value)),
-                path,
+                location,
             ))
         }
         (op, lhs, rhs) => Err(OpsError::eval_type(
-            path,
+            location,
             format!(
                 "不支持的二元运算: {} {} {}",
                 format_value_for_message(&lhs),

@@ -4,7 +4,7 @@ use coflow_cft::{
 };
 use coflow_data_model::{CfdErrorCode, CfdPath, CfdPathSegment, DimensionFieldLookupError};
 
-use super::value::CheckValue;
+use super::value::{CheckValue, ValueLocation};
 
 #[derive(Debug)]
 pub(super) struct CheckExplanation {
@@ -13,14 +13,14 @@ pub(super) struct CheckExplanation {
     pub(super) actual: Option<String>,
     pub(super) expected: Option<String>,
     pub(super) context: Vec<String>,
-    pub(super) path: Option<CfdPath>,
+    pub(super) location: Option<ValueLocation>,
 }
 
 impl CheckExplanation {
     pub(super) fn new(
         code: CfdErrorCode,
         expression: impl Into<String>,
-        path: Option<CfdPath>,
+        location: Option<ValueLocation>,
     ) -> Self {
         Self {
             code,
@@ -28,7 +28,7 @@ impl CheckExplanation {
             actual: None,
             expected: None,
             context: Vec::new(),
-            path,
+            location,
         }
     }
 

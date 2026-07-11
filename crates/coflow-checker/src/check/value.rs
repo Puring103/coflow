@@ -37,12 +37,11 @@ impl CheckValue {
         }
     }
 
-    pub(super) fn from_cfd_value_with_path(
+    pub(super) fn from_cfd_value(
         value: &CfdValue,
         ty: Option<&CftSchemaTypeRef>,
-        path: Option<CfdPath>,
+        location: Option<ValueLocation>,
         model: &CfdDataModel,
-        site: Option<RefSite>,
     ) -> Self {
         match value {
             CfdValue::Null => Self::Null,
@@ -51,17 +50,23 @@ impl CheckValue {
             CfdValue::Float(value) => Self::Float(*value),
             CfdValue::String(value) => Self::String(value.clone()),
             CfdValue::Enum(value) => Self::Enum(value.clone()),
-            CfdValue::Object(_) => site.map_or_else(
+            CfdValue::Object(_) => location.map_or_else(
                 || Self::Record(CheckRecordRef::Unresolved),
-                |site| Self::Record(CheckRecordRef::Inline { site, path }),
+                |location| Self::Record(CheckRecordRef::Resolved(location)),
             ),
             CfdValue::Ref(_) => {
-                let resolved = site
+                let resolved = location
                     .as_ref()
-                    .and_then(|site| model.resolve_effective_ref(site));
+                    .and_then(|location| model.resolve_effective_ref(&location.storage.ref_site()));
                 resolved.map_or_else(
                     || Self::Record(CheckRecordRef::Unresolved),
-                    |id| Self::Record(CheckRecordRef::Top(id)),
+                    |id| {
+                        let target = location.map_or_else(
+                            || ValueLocation::root(id),
+                            |location| location.dereference(id),
+                        );
+                        Self::Record(CheckRecordRef::Resolved(target))
+                    },
                 )
             }
             CfdValue::Array(items) => {
@@ -71,14 +76,11 @@ impl CheckValue {
                         .iter()
                         .enumerate()
                         .map(|(index, item)| {
-                            Self::from_cfd_value_with_path(
+                            Self::from_cfd_value(
                                 item,
                                 array_element_type(ty),
-                                path.clone().map(|path| path.index(index)),
+                                location.clone().map(|location| location.index(index)),
                                 model,
-                                site.clone().map(|site| {
-                                    RefSite::new(site.host, site.path.index(index))
-                                }),
                             )
                         })
                         .collect(),
@@ -90,14 +92,13 @@ impl CheckValue {
                     .iter()
                     .map(|(key, value)| CheckEntry {
                         key: Box::new(Self::from_dict_key(key)),
-                        value: Self::from_cfd_value_with_path(
+                        value: Self::from_cfd_value(
                             value,
                             dict_value_type(ty),
-                            path.clone().map(|path| path.dict_key_value(key)),
+                            location
+                                .clone()
+                                .map(|location| location.dict_key_value(key)),
                             model,
-                            site.clone().map(|site| {
-                                RefSite::new(site.host, site.path.dict_key_value(key))
-                            }),
                         ),
                     })
                     .collect(),
@@ -126,26 +127,142 @@ impl CheckValue {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct LocatedCheckValue {
     pub(super) value: CheckValue,
-    pub(super) path: Option<CfdPath>,
+    pub(super) location: Option<ValueLocation>,
 }
 
 impl LocatedCheckValue {
-    pub(super) fn new(value: CheckValue, path: Option<CfdPath>) -> Self {
-        Self { value, path }
+    pub(super) fn new(value: CheckValue, location: Option<ValueLocation>) -> Self {
+        Self { value, location }
     }
 
     pub(super) fn value(value: CheckValue) -> Self {
-        Self { value, path: None }
+        Self {
+            value,
+            location: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ModelCursor {
+    pub(super) record: CfdRecordId,
+    pub(super) path: CfdPath,
+}
+
+impl ModelCursor {
+    pub(super) fn root(record: CfdRecordId) -> Self {
+        Self {
+            record,
+            path: CfdPath::root(),
+        }
+    }
+
+    pub(super) fn field(&self, name: impl Into<String>) -> Self {
+        Self {
+            record: self.record,
+            path: self.path.clone().field(name),
+        }
+    }
+
+    pub(super) fn index(&self, index: usize) -> Self {
+        Self {
+            record: self.record,
+            path: self.path.clone().index(index),
+        }
+    }
+
+    pub(super) fn dict_key_value(&self, key: &CfdDictKey) -> Self {
+        Self {
+            record: self.record,
+            path: self.path.clone().dict_key_value(key),
+        }
+    }
+
+    pub(super) fn dict_key(&self, key: impl Into<String>) -> Self {
+        Self {
+            record: self.record,
+            path: self.path.clone().dict_key(key),
+        }
+    }
+
+    pub(super) fn ref_site(&self) -> RefSite {
+        RefSite::new(self.record, self.path.clone())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ValueLocation {
+    pub(super) storage: ModelCursor,
+    pub(super) blame: ModelCursor,
+    pub(super) references: Vec<ModelCursor>,
+}
+
+impl ValueLocation {
+    pub(super) fn root(record: CfdRecordId) -> Self {
+        let cursor = ModelCursor::root(record);
+        Self {
+            storage: cursor.clone(),
+            blame: cursor,
+            references: Vec::new(),
+        }
+    }
+
+    pub(super) fn field(&self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        Self {
+            storage: self.storage.field(name.clone()),
+            blame: self.blame.field(name),
+            references: self.references.clone(),
+        }
+    }
+
+    pub(super) fn index(&self, index: usize) -> Self {
+        Self {
+            storage: self.storage.index(index),
+            blame: self.blame.index(index),
+            references: self.references.clone(),
+        }
+    }
+
+    pub(super) fn dict_key_value(&self, key: &CfdDictKey) -> Self {
+        Self {
+            storage: self.storage.dict_key_value(key),
+            blame: self.blame.dict_key_value(key),
+            references: self.references.clone(),
+        }
+    }
+
+    pub(super) fn dict_key(&self, key: impl Into<String>) -> Self {
+        let key = key.into();
+        Self {
+            storage: self.storage.dict_key(key.clone()),
+            blame: self.blame.dict_key(key),
+            references: self.references.clone(),
+        }
+    }
+
+    pub(super) fn backed_by(&self, storage: ModelCursor) -> Self {
+        Self {
+            storage,
+            blame: self.blame.clone(),
+            references: self.references.clone(),
+        }
+    }
+
+    fn dereference(mut self, target: CfdRecordId) -> Self {
+        self.references.push(self.blame);
+        let target = ModelCursor::root(target);
+        Self {
+            storage: target.clone(),
+            blame: target,
+            references: self.references,
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum CheckRecordRef {
-    Top(CfdRecordId),
-    Inline {
-        site: RefSite,
-        path: Option<CfdPath>,
-    },
+    Resolved(ValueLocation),
     /// A `CfdValue::Ref` whose target could not be resolved (target type/key
     /// missing from the model). Reads through this ref return `None`, so
     /// callers surface a check diagnostic instead of crashing.
@@ -158,24 +275,24 @@ impl CheckRecordRef {
         model: &'a CfdDataModel,
     ) -> Option<&'a BTreeMap<String, CfdValue>> {
         match self {
-            Self::Top(id) => model.record(*id).map(CfdRecord::fields),
-            Self::Inline { site, .. } => inline_object(model, site).map(CfdObject::fields),
+            Self::Resolved(location) => resolved_object_fields(model, &location.storage),
             Self::Unresolved => None,
         }
     }
 
     pub(super) fn actual_type<'a>(&'a self, model: &'a CfdDataModel) -> Option<&'a str> {
         match self {
-            Self::Top(id) => model.record(*id).map(CfdRecord::actual_type),
-            Self::Inline { site, .. } => inline_object(model, site).map(CfdObject::actual_type),
+            Self::Resolved(location) => resolved_object_type(model, &location.storage),
             Self::Unresolved => None,
         }
     }
 
     pub(super) fn key<'a>(&'a self, model: &'a CfdDataModel) -> Option<&'a str> {
         match self {
-            Self::Top(id) => model.record(*id).map(CfdRecord::key),
-            Self::Inline { .. } => None,
+            Self::Resolved(location) if location.storage.path.segments.is_empty() => {
+                model.record(location.storage.record).map(CfdRecord::key)
+            }
+            Self::Resolved(_) => None,
             Self::Unresolved => None,
         }
     }
@@ -187,34 +304,49 @@ impl CheckRecordRef {
         name: &str,
     ) -> Option<LocatedCheckValue> {
         let value = self.fields(model)?.get(name)?;
-        let path = self.path().map(|path| path.field(name.to_string()));
-        let site = self
-            .value_site()
-            .map(|site| RefSite::new(site.host, site.path.field(name)));
+        let location = self.location().map(|location| location.field(name));
         Some(LocatedCheckValue::new(
-            CheckValue::from_cfd_value_with_path(value, field_type, path.clone(), model, site),
-            path,
+            CheckValue::from_cfd_value(value, field_type, location.clone(), model),
+            location,
         ))
     }
 
-    pub(super) fn path(&self) -> Option<CfdPath> {
+    pub(super) fn location(&self) -> Option<ValueLocation> {
         match self {
-            Self::Top(_) | Self::Unresolved => Some(CfdPath::root()),
-            Self::Inline { path, .. } => path.clone(),
+            Self::Resolved(location) => Some(location.clone()),
+            Self::Unresolved => None,
         }
     }
 
-    fn value_site(&self) -> Option<RefSite> {
+    pub(super) fn top_record_id(&self) -> Option<CfdRecordId> {
         match self {
-            Self::Top(id) => Some(RefSite::new(*id, CfdPath::root())),
-            Self::Inline { site, .. } => Some(site.clone()),
-            Self::Unresolved => None,
+            Self::Resolved(location) if location.storage.path.segments.is_empty() => {
+                Some(location.storage.record)
+            }
+            Self::Resolved(_) | Self::Unresolved => None,
         }
     }
 }
 
-fn inline_object<'a>(model: &'a CfdDataModel, site: &RefSite) -> Option<&'a CfdObject> {
-    match model.record(site.host)?.value_at_path(&site.path)? {
+fn resolved_object_fields<'a>(
+    model: &'a CfdDataModel,
+    cursor: &ModelCursor,
+) -> Option<&'a BTreeMap<String, CfdValue>> {
+    if cursor.path.segments.is_empty() {
+        return model.record(cursor.record).map(CfdRecord::fields);
+    }
+    inline_object(model, cursor).map(CfdObject::fields)
+}
+
+fn resolved_object_type<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a str> {
+    if cursor.path.segments.is_empty() {
+        return model.record(cursor.record).map(CfdRecord::actual_type);
+    }
+    inline_object(model, cursor).map(CfdObject::actual_type)
+}
+
+fn inline_object<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a CfdObject> {
+    match model.record(cursor.record)?.value_at_path(&cursor.path)? {
         CfdValue::Object(object) => Some(object),
         _ => None,
     }

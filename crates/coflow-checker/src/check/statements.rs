@@ -4,11 +4,11 @@ use super::diagnostics::{
 use super::evaluator::{CheckEvaluator, EvalAbort, EvalFlow};
 use super::explanations;
 use super::quantifiers;
-use super::value::{CheckValue, LocatedCheckValue};
+use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
 use coflow_cft::{
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckStmt, CftSchemaQuantifierKind,
 };
-use coflow_data_model::{CfdErrorCode, CfdPath};
+use coflow_data_model::CfdErrorCode;
 use std::collections::BTreeMap;
 
 pub(super) fn eval_check_block(
@@ -60,18 +60,18 @@ fn eval_expr_stmt(evaluator: &mut CheckEvaluator<'_>, expr: &CftSchemaCheckExpr)
                     CheckExplanation::new(
                         CfdErrorCode::CheckFailed,
                         render_expr(expr),
-                        value.path.clone(),
+                        value.location.clone(),
                     )
                 })
                 .with_context(&evaluator.contexts);
             let message = explanation.message();
-            evaluator.diag_at_preformatted(explanation.code, explanation.path, message);
+            evaluator.diag_at_preformatted(explanation.code, explanation.location, message);
             EvalFlow::Continue
         }
         Ok(value) => {
             evaluator.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
-                value.path,
+                value.location,
                 "check 表达式没有求值为 bool",
             );
             EvalFlow::HardStop
@@ -99,7 +99,7 @@ fn eval_when_stmt(
         Ok(value) => {
             evaluator.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
-                value.path,
+                value.location,
                 "when 条件没有求值为 bool",
             );
             EvalFlow::HardStop
@@ -142,7 +142,7 @@ fn eval_quantifier(
     let quantifier_diagnostic_start = evaluator.diagnostics.len();
     let mut matched = 0_usize;
     let mut any_failures = Vec::new();
-    let mut none_match_paths: Vec<Option<CfdPath>> = Vec::new();
+    let mut none_match_locations: Vec<Option<ValueLocation>> = Vec::new();
     for item in items {
         let diagnostic_start = evaluator.diagnostics.len();
         let mut scope = BTreeMap::new();
@@ -150,9 +150,10 @@ fn eval_quantifier(
         evaluator.scopes.push(scope);
         let item_context = format!(
             "绑定 {binding} 位于 {}",
-            item.path
-                .as_ref()
-                .map_or_else(|| render_expr(collection), format_cfd_path_for_message)
+            item.location.as_ref().map_or_else(
+                || render_expr(collection),
+                |location| { format_cfd_path_for_message(&location.blame.path) }
+            )
         );
         evaluator.contexts.push(item_context);
         let flow = eval_stmts(evaluator, body);
@@ -180,7 +181,7 @@ fn eval_quantifier(
             CftSchemaQuantifierKind::None => {
                 evaluator.diagnostics.truncate(diagnostic_start);
                 if passed {
-                    none_match_paths.push(item.path.clone());
+                    none_match_locations.push(item.location.clone());
                 }
             }
         }
@@ -201,7 +202,7 @@ fn eval_quantifier(
         any_failures
             .first()
             .map(|diagnostic| diagnostic.message.as_str()),
-        none_match_paths,
+        none_match_locations,
     );
     EvalFlow::Continue
 }
@@ -216,7 +217,7 @@ fn finish_quantifier(
     quantifier_diagnostic_start: usize,
     matched: usize,
     first_any_failure: Option<&str>,
-    none_match_paths: Vec<Option<CfdPath>>,
+    none_match_locations: Vec<Option<ValueLocation>>,
 ) {
     match kind {
         CftSchemaQuantifierKind::All => {
@@ -227,7 +228,7 @@ fn finish_quantifier(
         }
         CftSchemaQuantifierKind::Any => {}
         CftSchemaQuantifierKind::None if matched > 0 => {
-            emit_none_failures(evaluator, collection, stmt, none_match_paths);
+            emit_none_failures(evaluator, collection, stmt, none_match_locations);
         }
         CftSchemaQuantifierKind::None => {}
     }
@@ -271,14 +272,14 @@ fn emit_any_failure(
     let explanation = CheckExplanation::new(
         CfdErrorCode::CheckAnyQuantifierFailed,
         render_stmt(stmt),
-        items.first().and_then(|item| item.path.clone()),
+        items.first().and_then(|item| item.location.clone()),
     )
     .with_actual(format!("0 / {} 个元素匹配", items.len()))
     .with_expected("至少 1 个元素满足")
     .with_context(&context);
     evaluator.diag_at_preformatted(
         explanation.code,
-        explanation.path.clone(),
+        explanation.location.clone(),
         explanation.message(),
     );
 }
@@ -287,22 +288,24 @@ fn emit_none_failures(
     evaluator: &mut CheckEvaluator<'_>,
     collection: &CftSchemaCheckExpr,
     stmt: &CftSchemaCheckStmt,
-    none_match_paths: Vec<Option<CfdPath>>,
+    none_match_locations: Vec<Option<ValueLocation>>,
 ) {
-    for path in none_match_paths {
+    for location in none_match_locations {
         let explanation = CheckExplanation::new(
             CfdErrorCode::CheckNoneQuantifierFailed,
             render_stmt(stmt),
-            path.clone(),
+            location.clone(),
         )
         .with_actual(format!(
             "{} 已匹配",
-            path.as_ref()
-                .map_or_else(|| render_expr(collection), format_cfd_path_for_message)
+            location.as_ref().map_or_else(
+                || render_expr(collection),
+                |location| format_cfd_path_for_message(&location.blame.path),
+            )
         ))
         .with_expected("没有元素满足")
         .with_context(&evaluator.contexts);
         let message = explanation.message();
-        evaluator.diag_at_preformatted(explanation.code, explanation.path, message);
+        evaluator.diag_at_preformatted(explanation.code, explanation.location, message);
     }
 }

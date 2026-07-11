@@ -4,10 +4,10 @@ use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCmpOp,
     CftSchemaTypePredicate,
 };
-use coflow_data_model::{CfdDataModel, CfdPath};
+use coflow_data_model::CfdDataModel;
 
 use super::diagnostics::format_value_for_message;
-use super::value::{CheckValue, LocatedCheckValue};
+use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
 
 type ExprKey = usize;
 
@@ -48,7 +48,7 @@ pub(super) struct TraceFact {
     pub(super) bool_value: Option<bool>,
     pub(super) actual_type: Option<String>,
     pub(super) is_null: bool,
-    pub(super) path: Option<CfdPath>,
+    pub(super) location: Option<ValueLocation>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,7 +58,7 @@ pub(super) struct ComparisonFailure {
     pub(super) rhs_expression: String,
     pub(super) rhs: TraceFact,
     pub(super) op: CftSchemaCmpOp,
-    pub(super) path: Option<CfdPath>,
+    pub(super) location: Option<ValueLocation>,
 }
 
 #[derive(Debug, Default)]
@@ -144,7 +144,7 @@ impl EvaluationTrace {
         lhs: &CftSchemaCheckExpr,
         op: CftSchemaCmpOp,
         rhs: &CftSchemaCheckExpr,
-        path: Option<CfdPath>,
+        location: Option<ValueLocation>,
     ) {
         let lhs_expression = super::diagnostics::render_expr(lhs);
         let rhs_expression = super::diagnostics::render_expr(rhs);
@@ -160,7 +160,7 @@ impl EvaluationTrace {
             rhs_expression,
             rhs,
             op,
-            path,
+            location,
         });
     }
 
@@ -168,11 +168,7 @@ impl EvaluationTrace {
         self.comparison_failure.as_ref()
     }
 
-    pub(super) fn note_unique_failure(
-        &mut self,
-        collection: &CftSchemaCheckExpr,
-        detail: String,
-    ) {
+    pub(super) fn note_unique_failure(&mut self, collection: &CftSchemaCheckExpr, detail: String) {
         self.unique_failures.insert(expr_key(collection), detail);
     }
 
@@ -205,7 +201,7 @@ fn trace_fact(
             .then(|| value.value.actual_type(model).map(str::to_string))
             .flatten(),
         is_null: matches!(value.value, CheckValue::Null),
-        path: value.path.clone(),
+        location: value.location.clone(),
     }
 }
 

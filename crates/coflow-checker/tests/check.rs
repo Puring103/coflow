@@ -842,6 +842,147 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
 }
 
 #[test]
+fn checks_through_refs_blame_the_target_value_and_relate_the_ref_source() {
+    let schema = compile_schema(
+        r#"
+            type Target { price: int; }
+            type Holder {
+                item: &Target;
+                check { item.price > 0; }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("target", "Target", [("price", CfdInputValue::from(0_i64))]);
+    builder.add_record(
+        "holder",
+        "Holder",
+        [("item", CfdInputValue::record_ref("target"))],
+    );
+    let model = build_model(&schema, builder);
+
+    let err = model
+        .run_checks(&CompiledSchema::new(&schema))
+        .expect_err("target price should fail the holder check");
+    let diagnostic = err
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
+        .expect("comparison diagnostic");
+
+    let primary = diagnostic.primary.as_ref().expect("primary location");
+    assert_eq!(primary.record, Some(record_id_at(&model, 0)));
+    assert_eq!(primary.path, CfdPath::root().field("price"));
+    assert_eq!(diagnostic.related.len(), 1);
+    assert_eq!(diagnostic.related[0].record, Some(record_id_at(&model, 1)));
+    assert_eq!(diagnostic.related[0].path, CfdPath::root().field("item"));
+}
+
+#[test]
+fn checks_preserve_every_hop_in_a_reference_chain() {
+    let schema = compile_schema(
+        r#"
+            type Leaf { value: int; }
+            type Middle { leaf: &Leaf; }
+            type Root {
+                middle: &Middle;
+                check { middle.leaf.value > 0; }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("leaf", "Leaf", [("value", CfdInputValue::from(0_i64))]);
+    builder.add_record(
+        "middle",
+        "Middle",
+        [("leaf", CfdInputValue::record_ref("leaf"))],
+    );
+    builder.add_record(
+        "root",
+        "Root",
+        [("middle", CfdInputValue::record_ref("middle"))],
+    );
+    let model = build_model(&schema, builder);
+
+    let err = model
+        .run_checks(&CompiledSchema::new(&schema))
+        .expect_err("leaf value should fail the root check");
+    let diagnostic = err
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
+        .expect("comparison diagnostic");
+
+    let primary = diagnostic.primary.as_ref().expect("primary location");
+    assert_eq!(primary.record, Some(record_id_at(&model, 0)));
+    assert_eq!(primary.path, CfdPath::root().field("value"));
+    assert_eq!(diagnostic.related.len(), 2);
+    assert_eq!(diagnostic.related[0].record, Some(record_id_at(&model, 2)));
+    assert_eq!(diagnostic.related[0].path, CfdPath::root().field("middle"));
+    assert_eq!(diagnostic.related[1].record, Some(record_id_at(&model, 1)));
+    assert_eq!(diagnostic.related[1].path, CfdPath::root().field("leaf"));
+}
+
+#[test]
+fn checks_keep_target_locations_through_collection_access_and_virtual_ids() {
+    let schema = compile_schema(
+        r#"
+            type Target { nums: [int]; }
+            type Holder {
+                item: &Target;
+                check {
+                    item.nums[1] > 0;
+                    item.id == "different";
+                }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "target",
+        "Target",
+        [(
+            "nums",
+            CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(0_i64)]),
+        )],
+    );
+    builder.add_record(
+        "holder",
+        "Holder",
+        [("item", CfdInputValue::record_ref("target"))],
+    );
+    let model = build_model(&schema, builder);
+
+    let err = model
+        .run_checks(&CompiledSchema::new(&schema))
+        .expect_err("target collection value and id should fail");
+    let paths = err
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
+        .map(|diagnostic| {
+            let primary = diagnostic.primary.as_ref().expect("primary location");
+            assert_eq!(
+                primary.record,
+                Some(record_id_at(&model, 0)),
+                "diagnostic: {diagnostic:?}"
+            );
+            assert_eq!(diagnostic.related.len(), 1);
+            assert_eq!(diagnostic.related[0].record, Some(record_id_at(&model, 1)));
+            assert_eq!(diagnostic.related[0].path, CfdPath::root().field("item"));
+            primary.path.clone()
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        paths,
+        std::collections::BTreeSet::from([
+            CfdPath::root().field("id"),
+            CfdPath::root().field("nums").index(1),
+        ])
+    );
+}
+
+#[test]
 fn checks_can_access_ref_fields_inherited_from_spread() {
     let schema = compile_schema(
         r#"
