@@ -16,7 +16,6 @@ use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{
     plan_delete_record, plan_field_write, plan_insert_record, TableAppendRow, TableDeleteRow,
     TableFieldWrite, TableInsertRecord, TableSetCell, TableWriteDiagnostics, TableWritePlan,
-    WriteFieldPathSegment as TableWriteFieldPathSegment,
 };
 use coflow_loader_table_core::{resolve_table_write_layout, TableDiagnostics};
 use std::collections::BTreeMap;
@@ -66,11 +65,7 @@ impl SourceWriter for ExcelWriter {
             origin: request.origin,
             record_key: request.record_key,
             actual_type: request.actual_type,
-            field_path: &request
-                .field_path
-                .iter()
-                .map(api_path_segment_to_table)
-                .collect::<Vec<_>>(),
+            field_path: request.field_path,
             new_value: request.new_value,
             model: ctx.model,
         })
@@ -532,22 +527,6 @@ fn humanize_io_error(path: &Path, err: &std::io::Error, action: &str) -> String 
 
 fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic {
     Diagnostic::error(code, "EXCEL", message)
-}
-
-fn api_path_segment_to_table(
-    segment: &coflow_api::WriteFieldPathSegment,
-) -> TableWriteFieldPathSegment {
-    match segment {
-        coflow_api::WriteFieldPathSegment::Field(field) => {
-            TableWriteFieldPathSegment::Field(field.clone())
-        }
-        coflow_api::WriteFieldPathSegment::Index(index) => {
-            TableWriteFieldPathSegment::Index(*index)
-        }
-        coflow_api::WriteFieldPathSegment::DictKey(key) => {
-            TableWriteFieldPathSegment::DictKey(key.clone())
-        }
-    }
 }
 
 fn table_write_diagnostics_to_api(err: TableWriteDiagnostics) -> DiagnosticSet {

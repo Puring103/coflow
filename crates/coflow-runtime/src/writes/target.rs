@@ -1,8 +1,8 @@
 use coflow_api::{Diagnostic, DiagnosticSet, WriteFieldPathSegment};
+use coflow_data_model::CfdPath;
 use coflow_data_model::RecordOrigin;
 use coflow_data_model::CfdValue;
 
-use super::path::{cfd_path_from_write_path, cfd_path_to_write_path};
 use crate::{ProjectSession, RecordCoordinate, RecordRef};
 
 pub(super) fn not_found(actual_type: &str, key: &str) -> Diagnostic {
@@ -67,14 +67,16 @@ pub(super) fn write_target_for_path(
             field_path: path.to_vec(),
         });
     };
-    let path = cfd_path_from_write_path(path);
+    let path = CfdPath {
+        segments: path.to_vec(),
+    };
     let Some((source_id, source_path)) = session.model.spread_source_path(host_ref.id, &path)
     else {
         return Ok(WriteTarget {
             coordinate: host_ref.coordinate.clone(),
             origin: host_ref.origin.clone(),
             display_path: host_ref.display_path.clone(),
-            field_path: cfd_path_to_write_path(&path),
+            field_path: path.segments,
         });
     };
     let Some(source_ref) = session.records.get(source_id) else {
@@ -88,6 +90,6 @@ pub(super) fn write_target_for_path(
         coordinate: source_ref.coordinate.clone(),
         origin: source_ref.origin.clone(),
         display_path: source_ref.display_path.clone(),
-        field_path: cfd_path_to_write_path(&source_path),
+        field_path: source_path.segments,
     })
 }

@@ -152,7 +152,7 @@ pub(super) fn prepare_one(
             value,
         } => {
             let expected = expected_value_for_path(session, &record, &path)?;
-            let path = cfd_path_to_write_path(&path)?;
+            let path = validated_write_path(&path)?;
             let (write_file, path) = effective_write_target_for_set_field(session, &record, &path)?;
             ensure_file_guard_for_file(&record, &write_file, file.as_deref())?;
             let value = coerce_mutation_value(session, &expected.ty, value)?;
@@ -254,13 +254,13 @@ fn expected_value_for_path(
     Ok(ExpectedValue { ty: current })
 }
 
-fn cfd_path_to_write_path(
+fn validated_write_path(
     path: &[CfdPathSegment],
 ) -> Result<Vec<WriteFieldPathSegment>, DiagnosticSet> {
     if path.is_empty() {
         return Err(one_path_error("mutation path must not be empty"));
     }
-    Ok(write_rules::cfd_path_to_write_path(path))
+    Ok(path.to_vec())
 }
 
 fn effective_write_target_for_set_field(

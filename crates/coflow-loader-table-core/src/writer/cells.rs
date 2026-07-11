@@ -1,4 +1,4 @@
-use coflow_data_model::{CfdDataModel, CfdValue};
+use coflow_data_model::{format_cfd_dict_key, CfdDataModel, CfdValue};
 use std::collections::BTreeMap;
 
 use crate::cell_value::render_cell_value;
@@ -156,7 +156,7 @@ fn replace_subvalue(
         (WriteFieldPathSegment::DictKey(key), CfdValue::Dict(entries)) => {
             let index = entries
                 .iter()
-                .position(|(entry_key, _)| format_dict_key_for_path(entry_key) == *key)
+                .position(|(entry_key, _)| format_cfd_dict_key(entry_key) == *key)
                 .ok_or_else(|| one_error("TABLE-WRITE", format!("dict key `{key}` not found")))?;
             let current = entries[index].1.clone();
             entries[index].1 = replace_subvalue(current, &path[1..], new_value)?;
@@ -244,17 +244,6 @@ fn direct_child_columns(
 
 fn is_id_path(path: &[WriteFieldPathSegment]) -> bool {
     matches!(path, [WriteFieldPathSegment::Field(name)] if name == "id")
-}
-
-fn format_dict_key_for_path(key: &coflow_data_model::CfdDictKey) -> String {
-    match key {
-        coflow_data_model::CfdDictKey::String(value) => format!("\"{value}\""),
-        coflow_data_model::CfdDictKey::Int(value) => value.to_string(),
-        coflow_data_model::CfdDictKey::Enum(value) => value.variant.as_deref().map_or_else(
-            || format!("{}({})", value.enum_name, value.value),
-            |variant| format!("{}.{}", value.enum_name, variant),
-        ),
-    }
 }
 
 fn unmapped_path_error(

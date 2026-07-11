@@ -709,7 +709,7 @@ fn table_core_writer_diagnostics_do_not_live_in_writer_rs() {
 
         "fn direct_child_columns",
 
-        "fn format_dict_key_for_path",
+        "format_cfd_dict_key",
 
     ] {
 

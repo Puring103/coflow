@@ -1,16 +1,11 @@
 use crate::{DiagnosticSet, ResolvedSource};
 use coflow_cft::CftSchemaView;
-use coflow_data_model::{CfdDataModel, CfdValue, RecordOrigin};
+use coflow_data_model::{CfdDataModel, CfdPathSegment, CfdValue, RecordOrigin};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// One step in a field path used by writers and the wire protocol.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WriteFieldPathSegment {
-    Field(String),
-    Index(usize),
-    DictKey(String),
-}
+/// Canonical data-model path segment used by writers and host wire adapters.
+pub type WriteFieldPathSegment = CfdPathSegment;
 
 /// Request describing a single field write.
 #[derive(Debug, Clone)]

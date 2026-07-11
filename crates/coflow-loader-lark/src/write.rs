@@ -9,7 +9,6 @@ use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::TableSheetConfig;
 use coflow_loader_table_core::writer::{
     plan_field_write, plan_insert_record, TableFieldWrite, TableInsertRecord, TableWritePlan,
-    WriteFieldPathSegment as TableWriteFieldPathSegment,
 };
 use serde_json::json;
 
@@ -59,16 +58,11 @@ where
         ctx: WriteContext<'_>,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let field_path = request
-            .field_path
-            .iter()
-            .map(api_path_segment_to_table)
-            .collect::<Vec<_>>();
         let plan = plan_field_write(&TableFieldWrite {
             origin: request.origin,
             record_key: request.record_key,
             actual_type: request.actual_type,
-            field_path: &field_path,
+            field_path: request.field_path,
             new_value: request.new_value,
             model: ctx.model,
         })
@@ -407,14 +401,6 @@ where
             removed,
             diagnostics: DiagnosticSet::empty(),
         })
-    }
-}
-
-fn api_path_segment_to_table(segment: &WriteFieldPathSegment) -> TableWriteFieldPathSegment {
-    match segment {
-        WriteFieldPathSegment::Field(field) => TableWriteFieldPathSegment::Field(field.clone()),
-        WriteFieldPathSegment::Index(index) => TableWriteFieldPathSegment::Index(*index),
-        WriteFieldPathSegment::DictKey(key) => TableWriteFieldPathSegment::DictKey(key.clone()),
     }
 }
 

@@ -278,7 +278,7 @@ fn api_writer_contract_is_split_by_responsibility() {
         );
     }
     for expected in [
-        "pub enum WriteFieldPathSegment",
+        "pub type WriteFieldPathSegment = CfdPathSegment",
         "pub struct WriteCellRequest",
         "pub struct InsertRecordRequest",
         "pub struct DeleteRecordRequest",

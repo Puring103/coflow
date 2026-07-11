@@ -526,13 +526,7 @@ fn engine_write_path_helpers_do_not_live_in_writes_rs() {
     let path = std::fs::read_to_string("crates/coflow-runtime/src/writes/path.rs")
         .expect("read engine write path helpers");
 
-    for expected in [
-        "pub(super) fn write_path_from_cfd_path",
-        "pub(super) fn value_at_path",
-        "fn format_dict_key_for_path",
-        "pub(super) fn cfd_path_from_write_path",
-        "pub(super) fn cfd_path_to_write_path",
-    ] {
+    for expected in ["pub(super) fn value_at_path", "format_cfd_dict_key"] {
         assert!(
             path.contains(expected),
             "engine write path helper `{expected}` should live in writes/path.rs"
@@ -540,6 +534,17 @@ fn engine_write_path_helpers_do_not_live_in_writes_rs() {
         assert!(
             !writes.contains(expected),
             "engine write path helper `{expected}` should not live in writes.rs"
+        );
+    }
+    for deleted in [
+        "write_path_from_cfd_path",
+        "format_dict_key_for_path",
+        "cfd_path_from_write_path",
+        "cfd_path_to_write_path",
+    ] {
+        assert!(
+            !path.contains(deleted),
+            "canonical path segments should make conversion helper `{deleted}` unnecessary"
         );
     }
     assert!(

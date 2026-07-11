@@ -8,7 +8,7 @@ use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdRecordId, CfdValue, RecordOrigin};
 
 use super::{lookup_source_writer, source_for_file};
-use crate::writes::path::{cfd_path_to_write_path, value_at_path, write_path_from_cfd_path};
+use crate::writes::path::value_at_path;
 use crate::ProjectSession;
 
 pub(super) struct ReferenceUpdateAction {
@@ -109,7 +109,7 @@ pub(super) fn reference_update_actions(
                 origin: host_ref.origin.clone(),
                 record_key: host_ref.coordinate.key.clone(),
                 actual_type: host_ref.coordinate.actual_type.clone(),
-                field_path: write_path_from_cfd_path(&edge.path)?,
+                field_path: edge.path.segments.clone(),
                 new_value: CfdValue::Ref(new_key.to_string()),
                 source,
             },
@@ -136,7 +136,7 @@ pub(super) fn source_rewrite_actions(
             origin: host_ref.origin.clone(),
             record_key: host_ref.coordinate.key.clone(),
             actual_type: host_ref.coordinate.actual_type.clone(),
-            object_path: cfd_path_to_write_path(&edge.path),
+            object_path: edge.path.segments.clone(),
         };
         by_file
             .entry(host_ref.display_path.clone())

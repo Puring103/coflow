@@ -298,23 +298,9 @@ pub fn write_path_to_cfd_path(
     if path.is_empty() {
         return Err(one_error(code, stage, "field path must not be empty"));
     }
-    Ok(path
-        .iter()
-        .fold(CfdPath::root(), |path, segment| match segment {
-            WriteFieldPathSegment::Field(field) => path.field(field.clone()),
-            WriteFieldPathSegment::Index(index) => path.index(*index),
-            WriteFieldPathSegment::DictKey(key) => path.dict_key(key.clone()),
-        }))
-}
-
-pub fn cfd_path_to_write_path(path: &[CfdPathSegment]) -> Vec<WriteFieldPathSegment> {
-    path.iter()
-        .map(|segment| match segment {
-            CfdPathSegment::Field(field) => WriteFieldPathSegment::Field(field.clone()),
-            CfdPathSegment::Index(index) => WriteFieldPathSegment::Index(*index),
-            CfdPathSegment::DictKey(key) => WriteFieldPathSegment::DictKey(key.clone()),
-        })
-        .collect()
+    Ok(CfdPath {
+        segments: path.to_vec(),
+    })
 }
 
 fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {

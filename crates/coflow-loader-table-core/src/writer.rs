@@ -7,19 +7,14 @@
 mod cells;
 mod diagnostics;
 
-use coflow_data_model::{CfdDataModel, CfdValue, RecordOrigin, SourceDocument};
+use coflow_data_model::{CfdDataModel, CfdPathSegment, CfdValue, RecordOrigin, SourceDocument};
 use std::collections::BTreeMap;
 
 use cells::{render_field_cells, render_insert_value};
 use diagnostics::one_error;
 pub use diagnostics::{TableWriteDiagnostic, TableWriteDiagnostics};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WriteFieldPathSegment {
-    Field(String),
-    Index(usize),
-    DictKey(String),
-}
+pub type WriteFieldPathSegment = CfdPathSegment;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSetCell {
