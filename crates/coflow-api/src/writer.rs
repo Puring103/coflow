@@ -7,7 +7,7 @@ pub use requests::{
     SpreadRewriteTarget, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
 };
 
-use crate::{Diagnostic, DiagnosticSet};
+use crate::{Diagnostic, DiagnosticSet, ResolvedSource};
 
 /// Trait for source-specific writers that persist field edits.
 ///
@@ -16,6 +16,15 @@ use crate::{Diagnostic, DiagnosticSet};
 /// records were touched so the session can run incremental checks.
 pub trait SourceWriter: Send + Sync {
     fn descriptor(&self) -> &'static WriterDescriptor;
+
+    /// Return capabilities for one resolved source.
+    ///
+    /// Providers whose mutation support depends on the concrete storage
+    /// format should override this instead of advertising provider-wide
+    /// write access for every source they can read.
+    fn capabilities(&self, _source: &ResolvedSource) -> WriterCapabilities {
+        self.descriptor().capabilities.clone()
+    }
 
     /// Cheap pre-flight check: type matches, target file exists, etc. The
     /// default implementation does nothing.

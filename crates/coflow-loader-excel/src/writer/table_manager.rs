@@ -7,6 +7,7 @@ use coflow_loader_table_core::writer::HeaderReconciliationPlan;
 use coflow_loader_table_core::TableSheetConfig;
 use std::path::Path;
 
+use super::format::ensure_writable_excel_path;
 use super::{diag, excel_cell_to_text, ExcelWriter};
 use crate::options::{
     excel_sheet_config_from_options, excel_sheet_for_type_from_options, excel_source_options,
@@ -19,7 +20,7 @@ const EXCEL_TABLE_SHEET_MISSING: &str = "EXCEL-TABLE-SHEET-MISSING";
 pub static EXCEL_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
     id: "excel",
     display_name: "Excel table",
-    file_extensions: &["xlsx", "xlsm", "xls"],
+    file_extensions: &["xlsx"],
     aliases: &["xlsx"],
     addressing: TableAddressing::Sheet,
 };
@@ -69,6 +70,7 @@ impl TableManager for ExcelWriter {
                 "excel table manager requires a local path source",
             )));
         };
+        ensure_writable_excel_path(path, "create tables")?;
         if path.exists() {
             append_excel_sheet(path, request.sheet, request.headers)?;
         } else {
@@ -101,6 +103,7 @@ impl TableManager for ExcelWriter {
                 "excel table manager requires a local path source",
             )));
         };
+        ensure_writable_excel_path(path, "sync headers")?;
         let sheet = request.sheet.unwrap_or(request.actual_type);
         let mut created_sheet = false;
         let old_header = excel_header(path, sheet).or_else(|diagnostics| {

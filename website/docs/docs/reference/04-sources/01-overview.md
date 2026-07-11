@@ -39,7 +39,7 @@ sources:
 
 | Provider id | 数据源 | 常见文件/地址 | 支持写回 |
 | --- | --- | --- | --- |
-| `excel` | Excel workbook | `.xlsx` / `.xlsm` / `.xls` | 是 |
+| `excel` | Excel workbook | `.xlsx` / `.xlsm` / `.xls` | 仅 `.xlsx`；`.xlsm` / `.xls` 只读 |
 | `csv` | CSV 文件 | `.csv` | 是 |
 | `cfd` | Coflow 文本数据 | `.cfd` | 是 |
 | `lark-sheet` | 飞书/Lark 电子表格 | `lark:<spreadsheet_token>` 或表格 URL | 是 |

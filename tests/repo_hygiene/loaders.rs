@@ -180,6 +180,8 @@ fn excel_table_manager_does_not_live_in_writer_rs() {
     let table_manager =
         std::fs::read_to_string("crates/coflow-loader-excel/src/writer/table_manager.rs")
             .expect("read excel table manager");
+    let format = std::fs::read_to_string("crates/coflow-loader-excel/src/writer/format.rs")
+        .expect("read excel writer format capabilities");
 
     for expected in [
         "impl TableManager for ExcelWriter",
@@ -197,6 +199,25 @@ fn excel_table_manager_does_not_live_in_writer_rs() {
         assert!(
             !writer.contains(expected),
             "Excel table manager item `{expected}` should not live in writer.rs"
+        );
+    }
+    assert!(
+        table_manager.contains("file_extensions: &[\"xlsx\"]")
+            && table_manager.contains("ensure_writable_excel_path")
+            && writer.contains("fn capabilities(")
+            && writer.contains("ensure_writable_excel_path")
+            && format.contains("enum ExcelWorkbookFormat")
+            && format.contains("pub(super) fn excel_writer_capabilities")
+            && format.contains("EXCEL-FORMAT-READ-ONLY"),
+        "Excel mutation capabilities should be derived from the concrete workbook format"
+    );
+    for unsafe_extension in ["\"xlsm\"", "\"xls\""] {
+        assert!(
+            !table_manager
+                .lines()
+                .find(|line| line.contains("file_extensions:"))
+                .is_some_and(|line| line.contains(unsafe_extension)),
+            "Excel table manager should not advertise unsafe mutation extension {unsafe_extension}"
         );
     }
     assert!(

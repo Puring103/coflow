@@ -157,6 +157,7 @@
 | `EXCEL-TABLE` | `EXCEL` | Excel table manager 创建表、同步表头或写入 workbook 失败 |
 | `EXCEL-TABLE-SHEET-MISSING` | `EXCEL` | Excel table manager 读取或写入目标 sheet 时发现 sheet 不存在 |
 | `EXCEL-WRITE` | `EXCEL` | Excel writer 写回失败 |
+| `EXCEL-FORMAT-READ-ONLY` | `EXCEL` | mutation 目标不是可安全写回的 `.xlsx`；`.xlsm` 和 `.xls` 仅支持读取 |
 
 ### CSV
 

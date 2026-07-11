@@ -87,7 +87,7 @@ pub fn data_sources(session: &ProjectSession, registry: &ProviderRegistry) -> Da
             DataSourceInfo {
                 file: entry.display_path.clone(),
                 provider: entry.provider_id.clone(),
-                capabilities: writer_capabilities(registry, &entry.provider_id),
+                capabilities: writer_capabilities(registry, &entry.source),
                 types,
             }
         })
@@ -257,15 +257,13 @@ const fn requires_explicit_large_get(query: &DataGetQuery, match_count: usize) -
         && match_count > DEFAULT_GET_LIMIT
 }
 
-fn writer_capabilities(registry: &ProviderRegistry, provider_id: &str) -> WriterCapabilities {
-    registry.source_writer(provider_id).map_or_else(
-        || WriterCapabilities::read_only().with_provider_id(provider_id.to_string()),
+fn writer_capabilities(registry: &ProviderRegistry, source: &coflow_api::ResolvedSource) -> WriterCapabilities {
+    registry.source_writer(&source.provider_id).map_or_else(
+        || WriterCapabilities::read_only().with_provider_id(source.provider_id.clone()),
         |writer| {
             writer
-                .descriptor()
-                .capabilities
-                .clone()
-                .with_provider_id(provider_id.to_string())
+                .capabilities(source)
+                .with_provider_id(source.provider_id.clone())
         },
     )
 }

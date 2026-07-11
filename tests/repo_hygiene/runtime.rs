@@ -482,6 +482,22 @@ fn engine_data_file_headers_use_cft_compiler_context() {
 }
 
 #[test]
+fn engine_writer_capabilities_are_resolved_per_source() {
+    let data_read = std::fs::read_to_string("crates/coflow-runtime/src/data_read.rs")
+        .expect("read engine data queries");
+
+    assert!(
+        data_read.contains("writer_capabilities(registry, &entry.source)")
+            && data_read.contains(".capabilities(source)"),
+        "runtime should query writer capabilities for each resolved source format"
+    );
+    assert!(
+        !data_read.contains(".descriptor()\n                .capabilities"),
+        "runtime should not apply one static writer capability set to every source"
+    );
+}
+
+#[test]
 fn engine_dimension_generation_uses_provider_source_options() {
     let dimensions = std::fs::read_to_string("crates/coflow-runtime/src/dimensions/regenerate.rs")
         .expect("read engine dimension regeneration");

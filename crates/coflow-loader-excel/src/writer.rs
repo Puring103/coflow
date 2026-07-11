@@ -4,6 +4,7 @@
 //! whose document is `SourceDocument::Local`. It uses
 //! [`umya-spreadsheet`](https://docs.rs/umya-spreadsheet) so existing styles,
 //! merged cells, and column widths survive round-trips.
+mod format;
 mod table_manager;
 
 use calamine::Reader;
@@ -24,6 +25,7 @@ use crate::options::{
     excel_sheet_config_from_options, excel_sheet_for_type_from_options, excel_source_options,
     ExcelSourceOptions,
 };
+use format::{ensure_writable_excel_path, excel_writer_capabilities};
 
 pub static EXCEL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "excel",
@@ -59,11 +61,34 @@ impl SourceWriter for ExcelWriter {
         &EXCEL_WRITER_DESCRIPTOR
     }
 
+    fn capabilities(&self, source: &coflow_api::ResolvedSource) -> WriterCapabilities {
+        excel_writer_capabilities(source)
+    }
+
+    fn preflight(&self, _ctx: WriteContext<'_>, request: &WriteCellRequest<'_>) -> DiagnosticSet {
+        let SourceLocationSpec::Path(path) = &request.source.location else {
+            return DiagnosticSet::one(diag(
+                "EXCEL-WRITE",
+                "excel writer requires a local path source",
+            ));
+        };
+        ensure_writable_excel_path(path, "edit fields")
+            .err()
+            .unwrap_or_default()
+    }
+
     fn write_field(
         &self,
         ctx: WriteContext<'_>,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location else {
+            return Err(DiagnosticSet::one(diag(
+                "EXCEL-WRITE",
+                "excel writer requires a local path source",
+            )));
+        };
+        ensure_writable_excel_path(path, "edit fields")?;
         let plan = plan_field_write(&TableFieldWrite {
             origin: request.origin,
             record_key: request.record_key,
@@ -93,6 +118,7 @@ impl SourceWriter for ExcelWriter {
                 "excel writer requires a local path source",
             )));
         };
+        ensure_writable_excel_path(path, "insert records")?;
         let sheet = match request.sheet {
             Some(sheet) => sheet.to_string(),
             None => excel_sheet_for_type_from_options(
@@ -153,6 +179,13 @@ impl SourceWriter for ExcelWriter {
         _ctx: WriteContext<'_>,
         request: &DeleteRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location else {
+            return Err(DiagnosticSet::one(diag(
+                "EXCEL-WRITE",
+                "excel writer requires a local path source",
+            )));
+        };
+        ensure_writable_excel_path(path, "delete records")?;
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
@@ -262,6 +295,7 @@ fn mutate_workbook(
         &mut umya_spreadsheet::Spreadsheet,
     ) -> Result<Option<RecordOrigin>, DiagnosticSet>,
 ) -> Result<Option<RecordOrigin>, DiagnosticSet> {
+    ensure_writable_excel_path(path, "mutate workbook")?;
     if !path.exists() {
         return Err(DiagnosticSet::one(diag(
             "EXCEL-WRITE",

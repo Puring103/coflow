@@ -152,6 +152,11 @@ HTTP method 标记和 token-expiry retry。凭证缓存按 app id 与 secret 的
 不会进入 Debug 输出。每个远程请求最多在明确的 token-expired 响应后重试一次，
 transport diagnostic 始终包含 HTTP method、operation 和 retry 阶段。
 
+Excel source provider 的 read descriptor 接受 `.xlsx`、`.xlsm` 和 `.xls`，但
+writer capability 与 table-operation descriptor 只对 `.xlsx` 开放。Runtime 查询
+每个 `ResolvedSource` 的动态 capability，不再把 provider 级静态 capability 套用
+到所有格式；writer 和 table manager 入口仍执行相同的格式预检。
+
 ## 数据模型边界
 
 Loader 输出 source-neutral input records。它们只表达“某个来源读到了哪些记录和值”，不直接变成导出产物。

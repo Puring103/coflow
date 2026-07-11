@@ -9,8 +9,9 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
-    DeleteRecordRequest, InsertRecordRequest, ResolvedSource, SourceLocationSpec, SourceWriter,
-    SourceProvider, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    CreateTableRequest, DeleteRecordRequest, InsertRecordRequest, ResolvedSource,
+    SourceLocationSpec, SourceProvider, SourceWriter, SyncHeaderRequest, TableContext, TableManager,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::{CftContainer};
 use coflow_data_model::{
@@ -121,6 +122,122 @@ fn schema_for_items() -> CftContainer {
         .expect("schema parse");
     schema.compile().expect("schema compile");
     schema
+}
+
+#[test]
+fn writer_capabilities_are_derived_from_workbook_format() {
+    let writer = ExcelWriter::new();
+    let xlsx = empty_source(Path::new("items.xlsx"));
+    let xlsm = empty_source(Path::new("items.xlsm"));
+    let xls = empty_source(Path::new("items.xls"));
+
+    let writable = writer.capabilities(&xlsx);
+    assert!(writable.can_edit_field);
+    assert!(writable.can_edit_key);
+    assert!(writable.can_insert_record);
+    assert!(writable.can_delete_record);
+
+    for read_only in [writer.capabilities(&xlsm), writer.capabilities(&xls)] {
+        assert!(!read_only.can_edit_field);
+        assert!(!read_only.can_edit_key);
+        assert!(!read_only.can_insert_record);
+        assert!(!read_only.can_delete_record);
+    }
+}
+
+#[test]
+fn writer_rejects_xlsm_and_xls_before_mutating_workbook_bytes() {
+    let seed = temp_xlsx("read-only-format-seed");
+    write_seed_workbook(&seed).expect("seed workbook");
+    let schema = CftContainer::new();
+    let compiled_schema = schema.compiled_schema();
+    let new_value = CfdValue::String("Changed".to_string());
+    let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
+    let writer = ExcelWriter::new();
+
+    for extension in ["xlsm", "xls"] {
+        let path = seed.with_extension(extension);
+        std::fs::copy(&seed, &path).expect("copy workbook package");
+        let before = std::fs::read(&path).expect("read before");
+        let source = empty_source(&path);
+        let origin = origin_for_sword(&path);
+        let request = WriteCellRequest {
+            origin: &origin,
+            record_key: "sword",
+            actual_type: "Item",
+            field_path: &segments,
+            new_value: &new_value,
+            schema: &compiled_schema,
+            source: &source,
+        };
+        let context = WriteContext {
+            project_root: &std::env::temp_dir(),
+            schema: &compiled_schema,
+            model: None,
+        };
+
+        let preflight = writer.preflight(context, &request);
+        assert!(preflight
+            .iter()
+            .any(|diagnostic| diagnostic.code == "EXCEL-FORMAT-READ-ONLY"));
+        let error = writer
+            .write_field(context, &request)
+            .expect_err("read-only format should reject writes");
+        assert!(error
+            .iter()
+            .any(|diagnostic| diagnostic.code == "EXCEL-FORMAT-READ-ONLY"));
+        assert_eq!(std::fs::read(&path).expect("read after"), before);
+    }
+}
+
+#[test]
+fn table_manager_rejects_unsafe_formats_before_create_or_sync() {
+    let writer = ExcelWriter::new();
+    let headers = vec!["id".to_string(), "name".to_string()];
+    let table_context = TableContext {
+        project_root: &std::env::temp_dir(),
+    };
+
+    let create_path = temp_xlsx("read-only-create").with_extension("xlsm");
+    let create_source = empty_source(&create_path);
+    let create_error = writer
+        .create_table(
+            table_context,
+            &CreateTableRequest {
+                source: &create_source,
+                sheet: "Items",
+                actual_type: "Item",
+                headers: &headers,
+            },
+        )
+        .expect_err("xlsm create should fail preflight");
+    assert!(create_error
+        .iter()
+        .any(|diagnostic| diagnostic.code == "EXCEL-FORMAT-READ-ONLY"));
+    assert!(!create_path.exists());
+
+    let seed = temp_xlsx("read-only-sync-seed");
+    write_seed_workbook(&seed).expect("seed workbook");
+    let sync_path = seed.with_extension("xls");
+    std::fs::copy(&seed, &sync_path).expect("copy workbook package");
+    let before = std::fs::read(&sync_path).expect("read before");
+    let sync_source = empty_source(&sync_path);
+    let sync_error = writer
+        .sync_header(
+            table_context,
+            &SyncHeaderRequest {
+                source: &sync_source,
+                sheet: Some("Items"),
+                actual_type: "Item",
+                headers: &headers,
+                schema: None,
+            },
+        )
+        .expect_err("xls sync should fail preflight");
+    assert!(sync_error
+        .iter()
+        .any(|diagnostic| diagnostic.code == "EXCEL-FORMAT-READ-ONLY"));
+    assert_eq!(std::fs::read(&sync_path).expect("read after"), before);
 }
 
 fn schema_for_tagged_items() -> CftContainer {

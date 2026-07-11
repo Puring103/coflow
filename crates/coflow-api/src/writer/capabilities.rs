@@ -11,8 +11,9 @@ pub struct WriterDescriptor {
 /// Editing capabilities exposed to the front-end so the UI can grey out
 /// disabled actions per source.
 ///
-/// Lower-bounded by the writer's actual implementation; the front-end must
-/// not assume a writer can do more than these flags claim.
+/// The descriptor contains the provider's maximum capability set. Hosts use
+/// [`crate::SourceWriter::capabilities`] for the authoritative per-source
+/// result when support depends on the resolved storage format.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]

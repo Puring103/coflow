@@ -343,8 +343,9 @@ fn api_writer_contract_is_split_by_responsibility() {
         "writer schema-bearing requests should expose schema view"
     );
     assert!(
-        writer.contains("pub trait SourceWriter"),
-        "API writer trait should remain in writer.rs"
+        writer.contains("pub trait SourceWriter")
+            && writer.contains("fn capabilities(&self, _source: &ResolvedSource)"),
+        "API writer trait should support per-source capabilities in writer.rs"
     );
     assert!(
         !writer.contains("pub trait DataWriter"),
