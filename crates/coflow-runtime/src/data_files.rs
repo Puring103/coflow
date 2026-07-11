@@ -5,7 +5,7 @@ use coflow_api::{
 };
 use coflow_project::{path_to_slash, Project, SourceConfig};
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::ProjectSchemaSession;
 
@@ -57,16 +57,13 @@ pub fn create_data_file(
     registry: &ProviderRegistry,
     options: DataCreateFileOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
-    let provider_id = resolve_provider_id(registry, options.provider.as_deref(), &options.file)?;
-    let descriptor = table_manager_descriptor(registry, &provider_id)?;
-    let path = resolve_project_file(&session.project, &options.file);
-    let source = table_operation_source(
+    let (provider_id, source) = table_operation_source(
         session.project(),
         registry,
         &options.file,
-        &provider_id,
-        path,
+        options.provider.as_deref(),
     )?;
+    let descriptor = table_manager_descriptor(registry, &provider_id)?;
     let manager = table_manager(registry, &provider_id)?;
     let actual_type = options.actual_type;
     let layout = descriptor
@@ -121,22 +118,19 @@ pub fn sync_data_header(
     registry: &ProviderRegistry,
     options: DataSyncHeaderOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
-    let provider_id = resolve_provider_id(registry, options.provider.as_deref(), &options.file)?;
+    let (provider_id, source) = table_operation_source(
+        session.project(),
+        registry,
+        &options.file,
+        options.provider.as_deref(),
+    )?;
     let descriptor = table_manager_descriptor(registry, &provider_id)?;
-    let path = resolve_project_file(&session.project, &options.file);
-    if !path.exists() {
+    if matches!(&source.location, SourceLocationSpec::Path(path) if !path.exists()) {
         return Err(one_data_file_error(
             "DATA-FILE-MISSING",
             format!("file `{}` does not exist", options.file),
         ));
     }
-    let source = table_operation_source(
-        session.project(),
-        registry,
-        &options.file,
-        &provider_id,
-        path,
-    )?;
     let manager = table_manager(registry, &provider_id)?;
     let layout = table_header_layout(
         session,
@@ -179,24 +173,79 @@ fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
 fn table_operation_source(
     project: &Project,
     registry: &ProviderRegistry,
-    file: &str,
-    provider_id: &str,
-    path: PathBuf,
-) -> Result<ResolvedSource, DiagnosticSet> {
-    let provider = registry.source_provider(provider_id).ok_or_else(|| {
+    target: &str,
+    requested_provider: Option<&str>,
+) -> Result<(String, ResolvedSource), DiagnosticSet> {
+    let configured = configured_table_source(project, target);
+    if let Some(configured) = configured {
+        let requested = requested_provider
+            .map(|provider| resolve_explicit_provider_id(registry, provider))
+            .transpose()?;
+        if let (Some(requested), Some(configured_provider)) =
+            (requested.as_deref(), configured.source_type.as_deref())
+        {
+            if requested != configured_provider {
+                return Err(one_data_file_error(
+                    "DATA-FILE-PROVIDER",
+                    format!(
+                        "configured source `{target}` uses provider `{configured_provider}`, not `{requested}`"
+                    ),
+                ));
+            }
+        }
+        let provider_id = if let Some(requested) = requested {
+            requested
+        } else if let Some(configured_provider) = &configured.source_type {
+            configured_provider.clone()
+        } else if matches!(configured.location(), SourceLocationSpec::Path(_)) {
+            resolve_provider_id(registry, None, target)?
+        } else {
+            String::new()
+        };
+        let mut source = if provider_id.is_empty() {
+            crate::configured_project_source(project, registry, configured)?
+        } else {
+            crate::load::configured_project_source_as(
+                project,
+                registry,
+                configured,
+                &provider_id,
+            )?
+        };
+        source.location = match configured.location() {
+            SourceLocationSpec::Uri(_) => SourceLocationSpec::Uri(target.to_string()),
+            SourceLocationSpec::Path(_) => {
+                SourceLocationSpec::Path(project.resolve_path(Path::new(target)))
+            }
+        };
+        source.display_name = target.to_string();
+        return Ok((source.provider_id.clone(), source));
+    }
+
+    if is_uri_target(target) {
+        return Err(one_data_file_error(
+            "DATA-FILE-SOURCE",
+            format!("remote table source `{target}` is not configured"),
+        ));
+    }
+    let provider_id = resolve_provider_id(registry, requested_provider, target)?;
+    let provider = registry.source_provider(&provider_id).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-PROVIDER",
             format!("source provider `{provider_id}` is not registered"),
         )
     })?;
-    let raw_options = configured_table_source(project, file)
-        .map_or(serde_json::Value::Null, |source| source.options().clone());
-    Ok(ResolvedSource {
-        provider_id: provider_id.to_string(),
-        location: SourceLocationSpec::Path(path),
-        options: provider.decode_options(&raw_options)?,
-        display_name: file.to_string(),
-    })
+    let source = ResolvedSource {
+        provider_id: provider_id.clone(),
+        location: SourceLocationSpec::Path(project.resolve_path(Path::new(target))),
+        options: provider.decode_options(&serde_json::Value::Null)?,
+        display_name: target.to_string(),
+    };
+    Ok((provider_id, source))
+}
+
+fn is_uri_target(target: &str) -> bool {
+    target.contains("://") || target.starts_with("lark:")
 }
 
 trait TableManagerDescriptorExt {
@@ -321,10 +370,6 @@ fn resolve_explicit_provider_id(
     }
 }
 
-fn resolve_project_file(project: &Project, file: &str) -> PathBuf {
-    project.resolve_path(Path::new(file))
-}
-
 pub fn table_header_layout(
     session: &ProjectSchemaSession,
     manager: &dyn TableManager,
@@ -388,12 +433,12 @@ fn configured_table_source<'a>(project: &'a Project, file: &str) -> Option<&'a S
         .config
         .sources
         .iter()
-        .find(|source| source_path_matches(project, source, file))
+        .find(|source| source_location_matches(project, source, file))
 }
 
-fn source_path_matches(project: &Project, source: &SourceConfig, file: &str) -> bool {
+fn source_location_matches(project: &Project, source: &SourceConfig, file: &str) -> bool {
     let SourceLocationSpec::Path(path) = source.location() else {
-        return false;
+        return matches!(source.location(), SourceLocationSpec::Uri(uri) if uri == file);
     };
     let requested = path_to_slash(Path::new(file));
     let configured = path_to_slash(path);

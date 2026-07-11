@@ -2,11 +2,18 @@
 
 use std::fmt::Write as _;
 
+use coflow_api::{
+    CreateTableRequest, DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource,
+    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLoadContext, SourceLocationSpec,
+    SourceProvider, SourceProviderDescriptor, SyncHeaderRequest, TableAddressing, TableContext,
+    TableManager, TableManagerDescriptor, TableOperationResult,
+};
 use coflow_data_model::CfdErrorCode;
 use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
-    create_data_file, data_get, data_list, data_sources, DataCreateFileOptions, DataGetQuery,
-    DataListQuery, ProjectSchemaSession, ProjectSession, RecordCoordinate, Runtime,
+    create_data_file, data_get, data_list, data_sources, sync_data_header, DataCreateFileOptions,
+    DataGetQuery, DataListQuery, DataSyncHeaderOptions, ProjectSchemaSession, ProjectSession,
+    RecordCoordinate, Runtime,
 };
 
 fn write_project(root: &std::path::Path) {
@@ -71,7 +78,7 @@ fn registry() -> coflow_api::ProviderRegistry {
 fn build_session(
     project: Project,
     registry: &coflow_api::ProviderRegistry,
-) -> Result<ProjectSession, coflow_api::DiagnosticSet> {
+) -> Result<ProjectSession, DiagnosticSet> {
     Runtime::new(registry.clone())
         .build_project_session(project)
         .map(coflow_runtime::BuildProjectSession::into_session)
@@ -79,7 +86,7 @@ fn build_session(
 
 fn schema_session(
     project: Project,
-) -> Result<ProjectSchemaSession, coflow_api::DiagnosticSet> {
+) -> Result<ProjectSchemaSession, DiagnosticSet> {
     Runtime::build_schema_session(project)
 }
 
@@ -461,6 +468,182 @@ fn provider_option_diagnostics_keep_the_project_key_path() {
     };
     assert_eq!(path, &canonical_config_path);
     assert_eq!(key_path, &["sources", "0", "rogue"]);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[derive(Debug)]
+struct RemoteTableOptions {
+    token: String,
+}
+
+#[derive(Debug)]
+struct FakeRemoteTable;
+
+static FAKE_REMOTE_SOURCE: SourceProviderDescriptor = SourceProviderDescriptor {
+    id: "remote-table",
+    display_name: "Remote table",
+    extensions: &[],
+    uri_schemes: &["remote"],
+    option_keys: &["token"],
+};
+
+static FAKE_REMOTE_TABLE: TableManagerDescriptor = TableManagerDescriptor {
+    id: "remote-table",
+    display_name: "Remote table",
+    file_extensions: &[],
+    aliases: &[],
+    addressing: TableAddressing::Sheet,
+};
+
+impl SourceProvider for FakeRemoteTable {
+    fn descriptor(&self) -> &'static SourceProviderDescriptor {
+        &FAKE_REMOTE_SOURCE
+    }
+
+    fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult {
+        if source.source_type == Some(FAKE_REMOTE_SOURCE.id) {
+            ProbeResult::certain()
+        } else {
+            ProbeResult::none()
+        }
+    }
+
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        let token = options
+            .get("token")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                DiagnosticSet::one(Diagnostic::error(
+                    "REMOTE-OPTIONS",
+                    "REMOTE",
+                    "remote table requires token",
+                ))
+            })?;
+        Ok(DecodedSourceOptions::new(
+            FAKE_REMOTE_SOURCE.id,
+            RemoteTableOptions {
+                token: token.to_string(),
+            },
+        ))
+    }
+
+    fn load(
+        &self,
+        _ctx: SourceLoadContext<'_>,
+        _source: &ResolvedSource,
+    ) -> Result<LoadedSource, DiagnosticSet> {
+        Ok(LoadedSource {
+            records: Vec::new(),
+        })
+    }
+}
+
+impl TableManager for FakeRemoteTable {
+    fn descriptor(&self) -> &'static TableManagerDescriptor {
+        &FAKE_REMOTE_TABLE
+    }
+
+    fn create_table(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &CreateTableRequest<'_>,
+    ) -> Result<TableOperationResult, DiagnosticSet> {
+        validate_remote_request(request.source)?;
+        Ok(TableOperationResult {
+            headers: request.headers.to_vec(),
+            ..TableOperationResult::default()
+        })
+    }
+
+    fn sync_header(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &SyncHeaderRequest<'_>,
+    ) -> Result<TableOperationResult, DiagnosticSet> {
+        validate_remote_request(request.source)?;
+        Ok(TableOperationResult {
+            headers: request.headers.to_vec(),
+            added: vec!["name".to_string()],
+            ..TableOperationResult::default()
+        })
+    }
+}
+
+fn validate_remote_request(source: &ResolvedSource) -> Result<(), DiagnosticSet> {
+    if source.location != SourceLocationSpec::Uri("remote://document".to_string()) {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "REMOTE-LOCATION",
+            "REMOTE",
+            "unexpected remote location",
+        )));
+    }
+    let options = source.options::<RemoteTableOptions>(FAKE_REMOTE_SOURCE.id)?;
+    if options.token != "secret" {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "REMOTE-TOKEN",
+            "REMOTE",
+            "unexpected remote token",
+        )));
+    }
+    Ok(())
+}
+
+#[test]
+fn table_operations_use_one_location_neutral_runtime_path() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-location-neutral-table-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("create project dir");
+    std::fs::write(root.join("schema.cft"), "type Item { name: string; }\n")
+        .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - type: remote-table\n    url: remote://document\n    token: secret\n",
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let session = schema_session(project).expect("schema session");
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_source_provider(FakeRemoteTable)
+        .expect("register source provider");
+    registry
+        .register_table_manager(FakeRemoteTable)
+        .expect("register table manager");
+
+    let created = create_data_file(
+        &session,
+        &registry,
+        DataCreateFileOptions {
+            file: "remote://document".to_string(),
+            actual_type: Some("Item".to_string()),
+            provider: None,
+            sheet: Some("Items".to_string()),
+        },
+    )
+    .expect("create remote table");
+    assert_eq!(created.provider, "remote-table");
+    assert_eq!(created.headers, ["id", "name"]);
+
+    let synced = sync_data_header(
+        &session,
+        &registry,
+        DataSyncHeaderOptions {
+            file: "remote://document".to_string(),
+            actual_type: "Item".to_string(),
+            provider: None,
+            sheet: Some("Items".to_string()),
+        },
+    )
+    .expect("sync remote table header");
+    assert_eq!(synced.added, ["name"]);
 
     let _ = std::fs::remove_dir_all(root);
 }

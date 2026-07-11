@@ -1,4 +1,3 @@
-use super::lark::{create_lark_table, infer_table_provider, sync_lark_header};
 use super::output::file_error_report;
 use coflow_api::ProviderRegistry;
 use coflow_runtime::{
@@ -35,23 +34,16 @@ pub(super) fn create_table_report(
     provider: Option<&str>,
     sheet: Option<String>,
 ) -> DataFileReport {
-    let provider_id = provider
-        .or_else(|| infer_table_provider(&source))
-        .unwrap_or("excel");
-    let result = if provider_id == "lark-sheet" || provider_id == "lark" {
-        create_lark_table(session, registry, &source, actual_type, sheet)
-    } else {
-        create_data_file(
-            session,
-            registry,
-            DataCreateFileOptions {
-                file: source,
-                actual_type,
-                provider: Some(provider_id.to_string()),
-                sheet,
-            },
-        )
-    };
+    let result = create_data_file(
+        session,
+        registry,
+        DataCreateFileOptions {
+            file: source,
+            actual_type,
+            provider: provider.map(str::to_string),
+            sheet,
+        },
+    );
     result.unwrap_or_else(|diagnostics| file_error_report(&diagnostics))
 }
 
@@ -63,23 +55,15 @@ pub(super) fn sync_header_report(
     provider: Option<String>,
     sheet: Option<String>,
 ) -> DataFileReport {
-    let provider_id = provider
-        .as_deref()
-        .or_else(|| infer_table_provider(&file))
-        .unwrap_or("");
-    let result = if provider_id == "lark-sheet" || provider_id == "lark" {
-        sync_lark_header(session, registry, &file, actual_type, sheet)
-    } else {
-        sync_data_header(
-            session,
-            registry,
-            DataSyncHeaderOptions {
-                file,
-                actual_type,
-                provider,
-                sheet,
-            },
-        )
-    };
+    let result = sync_data_header(
+        session,
+        registry,
+        DataSyncHeaderOptions {
+            file,
+            actual_type,
+            provider,
+            sheet,
+        },
+    );
     result.unwrap_or_else(|diagnostics| file_error_report(&diagnostics))
 }

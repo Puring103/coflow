@@ -494,6 +494,27 @@ pub fn configured_project_source(
     decode_configured_source(loader.as_ref(), &configured, &project.config_path)
 }
 
+pub(crate) fn configured_project_source_as(
+    project: &Project,
+    registry: &ProviderRegistry,
+    source: &SourceConfig,
+    provider_id: &str,
+) -> Result<ResolvedSource, DiagnosticSet> {
+    let provider = registry.source_provider(provider_id).ok_or_else(|| {
+        DiagnosticSet::one(project_diagnostic(
+            &project.config_path,
+            format!("source provider `{provider_id}` is not registered"),
+        ))
+    })?;
+    let source_index = project
+        .config
+        .sources
+        .iter()
+        .position(|candidate| std::ptr::eq(candidate, source));
+    let configured = configured_source(project, source, source_index);
+    decode_configured_source(provider.as_ref(), &configured, &project.config_path)
+}
+
 fn decode_configured_source(
     provider: &dyn coflow_api::SourceProvider,
     source: &ConfiguredSource,

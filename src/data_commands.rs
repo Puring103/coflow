@@ -14,7 +14,6 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 mod files;
-mod lark;
 mod output;
 mod write_file;
 

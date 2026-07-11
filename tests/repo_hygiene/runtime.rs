@@ -444,8 +444,9 @@ fn engine_data_file_headers_use_cft_compiler_context() {
         );
     }
     assert!(
-        data_files.contains("provider.decode_options(&raw_options)"),
-        "data file table operations should decode configured options through the selected provider"
+        data_files.contains("crate::configured_project_source(project, registry, configured)")
+            && data_files.contains("provider.decode_options(&serde_json::Value::Null)"),
+        "table operations should reuse configured typed options or decode an empty local source through the selected provider"
     );
     assert!(
         data_files.contains(".table_manager_descriptors()"),

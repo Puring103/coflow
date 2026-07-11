@@ -436,10 +436,6 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
 
         std::fs::read_to_string("src/data_commands.rs").expect("read root CLI data commands");
 
-    let lark = std::fs::read_to_string("src/data_commands/lark.rs")
-
-        .expect("read data command lark helpers");
-
     let files = std::fs::read_to_string("src/data_commands/files.rs")
 
         .expect("read data command file helpers");
@@ -454,37 +450,10 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
 
 
 
-    for expected in [
-
-        "pub(super) fn infer_table_provider",
-
-        "pub(super) fn create_lark_table",
-
-        "pub(super) fn sync_lark_header",
-
-        "fn lark_table_manager",
-
-        "fn configured_lark_source",
-
-    ] {
-
-        assert!(
-
-            lark.contains(expected),
-
-            "data command Lark helper `{expected}` should live in data_commands/lark.rs"
-
-        );
-
-        assert!(
-
-            !commands.contains(expected),
-
-            "data command Lark helper `{expected}` should not live in data_commands.rs"
-
-        );
-
-    }
+    assert!(
+        !std::path::Path::new("src/data_commands/lark.rs").exists(),
+        "table operations should not keep a CLI-only Lark path"
+    );
 
     for expected in [
 
@@ -604,14 +573,6 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
 
     );
 
-    assert!(
-
-        lark.contains("table_header_layout("),
-
-        "root CLI Lark helper should reuse runtime table header planning"
-
-    );
-
     for forbidden in [
 
         "serde_json::Value",
@@ -646,9 +607,9 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
 
         assert!(
 
-            !lark.contains(forbidden),
+            !files.contains(forbidden) && !commands.contains(forbidden),
 
-            "root CLI Lark helper should not bypass provider/schema facades with `{forbidden}`"
+            "root CLI table commands should not bypass runtime/provider facades with `{forbidden}`"
 
         );
 
@@ -736,9 +697,8 @@ fn root_cli_schema_queries_go_through_session_facade() {
 
     let commands = std::fs::read_to_string("src/commands.rs").expect("read root CLI commands");
 
-    let lark = std::fs::read_to_string("src/data_commands/lark.rs")
-
-        .expect("read root CLI Lark data command helpers");
+    let files = std::fs::read_to_string("src/data_commands/files.rs")
+        .expect("read root CLI table command helpers");
 
 
 
@@ -774,21 +734,13 @@ fn root_cli_schema_queries_go_through_session_facade() {
     );
 
     assert!(
-
-        lark.contains("table_header_layout("),
-
-        "root CLI Lark helper should delegate schema/header planning to runtime"
-
+        files.contains("create_data_file(") && files.contains("sync_data_header("),
+        "root CLI table commands should delegate all providers to runtime"
     );
-
     assert!(
-
-        !lark.contains("session.compiled_schema()")
-
-            && !lark.contains("CompiledSchema::new(session.schema())"),
-
-        "root CLI Lark helper should not own schema query construction"
-
+        !files.contains("session.compiled_schema()")
+            && !files.contains("CompiledSchema::new(session.schema())"),
+        "root CLI table commands should not own schema query construction"
     );
 
 }
@@ -814,16 +766,6 @@ fn root_cli_uses_session_accessors_instead_of_fields() {
             "src/data_commands.rs",
 
             std::fs::read_to_string("src/data_commands.rs").expect("read root CLI data commands"),
-
-        ),
-
-        (
-
-            "src/data_commands/lark.rs",
-
-            std::fs::read_to_string("src/data_commands/lark.rs")
-
-                .expect("read root CLI Lark data command helpers"),
 
         ),
 

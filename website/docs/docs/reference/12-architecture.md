@@ -135,6 +135,10 @@ Provider registry 持有 loader、writer、exporter 和 codegen。默认 registr
 
 runtime 只依赖 registry 和 trait，不依赖具体 Provider crate 的实现细节。扩展新数据源、导出格式或代码生成目标时，应优先通过 Provider 接口接入。
 
+本地文件和远程 URI 的 table operation 共用 runtime preparation interface：匹配
+项目 source、选择 provider、复用 decoded options、校验 provider role，然后调用
+`TableManager`。CLI 不包含 Excel/Lark 分支；新增远程表格 provider 不需要修改宿主。
+
 ## 数据模型边界
 
 Loader 输出 source-neutral input records。它们只表达“某个来源读到了哪些记录和值”，不直接变成导出产物。
