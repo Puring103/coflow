@@ -176,12 +176,7 @@ fn dimension_check_analysis_respects_quantifier_binding_shadowing() {
     .expect("schema compiles");
     let compiled = schema.compiled_schema();
 
-    assert_eq!(
-        compiled
-            .check_schedule("Item", Some("language"))
-            .count(),
-        0
-    );
+    assert_eq!(compiled.check_schedule("Item", Some("language")).count(), 0);
 }
 
 #[test]
@@ -527,4 +522,31 @@ fn spec_comprehensive_example_compiles() {
     let container = compile_one(source).unwrap();
     assert!(container.has_type("Monster"));
     assert_eq!(container.all_enums().count(), 5);
+}
+
+#[test]
+fn typed_check_plan_marks_only_fields_that_can_reach_nested_checks() {
+    let container = compile_one(
+        r#"
+            abstract type Reward {}
+            type CheckedReward : Reward { value: int; check { value > 0; } }
+            type Wrapper { reward: Reward; }
+            type Recursive { child: Recursive? = null; check { true; } }
+            type Holder {
+                primitive: [int];
+                wrapped: [Wrapper];
+                recursive: Recursive;
+                reference: &CheckedReward;
+            }
+        "#,
+    )
+    .expect("schema compiles");
+    let schema = container.compiled_schema();
+
+    assert!(!schema.field_has_nested_checks("Holder", "primitive"));
+    assert!(schema.field_has_nested_checks("Holder", "wrapped"));
+    assert!(schema.field_has_nested_checks("Holder", "recursive"));
+    assert!(!schema.field_has_nested_checks("Holder", "reference"));
+    assert!(schema.field_has_nested_checks("Wrapper", "reward"));
+    assert!(schema.field_has_nested_checks("Recursive", "child"));
 }

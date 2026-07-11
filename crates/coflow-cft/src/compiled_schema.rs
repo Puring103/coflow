@@ -8,12 +8,12 @@ pub use value_dependencies::{
     ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
 
+use crate::container::ModuleId;
+use crate::schema::SchemaReflection;
 use crate::{
     CftAnnotation, CftConstValue, CftDiagnostic, CftDiagnostics, CftErrorCode, CftSchemaCheckBlock,
     CftSchemaEnum, CftSchemaType, CftSchemaTypeRef, Span,
 };
-use crate::container::ModuleId;
-use crate::schema::SchemaReflection;
 use coflow_structure::{BudgetExceeded, StructuralBudget, StructuralLimits};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -275,6 +275,12 @@ impl CompiledSchema {
         dimension: Option<&'dimension str>,
     ) -> TypedCheckSchedule<'schema, 'dimension> {
         TypedCheckSchedule::new(self, actual_type, dimension)
+    }
+
+    #[must_use]
+    pub fn field_has_nested_checks(&self, actual_type: &str, field_name: &str) -> bool {
+        self.typed_checks
+            .field_has_nested_checks(actual_type, field_name)
     }
 
     #[must_use]

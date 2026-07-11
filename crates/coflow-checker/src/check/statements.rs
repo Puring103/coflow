@@ -126,19 +126,29 @@ fn eval_quantifier_stmt(
     if evaluator.charge_collection_work(&collection_value).is_err() {
         return EvalFlow::HardStop;
     }
-    let items = match evaluator.eval_ops(quantifiers::quantifier_items(collection_value)) {
-        Ok(items) => items,
+    let item_count = match evaluator.eval_ops(quantifiers::quantifier_len(&collection_value)) {
+        Ok(item_count) => item_count,
         Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
         Err(EvalAbort::Error) => return EvalFlow::HardStop,
     };
-    eval_quantifier(evaluator, kind, binding, &items, body, collection, stmt)
+    eval_quantifier(
+        evaluator,
+        kind,
+        binding,
+        &collection_value,
+        item_count,
+        body,
+        collection,
+        stmt,
+    )
 }
 
 fn eval_quantifier(
     evaluator: &mut CheckEvaluator<'_>,
     kind: CftSchemaQuantifierKind,
     binding: &str,
-    items: &[LocatedCheckValue],
+    collection_value: &LocatedCheckValue,
+    item_count: usize,
     body: &[CftSchemaCheckStmt],
     collection: &CftSchemaCheckExpr,
     stmt: &CftSchemaCheckStmt,
@@ -147,7 +157,17 @@ fn eval_quantifier(
     let mut matched = 0_usize;
     let mut any_failures = Vec::new();
     let mut none_match_locations: Vec<Option<ValueLocation>> = Vec::new();
-    for item in items {
+    let mut first_item_location = None;
+    for index in 0..item_count {
+        let item = match evaluator.quantifier_item(collection_value, index) {
+            Ok(Some(item)) => item,
+            Ok(None) => return EvalFlow::HardStop,
+            Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
+            Err(EvalAbort::Error) => return EvalFlow::HardStop,
+        };
+        if first_item_location.is_none() {
+            first_item_location.clone_from(&item.location);
+        }
         if evaluator
             .charge_work_at(StructureKind::QuantifierIteration, 1, item.location.clone())
             .is_err()
@@ -204,7 +224,8 @@ fn eval_quantifier(
     finish_quantifier(
         evaluator,
         kind,
-        items,
+        item_count,
+        first_item_location,
         collection,
         stmt,
         quantifier_diagnostic_start,
@@ -221,7 +242,8 @@ fn eval_quantifier(
 fn finish_quantifier(
     evaluator: &mut CheckEvaluator<'_>,
     kind: CftSchemaQuantifierKind,
-    items: &[LocatedCheckValue],
+    item_count: usize,
+    first_item_location: Option<ValueLocation>,
     collection: &CftSchemaCheckExpr,
     stmt: &CftSchemaCheckStmt,
     quantifier_diagnostic_start: usize,
@@ -234,7 +256,13 @@ fn finish_quantifier(
             rewrite_all_failures(evaluator, stmt, quantifier_diagnostic_start);
         }
         CftSchemaQuantifierKind::Any if matched == 0 => {
-            emit_any_failure(evaluator, items, stmt, first_any_failure);
+            emit_any_failure(
+                evaluator,
+                item_count,
+                first_item_location,
+                stmt,
+                first_any_failure,
+            );
         }
         CftSchemaQuantifierKind::Any => {}
         CftSchemaQuantifierKind::None if matched > 0 => {
@@ -271,7 +299,8 @@ fn rewrite_all_failures(
 
 fn emit_any_failure(
     evaluator: &mut CheckEvaluator<'_>,
-    items: &[LocatedCheckValue],
+    item_count: usize,
+    first_item_location: Option<ValueLocation>,
     stmt: &CftSchemaCheckStmt,
     first_any_failure: Option<&str>,
 ) {
@@ -282,9 +311,9 @@ fn emit_any_failure(
     let explanation = CheckExplanation::new(
         CfdErrorCode::CheckAnyQuantifierFailed,
         render_stmt(stmt),
-        items.first().and_then(|item| item.location.clone()),
+        first_item_location,
     )
-    .with_actual(format!("0 / {} 个元素匹配", items.len()))
+    .with_actual(format!("0 / {item_count} 个元素匹配"))
     .with_expected("至少 1 个元素满足")
     .with_context(&context);
     evaluator.diag_at_preformatted(

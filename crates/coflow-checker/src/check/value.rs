@@ -18,11 +18,11 @@ pub(super) enum CheckValue {
     Record(CheckRecordRef),
     Entry(Box<CheckEntry>),
     Array {
-        items: Vec<CheckValue>,
+        items: CheckItems,
         element_type: Option<CftSchemaTypeRef>,
     },
     Dict {
-        entries: Vec<CheckEntry>,
+        entries: CheckEntries,
         key_type: Option<CftSchemaTypeRef>,
         value_type: Option<CftSchemaTypeRef>,
     },
@@ -41,7 +41,7 @@ impl CheckValue {
     pub(super) fn from_cfd_value(
         value: &CfdValue,
         ty: Option<&CftSchemaTypeRef>,
-        location: Option<ValueLocation>,
+        location: ValueLocation,
         model: &CfdDataModel,
         budget: &mut StructuralBudget,
         cursor: TraversalCursor,
@@ -50,7 +50,7 @@ impl CheckValue {
             .enter(cursor, StructureKind::DataValue, 1)
             .map_err(|error| LocatedBudgetExceeded {
                 error,
-                location: location.clone(),
+                location: Some(location.clone()),
             })?;
         Ok(match value {
             CfdValue::Null => Self::Null,
@@ -59,21 +59,13 @@ impl CheckValue {
             CfdValue::Float(value) => Self::Float(*value),
             CfdValue::String(value) => Self::String(value.clone()),
             CfdValue::Enum(value) => Self::Enum(value.clone()),
-            CfdValue::Object(_) => location.map_or_else(
-                || Self::Record(CheckRecordRef::Unresolved),
-                |location| Self::Record(CheckRecordRef::Resolved(location)),
-            ),
+            CfdValue::Object(_) => Self::Record(CheckRecordRef::Resolved(location.clone())),
             CfdValue::Ref(_) => {
-                let resolved = location
-                    .as_ref()
-                    .and_then(|location| model.resolve_effective_ref(&location.storage.ref_site()));
+                let resolved = model.resolve_effective_ref(&location.storage.ref_site());
                 resolved.map_or_else(
                     || Self::Record(CheckRecordRef::Unresolved),
                     |id| {
-                        let target = location.map_or_else(
-                            || ValueLocation::root(id),
-                            |location| location.dereference(id),
-                        );
+                        let target = location.clone().dereference(id);
                         Self::Record(CheckRecordRef::Resolved(target))
                     },
                 )
@@ -81,49 +73,27 @@ impl CheckValue {
             CfdValue::Array(items) => {
                 let element_type = array_element_type(ty).cloned();
                 Self::Array {
-                    items: items
-                        .iter()
-                        .enumerate()
-                        .map(|(index, item)| {
-                            Self::from_cfd_value(
-                                item,
-                                array_element_type(ty),
-                                location.clone().map(|location| location.index(index)),
-                                model,
-                                budget,
-                                cursor,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
+                    items: CheckItems::ModelArray {
+                        storage: location.storage.clone(),
+                        traversal: cursor,
+                        len: items.len(),
+                    },
                     element_type,
                 }
             }
             CfdValue::Dict(entries) => Self::Dict {
-                entries: entries
-                    .iter()
-                    .map(|(key, value)| {
-                        Ok(CheckEntry {
-                            key: Box::new(Self::from_dict_key(key)),
-                            value: Self::from_cfd_value(
-                                value,
-                                dict_value_type(ty),
-                                location
-                                    .clone()
-                                    .map(|location| location.dict_key_value(key)),
-                                model,
-                                budget,
-                                cursor,
-                            )?,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, LocatedBudgetExceeded>>()?,
+                entries: CheckEntries {
+                    storage: location.storage.clone(),
+                    traversal: cursor,
+                    len: entries.len(),
+                },
                 key_type: dict_key_type(ty).cloned(),
                 value_type: dict_value_type(ty).cloned(),
             },
         })
     }
 
-    fn from_dict_key(key: &CfdDictKey) -> Self {
+    pub(super) fn from_dict_key(key: &CfdDictKey) -> Self {
         match key {
             CfdDictKey::String(value) => Self::String(value.clone()),
             CfdDictKey::Int(value) => Self::Int(*value),
@@ -144,6 +114,188 @@ impl CheckValue {
             Self::Dict { entries, .. } => Some(entries.len()),
             _ => None,
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum CheckItems {
+    ModelArray {
+        storage: ModelCursor,
+        traversal: TraversalCursor,
+        len: usize,
+    },
+    DictKeys(CheckEntries),
+    DictValues(CheckEntries),
+}
+
+impl CheckItems {
+    pub(super) const fn len(&self) -> usize {
+        match self {
+            Self::ModelArray { len, .. } => *len,
+            Self::DictKeys(entries) | Self::DictValues(entries) => entries.len(),
+        }
+    }
+
+    pub(super) fn located_at(
+        &self,
+        index: usize,
+        element_type: Option<&CftSchemaTypeRef>,
+        collection_location: Option<&ValueLocation>,
+        model: &CfdDataModel,
+        budget: &mut StructuralBudget,
+    ) -> Result<Option<LocatedCheckValue>, LocatedBudgetExceeded> {
+        let projected_location = collection_location.map(|location| location.index(index));
+        match self {
+            Self::ModelArray {
+                storage, traversal, ..
+            } => {
+                let Some(value) = model_array(model, storage).and_then(|items| items.get(index))
+                else {
+                    return Ok(None);
+                };
+                let Some(location) = projected_location else {
+                    return Ok(None);
+                };
+                let value = CheckValue::from_cfd_value(
+                    value,
+                    element_type,
+                    location.clone(),
+                    model,
+                    budget,
+                    *traversal,
+                )?;
+                Ok(Some(LocatedCheckValue::new(value, Some(location))))
+            }
+            Self::DictKeys(entries) => Ok(entries.key_at(model, index).map(|key| {
+                LocatedCheckValue::new(CheckValue::from_dict_key(key), projected_location)
+            })),
+            Self::DictValues(entries) => {
+                entries.projected_value_at(index, element_type, projected_location, model, budget)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct CheckEntries {
+    storage: ModelCursor,
+    traversal: TraversalCursor,
+    len: usize,
+}
+
+impl CheckEntries {
+    pub(super) const fn len(&self) -> usize {
+        self.len
+    }
+
+    fn key_at<'a>(&self, model: &'a CfdDataModel, index: usize) -> Option<&'a CfdDictKey> {
+        self.model_entry_at(model, index).map(|(key, _)| key)
+    }
+
+    pub(super) fn located_entry_at(
+        &self,
+        index: usize,
+        _key_type: Option<&CftSchemaTypeRef>,
+        value_type: Option<&CftSchemaTypeRef>,
+        collection_location: Option<&ValueLocation>,
+        model: &CfdDataModel,
+        budget: &mut StructuralBudget,
+    ) -> Result<Option<LocatedCheckValue>, LocatedBudgetExceeded> {
+        let Some((key, value)) =
+            model_dict(model, &self.storage).and_then(|items| items.get(index))
+        else {
+            return Ok(None);
+        };
+        let storage_location = ValueLocation {
+            storage: self.storage.dict_key_value(key),
+            blame: collection_location.map_or_else(
+                || self.storage.dict_key_value(key),
+                |location| location.blame.dict_key_value(key),
+            ),
+            references: collection_location
+                .map(|location| location.references.clone())
+                .unwrap_or_default(),
+        };
+        let value = CheckValue::from_cfd_value(
+            value,
+            value_type,
+            storage_location,
+            model,
+            budget,
+            self.traversal,
+        )?;
+        let key = CheckValue::from_dict_key(key);
+        let key_label = format_check_key_for_path(&key).unwrap_or_else(|| index.to_string());
+        let location = collection_location.map(|location| location.dict_key(key_label));
+        Ok(Some(LocatedCheckValue::new(
+            CheckValue::Entry(Box::new(CheckEntry {
+                key: Box::new(key),
+                value,
+            })),
+            location,
+        )))
+    }
+
+    fn projected_value_at(
+        &self,
+        index: usize,
+        value_type: Option<&CftSchemaTypeRef>,
+        projected_location: Option<ValueLocation>,
+        model: &CfdDataModel,
+        budget: &mut StructuralBudget,
+    ) -> Result<Option<LocatedCheckValue>, LocatedBudgetExceeded> {
+        let Some((key, value)) =
+            model_dict(model, &self.storage).and_then(|items| items.get(index))
+        else {
+            return Ok(None);
+        };
+        let Some(projected_location) = projected_location else {
+            return Ok(None);
+        };
+        let storage_location = ValueLocation {
+            storage: self.storage.dict_key_value(key),
+            blame: projected_location.blame.clone(),
+            references: projected_location.references.clone(),
+        };
+        let value = CheckValue::from_cfd_value(
+            value,
+            value_type,
+            storage_location,
+            model,
+            budget,
+            self.traversal,
+        )?;
+        Ok(Some(LocatedCheckValue::new(
+            value,
+            Some(projected_location),
+        )))
+    }
+
+    pub(super) fn model_entry_at<'a>(
+        &self,
+        model: &'a CfdDataModel,
+        index: usize,
+    ) -> Option<(&'a CfdDictKey, &'a CfdValue)> {
+        model_dict(model, &self.storage)
+            .and_then(|items| items.get(index))
+            .map(|(key, value)| (key, value))
+    }
+}
+
+fn model_array<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a [CfdValue]> {
+    match model.record(cursor.record)?.value_at_path(&cursor.path)? {
+        CfdValue::Array(items) => Some(items),
+        _ => None,
+    }
+}
+
+fn model_dict<'a>(
+    model: &'a CfdDataModel,
+    cursor: &ModelCursor,
+) -> Option<&'a [(CfdDictKey, CfdValue)]> {
+    match model.record(cursor.record)?.value_at_path(&cursor.path)? {
+        CfdValue::Dict(entries) => Some(entries),
+        _ => None,
     }
 }
 
@@ -336,7 +488,9 @@ impl CheckRecordRef {
         let Some(value) = self.fields(model).and_then(|fields| fields.get(name)) else {
             return Ok(None);
         };
-        let location = self.location().map(|location| location.field(name));
+        let Some(location) = self.location().map(|location| location.field(name)) else {
+            return Ok(None);
+        };
         Ok(Some(LocatedCheckValue::new(
             CheckValue::from_cfd_value(
                 value,
@@ -346,7 +500,7 @@ impl CheckRecordRef {
                 budget,
                 TraversalCursor::root(),
             )?,
-            location,
+            Some(location),
         )))
     }
 
@@ -421,12 +575,6 @@ pub(super) struct CheckEntry {
     pub(super) value: CheckValue,
 }
 
-impl CheckEntry {
-    pub(super) fn key_key(&self) -> Option<ComparableKey> {
-        comparable_key(&self.key)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ComparableKey {
     Null,
@@ -466,6 +614,17 @@ pub(super) fn dict_key_from_check_value(value: &CheckValue) -> Option<Comparable
     match value {
         CheckValue::Int(_) | CheckValue::String(_) | CheckValue::Enum(_) => comparable_key(value),
         _ => None,
+    }
+}
+
+pub(super) fn dict_key_matches(key: &CfdDictKey, expected: &ComparableKey) -> bool {
+    match (key, expected) {
+        (CfdDictKey::String(key), ComparableKey::String(expected)) => key == expected,
+        (CfdDictKey::Int(key), ComparableKey::Int(expected)) => key == expected,
+        (CfdDictKey::Enum(key), ComparableKey::Enum(expected)) => {
+            key.enum_name == expected.enum_name && key.value == expected.value
+        }
+        _ => false,
     }
 }
 

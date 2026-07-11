@@ -48,7 +48,7 @@ fn expression_depth_limit_stops_the_current_record_with_a_stable_diagnostic() {
 
 #[test]
 fn nested_data_traversal_uses_the_same_depth_contract() {
-    let schema = compile_schema("type Node { child: Node? = null; }");
+    let schema = compile_schema("type Node { child: Node? = null; check { true; } }");
     let child = |value| CfdInputValue::object_with_declared_type([("child", value)]);
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -205,4 +205,34 @@ fn aggregate_conversion_charges_nodes_before_copying_items() {
         diagnostic.primary.as_ref().map(|label| label.path.clone()),
         Some(CfdPath::root().field("nums").index(0))
     );
+}
+
+#[test]
+fn aggregate_len_keeps_a_borrowed_cursor_without_materializing_items() {
+    const ITEM_COUNT: usize = 100_000;
+    let schema = compile_schema(
+        r#"
+            type Item {
+                nums: [int];
+                check { nums.len() == 100000; }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [(
+            "nums",
+            CfdInputValue::Array(
+                (0..ITEM_COUNT)
+                    .map(|value| CfdInputValue::from(value as i64))
+                    .collect(),
+            ),
+        )],
+    );
+    let model = builder.build().expect("model builds");
+
+    run_checks_with_options(schema.compiled_schema(), &model, options(100, 16, 100))
+        .expect("len should retain only the aggregate cursor and never visit its elements");
 }

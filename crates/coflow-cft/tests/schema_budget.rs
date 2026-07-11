@@ -46,17 +46,17 @@ fn default_entry_matches_explicit_default_options() {
 #[test]
 fn flat_schema_nodes_and_work_have_exact_boundaries() {
     let source = "type Item { value: int; }";
-    compile(source, options(10, 3, 7)).expect("complete schema pipeline fits");
+    compile(source, options(10, 3, 8)).expect("complete schema pipeline fits");
 
     let node_error = structural_error(source, options(10, 2, 10));
     assert_eq!(
         node_error.message,
         "type ref exceeds structural nodes limit 2 (observed 3)"
     );
-    let work_error = structural_error(source, options(10, 10, 6));
+    let work_error = structural_error(source, options(10, 10, 7));
     assert_eq!(
         work_error.message,
-        "schema dependency exceeds structural work limit 6 (observed 7)"
+        "schema dependency exceeds structural work limit 7 (observed 8)"
     );
 }
 

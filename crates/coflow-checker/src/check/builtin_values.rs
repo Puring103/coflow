@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 
-use coflow_data_model::CfdErrorCode;
+use coflow_data_model::{CfdDataModel, CfdErrorCode};
+use coflow_structure::StructuralBudget;
 use regex::Regex;
 
 use super::builtins::Builtin;
 use super::diagnostics::{format_value_for_message, type_ref_is_float};
 use super::ops::{self, OpsError, OpsResult};
 use super::value::{
-    comparable_key, dict_key_from_check_value, values_equal, CheckValue, LocatedCheckValue,
+    comparable_key, dict_key_from_check_value, dict_key_matches, values_equal, CheckItems,
+    CheckValue, LocatedBudgetExceeded, LocatedCheckValue,
 };
 
 pub(super) fn len_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue> {
@@ -33,9 +35,33 @@ pub(super) fn len_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
 pub(super) fn contains_value(
     collection: &LocatedCheckValue,
     value: &CheckValue,
+    model: &CfdDataModel,
+    budget: &mut StructuralBudget,
 ) -> OpsResult<bool> {
     match &collection.value {
-        CheckValue::Array { items, .. } => Ok(items.iter().any(|item| values_equal(item, value))),
+        CheckValue::Array {
+            items,
+            element_type,
+        } => {
+            for index in 0..items.len() {
+                let Some(item) = items
+                    .located_at(
+                        index,
+                        element_type.as_ref(),
+                        collection.location.as_ref(),
+                        model,
+                        budget,
+                    )
+                    .map_err(budget_error)?
+                else {
+                    continue;
+                };
+                if values_equal(&item.value, value) {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
         CheckValue::Dict { entries, .. } => {
             let Some(key) = dict_key_from_check_value(value) else {
                 return Err(OpsError::eval_type(
@@ -46,9 +72,11 @@ pub(super) fn contains_value(
                     ),
                 ));
             };
-            Ok(entries
-                .iter()
-                .any(|entry| entry.key_key() == Some(key.clone())))
+            Ok((0..entries.len()).any(|index| {
+                entries
+                    .model_entry_at(model, index)
+                    .is_some_and(|(entry_key, _)| dict_key_matches(entry_key, &key))
+            }))
         }
         other => Err(OpsError::eval_type(
             collection.location.clone(),
@@ -65,27 +93,44 @@ pub(super) struct UniqueEvaluation {
     pub(super) duplicate: Option<String>,
 }
 
-pub(super) fn unique_value(value: LocatedCheckValue) -> OpsResult<UniqueEvaluation> {
-    let items = match value.value {
-        CheckValue::Array { items, .. } => items,
-        other => {
-            return Err(OpsError::eval_type(
-                value.location,
-                format!(
-                    "isUnique 需要 array: 实际为 {}",
-                    format_value_for_message(&other)
-                ),
-            ));
-        }
+pub(super) fn unique_value(
+    value: LocatedCheckValue,
+    model: &CfdDataModel,
+    budget: &mut StructuralBudget,
+) -> OpsResult<UniqueEvaluation> {
+    let CheckValue::Array {
+        items,
+        element_type,
+    } = &value.value
+    else {
+        return Err(OpsError::eval_type(
+            value.location,
+            format!(
+                "isUnique 需要 array: 实际为 {}",
+                format_value_for_message(&value.value)
+            ),
+        ));
     };
     let mut seen = BTreeMap::new();
-    for (index, item) in items.into_iter().enumerate() {
-        let Some(key) = comparable_key(&item) else {
+    for index in 0..items.len() {
+        let Some(item) = items
+            .located_at(
+                index,
+                element_type.as_ref(),
+                value.location.as_ref(),
+                model,
+                budget,
+            )
+            .map_err(budget_error)?
+        else {
+            continue;
+        };
+        let Some(key) = comparable_key(&item.value) else {
             return Err(OpsError::eval_type(
                 value.location.clone(),
                 format!(
                     "isUnique 元素不可比较: 实际为 {}",
-                    format_value_for_message(&item)
+                    format_value_for_message(&item.value)
                 ),
             ));
         };
@@ -93,7 +138,7 @@ pub(super) fn unique_value(value: LocatedCheckValue) -> OpsResult<UniqueEvaluati
             return Ok(UniqueEvaluation {
                 duplicate: Some(format!(
                     "重复值 {} 出现在索引 {first_index} 和 {index}",
-                    format_value_for_message(&item)
+                    format_value_for_message(&item.value)
                 )),
                 value: LocatedCheckValue::new(CheckValue::Bool(false), value.location),
             });
@@ -106,22 +151,15 @@ pub(super) fn unique_value(value: LocatedCheckValue) -> OpsResult<UniqueEvaluati
 }
 
 pub(super) fn keys_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue> {
-    let arg_kind = value.value.clone();
     let CheckValue::Dict {
         entries, key_type, ..
     } = value.value
     else {
-        return Err(OpsError::eval_type(
-            value.location,
-            format!(
-                "keys 需要 dict: 实际为 {}",
-                format_value_for_message(&arg_kind)
-            ),
-        ));
+        return Err(OpsError::eval_type(value.location, "keys 需要 dict"));
     };
     Ok(LocatedCheckValue::new(
         CheckValue::Array {
-            items: entries.into_iter().map(|entry| *entry.key).collect(),
+            items: CheckItems::DictKeys(entries),
             element_type: key_type,
         },
         value.location,
@@ -129,24 +167,17 @@ pub(super) fn keys_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValu
 }
 
 pub(super) fn values_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue> {
-    let arg_kind = value.value.clone();
     let CheckValue::Dict {
         entries,
         value_type,
         ..
     } = value.value
     else {
-        return Err(OpsError::eval_type(
-            value.location,
-            format!(
-                "values 需要 dict: 实际为 {}",
-                format_value_for_message(&arg_kind)
-            ),
-        ));
+        return Err(OpsError::eval_type(value.location, "values 需要 dict"));
     };
     Ok(LocatedCheckValue::new(
         CheckValue::Array {
-            items: entries.into_iter().map(|entry| entry.value).collect(),
+            items: CheckItems::DictValues(entries),
             element_type: value_type,
         },
         value.location,
@@ -180,30 +211,61 @@ pub(super) fn matches_value(
 pub(super) fn min_max_value(
     builtin: Builtin,
     value: LocatedCheckValue,
+    model: &CfdDataModel,
+    budget: &mut StructuralBudget,
 ) -> OpsResult<LocatedCheckValue> {
     let location = value.location.clone();
-    let arg_kind = value.value.clone();
-    let CheckValue::Array { items, .. } = value.value else {
+    let CheckValue::Array {
+        items,
+        element_type,
+    } = &value.value
+    else {
         return Err(OpsError::eval_type(
             location,
             format!(
                 "{} 需要 array: 实际为 {}",
                 builtin.name(),
-                format_value_for_message(&arg_kind)
+                format_value_for_message(&value.value)
             ),
         ));
     };
-    if items.is_empty() {
+    if items.len() == 0 {
         return Err(OpsError::new(
             CfdErrorCode::CheckEmptyMinMax,
             location,
             format!("{} 不能作用于空数组", builtin.name()),
         ));
     }
-    let mut non_null_items = items
-        .iter()
-        .filter(|item| !matches!(item, CheckValue::Null));
-    let Some(mut out) = non_null_items.next().cloned() else {
+    let mut out = None;
+    for index in 0..items.len() {
+        let Some(item) = items
+            .located_at(
+                index,
+                element_type.as_ref(),
+                value.location.as_ref(),
+                model,
+                budget,
+            )
+            .map_err(budget_error)?
+        else {
+            continue;
+        };
+        if matches!(item.value, CheckValue::Null) {
+            continue;
+        }
+        match &mut out {
+            None => out = Some(item.value),
+            Some(current) => {
+                let ord = ops::compare_order(current, &item.value, location.clone())?;
+                if (builtin == Builtin::Min && ord.is_gt())
+                    || (builtin == Builtin::Max && ord.is_lt())
+                {
+                    *current = item.value;
+                }
+            }
+        }
+    }
+    let Some(out) = out else {
         return Err(OpsError::new(
             CfdErrorCode::CheckEmptyMinMax,
             location,
@@ -214,28 +276,25 @@ pub(super) fn min_max_value(
             ),
         ));
     };
-    for item in non_null_items {
-        let ord = ops::compare_order(&out, item, location.clone())?;
-        if (builtin == Builtin::Min && ord.is_gt()) || (builtin == Builtin::Max && ord.is_lt()) {
-            out = item.clone();
-        }
-    }
     Ok(LocatedCheckValue::new(out, location))
 }
 
-pub(super) fn sum_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue> {
+pub(super) fn sum_value(
+    value: LocatedCheckValue,
+    model: &CfdDataModel,
+    budget: &mut StructuralBudget,
+) -> OpsResult<LocatedCheckValue> {
     let location = value.location.clone();
-    let arg_kind = value.value.clone();
     let CheckValue::Array {
         items,
         element_type,
-    } = value.value
+    } = &value.value
     else {
         return Err(OpsError::eval_type(
             value.location,
             format!(
                 "sum 需要 array: 实际为 {}",
-                format_value_for_message(&arg_kind)
+                format_value_for_message(&value.value)
             ),
         ));
     };
@@ -243,8 +302,20 @@ pub(super) fn sum_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
     let mut float_sum = 0.0_f64;
     let mut saw_float = false;
     let mut saw_numeric = false;
-    for item in items {
-        match item {
+    for index in 0..items.len() {
+        let Some(item) = items
+            .located_at(
+                index,
+                element_type.as_ref(),
+                value.location.as_ref(),
+                model,
+                budget,
+            )
+            .map_err(budget_error)?
+        else {
+            continue;
+        };
+        match item.value {
             CheckValue::Int(value) if !saw_float => {
                 saw_numeric = true;
                 let Some(next) = int_sum.checked_add(value) else {
@@ -287,4 +358,12 @@ pub(super) fn sum_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
     } else {
         Ok(LocatedCheckValue::new(CheckValue::Int(int_sum), location))
     }
+}
+
+fn budget_error(exceeded: LocatedBudgetExceeded) -> OpsError {
+    OpsError::new(
+        CfdErrorCode::CheckBudgetExceeded,
+        exceeded.location,
+        exceeded.error.to_string(),
+    )
 }

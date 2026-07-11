@@ -124,6 +124,7 @@ impl<'a> CheckRunner<'a> {
         } else {
             self.run_nested_field_checks(
                 Some(record_id),
+                record.actual_type(),
                 record.fields(),
                 location,
                 CheckSelection::Default,
@@ -188,6 +189,7 @@ impl<'a> CheckRunner<'a> {
     fn run_nested_field_checks(
         &mut self,
         root_record: Option<CfdRecordId>,
+        actual_type: &str,
         fields: &BTreeMap<String, CfdValue>,
         root_location: ValueLocation,
         selection: CheckSelection,
@@ -195,6 +197,9 @@ impl<'a> CheckRunner<'a> {
         cursor: TraversalCursor,
     ) {
         for (name, value) in fields {
+            if !self.schema.field_has_nested_checks(actual_type, name) {
+                continue;
+            }
             self.run_nested_value_checks(
                 root_record,
                 value,
@@ -296,6 +301,18 @@ impl<'a> CheckRunner<'a> {
         traversal_budget: &mut Option<StructuralBudget>,
         cursor: TraversalCursor,
     ) {
+        if matches!(
+            value,
+            CfdValue::Ref(_)
+                | CfdValue::Null
+                | CfdValue::Bool(_)
+                | CfdValue::Int(_)
+                | CfdValue::Float(_)
+                | CfdValue::String(_)
+                | CfdValue::Enum(_)
+        ) {
+            return;
+        }
         let Some(cursor) = self.enter_data_value(traversal_budget, cursor, &location) else {
             return;
         };
@@ -312,6 +329,7 @@ impl<'a> CheckRunner<'a> {
                 );
                 self.run_nested_field_checks(
                     root_record,
+                    record.actual_type(),
                     record.fields(),
                     location,
                     selection,

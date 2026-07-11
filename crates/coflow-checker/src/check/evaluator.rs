@@ -9,6 +9,7 @@ use super::enum_values;
 use super::evaluation_trace::EvaluationTrace;
 use super::fields;
 use super::ops::{self, OpsResult};
+use super::quantifiers;
 use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp, CompiledSchema,
@@ -271,7 +272,17 @@ impl<'a> CheckEvaluator<'a> {
         target: LocatedCheckValue,
         index: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
-        self.eval_ops(access::index_value(target, index))
+        let result = access::index_value(target, index, self.model, &mut self.budget);
+        self.eval_ops(result)
+    }
+
+    pub(super) fn quantifier_item(
+        &mut self,
+        collection: &LocatedCheckValue,
+        index: usize,
+    ) -> EvalResult<Option<LocatedCheckValue>> {
+        let result = quantifiers::quantifier_item(collection, index, self.model, &mut self.budget);
+        self.eval_ops(result)
     }
 
     pub(super) fn eval_call(
@@ -324,10 +335,14 @@ impl<'a> CheckEvaluator<'a> {
                 let collection = self.eval_expr(&args[0])?;
                 self.charge_collection_work(&collection)?;
                 let value = self.eval_expr(&args[1])?;
+                let contains = builtin_values::contains_value(
+                    &collection,
+                    &value.value,
+                    self.model,
+                    &mut self.budget,
+                );
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(
-                        self.eval_ops(builtin_values::contains_value(&collection, &value.value))?,
-                    ),
+                    CheckValue::Bool(self.eval_ops(contains)?),
                     collection.location.clone(),
                 ))
             }
@@ -381,11 +396,14 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Contains => {
                 self.charge_collection_work(&receiver_value)?;
                 let value = self.eval_expr(&args[0])?;
+                let contains = builtin_values::contains_value(
+                    &receiver_value,
+                    &value.value,
+                    self.model,
+                    &mut self.budget,
+                );
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(self.eval_ops(builtin_values::contains_value(
-                        &receiver_value,
-                        &value.value,
-                    ))?),
+                    CheckValue::Bool(self.eval_ops(contains)?),
                     receiver_value.location.clone(),
                 ))
             }
@@ -443,7 +461,9 @@ impl<'a> CheckEvaluator<'a> {
         arg_value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
         self.charge_collection_work(&arg_value)?;
-        self.eval_ops(builtin_values::min_max_value(builtin, arg_value))
+        let result =
+            builtin_values::min_max_value(builtin, arg_value, self.model, &mut self.budget);
+        self.eval_ops(result)
     }
 
     pub(super) fn eval_sum(
@@ -459,7 +479,8 @@ impl<'a> CheckEvaluator<'a> {
         arg_value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
         self.charge_collection_work(&arg_value)?;
-        self.eval_ops(builtin_values::sum_value(arg_value))
+        let result = builtin_values::sum_value(arg_value, self.model, &mut self.budget);
+        self.eval_ops(result)
     }
 
     pub(super) fn eval_unary(
@@ -537,7 +558,8 @@ impl<'a> CheckEvaluator<'a> {
         value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
         self.charge_collection_work(&value)?;
-        let evaluation = self.eval_ops(builtin_values::unique_value(value))?;
+        let result = builtin_values::unique_value(value, self.model, &mut self.budget);
+        let evaluation = self.eval_ops(result)?;
         if let Some(duplicate) = evaluation.duplicate {
             self.note_unique_failure(collection, duplicate);
         }

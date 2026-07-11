@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
@@ -63,7 +63,7 @@ impl DimensionRoundView {
                 })
                 .map(|field| {
                     let traverse_nested =
-                        value_type_has_checks(schema, &field.ty_ref, &mut BTreeSet::new());
+                        schema.field_has_nested_checks(record.actual_type(), &field.name);
                     let projection = match model.dimension_field_value(
                         schema,
                         record_id,
@@ -209,47 +209,6 @@ impl DimensionRoundView {
     }
 }
 
-fn value_type_has_checks(
-    schema: &CompiledSchema,
-    ty: &CftSchemaTypeRef,
-    visiting: &mut BTreeSet<String>,
-) -> bool {
-    match ty {
-        CftSchemaTypeRef::Named(type_name) => schema
-            .concrete_assignable_types(type_name)
-            .unwrap_or_else(|| vec![type_name.clone()])
-            .iter()
-            .any(|actual_type| type_has_checks(schema, actual_type, visiting)),
-        CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
-            value_type_has_checks(schema, inner, visiting)
-        }
-        CftSchemaTypeRef::Dict(_, value) => value_type_has_checks(schema, value, visiting),
-        CftSchemaTypeRef::Int
-        | CftSchemaTypeRef::Float
-        | CftSchemaTypeRef::Bool
-        | CftSchemaTypeRef::String
-        | CftSchemaTypeRef::Ref(_) => false,
-    }
-}
-
-fn type_has_checks(
-    schema: &CompiledSchema,
-    type_name: &str,
-    visiting: &mut BTreeSet<String>,
-) -> bool {
-    if !visiting.insert(type_name.to_string()) {
-        return false;
-    }
-    let has_checks = schema.check_schedule(type_name, None).next().is_some()
-        || schema.type_meta(type_name).is_some_and(|meta| {
-            meta.all_fields
-                .iter()
-                .any(|field| value_type_has_checks(schema, &field.ty_ref, visiting))
-        });
-    visiting.remove(type_name);
-    has_checks
-}
-
 pub(super) enum DimensionVariantAbort {
     Skipped,
     Error {
@@ -284,7 +243,7 @@ pub(super) fn apply_dimension_variant(
     located.value = CheckValue::from_cfd_value(
         materialized.value,
         materialized.field_type,
-        Some(materialized.location.clone()),
+        materialized.location.clone(),
         model,
         budget,
         TraversalCursor::root(),

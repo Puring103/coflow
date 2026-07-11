@@ -1,12 +1,19 @@
+use coflow_data_model::CfdDataModel;
 use coflow_data_model::CfdErrorCode;
+use coflow_structure::StructuralBudget;
 
 use super::diagnostics::format_value_for_message;
 use super::ops::{OpsError, OpsResult};
-use super::value::{dict_key_from_check_value, CheckValue, LocatedCheckValue};
+use super::value::{
+    dict_key_from_check_value, dict_key_matches, CheckValue, LocatedBudgetExceeded,
+    LocatedCheckValue,
+};
 
 pub(super) fn index_value(
     target: LocatedCheckValue,
     index: LocatedCheckValue,
+    model: &CfdDataModel,
+    budget: &mut StructuralBudget,
 ) -> OpsResult<LocatedCheckValue> {
     if matches!(target.value, CheckValue::Null) {
         return Err(OpsError::new(
@@ -19,7 +26,10 @@ pub(super) fn index_value(
         ));
     }
     match target.value {
-        CheckValue::Array { items, .. } => {
+        CheckValue::Array {
+            items,
+            element_type,
+        } => {
             let index_location = index.location.clone();
             let index_kind = index.value.clone();
             let CheckValue::Int(idx) = index.value else {
@@ -40,17 +50,14 @@ pub(super) fn index_value(
                 ));
             };
             items
-                .get(idx_us)
-                .cloned()
-                .map(|value| {
-                    LocatedCheckValue::new(
-                        value,
-                        target
-                            .location
-                            .clone()
-                            .map(|location| location.index(idx_us)),
-                    )
-                })
+                .located_at(
+                    idx_us,
+                    element_type.as_ref(),
+                    target.location.as_ref(),
+                    model,
+                    budget,
+                )
+                .map_err(budget_error)?
                 .ok_or_else(|| {
                     OpsError::new(
                         CfdErrorCode::CheckIndexOutOfBounds,
@@ -59,7 +66,11 @@ pub(super) fn index_value(
                     )
                 })
         }
-        CheckValue::Dict { entries, .. } => {
+        CheckValue::Dict {
+            entries,
+            key_type,
+            value_type,
+        } => {
             let Some(key) = dict_key_from_check_value(&index.value) else {
                 return Err(OpsError::eval_type(
                     index.location,
@@ -74,17 +85,36 @@ pub(super) fn index_value(
                 .location
                 .clone()
                 .map(|location| location.dict_key(key_label.clone()));
-            entries
-                .into_iter()
-                .find(|entry| entry.key_key().is_some_and(|entry_key| entry_key == key))
-                .map(|entry| LocatedCheckValue::new(entry.value, value_location))
-                .ok_or_else(|| {
-                    OpsError::new(
-                        CfdErrorCode::CheckMissingDictKey,
-                        target.location,
-                        format!("dict key {key_label} 不存在"),
+            for entry_index in 0..entries.len() {
+                let Some((entry_key, _)) = entries.model_entry_at(model, entry_index) else {
+                    continue;
+                };
+                if !dict_key_matches(entry_key, &key) {
+                    continue;
+                }
+                let Some(entry) = entries
+                    .located_entry_at(
+                        entry_index,
+                        key_type.as_ref(),
+                        value_type.as_ref(),
+                        target.location.as_ref(),
+                        model,
+                        budget,
                     )
-                })
+                    .map_err(budget_error)?
+                else {
+                    break;
+                };
+                let CheckValue::Entry(entry) = entry.value else {
+                    break;
+                };
+                return Ok(LocatedCheckValue::new(entry.value, value_location));
+            }
+            Err(OpsError::new(
+                CfdErrorCode::CheckMissingDictKey,
+                target.location,
+                format!("dict key {key_label} 不存在"),
+            ))
         }
         other => Err(OpsError::eval_type(
             target.location,
@@ -95,4 +125,12 @@ pub(super) fn index_value(
             ),
         )),
     }
+}
+
+fn budget_error(exceeded: LocatedBudgetExceeded) -> OpsError {
+    OpsError::new(
+        CfdErrorCode::CheckBudgetExceeded,
+        exceeded.location,
+        exceeded.error.to_string(),
+    )
 }
