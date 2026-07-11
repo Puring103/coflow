@@ -37,8 +37,7 @@ impl CompiledSchema {
     pub fn new(schema: &CftContainer) -> Self {
         schema
             .compiled_schema()
-            .cloned()
-            .unwrap_or_else(Self::empty)
+            .clone()
     }
 
     pub(crate) fn from_reflection(

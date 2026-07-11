@@ -22,9 +22,7 @@ pub fn inject_dimension_types(
     schema: &mut CftContainer,
     configs: &std::collections::BTreeMap<String, DimensionConfig>,
 ) -> Result<Vec<DimensionField>, coflow_cft::CftDiagnostics> {
-    let Some(view) = schema.compiled_schema() else {
-        return Ok(Vec::new());
-    };
+    let view = schema.compiled_schema();
     let fields = dimension_fields(view);
     let synthesized = fields
         .iter()

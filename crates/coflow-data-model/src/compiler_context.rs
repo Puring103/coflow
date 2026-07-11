@@ -54,15 +54,15 @@ pub(crate) enum CfdValueDraft {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct DataModelCompilerContext {
-    cft: CompiledSchema,
+pub(crate) struct DataModelCompilerContext<'a> {
+    cft: &'a CompiledSchema,
     domain_index: CfdDomainIndex,
 }
 
-impl DataModelCompilerContext {
-    pub(crate) fn new(schema: &CftContainer) -> Self {
-        let cft_view = CompiledSchema::new(schema);
-        let domain_index = Self::build_domain_index(&cft_view);
+impl<'a> DataModelCompilerContext<'a> {
+    pub(crate) fn new(schema: &'a CftContainer) -> Self {
+        let cft_view = schema.compiled_schema();
+        let domain_index = Self::build_domain_index(cft_view);
 
         Self {
             cft: cft_view,

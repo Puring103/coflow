@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use coflow_api::{DiagnosticSet, ProviderRegistry};
-use coflow_cft::{CftContainer, CompiledSchema};
+use coflow_cft::CftContainer;
 use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 
@@ -81,15 +81,13 @@ fn build_project_session_with_options(
     let ProjectSchemaSession {
         project,
         schema,
-        compiled_schema,
         mut diagnostics,
     } = build_schema_session(project)?;
 
-    let dimension_fields = dimensions::dimension_fields(&compiled_schema);
+    let dimension_fields = dimensions::dimension_fields(schema.compiled_schema());
     let ctx = SessionBuildContext {
         project,
         schema,
-        compiled_schema,
         registry,
         dimension_mode: options.dimension_mode(),
         dimension_fields,
@@ -113,7 +111,6 @@ fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, Diagno
 struct SessionBuildContext<'a> {
     project: Project,
     schema: CftContainer,
-    compiled_schema: CompiledSchema,
     registry: &'a ProviderRegistry,
     dimension_mode: DimensionBuildMode,
     dimension_fields: Vec<DimensionField>,
@@ -215,7 +212,7 @@ fn load_data(
     let output = match load_project_data(
         &ctx.project,
         &ctx.schema,
-        &ctx.compiled_schema,
+        ctx.schema.compiled_schema(),
         ctx.registry,
         &mut indexes.sources,
         &mut indexes.records,
@@ -286,7 +283,6 @@ fn assemble_session(
     ProjectSession {
         project: ctx.project,
         schema: ctx.schema,
-        compiled_schema: ctx.compiled_schema,
         model,
         diagnostics,
         sources: indexes.sources,

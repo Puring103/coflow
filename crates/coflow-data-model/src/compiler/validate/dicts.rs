@@ -6,7 +6,7 @@ use coflow_structure::TraversalCursor;
 
 use super::Validator;
 
-impl Validator<'_> {
+impl Validator<'_, '_> {
     pub(super) fn validate_dict_entries(
         &mut self,
         key_ty: &CftSchemaTypeRef,

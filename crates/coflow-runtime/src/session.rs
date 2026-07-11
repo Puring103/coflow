@@ -43,7 +43,6 @@ impl RecordCoordinate {
 pub struct ProjectSession {
     pub(crate) project: Project,
     pub(crate) schema: CftContainer,
-    pub(crate) compiled_schema: CompiledSchema,
     pub(crate) model: CfdDataModel,
     pub(crate) diagnostics: DiagnosticsStore,
     pub(crate) sources: SourceIndex,
@@ -65,7 +64,7 @@ impl ProjectSession {
 
     #[must_use]
     pub const fn compiled_schema(&self) -> &CompiledSchema {
-        &self.compiled_schema
+        self.schema.compiled_schema()
     }
 
     #[must_use]
@@ -103,7 +102,6 @@ impl ProjectSession {
         ProjectSchemaSession {
             project: self.project,
             schema: self.schema,
-            compiled_schema: self.compiled_schema,
             diagnostics: self.diagnostics,
         }
     }
@@ -393,7 +391,6 @@ impl ProjectSession {
 pub struct ProjectSchemaSession {
     pub(crate) project: Project,
     pub(crate) schema: CftContainer,
-    pub(crate) compiled_schema: CompiledSchema,
     pub(crate) diagnostics: DiagnosticsStore,
 }
 
@@ -410,7 +407,7 @@ impl ProjectSchemaSession {
 
     #[must_use]
     pub const fn compiled_schema(&self) -> &CompiledSchema {
-        &self.compiled_schema
+        self.schema.compiled_schema()
     }
 
     #[must_use]

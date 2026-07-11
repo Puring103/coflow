@@ -59,8 +59,8 @@ impl ValueNode {
     }
 }
 
-pub(super) struct ValueResolver<'a> {
-    schema: &'a DataModelCompilerContext,
+pub(super) struct ValueResolver<'a, 'schema> {
+    schema: &'a DataModelCompilerContext<'schema>,
     drafts: &'a [RecordDraft],
     record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
     diagnostics: &'a mut Vec<CfdDiagnostic>,
@@ -73,9 +73,9 @@ pub(super) struct ValueResolver<'a> {
     budget_exhausted: bool,
 }
 
-impl<'a> ValueResolver<'a> {
+impl<'a, 'schema> ValueResolver<'a, 'schema> {
     pub(super) fn new(
-        schema: &'a DataModelCompilerContext,
+        schema: &'a DataModelCompilerContext<'schema>,
         drafts: &'a [RecordDraft],
         record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
         diagnostics: &'a mut Vec<CfdDiagnostic>,

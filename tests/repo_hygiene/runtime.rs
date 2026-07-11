@@ -148,12 +148,13 @@ fn engine_session_api_does_not_live_in_lib_rs() {
     }
 
     assert!(
-        session.matches("pub(crate) compiled_schema: CompiledSchema").count() == 2,
-        "schema-only and full sessions should each retain one compiled schema view"
+        !session.contains("pub(crate) compiled_schema: CompiledSchema"),
+        "runtime sessions should not retain a second owned compiled schema view"
     );
     assert!(
-        session.contains("pub const fn compiled_schema(&self) -> &CompiledSchema"),
-        "session schema queries should borrow the retained view"
+        session.contains("pub const fn compiled_schema(&self) -> &CompiledSchema")
+            && session.matches("self.schema.compiled_schema()").count() == 2,
+        "session schema queries should borrow the container-owned canonical generation"
     );
 }
 
@@ -397,8 +398,9 @@ fn engine_write_rules_use_cft_compiler_context_for_path_types() {
         .expect("read engine write rules");
 
     assert!(
-        write_rules.contains("CompiledSchema::new(schema)"),
-        "engine write rules should use coflow-cft CompiledSchema for schema path lookup"
+        write_rules.contains("schema.compiled_schema()")
+            && !write_rules.contains("CompiledSchema::new(schema)"),
+        "engine write rules should borrow the canonical CompiledSchema for schema path lookup"
     );
     assert!(
         write_rules.contains("validate_complete_value_for_schema"),

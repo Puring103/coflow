@@ -117,8 +117,7 @@ pub fn expected_type_for_cfd_path(
     code: &'static str,
     stage: &'static str,
 ) -> Result<CftSchemaTypeRef, DiagnosticSet> {
-    let view = CompiledSchema::new(schema);
-    expected_type_for_cfd_path_in_view(&view, actual_type, path, code, stage)
+    expected_type_for_cfd_path_in_view(schema.compiled_schema(), actual_type, path, code, stage)
 }
 
 pub(crate) fn expected_type_for_cfd_path_in_view(
@@ -254,8 +253,13 @@ pub fn ensure_object_type_assignable(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    let view = CompiledSchema::new(schema);
-    ensure_object_type_assignable_in_view(&view, expected_type, actual_type, code, stage)
+    ensure_object_type_assignable_in_view(
+        schema.compiled_schema(),
+        expected_type,
+        actual_type,
+        code,
+        stage,
+    )
 }
 
 pub(crate) fn ensure_object_type_assignable_in_view(

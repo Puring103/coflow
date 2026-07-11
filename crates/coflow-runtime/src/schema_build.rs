@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
-use coflow_cft::{CftContainer, CftDiagnostic, CompiledSchema, ModuleId};
+use coflow_cft::{CftContainer, CftDiagnostic, ModuleId};
 use coflow_project::{normalize_path, Project};
 use std::path::PathBuf;
 
@@ -148,11 +148,9 @@ pub(crate) fn build_project_schema_with_diagnostics(
     } else {
         CftContainer::new()
     };
-    let compiled_schema = CompiledSchema::new(&schema);
     Ok(ProjectSchemaSession {
         project,
         schema,
-        compiled_schema,
         diagnostics,
     })
 }
@@ -160,8 +158,7 @@ pub(crate) fn build_project_schema_with_diagnostics(
 fn validate_dimension_schema_config(project: &Project, schema: &CftContainer) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
     let mut required = BTreeSet::new();
-    let view = CompiledSchema::new(schema);
-    for field in dimensions::dimension_fields(&view) {
+    for field in dimensions::dimension_fields(schema.compiled_schema()) {
         required.insert(field.dimension);
     }
     for dimension in required {

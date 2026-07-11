@@ -25,7 +25,7 @@ pub(crate) struct SpreadIndexes {
 pub(crate) fn build_spread_indexes(
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &DataModelCompilerContext,
+    schema: &DataModelCompilerContext<'_>,
 ) -> SpreadIndexes {
     let mut out = SpreadIndexes::default();
     for (index, draft) in drafts.iter().enumerate() {
@@ -48,7 +48,7 @@ fn collect_spread_edges(
     path: &CfdPath,
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &DataModelCompilerContext,
+    schema: &DataModelCompilerContext<'_>,
     out: &mut SpreadIndexes,
 ) {
     let mut fields_by_source = draft
@@ -122,7 +122,7 @@ fn collect_nested_spread_edges(
     path: &CfdPath,
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &DataModelCompilerContext,
+    schema: &DataModelCompilerContext<'_>,
     out: &mut SpreadIndexes,
 ) {
     match value {
@@ -188,7 +188,7 @@ fn collect_nested_spread_edges(
 pub(crate) fn build_ref_indexes(
     records: &[CfdRecord],
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &DataModelCompilerContext,
+    schema: &DataModelCompilerContext<'_>,
     spread_edges: &[SpreadEdge],
 ) -> RefIndexes {
     let mut out = RefIndexes::default();
@@ -229,14 +229,14 @@ pub(crate) fn build_ref_indexes(
     out
 }
 
-struct RefEdgeBuildContext<'a> {
+struct RefEdgeBuildContext<'a, 'schema> {
     records: &'a [CfdRecord],
     record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &'a DataModelCompilerContext,
+    schema: &'a DataModelCompilerContext<'schema>,
     spread_edges_by_host: BTreeMap<CfdRecordId, Vec<&'a SpreadEdge>>,
 }
 
-impl RefEdgeBuildContext<'_> {
+impl RefEdgeBuildContext<'_, '_> {
     fn is_spread_inherited_path(&self, host: CfdRecordId, path: &CfdPath) -> bool {
         self.spread_edges_by_host
             .get(&host)
@@ -249,7 +249,7 @@ fn collect_ref_edges(
     ty: &CftSchemaTypeRef,
     host: CfdRecordId,
     path: CfdPath,
-    context: &RefEdgeBuildContext<'_>,
+    context: &RefEdgeBuildContext<'_, '_>,
     out: &mut RefIndexes,
 ) {
     if context.is_spread_inherited_path(host, &path) {
@@ -342,7 +342,7 @@ fn collect_ref_edges(
 }
 
 fn lookup_domain_ref(
-    schema: &DataModelCompilerContext,
+    schema: &DataModelCompilerContext<'_>,
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     target_type: &str,
     key: &str,

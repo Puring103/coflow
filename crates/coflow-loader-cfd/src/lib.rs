@@ -47,8 +47,7 @@ pub fn parse_cfd_input_records(
     schema: &CftContainer,
     source: &str,
 ) -> Result<Vec<CfdInputRecord>, CfdTextLoadError> {
-    let compiled_schema = CompiledSchema::new(schema);
-    parse_cfd_input_records_with_spans(&compiled_schema, source).map(|records| {
+    parse_cfd_input_records_with_spans(schema.compiled_schema(), source).map(|records| {
         records
             .into_iter()
             .map(|record| record.record)
@@ -75,8 +74,7 @@ pub fn load_cfd_model(
     schema: &CftContainer,
     source: &str,
 ) -> Result<CfdDataModel, CfdTextLoadError> {
-    let compiled_schema = CompiledSchema::new(schema);
-    let records = parse_cfd_input_records_with_spans(&compiled_schema, source)?;
+    let records = parse_cfd_input_records_with_spans(schema.compiled_schema(), source)?;
     let mut builder = CfdDataModel::builder(schema);
     let mut origins = Vec::with_capacity(records.len());
     for record in records {

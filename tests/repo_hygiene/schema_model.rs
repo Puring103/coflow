@@ -14,9 +14,10 @@ fn data_model_schema_projection_uses_cft_compiler_context() {
 
     assert!(
 
-        compiler_context.contains("CompiledSchema::new(schema)"),
+        compiler_context.contains("cft: &'a CompiledSchema")
+            && compiler_context.contains("cft_view = schema.compiled_schema()"),
 
-        "data-model schema projection should be built from coflow-cft CompiledSchema"
+        "data-model schema projection should borrow the canonical coflow-cft CompiledSchema"
 
     );
 

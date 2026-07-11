@@ -54,11 +54,21 @@ pub(crate) struct CftModule {
     pub(crate) ast: crate::ast::ModuleAst,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CftContainer {
     pub(crate) modules: BTreeMap<ModuleId, CftModule>,
-    compiled: Option<CompiledSchema>,
+    compiled: CompiledSchema,
     parse_options: CftParseOptions,
+}
+
+impl Default for CftContainer {
+    fn default() -> Self {
+        Self {
+            modules: BTreeMap::new(),
+            compiled: CompiledSchema::empty(),
+            parse_options: CftParseOptions::default(),
+        }
+    }
 }
 
 impl CftContainer {
@@ -134,7 +144,7 @@ impl CftContainer {
             .map(|(id, module)| (id.clone(), module.source.clone()))
             .collect();
         let compiled = CompiledSchema::from_reflection(reflection, sources);
-        self.compiled = Some(compiled);
+        self.compiled = compiled;
         Ok(())
     }
 
@@ -143,23 +153,14 @@ impl CftContainer {
     /// # Errors
     ///
     /// Returns a duplicate-name diagnostic when a type with the same name is
-    /// already present, or a schema diagnostic when called before a successful
-    /// compile. The published snapshot is replaced only after the whole batch
-    /// and all derived indexes have been rebuilt.
+    /// already present. The published snapshot is replaced only after the
+    /// whole batch and all derived indexes have been rebuilt.
     pub fn register_runtime_types(
         &mut self,
         types: impl IntoIterator<Item = CftSchemaType>,
     ) -> Result<(), CftDiagnostics> {
-        let Some(compiled) = self.compiled.as_ref() else {
-            return Err(CftDiagnostics::one(CftDiagnostic::error(
-                CftErrorCode::UnknownNamedType,
-                ModuleId::from(Self::RUNTIME_MODULE_ID),
-                Span::new(0, 0),
-                "cannot register runtime type before schema is compiled",
-            )));
-        };
-        let mut reflection = compiled.reflection().clone();
-        let sources = compiled.sources().clone();
+        let mut reflection = self.compiled.reflection().clone();
+        let sources = self.compiled.sources().clone();
         let runtime_module = ModuleId::from(Self::RUNTIME_MODULE_ID);
         for mut ty in types {
             if reflection.types.contains_key(&ty.name) {
@@ -191,54 +192,45 @@ impl CftContainer {
                 .push(ty.clone());
             reflection.types.insert(name, ty);
         }
-        self.compiled = Some(CompiledSchema::from_reflection(reflection, sources));
+        self.compiled = CompiledSchema::from_reflection(reflection, sources);
         Ok(())
     }
 
     #[must_use]
-    pub const fn compiled_schema(&self) -> Option<&CompiledSchema> {
-        self.compiled.as_ref()
+    pub const fn compiled_schema(&self) -> &CompiledSchema {
+        &self.compiled
     }
 
     #[must_use]
     pub fn schema(&self, id: &ModuleId) -> Option<&CftSchemaModule> {
-        self.compiled.as_ref()?.reflection().modules.get(id)
+        self.compiled.reflection().modules.get(id)
     }
 
     #[must_use]
     pub fn resolve_type(&self, name: &str) -> Option<&CftSchemaType> {
-        self.compiled.as_ref()?.reflection().types.get(name)
+        self.compiled.reflection().types.get(name)
     }
 
     #[must_use]
     pub fn resolve_enum(&self, name: &str) -> Option<&CftSchemaEnum> {
-        self.compiled.as_ref()?.reflection().enums.get(name)
+        self.compiled.reflection().enums.get(name)
     }
 
     #[must_use]
     pub fn resolve_const(&self, name: &str) -> Option<&CftSchemaConst> {
-        self.compiled.as_ref()?.reflection().consts.get(name)
+        self.compiled.reflection().consts.get(name)
     }
 
     pub fn module_ids(&self) -> impl Iterator<Item = &ModuleId> {
-        self.compiled
-            .as_ref()
-            .into_iter()
-            .flat_map(|compiled| compiled.reflection().modules.keys())
+        self.compiled.reflection().modules.keys()
     }
 
     pub fn all_types(&self) -> impl Iterator<Item = &CftSchemaType> {
-        self.compiled
-            .as_ref()
-            .into_iter()
-            .flat_map(|compiled| compiled.reflection().types.values())
+        self.compiled.reflection().types.values()
     }
 
     pub fn all_enums(&self) -> impl Iterator<Item = &CftSchemaEnum> {
-        self.compiled
-            .as_ref()
-            .into_iter()
-            .flat_map(|compiled| compiled.reflection().enums.values())
+        self.compiled.reflection().enums.values()
     }
 
     #[must_use]
@@ -254,7 +246,6 @@ impl CftContainer {
     #[must_use]
     pub fn source(&self, id: &ModuleId) -> Option<&str> {
         self.compiled
-            .as_ref()?
             .sources()
             .get(id)
             .map(String::as_str)

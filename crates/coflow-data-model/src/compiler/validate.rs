@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// can therefore be iterated while `&mut self` methods are called to emit
 /// diagnostics — something impossible when the schema is an owned field of
 /// the same struct.
-pub(super) struct Validator<'s> {
-    pub(super) schema: &'s DataModelCompilerContext,
+pub(super) struct Validator<'s, 'schema> {
+    pub(super) schema: &'s DataModelCompilerContext<'schema>,
     pub(super) diagnostics: &'s mut Vec<CfdDiagnostic>,
     pub(super) default_objects: BTreeMap<String, CachedDefaultObject>,
     structural_limits: StructuralLimits,
@@ -36,9 +36,9 @@ pub(super) struct CachedDefaultObject {
     pub(super) depth: u64,
 }
 
-impl<'s> Validator<'s> {
+impl<'s, 'schema> Validator<'s, 'schema> {
     pub(super) fn new(
-        schema: &'s DataModelCompilerContext,
+        schema: &'s DataModelCompilerContext<'schema>,
         diagnostics: &'s mut Vec<CfdDiagnostic>,
         structural_limits: StructuralLimits,
     ) -> Self {

@@ -12,16 +12,16 @@ use coflow_structure::StructuralLimits;
 use resolve::ValueResolver;
 use validate::Validator;
 
-pub(crate) struct ModelCompiler {
-    schema: DataModelCompilerContext,
+pub(crate) struct ModelCompiler<'a> {
+    schema: DataModelCompilerContext<'a>,
     input: Vec<CfdInputRecord>,
     diagnostics: Vec<CfdDiagnostic>,
     structural_limits: StructuralLimits,
 }
 
-impl ModelCompiler {
+impl<'a> ModelCompiler<'a> {
     pub(crate) fn new(
-        schema_source: &CftContainer,
+        schema_source: &'a CftContainer,
         input: Vec<CfdInputRecord>,
         structural_limits: StructuralLimits,
     ) -> Self {

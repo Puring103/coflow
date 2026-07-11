@@ -12,7 +12,7 @@ pub(super) struct ModelIndexes {
 }
 
 pub(super) fn build_indexes(
-    schema: &DataModelCompilerContext,
+    schema: &DataModelCompilerContext<'_>,
     drafts: &[RecordDraft],
     diagnostics: &mut Vec<CfdDiagnostic>,
 ) -> ModelIndexes {
@@ -112,7 +112,7 @@ pub(super) fn build_indexes(
 }
 
 fn add_polymorphic_ids(
-    schema: &DataModelCompilerContext,
+    schema: &DataModelCompilerContext<'_>,
     inheritance_index: &mut BTreeMap<String, CfdPolymorphicIndex>,
     actual_type: &str,
     key: &str,
@@ -132,7 +132,7 @@ fn add_polymorphic_ids(
 }
 
 pub(super) fn validate_singletons(
-    schema: &DataModelCompilerContext,
+    schema: &DataModelCompilerContext<'_>,
     drafts: &[RecordDraft],
     tables: &BTreeMap<String, CfdTable>,
     diagnostics: &mut Vec<CfdDiagnostic>,

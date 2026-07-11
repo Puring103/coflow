@@ -7,7 +7,7 @@ use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef};
 use coflow_structure::TraversalCursor;
 use std::collections::BTreeMap;
 
-impl Validator<'_> {
+impl Validator<'_, '_> {
     pub(super) fn default_field_value(
         &mut self,
         field: &CftFieldMeta,

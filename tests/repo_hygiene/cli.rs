@@ -749,9 +749,9 @@ fn root_cli_schema_queries_go_through_session_facade() {
     assert!(
 
         session.contains("pub const fn compiled_schema(&self) -> &CompiledSchema")
-            && session.contains("pub(crate) compiled_schema: CompiledSchema"),
+            && !session.contains("pub(crate) compiled_schema: CompiledSchema"),
 
-        "runtime session should retain and lend the schema query facade"
+        "runtime session should lend the container-owned schema query facade"
 
     );
 
