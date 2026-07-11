@@ -26,6 +26,7 @@ const MOCK_CFD_CAPS: WriterCapabilities = {
 
 export const MOCK_PROJECT: ProjectSnapshot = {
   session_id: 1,
+  revision: 1,
   project_root: '(mock project)',
   first_source_file: 'data/item.cfd',
   file_tree: [

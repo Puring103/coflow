@@ -2,4 +2,4 @@
 import type { FileRecords } from "./FileRecords";
 import type { FlatDiagnostic } from "./FlatDiagnostic";
 
-export type InsertRecordOutcome = { file_records: FileRecords, diagnostics: Array<FlatDiagnostic>, };
+export type InsertRecordOutcome = { revision: number, file_records: FileRecords, diagnostics: Array<FlatDiagnostic>, };

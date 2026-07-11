@@ -63,6 +63,7 @@ function sameStringList(a: readonly string[] | null, b: readonly string[]): bool
 
 export default function App() {
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
+  const projectRevisionRef = useRef(0)
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
   const [graphEnabledFields, setGraphEnabledFields] = useState<string[] | null>(null)
@@ -155,6 +156,7 @@ export default function App() {
   // SessionStore doesn't accumulate stale sessions across project switches.
   const adoptSnapshot = useCallback(
     (snapshot: ProjectSnapshot) => {
+      projectRevisionRef.current = snapshot.revision
       setProject(prev => {
         // Fire-and-forget close of the outgoing session. We read prev here
         // (not `project` from the closure) so we always close exactly the
@@ -197,6 +199,8 @@ export default function App() {
 
   const refreshFromSnapshot = useCallback(
     async (snapshot: ProjectSnapshot) => {
+      if (snapshot.revision <= projectRevisionRef.current) return
+      projectRevisionRef.current = snapshot.revision
       const current = router.current
       const sourceFiles = collectSourceFiles(snapshot)
       const keepFile = current && sourceFiles.includes(current.file)
@@ -215,6 +219,7 @@ export default function App() {
         const fileRecords = api.isTauri
           ? await api.getFileRecords(snapshot.session_id, nextFile)
           : null
+        if (projectRevisionRef.current !== snapshot.revision) return
         if (fileRecords) {
           setFileDataCache({ [nextFile]: fileRecords })
         }
@@ -235,6 +240,18 @@ export default function App() {
     },
     [router],
   )
+
+  const commitProjectRevision = useCallback((
+    revision: number,
+    diagnostics: ProjectSnapshot['diagnostics'],
+  ) => {
+    projectRevisionRef.current = Math.max(projectRevisionRef.current, revision)
+    setProject(current => (
+      current && current.revision <= revision
+        ? { ...current, revision, diagnostics }
+        : current
+    ))
+  }, [])
 
   useEffect(() => {
     if (!api.isTauri || !project) return
@@ -494,6 +511,8 @@ export default function App() {
           fieldPath,
           newValue,
         )
+        commitProjectRevision(outcome.revision, outcome.diagnostics)
+        if (projectRevisionRef.current !== outcome.revision) return outcome.row
         // Stale guard: a newer edit superseded this one; drop our refresh so
         // we don't clobber the newer state with older data.
         if (mySeq !== writeSeqRef.current) return outcome.row
@@ -501,12 +520,14 @@ export default function App() {
         const refreshedFiles = await Promise.all(
           refreshFiles.map(async file => [file, await api.getFileRecords(project.session_id, file)] as const),
         )
-        if (mySeq !== writeSeqRef.current) return outcome.row
+        if (
+          mySeq !== writeSeqRef.current ||
+          projectRevisionRef.current !== outcome.revision
+        ) return outcome.row
         // Batch: apply diagnostics + refreshed file data + graph reset in a
         // single React commit so the table doesn't render an intermediate
         // frame with new diagnostics but old records (which briefly wraps
         // cells in diagnostic-tinted spans and shifts column widths).
-        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
         setFileDataCache(c => {
           const next = { ...c }
           for (const [file, records] of refreshedFiles) next[file] = records
@@ -542,7 +563,7 @@ export default function App() {
         }
       }
     },
-    [project, rebindCoordinate],
+    [commitProjectRevision, project, rebindCoordinate],
   )
 
   const writeField = useCallback(
@@ -562,13 +583,17 @@ export default function App() {
       const mySeq = ++writeSeqRef.current
       try {
         const outcome = await api.editCollection(project.session_id, coordinate, fieldPath, edit)
+        commitProjectRevision(outcome.revision, outcome.diagnostics)
+        if (projectRevisionRef.current !== outcome.revision) return outcome.row
         if (mySeq !== writeSeqRef.current) return outcome.row
-        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
         const refreshFiles = outcome.affected_files.length > 0 ? outcome.affected_files : [filePath]
         const refreshedFiles = await Promise.all(
           refreshFiles.map(async file => [file, await api.getFileRecords(project.session_id, file)] as const),
         )
-        if (mySeq !== writeSeqRef.current) return outcome.row
+        if (
+          mySeq !== writeSeqRef.current ||
+          projectRevisionRef.current !== outcome.revision
+        ) return outcome.row
         setFileDataCache(c => {
           const next = { ...c }
           for (const [file, records] of refreshedFiles) next[file] = records
@@ -599,7 +624,7 @@ export default function App() {
         }
       }
     },
-    [project, rebindCoordinate],
+    [commitProjectRevision, project, rebindCoordinate],
   )
 
   const renameRecordInternal = useCallback(
@@ -613,10 +638,14 @@ export default function App() {
       const mySeq = ++writeSeqRef.current
       try {
         const outcome = await api.renameRecordKey(project.session_id, coordinate, newKey)
+        commitProjectRevision(outcome.revision, outcome.diagnostics)
+        if (projectRevisionRef.current !== outcome.revision) return outcome.row
         if (mySeq !== writeSeqRef.current) return outcome.row
-        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
         const refreshed = await api.getFileRecords(project.session_id, filePath)
-        if (mySeq !== writeSeqRef.current) return outcome.row
+        if (
+          mySeq !== writeSeqRef.current ||
+          projectRevisionRef.current !== outcome.revision
+        ) return outcome.row
         setFileDataCache(c => ({ ...c, [filePath]: refreshed }))
         setGraphCache({})
         rebindCoordinate(coordinate, outcome.renamed)
@@ -640,7 +669,7 @@ export default function App() {
         }
       }
     },
-    [project, rebindCoordinate],
+    [commitProjectRevision, project, rebindCoordinate],
   )
 
   const renameRecord = useCallback(
@@ -669,7 +698,8 @@ export default function App() {
       if (!project || !api.isTauri) return
       try {
         const outcome = await api.insertRecord(project.session_id, filePath, recordKey, actualType, fields)
-        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
+        commitProjectRevision(outcome.revision, outcome.diagnostics)
+        if (projectRevisionRef.current !== outcome.revision) return
         setFileDataCache(c => ({ ...c, [filePath]: outcome.file_records }))
         setGraphCache({})
         if (opts.recordHistory) {
@@ -689,7 +719,7 @@ export default function App() {
         }
       }
     },
-    [project],
+    [commitProjectRevision, project],
   )
 
   const deleteRecordInternal = useCallback(
@@ -701,7 +731,8 @@ export default function App() {
       if (!project || !api.isTauri) return
       try {
         const outcome = await api.deleteRecord(project.session_id, coordinate)
-        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
+        commitProjectRevision(outcome.revision, outcome.diagnostics)
+        if (projectRevisionRef.current !== outcome.revision) return
         setFileDataCache(c => ({ ...c, [filePath]: outcome.file_records }))
         setGraphCache({})
         // Undo payload comes from the back-end's authoritative snapshot —
@@ -725,7 +756,7 @@ export default function App() {
         }
       }
     },
-    [project],
+    [commitProjectRevision, project],
   )
 
   const insertRecord = useCallback(

@@ -20,6 +20,7 @@ mod build;
 mod diagnostics;
 mod graph;
 mod path;
+mod revision;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path as StdPath;
@@ -44,8 +45,10 @@ pub use diagnostics::Diagnostics;
 
 use build::{
     build_session, default_provider_registry, diagnostic_messages, session_capabilities_for_file,
+    SessionSnapshotParts,
 };
 use path::strip_unc_prefix;
+use revision::{RevisionCoordinator, RevisionTicket};
 
 /// A loaded project. Held inside `Arc<RwLock<…>>` so multi-session and
 /// multi-reader access stay independent.
@@ -59,6 +62,7 @@ pub struct EditorSession {
     pub engine: WriteProjectSession,
     pub diagnostics: Diagnostics,
     ref_target_cache: HashMap<String, Vec<RefTarget>>,
+    revisions: RevisionCoordinator,
 }
 
 impl std::fmt::Debug for EditorSession {
@@ -75,11 +79,22 @@ impl EditorSession {
     fn queries(&self) -> ProjectQueries<'_> {
         self.engine.queries()
     }
+
+    fn commit_internal_write(&mut self, paths: &[String]) {
+        self.revisions
+            .commit_internal_write(&self.project_root, paths);
+    }
 }
 
 #[derive(Debug)]
 struct SessionEntry {
     state: RwLock<EditorSession>,
+}
+
+struct ReloadCandidate {
+    base_revision: RevisionTicket,
+    session: EditorSession,
+    snapshot: SessionSnapshotParts,
 }
 
 #[derive(Debug)]
@@ -136,8 +151,7 @@ impl SessionStore {
             .map_err(|_| EditorError::session("session store poisoned"))?;
         inner.next_id = inner.next_id.checked_add(1).unwrap_or(1);
         let id = inner.next_id;
-        let project_root = strip_unc_prefix(&session.project_root.display().to_string());
-        let diagnostics = session.diagnostics.flatten();
+        let snapshot = project_snapshot(id, &session, snapshot_partial);
         inner.sessions.insert(
             id,
             Arc::new(SessionEntry {
@@ -145,42 +159,74 @@ impl SessionStore {
             }),
         );
         drop(inner);
-        Ok(ProjectSnapshot {
-            session_id: id,
-            project_root,
-            first_source_file: first_source_file(&snapshot_partial.file_tree),
-            file_tree: snapshot_partial.file_tree,
-            diagnostics,
-        })
+        Ok(snapshot)
     }
 
     pub fn reload_session(&self, id: u32) -> Result<ProjectSnapshot, EditorError> {
+        loop {
+            let (entry, candidate) = self.build_reload_candidate(id)?;
+            if let Some(snapshot) = self.commit_reload_candidate(id, &entry, candidate)? {
+                return Ok(snapshot);
+            }
+        }
+    }
+
+    fn build_reload_candidate(
+        &self,
+        id: u32,
+    ) -> Result<(Arc<SessionEntry>, ReloadCandidate), EditorError> {
         let entry = self.session(id)?;
-        let yaml_path = {
+        let (yaml_path, base_revision) = {
             let session = entry
                 .state
                 .read()
                 .map_err(|_| EditorError::session("session poisoned"))?;
-            session.yaml_path.clone()
+            (session.yaml_path.clone(), session.revisions.begin_reload())
         };
         let registry = self.registry()?;
-        let (session, snapshot_partial) = build_session(&yaml_path, registry.as_ref())?;
-        let project_root = strip_unc_prefix(&session.project_root.display().to_string());
-        let diagnostics = session.diagnostics.flatten();
-        {
-            let mut state = entry
-                .state
-                .write()
-                .map_err(|_| EditorError::session("session poisoned"))?;
-            *state = session;
-        }
-        Ok(ProjectSnapshot {
-            session_id: id,
-            project_root,
-            first_source_file: first_source_file(&snapshot_partial.file_tree),
-            file_tree: snapshot_partial.file_tree,
-            diagnostics,
-        })
+        let (session, snapshot) = build_session(&yaml_path, registry.as_ref())?;
+        Ok((
+            entry,
+            ReloadCandidate {
+                base_revision,
+                session,
+                snapshot,
+            },
+        ))
+    }
+
+    fn commit_reload_candidate(
+        &self,
+        id: u32,
+        entry: &SessionEntry,
+        mut candidate: ReloadCandidate,
+    ) -> Result<Option<ProjectSnapshot>, EditorError> {
+        let mut state = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let Some(revisions) = state.revisions.commit_reload(candidate.base_revision) else {
+            return Ok(None);
+        };
+        candidate.session.revisions = revisions;
+        let snapshot = project_snapshot(id, &candidate.session, candidate.snapshot);
+        *state = candidate.session;
+        Ok(Some(snapshot))
+    }
+
+    pub(crate) fn has_external_file_changes(
+        &self,
+        id: u32,
+        paths: &[std::path::PathBuf],
+    ) -> Result<bool, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        Ok(session
+            .revisions
+            .has_external_change(&session.project_root, paths))
     }
 
     pub fn close_session(&self, id: u32) -> Result<(), EditorError> {
@@ -385,17 +431,14 @@ impl SessionStore {
                     }
                 }
             }
+            let affected_files = affected_files
+                .into_iter()
+                .filter(|file| !file.is_empty())
+                .collect::<Vec<_>>();
+            session.commit_internal_write(&affected_files);
             session.ref_target_cache.clear();
             drop(session);
-            (
-                final_coord,
-                renamed,
-                old_value,
-                affected_files
-                    .into_iter()
-                    .filter(|file| !file.is_empty())
-                    .collect(),
-            )
+            (final_coord, renamed, old_value, affected_files)
         };
 
         let session = session_lock
@@ -421,6 +464,7 @@ impl SessionStore {
         let ctx = WireContext::new(session.queries(), session.diagnostics.flatten());
         let row = record_view_to_row(&view, &ctx);
         Ok(WriteFieldOutcome {
+            revision: session.revisions.current(),
             row,
             diagnostics: session.diagnostics.flatten(),
             old_value,
@@ -521,6 +565,7 @@ impl SessionStore {
             }
             session.diagnostics =
                 Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
+            session.commit_internal_write(&[file_path.to_string()]);
             session.ref_target_cache.clear();
         }
         let file_records = self.get_file_records(id, file_path)?;
@@ -528,6 +573,7 @@ impl SessionStore {
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
         Ok(InsertRecordOutcome {
+            revision: session.revisions.current(),
             file_records,
             diagnostics: session.diagnostics.flatten(),
         })
@@ -545,6 +591,8 @@ impl SessionStore {
             let mut session = session_lock
                 .write()
                 .map_err(|_| EditorError::session("session poisoned"))?;
+            let file_path = file_path_for_coordinate(session.queries(), coordinate)
+                .ok_or_else(|| EditorError::not_found("record file not found before rename"))?;
             let report = session
                 .engine
                 .apply_mutation(MutationRequest {
@@ -573,6 +621,7 @@ impl SessionStore {
                 .renamed
                 .and_then(|(old, new)| (old == *coordinate).then_some(new))
                 .ok_or_else(|| EditorError::write("rename did not produce a new coordinate"))?;
+            session.commit_internal_write(&[file_path]);
             session.ref_target_cache.clear();
             drop(session);
             renamed
@@ -593,6 +642,7 @@ impl SessionStore {
         let ctx = WireContext::new(session.queries(), session.diagnostics.flatten());
         let row = record_view_to_row(&view, &ctx);
         Ok(RenameRecordOutcome {
+            revision: session.revisions.current(),
             row,
             diagnostics: session.diagnostics.flatten(),
             renamed,
@@ -645,6 +695,7 @@ impl SessionStore {
             }
             session.diagnostics =
                 Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
+            session.commit_internal_write(std::slice::from_ref(&file_path));
             session.ref_target_cache.clear();
         }
         let file_records = self.get_file_records(id, &file_path)?;
@@ -652,6 +703,7 @@ impl SessionStore {
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
         Ok(DeleteRecordOutcome {
+            revision: session.revisions.current(),
             file_records,
             diagnostics: session.diagnostics.flatten(),
             deleted_snapshot,
@@ -708,6 +760,21 @@ fn first_source_file(nodes: &[coflow_runtime::FileTreeNode]) -> Option<String> {
         }
     }
     None
+}
+
+fn project_snapshot(
+    session_id: u32,
+    session: &EditorSession,
+    snapshot: SessionSnapshotParts,
+) -> ProjectSnapshot {
+    ProjectSnapshot {
+        session_id,
+        revision: session.revisions.current(),
+        project_root: strip_unc_prefix(&session.project_root.display().to_string()),
+        first_source_file: first_source_file(&snapshot.file_tree),
+        file_tree: snapshot.file_tree,
+        diagnostics: session.diagnostics.flatten(),
+    }
 }
 
 fn file_path_for_coordinate(
@@ -887,4 +954,121 @@ fn mutation_report_to_editor_error(
         message
     })
     .with_diagnostics(diagnostics)
+}
+
+#[cfg(test)]
+mod revision_tests {
+    use std::sync::{Arc, Barrier};
+
+    use coflow_data_model::{CfdPathSegment, CfdValue};
+    use coflow_runtime::RecordCoordinate;
+
+    use super::SessionStore;
+
+    #[test]
+    fn stale_reload_candidate_cannot_replace_a_newer_internal_write() {
+        let root = temp_project_dir("stale-reload");
+        write_project(&root, "Initial");
+        let store = Arc::new(SessionStore::new().expect("create session store"));
+        let snapshot = store
+            .load_project(&root.join("coflow.yaml"))
+            .expect("load project");
+
+        write_project(&root, "External candidate");
+        let candidate_built = Arc::new(Barrier::new(2));
+        let allow_commit = Arc::new(Barrier::new(2));
+        let reload_store = Arc::clone(&store);
+        let reload_built = Arc::clone(&candidate_built);
+        let reload_commit = Arc::clone(&allow_commit);
+        let session_id = snapshot.session_id;
+        let reload = std::thread::spawn(move || {
+            let (entry, candidate) = reload_store
+                .build_reload_candidate(session_id)
+                .expect("build reload candidate");
+            reload_built.wait();
+            reload_commit.wait();
+            reload_store
+                .commit_reload_candidate(session_id, &entry, candidate)
+                .expect("attempt candidate commit")
+                .is_none()
+        });
+
+        candidate_built.wait();
+        store
+            .write_field(
+                session_id,
+                &RecordCoordinate::new("Item", "sword"),
+                &[CfdPathSegment::Field("name".to_string())],
+                &CfdValue::String("Internal write".to_string()),
+            )
+            .expect("commit internal write");
+        allow_commit.wait();
+
+        assert!(reload.join().expect("join reload thread"));
+        let records = store
+            .get_file_records(session_id, "data/items.cfd")
+            .expect("read current session");
+        assert_eq!(
+            records.records[0].fields[0].value,
+            CfdValue::String("Internal write".to_string())
+        );
+        std::fs::remove_dir_all(root).expect("remove temp project");
+    }
+
+    #[test]
+    fn file_events_only_match_the_exact_committed_internal_content() {
+        let root = temp_project_dir("event-attribution");
+        write_project(&root, "Initial");
+        let store = SessionStore::new().expect("create session store");
+        let snapshot = store
+            .load_project(&root.join("coflow.yaml"))
+            .expect("load project");
+        let source = root.join("data/items.cfd");
+
+        store
+            .write_field(
+                snapshot.session_id,
+                &RecordCoordinate::new("Item", "sword"),
+                &[CfdPathSegment::Field("name".to_string())],
+                &CfdValue::String("Internal".to_string()),
+            )
+            .expect("commit internal write");
+        assert!(!store
+            .has_external_file_changes(snapshot.session_id, std::slice::from_ref(&source))
+            .expect("classify internal event"));
+
+        std::fs::write(&source, "sword: Item { name: \"External\" }")
+            .expect("write external content");
+        assert!(store
+            .has_external_file_changes(snapshot.session_id, std::slice::from_ref(&source))
+            .expect("classify external event"));
+        std::fs::remove_dir_all(root).expect("remove temp project");
+    }
+
+    fn write_project(root: &std::path::Path, name: &str) {
+        std::fs::create_dir_all(root.join("data")).expect("create data directory");
+        std::fs::write(root.join("schema.cft"), "type Item { name: string; }")
+            .expect("write schema");
+        std::fs::write(
+            root.join("data/items.cfd"),
+            format!("sword: Item {{ name: \"{name}\" }}"),
+        )
+        .expect("write source");
+        std::fs::write(
+            root.join("coflow.yaml"),
+            "schema: schema.cft\nsources:\n  - path: data\n",
+        )
+        .expect("write project configuration");
+    }
+
+    fn temp_project_dir(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "coflow-editor-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ))
+    }
 }

@@ -122,6 +122,7 @@ impl From<String> for EditorError {
 )]
 pub struct ProjectSnapshot {
     pub session_id: u32,
+    pub revision: u32,
     pub project_root: String,
     pub file_tree: Vec<FileTreeNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -314,6 +315,7 @@ pub struct SpreadInfo {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct WriteFieldOutcome {
+    pub revision: u32,
     pub row: RecordRow,
     pub diagnostics: Vec<FlatDiagnostic>,
     /// Value at the target path before the write. Captured by the backend
@@ -355,6 +357,7 @@ pub enum CollectionEdit {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct RenameRecordOutcome {
+    pub revision: u32,
     pub row: RecordRow,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub renamed: RecordCoordinate,
@@ -367,6 +370,7 @@ pub struct RenameRecordOutcome {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct InsertRecordOutcome {
+    pub revision: u32,
     pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
 }
@@ -442,6 +446,7 @@ pub enum CreateRequiredInput {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct DeleteRecordOutcome {
+    pub revision: u32,
     pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
     /// Authoritative snapshot of the deleted record so the front-end's undo

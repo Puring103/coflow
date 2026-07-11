@@ -6,6 +6,7 @@ use coflow_runtime::{FileTreeNode, Runtime};
 use std::collections::HashMap;
 
 use super::diagnostics::diagnostics_from_store;
+use super::revision::RevisionCoordinator;
 use super::EditorSession;
 use crate::editor::types::EditorError;
 
@@ -47,6 +48,7 @@ pub(super) fn build_session(
             engine,
             diagnostics,
             ref_target_cache: HashMap::new(),
+            revisions: RevisionCoordinator::initial(),
         },
         SessionSnapshotParts { file_tree },
     ))

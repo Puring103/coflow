@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
@@ -13,12 +13,10 @@ use crate::editor::{EditorError, ProjectSnapshot, SessionStore};
 const PROJECT_CHANGED_EVENT: &str = "project_changed";
 const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
 const DEBOUNCE: Duration = Duration::from_millis(350);
-const INTERNAL_WRITE_SUPPRESSION: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Default)]
 pub struct ProjectWatchRegistry {
     watchers: Mutex<HashMap<u32, RecommendedWatcher>>,
-    suppress_until: Mutex<HashMap<u32, Instant>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -72,36 +70,6 @@ impl ProjectWatchRegistry {
         if let Ok(mut watchers) = self.watchers.lock() {
             watchers.remove(&session_id);
         }
-        if let Ok(mut suppress_until) = self.suppress_until.lock() {
-            suppress_until.remove(&session_id);
-        }
-    }
-
-    pub fn suppress_internal_write_events(&self, session_id: u32) {
-        if let Ok(mut suppress_until) = self.suppress_until.lock() {
-            suppress_until.insert(session_id, Instant::now() + INTERNAL_WRITE_SUPPRESSION);
-        }
-    }
-
-    pub fn clear_internal_write_suppression(&self, session_id: u32) {
-        if let Ok(mut suppress_until) = self.suppress_until.lock() {
-            suppress_until.remove(&session_id);
-        }
-    }
-
-    fn is_suppressed(&self, session_id: u32) -> bool {
-        let Ok(mut suppress_until) = self.suppress_until.lock() else {
-            return false;
-        };
-        let Some(until) = suppress_until.get(&session_id).copied() else {
-            return false;
-        };
-        if Instant::now() < until {
-            suppress_until.insert(session_id, Instant::now() + INTERNAL_WRITE_SUPPRESSION);
-            return true;
-        }
-        suppress_until.remove(&session_id);
-        false
     }
 }
 
@@ -123,11 +91,13 @@ fn watch_loop(app: &AppHandle, session_id: u32, rx: &mpsc::Receiver<notify::Resu
                         Ok(Err(err)) => emit_watch_error(app, session_id, err.to_string()),
                         Err(RecvTimeoutError::Timeout) => {
                             let changed_paths = normalize_paths(&pending_paths);
+                            let external = has_external_changes(app, session_id, &pending_paths);
                             pending_paths.clear();
-                            if is_session_suppressed(app, session_id) {
-                                break;
+                            match external {
+                                Ok(false) => break,
+                                Ok(true) => emit_reload(app, session_id, changed_paths),
+                                Err(err) => emit_watch_error(app, session_id, err.message),
                             }
-                            emit_reload(app, session_id, changed_paths);
                             break;
                         }
                         Err(RecvTimeoutError::Disconnected) => return,
@@ -195,9 +165,13 @@ fn emit_reload(app: &AppHandle, session_id: u32, changed_paths: Vec<String>) {
     }
 }
 
-fn is_session_suppressed(app: &AppHandle, session_id: u32) -> bool {
-    app.state::<ProjectWatchRegistry>()
-        .is_suppressed(session_id)
+fn has_external_changes(
+    app: &AppHandle,
+    session_id: u32,
+    changed_paths: &[PathBuf],
+) -> Result<bool, EditorError> {
+    app.state::<SessionStore>()
+        .has_external_file_changes(session_id, changed_paths)
 }
 
 fn emit_watch_error(app: &AppHandle, session_id: u32, message: String) {

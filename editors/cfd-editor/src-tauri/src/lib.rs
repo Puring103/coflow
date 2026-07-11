@@ -133,14 +133,8 @@ fn write_field(
     field_path: Vec<CfdPathSegment>,
     new_value: CfdValue,
     store: State<'_, SessionStore>,
-    watchers: State<'_, ProjectWatchRegistry>,
 ) -> Result<WriteFieldOutcome, EditorError> {
-    watchers.suppress_internal_write_events(session_id);
-    let result = store.write_field(session_id, &coordinate, &field_path, &new_value);
-    if result.is_err() {
-        watchers.clear_internal_write_suppression(session_id);
-    }
-    result
+    store.write_field(session_id, &coordinate, &field_path, &new_value)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -151,14 +145,8 @@ fn edit_collection(
     field_path: Vec<CfdPathSegment>,
     edit: CollectionEdit,
     store: State<'_, SessionStore>,
-    watchers: State<'_, ProjectWatchRegistry>,
 ) -> Result<WriteFieldOutcome, EditorError> {
-    watchers.suppress_internal_write_events(session_id);
-    let result = store.edit_collection(session_id, &coordinate, &field_path, edit);
-    if result.is_err() {
-        watchers.clear_internal_write_suppression(session_id);
-    }
-    result
+    store.edit_collection(session_id, &coordinate, &field_path, edit)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -170,14 +158,8 @@ fn insert_record(
     actual_type: String,
     fields: CfdValue,
     store: State<'_, SessionStore>,
-    watchers: State<'_, ProjectWatchRegistry>,
 ) -> Result<InsertRecordOutcome, EditorError> {
-    watchers.suppress_internal_write_events(session_id);
-    let result = store.insert_record(session_id, &file_path, &record_key, &actual_type, fields);
-    if result.is_err() {
-        watchers.clear_internal_write_suppression(session_id);
-    }
-    result
+    store.insert_record(session_id, &file_path, &record_key, &actual_type, fields)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -187,14 +169,8 @@ fn rename_record_key(
     coordinate: RecordCoordinate,
     new_key: String,
     store: State<'_, SessionStore>,
-    watchers: State<'_, ProjectWatchRegistry>,
 ) -> Result<RenameRecordOutcome, EditorError> {
-    watchers.suppress_internal_write_events(session_id);
-    let result = store.rename_record_key(session_id, &coordinate, &new_key);
-    if result.is_err() {
-        watchers.clear_internal_write_suppression(session_id);
-    }
-    result
+    store.rename_record_key(session_id, &coordinate, &new_key)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -203,14 +179,8 @@ fn delete_record(
     session_id: u32,
     coordinate: RecordCoordinate,
     store: State<'_, SessionStore>,
-    watchers: State<'_, ProjectWatchRegistry>,
 ) -> Result<DeleteRecordOutcome, EditorError> {
-    watchers.suppress_internal_write_events(session_id);
-    let result = store.delete_record(session_id, &coordinate);
-    if result.is_err() {
-        watchers.clear_internal_write_suppression(session_id);
-    }
-    result
+    store.delete_record(session_id, &coordinate)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -4,7 +4,8 @@
  * Editing capabilities exposed to the front-end so the UI can grey out
  * disabled actions per source.
  *
- * Lower-bounded by the writer's actual implementation; the front-end must
- * not assume a writer can do more than these flags claim.
+ * The descriptor contains the provider's maximum capability set. Hosts use
+ * [`crate::SourceWriter::capabilities`] for the authoritative per-source
+ * result when support depends on the resolved storage format.
  */
 export type WriterCapabilities = { provider_id: string, can_edit_field: boolean, can_edit_key: boolean, can_insert_record: boolean, can_delete_record: boolean, requires_full_refresh_after_write: boolean, is_remote: boolean, };

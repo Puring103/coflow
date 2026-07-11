@@ -2,4 +2,4 @@
 import type { FileTreeNode } from "./FileTreeNode";
 import type { FlatDiagnostic } from "./FlatDiagnostic";
 
-export type ProjectSnapshot = { session_id: number, project_root: string, file_tree: Array<FileTreeNode>, first_source_file: string | null, diagnostics: Array<FlatDiagnostic>, };
+export type ProjectSnapshot = { session_id: number, revision: number, project_root: string, file_tree: Array<FileTreeNode>, first_source_file: string | null, diagnostics: Array<FlatDiagnostic>, };
