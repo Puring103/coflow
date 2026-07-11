@@ -13,12 +13,16 @@ flowchart TD
   compile --> model["构建 DataModel"]
   load --> model
   model --> check["执行 check"]
-  check --> session["ProjectSession"]
-  session --> cli["CLI / 编辑器 / LSP / AI 命令"]
-  session --> export["导出 JSON / MessagePack"]
+  check --> generation["Runtime generation"]
+  generation --> queries["ProjectQueries"]
+  generation --> write["WriteProjectSession"]
+  queries --> cli["CLI / 编辑器 / LSP / AI 命令"]
+  queries --> export["导出 JSON / MessagePack"]
+  write --> mutation["Provider mutation"]
   compile --> codegen["生成 C# 代码"]
-  export --> artifacts["staging 后提交产物"]
+  export --> artifacts["封存不可变 generation"]
   codegen --> artifacts
+  artifacts --> manifest["原子激活 active manifest"]
 ```
 
 ## 入口
@@ -66,6 +70,8 @@ Schema 编译阶段会处理：
 - 注解。
 - `check {}` 静态类型检查。
 
+`CftContainer` 将 module source、schema reflection、类型/enum 索引、typed check schedule 和 value dependency plan 作为同一个 `CompiledSchema` generation 发布。新增 module 只进入 staged 输入；只有完整编译成功才原子替换 generation，失败时查询仍读取上一份 schema 与对应 source。运行时生成的 dimension storage type 也按批次构建候选 generation，不会逐个类型发布半完成索引。
+
 只需要 schema 的命令不会要求数据源存在。
 
 ## 命令阶段矩阵
@@ -90,12 +96,15 @@ Schema 编译阶段会处理：
 
 `codegen csharp` 是 schema-only 命令。它不要求 source 存在，也不构建 DataModel。
 
-`data sources`、`data list` 和 `data get` 使用完整项目 session。它们的主要输出
+`data sources`、`data list` 和 `data get` 使用绑定到同一 generation 的只读 query capability。它们的主要输出
 分别是 source、record 索引和 record 内容，但返回的 `diagnostics` 会包含数据加载、
 DataModel 和 CFT `check {}` 诊断。
 
-`data patch` 写入后会刷新项目 session 并返回写入后的诊断；业务校验诊断不会回滚
-已经成功写入的数据，调用方应根据 `write_ok`、`check_ok` 和 `diagnostics` 继续修正。
+`data patch` 通过 write capability 执行整批 mutation transaction。runtime 先解析批内依赖并完成
+provider preflight，再为本地来源保存字节快照、为远程来源取得补偿句柄；全部 writer I/O 完成后只重建一次
+候选 generation。writer、加载、DataModel 或 transaction commit 失败会恢复来源并保留旧 generation，
+此时 `applied` 为空且 revision 不变。候选 generation 只有业务 `CHECK` 诊断时仍可发布，调用方根据
+`check_ok` 和 `diagnostics` 继续修正；一次成功批次只推进一次 revision。
 
 `schema write-file --check` 的 Check 列为“否”，因为它只在写入后重新编译
 schema。它不会加载 source、同步表头、构建 DataModel，也不会执行 CFT
@@ -119,6 +128,15 @@ Source resolve 由 `coflow-runtime` 通过 `ProviderRegistry` 执行。
 
 Resolve 之后得到具体 `ResolvedSource`。例如一个目录 source 可能展开为多个 Excel、CSV 或 CFD 文件。
 
+项目配置中的 provider options 只在 provider 选择边界保留为 raw JSON。选中
+provider 后，runtime 调用一次 provider decoder，将其转换为带 provider identity
+的 typed options；后续 resolve、load、write、table 和 dimension operation 都复用
+同一份 decoded options。未知 key、错误类型和歧义映射会在读取数据前报告，并
+定位到 `coflow.yaml` 对应的 `sources.<index>.<key>`。
+
+目录 source 由 runtime 统一按 canonical 路径顺序遍历，并按文件 probe provider；
+每个文件只由选中的 provider 解码和处理，不会让所有 provider 重复扫描目录。
+
 ## Load 与 input records
 
 Loader 负责把具体来源读成 input records：
@@ -131,6 +149,25 @@ ResolvedSource
 ```
 
 Input record 保留来源定位，但不执行最终业务规则。不同 Provider 输出相同的来源无关结构，后续统一交给 DataModel。
+
+CFD 使用唯一的两阶段前端：`coflow-cfd` 先把文本解析成带 source span 的
+canonical AST，`coflow-loader-cfd` 再根据已编译 schema 将 AST lowering 为
+`CfdInputRecord`。LSP、writer 和 loader 共享同一套 CFD syntax parser；loader
+不维护第二套 lexer/parser，也不在 syntax 阶段执行 schema 语义。
+
+表格 create/sync operation 使用同一条 location-neutral runtime 路径。本地 path
+可以按扩展名选择 provider；远程 URI 必须匹配已配置 source，由 source provider
+提供 decoded options，再调用同 id 的 `TableManager`。CLI 不解析 Lark URL、凭证
+或 sheet options，也没有远程 provider 特判。
+
+`sync-header` 在 provider 写入前构建统一表头协调计划。该计划按列身份投影所有
+已有行，同时给出新增和删除列；CSV、Excel 与 Lark 使用同一语义。字段重排不会
+只替换首行，也不会让原数据继续停留在旧列位置；远程表格还会显式清空已删除的
+尾列范围。
+
+Lark source load 与后续 write/table operation 共享同一个远程 document state，因而
+复用同一份凭证、wiki 解析和 sheet metadata。缓存不会只按 app id 或 spreadsheet
+token 跨凭证复用；token 失效时由统一远程请求层刷新并重试一次。
 
 ## DataModel 与 Check
 
@@ -145,7 +182,7 @@ Project
   -> build CfdDataModel
   -> resolve refs
   -> run coflow-checker
-  -> ProjectSession
+  -> runtime generation
 ```
 
 DataModel 阶段统一处理：
@@ -161,22 +198,18 @@ DataModel 阶段统一处理：
 
 Checker 阶段执行 CFT `check {}`，并生成 `CFD-CHECK-*` 诊断。
 
-## ProjectSession
+## 运行时能力会话
 
-`ProjectSession` 是 runtime 构建出的共享运行时状态：
+runtime 内部把 project、schema、model、diagnostics 和 source/record/file 索引保存为一个完整 generation。拥有该状态的 session 是 crate-private；宿主只能使用表达用途的窄接口：
 
-```text
-ProjectSession
-  project
-  schema
-  model
-  diagnostics
-  sources
-  records
-  files
-```
+| Capability | 用途 |
+| --- | --- |
+| `ProjectQueries<'generation>` | 对一个确定 generation 执行只读查询 |
+| `ReadOnlyProjectSession` | 编辑、检查等不允许生成维度文件的生命周期 |
+| `BuildProjectSession` | build 流程；允许生成维度来源后再发布最终 generation |
+| `WriteProjectSession` | 持有 Provider registry、revision 和 mutation 命令 |
 
-CLI、编辑器和自动化命令应该复用 `ProjectSession` 中的 schema、model、source index、record index 和 diagnostics，而不是重新实现一套加载和检查流程。
+CLI、编辑器和自动化命令复用这些 capability，而不是导入 owning session、重新实现加载/检查流程，或自行协调 Provider 写入和重建。每个成功应用的 mutation 才推进 write revision；没有应用任何操作的失败保持当前 generation。
 
 ## 维度文件
 
@@ -208,9 +241,9 @@ CLI、编辑器和自动化命令应该复用 `ProjectSession` 中的 schema、m
 
 存在诊断时不写产物。
 
-通过检查后，CLI 使用 staging 目录写入完整产物，再替换目标目录。导出目录和代码生成目录由 Coflow 完整接管，目标目录内已有内容不会保留。
+通过检查后，CLI 使用 staging 目录写入、同步并回读验证完整产物，再把目录封存为不可变 generation。旧 generation 不会被改写。
 
-C# codegen 的 `coflow.enum.lock.json` 位于 `coflow.yaml` 同级。codegen 会在 staging 成功后再提交 lockfile。
+data、code generation 与 C# `@idAsEnum` lock state 组成一个 manifest snapshot。CLI 最后只原子替换项目目录下 `.coflow/artifacts/active.json`；激活前失败时，旧 snapshot 保持完整。激活成功后再原子更新可提交到版本库的 `coflow.enum.lock.json` 镜像，供没有本地 manifest 的干净 clone 恢复编号。
 
 ## 诊断流
 
@@ -240,8 +273,8 @@ DiagnosticSet
 | --- | --- |
 | `coflow-project` | 项目配置、项目根目录、路径解析、schema 文件发现、项目初始化 |
 | `coflow-runtime` | schema 编译、source resolve/load、DataModel、check、索引、诊断聚合 |
-| 根 `coflow` crate | CLI 参数、命令编排、human/JSON 输出、产物 preflight、staging 和 commit |
+| 根 `coflow` crate | CLI 参数、命令编排、human/JSON 输出、产物 preflight、generation staging 和 manifest publication |
 | `coflow-builtins` | 默认 Provider registry |
 | Provider crates | loader、writer、exporter、codegen 具体实现 |
 
-Provider 不发现项目配置，不持有宿主状态，不直接决定业务合法性。Runtime 不渲染 CLI 输出，不替换导出目录。CLI 不重新实现 source resolve/load/model/check。
+Provider 不发现项目配置，不持有宿主状态，不直接决定业务合法性。Runtime 不渲染 CLI 输出，不发布 artifact manifest。CLI 不重新实现 source resolve/load/model/check。

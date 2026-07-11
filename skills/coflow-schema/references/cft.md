@@ -456,7 +456,7 @@ type Item {
 enum ItemId {}
 ```
 
-构建时，Coflow 会维护 `coflow.enum.lock.json` 来稳定生成 enum 的整数值。这个文件位于 `coflow.yaml` 同级，不属于生成输出目录。
+构建时，Coflow 会在 `.coflow/artifacts/active.json` 中维护 lock state 来稳定生成 enum 的整数值。它与 data/code generation 在同一个 manifest snapshot 中激活，并在成功后镜像到应提交版本库的 `coflow.enum.lock.json`。
 
 ### `@singleton`
 
@@ -626,6 +626,18 @@ type Monster {
   }
 }
 ```
+
+## 结构预算
+
+CFT parser 会在构造 AST 时限制结构深度、节点数和解析工作量。默认上限为：
+
+- 最大深度 `256`；
+- 最大节点数 `1,000,000`；
+- 最大工作量 `10,000,000`。
+
+parser 预算覆盖 type ref、default、check 表达式、`when`/量词语句和 module 顶层节点。超过上限时当前 module 解析失败并返回 `CFT-SYN-011`，不会向项目发布部分 AST。Rust API 可以通过 `CftContainer::with_parse_options` 或 `parse_module_with_options` 为单个 container/module 指定更严格的限制。
+
+schema compiler 使用独立的 project 预算重新验证所有 module AST，并限制继承链与 schema dependency 工作量。超过上限时返回 `CFT-SCHEMA-038`。继承 cycle 在能够确认 back edge 时优先返回 `CFT-SCHEMA-009`；无环继承链超过深度上限时返回结构预算诊断。Rust API 可以通过 `CftContainer::compile_with_options` 和 `CftCompileOptions` 为一次编译指定限制。编译只有在所有 pass 成功后才发布 reflection，失败的严格重编译不会覆盖上一次成功结果。
 
 ## 常见错误
 

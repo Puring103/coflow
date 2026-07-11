@@ -89,7 +89,7 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 | `REF` | `&Type` 记录引用解析 |
 | `CHECK` | CFT `check {}` 运行期校验 |
 | `CODEGEN` | 代码生成 preflight |
-| `ARTIFACT` | 输出目录、staging、commit、lockfile |
+| `ARTIFACT` | artifact path、generation 写入/验证、active manifest、lock state |
 | `WRITE` | 通用 writer 能力错误 |
 
 ## 非阻塞收集规则

@@ -134,6 +134,8 @@ DataModel 同时维护：
 
 默认值由 schema 编译阶段确定。DataModel 构建时只应用已编译的默认值，不重新解释 CFT 源文本。
 
+写入接口把字段值视为完整值：每一层内联 object 都必须包含所有没有 CFT 默认值的字段。局部片段验证只检查已提供字段，只用于尚未提交的路径级构造过程，不能直接通过 Provider 写入。
+
 ## Singleton
 
 `@singleton` type 在 DataModel 阶段执行约束：
