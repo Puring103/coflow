@@ -860,6 +860,57 @@ fn schema_files_deduplicate_canonical_file_identities() -> TestResult {
 }
 
 #[test]
+fn schema_files_terminate_directory_alias_cycles_and_deduplicate() -> TestResult {
+    let root = temp_project_dir("coflow-project-schema-directory-cycle");
+    let schema_dir = root.join("schema");
+    let nested_dir = schema_dir.join("nested");
+    std::fs::create_dir_all(&nested_dir).map_err(|err| err.to_string())?;
+    std::fs::write(schema_dir.join("main.cft"), "type Main { value: string; }")
+        .map_err(|err| err.to_string())?;
+    std::fs::write(nested_dir.join("extra.cft"), "type Extra { value: string; }")
+        .map_err(|err| err.to_string())?;
+    let alias = nested_dir.join("back_to_schema");
+    create_directory_alias(&alias, &schema_dir);
+    std::fs::write(root.join("coflow.yaml"), "schema: schema\n")
+        .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    let files = project.schema_files().map_err(|err| err.to_string())?;
+    let module_ids = files
+        .iter()
+        .map(|file| file.module_id.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(module_ids, ["schema/main.cft", "schema/nested/extra.cft"]);
+    remove_directory_alias(&alias).map_err(|err| err.to_string())?;
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn schema_files_reject_directory_aliases_outside_declared_root() -> TestResult {
+    let root = temp_project_dir("coflow-project-schema-directory-outside");
+    let external = temp_project_dir("coflow-project-schema-directory-external");
+    let schema_dir = root.join("schema");
+    std::fs::create_dir_all(&schema_dir).map_err(|err| err.to_string())?;
+    std::fs::write(external.join("outside.cft"), "type Outside { value: string; }")
+        .map_err(|err| err.to_string())?;
+    let alias = schema_dir.join("outside");
+    create_directory_alias(&alias, &external);
+    std::fs::write(root.join("coflow.yaml"), "schema: schema\n")
+        .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    let diagnostics = project
+        .schema_files()
+        .expect_err("alias outside the declared schema root must fail");
+    assert!(diagnostics.contains("resolves outside declared root"));
+
+    remove_directory_alias(&alias).map_err(|err| err.to_string())?;
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())?;
+    std::fs::remove_dir_all(external).map_err(|err| err.to_string())
+}
+
+#[test]
 fn schema_files_ignores_uppercase_cft_extensions() -> TestResult {
     let root = temp_project_dir("coflow-project-schema-files-extension-case");
     std::fs::create_dir_all(root.join("schema/nested")).map_err(|err| err.to_string())?;
@@ -1063,6 +1114,36 @@ fn concurrent_project_initialization_has_one_winner() {
         DEFAULT_PROJECT_YAML
     );
     std::fs::remove_dir_all(dir).expect("clean concurrent project");
+}
+
+#[cfg(unix)]
+fn create_directory_alias(alias: &Path, target: &Path) {
+    std::os::unix::fs::symlink(target, alias).expect("create directory symlink");
+}
+
+#[cfg(windows)]
+fn create_directory_alias(alias: &Path, target: &Path) {
+    let output = std::process::Command::new("cmd")
+        .args(["/c", "mklink", "/J"])
+        .arg(alias)
+        .arg(target)
+        .output()
+        .expect("create directory junction");
+    assert!(
+        output.status.success(),
+        "failed to create junction: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[cfg(unix)]
+fn remove_directory_alias(alias: &Path) -> std::io::Result<()> {
+    std::fs::remove_file(alias)
+}
+
+#[cfg(windows)]
+fn remove_directory_alias(alias: &Path) -> std::io::Result<()> {
+    std::fs::remove_dir(alias)
 }
 
 fn temp_project_dir(name: &str) -> PathBuf {
