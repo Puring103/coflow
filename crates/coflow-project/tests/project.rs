@@ -9,7 +9,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_api::SourceLocation;
+use coflow_api::{path_to_slash as canonical_path_to_slash, SourceLocation};
 use coflow_project::{
     init_project, normalize_path, path_to_slash, resolve_config_path, OutputConfig, OutputsConfig,
     Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
@@ -1002,6 +1002,9 @@ fn path_helpers_normalize_nonexistent_paths_and_slash_components() {
         path_to_slash(Path::new("schema").join("nested").join("a.cft").as_path()),
         "schema/nested/a.cft"
     );
+    let project_formatter: fn(&Path) -> String = path_to_slash;
+    let canonical_formatter: fn(&Path) -> String = canonical_path_to_slash;
+    assert!(std::ptr::fn_addr_eq(project_formatter, canonical_formatter));
 }
 
 fn project_with_outputs(root: &Path, outputs: OutputsConfig) -> Project {

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::{
-    path_to_slash, resolve_project_relative, schema_path_policy::SchemaPathPolicy,
+    normalize_path, path_to_slash, resolve_project_relative, schema_path_policy::SchemaPathPolicy,
     DimensionConfig, OutputsConfig, ProjectConfig, SchemaConfig, SourceConfig,
 };
 
@@ -88,20 +88,6 @@ fn validate_dimension_source_overlap_collecting(
         }
     }
     diagnostics
-}
-
-fn normalize_path(path: &Path) -> std::path::PathBuf {
-    let mut out = std::path::PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            _ => out.push(component.as_os_str()),
-        }
-    }
-    out
 }
 
 fn validate_dimensions_collecting(
@@ -354,4 +340,3 @@ fn validate_output_dir(label: &str, path: &Path) -> Result<(), String> {
         Ok(())
     }
 }
-

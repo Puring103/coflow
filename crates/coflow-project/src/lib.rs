@@ -20,11 +20,12 @@ mod schema_path_policy;
 mod schema_sources;
 mod validation;
 
+pub use coflow_api::path_to_slash;
 pub use config::{
     DimensionConfig, OutputConfig, OutputsConfig, ProjectConfig, SchemaConfig, SourceConfig,
 };
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
-pub use paths::{normalize_path, path_to_slash, resolve_config_path};
+pub use paths::{normalize_path, resolve_config_path};
 pub use schema_path_policy::SchemaFile;
 pub use schema_sources::{SchemaSource, SchemaSourceSet};
 
