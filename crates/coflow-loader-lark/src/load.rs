@@ -6,21 +6,20 @@ use coflow_api::{
 use coflow_loader_table_core::{
     collect_table_input_records, TableSheet, TableSheetConfig, TableSource,
 };
-use serde::de::DeserializeOwned;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::diagnostics::{lark_diagnostics_to_api, table_diagnostics_to_api};
-use crate::dto::{
-    ApiEnvelope, AuthResponse, LarkSheetMetadata, SheetsQueryData, ValuesData, WikiNodeData,
-};
+use crate::dto::{ApiEnvelope, LarkSheetMetadata, ValuesData};
 use crate::http::{LarkHttpClient, UreqLarkHttpClient};
+use crate::remote::{
+    envelope_data, parse_response, LarkAuth, LarkHttpMethod, LarkRemote, LarkRequest,
+};
 use crate::source::{
     decode_lark_source_options, is_lark_uri, lark_document, lark_source_from_spec,
-    token_after_path_marker, LarkSheetLocator, LarkSheetSource,
+    LarkSheetSource,
 };
 use crate::{
-    api_error_message, column_name, json_cell_text, url_component, LarkDiagnostic, LarkDiagnostics,
-    API_BASE, AUTH_URL,
+    column_name, json_cell_text, url_component, LarkDiagnostic, LarkDiagnostics, API_BASE,
 };
 
 /// Loads a Feishu/Lark spreadsheet into an Excel-like table source.
@@ -43,25 +42,39 @@ pub fn load_lark_table_source_with_client(
     source: &LarkSheetSource,
     client: &impl LarkHttpClient,
 ) -> Result<TableSource, LarkDiagnostics> {
-    let tenant_access_token = tenant_access_token(client, source)?;
-    let spreadsheet_token = spreadsheet_token(client, source, &tenant_access_token)?;
-    let metadata = spreadsheet_metadata(client, &spreadsheet_token, &tenant_access_token)?;
+    let remote = LarkRemote::new(client);
+    load_lark_table_source_with_remote(source, &remote)
+}
+
+fn load_lark_table_source_with_remote<C>(
+    source: &LarkSheetSource,
+    remote: &LarkRemote<C>,
+) -> Result<TableSource, LarkDiagnostics>
+where
+    C: LarkHttpClient,
+{
+    let auth = remote.authenticate(&source.app_id, &source.app_secret)?;
+    let spreadsheet_token = remote.spreadsheet_token(source, &auth)?;
+    let metadata = remote.metadata(&spreadsheet_token, &auth)?;
     build_table_source(
-        client,
+        remote,
         source,
         &spreadsheet_token,
-        &tenant_access_token,
+        &auth,
         &metadata,
     )
 }
 
-fn build_table_source(
-    client: &impl LarkHttpClient,
+fn build_table_source<C>(
+    remote: &LarkRemote<C>,
     source: &LarkSheetSource,
     spreadsheet_token: &str,
-    tenant_access_token: &str,
+    auth: &LarkAuth,
     metadata: &[LarkSheetMetadata],
-) -> Result<TableSource, LarkDiagnostics> {
+) -> Result<TableSource, LarkDiagnostics>
+where
+    C: LarkHttpClient,
+{
     let configs = configured_sheets(source, metadata);
     let mut diagnostics = Vec::new();
     let mut table_sheets = Vec::new();
@@ -87,7 +100,7 @@ fn build_table_source(
         let rows = if sheet.row_count() == 0 || sheet.column_count() == 0 {
             Vec::new()
         } else {
-            sheet_values(client, spreadsheet_token, sheet, tenant_access_token)?
+            sheet_values(remote, spreadsheet_token, sheet, auth)?
         };
         table_sheets.push(TableSheet::new(sheet.title.clone(), rows));
     }
@@ -104,101 +117,6 @@ fn build_table_source(
     }
 }
 
-fn tenant_access_token(
-    client: &impl LarkHttpClient,
-    source: &LarkSheetSource,
-) -> Result<String, LarkDiagnostics> {
-    let body = json!({
-        "app_id": source.app_id,
-        "app_secret": source.app_secret,
-    });
-    let response = client
-        .post_json(AUTH_URL, &body, None)
-        .map_err(|message| LarkDiagnostics::one(LarkDiagnostic::new("LARK-AUTH", message)))?;
-    let auth: AuthResponse = parse_response("LARK-AUTH", "tenant access token", &response)?;
-    if auth.code != 0 {
-        return Err(LarkDiagnostics::one(LarkDiagnostic::new(
-            "LARK-AUTH",
-            api_error_message("tenant access token", auth.code, auth.msg.as_deref()),
-        )));
-    }
-    auth.tenant_access_token.ok_or_else(|| {
-        LarkDiagnostics::one(LarkDiagnostic::new(
-            "LARK-AUTH",
-            "tenant access token response did not include `tenant_access_token`",
-        ))
-    })
-}
-
-pub(crate) fn spreadsheet_token(
-    client: &impl LarkHttpClient,
-    source: &LarkSheetSource,
-    tenant_access_token: &str,
-) -> Result<String, LarkDiagnostics> {
-    match &source.locator {
-        LarkSheetLocator::SpreadsheetToken(token) => Ok(token.trim().to_string()),
-        LarkSheetLocator::Url(url) => spreadsheet_token_from_url(client, url, tenant_access_token),
-    }
-}
-
-fn spreadsheet_token_from_url(
-    client: &impl LarkHttpClient,
-    url: &str,
-    tenant_access_token: &str,
-) -> Result<String, LarkDiagnostics> {
-    if let Some(token) = token_after_path_marker(url, "/sheets/") {
-        return Ok(token);
-    }
-    let Some(wiki_token) = token_after_path_marker(url, "/wiki/") else {
-        return Err(LarkDiagnostics::one(
-            LarkDiagnostic::new(
-                "LARK-URL",
-                "lark source url must be a `/sheets/<token>` or `/wiki/<token>` URL",
-            )
-            .with_document(url.to_string()),
-        ));
-    };
-    let endpoint = format!(
-        "{API_BASE}/wiki/v2/spaces/get_node?token={}",
-        url_component(&wiki_token)
-    );
-    let response = client
-        .get(&endpoint, tenant_access_token)
-        .map_err(|message| LarkDiagnostics::one(LarkDiagnostic::new("LARK-WIKI", message)))?;
-    let envelope: ApiEnvelope<WikiNodeData> = parse_response("LARK-WIKI", "wiki node", &response)?;
-    let data = envelope_data(envelope, "LARK-WIKI", "wiki node")?;
-    if data.node.obj_type != "sheet" {
-        return Err(LarkDiagnostics::one(
-            LarkDiagnostic::new(
-                "LARK-WIKI",
-                format!(
-                    "wiki node `{wiki_token}` points to `{}`, expected `sheet`",
-                    data.node.obj_type
-                ),
-            )
-            .with_document(url.to_string()),
-        ));
-    }
-    Ok(data.node.obj_token)
-}
-
-fn spreadsheet_metadata(
-    client: &impl LarkHttpClient,
-    spreadsheet_token: &str,
-    tenant_access_token: &str,
-) -> Result<Vec<LarkSheetMetadata>, LarkDiagnostics> {
-    let endpoint = format!(
-        "{API_BASE}/sheets/v3/spreadsheets/{}/sheets/query",
-        url_component(spreadsheet_token)
-    );
-    let response = client
-        .get(&endpoint, tenant_access_token)
-        .map_err(|message| LarkDiagnostics::one(LarkDiagnostic::new("LARK-SHEET", message)))?;
-    let envelope: ApiEnvelope<SheetsQueryData> =
-        parse_response("LARK-SHEET", "spreadsheet sheets", &response)?;
-    Ok(envelope_data(envelope, "LARK-SHEET", "spreadsheet sheets")?.sheets)
-}
-
 fn configured_sheets(
     source: &LarkSheetSource,
     metadata: &[LarkSheetMetadata],
@@ -213,12 +131,15 @@ fn configured_sheets(
     }
 }
 
-fn sheet_values(
-    client: &impl LarkHttpClient,
+fn sheet_values<C>(
+    remote: &LarkRemote<C>,
     spreadsheet_token: &str,
     sheet: &LarkSheetMetadata,
-    tenant_access_token: &str,
-) -> Result<Vec<Vec<String>>, LarkDiagnostics> {
+    auth: &LarkAuth,
+) -> Result<Vec<Vec<String>>, LarkDiagnostics>
+where
+    C: LarkHttpClient,
+{
     let last_column = column_name(sheet.column_count());
     let range = format!("{}!A1:{last_column}{}", sheet.sheet_id, sheet.row_count());
     let endpoint = format!(
@@ -226,15 +147,16 @@ fn sheet_values(
         url_component(spreadsheet_token),
         url_component(&range)
     );
-    let response = client
-        .get(&endpoint, tenant_access_token)
-        .map_err(|message| {
-            LarkDiagnostics::one(
-                LarkDiagnostic::new("LARK-VALUE", message)
-                    .with_document(format!("lark:{spreadsheet_token}"))
-                    .with_sheet(sheet.title.clone()),
-            )
-        })?;
+    let response = remote.request(
+        auth,
+        &LarkRequest {
+            method: LarkHttpMethod::Get,
+            code: "LARK-VALUE",
+            description: "spreadsheet values",
+            endpoint: &endpoint,
+            body: None,
+        },
+    )?;
     let envelope: ApiEnvelope<ValuesData> =
         parse_response("LARK-VALUE", "spreadsheet values", &response)?;
     let data = envelope_data(envelope, "LARK-VALUE", "spreadsheet values")?;
@@ -245,74 +167,9 @@ fn json_row(row: Vec<Value>) -> Vec<String> {
     row.into_iter().map(json_cell_text).collect()
 }
 
-fn parse_response<T: DeserializeOwned>(
-    code: &str,
-    description: &str,
-    response: &str,
-) -> Result<T, LarkDiagnostics> {
-    serde_json::from_str(response).map_err(|err| {
-        LarkDiagnostics::one(LarkDiagnostic::new(
-            code,
-            format!("failed to parse {description} response: {err}"),
-        ))
-    })
-}
-
-fn envelope_data<T>(
-    envelope: ApiEnvelope<T>,
-    code: &str,
-    description: &str,
-) -> Result<T, LarkDiagnostics> {
-    if envelope.code != 0 {
-        return Err(LarkDiagnostics::one(LarkDiagnostic::new(
-            code,
-            api_error_message(description, envelope.code, envelope.msg.as_deref()),
-        )));
-    }
-    envelope.data.ok_or_else(|| {
-        LarkDiagnostics::one(LarkDiagnostic::new(
-            code,
-            format!("{description} response did not include `data`"),
-        ))
-    })
-}
-
 #[derive(Debug, Clone)]
 pub struct LarkSheetLoader<C = UreqLarkHttpClient> {
-    client: C,
-    cache: std::sync::Arc<std::sync::Mutex<LarkLoaderCache>>,
-}
-
-#[derive(Debug, Default)]
-struct LarkLoaderCache {
-    tokens: std::collections::HashMap<String, LoaderCachedToken>,
-    spreadsheet_tokens: std::collections::HashMap<String, String>,
-    metadata: std::collections::HashMap<String, Vec<LarkSheetMetadata>>,
-}
-
-#[derive(Debug, Clone)]
-struct LoaderCachedToken {
-    token: String,
-    expires_at: std::time::Instant,
-}
-
-impl Default for LarkSheetLoader<UreqLarkHttpClient> {
-    fn default() -> Self {
-        Self {
-            client: UreqLarkHttpClient,
-            cache: std::sync::Arc::new(std::sync::Mutex::new(LarkLoaderCache::default())),
-        }
-    }
-}
-
-impl<C> LarkSheetLoader<C> {
-    #[must_use]
-    pub fn new(client: C) -> Self {
-        Self {
-            client,
-            cache: std::sync::Arc::new(std::sync::Mutex::new(LarkLoaderCache::default())),
-        }
-    }
+    pub(crate) remote: std::sync::Arc<LarkRemote<C>>,
 }
 
 impl<C> LarkSheetLoader<C>
@@ -323,83 +180,7 @@ where
         &self,
         source: &LarkSheetSource,
     ) -> Result<TableSource, LarkDiagnostics> {
-        let tenant_access_token = self.cached_loader_tenant_token(source)?;
-        let spreadsheet_token =
-            self.cached_loader_spreadsheet_token(source, &tenant_access_token)?;
-        let metadata = self.cached_loader_metadata(&spreadsheet_token, &tenant_access_token)?;
-        build_table_source(
-            &self.client,
-            source,
-            &spreadsheet_token,
-            &tenant_access_token,
-            &metadata,
-        )
-    }
-
-    fn cached_loader_tenant_token(
-        &self,
-        source: &LarkSheetSource,
-    ) -> Result<String, LarkDiagnostics> {
-        let now = std::time::Instant::now();
-        if let Ok(cache) = self.cache.lock() {
-            if let Some(entry) = cache.tokens.get(&source.app_id) {
-                if entry.expires_at > now {
-                    return Ok(entry.token.clone());
-                }
-            }
-        }
-        let token = tenant_access_token(&self.client, source)?;
-        let expires_at = now + std::time::Duration::from_mins(30);
-        if let Ok(mut cache) = self.cache.lock() {
-            cache.tokens.insert(
-                source.app_id.clone(),
-                LoaderCachedToken {
-                    token: token.clone(),
-                    expires_at,
-                },
-            );
-        }
-        Ok(token)
-    }
-
-    fn cached_loader_spreadsheet_token(
-        &self,
-        source: &LarkSheetSource,
-        tenant_access_token: &str,
-    ) -> Result<String, LarkDiagnostics> {
-        let cache_key = match &source.locator {
-            LarkSheetLocator::SpreadsheetToken(token) => return Ok(token.trim().to_string()),
-            LarkSheetLocator::Url(url) => url.clone(),
-        };
-        if let Ok(cache) = self.cache.lock() {
-            if let Some(token) = cache.spreadsheet_tokens.get(&cache_key) {
-                return Ok(token.clone());
-            }
-        }
-        let token = spreadsheet_token(&self.client, source, tenant_access_token)?;
-        if let Ok(mut cache) = self.cache.lock() {
-            cache.spreadsheet_tokens.insert(cache_key, token.clone());
-        }
-        Ok(token)
-    }
-
-    fn cached_loader_metadata(
-        &self,
-        spreadsheet_token: &str,
-        tenant_access_token: &str,
-    ) -> Result<Vec<LarkSheetMetadata>, LarkDiagnostics> {
-        if let Ok(cache) = self.cache.lock() {
-            if let Some(metadata) = cache.metadata.get(spreadsheet_token) {
-                return Ok(metadata.clone());
-            }
-        }
-        let metadata = spreadsheet_metadata(&self.client, spreadsheet_token, tenant_access_token)?;
-        if let Ok(mut cache) = self.cache.lock() {
-            cache
-                .metadata
-                .insert(spreadsheet_token.to_string(), metadata.clone());
-        }
-        Ok(metadata)
+        load_lark_table_source_with_remote(source, &self.remote)
     }
 }
 

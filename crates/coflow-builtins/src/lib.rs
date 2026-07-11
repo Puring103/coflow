@@ -41,12 +41,15 @@ pub fn register_default_providers(
     let mut bundle = ProviderBundle::default();
     let excel_writer = Arc::new(coflow_loader_excel::ExcelWriter::new());
     let csv_writer = Arc::new(coflow_loader_csv::CsvWriter::new());
-    let lark_writer = Arc::new(coflow_loader_lark::LarkSheetWriter::default());
+    let (lark_loader, lark_writer) = coflow_loader_lark::lark_provider_roles(
+        coflow_loader_lark::UreqLarkHttpClient,
+    );
+    let lark_writer = Arc::new(lark_writer);
     let cfd_writer = Arc::new(coflow_loader_cfd::CfdWriter::new());
 
     bundle.add_source_provider(coflow_loader_excel::ExcelLoader)?;
     bundle.add_source_provider(coflow_loader_csv::CsvLoader)?;
-    bundle.add_source_provider(coflow_loader_lark::LarkSheetLoader::default())?;
+    bundle.add_source_provider(lark_loader)?;
     bundle.add_source_provider(coflow_loader_cfd::CfdLoader)?;
     bundle.add_source_writer_arc(Arc::clone(&excel_writer))?;
     bundle.add_source_writer_arc(Arc::clone(&lark_writer))?;

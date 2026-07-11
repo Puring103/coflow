@@ -346,9 +346,7 @@ fn lark_loader_load_pipeline_does_not_live_in_lib_rs() {
 
         "pub const LARK_SHEET_LOADER_DESCRIPTOR",
 
-        "fn tenant_access_token",
-
-        "fn spreadsheet_metadata",
+        "fn load_lark_table_source_with_remote",
 
         "fn sheet_values",
 
@@ -378,47 +376,49 @@ fn lark_loader_load_pipeline_does_not_live_in_lib_rs() {
 
 #[test]
 
-fn lark_loader_writer_cache_does_not_live_in_lib_rs() {
+fn lark_remote_state_is_one_deep_module() {
 
     let lib = std::fs::read_to_string("crates/coflow-loader-lark/src/lib.rs")
 
         .expect("read lark loader lib");
 
-    let writer_cache = std::fs::read_to_string("crates/coflow-loader-lark/src/writer_cache.rs")
+    let remote = std::fs::read_to_string("crates/coflow-loader-lark/src/remote.rs")
 
-        .expect("read lark writer cache");
+        .expect("read lark remote state");
 
 
 
     for expected in [
 
-        "pub(crate) struct LarkWriterCache",
+        "pub(crate) struct LarkRemote",
+
+        "struct LarkRemoteState",
+
+        "struct CredentialKey",
 
         "struct CachedToken",
 
-        "pub(crate) struct LarkWriteAuth",
+        "pub(crate) struct LarkAuth",
 
-        "pub(crate) fn cached_tenant_token",
+        "pub(crate) fn authenticate",
 
-        "pub(crate) fn cached_sheet_metadata",
+        "pub(crate) fn request",
 
-        "pub(crate) fn cached_sheet_id",
+        "pub(crate) fn metadata",
 
-        "pub(crate) fn invalidate_caches",
+        "pub(crate) fn sheet_metadata",
 
         "pub(crate) fn lark_write_auth",
 
-        "fn lark_tenant_token_with_ttl",
-
-        "pub(crate) fn fetch_sheet_metadata_map",
+        "pub fn lark_provider_roles",
 
     ] {
 
         assert!(
 
-            writer_cache.contains(expected),
+            remote.contains(expected),
 
-            "Lark writer cache helper `{expected}` should live in writer_cache.rs"
+            "Lark remote state helper `{expected}` should live in remote.rs"
 
         );
 
@@ -506,10 +506,6 @@ fn lark_loader_write_operations_do_not_live_in_lib_rs() {
 
         "fn parse_write_envelope",
 
-        "enum LarkWriteFailure",
-
-        "enum LarkHttpMethod",
-
     ] {
 
         assert!(
@@ -575,6 +571,10 @@ fn lark_loader_write_operations_do_not_live_in_lib_rs() {
 
 fn table_header_reconciliation_lives_in_table_core() {
 
+    let write_http = std::fs::read_to_string("crates/coflow-loader-lark/src/write_http.rs")
+
+        .expect("read Lark write HTTP adapter");
+
     let header = std::fs::read_to_string(
 
         "crates/coflow-loader-table-core/src/writer/header.rs",
@@ -638,6 +638,24 @@ fn table_header_reconciliation_lives_in_table_core() {
         }
 
     }
+
+    assert!(
+
+        !write_http.contains("enum LarkWriteFailure")
+
+            && !write_http.contains("enum LarkHttpMethod"),
+
+        "Lark write HTTP adapter should delegate retries and methods to remote.rs"
+
+    );
+
+    assert!(
+
+        !std::path::Path::new("crates/coflow-loader-lark/src/writer_cache.rs").exists(),
+
+        "Lark should not retain a writer-only cache module"
+
+    );
 
 }
 

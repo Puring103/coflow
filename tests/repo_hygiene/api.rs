@@ -251,8 +251,10 @@ fn builtins_share_provider_role_instances() {
     for expected in [
         "let excel_writer = Arc::new(coflow_loader_excel::ExcelWriter::new())",
         "let csv_writer = Arc::new(coflow_loader_csv::CsvWriter::new())",
-        "let lark_writer = Arc::new(coflow_loader_lark::LarkSheetWriter::default())",
+        "let (lark_loader, lark_writer) = coflow_loader_lark::lark_provider_roles(",
+        "let lark_writer = Arc::new(lark_writer)",
         "let cfd_writer = Arc::new(coflow_loader_cfd::CfdWriter::new())",
+        "bundle.add_source_provider(lark_loader)",
         "bundle.add_source_writer_arc(Arc::clone(&excel_writer))",
         "bundle.add_table_manager_arc(Arc::clone(&excel_writer))",
         "bundle.add_dimension_source_manager_arc(Arc::clone(&csv_writer))",
@@ -268,7 +270,7 @@ fn builtins_share_provider_role_instances() {
     for (constructor, count) in [
         ("ExcelWriter::new()", 1),
         ("CsvWriter::new()", 1),
-        ("LarkSheetWriter::default()", 1),
+        ("lark_provider_roles(", 1),
         ("CfdWriter::new()", 1),
     ] {
         assert_eq!(

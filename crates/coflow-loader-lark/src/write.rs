@@ -19,7 +19,6 @@ use crate::source::{
     lark_document_spreadsheet_token, lark_source_options, sheet_config_from_options,
     sheet_for_type_from_options, type_for_sheet_from_options,
 };
-use crate::write_http::LarkWriteFailure;
 use crate::write_layout::{lark_insert_layout, LarkInsertLayoutRequest};
 use crate::{column_name, url_component, LarkSheetWriter, API_BASE};
 
@@ -87,9 +86,8 @@ where
             )));
         };
 
-        let options = lark_source_options(request.source)?;
-        let token = self.cached_tenant_token(&options.app_id, &options.app_secret)?;
-        let spreadsheet_token = self.lark_spreadsheet_token_from_source(request.source, &token)?;
+        let auth = self.lark_write_auth(request.source)?;
+        let spreadsheet_token = self.lark_spreadsheet_token_from_source(request.source, &auth)?;
         let same_source_uri =
             matches!(&request.source.location, SourceLocationSpec::Uri(uri) if uri == doc);
         let same_spreadsheet =
@@ -101,7 +99,7 @@ where
             )));
         }
 
-        let sheet_id = self.cached_sheet_id(&spreadsheet_token, &sheet, &token)?;
+        let sheet_id = self.cached_sheet_id(&spreadsheet_token, &sheet, &auth)?;
         let value_ranges = cells
             .iter()
             .map(|cell| {
@@ -120,24 +118,7 @@ where
         let body = json!({
             "valueRanges": value_ranges
         });
-        let outcome = match self.send_values_batch_update(&endpoint, &body, &token) {
-            Ok(()) => Ok(()),
-            Err(LarkWriteFailure::TokenExpired(diag_set)) => {
-                self.invalidate_caches(Some(&options.app_id), None);
-                let fresh = self.cached_tenant_token(&options.app_id, &options.app_secret)?;
-                self.send_values_batch_update(&endpoint, &body, &fresh)
-                    .map_err(|err| match err {
-                        LarkWriteFailure::TokenExpired(d) | LarkWriteFailure::Other(d) => d,
-                    })
-                    .map_err(|d| {
-                        let mut combined = diag_set.clone();
-                        combined.extend(d);
-                        combined
-                    })
-            }
-            Err(LarkWriteFailure::Other(diag_set)) => Err(diag_set),
-        };
-        outcome?;
+        self.send_values_batch_update(&endpoint, &body, &auth)?;
 
         Ok(WriteOutcome {
             touched_record_origins: vec![request.origin.clone()],
@@ -174,8 +155,7 @@ where
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let auth = self.lark_write_auth(request.source)?;
-        let spreadsheet_token =
-            self.lark_spreadsheet_token_from_source(request.source, &auth.token)?;
+        let spreadsheet_token = self.lark_spreadsheet_token_from_source(request.source, &auth)?;
         let sheet = match request.sheet {
             Some(sheet) => sheet.to_string(),
             None => sheet_for_type_from_options(
@@ -184,7 +164,7 @@ where
             )?
                 .unwrap_or_else(|| request.actual_type.to_string()),
         };
-        let sheet_id = self.cached_sheet_id(&spreadsheet_token, &sheet, &auth.token)?;
+        let sheet_id = self.cached_sheet_id(&spreadsheet_token, &sheet, &auth)?;
         let layout = lark_insert_layout(&LarkInsertLayoutRequest {
             ctx,
             writer: self,
@@ -193,7 +173,7 @@ where
             sheet_id: &sheet_id,
             sheet: &sheet,
             actual_type: request.actual_type,
-            token: &auth.token,
+            auth: &auth,
         })?;
         let plan = plan_insert_record(&TableInsertRecord {
             document: SourceDocument::Remote(format!("lark:{spreadsheet_token}")),
@@ -270,8 +250,7 @@ where
             )));
         };
         let auth = self.lark_write_auth(request.source)?;
-        let spreadsheet_token =
-            self.lark_spreadsheet_token_from_source(request.source, &auth.token)?;
+        let spreadsheet_token = self.lark_spreadsheet_token_from_source(request.source, &auth)?;
         let same_source_uri =
             matches!(&request.source.location, SourceLocationSpec::Uri(uri) if uri == doc);
         let same_spreadsheet =
@@ -288,7 +267,7 @@ where
                 "lark row and id column indexes must be at least 1",
             )));
         }
-        let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet, &auth.token)?;
+        let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet, &auth)?;
         let current_key =
             self.read_lark_cell(&spreadsheet_token, &sheet_id, *row, *id_column, &auth)?;
         if current_key.trim() != request.record_key {
@@ -362,10 +341,9 @@ where
         request: &CreateTableRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
         let auth = self.lark_write_auth(request.source)?;
-        let spreadsheet_token =
-            self.lark_spreadsheet_token_from_source(request.source, &auth.token)?;
+        let spreadsheet_token = self.lark_spreadsheet_token_from_source(request.source, &auth)?;
         if self
-            .cached_sheet_id(&spreadsheet_token, request.sheet, &auth.token)
+            .cached_sheet_id(&spreadsheet_token, request.sheet, &auth)
             .is_ok()
         {
             return Err(DiagnosticSet::one(diag(
@@ -375,7 +353,7 @@ where
         }
         let sheet_id = self.create_lark_sheet(&spreadsheet_token, request.sheet, &auth)?;
         self.write_lark_header(&spreadsheet_token, &sheet_id, request.headers, &auth)?;
-        self.invalidate_caches(None, Some(&spreadsheet_token));
+        self.invalidate_document(&auth, &spreadsheet_token);
         Ok(TableOperationResult {
             headers: request.headers.to_vec(),
             added: request.headers.to_vec(),
@@ -390,12 +368,11 @@ where
         request: &SyncHeaderRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
         let auth = self.lark_write_auth(request.source)?;
-        let spreadsheet_token =
-            self.lark_spreadsheet_token_from_source(request.source, &auth.token)?;
+        let spreadsheet_token = self.lark_spreadsheet_token_from_source(request.source, &auth)?;
         let sheet = request.sheet.unwrap_or(request.actual_type);
-        let metadata = self.cached_sheet_metadata(&spreadsheet_token, sheet, &auth.token)?;
+        let metadata = self.cached_sheet_metadata(&spreadsheet_token, sheet, &auth)?;
         let mut old_header =
-            self.read_lark_header(&spreadsheet_token, &metadata.sheet_id, &auth.token)?;
+            self.read_lark_header(&spreadsheet_token, &metadata.sheet_id, &auth)?;
         old_header.resize(metadata.column_count().max(old_header.len()), String::new());
         let plan = HeaderReconciliationPlan::new(&old_header, request.headers);
         let source_rows = self.read_lark_rows(
@@ -403,7 +380,7 @@ where
             &metadata.sheet_id,
             plan.source_width(),
             metadata.row_count(),
-            &auth.token,
+            &auth,
         )?;
         let mut target_rows = plan.project_rows(&source_rows);
         for row in &mut target_rows {

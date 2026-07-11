@@ -52,6 +52,42 @@ pub trait LarkHttpClient {
     }
 }
 
+impl<T> LarkHttpClient for &T
+where
+    T: LarkHttpClient + ?Sized,
+{
+    fn get(&self, url: &str, tenant_access_token: &str) -> Result<String, String> {
+        <T as LarkHttpClient>::get(*self, url, tenant_access_token)
+    }
+
+    fn post_json(
+        &self,
+        url: &str,
+        body: &Value,
+        tenant_access_token: Option<&str>,
+    ) -> Result<String, String> {
+        <T as LarkHttpClient>::post_json(*self, url, body, tenant_access_token)
+    }
+
+    fn put_json(
+        &self,
+        url: &str,
+        body: &Value,
+        tenant_access_token: &str,
+    ) -> Result<String, String> {
+        <T as LarkHttpClient>::put_json(*self, url, body, tenant_access_token)
+    }
+
+    fn delete_json(
+        &self,
+        url: &str,
+        body: &Value,
+        tenant_access_token: &str,
+    ) -> Result<String, String> {
+        <T as LarkHttpClient>::delete_json(*self, url, body, tenant_access_token)
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UreqLarkHttpClient;
 
