@@ -8,18 +8,13 @@ use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdPath};
 use crate::edge_index::{build_ref_indexes, build_spread_indexes};
 use crate::model::{CfdDataModel, CfdInputRecord, CfdObject, CfdRecord, CfdRecordId};
 use coflow_cft::CftContainer;
+use resolve::ValueResolver;
 use validate::Validator;
 
 pub(crate) struct ModelCompiler {
     schema: DataModelCompilerContext,
     input: Vec<CfdInputRecord>,
     diagnostics: Vec<CfdDiagnostic>,
-}
-
-struct SpreadFieldRef<'a> {
-    source_type: &'a str,
-    key: &'a str,
-    field: &'a str,
 }
 
 impl ModelCompiler {
@@ -83,19 +78,19 @@ impl ModelCompiler {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
 
-        // Phase 3: resolve PendingRef drafts into concrete CfdValue::Ref.
+        // Phase 3: resolve refs and spread dependencies through one stateful
+        // resolver so shared values are memoized and cycles become diagnostics.
         let mut records = Vec::with_capacity(drafts.len());
         {
-            let mut v = Validator::new(&self.schema, &mut self.diagnostics);
+            let mut resolver = ValueResolver::new(
+                &self.schema,
+                &drafts,
+                &indexes.record_by_domain_key,
+                &mut self.diagnostics,
+            );
             for (index, draft) in drafts.iter().enumerate() {
                 let record_id = CfdRecordId::new(index);
-                let Some(fields) = v.resolve_fields(
-                    &draft.fields,
-                    Some(record_id),
-                    &CfdPath::root(),
-                    &drafts,
-                    &indexes.record_by_domain_key,
-                ) else {
+                let Some(fields) = resolver.resolve_record_fields(record_id) else {
                     continue;
                 };
                 records.push(CfdRecord {

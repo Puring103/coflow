@@ -125,6 +125,82 @@ fn data_model_reuses_shared_schema_default_subgraphs() {
 }
 
 #[test]
+fn data_model_reports_direct_spread_dependency_cycle() {
+    let schema = compile_schema("type Stats { hp: int; }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::with_spreads(
+        "self_ref",
+        "Stats",
+        [CfdInputValue::record_ref("self_ref")],
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    ));
+
+    let err = builder.build().expect_err("spread cycle must be rejected");
+    let diagnostic = diagnostic_with_code(&err, CfdErrorCode::ValueDependencyCycle);
+    assert_eq!(
+        diagnostic.message,
+        "data spread dependency cycle: Stats.self_ref.hp -> Stats.self_ref.hp"
+    );
+    assert_eq!(
+        primary_path_segments(diagnostic),
+        [CfdPathSegment::Field("hp".to_string())]
+    );
+}
+
+#[test]
+fn data_model_reports_one_canonical_indirect_spread_cycle() {
+    let schema = compile_schema("type Stats { hp: int; }");
+    let mut builder = CfdDataModel::builder(&schema);
+    for (key, source) in [("a", "b"), ("b", "c"), ("c", "a")] {
+        builder.add_input_record(CfdInputRecord::with_spreads(
+            key,
+            "Stats",
+            [CfdInputValue::record_ref(source)],
+            std::iter::empty::<(&str, CfdInputValue)>(),
+        ));
+    }
+
+    let err = builder.build().expect_err("spread cycle must be rejected");
+    let cycles = err
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == CfdErrorCode::ValueDependencyCycle)
+        .collect::<Vec<_>>();
+    assert_eq!(cycles.len(), 1, "the same cycle should be reported once");
+    assert_eq!(
+        cycles[0].message,
+        "data spread dependency cycle: Stats.a.hp -> Stats.b.hp -> Stats.c.hp -> Stats.a.hp"
+    );
+    assert_eq!(cycles[0].related.len(), 2);
+}
+
+#[test]
+fn data_model_resolves_shared_spread_source_for_multiple_consumers() {
+    let schema = compile_schema("type Stats { hp: int; }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("base", "Stats", [("hp", CfdInputValue::from(7_i64))]);
+    for key in ["left", "right"] {
+        builder.add_input_record(CfdInputRecord::with_spreads(
+            key,
+            "Stats",
+            [CfdInputValue::record_ref("base")],
+            std::iter::empty::<(&str, CfdInputValue)>(),
+        ));
+    }
+
+    let model = builder.build().expect("shared spread source resolves");
+    for key in ["left", "right"] {
+        let record = model
+            .lookup_assignable("Stats", key)
+            .and_then(|id| model.record(id));
+        assert_eq!(
+            record.and_then(|record| record.field("hp")),
+            Some(&CfdValue::Int(7))
+        );
+    }
+}
+
+#[test]
 fn dimension_field_lookup_reads_variant_storage_without_exposing_storage_to_callers() {
     let schema = compile_schema(
         r#"

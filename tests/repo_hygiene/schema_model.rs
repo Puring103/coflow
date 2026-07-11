@@ -432,7 +432,11 @@ fn data_model_compiler_indexes_are_split_out() {
 
     for expected in [
 
-        "pub(super) fn resolve_fields",
+        "pub(super) struct ValueResolver",
+
+        "pub(super) fn resolve_record_fields",
+
+        "fn resolve_node",
 
         "fn resolve_value",
 
@@ -457,6 +461,18 @@ fn data_model_compiler_indexes_are_split_out() {
             !compiler.contains(expected),
 
             "data-model compiler resolve helper `{expected}` should not live in compiler.rs"
+
+        );
+
+    }
+
+    for forbidden in ["fn resolve_fields", "fn resolve_ref_target", "fn resolve_spread_field"] {
+
+        assert!(
+
+            !validate.contains(forbidden),
+
+            "data-model validation should not own value resolution helper `{forbidden}`"
 
         );
 
