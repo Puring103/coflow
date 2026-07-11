@@ -880,6 +880,10 @@ fn engine_mutation_prepare_does_not_live_in_mutation_mod_rs() {
         );
     }
     assert!(
+        !prepare.contains("spread_source_path"),
+        "mutation prepare should use the writes target module instead of duplicating spread source resolution"
+    );
+    assert!(
         mutation.lines().count() < 120,
         "coflow-runtime mutation/mod.rs should stay as a small module boundary"
     );

@@ -23,7 +23,7 @@ use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RecordOrigin}
 
 use super::records::WriteOutcome;
 use super::write_rules;
-use super::{ProjectSession, RecordCoordinate};
+use super::{ProjectSession, RecordCoordinate, RecordRef};
 use plan::prepare_write_field;
 use rebuild::rebuild_session_after_write;
 use refs::{reference_update_actions, source_rewrite_actions};
@@ -36,6 +36,15 @@ pub(crate) fn record_value_at_path<'a>(
     path: &CfdPath,
 ) -> Option<&'a CfdValue> {
     path::value_at_path(record, path)
+}
+
+pub(crate) fn effective_write_target_for_path(
+    session: &ProjectSession,
+    host_ref: &RecordRef,
+    path: &[WriteFieldPathSegment],
+) -> Result<(String, Vec<WriteFieldPathSegment>), DiagnosticSet> {
+    let target = target::write_target_for_path(session, host_ref, path)?;
+    Ok((target.display_path, target.field_path))
 }
 
 impl ProjectSession {

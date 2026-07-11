@@ -2,9 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::DiagnosticSet;
 use coflow_cft::{CftSchemaTypeRef, CftSchemaView};
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue};
+use coflow_api::WriteFieldPathSegment;
+use coflow_data_model::{CfdPathSegment, CfdValue};
 
 use crate::write_rules;
+use crate::writes;
 use crate::{ProjectSession, RecordCoordinate};
 
 use super::coercion::{coerce_cfd_field_value, coerce_json_field_value, coerce_mutation_value};
@@ -150,10 +152,9 @@ pub(super) fn prepare_one(
             value,
         } => {
             let expected = expected_value_for_path(session, &record, &path)?;
-            let (write_file, write_path) =
-                effective_write_target_for_set_field(session, &record, &path)?;
+            let path = cfd_path_to_write_path(&path)?;
+            let (write_file, path) = effective_write_target_for_set_field(session, &record, &path)?;
             ensure_file_guard_for_file(&record, &write_file, file.as_deref())?;
-            let path = cfd_path_to_write_path(&write_path)?;
             let value = coerce_mutation_value(session, &expected.ty, value)?;
             Ok(PreparedMutationOp::SetField {
                 record,
@@ -255,7 +256,7 @@ fn expected_value_for_path(
 
 fn cfd_path_to_write_path(
     path: &[CfdPathSegment],
-) -> Result<Vec<coflow_api::WriteFieldPathSegment>, DiagnosticSet> {
+) -> Result<Vec<WriteFieldPathSegment>, DiagnosticSet> {
     if path.is_empty() {
         return Err(one_path_error("mutation path must not be empty"));
     }
@@ -265,8 +266,8 @@ fn cfd_path_to_write_path(
 fn effective_write_target_for_set_field(
     session: &ProjectSession,
     coordinate: &RecordCoordinate,
-    path: &[CfdPathSegment],
-) -> Result<(String, Vec<CfdPathSegment>), DiagnosticSet> {
+    path: &[WriteFieldPathSegment],
+) -> Result<(String, Vec<WriteFieldPathSegment>), DiagnosticSet> {
     let record_ref = session
         .records
         .get_by_coordinate(&coordinate.actual_type, &coordinate.key)
@@ -276,36 +277,13 @@ fn effective_write_target_for_set_field(
                 coordinate.actual_type, coordinate.key
             ))
         })?;
-    let Some(CfdPathSegment::Field(top_field)) = path.first() else {
-        return Ok((record_ref.display_path.clone(), path.to_vec()));
-    };
     let _record = session.model.record(record_ref.id).ok_or_else(|| {
         one_path_error(format!(
             "record `{}.{}` was not found in the data model",
             coordinate.actual_type, coordinate.key
         ))
     })?;
-    let cfd_path = CfdPath {
-        segments: path.to_vec(),
-    };
-    let Some((source_id, source_path)) = session.model.spread_source_path(record_ref.id, &cfd_path)
-    else {
-        return Ok((record_ref.display_path.clone(), path.to_vec()));
-    };
-    session
-        .records
-        .get(source_id)
-        .map(|source_ref| {
-            (
-                source_ref.display_path.clone(),
-                source_path.segments.clone(),
-            )
-        })
-        .ok_or_else(|| {
-            one_path_error(format!(
-                "spread source for field `{top_field}` is no longer indexed"
-            ))
-        })
+    writes::effective_write_target_for_path(session, record_ref, path)
 }
 
 fn ensure_source_file(session: &ProjectSession, file: &str) -> Result<(), DiagnosticSet> {
