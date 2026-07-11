@@ -8,6 +8,7 @@ use coflow_cft::CompiledSchema;
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdRecordId, CfdValue,
 };
+use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
 
 pub(crate) struct CheckRunner<'a> {
@@ -19,6 +20,7 @@ pub(crate) struct CheckRunner<'a> {
     deps: Option<DependencyGraphBuilder>,
     dimension_context: Option<DimensionCheckContext>,
     dimension_round: Option<DimensionRoundView>,
+    structural_limits: StructuralLimits,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -29,7 +31,11 @@ enum CheckSelection {
 }
 
 impl<'a> CheckRunner<'a> {
-    pub(crate) fn new(schema: &'a CompiledSchema, model: &'a CfdDataModel) -> Self {
+    pub(crate) fn new(
+        schema: &'a CompiledSchema,
+        model: &'a CfdDataModel,
+        structural_limits: StructuralLimits,
+    ) -> Self {
         Self {
             schema,
             model,
@@ -37,6 +43,7 @@ impl<'a> CheckRunner<'a> {
             deps: None,
             dimension_context: None,
             dimension_round: None,
+            structural_limits,
         }
     }
 
@@ -44,6 +51,7 @@ impl<'a> CheckRunner<'a> {
         schema: &'a CompiledSchema,
         model: &'a CfdDataModel,
         dimension_context: DimensionCheckContext,
+        structural_limits: StructuralLimits,
     ) -> Self {
         let dimension_round = DimensionRoundView::compile(schema, model, &dimension_context);
         Self {
@@ -53,6 +61,7 @@ impl<'a> CheckRunner<'a> {
             deps: None,
             dimension_context: Some(dimension_context),
             dimension_round: Some(dimension_round),
+            structural_limits,
         }
     }
 
@@ -89,6 +98,12 @@ impl<'a> CheckRunner<'a> {
             return;
         }
         let location = ValueLocation::root(record_id);
+        let mut traversal_budget = Some(StructuralBudget::new(self.structural_limits));
+        let Some(root_cursor) =
+            self.enter_data_value(&mut traversal_budget, TraversalCursor::root(), &location)
+        else {
+            return;
+        };
         self.run_record_checks(
             CheckRecordRef::Resolved(location.clone()),
             Some(record_id),
@@ -100,13 +115,20 @@ impl<'a> CheckRunner<'a> {
             },
         );
         if self.dimension_round.is_some() {
-            self.run_dimension_nested_checks(record_id, location);
+            self.run_dimension_nested_checks(
+                record_id,
+                location,
+                &mut traversal_budget,
+                root_cursor,
+            );
         } else {
             self.run_nested_field_checks(
                 Some(record_id),
                 record.fields(),
                 location,
                 CheckSelection::Default,
+                &mut traversal_budget,
+                root_cursor,
             );
         }
     }
@@ -142,7 +164,14 @@ impl<'a> CheckRunner<'a> {
             || DependencyCollector::disabled(root_record),
             |deps| deps.collector_for(root_record),
         );
-        let mut evaluator = CheckEvaluator::new(self.schema, self.model, root_location, root, deps);
+        let mut evaluator = CheckEvaluator::new(
+            self.schema,
+            self.model,
+            root_location,
+            root,
+            deps,
+            self.structural_limits,
+        );
         if matches!(selection, CheckSelection::DimensionRelevant) {
             evaluator.dimension_round.clone_from(&self.dimension_round);
         }
@@ -162,9 +191,18 @@ impl<'a> CheckRunner<'a> {
         fields: &BTreeMap<String, CfdValue>,
         root_location: ValueLocation,
         selection: CheckSelection,
+        traversal_budget: &mut Option<StructuralBudget>,
+        cursor: TraversalCursor,
     ) {
         for (name, value) in fields {
-            self.run_nested_value_checks(root_record, value, root_location.field(name), selection);
+            self.run_nested_value_checks(
+                root_record,
+                value,
+                root_location.field(name),
+                selection,
+                traversal_budget,
+                cursor,
+            );
         }
     }
 
@@ -172,6 +210,8 @@ impl<'a> CheckRunner<'a> {
         &mut self,
         root_record: CfdRecordId,
         root_location: ValueLocation,
+        traversal_budget: &mut Option<StructuralBudget>,
+        cursor: TraversalCursor,
     ) {
         let Some(round) = self.dimension_round.clone() else {
             return;
@@ -198,6 +238,8 @@ impl<'a> CheckRunner<'a> {
                         materialized.value,
                         materialized.location,
                         CheckSelection::FullVariantSubtree,
+                        traversal_budget,
+                        cursor,
                     );
                 }
                 Ok(None) | Err(DimensionVariantAbort::Skipped) => {}
@@ -225,13 +267,38 @@ impl<'a> CheckRunner<'a> {
         deps.extend_root(Some(root), collector);
     }
 
+    fn enter_data_value(
+        &mut self,
+        budget: &mut Option<StructuralBudget>,
+        cursor: TraversalCursor,
+        location: &ValueLocation,
+    ) -> Option<TraversalCursor> {
+        let result = budget.as_mut()?.enter(cursor, StructureKind::DataValue, 1);
+        match result {
+            Ok(cursor) => Some(cursor),
+            Err(error) => {
+                *budget = None;
+                self.diagnostics.push(
+                    CfdDiagnostic::error(CfdErrorCode::CheckBudgetExceeded, error.to_string())
+                        .with_primary(Some(location.blame.record), location.blame.path.clone()),
+                );
+                None
+            }
+        }
+    }
+
     fn run_nested_value_checks(
         &mut self,
         root_record: Option<CfdRecordId>,
         value: &CfdValue,
         location: ValueLocation,
         selection: CheckSelection,
+        traversal_budget: &mut Option<StructuralBudget>,
+        cursor: TraversalCursor,
     ) {
+        let Some(cursor) = self.enter_data_value(traversal_budget, cursor, &location) else {
+            return;
+        };
         match value {
             CfdValue::Object(record) => {
                 if root_record.is_none() {
@@ -243,7 +310,14 @@ impl<'a> CheckRunner<'a> {
                     location.clone(),
                     selection,
                 );
-                self.run_nested_field_checks(root_record, record.fields(), location, selection);
+                self.run_nested_field_checks(
+                    root_record,
+                    record.fields(),
+                    location,
+                    selection,
+                    traversal_budget,
+                    cursor,
+                );
             }
             CfdValue::Array(items) => {
                 for (index, item) in items.iter().enumerate() {
@@ -252,6 +326,8 @@ impl<'a> CheckRunner<'a> {
                         item,
                         location.index(index),
                         selection,
+                        traversal_budget,
+                        cursor,
                     );
                 }
             }
@@ -262,6 +338,8 @@ impl<'a> CheckRunner<'a> {
                         item,
                         location.dict_key_value(key),
                         selection,
+                        traversal_budget,
+                        cursor,
                     );
                 }
             }

@@ -3,6 +3,7 @@ use coflow_data_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdPath, CfdRecord, CfdRecordId, CfdValue,
     RefSite,
 };
+use coflow_structure::{BudgetExceeded, StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,8 +43,16 @@ impl CheckValue {
         ty: Option<&CftSchemaTypeRef>,
         location: Option<ValueLocation>,
         model: &CfdDataModel,
-    ) -> Self {
-        match value {
+        budget: &mut StructuralBudget,
+        cursor: TraversalCursor,
+    ) -> Result<Self, LocatedBudgetExceeded> {
+        let cursor = budget
+            .enter(cursor, StructureKind::DataValue, 1)
+            .map_err(|error| LocatedBudgetExceeded {
+                error,
+                location: location.clone(),
+            })?;
+        Ok(match value {
             CfdValue::Null => Self::Null,
             CfdValue::Bool(value) => Self::Bool(*value),
             CfdValue::Int(value) => Self::Int(*value),
@@ -81,31 +90,37 @@ impl CheckValue {
                                 array_element_type(ty),
                                 location.clone().map(|location| location.index(index)),
                                 model,
+                                budget,
+                                cursor,
                             )
                         })
-                        .collect(),
+                        .collect::<Result<Vec<_>, _>>()?,
                     element_type,
                 }
             }
             CfdValue::Dict(entries) => Self::Dict {
                 entries: entries
                     .iter()
-                    .map(|(key, value)| CheckEntry {
-                        key: Box::new(Self::from_dict_key(key)),
-                        value: Self::from_cfd_value(
-                            value,
-                            dict_value_type(ty),
-                            location
-                                .clone()
-                                .map(|location| location.dict_key_value(key)),
-                            model,
-                        ),
+                    .map(|(key, value)| {
+                        Ok(CheckEntry {
+                            key: Box::new(Self::from_dict_key(key)),
+                            value: Self::from_cfd_value(
+                                value,
+                                dict_value_type(ty),
+                                location
+                                    .clone()
+                                    .map(|location| location.dict_key_value(key)),
+                                model,
+                                budget,
+                                cursor,
+                            )?,
+                        })
                     })
-                    .collect(),
+                    .collect::<Result<Vec<_>, LocatedBudgetExceeded>>()?,
                 key_type: dict_key_type(ty).cloned(),
                 value_type: dict_value_type(ty).cloned(),
             },
-        }
+        })
     }
 
     fn from_dict_key(key: &CfdDictKey) -> Self {
@@ -122,6 +137,20 @@ impl CheckValue {
             _ => None,
         }
     }
+
+    pub(super) fn collection_len(&self) -> Option<usize> {
+        match self {
+            Self::Array { items, .. } => Some(items.len()),
+            Self::Dict { entries, .. } => Some(entries.len()),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct LocatedBudgetExceeded {
+    pub(super) error: BudgetExceeded,
+    pub(super) location: Option<ValueLocation>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -302,13 +331,23 @@ impl CheckRecordRef {
         model: &CfdDataModel,
         field_type: Option<&CftSchemaTypeRef>,
         name: &str,
-    ) -> Option<LocatedCheckValue> {
-        let value = self.fields(model)?.get(name)?;
+        budget: &mut StructuralBudget,
+    ) -> Result<Option<LocatedCheckValue>, LocatedBudgetExceeded> {
+        let Some(value) = self.fields(model).and_then(|fields| fields.get(name)) else {
+            return Ok(None);
+        };
         let location = self.location().map(|location| location.field(name));
-        Some(LocatedCheckValue::new(
-            CheckValue::from_cfd_value(value, field_type, location.clone(), model),
+        Ok(Some(LocatedCheckValue::new(
+            CheckValue::from_cfd_value(
+                value,
+                field_type,
+                location.clone(),
+                model,
+                budget,
+                TraversalCursor::root(),
+            )?,
             location,
-        ))
+        )))
     }
 
     pub(super) fn location(&self) -> Option<ValueLocation> {

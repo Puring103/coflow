@@ -14,6 +14,7 @@ use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp, CompiledSchema,
 };
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId};
+use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
 
 use super::value::CheckRecordRef;
@@ -29,6 +30,8 @@ pub(super) struct CheckEvaluator<'a> {
     deps: DependencyCollector,
     pub(super) dimension_round: Option<dimensions::DimensionRoundView>,
     trace: Option<EvaluationTrace>,
+    budget: StructuralBudget,
+    eval_stack: Vec<TraversalCursor>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +56,7 @@ impl<'a> CheckEvaluator<'a> {
         check_origin: ValueLocation,
         current: CheckValue,
         mut deps: DependencyCollector,
+        structural_limits: StructuralLimits,
     ) -> Self {
         let initial_top = match &current {
             CheckValue::Record(record) => record.top_record_id(),
@@ -72,6 +76,8 @@ impl<'a> CheckEvaluator<'a> {
             deps,
             dimension_round: None,
             trace: None,
+            budget: StructuralBudget::new(structural_limits),
+            eval_stack: Vec::new(),
         }
     }
 
@@ -103,6 +109,7 @@ impl<'a> CheckEvaluator<'a> {
             record,
             field_name,
             located,
+            &mut self.budget,
         ) {
             Ok(Some(record_id)) => {
                 self.note_read_from(record_id);
@@ -122,13 +129,51 @@ impl<'a> CheckEvaluator<'a> {
     }
 
     pub(super) fn eval_expr(&mut self, expr: &CftSchemaCheckExpr) -> EvalResult<LocatedCheckValue> {
+        let parent = self
+            .eval_stack
+            .last()
+            .copied()
+            .unwrap_or_else(TraversalCursor::root);
+        let cursor = match self.budget.enter(parent, StructureKind::CheckEvaluation, 1) {
+            Ok(cursor) => cursor,
+            Err(error) => {
+                self.diag(CfdErrorCode::CheckBudgetExceeded, error.to_string());
+                return Err(EvalAbort::Error);
+            }
+        };
+        self.eval_stack.push(cursor);
         let result = super::expressions::eval_expr(self, expr);
+        let _ = self.eval_stack.pop();
         if let Ok(value) = &result {
             if let Some(trace) = &mut self.trace {
                 trace.record(expr, value, self.model);
             }
         }
         result
+    }
+
+    pub(super) fn charge_work_at(
+        &mut self,
+        kind: StructureKind,
+        work: u64,
+        location: Option<ValueLocation>,
+    ) -> EvalResult<()> {
+        self.budget.charge_work(kind, work).map_err(|error| {
+            self.diag_at(
+                CfdErrorCode::CheckBudgetExceeded,
+                location,
+                error.to_string(),
+            );
+            EvalAbort::Error
+        })
+    }
+
+    pub(super) fn charge_collection_work(&mut self, value: &LocatedCheckValue) -> EvalResult<()> {
+        let work = value
+            .value
+            .collection_len()
+            .map_or(0, |length| u64::try_from(length).unwrap_or(u64::MAX));
+        self.charge_work_at(StructureKind::CheckEvaluation, work, value.location.clone())
     }
 
     pub(super) fn eval_expr_with_trace(
@@ -166,8 +211,14 @@ impl<'a> CheckEvaluator<'a> {
                 return Ok(value.clone());
             }
         }
-        if let Some(mut value) = fields::current_field(self.schema, self.model, &self.current, name)
-        {
+        let current_field = fields::current_field(
+            self.schema,
+            self.model,
+            &self.current,
+            name,
+            &mut self.budget,
+        );
+        if let Some(mut value) = self.eval_ops(current_field)? {
             if let CheckValue::Record(record) = &value.value {
                 if let Some(id) = record.top_record_id() {
                     self.note_read_from(id);
@@ -202,8 +253,8 @@ impl<'a> CheckEvaluator<'a> {
             CheckValue::Record(record) => Some(record.clone()),
             _ => None,
         };
-        let mut result =
-            self.eval_ops(fields::field_value(self.schema, self.model, target, name))?;
+        let field = fields::field_value(self.schema, self.model, target, name, &mut self.budget);
+        let mut result = self.eval_ops(field)?;
         if let CheckValue::Record(record) = &result.value {
             if let Some(id) = record.top_record_id() {
                 self.note_read_from(id);
@@ -271,6 +322,7 @@ impl<'a> CheckEvaluator<'a> {
             }
             Builtin::Contains => {
                 let collection = self.eval_expr(&args[0])?;
+                self.charge_collection_work(&collection)?;
                 let value = self.eval_expr(&args[1])?;
                 Ok(LocatedCheckValue::new(
                     CheckValue::Bool(
@@ -289,11 +341,13 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Keys => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
+                self.charge_collection_work(&arg_value)?;
                 self.eval_ops(builtin_values::keys_value(arg_value))
             }
             Builtin::Values => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
+                self.charge_collection_work(&arg_value)?;
                 self.eval_ops(builtin_values::values_value(arg_value))
             }
             Builtin::Matches => {
@@ -325,6 +379,7 @@ impl<'a> CheckEvaluator<'a> {
         match builtin {
             Builtin::Len => self.eval_ops(builtin_values::len_value(receiver_value)),
             Builtin::Contains => {
+                self.charge_collection_work(&receiver_value)?;
                 let value = self.eval_expr(&args[0])?;
                 Ok(LocatedCheckValue::new(
                     CheckValue::Bool(self.eval_ops(builtin_values::contains_value(
@@ -337,8 +392,14 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Unique => self.eval_unique(receiver, receiver_value),
             Builtin::Min | Builtin::Max => self.eval_min_max_value(builtin, receiver_value),
             Builtin::Sum => self.eval_sum_value(receiver_value),
-            Builtin::Keys => self.eval_ops(builtin_values::keys_value(receiver_value)),
-            Builtin::Values => self.eval_ops(builtin_values::values_value(receiver_value)),
+            Builtin::Keys => {
+                self.charge_collection_work(&receiver_value)?;
+                self.eval_ops(builtin_values::keys_value(receiver_value))
+            }
+            Builtin::Values => {
+                self.charge_collection_work(&receiver_value)?;
+                self.eval_ops(builtin_values::values_value(receiver_value))
+            }
             Builtin::Matches => {
                 let pattern =
                     self.resolve_call_signature(builtin_calls::matches_pattern_arg(&args[0]))?;
@@ -381,6 +442,7 @@ impl<'a> CheckEvaluator<'a> {
         builtin: Builtin,
         arg_value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
+        self.charge_collection_work(&arg_value)?;
         self.eval_ops(builtin_values::min_max_value(builtin, arg_value))
     }
 
@@ -396,6 +458,7 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         arg_value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
+        self.charge_collection_work(&arg_value)?;
         self.eval_ops(builtin_values::sum_value(arg_value))
     }
 
@@ -473,6 +536,7 @@ impl<'a> CheckEvaluator<'a> {
         collection: &CftSchemaCheckExpr,
         value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
+        self.charge_collection_work(&value)?;
         let evaluation = self.eval_ops(builtin_values::unique_value(value))?;
         if let Some(duplicate) = evaluation.duplicate {
             self.note_unique_failure(collection, duplicate);

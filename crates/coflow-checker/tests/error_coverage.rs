@@ -9,6 +9,7 @@
 mod common;
 use common::*;
 
+use coflow_checker::{run_checks_with_options, CheckOptions, StructuralLimits};
 use std::collections::BTreeSet;
 
 type BuildFn = fn(&CftContainer) -> Result<CfdDataModel, CfdDiagnostics>;
@@ -318,6 +319,13 @@ fn cases() -> Vec<Case> {
             phase: Phase::Check(build_default_item_model, run_checks),
             code: CfdErrorCode::CheckEmptyMinMax,
             adjacent: adjacent_non_empty_min,
+        },
+        Case {
+            name: "check structural budget exceeded",
+            schema: "",
+            phase: Phase::Direct(check_budget_exceeded),
+            code: CfdErrorCode::CheckBudgetExceeded,
+            adjacent: adjacent_check_budget_valid,
         },
         Case {
             name: "singleton record count invalid",
@@ -804,6 +812,54 @@ fn adjacent_known_field() {
 
 fn adjacent_required_field_present() {
     adjacent_known_record_type();
+}
+
+fn check_budget_exceeded() -> CfdDiagnostics {
+    let schema = compile_schema("type Item { nums: [int]; check { nums.isUnique(); } }");
+    let model = model_from_records(
+        &schema,
+        [one_record(
+            "item",
+            "Item",
+            [(
+                "nums",
+                CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(2_i64)]),
+            )],
+        )],
+    )
+    .expect("budget coverage model builds");
+    run_checks_with_options(
+        &CompiledSchema::new(&schema),
+        &model,
+        CheckOptions {
+            structural_limits: StructuralLimits::new(100, 100, 1),
+        },
+    )
+    .expect_err("collection work should exceed one")
+}
+
+fn adjacent_check_budget_valid() {
+    let schema = compile_schema("type Item { nums: [int]; check { nums.isUnique(); } }");
+    let model = model_from_records(
+        &schema,
+        [one_record(
+            "item",
+            "Item",
+            [(
+                "nums",
+                CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(2_i64)]),
+            )],
+        )],
+    )
+    .expect("adjacent budget model builds");
+    run_checks_with_options(
+        &CompiledSchema::new(&schema),
+        &model,
+        CheckOptions {
+            structural_limits: StructuralLimits::new(100, 100, 2),
+        },
+    )
+    .expect("work exactly at the limit should pass");
 }
 
 fn adjacent_acyclic_schema_default() {

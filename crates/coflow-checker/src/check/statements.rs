@@ -9,6 +9,7 @@ use coflow_cft::{
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckStmt, CftSchemaQuantifierKind,
 };
 use coflow_data_model::CfdErrorCode;
+use coflow_structure::StructureKind;
 use std::collections::BTreeMap;
 
 pub(super) fn eval_check_block(
@@ -122,6 +123,9 @@ fn eval_quantifier_stmt(
         Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
         Err(EvalAbort::Error) => return EvalFlow::HardStop,
     };
+    if evaluator.charge_collection_work(&collection_value).is_err() {
+        return EvalFlow::HardStop;
+    }
     let items = match evaluator.eval_ops(quantifiers::quantifier_items(collection_value)) {
         Ok(items) => items,
         Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
@@ -144,6 +148,12 @@ fn eval_quantifier(
     let mut any_failures = Vec::new();
     let mut none_match_locations: Vec<Option<ValueLocation>> = Vec::new();
     for item in items {
+        if evaluator
+            .charge_work_at(StructureKind::QuantifierIteration, 1, item.location.clone())
+            .is_err()
+        {
+            return EvalFlow::HardStop;
+        }
         let diagnostic_start = evaluator.diagnostics.len();
         let mut scope = BTreeMap::new();
         scope.insert(binding.to_string(), item.clone());

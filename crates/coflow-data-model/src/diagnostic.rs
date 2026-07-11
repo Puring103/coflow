@@ -249,6 +249,7 @@ pub enum CfdErrorCode {
     CheckAnyQuantifierFailed,
     CheckNoneQuantifierFailed,
     CheckAllQuantifierFailed,
+    CheckBudgetExceeded,
 }
 
 impl CfdErrorCode {
@@ -292,6 +293,7 @@ impl CfdErrorCode {
             Self::CheckAnyQuantifierFailed => (CfdStage::Check, "CFD-CHECK-017"),
             Self::CheckNoneQuantifierFailed => (CfdStage::Check, "CFD-CHECK-018"),
             Self::CheckAllQuantifierFailed => (CfdStage::Check, "CFD-CHECK-019"),
+            Self::CheckBudgetExceeded => (CfdStage::Check, "CFD-CHECK-020"),
         }
     }
 

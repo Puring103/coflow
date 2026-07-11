@@ -1,9 +1,12 @@
 use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
 use coflow_data_model::{CfdDataModel, CfdErrorCode};
+use coflow_structure::StructuralBudget;
 
 use super::diagnostics::format_value_for_message;
 use super::ops::{OpsError, OpsResult};
-use super::value::{CheckRecordRef, CheckValue, LocatedCheckValue, ValueLocation};
+use super::value::{
+    CheckRecordRef, CheckValue, LocatedBudgetExceeded, LocatedCheckValue, ValueLocation,
+};
 
 pub(super) fn field_type_for_record<'a>(
     schema: &'a CompiledSchema,
@@ -21,18 +24,22 @@ pub(super) fn current_field(
     model: &CfdDataModel,
     current: &CheckValue,
     name: &str,
-) -> Option<LocatedCheckValue> {
+    budget: &mut StructuralBudget,
+) -> OpsResult<Option<LocatedCheckValue>> {
     let CheckValue::Record(record) = current else {
-        return None;
+        return Ok(None);
     };
     if name == "id" {
-        return virtual_id(model, record, record.location());
+        return Ok(virtual_id(model, record, record.location()));
     }
-    record.field(
-        model,
-        field_type_for_record(schema, model, record, name),
-        name,
-    )
+    record
+        .field(
+            model,
+            field_type_for_record(schema, model, record, name),
+            name,
+            budget,
+        )
+        .map_err(budget_error)
 }
 
 pub(super) fn field_value(
@@ -40,6 +47,7 @@ pub(super) fn field_value(
     model: &CfdDataModel,
     target: LocatedCheckValue,
     name: &str,
+    budget: &mut StructuralBudget,
 ) -> OpsResult<LocatedCheckValue> {
     if matches!(target.value, CheckValue::Null) {
         return Err(OpsError::new(
@@ -59,7 +67,9 @@ pub(super) fn field_value(
                     model,
                     field_type_for_record(schema, model, &record, name),
                     name,
+                    budget,
                 )
+                .map_err(budget_error)?
                 .ok_or_else(|| {
                     OpsError::eval_type(target.location, format!("记录没有字段 `{name}`"))
                 })
@@ -91,4 +101,12 @@ pub(super) fn virtual_id(
     let key = key.to_string();
     let location = location.map(|location| location.field("id"));
     Some(LocatedCheckValue::new(CheckValue::String(key), location))
+}
+
+fn budget_error(exceeded: LocatedBudgetExceeded) -> OpsError {
+    OpsError::new(
+        CfdErrorCode::CheckBudgetExceeded,
+        exceeded.location,
+        exceeded.error.to_string(),
+    )
 }

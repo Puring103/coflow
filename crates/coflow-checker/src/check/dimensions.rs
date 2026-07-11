@@ -5,6 +5,7 @@ use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
 use coflow_data_model::{
     CfdDataModel, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
 };
+use coflow_structure::{StructuralBudget, TraversalCursor};
 
 use super::diagnostics::dimension_lookup_error_message;
 use super::value::{CheckRecordRef, CheckValue, LocatedCheckValue, ModelCursor, ValueLocation};
@@ -264,6 +265,7 @@ pub(super) fn apply_dimension_variant(
     record: &CheckRecordRef,
     field_name: &str,
     located: &mut LocatedCheckValue,
+    budget: &mut StructuralBudget,
 ) -> Result<Option<CfdRecordId>, DimensionVariantAbort> {
     let Some(round) = round else {
         return Ok(None);
@@ -284,7 +286,14 @@ pub(super) fn apply_dimension_variant(
         materialized.field_type,
         Some(materialized.location.clone()),
         model,
-    );
+        budget,
+        TraversalCursor::root(),
+    )
+    .map_err(|exceeded| DimensionVariantAbort::Error {
+        code: CfdErrorCode::CheckBudgetExceeded,
+        location: exceeded.location,
+        message: exceeded.error.to_string(),
+    })?;
     located.location = Some(materialized.location);
     Ok(Some(materialized.storage_record))
 }

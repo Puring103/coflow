@@ -35,7 +35,21 @@ mod check;
 use check::CheckRunner;
 use coflow_cft::CompiledSchema;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdRecordId};
+pub use coflow_structure::StructuralLimits;
 use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckOptions {
+    pub structural_limits: StructuralLimits,
+}
+
+impl Default for CheckOptions {
+    fn default() -> Self {
+        Self {
+            structural_limits: StructuralLimits::default(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DimensionCheckContext {
@@ -49,7 +63,21 @@ pub(crate) struct DimensionCheckContext {
 ///
 /// Returns runtime check diagnostics for false conditions or evaluation errors.
 pub fn run_checks(schema: &CompiledSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
-    CheckRunner::new(schema, model).run()
+    run_checks_with_options(schema, model, CheckOptions::default())
+}
+
+/// Executes CFT `check` blocks with explicit structural resource limits.
+///
+/// # Errors
+///
+/// Returns runtime check diagnostics, including `CFD-CHECK-020` when a limit
+/// is exhausted.
+pub fn run_checks_with_options(
+    schema: &CompiledSchema,
+    model: &CfdDataModel,
+    options: CheckOptions,
+) -> Result<(), CfdDiagnostics> {
+    CheckRunner::new(schema, model, options.structural_limits).run()
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -112,8 +140,22 @@ pub fn run_checks_for_dimensions(
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
 ) -> Result<(), CfdDiagnostics> {
+    run_checks_for_dimensions_with_options(schema, model, plan, CheckOptions::default())
+}
+
+/// Runs default and dimension rounds with explicit structural resource limits.
+///
+/// # Errors
+///
+/// Returns the union of runtime check diagnostics from every round.
+pub fn run_checks_for_dimensions_with_options(
+    schema: &CompiledSchema,
+    model: &CfdDataModel,
+    plan: &DimensionCheckPlan,
+    options: CheckOptions,
+) -> Result<(), CfdDiagnostics> {
     let mut all = Vec::new();
-    if let Err(diagnostics) = run_checks(schema, model) {
+    if let Err(diagnostics) = run_checks_with_options(schema, model, options) {
         all.extend(diagnostics.diagnostics);
     }
     for round in plan.rounds() {
@@ -121,7 +163,8 @@ pub fn run_checks_for_dimensions(
             dimension: round.dimension.clone(),
             variant: Some(round.variant.clone()),
         };
-        let runner = CheckRunner::with_dimension_context(schema, model, context);
+        let runner =
+            CheckRunner::with_dimension_context(schema, model, context, options.structural_limits);
         push_dimension_diagnostics(&mut all, &round.dimension, &round.variant, runner.run());
     }
     diagnostics_result(all)
@@ -139,8 +182,23 @@ pub fn run_checks_for_dimensions_with_deps(
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
+    run_checks_for_dimensions_with_deps_and_options(schema, model, plan, CheckOptions::default())
+}
+
+/// Runs dimension-aware checks with dependencies and explicit structural limits.
+///
+/// # Errors
+///
+/// Returns the union of runtime diagnostics and the dependency graph collected
+/// before any failing root was stopped.
+pub fn run_checks_for_dimensions_with_deps_and_options(
+    schema: &CompiledSchema,
+    model: &CfdDataModel,
+    plan: &DimensionCheckPlan,
+    options: CheckOptions,
+) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
     let mut all = Vec::new();
-    let (default_result, mut graph) = run_checks_with_deps(schema, model);
+    let (default_result, mut graph) = run_checks_with_deps_and_options(schema, model, options);
     if let Err(diagnostics) = default_result {
         all.extend(diagnostics.diagnostics);
     }
@@ -149,7 +207,8 @@ pub fn run_checks_for_dimensions_with_deps(
             dimension: round.dimension.clone(),
             variant: Some(round.variant.clone()),
         };
-        let runner = CheckRunner::with_dimension_context(schema, model, context);
+        let runner =
+            CheckRunner::with_dimension_context(schema, model, context, options.structural_limits);
         let (result, variant_graph) = runner.run_with_deps();
         merge_dependency_graph(&mut graph, variant_graph);
         push_dimension_diagnostics(&mut all, &round.dimension, &round.variant, result);
@@ -169,10 +228,24 @@ pub fn run_checks_for(
     model: &CfdDataModel,
     targets: &[CfdRecordId],
 ) -> Result<(), CfdDiagnostics> {
+    run_checks_for_with_options(schema, model, targets, CheckOptions::default())
+}
+
+/// Runs checks for selected records with explicit structural limits.
+///
+/// # Errors
+///
+/// Returns runtime check diagnostics for the selected records.
+pub fn run_checks_for_with_options(
+    schema: &CompiledSchema,
+    model: &CfdDataModel,
+    targets: &[CfdRecordId],
+    options: CheckOptions,
+) -> Result<(), CfdDiagnostics> {
     if targets.is_empty() {
         return Ok(());
     }
-    CheckRunner::new(schema, model).run_for(targets)
+    CheckRunner::new(schema, model, options.structural_limits).run_for(targets)
 }
 
 /// A directional dependency graph captured during a full check run.
@@ -214,7 +287,21 @@ pub fn run_checks_with_deps(
     schema: &CompiledSchema,
     model: &CfdDataModel,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
-    CheckRunner::new(schema, model).run_with_deps()
+    run_checks_with_deps_and_options(schema, model, CheckOptions::default())
+}
+
+/// Runs checks with dependency collection and explicit structural limits.
+///
+/// # Errors
+///
+/// Returns runtime check diagnostics and the dependency graph collected before
+/// any failing root was stopped.
+pub fn run_checks_with_deps_and_options(
+    schema: &CompiledSchema,
+    model: &CfdDataModel,
+    options: CheckOptions,
+) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
+    CheckRunner::new(schema, model, options.structural_limits).run_with_deps()
 }
 
 fn push_dimension_diagnostics(
