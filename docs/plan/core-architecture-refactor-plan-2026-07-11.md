@@ -44,6 +44,8 @@ Commit boundary: `refactor: centralize flat diagnostics`
 
 ### 2. Schema path policy
 
+Status: completed.
+
 Goal: make schema source path validation and discovery use one deeper module
 interface.
 

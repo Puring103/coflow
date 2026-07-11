@@ -15,6 +15,7 @@
 mod config;
 mod diagnostics;
 mod paths;
+mod schema_path_policy;
 mod schema_sources;
 mod validation;
 
@@ -23,7 +24,7 @@ pub use config::{
 };
 pub use diagnostics::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
 pub use paths::{normalize_path, path_to_slash, resolve_config_path};
-pub use schema_sources::SchemaFile;
+pub use schema_path_policy::SchemaFile;
 
 use validation::{
     validate_for_codegen_collecting, validate_project_config_schema_only_collecting,

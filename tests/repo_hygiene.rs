@@ -877,11 +877,9 @@ fn project_schema_discovery_does_not_live_in_project_lib_rs() {
         .expect("read project schema sources");
 
     for expected in [
-        "pub struct SchemaFile",
         "pub(super) fn schema_files",
         "fn push_schema_path",
         "fn collect_cft_files",
-        "fn is_cft_path",
     ] {
         assert!(
             schema_sources.contains(expected),
@@ -892,6 +890,43 @@ fn project_schema_discovery_does_not_live_in_project_lib_rs() {
             "project schema discovery item `{expected}` should not live in lib.rs"
         );
     }
+    for forbidden in ["pub struct SchemaFile", "fn is_cft_path"] {
+        assert!(
+            !schema_sources.contains(forbidden),
+            "project schema discovery should delegate `{forbidden}` to schema_path_policy.rs"
+        );
+    }
+}
+
+#[test]
+fn project_schema_path_policy_owns_schema_path_rules() {
+    let project =
+        std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
+    let policy = std::fs::read_to_string("crates/coflow-project/src/schema_path_policy.rs")
+        .expect("read project schema path policy");
+    let validation = std::fs::read_to_string("crates/coflow-project/src/validation.rs")
+        .expect("read project validation");
+
+    for expected in [
+        "pub struct SchemaFile",
+        "pub(super) struct SchemaPathPolicy",
+        "pub(super) fn validate_config_path",
+        "pub(super) fn is_cft_path",
+        "pub(super) fn schema_file",
+    ] {
+        assert!(
+            policy.contains(expected),
+            "schema path policy item `{expected}` should live in schema_path_policy.rs"
+        );
+        assert!(
+            !project.contains(expected),
+            "schema path policy item `{expected}` should not live in lib.rs"
+        );
+    }
+    assert!(
+        !validation.contains("fn validate_schema_path"),
+        "project validation should use SchemaPathPolicy instead of owning schema path rules"
+    );
 }
 
 #[test]

@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::{
-    path_to_slash, resolve_project_relative, DimensionConfig, OutputsConfig, ProjectConfig,
-    SchemaConfig, SourceConfig,
+    path_to_slash, resolve_project_relative, schema_path_policy::SchemaPathPolicy,
+    DimensionConfig, OutputsConfig, ProjectConfig, SchemaConfig, SourceConfig,
 };
 
 pub(super) struct ProjectDiagnostic {
@@ -182,9 +182,10 @@ fn validate_schema_config_collecting(
     schema: &SchemaConfig,
 ) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
+    let policy = SchemaPathPolicy::new(root_dir);
     match schema {
         SchemaConfig::One(path) => {
-            if let Err(err) = validate_schema_path(root_dir, path, "schema") {
+            if let Err(err) = policy.validate_config_path(path, "schema") {
                 diagnostics.push(ProjectDiagnostic::new(err, ["schema"]));
             }
         }
@@ -193,7 +194,7 @@ fn validate_schema_config_collecting(
                 diagnostics.push(ProjectDiagnostic::new("schema list is empty", ["schema"]));
             }
             for (index, path) in paths.iter().enumerate() {
-                if let Err(err) = validate_schema_path(root_dir, path, &format!("schema[{index}]"))
+                if let Err(err) = policy.validate_config_path(path, &format!("schema[{index}]"))
                 {
                     diagnostics.push(ProjectDiagnostic::new(
                         err,
@@ -204,23 +205,6 @@ fn validate_schema_config_collecting(
         }
     }
     diagnostics
-}
-
-fn validate_schema_path(root_dir: &Path, path: &Path, label: &str) -> Result<(), String> {
-    if path.as_os_str().is_empty() {
-        return Err(format!("{label} path is empty"));
-    }
-    let resolved = resolve_project_relative(root_dir, path);
-    if !resolved.exists() {
-        return Err(format!("{label} path `{}` does not exist", path.display()));
-    }
-    if resolved.is_file() && !is_cft_path(&resolved) {
-        return Err(format!(
-            "schema file `{}` has unsupported extension",
-            path_to_slash(path)
-        ));
-    }
-    Ok(())
 }
 
 pub(super) fn validate_sources_collecting(
@@ -371,6 +355,3 @@ fn validate_output_dir(label: &str, path: &Path) -> Result<(), String> {
     }
 }
 
-fn is_cft_path(path: &Path) -> bool {
-    path.extension().and_then(|ext| ext.to_str()) == Some("cft")
-}
