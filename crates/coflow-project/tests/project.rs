@@ -1204,6 +1204,53 @@ fn init_project_refuses_to_clobber_existing_yaml() {
     assert_eq!(preserved, "# existing\n");
 }
 
+#[test]
+fn init_project_removes_new_paths_after_staging_failure() {
+    let dir = temp_project_dir("coflow-init-rollback");
+    std::fs::create_dir_all(dir.join("generated")).expect("create existing generated directory");
+    std::fs::write(dir.join("generated/data"), "conflict").expect("seed path conflict");
+
+    let err = init_project(&dir).expect_err("staging conflict must fail");
+
+    assert!(err.contains("because it is a file"));
+    assert!(!dir.join("coflow.yaml").exists());
+    assert!(!dir.join("schema").exists());
+    assert!(!dir.join("data").exists());
+    assert_eq!(
+        std::fs::read_to_string(dir.join("generated/data")).expect("preserved conflict"),
+        "conflict"
+    );
+    std::fs::remove_dir_all(dir).expect("clean rollback project");
+}
+
+#[test]
+fn concurrent_project_initialization_has_one_winner() {
+    let dir = temp_project_dir("coflow-init-concurrent");
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+    let mut handles = Vec::new();
+    for _ in 0..2 {
+        let dir = dir.clone();
+        let barrier = std::sync::Arc::clone(&barrier);
+        handles.push(std::thread::spawn(move || {
+            barrier.wait();
+            init_project(dir)
+        }));
+    }
+    barrier.wait();
+    let outcomes = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("initializer thread"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 1);
+    assert_eq!(outcomes.iter().filter(|outcome| outcome.is_err()).count(), 1);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("coflow.yaml")).expect("published config"),
+        DEFAULT_PROJECT_YAML
+    );
+    std::fs::remove_dir_all(dir).expect("clean concurrent project");
+}
+
 fn temp_project_dir(name: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
     if root.exists() {

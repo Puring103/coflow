@@ -324,5 +324,30 @@ fn project_diagnostic_conversion_does_not_live_in_project_lib_rs() {
 
 }
 
+#[test]
+fn project_initialization_is_an_atomic_module() {
+    let project =
+        std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
+    let init =
+        std::fs::read_to_string("crates/coflow-project/src/init.rs").expect("read project init");
+
+    for expected in [
+        "struct InitLock",
+        "struct InitTransaction",
+        "fn acquire_init_lock",
+        "fs::hard_link(&temporary, config_path)",
+        "pub fn init_project",
+    ] {
+        assert!(
+            init.contains(expected),
+            "atomic project initialization should own `{expected}`"
+        );
+        assert!(
+            !project.contains(expected),
+            "project lib should delegate initialization item `{expected}`"
+        );
+    }
+}
+
 
 

@@ -14,6 +14,7 @@
 
 mod config;
 mod diagnostics;
+mod init;
 mod paths;
 mod schema_path_policy;
 mod schema_sources;
@@ -23,6 +24,7 @@ pub use config::{
     DimensionConfig, OutputConfig, OutputsConfig, ProjectConfig, SchemaConfig, SourceConfig,
 };
 pub use diagnostics::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
+pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
 pub use paths::{normalize_path, path_to_slash, resolve_config_path};
 pub use schema_path_policy::SchemaFile;
 
@@ -207,104 +209,6 @@ pub struct SchemaSourceOverride {
 ///
 /// # Errors
 ///
-/// Default `coflow.yaml` template installed by [`init_project`]. Kept as a
-/// constant so the CLI and the editor-side init command share the exact
-/// same project layout.
-pub const DEFAULT_PROJECT_YAML: &str = r"schema: schema/
-
-sources: []
-
-outputs:
-  data:
-    type: json
-    dir: generated/data
-  code:
-    type: csharp
-    dir: generated/csharp
-    namespace: Game.Config
-";
-
-/// Outcome of [`init_project`]: where the new `coflow.yaml` lives.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InitOutcome {
-    pub config_path: PathBuf,
-}
-
-/// Create a minimal Coflow project rooted at `dir`. Identical to the CLI's
-/// `coflow init` so the editor can offer "新建工程" without spawning a
-/// subprocess.
-///
-/// Layout:
-/// - `coflow.yaml` with the default template (see [`DEFAULT_PROJECT_YAML`]),
-/// - `schema/` directory for `.cft` files,
-/// - `data/` directory for source data,
-/// - `generated/data/` and `generated/csharp/` directories for build
-///   artefacts.
-///
-/// # Errors
-/// Returns a human-readable error when `coflow.yaml` already exists in
-/// `dir` (refuses to overwrite) or when any directory or file cannot be
-/// created.
-pub fn init_project(dir: impl AsRef<Path>) -> Result<InitOutcome, DiagnosticSet> {
-    let dir = dir.as_ref();
-    let config_path = dir.join("coflow.yaml");
-    if config_path.exists() {
-        return Err(diagnostics::file_error(
-            &config_path,
-            "PROJECT-INIT-IO",
-            "PROJECT",
-            format!("`{}` already exists", config_path.display()),
-        ));
-    }
-    fs::create_dir_all(dir.join("schema")).map_err(|err| {
-        diagnostics::file_error(
-            &dir.join("schema"),
-            "PROJECT-INIT-IO",
-            "PROJECT",
-            format!("failed to create `{}`: {err}", dir.join("schema").display()),
-        )
-    })?;
-    fs::create_dir_all(dir.join("data")).map_err(|err| {
-        diagnostics::file_error(
-            &dir.join("data"),
-            "PROJECT-INIT-IO",
-            "PROJECT",
-            format!("failed to create `{}`: {err}", dir.join("data").display()),
-        )
-    })?;
-    fs::create_dir_all(dir.join("generated").join("data")).map_err(|err| {
-        diagnostics::file_error(
-            &dir.join("generated").join("data"),
-            "PROJECT-INIT-IO",
-            "PROJECT",
-            format!(
-            "failed to create `{}`: {err}",
-            dir.join("generated").join("data").display()
-            ),
-        )
-    })?;
-    fs::create_dir_all(dir.join("generated").join("csharp")).map_err(|err| {
-        diagnostics::file_error(
-            &dir.join("generated").join("csharp"),
-            "PROJECT-INIT-IO",
-            "PROJECT",
-            format!(
-            "failed to create `{}`: {err}",
-            dir.join("generated").join("csharp").display()
-            ),
-        )
-    })?;
-    fs::write(&config_path, DEFAULT_PROJECT_YAML).map_err(|err| {
-        diagnostics::file_error(
-            &config_path,
-            "PROJECT-INIT-IO",
-            "PROJECT",
-            format!("failed to write `{}`: {err}", config_path.display()),
-        )
-    })?;
-    Ok(InitOutcome { config_path })
-}
-
 /// Compile the schema for a project.
 ///
 /// # Errors
