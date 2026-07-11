@@ -1,8 +1,11 @@
+mod publication;
 mod staging;
 
-pub use staging::{
-    commit_staged_dir_and_file, commit_staged_dirs_and_file, StagedArtifactDir, StagedArtifactFile,
+pub use publication::{
+    enum_lockfile_path, publish_artifacts, read_active_enum_lock, EnumLockUpdate,
+    CODE_OUTPUT_SLOT, DATA_OUTPUT_SLOT,
 };
+pub use staging::StagedArtifactDir;
 
 use coflow_api::{
     CodegenContext, Diagnostic, DiagnosticSet, ExportContext, Label, OutputSpec, ProviderRegistry,
@@ -11,7 +14,6 @@ use coflow_api::{
 use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdDataModel;
 use coflow_project::{OutputConfig, Project};
-use serde::Serialize;
 use serde_json::Value;
 use staging::stage_artifact_set;
 use std::path::{Path, PathBuf};
@@ -25,17 +27,6 @@ pub fn output_dir(
         || project.resolve_path(&output.dir),
         |path| project.resolve_path(path),
     )
-}
-
-pub fn write_data_tables(
-    registry: &ProviderRegistry,
-    schema: &CompiledSchema,
-    model: &CfdDataModel,
-    exporter_id: &str,
-    output: &OutputConfig,
-    dir: &Path,
-) -> Result<(), DiagnosticSet> {
-    stage_data_tables(registry, schema, model, exporter_id, output, dir)?.commit()
 }
 
 pub fn stage_data_tables(
@@ -132,13 +123,6 @@ pub fn preflight_codegen(
         },
         &output,
     ))
-}
-
-pub fn stage_json_file<T: Serialize>(
-    path: &Path,
-    value: &T,
-) -> Result<StagedArtifactFile, DiagnosticSet> {
-    StagedArtifactFile::create_json(path, value)
 }
 
 pub fn required_data_output<'a>(

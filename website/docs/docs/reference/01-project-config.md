@@ -412,13 +412,13 @@ dimensions:
     out_dir: data/dimensions/language
 ```
 
-## 输出目录接管
+## 产物 generation
 
-数据导出和 C# codegen 的输出目录由 Coflow 完全接管。
+`outputs.data.dir` 和 `outputs.code.dir` 是不可变 generation 的放置锚点。
 
-写入时，Coflow 会先生成完整 staging 目录；所有产物成功写入后，再替换目标输出目录。如果构建过程中出现诊断，Coflow 不会写入 build、export 或 codegen 产物。
+写入时，Coflow 在锚点同级生成、同步并验证完整 generation；data、code 和 `@idAsEnum` lock state 通过 `.coflow/artifacts/active.json` 一次激活。如果构建过程中出现诊断，Coflow 不会激活新的 build、export 或 codegen snapshot。
 
-**不要把手写文件放进 `outputs.*.dir`。目标目录内已有文件、人工文件和其他工具产物不会被保留**。
+命令成功信息会输出实际 generation 目录。消费者也可以从 active manifest 的 `outputs.<slot>.generation_dir` 读取当前位置。**不要修改或向 generation 目录添加手写文件**。
 
 ## 常见错误
 

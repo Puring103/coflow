@@ -1,4 +1,4 @@
-use crate::artifacts::{stage_json_file, StagedArtifactFile};
+use crate::artifacts::{enum_lockfile_path, read_active_enum_lock};
 use crate::commands::artifact_safety::artifact_diagnostic_set;
 use coflow_api::DiagnosticSet;
 use coflow_cft::{CftAnnotation, CftAnnotationValue, CompiledSchema};
@@ -7,17 +7,14 @@ use coflow_project::Project;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::{Path, PathBuf};
-
-const ENUM_LOCKFILE_NAME: &str = "coflow.enum.lock.json";
+use std::path::Path;
 
 type IdAsEnumLockfile = BTreeMap<String, BTreeMap<String, i64>>;
 
 #[derive(Debug)]
 pub(super) struct IdAsEnumArtifacts {
     pub(super) variants: Value,
-    pub(super) lockfile: Option<StagedArtifactFile>,
+    pub(super) lock_state: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -36,22 +33,30 @@ pub(super) fn id_as_enum_variants_for_schema_only(
     project: &Project,
 ) -> Result<Value, DiagnosticSet> {
     let lockfile = enum_lockfile_path(project);
-    let existing_locked = read_id_as_enum_lockfile(&lockfile)?;
+    let existing_locked = read_id_as_enum_lock(project, &lockfile)?;
     let variants = lockfile_to_variants(&existing_locked);
     variants_json(&lockfile, variants)
 }
 
-pub(super) fn stage_id_as_enum_lockfile_for_build(
+pub(super) fn prepare_id_as_enum_artifacts_for_build(
     project: &Project,
     schema: &CompiledSchema,
     model: &CfdDataModel,
 ) -> Result<IdAsEnumArtifacts, DiagnosticSet> {
     let lockfile = enum_lockfile_path(project);
     let id_as_enum_ids = collect_id_as_enum_ids(schema, model);
-    let (locked, variants) = merge_id_as_enum_lockfile(&lockfile, id_as_enum_ids)?;
+    let (locked, variants) = merge_id_as_enum_lockfile(project, &lockfile, id_as_enum_ids)?;
     let variants = variants_json(&lockfile, variants)?;
-    let lockfile = stage_id_as_enum_lockfile_if_needed(&lockfile, &locked)?;
-    Ok(IdAsEnumArtifacts { variants, lockfile })
+    let lock_state = serde_json::to_value(locked).map_err(|err| {
+        artifact_diagnostic_set(
+            &lockfile,
+            format!("failed to serialize @idAsEnum lock state: {err}"),
+        )
+    })?;
+    Ok(IdAsEnumArtifacts {
+        variants,
+        lock_state,
+    })
 }
 
 fn collect_declared_id_as_enum_ids(
@@ -105,15 +110,8 @@ fn collect_id_as_enum_ids(
     out
 }
 
-fn enum_lockfile_path(project: &Project) -> PathBuf {
-    project
-        .config_path
-        .parent()
-        .unwrap_or(&project.root_dir)
-        .join(ENUM_LOCKFILE_NAME)
-}
-
 fn merge_id_as_enum_lockfile(
+    project: &Project,
     lockfile: &Path,
     current_ids: BTreeMap<String, IdAsEnumIds>,
 ) -> Result<(IdAsEnumLockfile, BTreeMap<String, Vec<IdAsEnumVariant>>), DiagnosticSet> {
@@ -121,7 +119,7 @@ fn merge_id_as_enum_lockfile(
         return Ok((BTreeMap::new(), BTreeMap::new()));
     }
 
-    let mut locked = read_id_as_enum_lockfile(lockfile)?;
+    let mut locked = read_id_as_enum_lock(project, lockfile)?;
     locked.retain(|enum_name, _| current_ids.contains_key(enum_name));
 
     for (enum_name, key_enum) in current_ids {
@@ -207,27 +205,20 @@ fn validate_existing_id_as_enum_values(
     Ok(())
 }
 
-fn read_id_as_enum_lockfile(path: &Path) -> Result<IdAsEnumLockfile, DiagnosticSet> {
-    if !path.exists() {
-        return Ok(BTreeMap::new());
-    }
-
-    let contents = fs::read_to_string(path).map_err(|err| {
-        artifact_diagnostic_set(path, format!("failed to read `{}`: {err}", path.display()))
-    })?;
-    serde_json::from_str(&contents).map_err(|err| {
-        artifact_diagnostic_set(path, format!("failed to parse `{}`: {err}", path.display()))
-    })
-}
-
-fn stage_id_as_enum_lockfile_if_needed(
-    path: &Path,
-    locked: &IdAsEnumLockfile,
-) -> Result<Option<StagedArtifactFile>, DiagnosticSet> {
-    if locked.is_empty() {
-        return Ok(None);
-    }
-    stage_json_file(path, locked).map(Some)
+fn read_id_as_enum_lock(
+    project: &Project,
+    diagnostic_path: &Path,
+) -> Result<IdAsEnumLockfile, DiagnosticSet> {
+    read_active_enum_lock(project)?
+        .map(serde_json::from_value)
+        .transpose()
+        .map(Option::unwrap_or_default)
+        .map_err(|err| {
+            artifact_diagnostic_set(
+                diagnostic_path,
+                format!("failed to parse @idAsEnum lock state: {err}"),
+            )
+        })
 }
 
 fn lockfile_to_variants(locked: &IdAsEnumLockfile) -> BTreeMap<String, Vec<IdAsEnumVariant>> {

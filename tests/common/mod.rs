@@ -33,6 +33,42 @@ pub fn temp_project_dir(name: &str) -> std::path::PathBuf {
     root
 }
 
+pub fn active_artifact_manifest(project_root: &std::path::Path) -> Value {
+    let path = project_root.join(".coflow/artifacts/active.json");
+    let contents = std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("read active artifact manifest `{}`: {err}", path.display()));
+    serde_json::from_str(&contents)
+        .unwrap_or_else(|err| panic!("parse active artifact manifest `{}`: {err}", path.display()))
+}
+
+pub fn active_artifact_dir(project_root: &std::path::Path, slot: &str) -> std::path::PathBuf {
+    let manifest = active_artifact_manifest(project_root);
+    let path = manifest["outputs"][slot]["generation_dir"]
+        .as_str()
+        .unwrap_or_else(|| panic!("active artifact manifest has no `{slot}` generation"));
+    std::path::PathBuf::from(path)
+}
+
+pub fn active_enum_lock(project_root: &std::path::Path) -> Value {
+    active_artifact_manifest(project_root)["enum_lock"].clone()
+}
+
+pub fn write_active_enum_lock(project_root: &std::path::Path, lock: Value) {
+    let state_dir = project_root.join(".coflow/artifacts");
+    std::fs::create_dir_all(&state_dir).expect("create artifact state directory");
+    std::fs::write(
+        state_dir.join("active.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "version": 1,
+            "revision": "test-fixture",
+            "outputs": {},
+            "enum_lock": lock,
+        }))
+        .expect("serialize active artifact fixture"),
+    )
+    .expect("write active artifact fixture");
+}
+
 pub fn write_invalid_check_project(
     root: &std::path::Path,
 ) -> Result<(), rust_xlsxwriter::XlsxError> {

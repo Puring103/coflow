@@ -256,13 +256,13 @@ fn root_cli_id_as_enum_lockfile_does_not_live_in_commands_rs() {
 
         "pub(super) fn id_as_enum_variants_for_schema_only",
 
-        "pub(super) fn stage_id_as_enum_lockfile_for_build",
+        "pub(super) fn prepare_id_as_enum_artifacts_for_build",
 
         "fn merge_id_as_enum_lockfile",
 
         "fn allocate_id_as_enum_value",
 
-        "fn read_id_as_enum_lockfile",
+        "fn read_id_as_enum_lock",
 
         "fn lockfile_to_variants",
 
@@ -354,19 +354,13 @@ fn root_cli_artifact_staging_does_not_live_in_artifacts_rs() {
 
         "pub struct StagedArtifactDir",
 
-        "pub struct StagedArtifactFile",
-
         "pub(super) fn stage_artifact_set",
 
-        "pub fn commit_staged_dir_and_file",
+        "pub struct PublishedArtifactDir",
 
-        "pub fn commit_staged_dirs_and_file",
+        "fn write_verified_file",
 
-        "fn replace_file_with_staging",
-
-        "fn replace_dir_with_staging",
-
-        "fn rollback_committed_dirs",
+        "pub(super) fn seal",
 
         "fn unique_sidecar_path",
 

@@ -64,7 +64,7 @@ in this file or in `docs/`.
 - `coflow-runtime` owns the shared project runtime: schema compilation, source resolve/load, data model, check, diagnostics, and source/record/file indexes.
 - `coflow-structure` owns domain-neutral structural limits and traversal/work accounting shared by parsers, compilers, and evaluators.
 - `coflow-builtins` registers the default provider registry for the CLI, editor, and LSP hosts.
-- The root `coflow` crate owns CLI command orchestration, terminal/JSON output, export/codegen staging, and artifact commit.
+- The root `coflow` crate owns CLI command orchestration, terminal/JSON output, immutable artifact generation, and active-manifest publication.
 - `editors/cfd-editor/src-tauri` is the editor backend host. It reuses `coflow-runtime` and keeps only editor wire DTOs, graph/table views, and write command bridging.
 - Provider shared algorithms live in `coflow-loader-table-core` and `coflow-exporter-core`; they do not belong in `coflow-api`.
 

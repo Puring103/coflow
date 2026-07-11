@@ -563,7 +563,9 @@ outputs:
         String::from_utf8_lossy(&codegen.stdout),
         String::from_utf8_lossy(&codegen.stderr)
     );
-    assert!(codegen_dir.join("CoflowTables.cs").exists());
+    assert!(active_artifact_dir(&root, "code")
+        .join("CoflowTables.cs")
+        .exists());
 }
 
 #[test]

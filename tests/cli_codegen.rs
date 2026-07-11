@@ -39,6 +39,7 @@ fn codegen_csharp_writes_newtonsoft_json_source_provider() {
         String::from_utf8_lossy(&output.stdout)
     );
 
+    let out_dir = active_artifact_dir(&root, "code");
     let coflow_tables =
         std::fs::read_to_string(out_dir.join("CoflowTables.cs")).expect("CoflowTables.cs");
     assert!(coflow_tables.contains("using Newtonsoft.Json.Linq;"));
@@ -85,6 +86,7 @@ fn codegen_csharp_uses_messagepack_loader_when_data_output_is_messagepack() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    let out_dir = active_artifact_dir(&project_dir, "code");
     let coflow_tables =
         std::fs::read_to_string(out_dir.join("CoflowTables.cs")).expect("CoflowTables.cs");
     assert!(coflow_tables.contains("using MessagePack;"));
@@ -127,8 +129,7 @@ outputs:
 ",
     )
     .expect("write config");
-    let lockfile = root.join("coflow.enum.lock.json");
-    std::fs::write(&lockfile, "{bad json").expect("write malformed lockfile");
+    write_active_enum_lock(&root, Value::String("malformed lock state".to_string()));
 
     let output = coflow()
         .args(["codegen", "csharp", root.to_str().expect("utf8 path")])
@@ -148,8 +149,8 @@ outputs:
     assert!(stderr.contains("invalid C# enum name `namespace`"));
     assert!(!stderr.contains("failed to parse"));
     assert_eq!(
-        std::fs::read_to_string(&lockfile).expect("lockfile remains"),
-        "{bad json"
+        active_enum_lock(&root),
+        Value::String("malformed lock state".to_string())
     );
     assert!(!root
         .join("generated")
@@ -307,6 +308,8 @@ fn generated_csharp_compiles_and_loads_exported_json() {
         String::from_utf8_lossy(&codegen_output.stderr)
     );
 
+    let export_dir = active_artifact_dir(&project_dir, "data");
+    let csharp_dir = active_artifact_dir(&project_dir, "code");
     let new_output = Command::new("dotnet")
         .args([
             "new",
@@ -443,7 +446,7 @@ outputs:
         root.join("coflow.enum.lock.json"),
         r#"{"ItemId":{"potion":0,"sword":1}}"#,
     )
-    .expect("write lockfile");
+    .expect("write versioned lockfile");
 
     let output = coflow()
         .args(["codegen", "csharp", root.to_str().expect("utf8 path")])
@@ -456,10 +459,14 @@ outputs:
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let item_id = std::fs::read_to_string(root.join("generated").join("csharp").join("ItemId.cs"))
+    let item_id = std::fs::read_to_string(active_artifact_dir(&root, "code").join("ItemId.cs"))
         .expect("read generated ItemId.cs");
     assert!(item_id.contains("potion = 0"), "ItemId.cs:\n{item_id}");
     assert!(item_id.contains("sword = 1"), "ItemId.cs:\n{item_id}");
+    assert_eq!(
+        active_enum_lock(&root),
+        serde_json::json!({"ItemId": {"potion": 0, "sword": 1}})
+    );
     assert_eq!(
         std::fs::read_to_string(root.join("coflow.enum.lock.json")).expect("read lockfile"),
         r#"{"ItemId":{"potion":0,"sword":1}}"#
@@ -555,6 +562,8 @@ outputs:
         String::from_utf8_lossy(&codegen_output.stderr)
     );
 
+    let export_dir = active_artifact_dir(&project_dir, "data");
+    let csharp_dir = active_artifact_dir(&project_dir, "code");
     let new_output = Command::new("dotnet")
         .args([
             "new",
@@ -705,6 +714,8 @@ fn generated_csharp_compiles_and_loads_exported_messagepack() {
         String::from_utf8_lossy(&codegen_output.stderr)
     );
 
+    let export_dir = active_artifact_dir(&project_dir, "data");
+    let csharp_dir = active_artifact_dir(&project_dir, "code");
     let new_output = Command::new("dotnet")
         .args([
             "new",

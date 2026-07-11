@@ -12,17 +12,20 @@ use common::*;
 
 #[test]
 fn export_json_validates_declared_output_type() {
-    let out_dir =
-        std::env::temp_dir().join(format!("coflow-json-export-test-{}", std::process::id()));
-    if out_dir.exists() {
-        std::fs::remove_dir_all(&out_dir).expect("clean old output dir");
+    let root_dir = temp_project_dir("json-export");
+    let project_dir = root_dir.join("rpg");
+    let out_dir = root_dir.join("export");
+    if root_dir.exists() {
+        std::fs::remove_dir_all(&root_dir).expect("clean old output dir");
     }
+    copy_dir_recursive(std::path::Path::new("examples/rpg"), &project_dir)
+        .expect("copy example project");
 
     let output = coflow()
         .args([
             "export",
             "json",
-            "examples/rpg",
+            project_dir.to_str().expect("utf8 temp path"),
             "--out",
             out_dir.to_str().expect("utf8 temp path"),
         ])
@@ -40,11 +43,12 @@ fn export_json_validates_declared_output_type() {
         String::from_utf8_lossy(&output.stdout)
     );
 
-    let drop_table = std::fs::read_to_string(out_dir.join("DropTable.json"))
+    let generation = active_artifact_dir(&project_dir, "data");
+    let drop_table = std::fs::read_to_string(generation.join("DropTable.json"))
         .expect("DropTable.json should be written");
     assert!(drop_table.contains(r#""$type": "ItemReward""#));
     assert!(drop_table.contains(r#""monster": "goblin_warrior""#));
-    std::fs::remove_dir_all(out_dir).expect("clean output dir");
+    std::fs::remove_dir_all(root_dir).expect("clean output dir");
 }
 
 #[test]
@@ -95,8 +99,9 @@ fn export_messagepack_writes_msgpack_tables() {
         "stdout: {}",
         String::from_utf8_lossy(&output.stdout)
     );
-    assert!(out_dir.join("Item.msgpack").exists());
-    assert!(out_dir.join("DropTable.msgpack").exists());
+    let generation = active_artifact_dir(&project_dir, "data");
+    assert!(generation.join("Item.msgpack").exists());
+    assert!(generation.join("DropTable.msgpack").exists());
 
     std::fs::remove_dir_all(root_dir).expect("clean temp dir");
 }

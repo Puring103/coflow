@@ -53,7 +53,7 @@ generated/csharp/
 
 `CoflowTables.cs` 是默认入口。每个 CFT type / enum 会生成对应 C# 文件。本地化字段存在时，会额外生成运行时 helper。
 
-C# 输出目录由 Coflow 完整接管。生成成功后，目标目录中已有文件和子目录都会被移除。不要把手写代码放进 codegen 输出目录。
+`outputs.code.dir` 或 `--out` 是不可变 generation 的放置锚点。生成成功信息会输出实际 generation 目录；当前目录也记录在 `.coflow/artifacts/active.json` 的 `outputs.code.generation_dir`。后续 codegen 创建新 generation，不会修改或删除旧 generation。不要在 generation 中放置或修改手写代码。
 
 ## 入口类
 
@@ -184,7 +184,7 @@ enum ItemId {}
 
 生成后，`TbItem` 的 key 类型会从 `string` 变为 `ItemId`，引用该 type 的字段也会使用对应 enum。
 
-`coflow.enum.lock.json` 位于 `coflow.yaml` 同级，用来稳定 enum variant 的整数值。`coflow build` 会加载数据并补全新增 variant；单独运行 `codegen csharp` 不加载数据源，因此只读取已有 lockfile。
+`@idAsEnum` lock state 位于 `.coflow/artifacts/active.json`，与 data/code generation 在同一次 manifest 激活中发布，用来稳定 enum variant 的整数值。激活成功后，Coflow 原子更新 `coflow.yaml` 同级的 `coflow.enum.lock.json` 作为可提交到版本库的镜像；没有本地 manifest 的干净 clone 会从该文件恢复 lock state。`coflow build` 会加载数据并补全新增 variant；单独运行 `codegen csharp` 不加载数据源，因此只读取已有 lock state。
 
 ## `@singleton`
 
@@ -256,7 +256,7 @@ codegen 会在写文件前检查：
 - `@idAsEnum` variant 是否能生成合法 C# enum member。
 - 输出目录是否可安全接管。
 
-存在诊断时，不会替换输出目录，也不会更新 `coflow.enum.lock.json`。
+存在诊断时，不会激活新的 generation，也不会更新 active manifest 中的 lock state。
 
 ## 运行时定位
 

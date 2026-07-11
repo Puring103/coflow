@@ -185,7 +185,7 @@ coflow build examples/rpg --data-out out/data --code-out out/csharp --namespace 
 | `--code-out DIR` | 覆盖 `outputs.code.dir` |
 | `--namespace NAME` | 覆盖 C# codegen 的命名空间 |
 
-只有项目配置、schema、数据加载、引用解析和 `check` 全部通过时，`build` 才会写产物。若产生诊断，本次运行不会写数据或代码产物。
+只有项目配置、schema、数据加载、引用解析和 `check` 全部通过时，`build` 才会写产物。data、code 和 `@idAsEnum` lock state 组成一个 manifest snapshot；若产生诊断，本次运行不会激活新的 snapshot。
 
 ## `export`
 
@@ -239,11 +239,11 @@ coflow export messagepack examples/rpg --out generated/data
 
 输出文件名为 `<TypeName>.msgpack`。
 
-### 输出目录接管
+### 不可变 generation
 
-数据导出成功后，`outputs.data.dir` 或 `--out` 指定的目录由 coflow 完整接管。
+`outputs.data.dir` 或 `--out` 指定 generation 的放置锚点。Coflow 在同级位置写入不可变 generation，命令成功信息输出实际目录。当前 data generation 记录在项目目录的 `.coflow/artifacts/active.json` 中。
 
-导出会先写入同级 staging 目录，所有文件写入成功后再替换目标输出目录。目标目录中已有文件和子目录都会被移除。不要把手写文件放进数据输出目录。
+所有文件写入、同步和回读验证成功后，Coflow 才原子替换唯一 active manifest。失败时旧 manifest 和旧 generation 仍然完整。不要修改 generation 文件；新发布不会原地覆盖它们。
 
 ## `codegen`
 
@@ -281,9 +281,9 @@ coflow codegen csharp examples/rpg --out generated/csharp --namespace Game.Confi
 | `json` | Newtonsoft.Json loader |
 | `messagepack` | MessagePack-CSharp loader |
 
-C# 输出目录由 coflow 完整接管，目录中已有文件和子目录都会被移除。`coflow.enum.lock.json` 位于 `coflow.yaml` 同级，不属于 C# 输出目录。
+C# 也发布为不可变 generation。实际目录由命令输出，并记录在 active manifest 的 `outputs.code.generation_dir`。
 
-对于 `@idAsEnum`，单独运行 `codegen csharp` 会读取已有 `coflow.enum.lock.json`，但不会加载数据源，因此不会新增 data-driven enum variant。需要根据当前数据补全 variant 时，使用 `coflow build`。
+对于 `@idAsEnum`，单独运行 `codegen csharp` 会读取 active manifest 中已有的 lock state；没有 manifest 时从应提交到版本库的 `coflow.enum.lock.json` 恢复。该命令不会加载数据源，因此不会新增 data-driven enum variant。需要根据当前数据补全 variant 时，使用 `coflow build`。
 
 ## `lsp`
 

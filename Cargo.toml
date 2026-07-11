@@ -58,6 +58,7 @@ dbg_macro = "warn"
 redundant_pub_crate = "allow"
 
 [dependencies]
+atomicwrites = "0.4.4"
 clap = { version = "4", features = ["derive"] }
 coflow-api = { path = "crates/coflow-api" }
 coflow-builtins = { path = "crates/coflow-builtins" }

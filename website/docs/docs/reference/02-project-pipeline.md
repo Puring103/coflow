@@ -20,8 +20,9 @@ flowchart TD
   queries --> export["导出 JSON / MessagePack"]
   write --> mutation["Provider mutation"]
   compile --> codegen["生成 C# 代码"]
-  export --> artifacts["staging 后提交产物"]
+  export --> artifacts["封存不可变 generation"]
   codegen --> artifacts
+  artifacts --> manifest["原子激活 active manifest"]
 ```
 
 ## 入口
@@ -240,9 +241,9 @@ CLI、编辑器和自动化命令复用这些 capability，而不是导入 ownin
 
 存在诊断时不写产物。
 
-通过检查后，CLI 使用 staging 目录写入完整产物，再替换目标目录。导出目录和代码生成目录由 Coflow 完整接管，目标目录内已有内容不会保留。
+通过检查后，CLI 使用 staging 目录写入、同步并回读验证完整产物，再把目录封存为不可变 generation。旧 generation 不会被改写。
 
-C# codegen 的 `coflow.enum.lock.json` 位于 `coflow.yaml` 同级。codegen 会在 staging 成功后再提交 lockfile。
+data、code generation 与 C# `@idAsEnum` lock state 组成一个 manifest snapshot。CLI 最后只原子替换项目目录下 `.coflow/artifacts/active.json`；激活前失败时，旧 snapshot 保持完整。激活成功后再原子更新可提交到版本库的 `coflow.enum.lock.json` 镜像，供没有本地 manifest 的干净 clone 恢复编号。
 
 ## 诊断流
 
@@ -272,8 +273,8 @@ DiagnosticSet
 | --- | --- |
 | `coflow-project` | 项目配置、项目根目录、路径解析、schema 文件发现、项目初始化 |
 | `coflow-runtime` | schema 编译、source resolve/load、DataModel、check、索引、诊断聚合 |
-| 根 `coflow` crate | CLI 参数、命令编排、human/JSON 输出、产物 preflight、staging 和 commit |
+| 根 `coflow` crate | CLI 参数、命令编排、human/JSON 输出、产物 preflight、generation staging 和 manifest publication |
 | `coflow-builtins` | 默认 Provider registry |
 | Provider crates | loader、writer、exporter、codegen 具体实现 |
 
-Provider 不发现项目配置，不持有宿主状态，不直接决定业务合法性。Runtime 不渲染 CLI 输出，不替换导出目录。CLI 不重新实现 source resolve/load/model/check。
+Provider 不发现项目配置，不持有宿主状态，不直接决定业务合法性。Runtime 不渲染 CLI 输出，不发布 artifact manifest。CLI 不重新实现 source resolve/load/model/check。
