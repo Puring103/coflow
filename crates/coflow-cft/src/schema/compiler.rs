@@ -7,8 +7,7 @@ mod types;
 
 use super::support::{ConstInfo, EnumInfo, FieldInfo, Symbol, TypeInfo};
 use super::type_checker::TypeChecker;
-use super::CftCompileOptions;
-use super::CompiledSchema;
+use super::{CftCompileOptions, SchemaReflection};
 use crate::ast::{ConstLiteral, TypeRefKind};
 use crate::container::{CftContainer, ModuleId};
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
@@ -43,7 +42,7 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    pub(super) fn compile(&mut self) -> Result<CompiledSchema, CftDiagnostics> {
+    pub(super) fn compile(&mut self) -> Result<SchemaReflection, CftDiagnostics> {
         if !self.validate_structure() {
             return Err(CftDiagnostics::new(std::mem::take(&mut self.diagnostics)));
         }

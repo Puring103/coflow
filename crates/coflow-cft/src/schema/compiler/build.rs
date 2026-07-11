@@ -6,12 +6,12 @@ use crate::schema::support::{
 };
 use crate::schema::{
     CftConstValue, CftSchemaDefaultValue, CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField,
-    CftSchemaModule, CftSchemaType, CompiledSchema, Dimension, DimensionSpec,
+    CftSchemaModule, CftSchemaType, Dimension, DimensionSpec, SchemaReflection,
 };
 use std::collections::BTreeMap;
 
 impl SchemaCompiler<'_> {
-    pub(super) fn build_schema(&self) -> CompiledSchema {
+    pub(super) fn build_schema(&self) -> SchemaReflection {
         let mut modules = self
             .container
             .modules
@@ -104,7 +104,7 @@ impl SchemaCompiler<'_> {
             types.insert(name.clone(), schema);
         }
 
-        CompiledSchema {
+        SchemaReflection {
             modules,
             consts,
             types,

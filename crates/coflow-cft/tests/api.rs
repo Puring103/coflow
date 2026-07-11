@@ -261,12 +261,13 @@ fn failed_compile_keeps_previously_published_schema() {
     container
         .add_module(ModuleId::from("bad"), "type B { missing: Missing; }")
         .unwrap();
-    // add_module invalidates the schema by design; a failed compile must
-    // not re-publish anything but also must not introduce new transient state.
-    assert!(!container.has_type("A"));
+    // Staging a new module does not disturb the last published generation.
+    assert!(container.has_type("A"));
+    assert!(!container.has_type("B"));
     let err = container.compile().unwrap_err();
     assert_has_code(&err, CftErrorCode::UnknownNamedType);
-    assert!(!container.has_type("A"));
+    assert!(container.has_type("A"));
+    assert!(!container.has_type("B"));
 }
 
 #[test]
@@ -307,12 +308,12 @@ fn failed_recompile_without_new_modules_keeps_old_schema() {
 }
 
 #[test]
-fn register_runtime_type_injects_schema_type_and_rejects_duplicates() {
+fn register_runtime_types_injects_schema_type_and_rejects_duplicates_atomically() {
     let mut container = compile_one("type Item { name: string; }").unwrap();
     let runtime_type = runtime_variants_type("Item_nameVariants");
 
     container
-        .register_runtime_type(runtime_type.clone())
+        .register_runtime_types([runtime_type.clone()])
         .expect("runtime type registers");
 
     let resolved = container
@@ -331,10 +332,15 @@ fn register_runtime_type_injects_schema_type_and_rejects_duplicates() {
         .iter()
         .any(|ty| ty.name == "Item_nameVariants"));
 
+    let staged = runtime_variants_type("Other_nameVariants");
     let err = container
-        .register_runtime_type(runtime_type)
+        .register_runtime_types([staged, runtime_type])
         .expect_err("duplicate runtime type should fail");
     assert_has_code(&err, CftErrorCode::DuplicateGlobalName);
+    assert!(
+        container.resolve_type("Other_nameVariants").is_none(),
+        "the valid prefix of a failed runtime batch must not be published"
+    );
 }
 
 fn runtime_variants_type(name: &str) -> CftSchemaType {

@@ -12,10 +12,14 @@ use crate::{
     CftAnnotation, CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaEnum, CftSchemaType,
     CftSchemaTypeRef,
 };
+use crate::container::ModuleId;
+use crate::schema::SchemaReflection;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
 pub struct CompiledSchema {
+    reflection: SchemaReflection,
+    sources: BTreeMap<ModuleId, String>,
     consts: BTreeMap<String, CftConstValue>,
     types: BTreeMap<String, CftTypeMeta>,
     enums: BTreeMap<String, CftEnumMeta>,
@@ -26,17 +30,31 @@ pub struct CompiledSchema {
 }
 
 impl CompiledSchema {
+    /// Transitional constructor for callers that have not migrated to the
+    /// container-owned canonical snapshot yet. This never recompiles schema;
+    /// it only clones the already-published product.
     #[must_use]
     pub fn new(schema: &CftContainer) -> Self {
-        let consts = schema
-            .module_ids()
-            .filter_map(|id| schema.schema(id))
+        schema
+            .compiled_schema()
+            .cloned()
+            .unwrap_or_else(Self::empty)
+    }
+
+    pub(crate) fn from_reflection(
+        reflection: SchemaReflection,
+        sources: BTreeMap<ModuleId, String>,
+    ) -> Self {
+        let consts = reflection
+            .modules
+            .values()
             .flat_map(|module| module.consts.iter())
             .map(|schema_const| (schema_const.name.clone(), schema_const.value.clone()))
             .collect::<BTreeMap<_, _>>();
 
-        let enums = schema
-            .all_enums()
+        let enums = reflection
+            .enums
+            .values()
             .map(|schema_enum| {
                 (
                     schema_enum.name.clone(),
@@ -45,8 +63,9 @@ impl CompiledSchema {
             })
             .collect::<BTreeMap<_, _>>();
 
-        let types = schema
-            .all_types()
+        let types = reflection
+            .types
+            .values()
             .map(|schema_type| {
                 let meta = CftTypeMeta::from_schema(schema_type);
                 (meta.name.clone(), meta)
@@ -70,6 +89,8 @@ impl CompiledSchema {
         let typed_checks = TypedCheckPlan::compile(&types);
         let value_dependencies = ValueDependencyPlan::compile(&types);
         let mut view = Self {
+            reflection,
+            sources,
             consts,
             types,
             enums,
@@ -80,6 +101,18 @@ impl CompiledSchema {
         };
         view.populate_dimension_checks();
         view
+    }
+
+    pub(crate) fn empty() -> Self {
+        Self::from_reflection(SchemaReflection::default(), BTreeMap::new())
+    }
+
+    pub(crate) const fn reflection(&self) -> &SchemaReflection {
+        &self.reflection
+    }
+
+    pub(crate) const fn sources(&self) -> &BTreeMap<ModuleId, String> {
+        &self.sources
     }
 
     fn build_dimension_storage_index(

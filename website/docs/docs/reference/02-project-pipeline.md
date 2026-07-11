@@ -66,6 +66,8 @@ Schema 编译阶段会处理：
 - 注解。
 - `check {}` 静态类型检查。
 
+`CftContainer` 将 module source、schema reflection、类型/enum 索引、typed check schedule 和 value dependency plan 作为同一个 `CompiledSchema` generation 发布。新增 module 只进入 staged 输入；只有完整编译成功才原子替换 generation，失败时查询仍读取上一份 schema 与对应 source。运行时生成的 dimension storage type 也按批次构建候选 generation，不会逐个类型发布半完成索引。
+
 只需要 schema 的命令不会要求数据源存在。
 
 ## 命令阶段矩阵

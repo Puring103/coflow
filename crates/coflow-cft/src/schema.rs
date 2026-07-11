@@ -320,8 +320,8 @@ pub enum CftAnnotationValue {
     Null,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct CompiledSchema {
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SchemaReflection {
     pub(crate) modules: BTreeMap<ModuleId, CftSchemaModule>,
     pub(crate) consts: BTreeMap<String, CftSchemaConst>,
     pub(crate) types: BTreeMap<String, CftSchemaType>,
@@ -331,7 +331,7 @@ pub(crate) struct CompiledSchema {
 pub(crate) fn compile_container(
     container: &CftContainer,
     options: CftCompileOptions,
-) -> Result<CompiledSchema, CftDiagnostics> {
+) -> Result<SchemaReflection, CftDiagnostics> {
     let mut compiler = SchemaCompiler::new(container, options);
     compiler.compile()
 }

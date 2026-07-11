@@ -357,8 +357,9 @@ fn engine_dimension_synthesis_uses_cft_compiler_context() {
         .expect("read dimension synthesis");
 
     assert!(
-        synthesize.contains("CompiledSchema::new(schema)"),
-        "dimension synthesis should derive schema metadata from coflow-cft CompiledSchema"
+        synthesize.contains("schema.compiled_schema()")
+            && synthesize.contains("schema.register_runtime_types(synthesized)"),
+        "dimension synthesis should borrow the canonical schema and publish runtime types in one batch"
     );
     for forbidden in ["schema.all_types()", "schema.resolve_type(", ".types.get("] {
         assert!(

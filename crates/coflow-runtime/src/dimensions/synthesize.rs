@@ -22,30 +22,28 @@ pub fn inject_dimension_types(
     schema: &mut CftContainer,
     configs: &std::collections::BTreeMap<String, DimensionConfig>,
 ) -> Result<Vec<DimensionField>, coflow_cft::CftDiagnostics> {
-    let view = CompiledSchema::new(schema);
-    let fields = dimension_fields(&view);
-    for field in &fields {
-        let Some(config) = configs.get(&field.dimension) else {
-            continue;
-        };
-        let Some(source_type) = view.type_meta(&field.source_type) else {
-            continue;
-        };
-        let Some(source_field) = source_type
-            .own_fields
-            .iter()
-            .find(|candidate| candidate.name == field.source_field)
-        else {
-            continue;
-        };
-        let synthesized = synthesized_type(
-            &field.synthesized_type,
-            field,
-            &source_field.ty_ref,
-            &config.variants,
-        );
-        schema.register_runtime_type(synthesized)?;
-    }
+    let Some(view) = schema.compiled_schema() else {
+        return Ok(Vec::new());
+    };
+    let fields = dimension_fields(view);
+    let synthesized = fields
+        .iter()
+        .filter_map(|field| {
+            let config = configs.get(&field.dimension)?;
+            let source_type = view.type_meta(&field.source_type)?;
+            let source_field = source_type
+                .own_fields
+                .iter()
+                .find(|candidate| candidate.name == field.source_field)?;
+            Some(synthesized_type(
+                &field.synthesized_type,
+                field,
+                &source_field.ty_ref,
+                &config.variants,
+            ))
+        })
+        .collect::<Vec<_>>();
+    schema.register_runtime_types(synthesized)?;
     Ok(fields)
 }
 
