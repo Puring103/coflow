@@ -1,9 +1,5 @@
-use coflow_api::{
-    byte_range, Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, TextRange,
-};
-use coflow_cft::{CftDiagnostic, CftLabel, ModuleId, Span};
+use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::path::Path;
 
 const PROJECT_DIAGNOSTIC_STAGE: &str = "PROJECT";
@@ -99,42 +95,6 @@ impl DiagnosticJson {
             related: Vec::new(),
         }
     }
-
-    #[must_use]
-    pub fn from_cft(
-        diagnostic: &CftDiagnostic,
-        sources: &BTreeMap<String, String>,
-        paths: &BTreeMap<String, String>,
-    ) -> Self {
-        let fallback = CftLabel {
-            module: ModuleId::new(""),
-            span: Span::default(),
-            message: None,
-        };
-        let primary = diagnostic.primary.as_ref().unwrap_or(&fallback);
-        let range = cft_label_range(primary, sources);
-        let path = paths
-            .get(primary.module.as_str())
-            .map_or_else(|| primary.module.as_str().to_string(), Clone::clone);
-        Self {
-            code: diagnostic.code.as_str().to_string(),
-            stage: diagnostic.stage.to_string(),
-            severity: "error".to_string(),
-            message: diagnostic.message.clone(),
-            path,
-            sheet: None,
-            cell: None,
-            start_line: range.start.line,
-            start_character: range.start.character,
-            end_line: range.end.line,
-            end_character: range.end.character,
-            related: diagnostic
-                .related
-                .iter()
-                .map(|label| RelatedJson::from_cft(label, sources, paths))
-                .collect(),
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -154,29 +114,6 @@ pub struct RelatedJson {
     pub end_character: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-}
-
-impl RelatedJson {
-    fn from_cft(
-        label: &CftLabel,
-        sources: &BTreeMap<String, String>,
-        paths: &BTreeMap<String, String>,
-    ) -> Self {
-        let range = cft_label_range(label, sources);
-        let path = paths
-            .get(label.module.as_str())
-            .map_or_else(|| label.module.as_str().to_string(), Clone::clone);
-        Self {
-            path,
-            sheet: None,
-            cell: None,
-            start_line: range.start.line,
-            start_character: range.start.character,
-            end_line: range.end.line,
-            end_character: range.end.character,
-            label: label.message.clone(),
-        }
-    }
 }
 
 #[must_use]
@@ -291,11 +228,4 @@ const fn severity_name(severity: Severity) -> &'static str {
         Severity::Warning => "warning",
         Severity::Info => "info",
     }
-}
-
-fn cft_label_range(label: &CftLabel, sources: &BTreeMap<String, String>) -> TextRange {
-    let source = sources
-        .get(label.module.as_str())
-        .map_or("", String::as_str);
-    byte_range(source, label.span.start, label.span.end)
 }

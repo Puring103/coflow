@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
-use coflow_cft::{CftContainer, CftDiagnostic, ModuleId};
+use coflow_cft::{CftContainer, ModuleId};
 use coflow_project::{normalize_path, Project};
 use std::path::PathBuf;
 
@@ -13,7 +13,7 @@ use crate::session::ProjectSchemaSession;
 #[derive(Debug)]
 pub struct SchemaBuild {
     pub container: Option<CftContainer>,
-    pub diagnostics: Vec<CftDiagnostic>,
+    pub diagnostics: DiagnosticSet,
     pub sources: BTreeMap<String, String>,
     pub paths: BTreeMap<String, String>,
 }
@@ -96,6 +96,8 @@ pub fn compile_schema_project_with_overrides(
         None
     };
 
+    let diagnostics =
+        diagnostic_set_from_cft(dedupe_cft_diagnostics(diagnostics), &sources, &paths);
     Ok(SchemaBuild {
         container: compiled,
         diagnostics,
@@ -215,9 +217,5 @@ fn compile_project_schema(
 }
 
 fn diagnostics_from_schema_build(build: &SchemaBuild) -> DiagnosticSet {
-    diagnostic_set_from_cft(
-        dedupe_cft_diagnostics(build.diagnostics.clone()),
-        &build.sources,
-        &build.paths,
-    )
+    build.diagnostics.clone()
 }

@@ -10,7 +10,155 @@
 mod common;
 use common::*;
 
+use coflow_api::{Severity, SourceLocation};
+use coflow_project::Project;
+use coflow_runtime::compile_schema_project_with_overrides;
 use std::process::Stdio;
+
+#[test]
+fn cli_lsp_and_runtime_share_the_canonical_schema_diagnostic() {
+    let project_dir = temp_project_dir("schema-diagnostic-host-golden");
+    let _cleanup = TempDirCleanup(project_dir.clone());
+    let schema_dir = project_dir.join("schema");
+    std::fs::create_dir_all(&schema_dir).expect("create schema dir");
+    std::fs::write(project_dir.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+    let schema_path = schema_dir.join("main.cft");
+    let source = "type 表 {\n  名: Missing;\n}\n";
+    std::fs::write(&schema_path, source).expect("write schema");
+
+    let project = Project::open_schema_only(Some(&project_dir)).expect("open project");
+    let build = compile_schema_project_with_overrides(&project, &[]).expect("compile schema");
+    let expected = build
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "CFT-SCHEMA-006")
+        .expect("runtime diagnostic");
+    assert_eq!(expected.severity, Severity::Error);
+    let expected_range = expected
+        .primary
+        .as_ref()
+        .expect("runtime primary label")
+        .location
+        .text_range();
+    assert!(matches!(
+        &expected.primary.as_ref().expect("primary").location,
+        SourceLocation::FileSpan { path, .. }
+            if coflow_project::normalize_path(path)
+                == coflow_project::normalize_path(&schema_path)
+    ));
+
+    let cli = coflow()
+        .args([
+            "cft",
+            "check",
+            project_dir.to_str().expect("utf8 project path"),
+            "--json",
+        ])
+        .output()
+        .expect("run cft check");
+    assert!(!cli.status.success());
+    let cli_json: Value = serde_json::from_slice(&cli.stdout).expect("parse CLI diagnostics");
+    let cli_diagnostic = cli_json["diagnostics"]
+        .as_array()
+        .expect("CLI diagnostics")
+        .iter()
+        .find(|diagnostic| diagnostic["code"] == expected.code)
+        .expect("CLI canonical diagnostic");
+
+    let mut child = coflow()
+        .args(["lsp", project_dir.to_str().expect("utf8 project path")])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn coflow lsp");
+    let mut stdin = child.stdin.take().expect("lsp stdin");
+    let mut stdout = child.stdout.take().expect("lsp stdout");
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }),
+    );
+    read_lsp_response(&mut stdout, 1);
+    let canonical_schema = std::fs::canonicalize(&schema_path).expect("canonical schema path");
+    let uri = file_uri(&canonical_schema);
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "cft",
+                    "version": 1,
+                    "text": source
+                }
+            }
+        }),
+    );
+    let publication = read_lsp(&mut stdout);
+    let lsp_diagnostic = publication["params"]["diagnostics"]
+        .as_array()
+        .expect("LSP diagnostics")
+        .iter()
+        .find(|diagnostic| diagnostic["code"] == expected.code)
+        .expect("LSP canonical diagnostic");
+
+    assert_eq!(cli_diagnostic["message"], expected.message);
+    assert_eq!(cli_diagnostic["stage"], expected.stage);
+    assert_eq!(cli_diagnostic["severity"], "error");
+    assert_eq!(lsp_diagnostic["message"], expected.message);
+    assert_eq!(
+        lsp_diagnostic["source"],
+        format!("coflow {}", expected.stage)
+    );
+    assert_eq!(lsp_diagnostic["severity"], 1);
+    assert_eq!(cli_diagnostic["startLine"], expected_range.start.line);
+    assert_eq!(
+        cli_diagnostic["startCharacter"],
+        expected_range.start.character
+    );
+    assert_eq!(
+        lsp_diagnostic["range"]["start"]["line"],
+        expected_range.start.line
+    );
+    assert_eq!(
+        lsp_diagnostic["range"]["start"]["character"],
+        expected_range.start.character
+    );
+    assert_eq!(
+        lsp_diagnostic["range"]["end"]["line"],
+        expected_range.end.line
+    );
+    assert_eq!(
+        lsp_diagnostic["range"]["end"]["character"],
+        expected_range.end.character
+    );
+
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "shutdown",
+            "params": null
+        }),
+    );
+    read_lsp_response(&mut stdout, 2);
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "exit",
+            "params": null
+        }),
+    );
+    assert_child_exits(&mut child);
+}
 
 #[test]
 fn lsp_publishes_project_diagnostics_for_open_document() {

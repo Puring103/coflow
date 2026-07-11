@@ -1,18 +1,14 @@
 use super::{is_cfd_path, OpenDocument};
 use crate::definition::CfdDefinitionIndex;
 use crate::diagnostics::{
-    label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location,
-    preferred_diagnostic_uri,
+    label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
 };
 use crate::state::LspBuild;
 use crate::uri::path_to_file_uri;
 use coflow_api::{DiagnosticSet, SourceLocationSpec};
 use coflow_cfd::parse_cfd;
 use coflow_project::{normalize_path, Project};
-use coflow_runtime::{
-    compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
-    SchemaSourceOverride,
-};
+use coflow_runtime::{compile_schema_project_with_overrides, SchemaSourceOverride};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -74,7 +70,6 @@ impl ValidationSnapshot {
             document_versions: BTreeMap::new(),
         }
     }
-
 }
 
 pub(crate) fn build_snapshot(input: ValidationInput) -> ValidationSnapshot {
@@ -151,7 +146,7 @@ pub(crate) fn build_snapshot(input: ValidationInput) -> ValidationSnapshot {
             .push(lsp_error_diagnostic("CFD-LSP", &failure.message));
     }
 
-    let mut raw_build = match compile_schema_project_with_overrides(&input.project, &overrides) {
+    let raw_build = match compile_schema_project_with_overrides(&input.project, &overrides) {
         Ok(build) => build,
         Err(diagnostics) => {
             add_diagnostic_set(
@@ -163,12 +158,9 @@ pub(crate) fn build_snapshot(input: ValidationInput) -> ValidationSnapshot {
             return snapshot;
         }
     };
-    let diagnostics = dedupe_cft_diagnostics(std::mem::take(&mut raw_build.diagnostics));
-    let diagnostic_set =
-        diagnostic_set_from_cft(diagnostics, &raw_build.sources, &raw_build.paths);
     add_diagnostic_set(
         &mut snapshot,
-        &diagnostic_set,
+        &raw_build.diagnostics,
         &preferred_uris,
         &input.project.config_path,
     );
@@ -247,19 +239,9 @@ fn collect_cfd_sources(
         };
         let resolved = project.resolve_path(path);
         if resolved.is_dir() {
-            collect_cfd_sources_in_dir(
-                &resolved,
-                open_documents,
-                &mut sources,
-                &mut failures,
-            );
+            collect_cfd_sources_in_dir(&resolved, open_documents, &mut sources, &mut failures);
         } else if is_cfd_path(&resolved) {
-            collect_cfd_source(
-                &resolved,
-                open_documents,
-                &mut sources,
-                &mut failures,
-            );
+            collect_cfd_source(&resolved, open_documents, &mut sources, &mut failures);
         }
     }
 
@@ -291,7 +273,10 @@ fn collect_cfd_sources_in_dir(
         Err(err) => {
             failures.push(CfdSourceFailure {
                 uri: path_to_file_uri(dir),
-                message: format!("failed to read CFD source directory `{}`: {err}", dir.display()),
+                message: format!(
+                    "failed to read CFD source directory `{}`: {err}",
+                    dir.display()
+                ),
             });
             return;
         }
@@ -302,7 +287,10 @@ fn collect_cfd_sources_in_dir(
             Ok(entry) => paths.push(entry.path()),
             Err(err) => failures.push(CfdSourceFailure {
                 uri: path_to_file_uri(dir),
-                message: format!("failed to enumerate CFD source directory `{}`: {err}", dir.display()),
+                message: format!(
+                    "failed to enumerate CFD source directory `{}`: {err}",
+                    dir.display()
+                ),
             }),
         }
     }

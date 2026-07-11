@@ -1,8 +1,6 @@
 use coflow::diagnostics::{diagnostic_json_from_set, DiagnosticJson};
-use coflow_cft::CftDiagnostic;
 use coflow_project::Project;
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -43,19 +41,6 @@ fn write_human_diagnostics(
             .map_err(|err| format!("failed to write diagnostics: {err}"))?;
     }
     Ok(())
-}
-
-pub(crate) fn write_human_cft_diagnostics(
-    diagnostics: &[CftDiagnostic],
-    sources: &BTreeMap<String, String>,
-    paths: &BTreeMap<String, String>,
-    root_dir: &Path,
-) -> Result<(), String> {
-    let diagnostics = diagnostics
-        .iter()
-        .map(|diagnostic| DiagnosticJson::from_cft(diagnostic, sources, paths))
-        .collect::<Vec<_>>();
-    write_human_diagnostics(&diagnostics, Some(root_dir))
 }
 
 fn write_diagnostic_block(

@@ -2,9 +2,8 @@ use crate::diagnostics::{cli_error, cli_file_error};
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
-    compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
-    inspect_schema, schema_files, Runtime, SchemaFilesReport, SchemaInspectReport,
-    SchemaSourceOverride,
+    compile_schema_project_with_overrides, inspect_schema, schema_files, Runtime,
+    SchemaFilesReport, SchemaInspectReport, SchemaSourceOverride,
 };
 use serde::Serialize;
 use std::io::{self, Read, Write};
@@ -246,39 +245,29 @@ fn check_schema_source(
             source: source.to_string(),
         }],
     )?;
-    diagnostics.extend(diagnostic_set_from_cft(
-        dedupe_cft_diagnostics(build.diagnostics),
-        &build.sources,
-        &build.paths,
-    ));
+    diagnostics.extend(build.diagnostics);
     Ok(diagnostics.flat_diagnostics())
 }
 
 fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), DiagnosticSet> {
     let mut stdout = io::stdout().lock();
     for ty in &report.types {
-        writeln!(stdout, "type {}", ty.name)
-            .map_err(output_error)?;
+        writeln!(stdout, "type {}", ty.name).map_err(output_error)?;
         for annotation in &ty.annotations {
-            writeln!(stdout, "  @{}", annotation.name)
-                .map_err(output_error)?;
+            writeln!(stdout, "  @{}", annotation.name).map_err(output_error)?;
         }
         for field in &ty.fields {
-            writeln!(stdout, "  {}: {}", field.name, field.raw_type)
-                .map_err(output_error)?;
+            writeln!(stdout, "  {}: {}", field.name, field.raw_type).map_err(output_error)?;
         }
     }
     for schema_enum in &report.enums {
-        writeln!(stdout, "enum {}", schema_enum.name)
-            .map_err(output_error)?;
+        writeln!(stdout, "enum {}", schema_enum.name).map_err(output_error)?;
         for variant in &schema_enum.variants {
-            writeln!(stdout, "  {} = {}", variant.name, variant.value)
-                .map_err(output_error)?;
+            writeln!(stdout, "  {} = {}", variant.name, variant.value).map_err(output_error)?;
         }
     }
     for schema_const in &report.consts {
-        writeln!(stdout, "const {}", schema_const.name)
-            .map_err(output_error)?;
+        writeln!(stdout, "const {}", schema_const.name).map_err(output_error)?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
@@ -286,10 +275,8 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
 fn write_schema_files_human(report: &SchemaFilesReport) -> Result<(), DiagnosticSet> {
     let mut stdout = io::stdout().lock();
     for file in &report.files {
-        writeln!(stdout, "{}", file.module)
-            .map_err(output_error)?;
-        writeln!(stdout, "{}", file.source)
-            .map_err(output_error)?;
+        writeln!(stdout, "{}", file.module).map_err(output_error)?;
+        writeln!(stdout, "{}", file.source).map_err(output_error)?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }

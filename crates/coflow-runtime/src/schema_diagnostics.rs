@@ -109,3 +109,87 @@ fn cft_label_range(label: &CftLabel, sources: &BTreeMap<String, String>) -> Text
         .map_or("", String::as_str);
     byte_range(source, label.span.start, label.span.end)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
+    use coflow_api::SourceLocation;
+    use coflow_cft::{CftDiagnostic, CftErrorCode, CftSeverity, ModuleId, Span};
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn canonical_conversion_deduplicates_complete_diagnostic_identity() {
+        let source = "type 表 {\n  名: string;\n}\n";
+        let start = source.find('名').expect("field name");
+        let end = start + "名".len();
+        let diagnostic = CftDiagnostic::error(
+            CftErrorCode::UnknownNamedType,
+            ModuleId::new("schema/main.cft"),
+            Span::new(start, end),
+            "bad type",
+        )
+        .with_primary_message("primary")
+        .with_related(
+            ModuleId::new("schema/other.cft"),
+            Span::new(0, 4),
+            "related",
+        );
+        let distinct = diagnostic.clone().with_related(
+            ModuleId::new("schema/other.cft"),
+            Span::new(5, 9),
+            "related",
+        );
+        let diagnostics =
+            dedupe_cft_diagnostics(vec![diagnostic.clone(), diagnostic.clone(), distinct]);
+        assert_eq!(diagnostics.len(), 2);
+
+        let sources = BTreeMap::from([
+            ("schema/main.cft".to_string(), source.to_string()),
+            ("schema/other.cft".to_string(), "enum E {}".to_string()),
+        ]);
+        let paths = BTreeMap::from([
+            (
+                "schema/main.cft".to_string(),
+                "C:/project/schema/main.cft".to_string(),
+            ),
+            (
+                "schema/other.cft".to_string(),
+                "C:/project/schema/other.cft".to_string(),
+            ),
+        ]);
+        let converted = diagnostic_set_from_cft(vec![diagnostic], &sources, &paths);
+        let converted = converted.diagnostics.first().expect("canonical diagnostic");
+        assert!(matches!(
+            converted.primary.as_ref().map(|label| &label.location),
+            Some(SourceLocation::FileSpan {
+                path,
+                start_line: 1,
+                start_character: 2,
+                end_line: 1,
+                end_character: 3,
+            }) if path == &PathBuf::from("C:/project/schema/main.cft")
+        ));
+        assert!(matches!(
+            converted.related.first(),
+            Some(label) if label.message.as_deref() == Some("related")
+                && matches!(&label.location, SourceLocation::FileSpan { path, .. }
+                    if path == &PathBuf::from("C:/project/schema/other.cft"))
+        ));
+    }
+
+    #[test]
+    fn deduplication_supports_diagnostics_without_primary_labels() {
+        let diagnostic = CftDiagnostic {
+            code: CftErrorCode::UnexpectedEof,
+            stage: CftErrorCode::UnexpectedEof.stage(),
+            severity: CftSeverity::Error,
+            message: "missing token".to_string(),
+            primary: None,
+            related: Vec::new(),
+        };
+        let deduped = dedupe_cft_diagnostics(vec![diagnostic.clone(), diagnostic]);
+        assert_eq!(deduped.len(), 1);
+        assert!(deduped[0].primary.is_none());
+    }
+}

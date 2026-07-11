@@ -14,23 +14,17 @@
 #![allow(clippy::multiple_crate_versions)]
 
 use clap::Parser;
-use cli_output::{
-    display_path, project_path, write_human_cft_diagnostics, write_json_diagnostics,
-    write_project_diagnostics,
-};
-use coflow::diagnostics::cli_error;
+use cli_output::{display_path, project_path, write_json_diagnostics, write_project_diagnostics};
 use coflow::commands::{
     build_project, check_project, export_project_data, generate_project_code, BuildOptions,
     CodegenOptions, CommandOutcome, ExportOptions, CSHARP_CODEGEN_ID, JSON_EXPORTER_ID,
     MESSAGEPACK_EXPORTER_ID,
 };
-use coflow::diagnostics::DiagnosticJson;
+use coflow::diagnostics::cli_error;
 use coflow::{data_commands, schema_commands};
 use coflow_api::DiagnosticSet;
 use coflow_project::{normalize_path, path_to_slash, Project};
-use coflow_runtime::{
-    compile_schema_project_with_overrides, dedupe_cft_diagnostics, SchemaSourceOverride,
-};
+use coflow_runtime::{compile_schema_project_with_overrides, SchemaSourceOverride};
 use data_get_target::parse_data_get_target;
 use serde_json::Value;
 use std::io::Read;
@@ -262,32 +256,18 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
         Vec::new()
     };
     let build = compile_schema_project_with_overrides(&project, &overrides)?;
-    let diagnostics = dedupe_cft_diagnostics(build.diagnostics);
-    if args.json {
-        write_json_diagnostics(
-            diagnostics
-                .iter()
-                .map(|diagnostic| {
-                    DiagnosticJson::from_cft(diagnostic, &build.sources, &build.paths)
-                })
-                .collect(),
-        )
-        .map_err(output_error)?;
-    } else if diagnostics.is_empty() {
+    let diagnostics = build.diagnostics;
+    let success = diagnostics.is_empty();
+    if success && !args.json {
         println!(
             "CFT check passed: {}",
             project_path(&project, &project.config_path)
         );
     } else {
-        write_human_cft_diagnostics(
-            &diagnostics,
-            &build.sources,
-            &build.paths,
-            &project.root_dir,
-        )
-        .map_err(output_error)?;
+        write_project_diagnostics(diagnostics, args.json, &project.root_dir)
+            .map_err(output_error)?;
     }
-    Ok(diagnostics.is_empty())
+    Ok(success)
 }
 
 fn run_lsp(args: &LspArgs) -> Result<bool, DiagnosticSet> {

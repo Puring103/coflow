@@ -35,8 +35,8 @@ mod write_rules;
 mod writes;
 
 pub use data_files::{
-    create_data_file, sync_data_header, table_header_layout, DataCreateFileOptions,
-    DataFileReport, DataSyncHeaderOptions, TableHeaderLayout,
+    create_data_file, sync_data_header, table_header_layout, DataCreateFileOptions, DataFileReport,
+    DataSyncHeaderOptions, TableHeaderLayout,
 };
 pub use data_patch::{
     DataPatchAppliedOp, DataPatchFailedOp, DataPatchOp, DataPatchReport, DataPatchRequest,
@@ -63,21 +63,18 @@ pub use mutation::{
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
     MutationReport, MutationRequest, MutationValue,
 };
+pub use query::ProjectQueries;
 pub use records::{
     dict_key_path_text, value_summary, EffectiveFieldWrite, RecordTarget, RecordView,
     RefTargetInfo, WriteOutcome,
 };
-pub use query::ProjectQueries;
 pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime, WriteProjectSession};
-pub use schema_build::{
-    compile_schema_project_with_overrides, SchemaBuild, SchemaSourceOverride,
-};
-pub use schema_diagnostics::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
+pub use schema_build::{compile_schema_project_with_overrides, SchemaBuild, SchemaSourceOverride};
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,
     SchemaConstValueInfo, SchemaDefaultValueInfo, SchemaEnumInfo, SchemaEnumVariantInfo,
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,
 };
-pub use session::{ProjectSchemaSession, RecordCoordinate};
 pub(crate) use session::ProjectSession;
+pub use session::{ProjectSchemaSession, RecordCoordinate};
