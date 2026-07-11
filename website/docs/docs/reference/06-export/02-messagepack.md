@@ -17,6 +17,8 @@ generated/data/
 
 MessagePack 文件没有 Coflow envelope、文件头或 manifest。
 
+导出遍历把 `begin/end/key/scalar` 事件直接写入单个 MessagePack buffer；array/map header 使用预知长度写入，不再为每个子值创建临时 buffer。若编码失败，诊断消息会包含 table、record key 和完整嵌套字段路径。
+
 ## 编码规则
 
 | CFT 类型 | MessagePack 表示 |

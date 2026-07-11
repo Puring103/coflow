@@ -7,10 +7,10 @@
     clippy::unwrap_used
 )]
 
-use coflow_api::{DataExporter, ExportContext, OutputSpec};
+use coflow_api::{ArtifactContent, DataExporter, ExportContext, OutputSpec};
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
-use coflow_exporter_json::export_json_model;
+use coflow_exporter_json::export_json_artifacts;
 use serde_json::json;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -38,8 +38,25 @@ fn export_tables(
     schema: &CftContainer,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, Value>, String> {
-    export_json_model(schema.compiled_schema(), model)
-        .map_err(|err| format!("export json: {err:?}"))
+    let artifacts = export_json_artifacts(schema.compiled_schema(), model)
+        .map_err(|err| format!("export json: {err:?}"))?;
+    artifacts
+        .files()
+        .iter()
+        .map(|file| {
+            let table = file
+                .relative_path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| "artifact table name should be UTF-8".to_string())?;
+            let ArtifactContent::Text(text) = &file.content else {
+                return Err(format!("JSON artifact `{table}` should contain text"));
+            };
+            let value = serde_json::from_str(text)
+                .map_err(|err| format!("parse JSON artifact `{table}`: {err}"))?;
+            Ok((table.to_string(), value))
+        })
+        .collect()
 }
 
 #[test]
@@ -100,7 +117,42 @@ fn exports_tables_with_schema_order_defaults_and_record_key_id() -> TestResult {
 }
 
 #[test]
-fn exports_empty_tables_for_concrete_types() -> TestResult {
+fn streaming_json_preserves_pretty_output_bytes() -> TestResult {
+    let schema = compile_schema("type Item { name: string; numbers: [int]; }")?;
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [
+            ("name", CfdInputValue::from("Sword")),
+            (
+                "numbers",
+                CfdInputValue::Array(vec![
+                    CfdInputValue::from(1_i64),
+                    CfdInputValue::from(2_i64),
+                ]),
+            ),
+        ],
+    );
+    let model = build_model(builder)?;
+    let artifacts = export_json_artifacts(schema.compiled_schema(), &model)
+        .map_err(|err| format!("export JSON artifacts: {err}"))?;
+    let ArtifactContent::Text(actual) = &artifacts.files()[0].content else {
+        return Err("JSON artifact should contain text".to_string());
+    };
+    let expected = serde_json::to_string_pretty(&json!([{
+        "id": "item_1",
+        "name": "Sword",
+        "numbers": [1, 2]
+    }]))
+    .map_err(|err| format!("serialize expected JSON: {err}"))?;
+
+    assert_eq!(actual, &expected);
+    Ok(())
+}
+
+#[test]
+fn artifact_export_omits_empty_tables() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item { name: string; }
@@ -114,7 +166,7 @@ fn exports_empty_tables_for_concrete_types() -> TestResult {
     let tables = export_tables(&schema, &model)?;
 
     assert_eq!(tables["Item"], json!([{ "id": "item_1", "name": "Sword" }]));
-    assert_eq!(tables["Monster"], json!([]));
+    assert!(!tables.contains_key("Monster"));
     Ok(())
 }
 

@@ -24,6 +24,8 @@ generated/data/
 
 没有记录的 table 不写空 `[]` 文件。
 
+导出遍历按 `begin/end/key/scalar` 事件直接写入每个 table 的 JSON 文本，不构造整项目 JSON 树。若编码失败，诊断消息会包含 table、record key 和完整嵌套字段路径。
+
 ## 编码规则
 
 | CFT 类型 | JSON 表示 | 示例 |

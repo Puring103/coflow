@@ -8,8 +8,9 @@
 )]
 
 use coflow_cft::{CftContainer, ModuleId};
+use coflow_api::ArtifactContent;
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
-use coflow_exporter_messagepack::export_messagepack_model;
+use coflow_exporter_messagepack::export_messagepack_artifacts;
 use rmpv::Value;
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -37,15 +38,24 @@ fn export_tables(
     schema: &CftContainer,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, Value>, String> {
-    let bytes_by_table = export_messagepack_model(schema.compiled_schema(), model)
+    let artifacts = export_messagepack_artifacts(schema.compiled_schema(), model)
         .map_err(|err| format!("export msgpack: {err:?}"))?;
-    bytes_by_table
-        .into_iter()
-        .map(|(table, bytes)| {
+    artifacts
+        .files()
+        .iter()
+        .map(|file| {
+            let table = file
+                .relative_path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| "artifact table name should be UTF-8".to_string())?;
+            let ArtifactContent::Bytes(bytes) = &file.content else {
+                return Err(format!("MessagePack artifact `{table}` should contain bytes"));
+            };
             let mut cursor = Cursor::new(bytes);
             let value = rmpv::decode::read_value(&mut cursor)
                 .map_err(|err| format!("decode msgpack table `{table}`: {err}"))?;
-            Ok((table, value))
+            Ok((table.to_string(), value))
         })
         .collect()
 }

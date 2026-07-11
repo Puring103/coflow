@@ -1,7 +1,4 @@
-//! `MessagePack` exporter for validated Coflow data models.
-//!
-//! This crate converts an already-built [`CfdDataModel`] into table-oriented
-//! `MessagePack` bytes. Each table is encoded as a bare `MessagePack` array value.
+//! Streaming MessagePack exporter for validated Coflow data models.
 
 #![cfg_attr(
     not(test),
@@ -23,8 +20,7 @@ use coflow_api::{
 };
 use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdDataModel;
-use coflow_exporter_core::{export_model_with_encoder, ExportEncoder, ExportError};
-use std::collections::BTreeMap;
+use coflow_exporter_core::{export_model_to_sink, ExportError, ExportEventSink};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,26 +47,22 @@ impl std::error::Error for MessagePackExportError {}
 
 impl From<ExportError> for MessagePackExportError {
     fn from(error: ExportError) -> Self {
-        Self::new(error.message)
+        Self::new(error.to_string())
     }
 }
 
-/// Converts every table in the data model into one bare `MessagePack` array.
-///
-/// The returned map key is the CFT type/table name. Values are complete
-/// `MessagePack` byte buffers with no additional file header, manifest, schema
-/// hash, encryption, or checksum.
+/// Encodes the model directly into one MessagePack byte artifact per table.
 ///
 /// # Errors
 ///
-/// Returns an error when a model record or field cannot be matched back to the
-/// compiled schema, or when a value cannot be encoded as `MessagePack`.
-pub fn export_messagepack_model(
+/// Returns an error carrying the record and field path that failed.
+pub fn export_messagepack_artifacts(
     schema: &CompiledSchema,
     model: &CfdDataModel,
-) -> Result<BTreeMap<String, Vec<u8>>, MessagePackExportError> {
-    export_model_with_encoder(schema, model, &mut MessagePackEncoder)
-        .map_err(MessagePackExportError::from)
+) -> Result<ArtifactSet, MessagePackExportError> {
+    let mut sink = MessagePackEventSink::default();
+    export_model_to_sink(schema, model, &mut sink).map_err(MessagePackExportError::from)?;
+    ArtifactSet::new(sink.files).map_err(|err| MessagePackExportError::new(err.to_string()))
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -93,30 +85,24 @@ impl DataExporter for MessagePackExporter {
         ctx: ExportContext<'_>,
         _output: &OutputSpec,
     ) -> Result<ArtifactSet, DiagnosticSet> {
-        let tables = export_messagepack_model(ctx.schema, ctx.model).map_err(|err| {
+        export_messagepack_artifacts(ctx.schema, ctx.model).map_err(|err| {
             DiagnosticSet::one(Diagnostic::error(
                 "MESSAGEPACK-EXPORT",
                 "EXPORT",
                 format!("failed to export MessagePack model: {err}"),
             ))
-        })?;
-        let files = tables
-            .into_iter()
-            .map(|(table, bytes)| ArtifactFile::bytes(format!("{table}.msgpack"), bytes))
-            .collect();
-        ArtifactSet::new(files).map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "MESSAGEPACK-ARTIFACT",
-                "ARTIFACT",
-                err.to_string(),
-            ))
         })
     }
 }
 
-struct MessagePackEncoder;
+#[derive(Debug, Default)]
+struct MessagePackEventSink {
+    files: Vec<ArtifactFile>,
+    table_name: Option<String>,
+    bytes: Vec<u8>,
+}
 
-impl MessagePackEncoder {
+impl MessagePackEventSink {
     fn len_as_u32(len: usize, kind: &str) -> Result<u32, MessagePackExportError> {
         u32::try_from(len).map_err(|_| {
             MessagePackExportError::new(format!(
@@ -124,64 +110,83 @@ impl MessagePackEncoder {
             ))
         })
     }
+
+    fn encode_error(error: impl fmt::Display) -> MessagePackExportError {
+        MessagePackExportError::new(error.to_string())
+    }
 }
 
-impl ExportEncoder for MessagePackEncoder {
+impl ExportEventSink for MessagePackEventSink {
     type Error = MessagePackExportError;
-    type Value = Vec<u8>;
 
-    fn null(&mut self) -> Result<Self::Value, Self::Error> {
-        let mut bytes = Vec::new();
-        rmp::encode::write_nil(&mut bytes).map_err(encode_error)?;
-        Ok(bytes)
-    }
-
-    fn bool(&mut self, value: bool) -> Result<Self::Value, Self::Error> {
-        let mut bytes = Vec::new();
-        rmp::encode::write_bool(&mut bytes, value).map_err(encode_error)?;
-        Ok(bytes)
-    }
-
-    fn int(&mut self, value: i64) -> Result<Self::Value, Self::Error> {
-        let mut bytes = Vec::new();
-        rmp::encode::write_sint(&mut bytes, value).map_err(encode_error)?;
-        Ok(bytes)
-    }
-
-    fn float(&mut self, value: f64) -> Result<Self::Value, Self::Error> {
-        let mut bytes = Vec::new();
-        rmp::encode::write_f64(&mut bytes, value).map_err(encode_error)?;
-        Ok(bytes)
-    }
-
-    fn string(&mut self, value: &str) -> Result<Self::Value, Self::Error> {
-        let mut bytes = Vec::new();
-        rmp::encode::write_str(&mut bytes, value).map_err(encode_error)?;
-        Ok(bytes)
-    }
-
-    fn array(&mut self, values: Vec<Self::Value>) -> Result<Self::Value, Self::Error> {
-        let mut bytes = Vec::new();
-        rmp::encode::write_array_len(&mut bytes, Self::len_as_u32(values.len(), "array")?)
-            .map_err(encode_error)?;
-        for value in values {
-            bytes.extend(value);
+    fn begin_table(&mut self, name: &str, records: usize) -> Result<(), Self::Error> {
+        if self.table_name.is_some() {
+            return Err(MessagePackExportError::new(
+                "MessagePack table stream is already open",
+            ));
         }
-        Ok(bytes)
+        self.table_name = Some(name.to_string());
+        self.bytes.clear();
+        rmp::encode::write_array_len(&mut self.bytes, Self::len_as_u32(records, "table")?)
+            .map(|_| ())
+            .map_err(Self::encode_error)
     }
 
-    fn map(&mut self, entries: Vec<(String, Self::Value)>) -> Result<Self::Value, Self::Error> {
-        let mut bytes = Vec::new();
-        rmp::encode::write_map_len(&mut bytes, Self::len_as_u32(entries.len(), "map")?)
-            .map_err(encode_error)?;
-        for (key, value) in entries {
-            rmp::encode::write_str(&mut bytes, &key).map_err(encode_error)?;
-            bytes.extend(value);
-        }
-        Ok(bytes)
+    fn end_table(&mut self) -> Result<(), Self::Error> {
+        let name = self
+            .table_name
+            .take()
+            .ok_or_else(|| MessagePackExportError::new("MessagePack table stream is not open"))?;
+        self.files.push(ArtifactFile::bytes(
+            format!("{name}.msgpack"),
+            std::mem::take(&mut self.bytes),
+        ));
+        Ok(())
     }
-}
 
-fn encode_error(error: impl fmt::Display) -> MessagePackExportError {
-    MessagePackExportError::new(error.to_string())
+    fn begin_array(&mut self, len: usize) -> Result<(), Self::Error> {
+        rmp::encode::write_array_len(&mut self.bytes, Self::len_as_u32(len, "array")?)
+            .map(|_| ())
+            .map_err(Self::encode_error)
+    }
+
+    fn end_array(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn begin_map(&mut self, len: usize) -> Result<(), Self::Error> {
+        rmp::encode::write_map_len(&mut self.bytes, Self::len_as_u32(len, "map")?)
+            .map(|_| ())
+            .map_err(Self::encode_error)
+    }
+
+    fn map_key(&mut self, key: &str) -> Result<(), Self::Error> {
+        rmp::encode::write_str(&mut self.bytes, key).map_err(Self::encode_error)
+    }
+
+    fn end_map(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn null(&mut self) -> Result<(), Self::Error> {
+        rmp::encode::write_nil(&mut self.bytes).map_err(Self::encode_error)
+    }
+
+    fn bool(&mut self, value: bool) -> Result<(), Self::Error> {
+        rmp::encode::write_bool(&mut self.bytes, value).map_err(Self::encode_error)
+    }
+
+    fn int(&mut self, value: i64) -> Result<(), Self::Error> {
+        rmp::encode::write_sint(&mut self.bytes, value)
+            .map(|_| ())
+            .map_err(Self::encode_error)
+    }
+
+    fn float(&mut self, value: f64) -> Result<(), Self::Error> {
+        rmp::encode::write_f64(&mut self.bytes, value).map_err(Self::encode_error)
+    }
+
+    fn string(&mut self, value: &str) -> Result<(), Self::Error> {
+        rmp::encode::write_str(&mut self.bytes, value).map_err(Self::encode_error)
+    }
 }

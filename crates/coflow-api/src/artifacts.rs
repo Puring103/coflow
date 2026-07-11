@@ -158,21 +158,12 @@ impl ArtifactFile {
             content: ArtifactContent::Bytes(contents),
         }
     }
-
-    #[must_use]
-    pub fn json(relative_path: impl Into<PathBuf>, value: serde_json::Value) -> Self {
-        Self {
-            relative_path: relative_path.into(),
-            content: ArtifactContent::Json(value),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArtifactContent {
     Text(String),
     Bytes(Vec<u8>),
-    Json(serde_json::Value),
 }
 
 #[cfg(test)]

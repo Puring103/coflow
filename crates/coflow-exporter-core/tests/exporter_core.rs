@@ -9,7 +9,7 @@
 
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
-use coflow_exporter_core::{export_model_with_encoder, ExportEncoder};
+use coflow_exporter_core::{export_model_to_sink, ExportEventSink};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
@@ -26,39 +26,113 @@ enum TestValue {
     Map(Vec<(String, Self)>),
 }
 
-#[derive(Debug, Clone, Copy)]
-struct TestEncoder;
+#[derive(Debug, Default)]
+struct TestSink {
+    tables: BTreeMap<String, TestValue>,
+    table_name: Option<String>,
+    root: Option<TestValue>,
+    stack: Vec<TestFrame>,
+}
 
-impl ExportEncoder for TestEncoder {
+#[derive(Debug)]
+enum TestFrame {
+    Array(Vec<TestValue>),
+    Map {
+        entries: Vec<(String, TestValue)>,
+        key: Option<String>,
+    },
+}
+
+impl TestSink {
+    fn push(&mut self, value: TestValue) {
+        match self.stack.last_mut() {
+            Some(TestFrame::Array(values)) => values.push(value),
+            Some(TestFrame::Map { entries, key }) => {
+                entries.push((key.take().expect("map value key"), value));
+            }
+            None => self.root = Some(value),
+        }
+    }
+}
+
+impl ExportEventSink for TestSink {
     type Error = Infallible;
-    type Value = TestValue;
 
-    fn null(&mut self) -> Result<Self::Value, Self::Error> {
-        Ok(TestValue::Null)
+    fn begin_table(&mut self, name: &str, _records: usize) -> Result<(), Self::Error> {
+        self.table_name = Some(name.to_string());
+        self.begin_array(0)
     }
 
-    fn bool(&mut self, value: bool) -> Result<Self::Value, Self::Error> {
-        Ok(TestValue::Bool(value))
+    fn end_table(&mut self) -> Result<(), Self::Error> {
+        self.end_array()?;
+        self.tables.insert(
+            self.table_name.take().expect("table name"),
+            self.root.take().expect("table root"),
+        );
+        Ok(())
     }
 
-    fn int(&mut self, value: i64) -> Result<Self::Value, Self::Error> {
-        Ok(TestValue::Int(value))
+    fn begin_array(&mut self, _len: usize) -> Result<(), Self::Error> {
+        self.stack.push(TestFrame::Array(Vec::new()));
+        Ok(())
     }
 
-    fn float(&mut self, value: f64) -> Result<Self::Value, Self::Error> {
-        Ok(TestValue::Float(value))
+    fn end_array(&mut self) -> Result<(), Self::Error> {
+        let TestFrame::Array(values) = self.stack.pop().expect("array frame") else {
+            panic!("expected array frame");
+        };
+        self.push(TestValue::Array(values));
+        Ok(())
     }
 
-    fn string(&mut self, value: &str) -> Result<Self::Value, Self::Error> {
-        Ok(TestValue::String(value.to_string()))
+    fn begin_map(&mut self, _len: usize) -> Result<(), Self::Error> {
+        self.stack.push(TestFrame::Map {
+            entries: Vec::new(),
+            key: None,
+        });
+        Ok(())
     }
 
-    fn array(&mut self, values: Vec<Self::Value>) -> Result<Self::Value, Self::Error> {
-        Ok(TestValue::Array(values))
+    fn map_key(&mut self, map_key: &str) -> Result<(), Self::Error> {
+        let Some(TestFrame::Map { key, .. }) = self.stack.last_mut() else {
+            panic!("expected map frame");
+        };
+        *key = Some(map_key.to_string());
+        Ok(())
     }
 
-    fn map(&mut self, entries: Vec<(String, Self::Value)>) -> Result<Self::Value, Self::Error> {
-        Ok(TestValue::Map(entries))
+    fn end_map(&mut self) -> Result<(), Self::Error> {
+        let TestFrame::Map { entries, key } = self.stack.pop().expect("map frame") else {
+            panic!("expected map frame");
+        };
+        assert!(key.is_none(), "map key should have a value");
+        self.push(TestValue::Map(entries));
+        Ok(())
+    }
+
+    fn null(&mut self) -> Result<(), Self::Error> {
+        self.push(TestValue::Null);
+        Ok(())
+    }
+
+    fn bool(&mut self, value: bool) -> Result<(), Self::Error> {
+        self.push(TestValue::Bool(value));
+        Ok(())
+    }
+
+    fn int(&mut self, value: i64) -> Result<(), Self::Error> {
+        self.push(TestValue::Int(value));
+        Ok(())
+    }
+
+    fn float(&mut self, value: f64) -> Result<(), Self::Error> {
+        self.push(TestValue::Float(value));
+        Ok(())
+    }
+
+    fn string(&mut self, value: &str) -> Result<(), Self::Error> {
+        self.push(TestValue::String(value.to_string()));
+        Ok(())
     }
 }
 
@@ -83,9 +157,10 @@ fn export_tables(
     schema: &CftContainer,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, TestValue>, String> {
-    let mut encoder = TestEncoder;
-    export_model_with_encoder(schema.compiled_schema(), model, &mut encoder)
-        .map_err(|err| format!("export core: {err:?}"))
+    let mut sink = TestSink::default();
+    export_model_to_sink(schema.compiled_schema(), model, &mut sink)
+        .map_err(|err| format!("export core: {err:?}"))?;
+    Ok(sink.tables)
 }
 
 #[test]
@@ -295,53 +370,203 @@ fn exports_nullable_and_array_fields() -> TestResult {
 }
 
 #[derive(Debug)]
-struct FailingEncoder;
+struct FailingSink;
 
-impl ExportEncoder for FailingEncoder {
+impl ExportEventSink for FailingSink {
     type Error = &'static str;
-    type Value = ();
 
-    fn null(&mut self) -> Result<Self::Value, Self::Error> {
-        Err("encoder null failed")
+    fn begin_table(&mut self, _name: &str, _records: usize) -> Result<(), Self::Error> {
+        Ok(())
     }
 
-    fn bool(&mut self, _value: bool) -> Result<Self::Value, Self::Error> {
-        Err("encoder bool failed")
+    fn end_table(&mut self) -> Result<(), Self::Error> {
+        Ok(())
     }
 
-    fn int(&mut self, _value: i64) -> Result<Self::Value, Self::Error> {
-        Err("encoder int failed")
+    fn begin_array(&mut self, _len: usize) -> Result<(), Self::Error> {
+        Ok(())
     }
 
-    fn float(&mut self, _value: f64) -> Result<Self::Value, Self::Error> {
-        Err("encoder float failed")
+    fn end_array(&mut self) -> Result<(), Self::Error> {
+        Ok(())
     }
 
-    fn string(&mut self, _value: &str) -> Result<Self::Value, Self::Error> {
-        Err("encoder string failed")
+    fn begin_map(&mut self, _len: usize) -> Result<(), Self::Error> {
+        Ok(())
     }
 
-    fn array(&mut self, _values: Vec<Self::Value>) -> Result<Self::Value, Self::Error> {
-        Err("encoder array failed")
+    fn map_key(&mut self, _key: &str) -> Result<(), Self::Error> {
+        Ok(())
     }
 
-    fn map(&mut self, _entries: Vec<(String, Self::Value)>) -> Result<Self::Value, Self::Error> {
-        Err("encoder map failed")
+    fn end_map(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn null(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn bool(&mut self, _value: bool) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn int(&mut self, _value: i64) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn float(&mut self, _value: f64) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn string(&mut self, value: &str) -> Result<(), Self::Error> {
+        if value == "fail here" {
+            Err("encoder string failed")
+        } else {
+            Ok(())
+        }
     }
 }
 
 #[test]
-fn converts_encoder_errors_to_export_error_display_string() -> TestResult {
-    let schema = compile_schema("type Item { name: string; }")?;
+fn reports_sink_errors_with_record_and_full_field_path() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Nested { labels: [string]; }
+            type Item { nested: Nested; }
+        "#,
+    )?;
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [(
+            "nested",
+            CfdInputValue::object_with_declared_type([(
+                "labels",
+                CfdInputValue::Array(vec![
+                    CfdInputValue::from("ok"),
+                    CfdInputValue::from("fail here"),
+                ]),
+            )]),
+        )],
+    );
     let model = build_model(builder)?;
-    let mut encoder = FailingEncoder;
-    let err = export_model_with_encoder(schema.compiled_schema(), &model, &mut encoder)
-        .expect_err("encoder error should become export error");
+    let mut sink = FailingSink;
+    let err = export_model_to_sink(schema.compiled_schema(), &model, &mut sink)
+        .expect_err("sink error should become export error");
 
-    assert_eq!(err.to_string(), "encoder string failed");
+    assert_eq!(
+        err.to_string(),
+        "Item[\"item_1\"].nested.labels[1]: encoder string failed"
+    );
+    Ok(())
+}
+
+#[derive(Debug, Default)]
+struct CountingSink {
+    depth: usize,
+    max_depth: usize,
+    integers: usize,
+}
+
+impl CountingSink {
+    fn enter(&mut self) {
+        self.depth += 1;
+        self.max_depth = self.max_depth.max(self.depth);
+    }
+
+    fn exit(&mut self) {
+        self.depth -= 1;
+    }
+}
+
+impl ExportEventSink for CountingSink {
+    type Error = Infallible;
+
+    fn begin_table(&mut self, _name: &str, _records: usize) -> Result<(), Self::Error> {
+        self.enter();
+        Ok(())
+    }
+
+    fn end_table(&mut self) -> Result<(), Self::Error> {
+        self.exit();
+        Ok(())
+    }
+
+    fn begin_array(&mut self, _len: usize) -> Result<(), Self::Error> {
+        self.enter();
+        Ok(())
+    }
+
+    fn end_array(&mut self) -> Result<(), Self::Error> {
+        self.exit();
+        Ok(())
+    }
+
+    fn begin_map(&mut self, _len: usize) -> Result<(), Self::Error> {
+        self.enter();
+        Ok(())
+    }
+
+    fn map_key(&mut self, _key: &str) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn end_map(&mut self) -> Result<(), Self::Error> {
+        self.exit();
+        Ok(())
+    }
+
+    fn null(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn bool(&mut self, _value: bool) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn int(&mut self, _value: i64) -> Result<(), Self::Error> {
+        self.integers += 1;
+        Ok(())
+    }
+
+    fn float(&mut self, _value: f64) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn string(&mut self, _value: &str) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+#[test]
+fn streams_large_arrays_through_a_constant_state_sink() -> TestResult {
+    const ITEM_COUNT: usize = 50_000;
+    let schema = compile_schema("type Item { numbers: [int]; }")?;
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [(
+            "numbers",
+            CfdInputValue::Array(
+                (0..ITEM_COUNT)
+                    .map(|value| CfdInputValue::from(value as i64))
+                    .collect(),
+            ),
+        )],
+    );
+    let model = build_model(builder)?;
+    let mut sink = CountingSink::default();
+
+    export_model_to_sink(schema.compiled_schema(), &model, &mut sink)
+        .map_err(|err| format!("stream large array: {err}"))?;
+
+    assert_eq!(sink.integers, ITEM_COUNT);
+    assert_eq!(sink.depth, 0);
+    assert_eq!(sink.max_depth, 3);
     Ok(())
 }
 

@@ -37,12 +37,6 @@ pub(super) fn stage_artifact_set(
         let contents = match artifact.content {
             ArtifactContent::Text(contents) => contents.into_bytes(),
             ArtifactContent::Bytes(bytes) => bytes,
-            ArtifactContent::Json(value) => serde_json::to_vec_pretty(&value).map_err(|err| {
-                diagnostic_set(
-                    &path,
-                    format!("failed to serialize `{}`: {err}", path.display()),
-                )
-            })?,
         };
         write_verified_file(&path, &contents)?;
     }

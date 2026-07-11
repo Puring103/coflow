@@ -130,9 +130,9 @@ fn provider_shared_algorithms_do_not_live_in_coflow_api() {
 
         "pub mod export",
 
-        "export_model_with_encoder",
+        "export_model_to_sink",
 
-        "ExportEncoder",
+        "ExportEventSink",
 
         "pub use coflow_cft::",
 
