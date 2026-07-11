@@ -464,6 +464,7 @@ fn engine_data_file_headers_use_cft_compiler_context() {
         ".source_provider_descriptors()",
         "provider_id != \"cfd\"",
         "source.provider_id != \"cfd\"",
+        "target.starts_with(\"lark:\")",
         "\"xlsx\" => Ok(\"excel\"",
         "\"cfd\" | \"csv\"",
         "\"cfd\" | \"csv\" | \"excel\"",

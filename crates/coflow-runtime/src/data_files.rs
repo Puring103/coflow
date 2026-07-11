@@ -245,7 +245,17 @@ fn table_operation_source(
 }
 
 fn is_uri_target(target: &str) -> bool {
-    target.contains("://") || target.starts_with("lark:")
+    let Some((scheme, remainder)) = target.split_once(':') else {
+        return false;
+    };
+    if scheme.len() == 1 && (remainder.starts_with('\\') || remainder.starts_with('/')) {
+        return false;
+    }
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|first| first.is_ascii_alphabetic())
+        && chars.all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
+        })
 }
 
 trait TableManagerDescriptorExt {
