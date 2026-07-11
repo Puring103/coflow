@@ -72,6 +72,7 @@
 | `CFT-SYN-008` | `InvalidAnnotationSyntax` | 注解语法非法 |
 | `CFT-SYN-009` | `InvalidCheckStatement` | `check` 块内不是合法条件语句、量词块或 `when` 块 |
 | `CFT-SYN-010` | `DuplicateCheckBlock` | 同一个 `type` 内声明多个 `check` 块 |
+| `CFT-SYN-011` | `SyntaxStructureLimitExceeded` | type ref、default、check AST 或 module 节点超过 parser 结构预算 |
 
 ## CFT Schema 错误
 

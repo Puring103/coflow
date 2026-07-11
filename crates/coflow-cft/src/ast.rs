@@ -20,6 +20,17 @@ pub enum Item {
     Type(TypeDef),
 }
 
+impl Item {
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        match self {
+            Self::Const(definition) => definition.span,
+            Self::Enum(definition) => definition.span,
+            Self::Type(definition) => definition.span,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ConstDef {
     pub name: String,

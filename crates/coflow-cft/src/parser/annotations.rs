@@ -3,6 +3,7 @@ use crate::ast::{Annotation, AnnotationArg};
 use crate::error::{CftDiagnostics, CftErrorCode};
 use crate::lexer::TokenKind;
 use crate::span::Span;
+use coflow_structure::StructureKind;
 
 impl Parser<'_> {
     pub(super) fn parse_annotation(&mut self) -> Result<Annotation, CftDiagnostics> {
@@ -30,12 +31,17 @@ impl Parser<'_> {
                 .expect_simple(&TokenKind::RParen, CftErrorCode::InvalidAnnotationSyntax)?
                 .end;
         }
-        Ok(Annotation {
+        let annotation = Annotation {
             name: name.name,
             name_span: name.span,
             args,
             span: Span::new(start, end),
-        })
+        };
+        let nodes = u64::try_from(annotation.args.len())
+            .unwrap_or(u64::MAX)
+            .saturating_add(1);
+        self.charge_nodes(StructureKind::SyntaxAst, annotation.span, nodes)?;
+        Ok(annotation)
     }
 
     fn parse_annotation_arg(&mut self) -> Result<AnnotationArg, CftDiagnostics> {

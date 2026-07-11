@@ -1,4 +1,4 @@
-use super::{negate_u64_to_i64, Parser};
+use super::{negate_u64_to_i64, Parsed, Parser};
 use crate::ast::{
     BinOp, CheckBlock, CheckExpr, CheckExprKind, CheckStmt, CmpOp, QuantifierKind, TypePredicate,
     UnaryOp,
@@ -7,6 +7,7 @@ use crate::container::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexer::TokenKind;
 use crate::span::Span;
+use coflow_structure::StructureKind;
 
 impl Parser<'_> {
     pub(super) fn parse_check_block(&mut self) -> Result<CheckBlock, CftDiagnostics> {
@@ -18,13 +19,17 @@ impl Parser<'_> {
         let end = self
             .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
             .end;
-        Ok(CheckBlock {
-            stmts,
-            span: Span::new(start, end),
+        let span = Span::new(start, end);
+        self.node(StructureKind::CheckAst, span, [stmts.depth], || {
+            CheckBlock {
+                stmts: stmts.value,
+                span,
+            }
         })
+        .map(|block| block.value)
     }
 
-    fn parse_check_stmts(&mut self) -> Result<Vec<CheckStmt>, CftDiagnostics> {
+    fn parse_check_stmts(&mut self) -> Result<Parsed<Vec<CheckStmt>>, CftDiagnostics> {
         let mut stmts = Vec::new();
         while !self.at(&TokenKind::RBrace) {
             if self.at(&TokenKind::Eof) {
@@ -32,10 +37,18 @@ impl Parser<'_> {
             }
             stmts.push(self.parse_check_stmt()?);
         }
-        Ok(stmts)
+        let depth = stmts
+            .iter()
+            .map(|stmt: &Parsed<CheckStmt>| stmt.depth)
+            .max()
+            .unwrap_or(0);
+        Ok(Parsed {
+            value: stmts.into_iter().map(|stmt| stmt.value).collect(),
+            depth,
+        })
     }
 
-    fn parse_check_stmt(&mut self) -> Result<CheckStmt, CftDiagnostics> {
+    fn parse_check_stmt(&mut self) -> Result<Parsed<CheckStmt>, CftDiagnostics> {
         if let Some(kind) = self.peek_quantifier() {
             return self.parse_quantifier_stmt(kind);
         }
@@ -49,83 +62,107 @@ impl Parser<'_> {
                 "check expression statements must end with `;`",
             );
         }
-        Ok(CheckStmt::Expr(expr))
+        let span = expr.value.span;
+        self.node(StructureKind::CheckAst, span, [expr.depth], || {
+            CheckStmt::Expr(expr.value)
+        })
     }
 
-    fn parse_quantifier_stmt(&mut self, kind: QuantifierKind) -> Result<CheckStmt, CftDiagnostics> {
-        let start = self.bump().span.start;
+    fn parse_quantifier_stmt(
+        &mut self,
+        kind: QuantifierKind,
+    ) -> Result<Parsed<CheckStmt>, CftDiagnostics> {
+        let keyword = self.bump().span;
+        let start = keyword.start;
         let binding = self.expect_ident()?;
         self.expect_simple(&TokenKind::In, CftErrorCode::ExpectedToken)?;
         let collection = self.parse_or_expr()?;
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
-        let body = self.parse_check_stmts()?;
+        let body = self.nested(StructureKind::CheckAst, keyword, |parser| {
+            parser.parse_check_stmts()
+        })?;
         let end = self
             .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
             .end;
-        Ok(CheckStmt::Quantifier {
-            kind,
-            binding,
-            collection,
-            body,
-            span: Span::new(start, end),
-        })
+        let span = Span::new(start, end);
+        self.node(
+            StructureKind::CheckAst,
+            keyword,
+            [collection.depth, body.depth],
+            || CheckStmt::Quantifier {
+                kind,
+                binding,
+                collection: collection.value,
+                body: body.value,
+                span,
+            },
+        )
     }
 
-    fn parse_when_stmt(&mut self) -> Result<CheckStmt, CftDiagnostics> {
-        let start = self
-            .expect_simple(&TokenKind::When, CftErrorCode::UnexpectedToken)?
-            .start;
+    fn parse_when_stmt(&mut self) -> Result<Parsed<CheckStmt>, CftDiagnostics> {
+        let keyword = self.expect_simple(&TokenKind::When, CftErrorCode::UnexpectedToken)?;
+        let start = keyword.start;
         let condition = self.parse_or_expr()?;
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
-        let body = self.parse_check_stmts()?;
+        let body = self.nested(StructureKind::CheckAst, keyword, |parser| {
+            parser.parse_check_stmts()
+        })?;
         let end = self
             .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
             .end;
-        Ok(CheckStmt::When {
-            condition,
-            body,
-            span: Span::new(start, end),
-        })
+        let span = Span::new(start, end);
+        self.node(
+            StructureKind::CheckAst,
+            keyword,
+            [condition.depth, body.depth],
+            || CheckStmt::When {
+                condition: condition.value,
+                body: body.value,
+                span,
+            },
+        )
     }
 
-    pub(super) fn parse_or_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+    pub(super) fn parse_or_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let mut expr = self.parse_and_expr()?;
-        while self.eat(&TokenKind::PipePipe).is_some() {
+        while let Some(operator) = self.eat(&TokenKind::PipePipe) {
             let rhs = self.parse_and_expr()?;
-            expr = bin_expr(BinOp::Or, expr, rhs);
+            expr = self.bin_expr(operator, BinOp::Or, expr, rhs)?;
         }
         Ok(expr)
     }
 
-    fn parse_and_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+    fn parse_and_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let mut expr = self.parse_is_expr()?;
-        while self.eat(&TokenKind::AmpAmp).is_some() {
+        while let Some(operator) = self.eat(&TokenKind::AmpAmp) {
             let rhs = self.parse_is_expr()?;
-            expr = bin_expr(BinOp::And, expr, rhs);
+            expr = self.bin_expr(operator, BinOp::And, expr, rhs)?;
         }
         Ok(expr)
     }
 
-    fn parse_is_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+    fn parse_is_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let mut expr = self.parse_cmp_chain()?;
-        while self.eat(&TokenKind::Is).is_some() {
+        while let Some(operator) = self.eat(&TokenKind::Is) {
             let predicate = self.parse_type_predicate()?;
             let end = match &predicate {
                 TypePredicate::Type(name) => name.span.end,
                 TypePredicate::Null(span) => span.end,
             };
-            expr = CheckExpr {
-                span: Span::new(expr.span.start, end),
+            let span = Span::new(expr.value.span.start, end);
+            let depth = expr.depth;
+            expr = self.node(StructureKind::CheckAst, operator, [depth], || CheckExpr {
+                span,
                 kind: CheckExprKind::Is {
-                    expr: Box::new(expr),
+                    expr: Box::new(expr.value),
                     predicate,
                 },
-            };
+            })?;
         }
         Ok(expr)
     }
 
-    fn parse_cmp_chain(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+    fn parse_cmp_chain(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let first = self.parse_bitor_expr()?;
         let mut rest = Vec::new();
         while let Some(op) = self.eat_cmp_op() {
@@ -134,88 +171,97 @@ impl Parser<'_> {
         if rest.is_empty() {
             return Ok(first);
         }
-        validate_cmp_chain(self.module, first.span, &rest)?;
+        validate_cmp_chain(self.module, first.value.span, &rest)?;
         let end = rest
             .last()
-            .map_or(first.span.end, |(_, expr)| expr.span.end);
-        Ok(CheckExpr {
-            span: Span::new(first.span.start, end),
+            .map_or(first.value.span.end, |(_, expr)| expr.value.span.end);
+        let span = Span::new(first.value.span.start, end);
+        let depths = std::iter::once(first.depth)
+            .chain(rest.iter().map(|(_, expr)| expr.depth))
+            .collect::<Vec<_>>();
+        self.node(StructureKind::CheckAst, span, depths, || CheckExpr {
+            span,
             kind: CheckExprKind::CmpChain {
-                first: Box::new(first),
-                rest,
+                first: Box::new(first.value),
+                rest: rest
+                    .into_iter()
+                    .map(|(op, expr)| (op, expr.value))
+                    .collect(),
             },
         })
     }
 
-    fn parse_bitor_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+    fn parse_bitor_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let mut expr = self.parse_add_expr()?;
         loop {
-            let op = if self.eat(&TokenKind::Pipe).is_some() {
-                BinOp::BitOr
-            } else if self.eat(&TokenKind::Caret).is_some() {
-                BinOp::BitXor
-            } else if self.eat(&TokenKind::Amp).is_some() {
-                BinOp::BitAnd
+            let operator = if let Some(span) = self.eat(&TokenKind::Pipe) {
+                (span, BinOp::BitOr)
+            } else if let Some(span) = self.eat(&TokenKind::Caret) {
+                (span, BinOp::BitXor)
+            } else if let Some(span) = self.eat(&TokenKind::Amp) {
+                (span, BinOp::BitAnd)
             } else {
                 break;
             };
             let rhs = self.parse_add_expr()?;
-            expr = bin_expr(op, expr, rhs);
+            expr = self.bin_expr(operator.0, operator.1, expr, rhs)?;
         }
         Ok(expr)
     }
 
-    fn parse_add_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+    fn parse_add_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let mut expr = self.parse_mul_expr()?;
         loop {
-            let op = if self.eat(&TokenKind::Plus).is_some() {
-                BinOp::Add
-            } else if self.eat(&TokenKind::Minus).is_some() {
-                BinOp::Sub
-            } else if self.eat(&TokenKind::LessLess).is_some() {
-                BinOp::Shl
-            } else if self.eat(&TokenKind::GreaterGreater).is_some() {
-                BinOp::Shr
+            let operator = if let Some(span) = self.eat(&TokenKind::Plus) {
+                (span, BinOp::Add)
+            } else if let Some(span) = self.eat(&TokenKind::Minus) {
+                (span, BinOp::Sub)
+            } else if let Some(span) = self.eat(&TokenKind::LessLess) {
+                (span, BinOp::Shl)
+            } else if let Some(span) = self.eat(&TokenKind::GreaterGreater) {
+                (span, BinOp::Shr)
             } else {
                 break;
             };
             let rhs = self.parse_mul_expr()?;
-            expr = bin_expr(op, expr, rhs);
+            expr = self.bin_expr(operator.0, operator.1, expr, rhs)?;
         }
         Ok(expr)
     }
 
-    fn parse_mul_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+    fn parse_mul_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let mut expr = self.parse_power_expr()?;
         loop {
-            let op = if self.eat(&TokenKind::Star).is_some() {
-                BinOp::Mul
-            } else if self.eat(&TokenKind::Slash).is_some() {
-                BinOp::Div
-            } else if self.eat(&TokenKind::SlashSlash).is_some() {
-                BinOp::IntDiv
-            } else if self.eat(&TokenKind::Percent).is_some() {
-                BinOp::Mod
+            let operator = if let Some(span) = self.eat(&TokenKind::Star) {
+                (span, BinOp::Mul)
+            } else if let Some(span) = self.eat(&TokenKind::Slash) {
+                (span, BinOp::Div)
+            } else if let Some(span) = self.eat(&TokenKind::SlashSlash) {
+                (span, BinOp::IntDiv)
+            } else if let Some(span) = self.eat(&TokenKind::Percent) {
+                (span, BinOp::Mod)
             } else {
                 break;
             };
             let rhs = self.parse_power_expr()?;
-            expr = bin_expr(op, expr, rhs);
+            expr = self.bin_expr(operator.0, operator.1, expr, rhs)?;
         }
         Ok(expr)
     }
 
-    fn parse_power_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+    fn parse_power_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let lhs = self.parse_prefix_expr()?;
-        if self.eat(&TokenKind::StarStar).is_some() {
-            let rhs = self.parse_power_expr()?;
-            Ok(bin_expr(BinOp::Pow, lhs, rhs))
+        if let Some(operator) = self.eat(&TokenKind::StarStar) {
+            let rhs = self.nested(StructureKind::CheckAst, operator, |parser| {
+                parser.parse_power_expr()
+            })?;
+            self.bin_expr(operator, BinOp::Pow, lhs, rhs)
         } else {
             Ok(lhs)
         }
     }
 
-    fn parse_prefix_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+    fn parse_prefix_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let token = self.peek().clone();
         let op = if self.eat(&TokenKind::Bang).is_some() {
             Some(UnaryOp::Not)
@@ -238,18 +284,22 @@ impl Parser<'_> {
                             "integer literal out of range",
                         );
                     };
-                    return Ok(CheckExpr {
+                    return self.node(StructureKind::CheckAst, span, [], || CheckExpr {
                         kind: CheckExprKind::Int(negated),
                         span,
                     });
                 }
             }
-            let expr = self.parse_prefix_expr()?;
-            return Ok(CheckExpr {
-                span: Span::new(token.span.start, expr.span.end),
+            let expr = self.nested(StructureKind::CheckAst, token.span, |parser| {
+                parser.parse_prefix_expr()
+            })?;
+            let span = Span::new(token.span.start, expr.value.span.end);
+            let depth = expr.depth;
+            return self.node(StructureKind::CheckAst, token.span, [depth], || CheckExpr {
+                span,
                 kind: CheckExprKind::Unary {
                     op,
-                    expr: Box::new(expr),
+                    expr: Box::new(expr.value),
                 },
             });
         }
@@ -282,23 +332,31 @@ impl Parser<'_> {
             None
         }
     }
-}
 
-fn bin_expr(op: BinOp, lhs: CheckExpr, rhs: CheckExpr) -> CheckExpr {
-    CheckExpr {
-        span: lhs.span.join(rhs.span),
-        kind: CheckExprKind::BinOp {
-            op,
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-        },
+    fn bin_expr(
+        &mut self,
+        trigger: Span,
+        op: BinOp,
+        lhs: Parsed<CheckExpr>,
+        rhs: Parsed<CheckExpr>,
+    ) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
+        let span = lhs.value.span.join(rhs.value.span);
+        let depths = [lhs.depth, rhs.depth];
+        self.node(StructureKind::CheckAst, trigger, depths, || CheckExpr {
+            span,
+            kind: CheckExprKind::BinOp {
+                op,
+                lhs: Box::new(lhs.value),
+                rhs: Box::new(rhs.value),
+            },
+        })
     }
 }
 
 fn validate_cmp_chain(
     module: &ModuleId,
     first_span: Span,
-    rest: &[(CmpOp, CheckExpr)],
+    rest: &[(CmpOp, Parsed<CheckExpr>)],
 ) -> Result<(), CftDiagnostics> {
     if rest.len() < 2 {
         return Ok(());

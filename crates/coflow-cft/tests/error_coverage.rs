@@ -10,6 +10,7 @@
 mod common;
 use common::*;
 
+use coflow_cft::{CftParseOptions, StructuralLimits};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Copy)]
@@ -17,6 +18,7 @@ enum Phase {
     AddModule,
     Compile,
     DuplicateModule,
+    StrictParse,
 }
 
 struct Case {
@@ -40,6 +42,14 @@ fn diagnostics_for(case: &Case) -> CftDiagnostics {
                 .add_module(ModuleId::from("main"), "type B {}")
                 .unwrap_err()
         }
+        Phase::StrictParse => coflow_cft::parser::parse_module_with_options(
+            &ModuleId::from("main"),
+            case.source,
+            CftParseOptions {
+                structural_limits: StructuralLimits::new(1, 100, 100),
+            },
+        )
+        .unwrap_err(),
     }
 }
 
@@ -149,6 +159,13 @@ fn cases() -> Vec<Case> {
             source: "type A { check { true; } check { true; } }",
             adjacent_valid_source: "type A { check { true; } }",
             codes: &[CftErrorCode::DuplicateCheckBlock],
+        },
+        Case {
+            name: "syntax structure limit exceeded",
+            phase: Phase::StrictParse,
+            source: "type A { value: [int]; }",
+            adjacent_valid_source: "type A { value: int; }",
+            codes: &[CftErrorCode::SyntaxStructureLimitExceeded],
         },
         Case {
             name: "duplicate module",
@@ -616,6 +633,18 @@ fn error_code_cases_accept_adjacent_valid_inputs() {
                         "{} adjacent-valid modules should compile: {:?}",
                         case.name, err
                     )
+                });
+            }
+            Phase::StrictParse => {
+                coflow_cft::parser::parse_module_with_options(
+                    &ModuleId::from("main"),
+                    case.adjacent_valid_source,
+                    CftParseOptions {
+                        structural_limits: StructuralLimits::new(1, 100, 100),
+                    },
+                )
+                .unwrap_or_else(|err| {
+                    panic!("{} adjacent-valid case should parse: {:?}", case.name, err)
                 });
             }
         }

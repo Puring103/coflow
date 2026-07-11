@@ -631,6 +631,7 @@ dependencies = [
 name = "coflow-cft"
 version = "0.5.0"
 dependencies = [
+ "coflow-structure",
  "regex",
  "unicode-ident",
 ]

@@ -1,5 +1,5 @@
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
-use crate::parser::parse_module;
+use crate::parser::{parse_module_with_options, CftParseOptions};
 use crate::schema::{
     compile_container, CftSchemaConst, CftSchemaEnum, CftSchemaModule, CftSchemaType,
     CompiledSchema,
@@ -57,6 +57,7 @@ pub(crate) struct CftModule {
 pub struct CftContainer {
     pub(crate) modules: BTreeMap<ModuleId, CftModule>,
     compiled: Option<CompiledSchema>,
+    parse_options: CftParseOptions,
 }
 
 impl CftContainer {
@@ -65,6 +66,19 @@ impl CftContainer {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    #[must_use]
+    pub fn with_parse_options(parse_options: CftParseOptions) -> Self {
+        Self {
+            parse_options,
+            ..Self::default()
+        }
+    }
+
+    #[must_use]
+    pub const fn parse_options(&self) -> CftParseOptions {
+        self.parse_options
     }
 
     /// Registers one module and parses it into AST.
@@ -86,7 +100,7 @@ impl CftContainer {
             )));
         }
         let source = source.into();
-        let ast = parse_module(&id, &source)?;
+        let ast = parse_module_with_options(&id, &source, self.parse_options)?;
         self.modules.insert(id, CftModule { source, ast });
         self.compiled = None;
         Ok(())

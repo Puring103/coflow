@@ -1,4 +1,5 @@
 mod annotations;
+mod budget;
 mod check;
 mod check_primary;
 mod defaults;
@@ -6,12 +7,15 @@ mod definitions;
 mod literals;
 mod tokens;
 
+pub use self::budget::CftParseOptions;
+pub(super) use self::budget::Parsed;
 use self::tokens::{reserved_keyword_name, token_name};
 use crate::ast::{Item, ModuleAst, NameRef};
 use crate::container::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexer::{lex, Token, TokenKind};
 use crate::span::Span;
+use coflow_structure::{StructuralBudget, StructureKind};
 
 /// Parses one CFT module into its AST.
 ///
@@ -20,22 +24,39 @@ use crate::span::Span;
 /// Returns diagnostics when lexing fails or when tokens do not match the CFT
 /// grammar.
 pub fn parse_module(module: &ModuleId, source: &str) -> Result<ModuleAst, CftDiagnostics> {
+    parse_module_with_options(module, source, CftParseOptions::default())
+}
+
+/// Parses one CFT module with explicit structural resource limits.
+///
+/// # Errors
+///
+/// Returns lexical, syntax, or structural-limit diagnostics.
+pub fn parse_module_with_options(
+    module: &ModuleId,
+    source: &str,
+    options: CftParseOptions,
+) -> Result<ModuleAst, CftDiagnostics> {
     let tokens = lex(module, source)?;
-    Parser::new(module, tokens).parse_module()
+    Parser::new(module, tokens, options).parse_module()
 }
 
 struct Parser<'a> {
     module: &'a ModuleId,
     tokens: Vec<Token>,
     pos: usize,
+    budget: StructuralBudget,
+    open_nesting: u64,
 }
 
 impl<'a> Parser<'a> {
-    fn new(module: &'a ModuleId, tokens: Vec<Token>) -> Self {
+    fn new(module: &'a ModuleId, tokens: Vec<Token>, options: CftParseOptions) -> Self {
         Self {
             module,
             tokens,
             pos: 0,
+            budget: StructuralBudget::new(options.structural_limits),
+            open_nesting: 0,
         }
     }
 
@@ -49,27 +70,23 @@ impl<'a> Parser<'a> {
             if self.at(&TokenKind::Eof) {
                 break;
             }
-            if self.at(&TokenKind::Const) {
-                items.push(Item::Const(
-                    self.parse_const(std::mem::take(&mut pending_annotations))?,
-                ));
+            let item = if self.at(&TokenKind::Const) {
+                Item::Const(self.parse_const(std::mem::take(&mut pending_annotations))?)
             } else if self.at(&TokenKind::Enum) {
-                items.push(Item::Enum(
-                    self.parse_enum(std::mem::take(&mut pending_annotations))?,
-                ));
+                Item::Enum(self.parse_enum(std::mem::take(&mut pending_annotations))?)
             } else if self.at(&TokenKind::Type)
                 || self.at(&TokenKind::Abstract)
                 || self.at(&TokenKind::Sealed)
             {
-                items.push(Item::Type(
-                    self.parse_type(std::mem::take(&mut pending_annotations))?,
-                ));
+                Item::Type(self.parse_type(std::mem::take(&mut pending_annotations))?)
             } else {
                 return self.err(
                     CftErrorCode::InvalidTopLevelItem,
                     "top level items must be const, enum, or type definitions",
                 );
-            }
+            };
+            self.charge_nodes(StructureKind::SyntaxAst, item.span(), 1)?;
+            items.push(item);
         }
         Ok(ModuleAst {
             items,
@@ -186,6 +203,7 @@ impl<'a> Parser<'a> {
             message,
         )))
     }
+
 }
 
 /// Folds `-magnitude` where `magnitude > i64::MAX` into the equivalent `i64`.

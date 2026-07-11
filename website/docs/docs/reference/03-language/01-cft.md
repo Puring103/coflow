@@ -627,6 +627,16 @@ type Monster {
 }
 ```
 
+## 结构预算
+
+CFT parser 会在构造 AST 时限制结构深度、节点数和解析工作量。默认上限为：
+
+- 最大深度 `256`；
+- 最大节点数 `1,000,000`；
+- 最大工作量 `10,000,000`。
+
+预算覆盖 type ref、default、check 表达式、`when`/量词语句和 module 顶层节点。超过上限时当前 module 解析失败并返回 `CFT-SYN-011`，不会向项目发布部分 AST；已经成功发布的其他 module 和 schema reflection 保持不变。Rust API 可以通过 `CftContainer::with_parse_options` 或 `parse_module_with_options` 为单个 container/module 指定更严格的限制。
+
 ## 常见错误
 
 | 错误写法 | 为什么错 | 推荐做法 |

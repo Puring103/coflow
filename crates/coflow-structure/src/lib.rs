@@ -76,6 +76,7 @@ impl fmt::Display for BudgetAxis {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StructureKind {
+    SyntaxAst,
     TypeRef,
     DefaultValue,
     CheckAst,
@@ -89,6 +90,7 @@ pub enum StructureKind {
 impl fmt::Display for StructureKind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::SyntaxAst => "syntax AST",
             Self::TypeRef => "type ref",
             Self::DefaultValue => "default value",
             Self::CheckAst => "check AST",

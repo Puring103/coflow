@@ -1,53 +1,66 @@
-use super::{negate_u64_to_i64, Parser};
+use super::{negate_u64_to_i64, Parsed, Parser};
 use crate::ast::{DefaultExpr, DefaultExprKind};
 use crate::error::{CftDiagnostics, CftErrorCode};
 use crate::lexer::TokenKind;
 use crate::span::Span;
+use coflow_structure::StructureKind;
 
 impl Parser<'_> {
-    pub(super) fn parse_default_expr(&mut self) -> Result<DefaultExpr, CftDiagnostics> {
+    pub(super) fn parse_default_expr(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
         let token = self.peek().clone();
         match token.kind {
             TokenKind::Int(value) => {
                 self.bump();
-                Ok(DefaultExpr {
-                    kind: DefaultExprKind::Int(value),
-                    span: token.span,
+                self.node(StructureKind::DefaultValue, token.span, [], || {
+                    DefaultExpr {
+                        kind: DefaultExprKind::Int(value),
+                        span: token.span,
+                    }
                 })
             }
             TokenKind::Float(value) => {
                 self.bump();
-                Ok(DefaultExpr {
-                    kind: DefaultExprKind::Float(value),
-                    span: token.span,
+                self.node(StructureKind::DefaultValue, token.span, [], || {
+                    DefaultExpr {
+                        kind: DefaultExprKind::Float(value),
+                        span: token.span,
+                    }
                 })
             }
             TokenKind::True => {
                 self.bump();
-                Ok(DefaultExpr {
-                    kind: DefaultExprKind::Bool(true),
-                    span: token.span,
+                self.node(StructureKind::DefaultValue, token.span, [], || {
+                    DefaultExpr {
+                        kind: DefaultExprKind::Bool(true),
+                        span: token.span,
+                    }
                 })
             }
             TokenKind::False => {
                 self.bump();
-                Ok(DefaultExpr {
-                    kind: DefaultExprKind::Bool(false),
-                    span: token.span,
+                self.node(StructureKind::DefaultValue, token.span, [], || {
+                    DefaultExpr {
+                        kind: DefaultExprKind::Bool(false),
+                        span: token.span,
+                    }
                 })
             }
             TokenKind::Null => {
                 self.bump();
-                Ok(DefaultExpr {
-                    kind: DefaultExprKind::Null,
-                    span: token.span,
+                self.node(StructureKind::DefaultValue, token.span, [], || {
+                    DefaultExpr {
+                        kind: DefaultExprKind::Null,
+                        span: token.span,
+                    }
                 })
             }
             TokenKind::String(value) => {
                 self.bump();
-                Ok(DefaultExpr {
-                    kind: DefaultExprKind::String(value),
-                    span: token.span,
+                self.node(StructureKind::DefaultValue, token.span, [], || {
+                    DefaultExpr {
+                        kind: DefaultExprKind::String(value),
+                        span: token.span,
+                    }
                 })
             }
             TokenKind::Ident(_) => self.parse_name_or_enum_default(),
@@ -65,7 +78,10 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_negative_default(&mut self, start: usize) -> Result<DefaultExpr, CftDiagnostics> {
+    fn parse_negative_default(
+        &mut self,
+        start: usize,
+    ) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
         self.bump();
         let next = self.peek().clone();
         let span = Span::new(start, next.span.end);
@@ -79,7 +95,7 @@ impl Parser<'_> {
                         "negated integer literal overflowed",
                     );
                 };
-                Ok(DefaultExpr {
+                self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
                     kind: DefaultExprKind::Int(negated),
                     span,
                 })
@@ -93,14 +109,14 @@ impl Parser<'_> {
                         "integer literal out of range",
                     );
                 };
-                Ok(DefaultExpr {
+                self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
                     kind: DefaultExprKind::Int(negated),
                     span,
                 })
             }
             TokenKind::Float(value) => {
                 self.bump();
-                Ok(DefaultExpr {
+                self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
                     kind: DefaultExprKind::Float(-value),
                     span,
                 })
@@ -112,35 +128,42 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_name_or_enum_default(&mut self) -> Result<DefaultExpr, CftDiagnostics> {
+    fn parse_name_or_enum_default(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
         let first = self.expect_ident()?;
         if self.eat(&TokenKind::Dot).is_some() {
             let variant = self.expect_ident()?;
-            Ok(DefaultExpr {
-                span: first.span.join(variant.span),
+            let span = first.span.join(variant.span);
+            self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
+                span,
                 kind: DefaultExprKind::EnumVariant {
                     enum_name: first,
                     variant,
                 },
             })
         } else {
-            Ok(DefaultExpr {
-                span: first.span,
-                kind: DefaultExprKind::Name(first),
+            self.node(StructureKind::DefaultValue, first.span, [], || {
+                DefaultExpr {
+                    span: first.span,
+                    kind: DefaultExprKind::Name(first),
+                }
             })
         }
     }
 
-    fn parse_array_default(&mut self) -> Result<DefaultExpr, CftDiagnostics> {
-        let start = self
-            .expect_simple(&TokenKind::LBracket, CftErrorCode::ExpectedToken)?
-            .start;
+    fn parse_array_default(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
+        let opener = self.expect_simple(&TokenKind::LBracket, CftErrorCode::ExpectedToken)?;
+        let start = opener.start;
         let mut items = Vec::new();
         while !self.at(&TokenKind::RBracket) {
             if self.at(&TokenKind::Eof) {
                 return self.err(CftErrorCode::UnexpectedEof, "unterminated array default");
             }
-            items.push(self.parse_default_expr()?);
+            let child_span = self.peek().span;
+            items.push(
+                self.nested(StructureKind::DefaultValue, child_span, |parser| {
+                    parser.parse_default_expr()
+                })?,
+            );
             if self.eat(&TokenKind::Comma).is_none() {
                 break;
             }
@@ -148,16 +171,19 @@ impl Parser<'_> {
         let end = self
             .expect_simple(&TokenKind::RBracket, CftErrorCode::ExpectedToken)?
             .end;
-        Ok(DefaultExpr {
-            kind: DefaultExprKind::Array(items),
-            span: Span::new(start, end),
+        let span = Span::new(start, end);
+        let depths = items.iter().map(|item| item.depth).collect::<Vec<_>>();
+        self.node(StructureKind::DefaultValue, opener, depths, || {
+            DefaultExpr {
+                kind: DefaultExprKind::Array(items.into_iter().map(|item| item.value).collect()),
+                span,
+            }
         })
     }
 
-    fn parse_object_default(&mut self) -> Result<DefaultExpr, CftDiagnostics> {
-        let start = self
-            .expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?
-            .start;
+    fn parse_object_default(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
+        let opener = self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
+        let start = opener.start;
         let mut fields = Vec::new();
         while !self.at(&TokenKind::RBrace) {
             if self.at(&TokenKind::Eof) {
@@ -165,7 +191,10 @@ impl Parser<'_> {
             }
             let name = self.expect_ident()?;
             self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
-            let value = self.parse_default_expr()?;
+            let value_span = self.peek().span;
+            let value = self.nested(StructureKind::DefaultValue, value_span, |parser| {
+                parser.parse_default_expr()
+            })?;
             fields.push((name, value));
             if self.eat(&TokenKind::Comma).is_none() {
                 break;
@@ -174,9 +203,21 @@ impl Parser<'_> {
         let end = self
             .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
             .end;
-        Ok(DefaultExpr {
-            kind: DefaultExprKind::Object(fields),
-            span: Span::new(start, end),
+        let span = Span::new(start, end);
+        let depths = fields
+            .iter()
+            .map(|(_, value)| value.depth)
+            .collect::<Vec<_>>();
+        self.node(StructureKind::DefaultValue, opener, depths, || {
+            DefaultExpr {
+                kind: DefaultExprKind::Object(
+                    fields
+                        .into_iter()
+                        .map(|(name, value)| (name, value.value))
+                        .collect(),
+                ),
+                span,
+            }
         })
     }
 }

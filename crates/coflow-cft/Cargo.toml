@@ -14,5 +14,6 @@ publish = false
 workspace = true
 
 [dependencies]
+coflow-structure = { path = "../coflow-structure" }
 regex = "1"
 unicode-ident = "1"

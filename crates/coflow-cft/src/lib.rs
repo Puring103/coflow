@@ -40,6 +40,7 @@ pub mod parser;
 mod schema;
 mod span;
 
+pub use coflow_structure::StructuralLimits;
 pub use compiled_schema::{
     CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftEnumVariantMeta, CftFieldMeta,
     CftTypeMeta, CompiledSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
@@ -48,6 +49,7 @@ pub use compiled_schema::{
 pub use container::{CftContainer, ModuleId};
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
+pub use parser::CftParseOptions;
 pub use schema::{
     format_schema_type_ref, CftAnnotation, CftAnnotationValue, CftConstValue, CftSchemaBinOp,
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
