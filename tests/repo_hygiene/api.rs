@@ -1,6 +1,23 @@
 use super::*;
 
 #[test]
+fn artifact_set_owns_only_validated_files() {
+    let artifacts = std::fs::read_to_string("crates/coflow-api/src/artifacts.rs")
+        .expect("read artifact API");
+    let artifact_set =
+        struct_block(&artifacts, "pub struct ArtifactSet").expect("find ArtifactSet contract");
+
+    assert!(
+        artifact_set.contains("files: Vec<ArtifactFile>") && !artifact_set.contains("pub files:"),
+        "ArtifactSet should own a private validated file namespace"
+    );
+    assert!(
+        !artifact_set.contains("metadata"),
+        "ArtifactSet should not expose unowned metadata without a publication consumer"
+    );
+}
+
+#[test]
 fn api_source_contexts_use_compiled_schema_not_full_container() {
     let provider =
         std::fs::read_to_string("crates/coflow-api/src/provider.rs").expect("read API provider");

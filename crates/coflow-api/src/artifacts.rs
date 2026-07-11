@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -12,7 +11,6 @@ pub enum ArtifactContentKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactSet {
     files: Vec<ArtifactFile>,
-    pub metadata: BTreeMap<String, String>,
 }
 
 impl ArtifactSet {
@@ -25,10 +23,7 @@ impl ArtifactSet {
     /// path is an ancestor of another.
     pub fn new(files: Vec<ArtifactFile>) -> Result<Self, ArtifactSetError> {
         validate_paths(&files)?;
-        Ok(Self {
-            files,
-            metadata: BTreeMap::new(),
-        })
+        Ok(Self { files })
     }
 
     #[must_use]
