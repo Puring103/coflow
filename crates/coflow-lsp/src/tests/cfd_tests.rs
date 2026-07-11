@@ -156,6 +156,58 @@ type Holder { key: string; item: Item; }\n";
 }
 
 #[test]
+fn cfd_definition_index_uses_actual_type_and_dirty_overlay() {
+    let schema_source = "type Item {}\n\
+type Skill {}\n\
+type Holder { item: &Item; }\n";
+    let (_cleanup, project) =
+        test_project_with_config("lsp-cfd-typed-definition-index", schema_source, "data");
+    let data_dir = project.root_dir.join("data");
+    std::fs::create_dir_all(&data_dir).expect("create data dir");
+    let skill_path = data_dir.join("a_skills.cfd");
+    let item_path = data_dir.join("z_items.cfd");
+    let source_path = data_dir.join("holders.cfd");
+    let source = "holder: Holder { item: &shared }\n";
+    std::fs::write(&skill_path, "shared: Skill {}\n").expect("write skill source");
+    std::fs::write(&item_path, "disk_only: Item {}\n").expect("write item source");
+    std::fs::write(&source_path, source).expect("write holder source");
+
+    let item_uri = path_to_file_uri(&item_path);
+    let source_uri = path_to_file_uri(&source_path);
+    let mut server = LspServer::new(project, Vec::new());
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": item_uri,
+                    "text": "shared: Item {}\n"
+                }
+            }
+        }))
+        .expect("open dirty item document");
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": source_uri,
+                    "text": source
+                }
+            }
+        }))
+        .expect("open holder document");
+    server.writer.clear();
+
+    let result = cfd_definition_result_at(&mut server, &source_uri, source, "shared");
+    assert_eq!(result["uri"], item_uri);
+    assert_eq!(result["range"]["start"]["character"], 0);
+    assert_eq!(result["range"]["end"]["character"], 6);
+}
+
+#[test]
 fn cfd_definition_request_resolves_examples_cfd_basic_monster() {
     let examples_dir =
         std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd"))

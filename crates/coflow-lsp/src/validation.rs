@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use crate::diagnostics::{
     label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
 };
+use crate::definition::CfdDefinitionIndex;
 use crate::state::{LspBuild, LspDocument};
 use crate::uri::path_to_file_uri;
 use crate::{cfd, path_from_file_uri};
@@ -51,7 +52,7 @@ pub(crate) struct CfdRequestDocument<'a> {
     pub(crate) build: Option<&'a LspBuild>,
 }
 
-pub(crate) struct CfdProjectSource {
+struct CfdProjectSource {
     path: PathBuf,
     pub(crate) uri: String,
     pub(crate) text: String,
@@ -182,7 +183,13 @@ impl LspValidationCore {
                 ));
             }
         };
-        let build = LspBuild::new(raw_build);
+        let cfd_sources = self.cfd_project_sources();
+        let cfd_definitions = CfdDefinitionIndex::from_sources(
+            cfd_sources
+                .iter()
+                .map(|source| (source.uri.as_str(), source.text.as_str())),
+        );
+        let build = LspBuild::new(raw_build).with_cfd_definitions(cfd_definitions);
         let diagnostics = dedupe_cft_diagnostics(build.schema.diagnostics.clone());
         let mut by_uri: BTreeMap<String, Vec<Value>> = BTreeMap::new();
 
@@ -262,7 +269,7 @@ impl LspValidationCore {
         LspRequestDocument::Cft { build, document }
     }
 
-    pub(crate) fn cfd_project_sources(&self) -> Vec<CfdProjectSource> {
+    fn cfd_project_sources(&self) -> Vec<CfdProjectSource> {
         let mut sources = Vec::new();
         for source in &self.project.config.sources {
             let SourceLocationSpec::Path(path) = source.location() else {

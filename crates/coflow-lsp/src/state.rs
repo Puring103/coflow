@@ -13,6 +13,7 @@ use crate::uri::{path_from_file_uri, path_to_file_uri};
 pub(crate) struct LspBuild {
     pub(crate) schema: SchemaBuild,
     pub(crate) documents: BTreeMap<String, LspDocument>,
+    pub(crate) cfd_definitions: definition::CfdDefinitionIndex,
     module_by_uri: BTreeMap<String, String>,
     module_by_path: BTreeMap<PathBuf, String>,
 }
@@ -54,9 +55,18 @@ impl LspBuild {
         Self {
             schema,
             documents,
+            cfd_definitions: definition::CfdDefinitionIndex::default(),
             module_by_uri,
             module_by_path,
         }
+    }
+
+    pub(crate) fn with_cfd_definitions(
+        mut self,
+        definitions: definition::CfdDefinitionIndex,
+    ) -> Self {
+        self.cfd_definitions = definitions;
+        self
     }
 
     pub(crate) const fn container(&self) -> Option<&coflow_cft::CftContainer> {

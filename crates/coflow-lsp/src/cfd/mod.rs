@@ -440,59 +440,117 @@ fn named_type_name(ty: &CftSchemaTypeRef) -> Option<&str> {
     }
 }
 
-/// Definition: return the key string when the cursor is on a reference key.
-///
-/// Walks all record field values recursively to find a `CfdRef` whose key
-/// span contains `offset`.
-pub fn definition_ref_key(ast: &CfdAst, offset: usize) -> Option<&str> {
+/// Definition: return the expected schema type and key under a reference.
+pub fn definition_ref_target(
+    ast: &CfdAst,
+    schema: Option<&CftContainer>,
+    offset: usize,
+) -> Option<(String, String)> {
+    let schema = schema?;
     for record in &ast.records {
         for entry in &record.entries {
-            if let Some(key) = ref_key_in_entry(entry, offset) {
-                return Some(key);
+            if let Some(target) = ref_target_in_entry(entry, schema, &record.type_name, offset) {
+                return Some(target);
             }
         }
     }
     None
 }
 
-fn ref_key_in_entry(entry: &CfdBlockEntry, offset: usize) -> Option<&str> {
+fn ref_target_in_entry(
+    entry: &CfdBlockEntry,
+    schema: &CftContainer,
+    owner_type: &str,
+    offset: usize,
+) -> Option<(String, String)> {
     match entry {
-        CfdBlockEntry::Field(field) => ref_key_in_value(&field.value, offset),
-        CfdBlockEntry::Spread(value, _) => ref_key_in_value(value, offset),
+        CfdBlockEntry::Field(field) => {
+            let owner = schema.resolve_type(owner_type)?;
+            let field_type = &owner
+                .all_fields
+                .iter()
+                .find(|candidate| candidate.name == field.name)?
+                .ty_ref;
+            ref_target_in_value(&field.value, schema, field_type, offset)
+        }
+        CfdBlockEntry::Spread(value, _) => ref_target_in_value(
+            value,
+            schema,
+            &CftSchemaTypeRef::Ref(owner_type.to_string()),
+            offset,
+        ),
     }
 }
 
-fn ref_key_in_value(value: &CfdValue, offset: usize) -> Option<&str> {
-    use coflow_cfd::{CfdBlockEntry, CfdValue};
+fn ref_target_in_value(
+    value: &CfdValue,
+    schema: &CftContainer,
+    expected_type: &CftSchemaTypeRef,
+    offset: usize,
+) -> Option<(String, String)> {
     match value {
         CfdValue::Ref(r) => {
             if span_contains(r.key.1, offset) {
-                Some(&r.key.0)
+                reference_target_type(expected_type)
+                    .map(|target_type| (target_type.to_string(), r.key.0.clone()))
             } else {
                 None
             }
         }
         CfdValue::Block(block) => {
+            let expected_type = strip_nullable(expected_type);
+            if let CftSchemaTypeRef::Dict(_, value_type) = expected_type {
+                for entry in &block.entries {
+                    let value = match entry {
+                        CfdBlockEntry::Field(field) => &field.value,
+                        CfdBlockEntry::Spread(value, _) => value,
+                    };
+                    if let Some(target) =
+                        ref_target_in_value(value, schema, value_type, offset)
+                    {
+                        return Some(target);
+                    }
+                }
+                return None;
+            }
+            let owner_type = block
+                .type_marker
+                .as_ref()
+                .map(|(name, _)| name.as_str())
+                .or_else(|| reference_target_type(expected_type))?;
             for entry in &block.entries {
-                let result = match entry {
-                    CfdBlockEntry::Field(f) => ref_key_in_value(&f.value, offset),
-                    CfdBlockEntry::Spread(v, _) => ref_key_in_value(v, offset),
-                };
-                if result.is_some() {
-                    return result;
+                if let Some(target) = ref_target_in_entry(entry, schema, owner_type, offset) {
+                    return Some(target);
                 }
             }
             None
         }
         CfdValue::Array(items, _) => {
+            let CftSchemaTypeRef::Array(item_type) = strip_nullable(expected_type) else {
+                return None;
+            };
             for item in items {
-                if let Some(k) = ref_key_in_value(item, offset) {
-                    return Some(k);
+                if let Some(target) = ref_target_in_value(item, schema, item_type, offset) {
+                    return Some(target);
                 }
             }
             None
         }
-        CfdValue::Spread(inner, _) => ref_key_in_value(inner, offset),
+        CfdValue::Spread(inner, _) => ref_target_in_value(inner, schema, expected_type, offset),
+        _ => None,
+    }
+}
+
+fn strip_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+    match ty {
+        CftSchemaTypeRef::Nullable(inner) => strip_nullable(inner),
+        _ => ty,
+    }
+}
+
+fn reference_target_type(ty: &CftSchemaTypeRef) -> Option<&str> {
+    match strip_nullable(ty) {
+        CftSchemaTypeRef::Named(name) | CftSchemaTypeRef::Ref(name) => Some(name),
         _ => None,
     }
 }

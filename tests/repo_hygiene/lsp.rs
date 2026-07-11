@@ -166,8 +166,6 @@ fn lsp_validation_core_does_not_live_in_lib_rs() {
 
         "pub(crate) enum LspRequestDocument",
 
-        "pub(crate) struct CfdProjectSource",
-
         "pub(crate) fn open_document",
 
         "pub(crate) fn validate_project",
@@ -177,8 +175,6 @@ fn lsp_validation_core_does_not_live_in_lib_rs() {
         "pub(crate) fn prepare_request_document",
 
         "pub(crate) fn request_document",
-
-        "pub(crate) fn cfd_project_sources",
 
         "pub(crate) fn is_cfd_path",
 
@@ -197,6 +193,18 @@ fn lsp_validation_core_does_not_live_in_lib_rs() {
             !lib.contains(expected),
 
             "LSP validation core item `{expected}` should not live in lib.rs"
+
+        );
+
+    }
+
+    for private in ["struct CfdProjectSource", "fn cfd_project_sources"] {
+
+        assert!(
+
+            validation.contains(private) && !lib.contains(private),
+
+            "LSP CFD source adapter `{private}` should remain private to validation.rs"
 
         );
 
@@ -449,7 +457,9 @@ fn lsp_definition_helpers_do_not_live_in_lib_rs() {
 
         "pub(crate) fn ast_enum_variant_location",
 
-        "fn cfd_record_definition_location_in_source",
+        "pub(crate) struct CfdDefinitionIndex",
+
+        "pub(crate) fn from_sources",
 
     ] {
 

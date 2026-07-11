@@ -78,7 +78,7 @@ use uri::path_from_file_uri;
 #[cfg(test)]
 pub(crate) use uri::path_to_file_uri;
 pub(crate) use validation::{
-    CfdProjectSource, DiagnosticPublication, LspRequestDocument, LspValidationCore,
+    DiagnosticPublication, LspRequestDocument, LspValidationCore,
 };
 
 /// Runs the CFT language server over stdio.
@@ -325,11 +325,15 @@ impl<W: Write> LspServer<W> {
                     )
                 {
                     json!(location)
-                } else if let Some(ref_key) = cfd::definition_ref_key(&document.ast, offset) {
-                    let sources = self.core.cfd_project_sources();
-                    cfd_record_definition_location(&sources, ref_key).map_or(Value::Null, |location| {
-                        json!(location)
-                    })
+                } else if let Some((target_type, ref_key)) =
+                    cfd::definition_ref_target(&document.ast, document.schema, offset)
+                {
+                    document
+                        .build
+                        .and_then(|build| {
+                            cfd_record_definition_location(build, &target_type, &ref_key)
+                        })
+                        .map_or(Value::Null, |location| json!(location))
                 } else {
                     Value::Null
                 }

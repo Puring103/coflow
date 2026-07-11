@@ -1,13 +1,71 @@
 use coflow_cfd::parse_cfd;
 use coflow_cft::ast::Item;
-use coflow_cft::Span;
+use coflow_cft::{CftContainer, Span};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 
 use crate::{
     byte_offset_from_position, byte_range, cfd, current_type_at, dotted_chain_at, field_by_type,
-    is_builtin_name, is_trivia_position, range_from_span, word_at, CfdProjectSource, LspBuild,
-    LspDocument, LspPosition,
+    is_builtin_name, is_trivia_position, range_from_span, word_at, LspBuild, LspDocument,
+    LspPosition,
 };
+
+#[derive(Debug, Default)]
+pub(crate) struct CfdDefinitionIndex {
+    records: BTreeMap<String, BTreeMap<String, Vec<Value>>>,
+}
+
+impl CfdDefinitionIndex {
+    pub(crate) fn from_sources<'a>(
+        sources: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Self {
+        let mut records = BTreeMap::<String, BTreeMap<String, Vec<Value>>>::new();
+        for (uri, text) in sources {
+            let (ast, _) = parse_cfd(text);
+            for record in ast.records {
+                let range = cfd::byte_range(text, record.key_span.start, record.key_span.end);
+                records
+                    .entry(record.type_name)
+                    .or_default()
+                    .entry(record.key)
+                    .or_default()
+                    .push(json!({
+                        "uri": uri,
+                        "range": range,
+                    }));
+            }
+        }
+        Self { records }
+    }
+
+    fn location(
+        &self,
+        schema: &CftContainer,
+        expected_type: &str,
+        key: &str,
+    ) -> Option<Value> {
+        if let Some(location) = self
+            .records
+            .get(expected_type)
+            .and_then(|records| records.get(key))
+            .and_then(|locations| locations.first())
+        {
+            return Some(location.clone());
+        }
+        schema
+            .compiled_schema()
+            .concrete_assignable_types(expected_type)?
+            .into_iter()
+            .filter(|actual_type| actual_type != expected_type)
+            .find_map(|actual_type| {
+                self.records
+                    .get(&actual_type)
+                    .and_then(|records| records.get(key))
+                    .and_then(|locations| locations.first())
+                    .cloned()
+            })
+    }
+}
 
 /// Find the LSP location (uri + range) of a CFT type definition by name.
 pub(crate) fn cft_type_definition_location(build: &LspBuild, type_name: &str) -> Option<Value> {
@@ -248,35 +306,13 @@ fn location(document: &LspDocument, span: Span) -> Value {
     })
 }
 
-/// Find the LSP location (uri + range) of a CFD record definition by key.
-///
-/// Searches configured CFD source files and open CFD documents for a top-level
-/// record whose key matches. Open documents override disk content for the same
-/// path so dirty editor buffers can still be targeted.
+/// Finds a CFD record definition by its expected schema type and key.
 pub(crate) fn cfd_record_definition_location(
-    sources: &[CfdProjectSource],
+    build: &LspBuild,
+    expected_type: &str,
     key: &str,
 ) -> Option<Value> {
-    for source in sources {
-        if let Some(location) =
-            cfd_record_definition_location_in_source(&source.uri, &source.text, key)
-        {
-            return Some(location);
-        }
-    }
-    None
-}
-
-fn cfd_record_definition_location_in_source(uri: &str, text: &str, key: &str) -> Option<Value> {
-    let (ast, _) = parse_cfd(text);
-    for record in &ast.records {
-        if record.key == key {
-            let range = cfd::byte_range(text, record.key_span.start, record.key_span.end);
-            return Some(json!({
-                "uri": uri,
-                "range": range,
-            }));
-        }
-    }
-    None
+    build
+        .container()
+        .and_then(|schema| build.cfd_definitions.location(schema, expected_type, key))
 }
