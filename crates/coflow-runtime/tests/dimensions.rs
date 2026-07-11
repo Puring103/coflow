@@ -8,7 +8,7 @@ use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
 use coflow_cft::{CftContainer, Dimension, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
 use coflow_project::Project;
-use coflow_runtime::{ProjectSession, Runtime};
+use coflow_runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime, WriteProjectSession};
 
 fn csv_dimension_registry() -> ProviderRegistry {
     let mut registry = ProviderRegistry::default();
@@ -24,19 +24,17 @@ fn csv_dimension_registry() -> ProviderRegistry {
 fn build_session(
     project: Project,
     registry: &ProviderRegistry,
-) -> Result<ProjectSession, DiagnosticSet> {
+) -> Result<BuildProjectSession, DiagnosticSet> {
     Runtime::new(registry.clone())
         .build_project_session(project)
-        .map(coflow_runtime::BuildProjectSession::into_session)
 }
 
 fn open_read_only_session(
     project: Project,
     registry: &ProviderRegistry,
-) -> Result<ProjectSession, DiagnosticSet> {
+) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
     Runtime::new(registry.clone())
         .open_read_only_session(project)
-        .map(coflow_runtime::ReadOnlyProjectSession::into_session)
 }
 
 fn schema_with_localized_string() -> CftContainer {
@@ -125,6 +123,7 @@ fn localized_schema_requires_language_dimension_config() {
 
     assert!(
         session
+            .queries()
             .diagnostics()
             .as_set()
             .diagnostics
@@ -135,7 +134,7 @@ fn localized_schema_requires_language_dimension_config() {
                     == "schema contains @localized fields but dimensions.language is not configured"
             }),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -173,6 +172,7 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
 
     assert!(
         session
+            .queries()
             .diagnostics()
             .as_set()
             .diagnostics
@@ -190,7 +190,7 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
                     })
             }),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -250,6 +250,7 @@ dimensions:
     let session = build_session(project, &registry).expect("build session");
 
     let variants = session
+        .queries()
         .schema()
         .resolve_type("Item_nameVariants")
         .expect("synthesized type");
@@ -281,6 +282,7 @@ dimensions:
         ]
     );
     assert!(session
+        .queries()
         .files()
         .source_files()
         .contains("data/dimensions/language/Item_name.csv"));
@@ -339,6 +341,7 @@ dimensions:
     let session = build_session(project, &registry).expect("build session");
 
     let variants = session
+        .queries()
         .schema()
         .resolve_type("Item_nameVariants")
         .expect("synthesized type");
@@ -351,10 +354,12 @@ dimensions:
         vec!["default", "pc", "mobile"]
     );
     assert!(session
+        .queries()
         .files()
         .source_files()
         .contains("data/dimensions/platform/Item_name.csv"));
     assert!(session
+        .queries()
         .records()
         .get_by_coordinate("Item_nameVariants", "potion")
         .is_some());
@@ -399,6 +404,7 @@ dimensions:
     let session = build_session(project, &registry).expect("build session");
 
     let variants = session
+        .queries()
         .schema()
         .resolve_type("Item_nameVariants")
         .expect("synthesized type");
@@ -451,9 +457,9 @@ dimensions:
     let session = open_read_only_session(project, &registry).expect("build session");
 
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
     assert!(
         !root.join("data/dimensions/language/Item_name.csv").exists(),
@@ -515,13 +521,13 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
-    assert!(session.schema().resolve_type("Base_nameVariants").is_some());
-    assert!(session.schema().resolve_type("Child_nameVariants").is_none());
+    assert!(session.queries().schema().resolve_type("Base_nameVariants").is_some());
+    assert!(session.queries().schema().resolve_type("Child_nameVariants").is_none());
     let generated =
         std::fs::read_to_string(root.join("data/dimensions/language/Base_name.csv"))
             .expect("read inherited dimension csv");
@@ -584,9 +590,9 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
@@ -644,12 +650,13 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
     assert!(
-        session.has_diagnostics(),
+        session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
     assert!(
         session
+            .queries()
             .diagnostics()
             .as_set()
             .diagnostics
@@ -659,7 +666,7 @@ dimensions:
                     && diagnostic.message.contains("unmanaged id `stale`")
             }),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -716,18 +723,19 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
     assert!(
-        session.has_diagnostics(),
+        session.queries().has_diagnostics(),
         "dimension zh variant should fail the check"
     );
     assert!(
         session
+            .queries()
             .diagnostics()
             .as_set()
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.message.contains("[language=zh]")),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
@@ -784,9 +792,10 @@ dimensions:
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
-    assert!(session.has_diagnostics());
+    assert!(session.queries().has_diagnostics());
     assert!(
         session
+            .queries()
             .diagnostics()
             .as_set()
             .diagnostics
@@ -796,7 +805,7 @@ dimensions:
                     && diagnostic.message.contains("unmanaged id `extra`")
             }),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -849,9 +858,10 @@ dimensions:
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
-    assert!(session.has_diagnostics());
+    assert!(session.queries().has_diagnostics());
     assert!(
         session
+            .queries()
             .diagnostics()
             .as_set()
             .diagnostics
@@ -861,7 +871,7 @@ dimensions:
                     && diagnostic.message.contains("duplicate id `potion`")
             }),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -913,9 +923,10 @@ dimensions:
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
-    assert!(session.has_diagnostics());
+    assert!(session.queries().has_diagnostics());
     assert!(
         session
+            .queries()
             .diagnostics()
             .as_set()
             .diagnostics
@@ -925,7 +936,7 @@ dimensions:
                     && diagnostic.message.contains("no longer managed")
             }),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -978,7 +989,7 @@ dimensions:
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
-    assert!(session.has_diagnostics());
+    assert!(session.queries().has_diagnostics());
     assert!(
         !generated_path.exists(),
         "new generated dimension file should be removed after rollback"
@@ -1050,7 +1061,7 @@ dimensions:
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
-    assert!(session.has_diagnostics());
+    assert!(session.queries().has_diagnostics());
     assert_eq!(
         std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
             .expect("read rolled back name csv"),
@@ -1108,9 +1119,9 @@ dimensions:
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     let generated_path = root.join("data/dimensions/language/Item_name.csv");
@@ -1123,9 +1134,9 @@ dimensions:
     let project = Project::open_schema_only(Some(&root)).expect("reopen project");
     let session = build_session(project, &registry).expect("rebuild session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
     let second_modified = std::fs::metadata(&generated_path)
         .expect("metadata")
@@ -1181,12 +1192,13 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     assert!(session
+        .queries()
         .files()
         .source_files()
         .contains("data/dimensions/language/ui_icon.csv"));
@@ -1251,9 +1263,9 @@ dimensions:
     let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
     let session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     let generated_name =
@@ -1331,9 +1343,9 @@ dimensions:
     let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
     let session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/UiText.cfd"))
@@ -1343,6 +1355,7 @@ dimensions:
         "welcome: UiText_welcomeVariants {\n    default: \"Welcome\",\n    zh: \"欢迎\",\n    en: null,\n}\n\n"
     );
     assert!(session
+        .queries()
         .files()
         .source_files()
         .contains("data/dimensions/language/UiText.cfd"));
@@ -1402,17 +1415,19 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     // Both records exist in the model, each addressable by (type, key).
     let source = session
+        .queries()
         .records()
         .get_by_coordinate("Item", "potion")
         .expect("source `Item.potion` should be indexed");
     let synthetic = session
+        .queries()
         .records()
         .get_by_coordinate("Item_nameVariants", "potion")
         .expect("synthetic `Item_nameVariants.potion` should be indexed");
@@ -1426,6 +1441,7 @@ dimensions:
     // The synthetic file lists only the synthetic record — the source row's
     // fields must not bleed through.
     let ids_in_variants_file = session
+        .queries()
         .records()
         .ids_in_file("data/dimensions/language/Item_name.csv")
         .to_vec();
@@ -1435,6 +1451,7 @@ dimensions:
         "synthetic file index should hold only the variant record"
     );
     let coordinate = session
+        .queries()
         .records()
         .get(synthetic.id)
         .expect("synthetic record ref")
@@ -1446,6 +1463,7 @@ dimensions:
     // `record_view` returns the synthetic record's fields when addressed by
     // its coordinate — not the source `Item` record's fields.
     let view = session
+        .queries()
         .record_view("Item_nameVariants", "potion")
         .expect("record view");
     assert!(view.record.fields().contains_key("default"));
@@ -1519,16 +1537,20 @@ sources:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
-    let mut session = build_session(project, &registry).expect("build session");
+    let session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
+    drop(session);
+    let project = Project::open_schema_only(Some(&root)).expect("reopen project");
+    let mut session = Runtime::new(registry.clone())
+        .open_write_session(project)
+        .expect("open write session");
 
     session
         .write_field(
-            &registry,
             "Item",
             "child",
             &[WriteFieldPathSegment::Field("name".to_string())],
@@ -1547,19 +1569,17 @@ sources:
         "host file should not receive spread edit:\n{host}"
     );
 
-    assert_nested_spread_write_redirects(&mut session, &registry, &root);
+    assert_nested_spread_write_redirects(&mut session, &root);
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
 
 fn assert_nested_spread_write_redirects(
-    session: &mut ProjectSession,
-    registry: &ProviderRegistry,
+    session: &mut WriteProjectSession,
     root: &std::path::Path,
 ) {
     session
         .write_field(
-            registry,
             "Holder",
             "holder",
             &[
@@ -1583,7 +1603,6 @@ fn assert_nested_spread_write_redirects(
 
     session
         .write_field(
-            registry,
             "Holder",
             "chain",
             &[
@@ -1619,10 +1638,15 @@ fn rename_record_updates_direct_refs_and_spread_sources_without_global_ref_scan(
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
-    let mut session = build_session(project, &registry).expect("build session");
+    let session = build_session(project, &registry).expect("build session");
+    drop(session);
+    let project = Project::open_schema_only(Some(&root)).expect("reopen project");
+    let mut session = Runtime::new(registry)
+        .open_write_session(project)
+        .expect("open write session");
 
     session
-        .rename_record_key(&registry, "Holder", "base_holder", "renamed_holder")
+        .rename_record_key("Holder", "base_holder", "renamed_holder")
         .expect("rename base holder");
 
     let items = std::fs::read_to_string(root.join("data/items.cfd")).expect("read items");

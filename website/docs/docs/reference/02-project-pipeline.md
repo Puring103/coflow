@@ -13,9 +13,12 @@ flowchart TD
   compile --> model["构建 DataModel"]
   load --> model
   model --> check["执行 check"]
-  check --> session["ProjectSession"]
-  session --> cli["CLI / 编辑器 / LSP / AI 命令"]
-  session --> export["导出 JSON / MessagePack"]
+  check --> generation["Runtime generation"]
+  generation --> queries["ProjectQueries"]
+  generation --> write["WriteProjectSession"]
+  queries --> cli["CLI / 编辑器 / LSP / AI 命令"]
+  queries --> export["导出 JSON / MessagePack"]
+  write --> mutation["Provider mutation"]
   compile --> codegen["生成 C# 代码"]
   export --> artifacts["staging 后提交产物"]
   codegen --> artifacts
@@ -92,11 +95,11 @@ Schema 编译阶段会处理：
 
 `codegen csharp` 是 schema-only 命令。它不要求 source 存在，也不构建 DataModel。
 
-`data sources`、`data list` 和 `data get` 使用完整项目 session。它们的主要输出
+`data sources`、`data list` 和 `data get` 使用绑定到同一 generation 的只读 query capability。它们的主要输出
 分别是 source、record 索引和 record 内容，但返回的 `diagnostics` 会包含数据加载、
 DataModel 和 CFT `check {}` 诊断。
 
-`data patch` 写入后会刷新项目 session 并返回写入后的诊断；业务校验诊断不会回滚
+`data patch` 通过 write capability 写入，并在成功后发布新的 generation 和诊断；业务校验诊断不会回滚
 已经成功写入的数据，调用方应根据 `write_ok`、`check_ok` 和 `diagnostics` 继续修正。
 
 `schema write-file --check` 的 Check 列为“否”，因为它只在写入后重新编译
@@ -175,7 +178,7 @@ Project
   -> build CfdDataModel
   -> resolve refs
   -> run coflow-checker
-  -> ProjectSession
+  -> runtime generation
 ```
 
 DataModel 阶段统一处理：
@@ -191,22 +194,18 @@ DataModel 阶段统一处理：
 
 Checker 阶段执行 CFT `check {}`，并生成 `CFD-CHECK-*` 诊断。
 
-## ProjectSession
+## 运行时能力会话
 
-`ProjectSession` 是 runtime 构建出的共享运行时状态：
+runtime 内部把 project、schema、model、diagnostics 和 source/record/file 索引保存为一个完整 generation。拥有该状态的 session 是 crate-private；宿主只能使用表达用途的窄接口：
 
-```text
-ProjectSession
-  project
-  schema
-  model
-  diagnostics
-  sources
-  records
-  files
-```
+| Capability | 用途 |
+| --- | --- |
+| `ProjectQueries<'generation>` | 对一个确定 generation 执行只读查询 |
+| `ReadOnlyProjectSession` | 编辑、检查等不允许生成维度文件的生命周期 |
+| `BuildProjectSession` | build 流程；允许生成维度来源后再发布最终 generation |
+| `WriteProjectSession` | 持有 Provider registry、revision 和 mutation 命令 |
 
-CLI、编辑器和自动化命令应该复用 `ProjectSession` 中的 schema、model、source index、record index 和 diagnostics，而不是重新实现一套加载和检查流程。
+CLI、编辑器和自动化命令复用这些 capability，而不是导入 owning session、重新实现加载/检查流程，或自行协调 Provider 写入和重建。每个成功应用的 mutation 才推进 write revision；没有应用任何操作的失败保持当前 generation。
 
 ## 维度文件
 

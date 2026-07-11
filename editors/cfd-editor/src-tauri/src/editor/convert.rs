@@ -9,7 +9,7 @@ use coflow_api::FlatDiagnostic;
 use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
 use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite};
 use coflow_runtime::{
-    dict_key_path_text, value_summary, ProjectSession, RecordCoordinate, RecordView,
+    dict_key_path_text, value_summary, ProjectQueries, RecordCoordinate, RecordView,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,7 +17,7 @@ use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRo
 
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
-    pub session: &'a ProjectSession,
+    pub queries: ProjectQueries<'a>,
     pub schema: &'a CompiledSchema,
     pub diagnostics: Vec<FlatDiagnostic>,
     /// Set of dimension-synthesized type names (e.g. `Item_nameVariants`).
@@ -31,12 +31,12 @@ impl<'a> WireContext<'a> {
     /// type set. Callers that build many rows in a row should reuse the
     /// same context to avoid re-walking the dimension list.
     #[must_use]
-    pub fn new(session: &'a ProjectSession, diagnostics: Vec<FlatDiagnostic>) -> Self {
+    pub fn new(queries: ProjectQueries<'a>, diagnostics: Vec<FlatDiagnostic>) -> Self {
         Self {
-            session,
-            schema: session.compiled_schema(),
+            queries,
+            schema: queries.compiled_schema(),
             diagnostics,
-            dimension_synth_types: session.dimension_synthesized_types(),
+            dimension_synth_types: queries.dimension_synthesized_types(),
         }
     }
 }
@@ -180,14 +180,14 @@ fn build_annotation(
     parent_path: &[String],
 ) -> Option<FieldAnnotation> {
     let host_id = ctx
-        .session
+        .queries
         .records()
         .id_for_coordinate(host.actual_type(), &host.key);
     let path = CfdPath::root().field(field_name.to_string());
     let declared_type = declared_field_type(ctx, host.actual_type(), field_name);
     let mut annotation = annotation_for_value(value, ctx, host_id, &path, declared_type);
     if let Some(source_id) =
-        host_id.and_then(|host| ctx.session.model().spread_source_at_path(host, &path))
+        host_id.and_then(|host| ctx.queries.model().spread_source_at_path(host, &path))
     {
         annotation.spread_info = spread_info_for_source(ctx, source_id, parent_path, field_name);
     }
@@ -248,13 +248,13 @@ fn annotation_for_value(
         CfdValue::Ref(_) => {
             annotation.ref_target_file = host_id
                 .and_then(|host| {
-                    ctx.session
+                    ctx.queries
                         .model()
                         .resolve_effective_ref(&RefSite::new(host, path.clone()))
                 })
-                .and_then(|target| ctx.session.model().record(target))
+                .and_then(|target| ctx.queries.model().record(target))
                 .and_then(|record| {
-                    ctx.session
+                    ctx.queries
                         .file_for_record(record.actual_type(), &record.key)
                         .map(str::to_string)
                 });
@@ -422,11 +422,11 @@ fn spread_info_for_source(
     parent_path: &[String],
     field_name: &str,
 ) -> Option<SpreadInfo> {
-    let source = ctx.session.model().record(source_id)?;
+    let source = ctx.queries.model().record(source_id)?;
     let mut source_field_path = parent_path.to_vec();
     source_field_path.push(field_name.to_string());
     let source_record_file = ctx
-        .session
+        .queries
         .file_for_record(source.actual_type(), &source.key)
         .map(str::to_string);
     Some(SpreadInfo {

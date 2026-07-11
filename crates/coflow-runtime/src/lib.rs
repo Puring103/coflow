@@ -79,4 +79,5 @@ pub use schema_inspect::{
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,
 };
-pub use session::{ProjectSchemaSession, ProjectSession, RecordCoordinate};
+pub use session::{ProjectSchemaSession, RecordCoordinate};
+pub(crate) use session::ProjectSession;

@@ -48,15 +48,16 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
         depths.insert(*id, 0);
     }
 
-    let ctx = WireContext::new(&session.engine, session.diagnostics.flatten());
+    let queries = session.queries();
+    let ctx = WireContext::new(queries, session.diagnostics.flatten());
 
     while let Some((id, depth)) = queue.pop_front() {
-        let Some(record) = session.engine.model().record(id) else {
+        let Some(record) = queries.model().record(id) else {
             continue;
         };
         let coordinate = RecordCoordinate::new(record.actual_type(), record.key.clone());
         let host_file = session
-            .engine
+            .queries()
             .records()
             .file_for_id(id)
             .unwrap_or_default()
@@ -82,11 +83,11 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
             continue;
         }
 
-        for edge in session.engine.model().direct_ref_edges_from_host(id) {
+        for edge in queries.model().direct_ref_edges_from_host(id) {
             if !edge_enabled(edge, enabled_fields.as_ref()) {
                 continue;
             }
-            let Some(target_record) = session.engine.model().record(edge.target) else {
+            let Some(target_record) = queries.model().record(edge.target) else {
                 continue;
             };
             if !depths.contains_key(&edge.target) && depths.len() >= node_limit {
@@ -120,18 +121,18 @@ fn start_records(
     enabled_fields: Option<&BTreeSet<&str>>,
 ) -> Vec<CfdRecordId> {
     session
-        .engine
+        .queries()
         .records()
         .ids_in_file(file_path)
         .iter()
         .copied()
         .filter(|id| {
-            let Some(record) = session.engine.model().record(*id) else {
+            let Some(record) = session.queries().model().record(*id) else {
                 return false;
             };
             active_type.is_none_or(|expected| record.actual_type() == expected)
                 && session
-                    .engine
+                    .queries()
                     .model()
                     .direct_ref_edges_from_host(*id)
                     .any(|edge| edge_enabled(edge, enabled_fields))
@@ -159,7 +160,7 @@ fn collect_available_fields(
         if depth >= max_depth {
             continue;
         }
-        for edge in session.engine.model().direct_ref_edges_from_host(id) {
+        for edge in session.queries().model().direct_ref_edges_from_host(id) {
             if let Some(field) = top_level_field(&edge.path) {
                 fields.insert(field.to_string());
             }

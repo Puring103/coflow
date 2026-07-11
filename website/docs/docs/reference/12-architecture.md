@@ -15,16 +15,19 @@ flowchart TD
   Schema --> Model
   Records --> Model["CfdDataModel<br/>合并 / 默认值 / 引用"]
   Model --> Check["coflow-checker<br/>业务校验"]
-  Check --> Session["ProjectSession<br/>可信模型 + 诊断 + 索引"]
-  Session --> Outputs["输出与消费<br/>check / editor / JSON / MessagePack / C#"]
+  Check --> Generation["Runtime generation<br/>可信模型 + 诊断 + 索引"]
+  Generation --> Queries["ProjectQueries<br/>generation-bound read capability"]
+  Generation --> Write["WriteProjectSession<br/>registry + revision + mutation"]
+  Queries --> Outputs["输出与消费<br/>check / editor / JSON / MessagePack / C#"]
+  Write --> Providers
 ```
 
-`coflow.yaml`、路径解析、Provider registry 和宿主命令都服务于这条数据主线。`ProjectSession` 是处理完成后的共享状态：CLI、编辑器和自动化命令应复用它，而不是各自重新实现一套 schema/data/check 管线。
+`coflow.yaml`、路径解析、Provider registry 和宿主命令都服务于这条数据主线。runtime 内部拥有处理完成后的完整 generation；CLI、编辑器和自动化命令只通过 capability session 复用它，而不是各自重新实现 schema/data/check 管线。
 
-`ProjectSession` 保存共享运行时状态：
+内部 generation 保存共享运行时状态：
 
 ```text
-ProjectSession
+Runtime generation
   project        # 项目配置、根目录和路径信息
   schema         # 编译后的 CFT schema
   model          # 构建后的 CfdDataModel
@@ -34,7 +37,7 @@ ProjectSession
   files          # 文件索引
 ```
 
-`check` 到这里结束。`build`、`export` 和 `codegen` 会在 session 有效后继续执行产物 preflight、staging 和 commit。
+拥有该 generation 的 session 不属于 public interface。`ProjectQueries` 提供只读 interface；`ReadOnlyProjectSession`、`BuildProjectSession` 和 `WriteProjectSession` 分别表达无副作用读取、允许维度生成的构建、以及持有 registry/revision 的 mutation 能力。`check` 到这里结束；`build`、`export` 和 `codegen` 会在 generation 有效后继续执行产物 preflight、staging 和 commit。
 
 ## 分层职责
 
@@ -86,7 +89,7 @@ flowchart TD
 
 ### `coflow-runtime`
 
-`coflow-runtime` 是共享项目运行时。它把 project、schema、source、DataModel、diagnostics 和索引组织成 `ProjectSession`。
+`coflow-runtime` 是共享项目运行时。它把 project、schema、source、DataModel、diagnostics 和索引组织成不可被宿主拆开的 generation，并通过 capability session 暴露用途明确的 interface。
 
 主要职责：
 

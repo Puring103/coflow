@@ -1,13 +1,16 @@
 use std::collections::BTreeMap;
 
-use coflow_api::{DiagnosticSet, ProviderRegistry};
+use coflow_api::{DiagnosticSet, ProviderRegistry, WriterCapabilities};
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
 
 use crate::schema_build::build_project_schema_session;
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::session_build::{open_project_session, SessionOpenOptions};
-use crate::{ProjectQueries, WriteOutcome};
+use crate::{
+    CreateRecordDraft, DefaultMaterialization, MutationReport, MutationRequest, ProjectQueries,
+    WriteOutcome,
+};
 
 #[derive(Debug, Clone)]
 pub struct Runtime {
@@ -83,19 +86,8 @@ pub struct ReadOnlyProjectSession {
 }
 
 impl ReadOnlyProjectSession {
-    #[must_use]
-    pub fn new(session: ProjectSession) -> Self {
+    fn new(session: ProjectSession) -> Self {
         Self { session }
-    }
-
-    #[must_use]
-    pub const fn as_session(&self) -> &ProjectSession {
-        &self.session
-    }
-
-    #[must_use]
-    pub fn into_session(self) -> ProjectSession {
-        self.session
     }
 
     #[must_use]
@@ -107,6 +99,11 @@ impl ReadOnlyProjectSession {
     pub fn into_diagnostics(self) -> DiagnosticSet {
         self.session.into_diagnostics()
     }
+
+    #[must_use]
+    pub fn into_schema_session(self) -> ProjectSchemaSession {
+        self.session.into_schema_session()
+    }
 }
 
 #[derive(Debug)]
@@ -115,19 +112,8 @@ pub struct BuildProjectSession {
 }
 
 impl BuildProjectSession {
-    #[must_use]
-    pub fn new(session: ProjectSession) -> Self {
+    fn new(session: ProjectSession) -> Self {
         Self { session }
-    }
-
-    #[must_use]
-    pub const fn as_session(&self) -> &ProjectSession {
-        &self.session
-    }
-
-    #[must_use]
-    pub fn into_session(self) -> ProjectSession {
-        self.session
     }
 
     #[must_use]
@@ -165,6 +151,71 @@ impl WriteProjectSession {
     #[must_use]
     pub const fn revision(&self) -> u64 {
         self.revision
+    }
+
+    #[must_use]
+    pub fn writer_capabilities_for_file(&self, file: &str) -> WriterCapabilities {
+        self.queries()
+            .writer_capabilities_for_file(&self.registry, file)
+    }
+
+    /// Build a schema-shaped default record value.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when `type_name` is unknown.
+    pub fn default_record_value(
+        &self,
+        type_name: &str,
+        materialization: DefaultMaterialization,
+    ) -> Result<CfdValue, DiagnosticSet> {
+        self.session
+            .default_record_value(type_name, materialization)
+    }
+
+    /// Build the editable fields needed to insert a record.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the type cannot be inserted.
+    pub fn create_record_draft(
+        &self,
+        type_name: &str,
+    ) -> Result<CreateRecordDraft, DiagnosticSet> {
+        self.session.create_record_draft(type_name)
+    }
+
+    /// Build a default collection item for an editor insertion.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the path is not a collection or no valid
+    /// reference target exists.
+    pub fn default_collection_item_value(
+        &self,
+        actual_type: &str,
+        path: &[CfdPathSegment],
+    ) -> Result<CfdValue, DiagnosticSet> {
+        self.session
+            .default_collection_item_value(actual_type, path)
+    }
+
+    /// Apply a batch of mutation commands using the registry owned by this
+    /// capability.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics only when mutation execution cannot produce a
+    /// report. Per-operation failures are included in the report.
+    pub fn apply_mutation(
+        &mut self,
+        request: MutationRequest,
+    ) -> Result<MutationReport, DiagnosticSet> {
+        let report = self.session.apply_mutation(&self.registry, request)?;
+        self.revision = self
+            .revision
+            .saturating_add(u64::try_from(report.applied.len()).unwrap_or(u64::MAX));
+        Ok(report)
     }
 
     pub fn write_field(

@@ -12,7 +12,7 @@ use coflow_data_model::CfdErrorCode;
 use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
     create_data_file, data_get, data_list, data_sources, sync_data_header, DataCreateFileOptions,
-    DataGetQuery, DataListQuery, DataSyncHeaderOptions, ProjectSchemaSession, ProjectSession,
+    BuildProjectSession, DataGetQuery, DataListQuery, DataSyncHeaderOptions, ProjectSchemaSession,
     RecordCoordinate, Runtime,
 };
 
@@ -78,10 +78,9 @@ fn registry() -> coflow_api::ProviderRegistry {
 fn build_session(
     project: Project,
     registry: &coflow_api::ProviderRegistry,
-) -> Result<ProjectSession, DiagnosticSet> {
+) -> Result<BuildProjectSession, DiagnosticSet> {
     Runtime::new(registry.clone())
         .build_project_session(project)
-        .map(coflow_runtime::BuildProjectSession::into_session)
 }
 
 fn schema_session(
@@ -99,7 +98,7 @@ fn data_sources_report_provider_capabilities_and_types() {
     let registry = registry();
     let session = build_session(project, &registry).expect("session");
 
-    let report = data_sources(&session, &registry);
+    let report = data_sources(session.queries(), &registry);
     let source = report
         .sources
         .iter()
@@ -177,13 +176,14 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
     let session = build_session(project, &registry).expect("session");
 
     let duplicate_index = session
+        .queries()
         .diagnostics()
         .as_set()
         .diagnostics
         .iter()
         .position(|diagnostic| diagnostic.code == CfdErrorCode::DuplicateId.to_string())
         .expect("duplicate diagnostic");
-    let duplicate = &session.diagnostics().as_set().diagnostics[duplicate_index];
+    let duplicate = &session.queries().diagnostics().as_set().diagnostics[duplicate_index];
     let primary = duplicate
         .primary
         .as_ref()
@@ -198,6 +198,7 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
         "duplicate diagnostic should point at data/items.cfd: {duplicate:?}"
     );
     let logical = session
+        .queries()
         .diagnostics()
         .logical_location(duplicate_index)
         .expect("duplicate diagnostic should keep logical record location");
@@ -205,14 +206,18 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
     assert_eq!(logical.record_key.as_deref(), Some("sword"));
     let indexed_file = path_to_slash(path.as_path());
     assert!(
-        !session.diagnostics().by_file(&indexed_file).is_empty(),
+        !session.queries().diagnostics().by_file(&indexed_file).is_empty(),
         "duplicate diagnostic should be indexed by source file `{indexed_file}`"
     );
     assert!(
-        !session.diagnostics().by_record("Item", "sword").is_empty(),
+        !session
+            .queries()
+            .diagnostics()
+            .by_record("Item", "sword")
+            .is_empty(),
         "duplicate diagnostic should be indexed by logical record"
     );
-    let rejected = session.records().rejected();
+    let rejected = session.queries().records().rejected();
     assert_eq!(
         rejected.len(),
         2,
@@ -224,12 +229,17 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
             && record.display_path == "data/items.cfd"
     }));
     assert_eq!(
-        session.records().rejected_in_file("data/items.cfd").count(),
+        session
+            .queries()
+            .records()
+            .rejected_in_file("data/items.cfd")
+            .count(),
         2,
         "rejected source rows should be queryable by file"
     );
     assert_eq!(
         session
+            .queries()
             .records()
             .rejected_by_coordinate("Item", "sword")
             .count(),
@@ -250,7 +260,7 @@ fn data_list_filters_and_paginates_record_summaries() {
     let session = build_session(project, &registry).expect("session");
 
     let list = data_list(
-        &session,
+        session.queries(),
         &DataListQuery {
             actual_type: Some("Item".to_string()),
             file: Some("data/items.cfd".to_string()),
@@ -277,7 +287,7 @@ fn data_get_supports_selector_and_key_filters() {
     let session = build_session(project, &registry).expect("session");
 
     let selected = data_get(
-        &session,
+        session.queries(),
         &DataGetQuery {
             selector: Some(RecordCoordinate::new("Item", "sword")),
             actual_type: None,
@@ -295,7 +305,7 @@ fn data_get_supports_selector_and_key_filters() {
     assert!(selected.records[0].fields.contains_key("price"));
 
     let filtered = data_get(
-        &session,
+        session.queries(),
         &DataGetQuery {
             selector: None,
             actual_type: Some("Item".to_string()),
@@ -326,7 +336,7 @@ fn data_get_applies_file_filter_to_selected_record() {
     let session = build_session(project, &registry).expect("session");
 
     let report = data_get(
-        &session,
+        session.queries(),
         &DataGetQuery {
             selector: Some(RecordCoordinate::new("Item", "sword")),
             actual_type: None,
@@ -354,7 +364,7 @@ fn data_get_returns_diagnostic_for_missing_selector() {
     let session = build_session(project, &registry).expect("session");
 
     let diagnostics = data_get(
-        &session,
+        session.queries(),
         &DataGetQuery {
             selector: Some(RecordCoordinate::new("Item", "missing")),
             actual_type: None,
@@ -385,7 +395,7 @@ fn data_get_requires_limit_or_all_for_large_unselected_results() {
     let session = build_session(project, &registry).expect("session");
 
     let diagnostics = data_get(
-        &session,
+        session.queries(),
         &DataGetQuery {
             selector: None,
             actual_type: None,
@@ -408,7 +418,7 @@ fn data_get_requires_limit_or_all_for_large_unselected_results() {
     }));
 
     let limited = data_get(
-        &session,
+        session.queries(),
         &DataGetQuery {
             selector: None,
             actual_type: None,
@@ -446,9 +456,9 @@ fn provider_option_diagnostics_keep_the_project_key_path() {
     let canonical_config_path = project.config_path.clone();
     let session = Runtime::new(registry())
         .build_project_session(project)
-        .expect("project diagnostics should be retained in a session")
-        .into_session();
+        .expect("project diagnostics should be retained in a session");
     let diagnostic = session
+        .queries()
         .diagnostics()
         .as_set()
         .diagnostics

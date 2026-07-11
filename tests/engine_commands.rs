@@ -9,7 +9,7 @@ use coflow_api::{
 };
 use coflow_data_model::{CfdInputRecord, CfdInputValue, RecordOrigin, SourceDocument};
 use coflow_project::Project;
-use coflow_runtime::{ProjectSession, RecordCoordinate, Runtime};
+use coflow_runtime::{RecordCoordinate, Runtime, WriteProjectSession};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
@@ -18,10 +18,9 @@ mod common;
 fn build_session(
     project: Project,
     registry: &ProviderRegistry,
-) -> Result<ProjectSession, DiagnosticSet> {
+) -> Result<WriteProjectSession, DiagnosticSet> {
     Runtime::new(registry.clone())
-        .build_project_session(project)
-        .map(coflow_runtime::BuildProjectSession::into_session)
+        .open_write_session(project)
 }
 
 #[test]
@@ -36,20 +35,26 @@ fn engine_builds_record_and_source_indexes() {
     let session = build_session(project, &registry).expect("build session");
 
     assert!(
-        session.has_diagnostics(),
+        session.queries().has_diagnostics(),
         "check diagnostic should be captured"
     );
     assert!(
-        session.files().source_files().contains("data/configs.xlsx"),
+        session
+            .queries()
+            .files()
+            .source_files()
+            .contains("data/configs.xlsx"),
         "file index should contain loaded xlsx source"
     );
     let record = session
+        .queries()
         .records()
         .get_by_coordinate("Item", "item_1")
         .expect("record index should contain item_1");
     assert_eq!(record.display_path, "data/configs.xlsx");
     assert_eq!(record.provider_id, "excel");
     let table = session
+        .queries()
         .model()
         .table("Item")
         .expect("check diagnostics should not discard the loaded model");
@@ -60,6 +65,7 @@ fn engine_builds_record_and_source_indexes() {
     );
     assert!(
         session
+            .queries()
             .files()
             .source_for_display("data/configs.xlsx")
             .is_some(),
@@ -99,13 +105,13 @@ fn rename_record_key_updates_cross_source_references() {
     let registry = coflow_builtins::default_provider_registry().expect("default registry");
     let mut session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics before rename: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     let outcome = session
-        .rename_record_key(&registry, "Item", "sword", "blade")
+        .rename_record_key("Item", "sword", "blade")
         .expect("rename key");
 
     assert_eq!(
@@ -116,17 +122,25 @@ fn rename_record_key_updates_cross_source_references() {
         ))
     );
     assert!(
-        session.records().get_by_coordinate("Item", "blade").is_some(),
+        session
+            .queries()
+            .records()
+            .get_by_coordinate("Item", "blade")
+            .is_some(),
         "renamed record should be indexed"
     );
     assert!(
-        session.records().get_by_coordinate("Item", "sword").is_none(),
+        session
+            .queries()
+            .records()
+            .get_by_coordinate("Item", "sword")
+            .is_none(),
         "old coordinate should be absent"
     );
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics after rename: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
     let items = std::fs::read_to_string(root.join("data/items.cfd")).expect("read items");
     let bundles = std::fs::read_to_string(root.join("data/bundles.csv")).expect("read bundles");
@@ -171,13 +185,13 @@ fn rename_record_key_does_not_scan_remote_sources_without_spread_provenance() {
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open project");
     let mut session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics before rename: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     session
-        .rename_record_key(&registry, "Item", "sword", "blade")
+        .rename_record_key("Item", "sword", "blade")
         .expect("rename key");
 
     let (renamed, rewrites) = {
@@ -211,13 +225,13 @@ fn rename_record_key_rolls_back_local_files_when_reference_write_fails() {
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open project");
     let mut session = build_session(project, &registry).expect("build session");
     assert!(
-        !session.has_diagnostics(),
+        !session.queries().has_diagnostics(),
         "diagnostics before rename: {:?}",
-        session.diagnostics().as_set()
+        session.queries().diagnostics().as_set()
     );
 
     let err = session
-        .rename_record_key(&registry, "Item", "sword", "blade")
+        .rename_record_key("Item", "sword", "blade")
         .expect_err("fake local writer should fail");
     assert!(
         err.iter()
@@ -240,11 +254,19 @@ fn rename_record_key_rolls_back_local_files_when_reference_write_fails() {
         "rolled back source should not keep new key:\n{items}"
     );
     assert!(
-        session.records().get_by_coordinate("Item", "sword").is_some(),
+        session
+            .queries()
+            .records()
+            .get_by_coordinate("Item", "sword")
+            .is_some(),
         "failed rename should leave current session on old coordinate"
     );
     assert!(
-        session.records().get_by_coordinate("Item", "blade").is_none(),
+        session
+            .queries()
+            .records()
+            .get_by_coordinate("Item", "blade")
+            .is_none(),
         "failed rename should not update current session"
     );
 }

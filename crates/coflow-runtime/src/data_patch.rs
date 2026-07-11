@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
-use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
+use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_data_model::CfdPathSegment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
-    MutationReport, MutationRequest, MutationValue, ProjectSession, RecordCoordinate, WriteOutcome,
+    MutationReport, MutationRequest, MutationValue, RecordCoordinate, WriteOutcome,
+    WriteProjectSession,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,7 +95,7 @@ const fn default_true() -> bool {
     true
 }
 
-impl ProjectSession {
+impl WriteProjectSession {
     /// Apply a JSON data patch through the engine mutation API.
     ///
     /// This keeps the CLI-facing data patch DTOs as a thin adapter while all
@@ -107,12 +108,11 @@ impl ProjectSession {
     /// the returned [`DataPatchReport`].
     pub fn apply_data_patch(
         &mut self,
-        registry: &ProviderRegistry,
         request: DataPatchRequest,
     ) -> Result<DataPatchReport, DiagnosticSet> {
         let original_ops = request.ops.clone();
         let mutation_request = request.into_mutation_request();
-        let mutation_report = self.apply_mutation(registry, mutation_request)?;
+        let mutation_report = self.apply_mutation(mutation_request)?;
         let remaining_ops =
             DataPatchRequest::remaining_after_failure(&original_ops, &mutation_report);
         Ok(mutation_report.into_data_patch_report(remaining_ops))

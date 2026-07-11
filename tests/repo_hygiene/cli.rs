@@ -719,7 +719,7 @@ fn root_cli_schema_queries_go_through_session_facade() {
 
     assert!(
 
-        commands.contains("session.compiled_schema()"),
+        commands.contains("queries.compiled_schema()"),
 
         "root CLI build/export/codegen commands should request schema queries through the runtime session facade"
 

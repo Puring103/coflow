@@ -126,7 +126,7 @@ fn engine_session_api_does_not_live_in_lib_rs() {
 
     for expected in [
         "pub struct RecordCoordinate",
-        "pub struct ProjectSession",
+        "pub(crate) struct ProjectSession",
         "impl ProjectSession",
         "pub struct ProjectSchemaSession",
     ] {
@@ -137,6 +137,21 @@ fn engine_session_api_does_not_live_in_lib_rs() {
         assert!(
             !engine.contains(expected),
             "engine session API `{expected}` should not live in lib.rs"
+        );
+    }
+
+    assert!(
+        engine.contains("pub(crate) use session::ProjectSession;")
+            && !engine.contains("pub use session::{ProjectSchemaSession, ProjectSession"),
+        "the owning ProjectSession must remain internal to coflow-runtime"
+    );
+
+    let runtime = std::fs::read_to_string("crates/coflow-runtime/src/runtime.rs")
+        .expect("read runtime capabilities");
+    for forbidden in ["pub fn into_session", "pub const fn as_session"] {
+        assert!(
+            !runtime.contains(forbidden),
+            "runtime capabilities must not expose `{forbidden}` escape hatches"
         );
     }
 
@@ -494,6 +509,8 @@ fn engine_data_file_headers_use_cft_compiler_context() {
 fn engine_writer_capabilities_are_resolved_per_source() {
     let data_read = std::fs::read_to_string("crates/coflow-runtime/src/data_read.rs")
         .expect("read engine data queries");
+    let queries = std::fs::read_to_string("crates/coflow-runtime/src/query.rs")
+        .expect("read project query capability");
 
     assert!(
         data_read.contains("writer_capabilities(registry, &entry.source)")
@@ -503,6 +520,10 @@ fn engine_writer_capabilities_are_resolved_per_source() {
     assert!(
         !data_read.contains(".descriptor()\n                .capabilities"),
         "runtime should not apply one static writer capability set to every source"
+    );
+    assert!(
+        queries.contains(".capabilities(&entry.source)"),
+        "write sessions should resolve editor capabilities from the concrete source format"
     );
 }
 

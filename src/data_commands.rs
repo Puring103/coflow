@@ -2,8 +2,9 @@ use crate::diagnostics::{cli_error, cli_file_error};
 use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
 use coflow_project::Project;
 use coflow_runtime::{
-    data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery, DataPatchReport,
-    DataPatchRequest, ProjectSchemaSession, ProjectSession, RecordCoordinate, Runtime,
+    data_get, data_list, data_sources, BuildProjectSession, DataGetQuery, DataGetReport,
+    DataListQuery, DataPatchReport, DataPatchRequest, ProjectSchemaSession, RecordCoordinate,
+    Runtime, WriteProjectSession,
 };
 use output::{
     file_error_report, write_data_write_file_human, write_file_report_human, write_get_human,
@@ -89,7 +90,7 @@ pub struct DataPatchInput {
 /// cannot be written.
 pub fn sources(config_or_dir: Option<&Path>, human: bool) -> Result<bool, DiagnosticSet> {
     let (session, registry) = open_session(config_or_dir)?;
-    let report = data_sources(&session, &registry);
+    let report = data_sources(session.queries(), &registry);
     if human {
         write_sources_human(&report)?;
     } else {
@@ -115,7 +116,7 @@ pub fn list(
 ) -> Result<bool, DiagnosticSet> {
     let (session, _registry) = open_session(config_or_dir)?;
     let report = data_list(
-        &session,
+        session.queries(),
         &DataListQuery {
             actual_type,
             file,
@@ -150,7 +151,7 @@ pub fn get(options: DataGetOptions) -> Result<bool, DiagnosticSet> {
         offset: options.offset,
         all: options.all,
     };
-    match data_get(&session, &query) {
+    match data_get(session.queries(), &query) {
         Ok(report) => {
             let ok = !report.records.is_empty() || report.diagnostics.is_empty();
             if options.human {
@@ -223,8 +224,8 @@ pub fn patch(
             format!("failed to parse patch request from {source_label}: {err}"),
         ))
     })?;
-    let (mut session, registry) = open_session(config_or_dir)?;
-    let report = match session.apply_data_patch(&registry, request) {
+    let mut session = open_write_session(config_or_dir)?;
+    let report = match session.apply_data_patch(request) {
         Ok(report) => report,
         Err(diagnostics) => DataPatchReport {
             write_ok: false,
@@ -315,9 +316,9 @@ pub fn sync_header(
     let project = Project::open_schema_only(config_or_dir)?;
     let registry = default_provider_registry()?;
     let runtime = Runtime::new(registry.clone());
-    let session = runtime.open_read_only_session(project)?.into_session();
+    let session = runtime.open_read_only_session(project)?;
     let duplicate_header_diagnostics =
-        duplicate_table_column_diagnostics(session.diagnostics().as_set());
+        duplicate_table_column_diagnostics(session.queries().diagnostics().as_set());
     if !duplicate_header_diagnostics.is_empty() {
         let report = file_error_report(&duplicate_header_diagnostics);
         if human {
@@ -394,12 +395,18 @@ fn has_error_diagnostics(diagnostics: &[FlatDiagnostic]) -> bool {
 
 fn open_session(
     config_or_dir: Option<&Path>,
-) -> Result<(ProjectSession, ProviderRegistry), DiagnosticSet> {
+) -> Result<(BuildProjectSession, ProviderRegistry), DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     let registry = default_provider_registry()?;
     let runtime = Runtime::new(registry.clone());
-    let session = runtime.build_project_session(project)?.into_session();
+    let session = runtime.build_project_session(project)?;
     Ok((session, registry))
+}
+
+fn open_write_session(config_or_dir: Option<&Path>) -> Result<WriteProjectSession, DiagnosticSet> {
+    let project = Project::open_schema_only(config_or_dir)?;
+    let registry = default_provider_registry()?;
+    Runtime::new(registry).open_write_session(project)
 }
 
 fn open_schema_session(

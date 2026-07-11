@@ -4,7 +4,7 @@ use coflow_api::{Diagnostic, DiagnosticSet, FlatDiagnostic, ProviderRegistry, Wr
 use coflow_data_model::CfdValue;
 use serde::{Deserialize, Serialize};
 
-use crate::{ProjectSession, RecordCoordinate};
+use crate::{ProjectQueries, RecordCoordinate};
 
 const DEFAULT_GET_LIMIT: usize = 100;
 
@@ -69,17 +69,17 @@ pub struct DataRecordInfo {
 }
 
 #[must_use]
-pub fn data_sources(session: &ProjectSession, registry: &ProviderRegistry) -> DataSourcesReport {
-    let sources = session
-        .sources
+pub fn data_sources(queries: ProjectQueries<'_>, registry: &ProviderRegistry) -> DataSourcesReport {
+    let sources = queries
+        .sources()
         .entries()
         .iter()
         .map(|entry| {
-            let types = session
-                .records
+            let types = queries
+                .records()
                 .ids_in_file(&entry.display_path)
                 .iter()
-                .filter_map(|id| session.records.get(*id))
+                .filter_map(|id| queries.records().get(*id))
                 .map(|record_ref| record_ref.coordinate.actual_type.clone())
                 .collect::<BTreeSet<_>>()
                 .into_iter()
@@ -95,18 +95,18 @@ pub fn data_sources(session: &ProjectSession, registry: &ProviderRegistry) -> Da
 
     DataSourcesReport {
         sources,
-        diagnostics: session.diagnostics.flat_diagnostics(),
+        diagnostics: queries.diagnostics().flat_diagnostics(),
     }
 }
 
 #[must_use]
-pub fn data_list(session: &ProjectSession, query: &DataListQuery) -> DataListReport {
-    let records = record_summaries(session, query.file.as_deref(), query.actual_type.as_deref());
+pub fn data_list(queries: ProjectQueries<'_>, query: &DataListQuery) -> DataListReport {
+    let records = record_summaries(queries, query.file.as_deref(), query.actual_type.as_deref());
     let records = paginate(&records, query.offset, query.limit);
 
     DataListReport {
         records,
-        diagnostics: session.diagnostics.flat_diagnostics(),
+        diagnostics: queries.diagnostics().flat_diagnostics(),
     }
 }
 
@@ -116,11 +116,8 @@ pub fn data_list(session: &ProjectSession, query: &DataListQuery) -> DataListRep
 ///
 /// Returns diagnostics when an explicit selector cannot be found or when an
 /// unbounded query would return more than the default safety limit.
-pub fn data_get(
-    session: &ProjectSession,
-    query: &DataGetQuery,
-) -> Result<DataGetReport, DiagnosticSet> {
-    let mut summaries = selected_summaries(session, query)?;
+pub fn data_get(queries: ProjectQueries<'_>, query: &DataGetQuery) -> Result<DataGetReport, DiagnosticSet> {
+    let mut summaries = selected_summaries(queries, query)?;
     apply_key_filter(&mut summaries, &query.keys);
 
     if requires_explicit_large_get(query, summaries.len()) {
@@ -142,7 +139,7 @@ pub fn data_get(
     let records = paginate(&summaries, query.offset, limit)
         .into_iter()
         .map(|summary| {
-            let view = session
+            let view = queries
                 .record_view(&summary.record.actual_type, &summary.record.key)
                 .ok_or_else(|| DiagnosticSet::one(not_found(&summary.record)))?;
             Ok(DataRecordInfo {
@@ -156,16 +153,16 @@ pub fn data_get(
 
     Ok(DataGetReport {
         records,
-        diagnostics: session.diagnostics.flat_diagnostics(),
+        diagnostics: queries.diagnostics().flat_diagnostics(),
     })
 }
 
 fn selected_summaries(
-    session: &ProjectSession,
+    queries: ProjectQueries<'_>,
     query: &DataGetQuery,
 ) -> Result<Vec<DataRecordSummary>, DiagnosticSet> {
     if let Some(selector) = &query.selector {
-        let view = session
+        let view = queries
             .record_view(&selector.actual_type, &selector.key)
             .ok_or_else(|| DiagnosticSet::one(not_found(selector)))?;
         if !matches_query_filters(&view.coordinate, view.display_path, query) {
@@ -179,7 +176,7 @@ fn selected_summaries(
     }
 
     Ok(record_summaries(
-        session,
+        queries,
         query.file.as_deref(),
         query.actual_type.as_deref(),
     ))
@@ -197,32 +194,32 @@ fn matches_query_filters(coordinate: &RecordCoordinate, file: &str, query: &Data
 }
 
 fn record_summaries(
-    session: &ProjectSession,
+    queries: ProjectQueries<'_>,
     file: Option<&str>,
     actual_type: Option<&str>,
 ) -> Vec<DataRecordSummary> {
     if let Some(file) = file {
-        return record_summaries_in_file(session, file, actual_type);
+        return record_summaries_in_file(queries, file, actual_type);
     }
 
-    session
-        .files
+    queries
+        .files()
         .source_files()
         .iter()
-        .flat_map(|file| record_summaries_in_file(session, file, actual_type))
+        .flat_map(|file| record_summaries_in_file(queries, file, actual_type))
         .collect()
 }
 
 fn record_summaries_in_file(
-    session: &ProjectSession,
+    queries: ProjectQueries<'_>,
     file: &str,
     actual_type: Option<&str>,
 ) -> Vec<DataRecordSummary> {
-    session
-        .records
+    queries
+        .records()
         .ids_in_file(file)
         .iter()
-        .filter_map(|id| session.records.get(*id))
+        .filter_map(|id| queries.records().get(*id))
         .filter(|record_ref| actual_type.is_none_or(|ty| record_ref.coordinate.actual_type == ty))
         .map(|record_ref| DataRecordSummary {
             record: record_ref.coordinate.clone(),

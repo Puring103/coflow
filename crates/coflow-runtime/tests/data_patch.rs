@@ -259,16 +259,12 @@ fn registry() -> coflow_api::ProviderRegistry {
     coflow_builtins::default_provider_registry().expect("default provider registry")
 }
 
-fn session(
-    root: &std::path::Path,
-) -> (coflow_runtime::ProjectSession, coflow_api::ProviderRegistry) {
+fn session(root: &std::path::Path) -> coflow_runtime::WriteProjectSession {
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
-    let session = Runtime::new(registry.clone())
-        .build_project_session(project)
-        .map(coflow_runtime::BuildProjectSession::into_session)
-        .expect("session");
-    (session, registry)
+    Runtime::new(registry)
+        .open_write_session(project)
+        .expect("session")
 }
 
 #[test]
@@ -276,11 +272,10 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     let root = std::env::temp_dir().join(format!("coflow-data-patch-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -350,11 +345,14 @@ fn patch_rejects_insert_and_delete_on_dimension_variant_tables() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_dimension_project(&root);
-    let (mut session, registry) = session(&root);
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    Runtime::new(registry())
+        .build_project_session(project)
+        .expect("generate dimension sources");
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: false,
@@ -403,11 +401,10 @@ fn rename_record_updates_refs_inside_polymorphic_cfd_values() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_polymorphic_ref_rename_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -443,7 +440,7 @@ fn rename_record_updates_refs_inside_polymorphic_cfd_values() {
         "polymorphic ref not renamed: {stages}"
     );
     assert!(
-        session.record_view("Item", "blade").is_some(),
+        session.queries().record_view("Item", "blade").is_some(),
         "rebuilt session should expose renamed item"
     );
 
@@ -458,11 +455,10 @@ fn patch_writes_group_record_without_required_commas() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_group_cfd_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -485,6 +481,7 @@ fn patch_writes_group_record_without_required_commas() {
     assert!(report.write_ok, "patch failed: {report:?}");
     assert!(report.failed.is_empty());
     let view = session
+        .queries()
         .record_view("DamageEffect", "eff_fireball_damage")
         .expect("record view");
     let Some(coflow_data_model::CfdValue::Object(damage)) = view.record.fields().get("damage")
@@ -513,11 +510,10 @@ fn patch_insert_minimal_does_not_materialize_explicit_schema_defaults() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -547,6 +543,7 @@ fn patch_insert_minimal_does_not_materialize_explicit_schema_defaults() {
     assert!(!inserted.contains("rarity"));
 
     let view = session
+        .queries()
         .record_view("Item", "defaulted")
         .expect("record view");
     let Some(coflow_data_model::CfdValue::Enum(value)) = view.record.fields().get("rarity") else {
@@ -585,11 +582,10 @@ fn patch_insert_minimal_requires_explicit_values_for_required_ref_fields() {
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -651,7 +647,7 @@ fn create_record_draft_marks_required_refs_and_keeps_schema_defaults_separate() 
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (session, _) = session(&root);
+    let session = session(&root);
 
     let draft = session.create_record_draft("Loot").expect("create draft");
     let owner = draft
@@ -715,7 +711,7 @@ fn create_record_draft_field_errors_do_not_pollute_following_fields() {
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (session, _) = session(&root);
+    let session = session(&root);
 
     let draft = session.create_record_draft("Parent").expect("create draft");
     let first = draft
@@ -770,11 +766,10 @@ fn patch_insert_minimal_seeds_nullable_refs_and_required_enums_without_defaults(
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -791,7 +786,7 @@ fn patch_insert_minimal_seeds_nullable_refs_and_required_enums_without_defaults(
         .expect("nullable ref and enum seeds should write");
 
     assert!(report.write_ok);
-    let view = session.record_view("Holder", "holder").expect("holder");
+    let view = session.queries().record_view("Holder", "holder").expect("holder");
     assert_eq!(
         view.record.fields().get("backup"),
         Some(&coflow_data_model::CfdValue::Null)
@@ -832,11 +827,10 @@ fn patch_insert_minimal_accepts_explicit_required_ref_fields() {
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -872,11 +866,10 @@ fn patch_rejects_explicit_values_that_violate_ref_shapes() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_shape_annotation_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: false,
@@ -939,11 +932,10 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_shape_annotation_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -967,7 +959,6 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: false,
@@ -1010,7 +1001,7 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
         .iter()
         .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
 
-    let view = session.record_view("Holder", "holder").expect("holder");
+    let view = session.queries().record_view("Holder", "holder").expect("holder");
     assert!(matches!(
         view.record.fields().get("owner"),
         Some(coflow_data_model::CfdValue::Ref(target_key)) if target_key == "sword"
@@ -1027,11 +1018,10 @@ fn direct_write_field_rejects_values_that_violate_ref_shapes_before_file_write()
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_shape_annotation_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1057,7 +1047,6 @@ fn direct_write_field_rejects_values_that_violate_ref_shapes_before_file_write()
         std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
     let err = session
         .write_field(
-            &registry,
             "Holder",
             "holder",
             &[coflow_api::WriteFieldPathSegment::Field(
@@ -1083,11 +1072,10 @@ fn direct_write_field_rejects_missing_ref_target_before_file_write() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_shape_annotation_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1113,7 +1101,6 @@ fn direct_write_field_rejects_missing_ref_target_before_file_write() {
         std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
     let err = session
         .write_field(
-            &registry,
             "Holder",
             "holder",
             &[coflow_api::WriteFieldPathSegment::Field(
@@ -1162,13 +1149,12 @@ holder: Holder { item_reward: &item }
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let before =
         std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
     let err = session
         .write_field(
-            &registry,
             "Holder",
             "holder",
             &[coflow_api::WriteFieldPathSegment::Field(
@@ -1194,12 +1180,11 @@ fn direct_write_field_rejects_primitive_mismatch_before_file_write() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let before = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read before");
     let err = session
         .write_field(
-            &registry,
             "Item",
             "sword",
             &[coflow_api::WriteFieldPathSegment::Field(
@@ -1225,13 +1210,12 @@ fn insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_write() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_domain_key_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
     let before =
         std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1269,7 +1253,7 @@ fn direct_insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_wr
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_domain_key_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
     let before =
         std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
     let fields = std::collections::BTreeMap::from([
@@ -1282,7 +1266,6 @@ fn direct_insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_wr
 
     let err = session
         .insert_record(
-            &registry,
             "data/records.cfd",
             None,
             "base",
@@ -1307,7 +1290,7 @@ fn direct_insert_rejects_missing_ref_target_before_file_write() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_shape_annotation_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
     let before =
         std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
     let fields = std::collections::BTreeMap::from([
@@ -1335,7 +1318,6 @@ fn direct_insert_rejects_missing_ref_target_before_file_write() {
 
     let err = session
         .insert_record(
-            &registry,
             "data/records.cfd",
             None,
             "holder",
@@ -1375,10 +1357,9 @@ fn json_patch_insert_accepts_ref_object_form() {
         "schema: schema.cft\nsources:\n  - path: data/records.cfd\n",
     )
     .expect("write config");
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1409,10 +1390,9 @@ fn data_patch_report_includes_remaining_ops_after_failure() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_shape_annotation_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1469,17 +1449,17 @@ fn direct_insert_allows_self_references() {
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
     let fields = std::collections::BTreeMap::from([(
         "parent".to_string(),
         coflow_data_model::CfdValue::Ref("root".to_string()),
     )]);
 
     session
-        .insert_record(&registry, "data/nodes.cfd", None, "root", "Node", &fields)
+        .insert_record("data/nodes.cfd", None, "root", "Node", &fields)
         .expect("self reference should be valid for inserted record");
 
-    let view = session.record_view("Node", "root").expect("inserted node");
+    let view = session.queries().record_view("Node", "root").expect("inserted node");
     assert_eq!(
         view.record.fields().get("parent"),
         Some(&coflow_data_model::CfdValue::Ref("root".to_string()))
@@ -1494,11 +1474,10 @@ fn insert_allows_same_key_for_unrelated_type() {
         std::env::temp_dir().join(format!("coflow-domain-insert-allow-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     write_domain_key_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1517,8 +1496,8 @@ fn insert_allows_same_key_for_unrelated_type() {
         )
         .expect("unrelated duplicate key should insert");
     assert!(report.write_ok);
-    assert!(session.record_view("ItemReward", "base").is_some());
-    assert!(session.record_view("Skill", "base").is_some());
+    assert!(session.queries().record_view("ItemReward", "base").is_some());
+    assert!(session.queries().record_view("Skill", "base").is_some());
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -1542,7 +1521,7 @@ fn editable_shape_reports_self_referential_dependency_cycle() {
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (session, _) = session(&root);
+    let session = session(&root);
 
     let err = session
         .default_record_value("Node", DefaultMaterialization::EditableShape)
@@ -1574,7 +1553,7 @@ fn editable_shape_reports_indirect_dependency_cycle_stably() {
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (session, _) = session(&root);
+    let session = session(&root);
 
     let err = session
         .default_record_value("B", DefaultMaterialization::EditableShape)
@@ -1612,11 +1591,10 @@ fn patch_insert_minimal_rejects_recursive_required_inline_defaults() {
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1669,7 +1647,7 @@ fn default_materialization_rejects_abstract_objects() {
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let abstract_default = session
         .default_record_value("Reward", DefaultMaterialization::EditableShape)
@@ -1680,7 +1658,6 @@ fn default_materialization_rejects_abstract_objects() {
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1734,7 +1711,7 @@ fn default_materialization_rejects_singleton_top_level_type() {
         "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
     )
     .expect("write config");
-    let (session, _) = session(&root);
+    let session = session(&root);
 
     let singleton_default = session
         .default_record_value("GameConfig", DefaultMaterialization::EditableShape)
@@ -1751,11 +1728,10 @@ fn patch_file_guard_stops_batch_with_failed_report() {
     let root = std::env::temp_dir().join(format!("coflow-data-patch-guard-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1806,11 +1782,10 @@ fn patch_coerces_ref_inline_object_and_enum_key_dict_values() {
         std::env::temp_dir().join(format!("coflow-data-patch-complex-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1847,6 +1822,7 @@ fn patch_coerces_ref_inline_object_and_enum_key_dict_values() {
     assert!(report.failed.is_empty());
 
     let view = session
+        .queries()
         .record_view("Loot", "starter_loot")
         .expect("inserted loot");
     assert!(view.record.fields().contains_key("owner"));
@@ -1869,11 +1845,10 @@ fn patch_supports_dict_key_path_writes() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1896,7 +1871,6 @@ fn patch_supports_dict_key_path_writes() {
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1919,6 +1893,7 @@ fn patch_supports_dict_key_path_writes() {
     assert!(report.write_ok);
     assert!(report.failed.is_empty());
     let view = session
+        .queries()
         .record_view("Loot", "starter_loot")
         .expect("inserted loot");
     let Some(coflow_data_model::CfdValue::Dict(entries)) = view.record.fields().get("resistances")
@@ -1937,11 +1912,10 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
         std::env::temp_dir().join(format!("coflow-data-patch-cfd-null-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_mutation(
-            &registry,
             MutationRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1963,7 +1937,6 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1982,7 +1955,6 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
 
     let report = session
         .apply_mutation(
-            &registry,
             MutationRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -1999,6 +1971,7 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
     assert!(report.write_ok);
     assert!(report.failed.is_empty());
     let view = session
+        .queries()
         .record_view("Loot", "starter_loot")
         .expect("inserted loot");
     assert_eq!(
@@ -2017,7 +1990,7 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let bad_reward =
         coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
@@ -2036,7 +2009,6 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -2055,7 +2027,6 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
 
     let report = session
         .apply_mutation(
-            &registry,
             MutationRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -2088,11 +2059,10 @@ fn mutation_complete_value_rejects_missing_nested_required_fields_before_write()
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let insert = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -2120,7 +2090,6 @@ fn mutation_complete_value_rejects_missing_nested_required_fields_before_write()
         )));
     let report = session
         .apply_mutation(
-            &registry,
             MutationRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -2157,11 +2126,10 @@ fn patch_collects_validation_failures_when_stop_disabled() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: false,
@@ -2233,11 +2201,10 @@ fn patch_stops_on_terminal_writer_error_even_when_stop_disabled() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: false,
@@ -2295,11 +2262,10 @@ fn patch_set_field_file_guard_uses_spread_source_file() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     write_spread_project(&root);
-    let (mut session, registry) = session(&root);
+    let mut session = session(&root);
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,
@@ -2328,7 +2294,6 @@ fn patch_set_field_file_guard_uses_spread_source_file() {
 
     let report = session
         .apply_data_patch(
-            &registry,
             DataPatchRequest {
                 check_after_write: true,
                 stop_on_write_error: true,

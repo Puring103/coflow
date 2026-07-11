@@ -9,8 +9,6 @@ use super::diagnostics::diagnostics_from_store;
 use super::EditorSession;
 use crate::editor::types::EditorError;
 
-const FALLBACK_PROVIDER_ID: &str = "unknown";
-
 pub(super) struct SessionSnapshotParts {
     pub(super) file_tree: Vec<FileTreeNode>,
 }
@@ -22,26 +20,9 @@ pub(super) fn default_provider_registry() -> Result<ProviderRegistry, EditorErro
 
 pub(super) fn session_capabilities_for_file(
     session: &EditorSession,
-    registry: &ProviderRegistry,
     file_path: &str,
 ) -> WriterCapabilities {
-    let provider_id = session
-        .engine
-        .files()
-        .source_for_display(file_path)
-        .and_then(|source_id| session.engine.sources().entries().get(source_id.index()))
-        .map_or(FALLBACK_PROVIDER_ID, |entry| entry.provider_id.as_str());
-    let writer = registry.source_writer(provider_id);
-    writer.map_or_else(
-        || WriterCapabilities::read_only().with_provider_id(provider_id),
-        |w| {
-            let descriptor = w.descriptor();
-            descriptor
-                .capabilities
-                .clone()
-                .with_provider_id(descriptor.id)
-        },
-    )
+    session.engine.writer_capabilities_for_file(file_path)
 }
 
 pub(super) fn build_session(
@@ -54,11 +35,10 @@ pub(super) fn build_session(
     let project_root = project.root_dir.clone();
     let runtime = Runtime::new(registry.clone());
     let engine = runtime
-        .open_read_only_session(project)
-        .map(coflow_runtime::ReadOnlyProjectSession::into_session)
+        .open_write_session(project)
         .map_err(|err| EditorError::project(prefixed_diagnostics("failed to build project", &err)))?;
-    let file_tree = engine.file_tree();
-    let diagnostics = diagnostics_from_store(engine.diagnostics(), &project_root);
+    let file_tree = engine.queries().file_tree();
+    let diagnostics = diagnostics_from_store(engine.queries().diagnostics(), &project_root);
 
     Ok((
         EditorSession {

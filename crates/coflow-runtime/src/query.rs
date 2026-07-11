@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use coflow_api::{ProviderRegistry, WriterCapabilities};
 use coflow_cft::{CftContainer, CompiledSchema};
 use coflow_data_model::{CfdDataModel, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::Project;
@@ -164,5 +165,27 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub const fn loader_extensions(self) -> &'a BTreeSet<String> {
         self.session.loader_extensions()
+    }
+
+    pub(crate) fn writer_capabilities_for_file(
+        self,
+        registry: &ProviderRegistry,
+        file: &str,
+    ) -> WriterCapabilities {
+        let Some(entry) = self
+            .files()
+            .source_for_display(file)
+            .and_then(|source_id| self.sources().entries().get(source_id.index()))
+        else {
+            return WriterCapabilities::read_only().with_provider_id("unknown");
+        };
+        registry.source_writer(&entry.provider_id).map_or_else(
+            || WriterCapabilities::read_only().with_provider_id(entry.provider_id.clone()),
+            |writer| {
+                writer
+                    .capabilities(&entry.source)
+                    .with_provider_id(entry.provider_id.clone())
+            },
+        )
     }
 }

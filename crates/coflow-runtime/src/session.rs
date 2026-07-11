@@ -40,7 +40,7 @@ impl RecordCoordinate {
 }
 
 #[derive(Debug)]
-pub struct ProjectSession {
+pub(crate) struct ProjectSession {
     pub(crate) project: Project,
     pub(crate) schema: CftContainer,
     pub(crate) model: CfdDataModel,

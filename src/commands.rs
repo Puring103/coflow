@@ -8,7 +8,7 @@ use artifact_safety::{artifact_safety_diagnostics, ArtifactOutputPlan};
 use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
 use coflow_cft::CompiledSchema;
 use coflow_project::{OutputConfig, Project};
-use coflow_runtime::{ProjectSession, Runtime};
+use coflow_runtime::{ProjectQueries, Runtime};
 use id_as_enum::{id_as_enum_variants_for_schema_only, stage_id_as_enum_lockfile_for_build};
 use std::path::{Path, PathBuf};
 
@@ -76,8 +76,8 @@ pub fn check_project(
     registry: &ProviderRegistry,
 ) -> Result<CommandOutcome<CheckReport>, DiagnosticSet> {
     let runtime = Runtime::new(registry.clone());
-    let session = runtime.build_project_session(project)?.into_session();
-    if session.has_diagnostics() {
+    let session = runtime.build_project_session(project)?;
+    if session.queries().has_diagnostics() {
         Ok(CommandOutcome::Diagnostics(session.into_diagnostics()))
     } else {
         Ok(CommandOutcome::Success(CheckReport))
@@ -104,16 +104,17 @@ pub fn build_project(
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
     let runtime = Runtime::new(registry.clone());
-    let session = runtime.build_project_session(project)?.into_session();
-    if session.has_diagnostics() {
+    let session = runtime.build_project_session(project)?;
+    if session.queries().has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let compiled_schema = session.compiled_schema();
+    let queries = session.queries();
+    let compiled_schema = queries.compiled_schema();
 
     let mut preflight_diagnostics =
-        build_codegen_preflight_diagnostics(registry, &session, &compiled_schema, &plan)?;
+        build_codegen_preflight_diagnostics(registry, queries, compiled_schema, &plan)?;
     preflight_diagnostics.extend(artifact_safety_diagnostics(
-        session.project(),
+        queries.project(),
         &plan.artifact_outputs,
     ));
     if !preflight_diagnostics.is_empty() {
@@ -122,8 +123,8 @@ pub fn build_project(
 
     let staged_data = match stage_data_tables(
         registry,
-        &compiled_schema,
-        session.model(),
+        compiled_schema,
+        queries.model(),
         &plan.data.exporter_id,
         &plan.data.output,
         &plan.data.dir,
@@ -131,7 +132,7 @@ pub fn build_project(
         Ok(staged_data) => staged_data,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    let code = match commit_build_artifacts(&session, &compiled_schema, registry, staged_data, &plan) {
+    let code = match commit_build_artifacts(queries, compiled_schema, registry, staged_data, &plan) {
         Ok(code) => code,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
@@ -177,13 +178,14 @@ pub fn export_project_data(
     let output = required_data_output(&project, exporter_id, &command)?.clone();
     let dir = output_dir(&project, &output, options.out_dir);
     let runtime = Runtime::new(registry.clone());
-    let session = runtime.build_project_session(project)?.into_session();
-    if session.has_diagnostics() {
+    let session = runtime.build_project_session(project)?;
+    if session.queries().has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let compiled_schema = session.compiled_schema();
+    let queries = session.queries();
+    let compiled_schema = queries.compiled_schema();
     let artifact_diagnostics = artifact_safety_diagnostics(
-        session.project(),
+        queries.project(),
         &[ArtifactOutputPlan::new("outputs.data.dir", dir.clone())],
     );
     if !artifact_diagnostics.is_empty() {
@@ -191,8 +193,8 @@ pub fn export_project_data(
     }
     if let Err(diagnostics) = write_data_tables(
         registry,
-        &compiled_schema,
-        session.model(),
+        compiled_schema,
+        queries.model(),
         exporter_id,
         &output,
         &dir,
@@ -409,7 +411,7 @@ fn build_codegen_plan<'a>(
 
 fn build_codegen_preflight_diagnostics(
     registry: &ProviderRegistry,
-    session: &ProjectSession,
+    queries: ProjectQueries<'_>,
     schema: &CompiledSchema,
     plan: &BuildProviderPlan,
 ) -> Result<DiagnosticSet, DiagnosticSet> {
@@ -419,7 +421,7 @@ fn build_codegen_preflight_diagnostics(
     preflight_codegen(
         registry,
         schema,
-        code.needs_model_for_build.then_some(session.model()),
+        code.needs_model_for_build.then_some(queries.model()),
         &code.codegen_id,
         &plan.data.exporter_id,
         &code.output,
@@ -427,7 +429,7 @@ fn build_codegen_preflight_diagnostics(
 }
 
 fn commit_build_artifacts(
-    session: &ProjectSession,
+    queries: ProjectQueries<'_>,
     schema: &CompiledSchema,
     registry: &ProviderRegistry,
     staged_data: crate::artifacts::StagedArtifactDir,
@@ -439,12 +441,12 @@ fn commit_build_artifacts(
     };
 
     let id_as_enum_artifacts =
-        stage_id_as_enum_lockfile_for_build(session.project(), schema, session.model())?;
+        stage_id_as_enum_lockfile_for_build(queries.project(), schema, queries.model())?;
     let staged_code = stage_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
             schema,
-            model: code.needs_model_for_build.then_some(session.model()),
+            model: code.needs_model_for_build.then_some(queries.model()),
             codegen_id: &code.codegen_id,
             data_format: &plan.data.exporter_id,
             output_config: &code.output,

@@ -58,7 +58,7 @@ fn editor_backend_schema_queries_use_runtime_facade() {
 
     assert!(
 
-        convert.contains("schema: session.compiled_schema()")
+        convert.contains("schema: queries.compiled_schema()")
 
             && convert.contains("enum_type_name(ty, &ctx.schema)")
 
@@ -70,7 +70,7 @@ fn editor_backend_schema_queries_use_runtime_facade() {
 
     assert!(
 
-        session.contains("session.engine.enum_variants(enum_name)"),
+        session.contains("session.queries().enum_variants(enum_name)"),
 
         "editor session should query enum variants through runtime session"
 
@@ -80,7 +80,7 @@ fn editor_backend_schema_queries_use_runtime_facade() {
 
         "CompiledSchema::new(session.schema())",
 
-        "ctx.session.schema()",
+        "ctx.queries.schema()",
 
         "coflow_cft::CftContainer",
 
@@ -95,6 +95,56 @@ fn editor_backend_schema_queries_use_runtime_facade() {
             "editor backend should not bypass runtime schema facades with `{forbidden}`"
 
         );
+
+    }
+
+}
+
+
+
+#[test]
+
+fn hosts_cannot_reach_the_owning_runtime_session() {
+
+    for path in [
+
+        "src/commands.rs",
+
+        "src/data_commands.rs",
+
+        "editors/cfd-editor/src-tauri/src/editor/convert.rs",
+
+        "editors/cfd-editor/src-tauri/src/editor/session/mod.rs",
+
+        "editors/cfd-editor/src-tauri/src/editor/session/build.rs",
+
+    ] {
+
+        let source = std::fs::read_to_string(path).expect("read runtime host");
+
+        for forbidden in [
+
+            "use coflow_runtime::ProjectSession",
+
+            " ProjectSession,",
+
+            " ProjectSession}",
+
+            ".into_session()",
+
+            ".as_session()",
+
+        ] {
+
+            assert!(
+
+                !source.contains(forbidden),
+
+                "{path} must use capability sessions instead of `{forbidden}`"
+
+            );
+
+        }
 
     }
 
