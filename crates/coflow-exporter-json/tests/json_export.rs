@@ -146,11 +146,11 @@ fn json_exporter_skips_empty_table_files() -> TestResult {
         .map_err(|err| format!("export json artifacts: {err:?}"))?;
 
     assert!(artifacts
-        .files
+        .files()
         .iter()
         .any(|file| file.relative_path.as_os_str() == "Item.json"));
     assert!(!artifacts
-        .files
+        .files()
         .iter()
         .any(|file| file.relative_path.as_os_str() == "Monster.json"));
     Ok(())

@@ -104,7 +104,13 @@ impl DataExporter for MessagePackExporter {
             .into_iter()
             .map(|(table, bytes)| ArtifactFile::bytes(format!("{table}.msgpack"), bytes))
             .collect();
-        Ok(ArtifactSet::new(files))
+        ArtifactSet::new(files).map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "MESSAGEPACK-ARTIFACT",
+                "ARTIFACT",
+                err.to_string(),
+            ))
+        })
     }
 }
 

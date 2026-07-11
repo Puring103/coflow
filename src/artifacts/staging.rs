@@ -24,9 +24,8 @@ pub(super) fn stage_artifact_set(
     artifacts: ArtifactSet,
 ) -> Result<StagedArtifactDir, DiagnosticSet> {
     let staged = StagedArtifactDir::create(dir)?;
-    for artifact in artifacts.files {
-        let path = safe_artifact_path(staged.path(), &artifact.relative_path)
-            .map_err(|err| diagnostic_set(dir, err))?;
+    for artifact in artifacts.into_files() {
+        let path = staged.path().join(&artifact.relative_path);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|err| {
                 diagnostic_set(
@@ -121,18 +120,6 @@ pub fn commit_staged_dirs_and_file(
             .map_err(|err| diagnostic_set(&committed_file.target, err))?;
     }
     Ok(())
-}
-
-fn safe_artifact_path(dir: &Path, relative_path: &Path) -> Result<PathBuf, String> {
-    if relative_path.as_os_str().is_empty()
-        || relative_path.is_absolute()
-        || relative_path
-            .components()
-            .any(|component| !matches!(component, std::path::Component::Normal(_)))
-    {
-        return Err("artifact path is empty".to_string());
-    }
-    Ok(dir.join(relative_path))
 }
 
 impl StagedArtifactDir {

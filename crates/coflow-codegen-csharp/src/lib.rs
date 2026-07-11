@@ -346,12 +346,19 @@ impl CodeGenerator for CsharpCodeGenerator {
                 err.to_string(),
             ))
         })?;
-        Ok(ArtifactSet::new(
+        ArtifactSet::new(
             generated
                 .into_iter()
                 .map(|file| ArtifactFile::text(file.relative_path, file.contents))
                 .collect(),
-        ))
+        )
+        .map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "CSHARP-ARTIFACT",
+                "ARTIFACT",
+                err.to_string(),
+            ))
+        })
     }
 }
 

@@ -105,7 +105,13 @@ impl DataExporter for JsonExporter {
             .filter(|(_, value)| !matches!(value, Value::Array(items) if items.is_empty()))
             .map(|(table, value)| ArtifactFile::json(format!("{table}.json"), value))
             .collect();
-        Ok(ArtifactSet::new(files))
+        ArtifactSet::new(files).map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "JSON-ARTIFACT",
+                "ARTIFACT",
+                err.to_string(),
+            ))
+        })
     }
 }
 

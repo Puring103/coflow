@@ -362,8 +362,6 @@ fn root_cli_artifact_staging_does_not_live_in_artifacts_rs() {
 
         "pub fn commit_staged_dirs_and_file",
 
-        "fn safe_artifact_path",
-
         "fn replace_file_with_staging",
 
         "fn replace_dir_with_staging",

@@ -24,7 +24,9 @@ pub mod provider;
 pub mod registry;
 pub mod writer;
 
-pub use artifacts::{ArtifactContent, ArtifactContentKind, ArtifactFile, ArtifactSet};
+pub use artifacts::{
+    ArtifactContent, ArtifactContentKind, ArtifactFile, ArtifactSet, ArtifactSetError,
+};
 pub use codegen::{CodeGenerator, CodegenContext, CodegenDescriptor};
 pub use data_output::{DataExporter, ExportContext, ExporterDescriptor};
 pub use diagnostics::{
