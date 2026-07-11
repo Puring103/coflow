@@ -68,16 +68,21 @@ pub(crate) fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<Vec<u8>>
     Ok(Some(body))
 }
 
-pub(crate) fn did_open_document(params: &Value) -> Option<(String, String)> {
+pub(crate) fn did_open_document(params: &Value) -> Option<(String, String, Option<i64>)> {
     let document = params.get("textDocument")?;
     Some((
         document.get("uri")?.as_str()?.to_string(),
         document.get("text")?.as_str()?.to_string(),
+        document.get("version").and_then(Value::as_i64),
     ))
 }
 
-pub(crate) fn did_change_document(params: &Value) -> Option<(String, String)> {
+pub(crate) fn did_change_document(params: &Value) -> Option<(String, String, Option<i64>)> {
     let uri = text_document_uri(params)?;
+    let version = params
+        .get("textDocument")?
+        .get("version")
+        .and_then(Value::as_i64);
     let text = params
         .get("contentChanges")?
         .as_array()?
@@ -85,7 +90,7 @@ pub(crate) fn did_change_document(params: &Value) -> Option<(String, String)> {
         .rev()
         .find_map(|change| change.get("text").and_then(Value::as_str))?
         .to_string();
-    Some((uri, text))
+    Some((uri, text, version))
 }
 
 pub(crate) fn did_save_document(params: &Value) -> Option<(String, Option<String>)> {

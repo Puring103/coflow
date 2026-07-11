@@ -1,5 +1,6 @@
 use super::common::*;
 use super::*;
+use crate::validation::build_snapshot;
 
 #[test]
 fn request_errors_are_reported_without_returning_from_handler() {
@@ -211,6 +212,120 @@ fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
         }))
         .expect("didClose removes document");
     assert!(!server.core.open_documents().contains_key(&normalized));
+}
+
+#[test]
+fn validation_snapshot_rejects_stale_revision_commit() {
+    let (_cleanup, project) = test_project("lsp-stale-snapshot", "type First {}\n");
+    let schema_path = project.root_dir.join("schema").join("main.cft");
+    let uri = path_to_file_uri(&schema_path);
+    let mut core = LspValidationCore::new(project);
+
+    assert!(core
+        .apply_open_document(uri.clone(), "type First {}\n".to_string(), Some(1))
+        .expect("open first revision"));
+    let stale_input = core.validation_input();
+    assert!(core
+        .apply_change_document(uri.clone(), "type Second {}\n".to_string(), Some(2))
+        .expect("change to second revision"));
+    let current_input = core.validation_input();
+
+    let stale = build_snapshot(stale_input);
+    let current = build_snapshot(current_input);
+    assert!(core.commit_snapshot(stale).is_empty());
+    assert!(core.build().is_none(), "stale build must not become visible");
+
+    let publications = core.commit_snapshot(current);
+    assert!(!publications.is_empty());
+    let document = core
+        .build()
+        .and_then(|build| build.document_by_uri(&uri))
+        .expect("current build document");
+    assert_eq!(document.source, "type Second {}\n");
+}
+
+#[test]
+fn failed_snapshot_invalidates_build_and_clears_old_uri() {
+    let (_cleanup, project) = test_project("lsp-failed-snapshot", "type Item {}\n");
+    let schema_dir = project.root_dir.join("schema");
+    let schema_uri = path_to_file_uri(&schema_dir.join("main.cft"));
+    let mut core = LspValidationCore::new(project);
+
+    let initial = build_snapshot(core.validation_input());
+    core.commit_snapshot(initial);
+    assert!(core.build().is_some());
+
+    std::fs::remove_dir_all(&schema_dir).expect("remove schema directory");
+    core.mark_project_changed().expect("advance revision");
+    let failed = build_snapshot(core.validation_input());
+    let publications = core.commit_snapshot(failed);
+
+    assert!(core.build().is_none(), "failed revision must invalidate old build");
+    let cleared = publications
+        .iter()
+        .find(|publication| publication.uri == schema_uri)
+        .expect("old schema URI clear publication");
+    assert!(cleared.diagnostics.is_empty());
+    assert!(
+        publications
+            .iter()
+            .any(|publication| !publication.diagnostics.is_empty()),
+        "failed snapshot should publish its replacement diagnostics"
+    );
+}
+
+#[test]
+fn unreadable_cfd_source_invalidates_current_snapshot() {
+    let (_cleanup, project) = test_project_with_config(
+        "lsp-unreadable-cfd-snapshot",
+        "type Item {}\n",
+        "data/items.cfd",
+    );
+    let source_path = project.root_dir.join("data").join("items.cfd");
+    std::fs::create_dir_all(source_path.parent().expect("data parent"))
+        .expect("create data directory");
+    std::fs::write(&source_path, "item: Item {}\n").expect("write CFD source");
+    let source_uri = path_to_file_uri(&source_path);
+    let mut core = LspValidationCore::new(project);
+
+    let initial = build_snapshot(core.validation_input());
+    core.commit_snapshot(initial);
+    assert!(core.build().is_some());
+
+    std::fs::remove_file(&source_path).expect("remove CFD source");
+    core.mark_project_changed().expect("advance revision");
+    let failed = build_snapshot(core.validation_input());
+    let publications = core.commit_snapshot(failed);
+
+    assert!(core.build().is_none());
+    assert!(publications.iter().any(|publication| {
+        publication.uri == source_uri
+            && publication
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "CFD-LSP")
+    }));
+}
+
+#[test]
+fn stale_document_version_does_not_replace_newer_text() {
+    let (_cleanup, project) = test_project("lsp-document-version", "type Item {}\n");
+    let uri = path_to_file_uri(&project.root_dir.join("schema").join("main.cft"));
+    let mut core = LspValidationCore::new(project);
+
+    assert!(core
+        .apply_open_document(uri.clone(), "type Newer {}\n".to_string(), Some(7))
+        .expect("open document"));
+    assert!(!core
+        .apply_change_document(uri.clone(), "type Older {}\n".to_string(), Some(6))
+        .expect("reject stale change"));
+    let document = core
+        .open_documents()
+        .values()
+        .next()
+        .expect("open document state");
+    assert_eq!(document.text, "type Newer {}\n");
+    assert_eq!(document.version, Some(7));
 }
 
 #[test]

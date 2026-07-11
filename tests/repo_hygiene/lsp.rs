@@ -154,6 +154,10 @@ fn lsp_validation_core_does_not_live_in_lib_rs() {
 
         .expect("read lsp validation");
 
+    let snapshot = std::fs::read_to_string("crates/coflow-lsp/src/validation/snapshot.rs")
+
+        .expect("read lsp validation snapshot");
+
 
 
     for expected in [
@@ -198,13 +202,33 @@ fn lsp_validation_core_does_not_live_in_lib_rs() {
 
     }
 
-    for private in ["struct CfdProjectSource", "fn cfd_project_sources"] {
+    for private in ["struct CfdProjectSource", "fn collect_cfd_sources"] {
 
         assert!(
 
-            validation.contains(private) && !lib.contains(private),
+            snapshot.contains(private) && !lib.contains(private),
 
-            "LSP CFD source adapter `{private}` should remain private to validation.rs"
+            "LSP CFD source adapter `{private}` should remain private to validation snapshot construction"
+
+        );
+
+    }
+
+    for expected in [
+
+        "pub(crate) struct ValidationSnapshot",
+
+        "pub(crate) struct ValidationInput",
+
+        "pub(crate) fn build_snapshot",
+
+    ] {
+
+        assert!(
+
+            snapshot.contains(expected) && !lib.contains(expected),
+
+            "LSP revision item `{expected}` should live behind the validation module"
 
         );
 

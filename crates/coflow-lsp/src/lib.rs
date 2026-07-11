@@ -176,23 +176,23 @@ impl<W: Write> LspServer<W> {
                 Ok(())
             }
             (None, "textDocument/didOpen") => {
-                if let Some((uri, text)) = did_open_document(params) {
-                    self.open_document(uri, text)?;
+                if let Some((uri, text, version)) = did_open_document(params) {
+                    self.open_document(uri, text, version)?;
                 }
                 Ok(())
             }
             (None, "textDocument/didChange") => {
-                if let Some((uri, text)) = did_change_document(params) {
-                    self.change_document(uri, text)?;
+                if let Some((uri, text, version)) = did_change_document(params) {
+                    self.change_document(uri, text, version)?;
                 }
                 Ok(())
             }
             (None, "textDocument/didSave") => {
                 if let Some((uri, text)) = did_save_document(params) {
                     if let Some(text) = text {
-                        self.change_document(uri, text)?;
+                        self.change_document(uri, text, None)?;
                     } else {
-                        self.validate_project()?;
+                        self.refresh_project()?;
                     }
                 }
                 Ok(())
@@ -244,13 +244,23 @@ impl<W: Write> LspServer<W> {
         )
     }
 
-    fn open_document(&mut self, uri: String, text: String) -> Result<(), String> {
-        let publications = self.core.open_document(uri, text)?;
+    fn open_document(
+        &mut self,
+        uri: String,
+        text: String,
+        version: Option<i64>,
+    ) -> Result<(), String> {
+        let publications = self.core.open_document(uri, text, version)?;
         self.publish_diagnostic_publications(publications)
     }
 
-    fn change_document(&mut self, uri: String, text: String) -> Result<(), String> {
-        let publications = self.core.change_document(uri, text)?;
+    fn change_document(
+        &mut self,
+        uri: String,
+        text: String,
+        version: Option<i64>,
+    ) -> Result<(), String> {
+        let publications = self.core.change_document(uri, text, version)?;
         self.publish_diagnostic_publications(publications)
     }
 
@@ -259,8 +269,14 @@ impl<W: Write> LspServer<W> {
         self.publish_diagnostic_publications(publications)
     }
 
+    #[cfg(test)]
     fn validate_project(&mut self) -> Result<(), String> {
         let publications = self.core.validate_project()?;
+        self.publish_diagnostic_publications(publications)
+    }
+
+    fn refresh_project(&mut self) -> Result<(), String> {
+        let publications = self.core.refresh_project()?;
         self.publish_diagnostic_publications(publications)
     }
 
@@ -414,13 +430,19 @@ impl<W: Write> LspServer<W> {
         Ok(self.core.build())
     }
 
-    fn publish_diagnostics(&mut self, uri: &str, diagnostics: &[Value]) -> Result<(), String> {
+    fn publish_diagnostics(
+        &mut self,
+        uri: &str,
+        diagnostics: &[Value],
+        version: Option<i64>,
+    ) -> Result<(), String> {
+        let params = version.map_or_else(
+            || json!({ "uri": uri, "diagnostics": diagnostics }),
+            |version| json!({ "uri": uri, "version": version, "diagnostics": diagnostics }),
+        );
         self.write_notification(
             "textDocument/publishDiagnostics",
-            &json!({
-                "uri": uri,
-                "diagnostics": diagnostics
-            }),
+            &params,
         )
     }
 
@@ -429,7 +451,11 @@ impl<W: Write> LspServer<W> {
         publications: Vec<DiagnosticPublication>,
     ) -> Result<(), String> {
         for publication in publications {
-            self.publish_diagnostics(&publication.uri, &publication.diagnostics)?;
+            self.publish_diagnostics(
+                &publication.uri,
+                &publication.diagnostics,
+                publication.version,
+            )?;
         }
         Ok(())
     }
