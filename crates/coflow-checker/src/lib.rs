@@ -33,7 +33,7 @@
 mod check;
 
 use check::CheckRunner;
-use coflow_cft::CftContainer;
+use coflow_cft::CompiledSchema;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdRecordId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -48,7 +48,7 @@ pub(crate) struct DimensionCheckContext {
 /// # Errors
 ///
 /// Returns runtime check diagnostics for false conditions or evaluation errors.
-pub fn run_checks(schema: &CftContainer, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
+pub fn run_checks(schema: &CompiledSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
     CheckRunner::new(schema, model).run()
 }
 
@@ -108,7 +108,7 @@ impl DimensionCheckRound {
 /// Returns the union of every failing round's diagnostics. Variant diagnostics
 /// are prefixed with `[dimension=variant]`.
 pub fn run_checks_for_dimensions(
-    schema: &CftContainer,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
 ) -> Result<(), CfdDiagnostics> {
@@ -135,7 +135,7 @@ pub fn run_checks_for_dimensions(
 /// Returns the union of every failing round's diagnostics. The dependency
 /// graph is returned even when diagnostics fail.
 pub fn run_checks_for_dimensions_with_deps(
-    schema: &CftContainer,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
@@ -165,7 +165,7 @@ pub fn run_checks_for_dimensions_with_deps(
 /// Returns runtime check diagnostics for false conditions or evaluation
 /// errors discovered while checking the subset.
 pub fn run_checks_for(
-    schema: &CftContainer,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
     targets: &[CfdRecordId],
 ) -> Result<(), CfdDiagnostics> {
@@ -211,7 +211,7 @@ impl DependencyGraph {
 /// either case (so callers can still wire incremental edits even when the
 /// initial state has check failures).
 pub fn run_checks_with_deps(
-    schema: &CftContainer,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
     CheckRunner::new(schema, model).run_with_deps()
@@ -254,11 +254,11 @@ pub trait CfdCheckExt {
     ///
     /// Returns runtime check diagnostics for false conditions or evaluation
     /// errors.
-    fn run_checks(&self, schema: &CftContainer) -> Result<(), CfdDiagnostics>;
+    fn run_checks(&self, schema: &CompiledSchema) -> Result<(), CfdDiagnostics>;
 }
 
 impl CfdCheckExt for CfdDataModel {
-    fn run_checks(&self, schema: &CftContainer) -> Result<(), CfdDiagnostics> {
+    fn run_checks(&self, schema: &CompiledSchema) -> Result<(), CfdDiagnostics> {
         run_checks(schema, self)
     }
 }

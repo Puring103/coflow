@@ -1,6 +1,5 @@
 use super::{CfdDataModel, CfdRecordId, CfdValue};
-use crate::compiler_context::DataModelCompilerContext;
-use coflow_cft::{CftContainer, CftSchemaTypeRef};
+use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DimensionFieldLookupError {
@@ -27,7 +26,7 @@ impl CfdDataModel {
     /// or the requested variant field is not present on that storage record.
     pub fn dimension_field_value<'a>(
         &'a self,
-        schema: &CftContainer,
+        schema: &CompiledSchema,
         source_record: CfdRecordId,
         field_name: &str,
         dimension: &str,
@@ -37,11 +36,10 @@ impl CfdDataModel {
             .record(source_record)
             .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
         let actual_type = record.actual_type();
-        let compiler_context = DataModelCompilerContext::new(schema);
-        let source_type = compiler_context
+        let source_type = schema
             .type_meta(actual_type)
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
-        let field = compiler_context
+        let field = schema
             .field_meta(actual_type, field_name)
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
         let Some(field_dimension) = field
@@ -54,7 +52,7 @@ impl CfdDataModel {
         if field_dimension != dimension {
             return Err(DimensionFieldLookupError::DimensionMismatch);
         }
-        let storage_type = compiler_context
+        let storage_type = schema
             .dimension_storage_type(dimension, actual_type, field_name)
             .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
         let storage_key = if source_type.is_singleton {
@@ -71,7 +69,7 @@ impl CfdDataModel {
         let value = storage_record
             .field(variant)
             .ok_or(DimensionFieldLookupError::MissingVariantField)?;
-        let field_type = compiler_context
+        let field_type = schema
             .field_meta(storage_type, variant)
             .map(|field| field.ty_ref.clone());
         Ok(DimensionFieldValue {

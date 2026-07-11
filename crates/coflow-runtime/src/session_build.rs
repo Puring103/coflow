@@ -215,6 +215,7 @@ fn load_data(
     let output = match load_project_data(
         &ctx.project,
         &ctx.schema,
+        &ctx.compiled_schema,
         ctx.registry,
         &mut indexes.sources,
         &mut indexes.records,

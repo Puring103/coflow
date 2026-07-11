@@ -71,7 +71,7 @@ fn default_round_passes_when_default_value_satisfies_check() {
         "#,
     );
     let model = build_simple_model(&schema);
-    run_checks(&schema, &model).expect("default round passes");
+    run_checks(&CompiledSchema::new(&schema), &model).expect("default round passes");
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn dimension_variant_record_can_make_a_passing_check_fail_for_one_language() {
     );
     let dimensions = language_dimensions();
 
-    let err = run_checks_for_dimensions(&schema, &model, &dimensions)
+    let err = run_checks_for_dimensions(&CompiledSchema::new(&schema), &model, &dimensions)
         .expect_err("empty zh variant should fail check");
 
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
@@ -101,7 +101,8 @@ fn null_dimension_variant_skips_that_field_check() {
     let model = build_dimension_model(&schema, CfdInputValue::Null, CfdInputValue::from("Potion"));
     let dimensions = language_dimensions();
 
-    run_checks_for_dimensions(&schema, &model, &dimensions).expect("null zh variant skips check");
+    run_checks_for_dimensions(&CompiledSchema::new(&schema), &model, &dimensions)
+        .expect("null zh variant skips check");
 }
 
 #[test]
@@ -109,8 +110,12 @@ fn missing_dimension_variant_record_is_an_eval_error_not_a_skip() {
     let schema = dimension_schema();
     let model = build_simple_model(&schema);
 
-    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
-        .expect_err("missing synthesized variant record should be reported");
+    let err = run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &language_dimensions(),
+    )
+    .expect_err("missing synthesized variant record should be reported");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
     assert!(err
@@ -152,8 +157,12 @@ fn missing_dimension_variant_field_is_an_eval_error_not_a_skip() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
-        .expect_err("missing synthesized variant field should be reported");
+    let err = run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &language_dimensions(),
+    )
+    .expect_err("missing synthesized variant field should be reported");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
     assert!(err
@@ -204,8 +213,12 @@ fn variant_rounds_only_run_checks_that_read_top_level_dimension_fields() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
-        .expect_err("default count and zh name checks should fail");
+    let err = run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &language_dimensions(),
+    )
+    .expect_err("default count and zh name checks should fail");
 
     assert_eq!(err.diagnostics.len(), 2, "diagnostics: {err:?}");
     assert_eq!(
@@ -274,8 +287,12 @@ fn null_dimension_variant_skips_methods_and_operators_by_control_flow() {
     ));
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(&schema, &model, &language_dimensions())
-        .expect("null zh variant should skip related checks without type errors");
+    run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &language_dimensions(),
+    )
+    .expect("null zh variant should skip related checks without type errors");
 }
 
 #[test]
@@ -320,8 +337,12 @@ fn nested_dimension_fields_do_not_trigger_variant_round_checks() {
     ));
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(&schema, &model, &language_dimensions())
-        .expect("nested localized fields are not variant-expanded");
+    run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &language_dimensions(),
+    )
+    .expect("nested localized fields are not variant-expanded");
 }
 
 #[test]
@@ -367,8 +388,12 @@ fn nested_inline_record_checks_do_not_run_in_variant_rounds() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
-        .expect_err("default nested check should still fail");
+    let err = run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &language_dimensions(),
+    )
+    .expect_err("default nested check should still fail");
 
     assert_eq!(err.diagnostics.len(), 1, "diagnostics: {err:?}");
     assert!(
@@ -378,7 +403,7 @@ fn nested_inline_record_checks_do_not_run_in_variant_rounds() {
 }
 
 #[test]
-fn inherited_dimension_fields_do_not_trigger_child_variant_round_checks() {
+fn inherited_dimension_checks_run_for_child_records() {
     let schema = compile_schema(
         r#"
             type Base {
@@ -419,8 +444,24 @@ fn inherited_dimension_fields_do_not_trigger_child_variant_round_checks() {
     ));
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(&schema, &model, &language_dimensions())
-        .expect("child records do not run inherited dimension checks in variant rounds");
+    let err = run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &language_dimensions(),
+    )
+    .expect_err("inherited dimension checks must run for child records");
+
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
+            .count(),
+        2
+    );
+    assert!(err.diagnostics.iter().all(|diagnostic| diagnostic
+        .primary
+        .as_ref()
+        .is_some_and(|label| { label.path == CfdPath::root().field("name") })));
 }
 
 #[test]
@@ -432,8 +473,11 @@ fn dimension_dependency_graph_includes_variant_records() {
         CfdInputValue::from("Potion"),
     );
 
-    let (result, graph) =
-        run_checks_for_dimensions_with_deps(&schema, &model, &language_dimensions());
+    let (result, graph) = run_checks_for_dimensions_with_deps(
+        &CompiledSchema::new(&schema),
+        &model,
+        &language_dimensions(),
+    );
 
     result.expect("checks pass");
     let source_id = model
@@ -474,8 +518,12 @@ fn empty_dimensions_map_runs_default_round() {
         "#,
     );
     let model = build_simple_model(&schema);
-    run_checks_for_dimensions(&schema, &model, &DimensionCheckPlan::default())
-        .expect("default round passes");
+    run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &DimensionCheckPlan::default(),
+    )
+    .expect("default round passes");
 }
 
 #[test]
@@ -496,8 +544,12 @@ fn non_dimensional_fields_are_unaffected_by_dimension_rounds() {
     ));
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(&schema, &model, &language_dimensions())
-        .expect("non-dimensional is unchanged");
+    run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &language_dimensions(),
+    )
+    .expect("non-dimensional is unchanged");
 }
 
 #[test]
@@ -519,7 +571,7 @@ fn unknown_dimensions_are_accepted_but_do_not_run_extra_check_rounds() {
     let model = builder.build().expect("model builds");
     let dimensions = dimension_plan("platform", ["pc", "mobile"]);
 
-    let err = run_checks_for_dimensions(&schema, &model, &dimensions)
+    let err = run_checks_for_dimensions(&CompiledSchema::new(&schema), &model, &dimensions)
         .expect_err("default check still fails once");
 
     assert_eq!(err.diagnostics.len(), 1, "diagnostics: {err:?}");
@@ -566,7 +618,7 @@ fn variant_rounds_run_for_every_configured_dimension() {
     let model = builder.build().expect("model builds");
     let dimensions = dimension_plan("platform", ["pc", "mobile"]);
 
-    let err = run_checks_for_dimensions(&schema, &model, &dimensions)
+    let err = run_checks_for_dimensions(&CompiledSchema::new(&schema), &model, &dimensions)
         .expect_err("empty pc variant should fail check");
 
     assert!(

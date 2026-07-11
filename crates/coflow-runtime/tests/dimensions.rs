@@ -464,7 +464,7 @@ dimensions:
 }
 
 #[test]
-fn inherited_localized_fields_are_not_synthesized_for_child_types() {
+fn inherited_localized_fields_generate_parent_storage_rows_for_child_records() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-dim-inherited-field-{}",
         std::process::id()
@@ -522,12 +522,15 @@ dimensions:
 
     assert!(session.schema().resolve_type("Base_nameVariants").is_some());
     assert!(session.schema().resolve_type("Child_nameVariants").is_none());
-    assert!(root.join("data/dimensions/language/Base_name.csv").exists());
+    let generated =
+        std::fs::read_to_string(root.join("data/dimensions/language/Base_name.csv"))
+            .expect("read inherited dimension csv");
+    assert_eq!(generated, "id,default,zh\nchild,Potion,null\n");
     assert!(
         !root
             .join("data/dimensions/language/Child_name.csv")
             .exists(),
-        "inherited localized fields should not generate child dimension files"
+        "the declaring type owns inherited dimension storage"
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");

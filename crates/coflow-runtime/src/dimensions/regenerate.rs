@@ -281,7 +281,7 @@ fn dimension_resolved_source(project: &Project, path: &Path, provider_id: &str) 
 fn dimension_entries(model: &CfdDataModel, field: &DimensionField) -> Vec<DimensionSourceEntry> {
     if field.is_singleton {
         model
-            .records_of_type(&field.source_type)
+            .records_assignable_to(&field.source_type)
             .next()
             .map(|(_, record)| DimensionSourceEntry {
                 key: field.source_field.clone(),
@@ -296,7 +296,7 @@ fn dimension_entries(model: &CfdDataModel, field: &DimensionField) -> Vec<Dimens
             .collect()
     } else {
         model
-            .records_of_type(&field.source_type)
+            .records_assignable_to(&field.source_type)
             .map(|(_, record)| DimensionSourceEntry {
                 key: record.key().to_string(),
                 actual_type: field.synthesized_type.clone(),

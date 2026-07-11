@@ -60,6 +60,7 @@ pub(crate) fn empty_load_output() -> Result<ProjectLoadOutput, DiagnosticSet> {
 pub(crate) fn load_project_data(
     project: &Project,
     schema: &CftContainer,
+    compiled_schema: &CompiledSchema,
     registry: &ProviderRegistry,
     sources: &mut SourceIndex,
     records_index: &mut RecordIndex,
@@ -68,8 +69,6 @@ pub(crate) fn load_project_data(
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
     let mut diagnostics = DiagnosticSet::empty();
-    let compiled_schema = CompiledSchema::new(schema);
-
     for source in &project.config.sources {
         let configured = configured_source(project, source);
         let resolved_sources = match resolve_sources(project, registry, source, &configured) {
@@ -82,7 +81,7 @@ pub(crate) fn load_project_data(
 
         diagnostics.extend(load_resolved_sources(
             project,
-            &compiled_schema,
+            compiled_schema,
             sources,
             records_index,
             files,
@@ -92,19 +91,18 @@ pub(crate) fn load_project_data(
     }
 
     if options.include_implicit_dimension_sources {
-        let dimension_fields = dimensions::dimension_fields(&compiled_schema);
+        let dimension_fields = dimensions::dimension_fields(compiled_schema);
         for configured in dimensions::dimension_sources(project, &dimension_fields) {
-            let resolved_sources =
-                match resolve_implicit_source(project, registry, &configured) {
-                    Ok(resolved_sources) => resolved_sources,
-                    Err(err) => {
-                        diagnostics.extend(err);
-                        continue;
-                    }
-                };
+            let resolved_sources = match resolve_implicit_source(project, registry, &configured) {
+                Ok(resolved_sources) => resolved_sources,
+                Err(err) => {
+                    diagnostics.extend(err);
+                    continue;
+                }
+            };
             diagnostics.extend(load_resolved_sources(
                 project,
-                &compiled_schema,
+                compiled_schema,
                 sources,
                 records_index,
                 files,
@@ -144,7 +142,7 @@ pub(crate) fn load_project_data(
         }
     };
     let check = if options.run_checks {
-        run_project_checks(project, schema, &model, &origins)
+        run_project_checks(project, compiled_schema, &model, &origins)
     } else {
         CheckOutput {
             diagnostics: DiagnosticSet::empty(),
@@ -248,7 +246,7 @@ fn resolve_implicit_source(
 
 fn run_project_checks(
     project: &Project,
-    schema: &CftContainer,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
 ) -> CheckOutput {
@@ -271,9 +269,7 @@ fn run_project_checks(
     }
 }
 
-fn dimension_check_plan(
-    dimensions: &BTreeMap<String, DimensionConfig>,
-) -> DimensionCheckPlan {
+fn dimension_check_plan(dimensions: &BTreeMap<String, DimensionConfig>) -> DimensionCheckPlan {
     DimensionCheckPlan::new(dimensions.iter().flat_map(|(dimension, config)| {
         config
             .variants

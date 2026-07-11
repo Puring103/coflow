@@ -1,7 +1,9 @@
 mod dimension_checks;
 mod queries;
+mod typed_checks;
 mod value_dependencies;
 
+pub use typed_checks::{TypedCheckPlan, TypedCheckSchedule};
 pub use value_dependencies::{
     ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
@@ -18,6 +20,8 @@ pub struct CompiledSchema {
     types: BTreeMap<String, CftTypeMeta>,
     enums: BTreeMap<String, CftEnumMeta>,
     children_by_parent: BTreeMap<String, BTreeSet<String>>,
+    dimension_storage_types: BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>,
+    typed_checks: TypedCheckPlan,
     value_dependencies: ValueDependencyPlan,
 }
 
@@ -62,16 +66,43 @@ impl CompiledSchema {
             },
         );
 
+        let dimension_storage_types = Self::build_dimension_storage_index(&types);
+        let typed_checks = TypedCheckPlan::compile(&types);
         let value_dependencies = ValueDependencyPlan::compile(&types);
         let mut view = Self {
             consts,
             types,
             enums,
             children_by_parent,
+            dimension_storage_types,
+            typed_checks,
             value_dependencies,
         };
         view.populate_dimension_checks();
         view
+    }
+
+    fn build_dimension_storage_index(
+        types: &BTreeMap<String, CftTypeMeta>,
+    ) -> BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>> {
+        let mut out = BTreeMap::<String, BTreeMap<String, BTreeMap<String, String>>>::new();
+        for schema_type in types.values() {
+            for annotation in &schema_type.annotations {
+                if annotation.name != "__coflow_dimension_storage" {
+                    continue;
+                }
+                if let [crate::CftAnnotationValue::String(dimension), crate::CftAnnotationValue::String(source_type), crate::CftAnnotationValue::String(source_field)] =
+                    annotation.args.as_slice()
+                {
+                    out.entry(dimension.clone())
+                        .or_default()
+                        .entry(source_type.clone())
+                        .or_default()
+                        .insert(source_field.clone(), schema_type.name.clone());
+                }
+            }
+        }
+        out
     }
 
     #[must_use]
@@ -176,34 +207,36 @@ impl CompiledSchema {
     }
 
     #[must_use]
-    pub fn checks_for_actual(
-        &self,
+    pub fn check_schedule<'schema, 'dimension>(
+        &'schema self,
         actual_type: &str,
-        dimension: Option<&str>,
-    ) -> Vec<CftSchemaCheckBlock> {
-        if let Some(dimension) = dimension {
-            return self
+        dimension: Option<&'dimension str>,
+    ) -> TypedCheckSchedule<'schema, 'dimension> {
+        TypedCheckSchedule::new(self, actual_type, dimension)
+    }
+
+    #[must_use]
+    pub fn dimension_storage_type(
+        &self,
+        dimension: &str,
+        source_type: &str,
+        source_field: &str,
+    ) -> Option<&str> {
+        let by_source_type = self.dimension_storage_types.get(dimension)?;
+        let mut current = Some(source_type);
+        while let Some(type_name) = current {
+            if let Some(storage_type) = by_source_type
+                .get(type_name)
+                .and_then(|by_field| by_field.get(source_field))
+            {
+                return Some(storage_type);
+            }
+            current = self
                 .types
-                .get(actual_type)
-                .and_then(|meta| meta.dimension_checks.get(dimension))
-                .cloned()
-                .into_iter()
-                .collect();
+                .get(type_name)
+                .and_then(|meta| meta.parent.as_deref());
         }
-        let mut chain = Vec::new();
-        let mut current = Some(actual_type);
-        while let Some(name) = current {
-            let Some(meta) = self.types.get(name) else {
-                break;
-            };
-            chain.push(meta);
-            current = meta.parent.as_deref();
-        }
-        chain.reverse();
-        chain
-            .into_iter()
-            .filter_map(|meta| meta.check.clone())
-            .collect()
+        None
     }
 
     #[must_use]

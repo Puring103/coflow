@@ -100,6 +100,93 @@ fn value_dependency_plan_memoizes_shared_subgraphs_in_topological_order() {
 }
 
 #[test]
+fn typed_check_schedule_borrows_inherited_blocks_in_parent_first_order() {
+    let schema = compile_one(
+        r#"
+            abstract type Base {
+                base_value: int;
+                check { base_value > 0; }
+            }
+            type Child : Base {
+                child_value: int;
+                check { child_value > 0; }
+            }
+        "#,
+    )
+    .expect("schema compiles");
+    let compiled = CompiledSchema::new(&schema);
+    let checks = compiled.check_schedule("Child", None).collect::<Vec<_>>();
+
+    assert_eq!(checks.len(), 2);
+    assert!(std::ptr::eq(
+        checks[0],
+        compiled
+            .type_meta("Base")
+            .and_then(|meta| meta.check.as_ref())
+            .expect("base check")
+    ));
+    assert!(std::ptr::eq(
+        checks[1],
+        compiled
+            .type_meta("Child")
+            .and_then(|meta| meta.check.as_ref())
+            .expect("child check")
+    ));
+}
+
+#[test]
+fn dimension_check_schedule_includes_inherited_dimension_checks() {
+    let schema = compile_one(
+        r#"
+            abstract type Base {
+                @localized
+                base_name: string;
+                check { base_name != ""; }
+            }
+            type Child : Base {
+                @localized
+                child_name: string;
+                check { child_name != ""; }
+            }
+        "#,
+    )
+    .expect("schema compiles");
+    let compiled = CompiledSchema::new(&schema);
+
+    assert_eq!(
+        compiled.check_schedule("Child", Some("language")).count(),
+        2
+    );
+}
+
+#[test]
+fn compiled_schema_indexes_dimension_storage_types() {
+    let schema = compile_one(
+        r#"
+            type Item { name: string; }
+            type Weapon : Item { damage: int; }
+            @__coflow_dimension_storage("language", "Item", "name")
+            type Item_nameVariants { zh: string?; }
+        "#,
+    )
+    .expect("schema compiles");
+    let compiled = CompiledSchema::new(&schema);
+
+    assert_eq!(
+        compiled.dimension_storage_type("language", "Item", "name"),
+        Some("Item_nameVariants")
+    );
+    assert_eq!(
+        compiled.dimension_storage_type("platform", "Item", "name"),
+        None
+    );
+    assert_eq!(
+        compiled.dimension_storage_type("language", "Weapon", "name"),
+        Some("Item_nameVariants")
+    );
+}
+
+#[test]
 fn api_exposes_schema_only_after_successful_compile() {
     let mut container = CftContainer::new();
     container

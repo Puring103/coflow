@@ -1,7 +1,7 @@
 use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
-    CftAnnotationValue, CftContainer, CftFieldMeta, CftSchemaTypeRef, CftTypeMeta, CompiledSchema,
+    CftContainer, CftFieldMeta, CftSchemaTypeRef, CftTypeMeta, CompiledSchema,
     ValueDependencyCycle, ValueDependencyMode,
 };
 use std::collections::BTreeMap;
@@ -56,7 +56,6 @@ pub(crate) enum CfdValueDraft {
 #[derive(Debug, Clone)]
 pub(crate) struct DataModelCompilerContext {
     cft: CompiledSchema,
-    dimension_storage_types: BTreeMap<DimensionStorageKey, String>,
     domain_index: CfdDomainIndex,
 }
 
@@ -64,59 +63,11 @@ impl DataModelCompilerContext {
     pub(crate) fn new(schema: &CftContainer) -> Self {
         let cft_view = CompiledSchema::new(schema);
         let domain_index = Self::build_domain_index(&cft_view);
-        let dimension_storage_types = Self::build_dimension_storage_index(&cft_view);
 
         Self {
             cft: cft_view,
-            dimension_storage_types,
             domain_index,
         }
-    }
-
-    fn build_dimension_storage_index(
-        cft_view: &CompiledSchema,
-    ) -> BTreeMap<DimensionStorageKey, String> {
-        let mut out = BTreeMap::new();
-        for schema_type in cft_view.type_metas() {
-            for annotation in &schema_type.annotations {
-                if annotation.name != "__coflow_dimension_storage" {
-                    continue;
-                }
-                if let [CftAnnotationValue::String(dimension), CftAnnotationValue::String(source_type), CftAnnotationValue::String(source_field)] =
-                    annotation.args.as_slice()
-                {
-                    out.insert(
-                        DimensionStorageKey {
-                            dimension: dimension.clone(),
-                            source_type: source_type.clone(),
-                            source_field: source_field.clone(),
-                        },
-                        schema_type.name.clone(),
-                    );
-                }
-            }
-        }
-        out
-    }
-
-    pub(crate) fn dimension_storage_type(
-        &self,
-        dimension: &str,
-        source_type: &str,
-        source_field: &str,
-    ) -> Option<&str> {
-        self.dimension_storage_types
-            .get(&DimensionStorageKey {
-                dimension: dimension.to_string(),
-                source_type: source_type.to_string(),
-                source_field: source_field.to_string(),
-            })
-            .map(String::as_str)
-    }
-
-    pub(crate) fn field_meta(&self, type_name: &str, field_name: &str) -> Option<&CftFieldMeta> {
-        self.full_fields(type_name)
-            .find(|field| field.name == field_name)
     }
 
     fn build_domain_index(cft_view: &CompiledSchema) -> CfdDomainIndex {
@@ -235,13 +186,6 @@ impl DataModelCompilerContext {
     pub(crate) fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId> {
         self.domain_index.type_domain_by_name(type_name)
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct DimensionStorageKey {
-    dimension: String,
-    source_type: String,
-    source_field: String,
 }
 
 pub(crate) fn type_accepts_default(expected: &CftSchemaTypeRef, actual: &CftSchemaTypeRef) -> bool {

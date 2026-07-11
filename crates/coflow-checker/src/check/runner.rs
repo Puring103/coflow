@@ -3,15 +3,14 @@ use super::evaluator::CheckEvaluator;
 use super::statements;
 use super::value::{CheckRecordRef, CheckValue};
 use crate::{DependencyGraph, DimensionCheckContext};
-use coflow_cft::{CftContainer, CompiledSchema};
+use coflow_cft::CompiledSchema;
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdPath, CfdRecordId, CfdValue,
 };
 use std::collections::BTreeMap;
 
 pub(crate) struct CheckRunner<'a> {
-    schema: CompiledSchema,
-    source_schema: &'a CftContainer,
+    schema: &'a CompiledSchema,
     model: &'a CfdDataModel,
     diagnostics: Vec<CfdDiagnostic>,
     /// When `Some`, the runner records read-from edges for each top-level
@@ -21,10 +20,9 @@ pub(crate) struct CheckRunner<'a> {
 }
 
 impl<'a> CheckRunner<'a> {
-    pub(crate) fn new(schema: &'a CftContainer, model: &'a CfdDataModel) -> Self {
+    pub(crate) fn new(schema: &'a CompiledSchema, model: &'a CfdDataModel) -> Self {
         Self {
-            schema: CompiledSchema::new(schema),
-            source_schema: schema,
+            schema,
             model,
             diagnostics: Vec::new(),
             deps: None,
@@ -33,13 +31,12 @@ impl<'a> CheckRunner<'a> {
     }
 
     pub(crate) fn with_dimension_context(
-        schema: &'a CftContainer,
+        schema: &'a CompiledSchema,
         model: &'a CfdDataModel,
         dimension_context: DimensionCheckContext,
     ) -> Self {
         Self {
-            schema: CompiledSchema::new(schema),
-            source_schema: schema,
+            schema,
             model,
             diagnostics: Vec::new(),
             deps: None,
@@ -102,7 +99,7 @@ impl<'a> CheckRunner<'a> {
         let Some(actual_type) = record.actual_type(self.model).map(ToOwned::to_owned) else {
             return;
         };
-        let checks = self.schema.checks_for_actual(
+        let checks = self.schema.check_schedule(
             &actual_type,
             self.dimension_context
                 .as_ref()
@@ -113,20 +110,13 @@ impl<'a> CheckRunner<'a> {
             || DependencyCollector::disabled(root_record),
             |deps| deps.collector_for(root_record),
         );
-        let mut evaluator = CheckEvaluator::new(
-            &self.schema,
-            self.source_schema,
-            self.model,
-            root_record,
-            root_path,
-            root,
-            deps,
-        );
+        let mut evaluator =
+            CheckEvaluator::new(self.schema, self.model, root_record, root_path, root, deps);
         evaluator
             .dimension_context
             .clone_from(&self.dimension_context);
         for check in checks {
-            let _ = statements::eval_check_block(&mut evaluator, &check);
+            let _ = statements::eval_check_block(&mut evaluator, check);
         }
         let (diagnostics, collector) = evaluator.into_outputs();
         self.diagnostics.extend(diagnostics);

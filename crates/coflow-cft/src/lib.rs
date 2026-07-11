@@ -42,8 +42,8 @@ mod span;
 
 pub use compiled_schema::{
     CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftEnumVariantMeta, CftFieldMeta,
-    CftTypeMeta, CompiledSchema, ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan,
-    ValueDependencyStep,
+    CftTypeMeta, CompiledSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
+    ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
 pub use container::{CftContainer, ModuleId};
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};

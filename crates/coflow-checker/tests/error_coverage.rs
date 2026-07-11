@@ -12,7 +12,7 @@ use common::*;
 use std::collections::BTreeSet;
 
 type BuildFn = fn(&CftContainer) -> Result<CfdDataModel, CfdDiagnostics>;
-type CheckFn = fn(&CftContainer, &CfdDataModel) -> Result<(), CfdDiagnostics>;
+type CheckFn = fn(&CompiledSchema, &CfdDataModel) -> Result<(), CfdDiagnostics>;
 type DirectFn = fn() -> CfdDiagnostics;
 type AdjacentFn = fn();
 
@@ -41,7 +41,8 @@ fn diagnostics_for(case: &Case) -> CfdDiagnostics {
         Phase::Check(build, check) => {
             let schema = compile_schema(case.schema);
             let model = build(&schema).expect("check coverage model should build");
-            check(&schema, &model).expect_err(case.name)
+            let compiled = CompiledSchema::new(&schema);
+            check(&compiled, &model).expect_err(case.name)
         }
     }
 }
@@ -736,7 +737,7 @@ fn build_present_attr_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDi
     )
 }
 
-fn run_checks(schema: &CftContainer, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
+fn run_checks(schema: &CompiledSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
     model.run_checks(schema)
 }
 
@@ -751,8 +752,9 @@ fn assert_builds(
 fn assert_checks(schema_source: &str, records: impl IntoIterator<Item = CfdInputRecord>) {
     let schema = compile_schema(schema_source);
     let model = model_from_records(&schema, records).expect("adjacent-valid model should build");
+    let compiled = CompiledSchema::new(&schema);
     model
-        .run_checks(&schema)
+        .run_checks(&compiled)
         .expect("adjacent-valid checks should pass");
 }
 

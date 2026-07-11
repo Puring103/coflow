@@ -183,6 +183,19 @@ impl CfdDataModel {
             .filter_map(move |id| self.records.get(id.index()).map(|record| (*id, record)))
     }
 
+    /// Iterates over records whose actual type is assignable to `type_name`.
+    ///
+    /// Unlike [`Self::records_of_type`], this includes records of every
+    /// descendant type and preserves insertion order.
+    pub fn records_assignable_to<'a>(
+        &'a self,
+        type_name: &'a str,
+    ) -> impl Iterator<Item = (CfdRecordId, &'a CfdRecord)> + 'a {
+        self.records().filter(move |(_, record)| {
+            self.type_is_assignable_by_name(record.actual_type(), type_name)
+        })
+    }
+
     /// Look up the direct target id for the `CfdValue::Ref` at `site`.
     ///
     /// Returns `None` when no direct ref lives at that path. This does not

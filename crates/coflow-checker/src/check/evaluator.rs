@@ -12,8 +12,7 @@ use super::ops::{self, OpsResult};
 use super::value::{CheckValue, LocatedCheckValue};
 use crate::DimensionCheckContext;
 use coflow_cft::{
-    CftContainer, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp,
-    CompiledSchema,
+    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp, CompiledSchema,
 };
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdPath, CfdRecordId};
 use std::collections::BTreeMap;
@@ -22,7 +21,6 @@ use super::value::CheckRecordRef;
 
 pub(super) struct CheckEvaluator<'a> {
     pub(super) schema: &'a CompiledSchema,
-    pub(super) source_schema: &'a CftContainer,
     pub(super) model: &'a CfdDataModel,
     pub(super) root_record: Option<CfdRecordId>,
     pub(super) root_path: CfdPath,
@@ -80,7 +78,6 @@ pub(super) type EvalResult<T> = Result<T, EvalAbort>;
 impl<'a> CheckEvaluator<'a> {
     pub(super) fn new(
         schema: &'a CompiledSchema,
-        source_schema: &'a CftContainer,
         model: &'a CfdDataModel,
         root_record: Option<CfdRecordId>,
         root_path: CfdPath,
@@ -96,7 +93,6 @@ impl<'a> CheckEvaluator<'a> {
         }
         Self {
             schema,
-            source_schema,
             model,
             root_record,
             root_path,
@@ -133,7 +129,6 @@ impl<'a> CheckEvaluator<'a> {
     ) -> EvalResult<()> {
         match dimensions::apply_dimension_variant(
             self.schema,
-            self.source_schema,
             self.model,
             self.dimension_context.as_ref(),
             record,
