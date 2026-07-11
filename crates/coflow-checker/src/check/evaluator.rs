@@ -6,7 +6,7 @@ use super::deps::DependencyCollector;
 use super::diagnostics::format_value_for_message;
 use super::dimensions::{self, DimensionVariantAbort};
 use super::enum_values;
-use super::explanations::ValueExprEvaluator;
+use super::evaluation_trace::EvaluationTrace;
 use super::fields;
 use super::ops::{self, OpsResult};
 use super::value::{CheckValue, LocatedCheckValue};
@@ -30,34 +30,7 @@ pub(super) struct CheckEvaluator<'a> {
     pub(super) diagnostics: Vec<CfdDiagnostic>,
     deps: DependencyCollector,
     pub(super) dimension_context: Option<DimensionCheckContext>,
-}
-
-impl ValueExprEvaluator for CheckEvaluator<'_> {
-    fn model(&self) -> &CfdDataModel {
-        self.model
-    }
-
-    fn eval_value_expr(&mut self, expr: &CftSchemaCheckExpr) -> EvalResult<LocatedCheckValue> {
-        self.eval_expr(expr)
-    }
-
-    fn eval_unary_expr(
-        &mut self,
-        op: CftSchemaUnaryOp,
-        value: LocatedCheckValue,
-    ) -> EvalResult<LocatedCheckValue> {
-        self.eval_unary(op, value)
-    }
-
-    fn compare_values(
-        &mut self,
-        op: CftSchemaCmpOp,
-        lhs: &CheckValue,
-        rhs: &CheckValue,
-        rhs_path: Option<CfdPath>,
-    ) -> EvalResult<bool> {
-        self.eval_ops(ops::compare(op, lhs, rhs, rhs_path))
-    }
+    trace: Option<EvaluationTrace>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +75,7 @@ impl<'a> CheckEvaluator<'a> {
             diagnostics: Vec::new(),
             deps,
             dimension_context: None,
+            trace: None,
         }
     }
 
@@ -153,7 +127,46 @@ impl<'a> CheckEvaluator<'a> {
     }
 
     pub(super) fn eval_expr(&mut self, expr: &CftSchemaCheckExpr) -> EvalResult<LocatedCheckValue> {
-        super::expressions::eval_expr(self, expr)
+        let result = super::expressions::eval_expr(self, expr);
+        if let Ok(value) = &result {
+            if let Some(trace) = &mut self.trace {
+                trace.record(expr, value, self.model);
+            }
+        }
+        result
+    }
+
+    pub(super) fn eval_expr_with_trace(
+        &mut self,
+        expr: &CftSchemaCheckExpr,
+    ) -> (EvalResult<LocatedCheckValue>, EvaluationTrace) {
+        debug_assert!(self.trace.is_none());
+        self.trace = Some(EvaluationTrace::for_explanation(expr));
+        let result = self.eval_expr(expr);
+        let trace = self.trace.take().unwrap_or_default();
+        (result, trace)
+    }
+
+    pub(super) fn note_comparison_failure(
+        &mut self,
+        lhs: &CftSchemaCheckExpr,
+        op: CftSchemaCmpOp,
+        rhs: &CftSchemaCheckExpr,
+        path: Option<CfdPath>,
+    ) {
+        if let Some(trace) = &mut self.trace {
+            trace.note_comparison_failure(lhs, op, rhs, path);
+        }
+    }
+
+    pub(super) fn note_unique_failure(
+        &mut self,
+        collection: &CftSchemaCheckExpr,
+        detail: String,
+    ) {
+        if let Some(trace) = &mut self.trace {
+            trace.note_unique_failure(collection, detail);
+        }
     }
 
     pub(super) fn eval_name(&mut self, name: &str) -> EvalResult<LocatedCheckValue> {
@@ -286,7 +299,7 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Unique => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
-                self.eval_ops(builtin_values::unique_value(arg_value))
+                self.eval_unique(arg, arg_value)
             }
             Builtin::Min | Builtin::Max => self.eval_min_max(builtin, args),
             Builtin::Sum => self.eval_sum(args),
@@ -338,7 +351,7 @@ impl<'a> CheckEvaluator<'a> {
                     receiver_value.path.clone(),
                 ))
             }
-            Builtin::Unique => self.eval_ops(builtin_values::unique_value(receiver_value)),
+            Builtin::Unique => self.eval_unique(receiver, receiver_value),
             Builtin::Min | Builtin::Max => self.eval_min_max_value(builtin, receiver_value),
             Builtin::Sum => self.eval_sum_value(receiver_value),
             Builtin::Keys => self.eval_ops(builtin_values::keys_value(receiver_value)),
@@ -470,6 +483,18 @@ impl<'a> CheckEvaluator<'a> {
             message.push_str(context);
         }
         self.diag_at_preformatted(code, path, message);
+    }
+
+    fn eval_unique(
+        &mut self,
+        collection: &CftSchemaCheckExpr,
+        value: LocatedCheckValue,
+    ) -> EvalResult<LocatedCheckValue> {
+        let evaluation = self.eval_ops(builtin_values::unique_value(value))?;
+        if let Some(duplicate) = evaluation.duplicate {
+            self.note_unique_failure(collection, duplicate);
+        }
+        Ok(evaluation.value)
     }
 
     pub(super) fn diag_at_preformatted(

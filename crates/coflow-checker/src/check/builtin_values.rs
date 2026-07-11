@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 use coflow_data_model::CfdErrorCode;
 use regex::Regex;
@@ -60,19 +60,26 @@ pub(super) fn contains_value(
     }
 }
 
-pub(super) fn unique_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue> {
-    let arg_kind = value.value.clone();
-    let CheckValue::Array { items, .. } = value.value else {
-        return Err(OpsError::eval_type(
-            value.path,
-            format!(
-                "isUnique 需要 array: 实际为 {}",
-                format_value_for_message(&arg_kind)
-            ),
-        ));
+pub(super) struct UniqueEvaluation {
+    pub(super) value: LocatedCheckValue,
+    pub(super) duplicate: Option<String>,
+}
+
+pub(super) fn unique_value(value: LocatedCheckValue) -> OpsResult<UniqueEvaluation> {
+    let items = match value.value {
+        CheckValue::Array { items, .. } => items,
+        other => {
+            return Err(OpsError::eval_type(
+                value.path,
+                format!(
+                    "isUnique 需要 array: 实际为 {}",
+                    format_value_for_message(&other)
+                ),
+            ));
+        }
     };
-    let mut seen = BTreeSet::new();
-    for item in items {
+    let mut seen = BTreeMap::new();
+    for (index, item) in items.into_iter().enumerate() {
         let Some(key) = comparable_key(&item) else {
             return Err(OpsError::eval_type(
                 value.path.clone(),
@@ -82,11 +89,20 @@ pub(super) fn unique_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckVa
                 ),
             ));
         };
-        if !seen.insert(key) {
-            return Ok(LocatedCheckValue::new(CheckValue::Bool(false), value.path));
+        if let Some(first_index) = seen.insert(key, index) {
+            return Ok(UniqueEvaluation {
+                duplicate: Some(format!(
+                    "重复值 {} 出现在索引 {first_index} 和 {index}",
+                    format_value_for_message(&item)
+                )),
+                value: LocatedCheckValue::new(CheckValue::Bool(false), value.path),
+            });
         }
     }
-    Ok(LocatedCheckValue::new(CheckValue::Bool(true), value.path))
+    Ok(UniqueEvaluation {
+        value: LocatedCheckValue::new(CheckValue::Bool(true), value.path),
+        duplicate: None,
+    })
 }
 
 pub(super) fn keys_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue> {

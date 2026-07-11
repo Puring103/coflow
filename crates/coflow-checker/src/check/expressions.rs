@@ -103,13 +103,16 @@ fn eval_cmp_chain_expr(
     first: &CftSchemaCheckExpr,
     rest: &[(coflow_cft::CftSchemaCmpOp, CftSchemaCheckExpr)],
 ) -> EvalResult<LocatedCheckValue> {
+    let mut lhs_expr = first;
     let mut lhs = evaluator.eval_expr(first)?;
     for (op, rhs_expr) in rest {
         let rhs = evaluator.eval_expr(rhs_expr)?;
         let path = lhs.path.clone().or_else(|| rhs.path.clone());
         if !evaluator.eval_ops(ops::compare(*op, &lhs.value, &rhs.value, rhs.path.clone()))? {
+            evaluator.note_comparison_failure(lhs_expr, *op, rhs_expr, path.clone());
             return Ok(LocatedCheckValue::new(CheckValue::Bool(false), path));
         }
+        lhs_expr = rhs_expr;
         lhs = rhs;
     }
     Ok(LocatedCheckValue::value(CheckValue::Bool(true)))

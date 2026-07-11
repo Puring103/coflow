@@ -6,6 +6,7 @@ mod deps;
 mod diagnostics;
 mod dimensions;
 mod enum_values;
+mod evaluation_trace;
 mod evaluator;
 mod explanations;
 mod expressions;

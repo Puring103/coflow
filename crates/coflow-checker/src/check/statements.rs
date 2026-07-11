@@ -51,27 +51,24 @@ fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> E
 }
 
 fn eval_expr_stmt(evaluator: &mut CheckEvaluator<'_>, expr: &CftSchemaCheckExpr) -> EvalFlow {
-    match explanations::eval_expr_explained(evaluator, expr) {
-        Ok((value, _)) if matches!(value.value, CheckValue::Bool(true)) => EvalFlow::Continue,
-        Ok((value, explanation)) if matches!(value.value, CheckValue::Bool(false)) => {
-            let explanation = explanations::explain_false_expr(evaluator, expr, &value)
+    let (result, trace) = evaluator.eval_expr_with_trace(expr);
+    match result {
+        Ok(value) if matches!(value.value, CheckValue::Bool(true)) => EvalFlow::Continue,
+        Ok(value) if matches!(value.value, CheckValue::Bool(false)) => {
+            let explanation = explanations::explain_false_expr(&trace, expr, &value)
                 .unwrap_or_else(|| {
-                    let mut fallback = CheckExplanation::new(
+                    CheckExplanation::new(
                         CfdErrorCode::CheckFailed,
                         render_expr(expr),
                         value.path.clone(),
-                    );
-                    if let Some(detail) = explanation {
-                        fallback = fallback.with_actual(detail);
-                    }
-                    fallback
+                    )
                 })
                 .with_context(&evaluator.contexts);
             let message = explanation.message();
             evaluator.diag_at_preformatted(explanation.code, explanation.path, message);
             EvalFlow::Continue
         }
-        Ok((value, _)) => {
+        Ok(value) => {
             evaluator.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
                 value.path,
