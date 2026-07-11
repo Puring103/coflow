@@ -76,6 +76,8 @@ Commit boundary: `refactor: make runtime session intent explicit`
 
 ### 4. Runtime write plan
 
+Status: completed.
+
 Goal: improve locality for write target resolution, validation, writer lookup,
 and report metadata.
 
@@ -86,7 +88,7 @@ Implementation:
   interface.
 - Keep `ProjectSession` public write methods behavior unchanged.
 
-Commit boundary: `refactor: introduce runtime write plans`
+Commit boundary: `refactor: introduce runtime write field plan`
 
 ### 5. Provider role registration
 

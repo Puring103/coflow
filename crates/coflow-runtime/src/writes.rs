@@ -7,6 +7,7 @@
 //! see the post-write state.
 
 mod path;
+mod plan;
 mod rebuild;
 mod refs;
 mod target;
@@ -23,9 +24,10 @@ use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RecordOrigin}
 use super::records::WriteOutcome;
 use super::write_rules;
 use super::{ProjectSession, RecordCoordinate};
+use plan::prepare_write_field;
 use rebuild::rebuild_session_after_write;
 use refs::{reference_update_actions, source_rewrite_actions};
-use target::{guess_new_coordinate, is_id_path, write_target_for_path};
+use target::{guess_new_coordinate, is_id_path, not_found};
 use transaction::LocalFileTransaction;
 use writer::{lookup_source_writer, source_for_file};
 
@@ -71,55 +73,38 @@ impl ProjectSession {
             };
             return self.rename_record_key(registry, actual_type, key, new_key);
         }
-        let Some(record_ref) = self.records.get_by_coordinate(actual_type, key) else {
-            return Err(DiagnosticSet::one(not_found(actual_type, key)));
-        };
-        let Some(_record) = self.model.record(record_ref.id) else {
-            return Err(DiagnosticSet::one(not_found(actual_type, key)));
-        };
-        let coordinate = record_ref.coordinate.clone();
-        let target = write_target_for_path(self, record_ref, path)?;
-        write_rules::validate_value_at_write_path(
-            self,
-            &target.coordinate.actual_type,
-            &target.field_path,
-            new_value,
-            "WRITE-SHAPE",
-            "WRITE",
-        )?;
-        let source = source_for_file(self, &target.display_path)?;
-        let writer = lookup_source_writer(registry, &source)?;
+        let plan = prepare_write_field(self, registry, actual_type, key, path, new_value)?;
         let schema_view = CftSchemaView::new(&self.schema);
 
         let write_request = WriteCellRequest {
-            origin: &target.origin,
-            record_key: &target.coordinate.key,
-            actual_type: &target.coordinate.actual_type,
-            field_path: &target.field_path,
+            origin: &plan.target.origin,
+            record_key: &plan.target.coordinate.key,
+            actual_type: &plan.target.coordinate.actual_type,
+            field_path: &plan.target.field_path,
             new_value,
             schema: &schema_view,
-            source: &source,
+            source: &plan.source,
         };
         let write_ctx = WriteContext {
             project_root: &self.project.root_dir,
             schema: &schema_view,
             model: Some(&self.model),
         };
-        let preflight = writer.preflight(write_ctx, &write_request);
+        let preflight = plan.writer.preflight(write_ctx, &write_request);
         if !preflight.is_empty() {
             return Err(preflight);
         }
-        writer.write_field(write_ctx, &write_request)?;
+        plan.writer.write_field(write_ctx, &write_request)?;
 
         let new_session = rebuild_session_after_write(self, registry)?;
         let new_write_coordinate =
-            guess_new_coordinate(&new_session, &target.coordinate, path, new_value);
-        let renamed = (new_write_coordinate != target.coordinate)
-            .then(|| (target.coordinate.clone(), new_write_coordinate.clone()));
+            guess_new_coordinate(&new_session, &plan.target.coordinate, path, new_value);
+        let renamed = (new_write_coordinate != plan.target.coordinate)
+            .then(|| (plan.target.coordinate.clone(), new_write_coordinate.clone()));
         let diagnostics = new_session.diagnostics.as_set().clone();
         *self = new_session;
-        let mut touched = vec![coordinate.clone()];
-        if new_write_coordinate != coordinate {
+        let mut touched = vec![plan.host_coordinate.clone()];
+        if new_write_coordinate != plan.host_coordinate {
             touched.push(new_write_coordinate);
         }
         Ok(WriteOutcome {
@@ -330,14 +315,6 @@ fn rollback_transaction(
     if let Some(transaction) = transaction {
         transaction.rollback_into(diagnostics);
     }
-}
-
-fn not_found(actual_type: &str, key: &str) -> Diagnostic {
-    Diagnostic::error(
-        "WRITE-NOT-FOUND",
-        "WRITE",
-        format!("record `{actual_type}.{key}` was not found in the session"),
-    )
 }
 
 /// Pick the sheet name to target when inserting a record into a table source.

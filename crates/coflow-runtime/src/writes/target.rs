@@ -5,6 +5,14 @@ use coflow_data_model::CfdValue;
 use super::path::{cfd_path_from_write_path, cfd_path_to_write_path};
 use crate::{ProjectSession, RecordCoordinate, RecordRef};
 
+pub(super) fn not_found(actual_type: &str, key: &str) -> Diagnostic {
+    Diagnostic::error(
+        "WRITE-NOT-FOUND",
+        "WRITE",
+        format!("record `{actual_type}.{key}` was not found in the session"),
+    )
+}
+
 /// Compute the post-write coordinate. Writers don't tell us the new key, so
 /// we walk the path: only a write at exactly `[Field("id")]` can rename the
 /// record. Everything else preserves the original coordinate.

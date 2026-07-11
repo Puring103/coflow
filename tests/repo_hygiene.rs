@@ -3164,6 +3164,28 @@ fn engine_write_rebuild_intent_does_not_live_in_writes_rs() {
 }
 
 #[test]
+fn engine_write_plan_does_not_live_in_writes_rs() {
+    let writes =
+        std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
+    let plan = std::fs::read_to_string("crates/coflow-runtime/src/writes/plan.rs")
+        .expect("read engine write plan");
+
+    for expected in [
+        "pub(super) struct WriteFieldPlan",
+        "pub(super) fn prepare_write_field",
+    ] {
+        assert!(
+            plan.contains(expected),
+            "engine write plan item `{expected}` should live in writes/plan.rs"
+        );
+        assert!(
+            !writes.contains(expected),
+            "engine write plan item `{expected}` should not live in writes.rs"
+        );
+    }
+}
+
+#[test]
 fn engine_mutation_defaults_use_cft_compiler_context() {
     let defaults = std::fs::read_to_string("crates/coflow-runtime/src/mutation/defaults.rs")
         .expect("read mutation defaults")
