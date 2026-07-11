@@ -1,9 +1,10 @@
+mod fault;
 mod publication;
 mod staging;
 
 pub use publication::{
-    enum_lockfile_path, publish_artifacts, read_active_enum_lock, EnumLockUpdate,
-    CODE_OUTPUT_SLOT, DATA_OUTPUT_SLOT,
+    enum_lockfile_path, publish_artifacts, read_active_enum_lock, EnumLockUpdate, CODE_OUTPUT_SLOT,
+    DATA_OUTPUT_SLOT,
 };
 pub use staging::StagedArtifactDir;
 
@@ -48,13 +49,7 @@ pub fn generate_data_tables(
         dir: dir.to_path_buf(),
         options: output_options(output_config),
     };
-    exporter.export(
-        ExportContext {
-            schema,
-            model,
-        },
-        &output,
-    )
+    exporter.export(ExportContext { schema, model }, &output)
 }
 
 #[derive(Debug, Clone, Copy)]

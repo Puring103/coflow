@@ -1,5 +1,6 @@
-use super::staging::{PublishedArtifactDir, StagedArtifactDir};
 use super::diagnostic_set;
+use super::fault::{self, Point};
+use super::staging::{PublishedArtifactDir, StagedArtifactDir};
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use coflow_api::DiagnosticSet;
 use coflow_project::Project;
@@ -65,8 +66,10 @@ pub fn publish_artifacts(
     if manifest.enum_lock.is_none() {
         manifest.enum_lock = read_versioned_enum_lock(project)?;
     }
+    let mut pending_generations = PendingGenerations::default();
     for (slot, staged) in staged_outputs {
         let generation = staged.seal()?;
+        pending_generations.track(&generation);
         manifest.outputs.insert(slot.to_string(), generation);
     }
     for slot in removed_outputs {
@@ -79,16 +82,46 @@ pub fn publish_artifacts(
     manifest.version = MANIFEST_VERSION;
     manifest.revision = unique_revision();
 
-    write_active_manifest(project, &manifest)?;
     if persist_enum_lock {
-        write_versioned_enum_lock(project, manifest.enum_lock.as_ref().ok_or_else(|| {
-            diagnostic_set(
-                manifest_path(project),
-                "active artifact manifest is missing replacement enum lock state",
-            )
-        })?)?;
+        write_versioned_enum_lock(
+            project,
+            manifest.enum_lock.as_ref().ok_or_else(|| {
+                diagnostic_set(
+                    manifest_path(project),
+                    "active artifact manifest is missing replacement enum lock state",
+                )
+            })?,
+        )?;
     }
+    write_active_manifest(project, &manifest)?;
+    pending_generations.activate();
     Ok(PublishedArtifactSnapshot { manifest })
+}
+
+#[derive(Debug, Default)]
+struct PendingGenerations {
+    directories: Vec<PathBuf>,
+    activated: bool,
+}
+
+impl PendingGenerations {
+    fn track(&mut self, generation: &PublishedArtifactDir) {
+        self.directories.push(generation.generation_dir.clone());
+    }
+
+    fn activate(&mut self) {
+        self.activated = true;
+    }
+}
+
+impl Drop for PendingGenerations {
+    fn drop(&mut self) {
+        if !self.activated {
+            for directory in &self.directories {
+                let _ = fs::remove_dir_all(directory);
+            }
+        }
+    }
 }
 
 fn validate_publication_slots(
@@ -132,13 +165,19 @@ fn read_versioned_enum_lock(project: &Project) -> Result<Option<Value>, Diagnost
     let contents = fs::read(&path).map_err(|err| {
         diagnostic_set(
             &path,
-            format!("failed to read @idAsEnum lockfile `{}`: {err}", path.display()),
+            format!(
+                "failed to read @idAsEnum lockfile `{}`: {err}",
+                path.display()
+            ),
         )
     })?;
     serde_json::from_slice(&contents).map(Some).map_err(|err| {
         diagnostic_set(
             &path,
-            format!("failed to parse @idAsEnum lockfile `{}`: {err}", path.display()),
+            format!(
+                "failed to parse @idAsEnum lockfile `{}`: {err}",
+                path.display()
+            ),
         )
     })
 }
@@ -157,16 +196,24 @@ fn load_active_manifest(project: &Project) -> Result<Option<ArtifactManifest>, D
     if !path.exists() {
         return Ok(None);
     }
-    let contents = fs::read(&path).map_err(|err| {
-        diagnostic_set(
-            &path,
-            format!("failed to read active artifact manifest `{}`: {err}", path.display()),
-        )
-    })?;
+    let contents = fault::check(Point::ReadActiveManifest)
+        .and_then(|()| fs::read(&path))
+        .map_err(|err| {
+            diagnostic_set(
+                &path,
+                format!(
+                    "failed to read active artifact manifest `{}`: {err}",
+                    path.display()
+                ),
+            )
+        })?;
     let manifest: ArtifactManifest = serde_json::from_slice(&contents).map_err(|err| {
         diagnostic_set(
             &path,
-            format!("failed to parse active artifact manifest `{}`: {err}", path.display()),
+            format!(
+                "failed to parse active artifact manifest `{}`: {err}",
+                path.display()
+            ),
         )
     })?;
     validate_manifest(&path, &manifest)?;
@@ -184,6 +231,15 @@ fn validate_manifest(path: &Path, manifest: &ArtifactManifest) -> Result<(), Dia
         ));
     }
     for (slot, output) in &manifest.outputs {
+        fault::check(Point::ValidateActiveGeneration).map_err(|err| {
+            diagnostic_set(
+                path,
+                format!(
+                    "failed to validate active `{slot}` artifact generation `{}`: {err}",
+                    output.generation_dir.display()
+                ),
+            )
+        })?;
         if !output.generation_dir.is_dir() {
             return Err(diagnostic_set(
                 path,
@@ -203,10 +259,22 @@ fn write_active_manifest(
 ) -> Result<(), DiagnosticSet> {
     let path = manifest_path(project);
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fault::check(Point::CreateArtifactStateDirectory).map_err(|err| {
+        diagnostic_set(
+            &path,
+            format!(
+                "failed to create artifact state directory `{}`: {err}",
+                parent.display()
+            ),
+        )
+    })?;
     fs::create_dir_all(parent).map_err(|err| {
         diagnostic_set(
             &path,
-            format!("failed to create artifact state directory `{}`: {err}", parent.display()),
+            format!(
+                "failed to create artifact state directory `{}`: {err}",
+                parent.display()
+            ),
         )
     })?;
     let contents = serde_json::to_vec_pretty(manifest).map_err(|err| {
@@ -216,27 +284,19 @@ fn write_active_manifest(
         )
     })?;
     AtomicFile::new(&path, AllowOverwrite)
-        .write(|file| file.write_all(&contents))
+        .write(|file| {
+            fault::check(Point::WriteActiveManifest)?;
+            file.write_all(&contents)
+        })
         .map_err(|err| {
             diagnostic_set(
                 &path,
-                format!("failed to activate artifact manifest `{}`: {err}", path.display()),
+                format!(
+                    "failed to activate artifact manifest `{}`: {err}",
+                    path.display()
+                ),
             )
-        })?;
-
-    let activated = fs::read(&path).map_err(|err| {
-        diagnostic_set(
-            &path,
-            format!("failed to verify active artifact manifest `{}`: {err}", path.display()),
-        )
-    })?;
-    if activated != contents {
-        return Err(diagnostic_set(
-            &path,
-            format!("verification failed for active artifact manifest `{}`", path.display()),
-        ));
-    }
-    Ok(())
+        })
 }
 
 fn write_versioned_enum_lock(project: &Project, lock: &Value) -> Result<(), DiagnosticSet> {
@@ -248,11 +308,17 @@ fn write_versioned_enum_lock(project: &Project, lock: &Value) -> Result<(), Diag
         )
     })?;
     AtomicFile::new(&path, AllowOverwrite)
-        .write(|file| file.write_all(&contents))
+        .write(|file| {
+            fault::check(Point::WriteEnumLockMirror)?;
+            file.write_all(&contents)
+        })
         .map_err(|err| {
             diagnostic_set(
                 &path,
-                format!("failed to update @idAsEnum lockfile `{}`: {err}", path.display()),
+                format!(
+                    "failed to update @idAsEnum lockfile `{}`: {err}",
+                    path.display()
+                ),
             )
         })
 }
@@ -283,26 +349,122 @@ fn unique_revision() -> String {
 
 #[cfg(test)]
 mod tests {
-    use atomicwrites::{AllowOverwrite, AtomicFile};
-    use std::io::{self, Write};
+    use super::{
+        publish_artifacts, read_active_enum_lock, EnumLockUpdate, DATA_OUTPUT_SLOT,
+        ENUM_LOCKFILE_NAME,
+    };
+    use crate::artifacts::fault::{self, ALL_POINTS};
+    use crate::artifacts::staging::stage_artifact_set;
+    use coflow_api::{ArtifactFile, ArtifactSet};
+    use coflow_project::Project;
+    use serde_json::json;
+    use std::path::Path;
 
     #[test]
-    fn failed_atomic_manifest_write_preserves_active_bytes() {
-        let root = std::env::temp_dir().join(format!(
-            "coflow-artifact-manifest-{}",
+    fn every_reported_filesystem_failure_preserves_the_active_snapshot() {
+        for point in ALL_POINTS {
+            assert_failure_preserves_active_snapshot(point);
+        }
+    }
+
+    fn assert_failure_preserves_active_snapshot(point: fault::Point) {
+        let root = test_project_root(point);
+        let project = open_test_project(&root);
+        let requested = root.join("generated/data");
+        let old_lock = json!({"ItemId": {"old": 0}});
+        let new_lock = json!({"ItemId": {"new": 1}});
+        let baseline =
+            stage_artifact_set(&requested, artifact_set("old")).expect("stage baseline artifacts");
+        let baseline = publish_artifacts(
+            &project,
+            vec![(DATA_OUTPUT_SLOT, baseline)],
+            &[],
+            EnumLockUpdate::Replace(old_lock.clone()),
+        )
+        .expect("publish baseline artifacts");
+        let old_generation = baseline
+            .output_dir(DATA_OUTPUT_SLOT)
+            .expect("baseline output")
+            .to_path_buf();
+        let manifest_path = root.join(".coflow/artifacts/active.json");
+        let old_manifest = std::fs::read(&manifest_path).expect("read baseline manifest");
+
+        let result = {
+            let _injection = fault::inject(point);
+            stage_artifact_set(&requested, artifact_set("new")).and_then(|staged| {
+                publish_artifacts(
+                    &project,
+                    vec![(DATA_OUTPUT_SLOT, staged)],
+                    &[],
+                    EnumLockUpdate::Replace(new_lock.clone()),
+                )
+                .map(|_| ())
+            })
+        };
+
+        assert!(result.is_err(), "{point:?} did not inject a failure");
+        assert_eq!(
+            std::fs::read(&manifest_path).expect("read active manifest after failure"),
+            old_manifest,
+            "{point:?} changed active manifest bytes"
+        );
+        assert_eq!(
+            std::fs::read_to_string(old_generation.join("nested/value.txt"))
+                .expect("read old active artifact"),
+            "old",
+            "{point:?} changed the active generation"
+        );
+        assert_eq!(
+            read_active_enum_lock(&project).expect("read active enum lock"),
+            Some(old_lock),
+            "{point:?} exposed the non-authoritative enum lock mirror"
+        );
+        if point == fault::Point::WriteActiveManifest {
+            let mirror: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(root.join(ENUM_LOCKFILE_NAME)).expect("read enum lock mirror"),
+            )
+            .expect("parse enum lock mirror");
+            assert_eq!(
+                mirror, new_lock,
+                "the test must prove that an ahead mirror remains non-authoritative"
+            );
+        }
+        assert_eq!(
+            generation_count(requested.parent().expect("output parent")),
+            1,
+            "{point:?} leaked an unactivated generation"
+        );
+        std::fs::remove_dir_all(root).expect("remove test project");
+    }
+
+    fn test_project_root(point: fault::Point) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "coflow-artifact-fault-{point:?}-{}",
             super::unique_revision()
-        ));
-        std::fs::create_dir_all(&root).expect("create test directory");
-        let path = root.join("active.json");
-        std::fs::write(&path, b"old").expect("write old manifest");
+        ))
+    }
 
-        let error = AtomicFile::new(&path, AllowOverwrite).write(|file| {
-            file.write_all(b"new")?;
-            Err::<(), _>(io::Error::other("injected manifest failure"))
-        });
+    fn open_test_project(root: &Path) -> Project {
+        std::fs::create_dir_all(root).expect("create test project");
+        std::fs::write(root.join("coflow.yaml"), "schema: schema/\n").expect("write test config");
+        Project::open_schema_only(Some(root)).expect("open test project")
+    }
 
-        assert!(error.is_err());
-        assert_eq!(std::fs::read(&path).expect("read active manifest"), b"old");
-        std::fs::remove_dir_all(root).expect("remove test directory");
+    fn artifact_set(contents: &str) -> ArtifactSet {
+        ArtifactSet::new(vec![ArtifactFile::text("nested/value.txt", contents)])
+            .expect("valid artifact set")
+    }
+
+    fn generation_count(parent: &Path) -> usize {
+        std::fs::read_dir(parent)
+            .expect("read output parent")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains(".coflow-generation-")
+            })
+            .count()
     }
 }

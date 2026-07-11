@@ -456,7 +456,7 @@ type Item {
 enum ItemId {}
 ```
 
-构建时，Coflow 会在 `.coflow/artifacts/active.json` 中维护 lock state 来稳定生成 enum 的整数值。它与 data/code generation 在同一个 manifest snapshot 中激活，并在成功后镜像到应提交版本库的 `coflow.enum.lock.json`。
+构建时，Coflow 会在 `.coflow/artifacts/active.json` 中维护 lock state 来稳定生成 enum 的整数值。它与 data/code generation 在同一个 manifest snapshot 中激活；应提交版本库的 `coflow.enum.lock.json` 是在最终 manifest 激活前写好的非权威镜像。
 
 ### `@singleton`
 

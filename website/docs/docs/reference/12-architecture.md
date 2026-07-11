@@ -212,7 +212,7 @@ DataModel 统一处理：
 - 执行 artifact preflight。
 - 验证并封存不可变 artifact generation，再原子发布 active manifest。
 
-active manifest 同时选择 data、code generation 和 `@idAsEnum` lock state。它的发布属于 CLI 宿主职责，不放进 runtime；旧 generation 不参与回滚写入，失败时只需保持旧 manifest 未变。根目录 `coflow.enum.lock.json` 是成功激活后的版本化镜像，不参与 active snapshot 选择。
+active manifest 同时选择 data、code generation 和 `@idAsEnum` lock state。它的发布属于 CLI 宿主职责，不放进 runtime；所有可报告的文件系统操作都在最后一次 manifest 原子替换前完成，旧 generation 不参与回滚写入，失败时只需保持旧 manifest 未变。根目录 `coflow.enum.lock.json` 是激活前写好的版本化镜像，不参与 active snapshot 选择；若最终激活失败，它可以暂时领先于 active manifest，但不会成为运行时状态。
 
 ### 编辑器
 

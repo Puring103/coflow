@@ -243,7 +243,7 @@ CLI、编辑器和自动化命令复用这些 capability，而不是导入 ownin
 
 通过检查后，CLI 使用 staging 目录写入、同步并回读验证完整产物，再把目录封存为不可变 generation。旧 generation 不会被改写。
 
-data、code generation 与 C# `@idAsEnum` lock state 组成一个 manifest snapshot。CLI 最后只原子替换项目目录下 `.coflow/artifacts/active.json`；激活前失败时，旧 snapshot 保持完整。激活成功后再原子更新可提交到版本库的 `coflow.enum.lock.json` 镜像，供没有本地 manifest 的干净 clone 恢复编号。
+data、code generation 与 C# `@idAsEnum` lock state 组成一个 manifest snapshot。CLI 先原子更新可提交到版本库的 `coflow.enum.lock.json` 镜像，再以一次原子替换项目目录下 `.coflow/artifacts/active.json` 激活整个 snapshot。任何被报告的失败都发生在最终激活之前，因此旧 active snapshot 保持完整；已有 active manifest 始终优先于镜像。没有本地 manifest 的干净 clone 才从镜像恢复编号。
 
 ## 诊断流
 

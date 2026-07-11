@@ -1,4 +1,5 @@
 use super::diagnostic_set;
+use super::fault::{self, Point};
 use coflow_api::{ArtifactContent, ArtifactSet, DiagnosticSet};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -27,6 +28,12 @@ pub(super) fn stage_artifact_set(
     for artifact in artifacts.into_files() {
         let path = staged.path().join(&artifact.relative_path);
         if let Some(parent) = path.parent() {
+            fault::check(Point::CreateArtifactParent).map_err(|err| {
+                diagnostic_set(
+                    dir,
+                    format!("failed to create `{}`: {err}", parent.display()),
+                )
+            })?;
             fs::create_dir_all(parent).map_err(|err| {
                 diagnostic_set(
                     dir,
@@ -40,38 +47,45 @@ pub(super) fn stage_artifact_set(
         };
         write_verified_file(&path, &contents)?;
     }
-    sync_directory_tree(staged.path())
+    fault::check(Point::SyncStagingTree)
+        .and_then(|()| sync_directory_tree(staged.path()))
         .map_err(|err| diagnostic_set(dir, format!("failed to sync staged artifacts: {err}")))?;
     Ok(staged)
 }
 
 fn write_verified_file(path: &Path, contents: &[u8]) -> Result<(), DiagnosticSet> {
+    fault::check(Point::CreateArtifactFile).map_err(|err| {
+        diagnostic_set(
+            path,
+            format!("failed to create `{}`: {err}", path.display()),
+        )
+    })?;
     let mut file = fs::File::create(path).map_err(|err| {
         diagnostic_set(
             path,
             format!("failed to create `{}`: {err}", path.display()),
         )
     })?;
-    file.write_all(contents).map_err(|err| {
-        diagnostic_set(
-            path,
-            format!("failed to write `{}`: {err}", path.display()),
-        )
-    })?;
-    file.sync_all().map_err(|err| {
-        diagnostic_set(
-            path,
-            format!("failed to sync `{}`: {err}", path.display()),
-        )
-    })?;
+    fault::check(Point::WriteArtifactFile)
+        .and_then(|()| file.write_all(contents))
+        .map_err(|err| {
+            diagnostic_set(path, format!("failed to write `{}`: {err}", path.display()))
+        })?;
+    fault::check(Point::SyncArtifactFile)
+        .and_then(|()| file.sync_all())
+        .map_err(|err| {
+            diagnostic_set(path, format!("failed to sync `{}`: {err}", path.display()))
+        })?;
     drop(file);
 
-    let written = fs::read(path).map_err(|err| {
-        diagnostic_set(
-            path,
-            format!("failed to verify `{}`: {err}", path.display()),
-        )
-    })?;
+    let written = fault::check(Point::ReadArtifactFile)
+        .and_then(|()| fs::read(path))
+        .map_err(|err| {
+            diagnostic_set(
+                path,
+                format!("failed to verify `{}`: {err}", path.display()),
+            )
+        })?;
     if written != contents {
         return Err(diagnostic_set(
             path,
@@ -84,6 +98,12 @@ fn write_verified_file(path: &Path, contents: &[u8]) -> Result<(), DiagnosticSet
 impl StagedArtifactDir {
     pub fn create(requested_dir: &Path) -> Result<Self, DiagnosticSet> {
         let parent = requested_dir.parent().unwrap_or_else(|| Path::new("."));
+        fault::check(Point::CreateOutputParent).map_err(|err| {
+            diagnostic_set(
+                requested_dir,
+                format!("failed to create `{}`: {err}", parent.display()),
+            )
+        })?;
         fs::create_dir_all(parent).map_err(|err| {
             diagnostic_set(
                 requested_dir,
@@ -91,6 +111,12 @@ impl StagedArtifactDir {
             )
         })?;
         let staging_dir = unique_sidecar_path(requested_dir, "staging");
+        fault::check(Point::CreateStagingDirectory).map_err(|err| {
+            diagnostic_set(
+                requested_dir,
+                format!("failed to create `{}`: {err}", staging_dir.display()),
+            )
+        })?;
         fs::create_dir(&staging_dir).map_err(|err| {
             diagnostic_set(
                 requested_dir,
@@ -111,31 +137,32 @@ impl StagedArtifactDir {
 
     pub(super) fn seal(mut self) -> Result<PublishedArtifactDir, DiagnosticSet> {
         let generation_dir = unique_sidecar_path(&self.requested_dir, "generation");
-        fs::rename(&self.staging_dir, &generation_dir).map_err(|err| {
-            diagnostic_set(
-                &self.requested_dir,
-                format!(
-                    "failed to seal artifact generation `{}` as `{}`: {err}",
-                    self.staging_dir.display(),
-                    generation_dir.display()
-                ),
-            )
-        })?;
+        fault::check(Point::SealGeneration)
+            .and_then(|()| fs::rename(&self.staging_dir, &generation_dir))
+            .map_err(|err| {
+                diagnostic_set(
+                    &self.requested_dir,
+                    format!(
+                        "failed to seal artifact generation `{}` as `{}`: {err}",
+                        self.staging_dir.display(),
+                        generation_dir.display()
+                    ),
+                )
+            })?;
         self.sealed = true;
-        sync_directory(
-            generation_dir
-                .parent()
-                .unwrap_or_else(|| Path::new(".")),
-        )
-        .map_err(|err| {
-            diagnostic_set(
-                &generation_dir,
-                format!(
-                    "failed to sync artifact generation `{}`: {err}",
-                    generation_dir.display()
-                ),
-            )
-        })?;
+        let parent = generation_dir.parent().unwrap_or_else(|| Path::new("."));
+        fault::check(Point::SyncGenerationParent)
+            .and_then(|()| sync_directory(parent))
+            .map_err(|err| {
+                let _ = fs::remove_dir_all(&generation_dir);
+                diagnostic_set(
+                    &generation_dir,
+                    format!(
+                        "failed to sync artifact generation `{}`: {err}",
+                        generation_dir.display()
+                    ),
+                )
+            })?;
         Ok(PublishedArtifactDir {
             requested_dir: self.requested_dir.clone(),
             generation_dir,

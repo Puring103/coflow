@@ -203,7 +203,7 @@ check 支持 `len` / `contains` / `isUnique` / `min` / `max` / `sum` / `keys` / 
 - CFT 字段类型是 `&Item` / `[&Item]` / `{string: &Item}` 时，单元格写 `&sword_01` 这类 key-only 引用。
 - CFT 字段是普通对象（`Stats`、`Reward`）时，单元格写 `Stats{hp: 100, attack: 50}`；多态对象用 `ConcreteType{...}`。
 - 裸字符串保持字符串语义。JSON / MessagePack 中，引用字段导出为纯 key 字符串（`"sword_01"`，不是 `"Item.sword_01"`）。
-- `coflow build` 会把 `@idAsEnum` lock state 与 data/code generation 一起激活，并在 `coflow.yaml` 同级原子更新 `coflow.enum.lock.json` 镜像；此文件应提交到版本库，让干净 clone 恢复稳定整数值。
+- `coflow build` 会把 `@idAsEnum` lock state 与 data/code generation 一起激活，并在最终激活前于 `coflow.yaml` 同级原子更新非权威的 `coflow.enum.lock.json` 镜像；此文件应提交到版本库，让干净 clone 恢复稳定整数值。
 
 ---
 
