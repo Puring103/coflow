@@ -26,7 +26,7 @@ mod render;
 
 use coflow_api::{
     ArtifactFile, ArtifactSet, CodeGenerator, CodegenContext, CodegenDescriptor, Diagnostic,
-    DiagnosticSet, OutputSpec,
+    DiagnosticSet, OutputSpec, ProviderBundle, ProviderRegistrationError,
 };
 use coflow_cft::CompiledSchema;
 use std::collections::BTreeMap;
@@ -252,6 +252,17 @@ pub fn generate_csharp_messagepack_with_id_as_enum_variants(
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CsharpCodeGenerator;
+
+/// Declares the C# code generator role implemented by this package.
+///
+/// # Errors
+///
+/// Returns an error if the package declares the code generator id more than once.
+pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
+    let mut bundle = ProviderBundle::default();
+    bundle.add_codegen(CsharpCodeGenerator)?;
+    Ok(bundle)
+}
 
 pub const CSHARP_CODEGEN_DESCRIPTOR: CodegenDescriptor = CodegenDescriptor {
     id: "csharp",

@@ -17,8 +17,8 @@
 
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
-    SourceProviderDescriptor, SourceResolveContext,
+    ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext,
+    SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceResolveContext,
 };
 
 mod diagnostics;
@@ -36,7 +36,23 @@ use lower::{lower_records, syntax_diagnostics, ParsedCfdInputRecord};
 use options::decode_cfd_source_options;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 pub use writer::{CfdWriter, CFD_WRITER_DESCRIPTOR};
+
+/// Declares every registry role implemented by the CFD provider package.
+///
+/// # Errors
+///
+/// Returns an error if two CFD implementations declare the same role id.
+pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
+    let writer = Arc::new(CfdWriter::new());
+    let mut bundle = ProviderBundle::default();
+    bundle.add_source_provider(CfdLoader)?;
+    bundle.add_source_writer_arc(Arc::clone(&writer))?;
+    bundle.add_table_manager_arc(Arc::clone(&writer))?;
+    bundle.add_dimension_source_manager_arc(writer)?;
+    Ok(bundle)
+}
 
 /// Parses `.cfd` text into source-neutral input records.
 ///

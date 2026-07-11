@@ -36,6 +36,46 @@ impl fmt::Debug for ProviderBundle {
 }
 
 impl ProviderBundle {
+    /// Merges every role from another package bundle into this bundle.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error without changing this bundle when any role id is
+    /// already present in the same role category.
+    pub fn merge(&mut self, additions: Self) -> Result<(), ProviderRegistrationError> {
+        ensure_available(
+            &self.source_providers,
+            &additions.source_providers,
+            "source provider",
+        )?;
+        ensure_available(
+            &self.source_writers,
+            &additions.source_writers,
+            "source writer",
+        )?;
+        ensure_available(
+            &self.table_managers,
+            &additions.table_managers,
+            "table manager",
+        )?;
+        ensure_available(
+            &self.dimension_source_managers,
+            &additions.dimension_source_managers,
+            "dimension source manager",
+        )?;
+        ensure_available(&self.exporters, &additions.exporters, "exporter")?;
+        ensure_available(&self.codegens, &additions.codegens, "codegen")?;
+
+        self.source_providers.extend(additions.source_providers);
+        self.source_writers.extend(additions.source_writers);
+        self.table_managers.extend(additions.table_managers);
+        self.dimension_source_managers
+            .extend(additions.dimension_source_managers);
+        self.exporters.extend(additions.exporters);
+        self.codegens.extend(additions.codegens);
+        Ok(())
+    }
+
     /// Adds a source provider role to this bundle.
     ///
     /// # Errors
@@ -226,13 +266,21 @@ impl ProviderRegistry {
         ensure_available(&self.exporters, &bundle.exporters, "exporter")?;
         ensure_available(&self.codegens, &bundle.codegens, "codegen")?;
 
-        self.source_providers.extend(bundle.source_providers);
-        self.source_writers.extend(bundle.source_writers);
-        self.table_managers.extend(bundle.table_managers);
+        let ProviderBundle {
+            source_providers,
+            source_writers,
+            table_managers,
+            dimension_source_managers,
+            exporters,
+            codegens,
+        } = bundle;
+        self.source_providers.extend(source_providers);
+        self.source_writers.extend(source_writers);
+        self.table_managers.extend(table_managers);
         self.dimension_source_managers
-            .extend(bundle.dimension_source_managers);
-        self.exporters.extend(bundle.exporters);
-        self.codegens.extend(bundle.codegens);
+            .extend(dimension_source_managers);
+        self.exporters.extend(exporters);
+        self.codegens.extend(codegens);
         Ok(())
     }
 }

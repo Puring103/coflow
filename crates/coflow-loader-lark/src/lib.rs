@@ -32,6 +32,7 @@ mod write_layout;
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde_json::Value;
+use std::sync::Arc;
 
 pub use diagnostics::{LarkDiagnostic, LarkDiagnostics};
 pub use http::{LarkHttpClient, UreqLarkHttpClient};
@@ -42,6 +43,26 @@ pub use load::{
 pub use remote::lark_provider_roles;
 pub use source::{LarkSheetLocator, LarkSheetSource};
 pub use write::{LARK_SHEET_TABLE_MANAGER_DESCRIPTOR, LARK_SHEET_WRITER_DESCRIPTOR};
+
+/// Declares every registry role implemented by one shared Lark remote.
+///
+/// # Errors
+///
+/// Returns an error if two Lark implementations declare the same role id.
+pub fn provider_bundle<C>(
+    client: C,
+) -> Result<coflow_api::ProviderBundle, coflow_api::ProviderRegistrationError>
+where
+    C: LarkHttpClient + Send + Sync + 'static,
+{
+    let (loader, writer) = lark_provider_roles(client);
+    let writer = Arc::new(writer);
+    let mut bundle = coflow_api::ProviderBundle::default();
+    bundle.add_source_provider(loader)?;
+    bundle.add_source_writer_arc(Arc::clone(&writer))?;
+    bundle.add_table_manager_arc(writer)?;
+    Ok(bundle)
+}
 
 pub(crate) const AUTH_URL: &str =
     "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal";
@@ -115,7 +136,7 @@ pub(crate) fn api_error_message(description: &str, code: i64, msg: Option<&str>)
 /// the loader when constructed through [`lark_provider_roles`].
 #[derive(Debug)]
 pub struct LarkSheetWriter<C = UreqLarkHttpClient> {
-    remote: std::sync::Arc<remote::LarkRemote<C>>,
+    remote: Arc<remote::LarkRemote<C>>,
 }
 
 #[cfg(test)]
@@ -475,7 +496,7 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct SequenceClient(
-        std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<SequenceResponse>>>,
+        Arc<std::sync::Mutex<std::collections::VecDeque<SequenceResponse>>>,
     );
 
     #[derive(Debug, Clone)]
@@ -489,7 +510,7 @@ mod tests {
         fn new(
             responses: impl IntoIterator<Item = (&'static str, &'static str, &'static str)>,
         ) -> Self {
-            Self(std::sync::Arc::new(std::sync::Mutex::new(
+            Self(Arc::new(std::sync::Mutex::new(
                 responses
                     .into_iter()
                     .map(|(method, url_contains, body)| SequenceResponse {

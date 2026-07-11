@@ -20,11 +20,12 @@
 
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
-    SourceProviderDescriptor, SourceResolveContext,
+    ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext,
+    SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceResolveContext,
 };
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 mod diagnostics;
 mod options;
@@ -38,6 +39,20 @@ use options::{decode_excel_source_options, excel_sheets, excel_source_options};
 use serde_json::Value;
 pub use source::{collect_input_records, ExcelInputRecords, ExcelSheet, ExcelSource};
 pub use writer::{ExcelWriter, EXCEL_WRITER_DESCRIPTOR};
+
+/// Declares every registry role implemented by the Excel provider package.
+///
+/// # Errors
+///
+/// Returns an error if two Excel implementations declare the same role id.
+pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
+    let writer = Arc::new(ExcelWriter::new());
+    let mut bundle = ProviderBundle::default();
+    bundle.add_source_provider(ExcelLoader)?;
+    bundle.add_source_writer_arc(Arc::clone(&writer))?;
+    bundle.add_table_manager_arc(writer)?;
+    Ok(bundle)
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ExcelLoader;

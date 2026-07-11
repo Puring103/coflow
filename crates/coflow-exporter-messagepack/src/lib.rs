@@ -16,7 +16,7 @@
 
 use coflow_api::{
     ArtifactContentKind, ArtifactFile, ArtifactSet, DataExporter, Diagnostic, DiagnosticSet,
-    ExportContext, ExporterDescriptor, OutputSpec,
+    ExportContext, ExporterDescriptor, OutputSpec, ProviderBundle, ProviderRegistrationError,
 };
 use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdDataModel;
@@ -74,6 +74,17 @@ pub const MESSAGEPACK_EXPORTER_DESCRIPTOR: ExporterDescriptor = ExporterDescript
     table_file_extension: "msgpack",
     content_kind: ArtifactContentKind::Bytes,
 };
+
+/// Declares the MessagePack exporter role implemented by this package.
+///
+/// # Errors
+///
+/// Returns an error if the package declares the exporter id more than once.
+pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
+    let mut bundle = ProviderBundle::default();
+    bundle.add_exporter(MessagePackExporter)?;
+    Ok(bundle)
+}
 
 impl DataExporter for MessagePackExporter {
     fn descriptor(&self) -> &'static ExporterDescriptor {
