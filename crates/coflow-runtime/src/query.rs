@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use coflow_api::{ProviderRegistry, WriterCapabilities};
-use coflow_cft::{CftContainer, CompiledSchema};
+use coflow_cft::CompiledSchema;
 use coflow_data_model::{CfdDataModel, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::Project;
 
@@ -33,11 +33,6 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub const fn project(self) -> &'a Project {
         self.session.project()
-    }
-
-    #[must_use]
-    pub const fn schema(self) -> &'a CftContainer {
-        self.session.schema()
     }
 
     #[must_use]

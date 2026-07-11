@@ -460,7 +460,6 @@ dependencies = [
  "coflow-builtins",
  "coflow-cft",
  "coflow-data-model",
- "coflow-loader-csv",
  "coflow-project",
  "coflow-runtime",
  "notify",
@@ -598,7 +597,6 @@ dependencies = [
  "coflow-exporter-json",
  "coflow-loader-csv",
  "coflow-loader-excel",
- "coflow-loader-table-core",
  "coflow-lsp",
  "coflow-project",
  "coflow-runtime",
@@ -805,7 +803,6 @@ version = "0.5.0"
 dependencies = [
  "coflow-api",
  "coflow-builtins",
- "coflow-cfd",
  "coflow-cft",
  "coflow-checker",
  "coflow-data-model",

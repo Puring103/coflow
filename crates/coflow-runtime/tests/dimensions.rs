@@ -251,8 +251,8 @@ dimensions:
 
     let variants = session
         .queries()
-        .schema()
-        .resolve_type("Item_nameVariants")
+        .compiled_schema()
+        .type_meta("Item_nameVariants")
         .expect("synthesized type");
     assert_eq!(
         variants
@@ -342,8 +342,8 @@ dimensions:
 
     let variants = session
         .queries()
-        .schema()
-        .resolve_type("Item_nameVariants")
+        .compiled_schema()
+        .type_meta("Item_nameVariants")
         .expect("synthesized type");
     assert_eq!(
         variants
@@ -405,11 +405,11 @@ dimensions:
 
     let variants = session
         .queries()
-        .schema()
-        .resolve_type("Item_nameVariants")
+        .compiled_schema()
+        .type_meta("Item_nameVariants")
         .expect("synthesized type");
-    assert_eq!(variants.all_fields[0].ty, "string?");
-    assert_eq!(variants.all_fields[1].ty, "string?");
+    assert_eq!(variants.all_fields[0].raw_type, "string?");
+    assert_eq!(variants.all_fields[1].raw_type, "string?");
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
@@ -526,8 +526,14 @@ dimensions:
         session.queries().diagnostics().as_set()
     );
 
-    assert!(session.queries().schema().resolve_type("Base_nameVariants").is_some());
-    assert!(session.queries().schema().resolve_type("Child_nameVariants").is_none());
+    assert!(session
+        .queries()
+        .compiled_schema()
+        .has_type("Base_nameVariants"));
+    assert!(!session
+        .queries()
+        .compiled_schema()
+        .has_type("Child_nameVariants"));
     let generated =
         std::fs::read_to_string(root.join("data/dimensions/language/Base_name.csv"))
             .expect("read inherited dimension csv");

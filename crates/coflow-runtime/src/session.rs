@@ -58,11 +58,6 @@ impl ProjectSession {
     }
 
     #[must_use]
-    pub const fn schema(&self) -> &CftContainer {
-        &self.schema
-    }
-
-    #[must_use]
     pub const fn compiled_schema(&self) -> &CompiledSchema {
         self.schema.compiled_schema()
     }
