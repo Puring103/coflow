@@ -49,19 +49,19 @@ Lark Provider 负责：
 
 ## 写回
 
-Lark writer 面向远端表格写回。当前 writer 能力为：
+Lark 的远端 mutation 暂不对 runtime 和编辑器开放。原子 mutation 要求远端 provider 提供可验证的 compensation handle；当前 Lark adapter 尚未实现该契约，因此不会广告必然失败的写能力：
 
 | 能力 | 支持 |
 | --- | --- |
-| 编辑字段 | 是 |
-| 修改 record key | 是 |
-| 插入记录 | 是 |
-| 删除记录 | 是 |
+| 编辑字段 | 否 |
+| 修改 record key | 否 |
+| 插入记录 | 否 |
+| 删除记录 | 否 |
 | 创建 sheet/table | 是 |
-| 写后完整刷新 | 是 |
+| 写后完整刷新 | 否 |
 | 远端 source | 是 |
 
-自动化命令和编辑器会根据 writer 报告的能力和诊断返回结果。写回失败使用 `LARK-WRITE` 诊断。
+自动化命令和编辑器会根据 writer 报告的能力禁用 mutation。绕过 capability 直接发起 mutation 会在任何远端写入前返回 `WRITE-TXN-UNSUPPORTED`。创建 sheet/table 走独立的 `TableManager` interface，不受该限制。
 
 ### 创建远端 sheet
 

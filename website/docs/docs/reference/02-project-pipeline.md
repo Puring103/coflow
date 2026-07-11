@@ -99,8 +99,11 @@ Schema 编译阶段会处理：
 分别是 source、record 索引和 record 内容，但返回的 `diagnostics` 会包含数据加载、
 DataModel 和 CFT `check {}` 诊断。
 
-`data patch` 通过 write capability 写入，并在成功后发布新的 generation 和诊断；业务校验诊断不会回滚
-已经成功写入的数据，调用方应根据 `write_ok`、`check_ok` 和 `diagnostics` 继续修正。
+`data patch` 通过 write capability 执行整批 mutation transaction。runtime 先解析批内依赖并完成
+provider preflight，再为本地来源保存字节快照、为远程来源取得补偿句柄；全部 writer I/O 完成后只重建一次
+候选 generation。writer、加载、DataModel 或 transaction commit 失败会恢复来源并保留旧 generation，
+此时 `applied` 为空且 revision 不变。候选 generation 只有业务 `CHECK` 诊断时仍可发布，调用方根据
+`check_ok` 和 `diagnostics` 继续修正；一次成功批次只推进一次 revision。
 
 `schema write-file --check` 的 Check 列为“否”，因为它只在写入后重新编译
 schema。它不会加载 source、同步表头、构建 DataModel，也不会执行 CFT

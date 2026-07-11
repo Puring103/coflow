@@ -1,13 +1,15 @@
 mod capabilities;
 mod requests;
+mod transaction;
 
 pub use capabilities::{WriterCapabilities, WriterDescriptor};
 pub use requests::{
     DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest,
     SpreadRewriteTarget, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
 };
+pub use transaction::{SourceTransaction, SourceTransactionCompensation};
 
-use crate::{Diagnostic, DiagnosticSet, ResolvedSource};
+use crate::{Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec};
 
 /// Trait for source-specific writers that persist field edits.
 ///
@@ -24,6 +26,28 @@ pub trait SourceWriter: Send + Sync {
     /// write access for every source they can read.
     fn capabilities(&self, _source: &ResolvedSource) -> WriterCapabilities {
         self.descriptor().capabilities.clone()
+    }
+
+    /// Start the rollback contract for one resolved source before any writer
+    /// method mutates it.
+    ///
+    /// Local path sources default to runtime-managed byte snapshots. Remote
+    /// sources must explicitly return a provider compensation handle or are
+    /// rejected by transactional mutation commands.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the provider cannot initialize its remote
+    /// transaction state.
+    fn begin_transaction(
+        &self,
+        _ctx: WriteContext<'_>,
+        source: &ResolvedSource,
+    ) -> Result<SourceTransaction, DiagnosticSet> {
+        Ok(match source.location {
+            SourceLocationSpec::Path(_) => SourceTransaction::RuntimeSnapshot,
+            SourceLocationSpec::Uri(_) => SourceTransaction::Unsupported,
+        })
     }
 
     /// Cheap pre-flight check: type matches, target file exists, etc. The

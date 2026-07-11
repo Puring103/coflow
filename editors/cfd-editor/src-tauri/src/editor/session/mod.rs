@@ -342,7 +342,6 @@ impl SessionStore {
             let report = session
                 .engine
                 .apply_mutation(MutationRequest {
-                    check_after_write: true,
                     stop_on_write_error: true,
                     ops: vec![MutationOp::SetField {
                         record: coordinate.clone(),
@@ -503,7 +502,6 @@ impl SessionStore {
             let report = session
                 .engine
                 .apply_mutation(MutationRequest {
-                    check_after_write: true,
                     stop_on_write_error: true,
                     ops: vec![MutationOp::InsertRecord {
                         file: file_path.to_string(),
@@ -550,7 +548,6 @@ impl SessionStore {
             let report = session
                 .engine
                 .apply_mutation(MutationRequest {
-                    check_after_write: true,
                     stop_on_write_error: true,
                     ops: vec![MutationOp::RenameRecord {
                         record: coordinate.clone(),
@@ -633,7 +630,6 @@ impl SessionStore {
             let report = session
                 .engine
                 .apply_mutation(MutationRequest {
-                    check_after_write: true,
                     stop_on_write_error: true,
                     ops: vec![MutationOp::DeleteRecord {
                         record: coordinate.clone(),

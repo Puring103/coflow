@@ -611,9 +611,9 @@ patch value 支持普通 JSON 值，也支持以下特殊对象：
 
 `$ref` 只写 record key，目标类型来自被写入字段的 CFT 类型（例如 `&Item`、`[&Item]` 或 `{string: &Item}`）。
 
-写入会走 provider writer 层，不绕过数据源。批量 patch 按顺序应用；已经成功的操作不会因为后续操作失败自动回滚，调用方需要读取输出中的 `applied` 和 `failed`。
+写入会走 provider writer 层，不绕过数据源。批量 patch 会先完成整批规划与事务预检，再写入所有来源；任一 writer、重建或提交步骤失败时会补偿已经写入的来源，报告中的 `applied` 为空，旧 runtime generation 保持可用。
 
-每次成功写入后会刷新项目 session，最终报告中的 `check_ok` 和 `diagnostics` 来自写入后的项目诊断。`check_after_write` 是兼容字段；调用方应以报告里的 `check_ok` 为准。
+整批成功后只刷新一次项目 session 并推进一次 revision。最终报告中的 `check_ok` 和 `diagnostics` 来自这个新 generation 的项目诊断。
 
 ## 命令矩阵
 

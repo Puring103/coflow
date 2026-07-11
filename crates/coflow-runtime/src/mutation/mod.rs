@@ -7,6 +7,7 @@ use crate::ProjectSession;
 mod apply;
 mod coercion;
 mod defaults;
+mod plan;
 mod prepare;
 mod types;
 
@@ -15,6 +16,7 @@ pub use types::{
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
     MutationReport, MutationRequest, MutationValue,
 };
+pub(crate) use types::PreparedMutationOp;
 
 pub(super) fn schema_field<'a>(
     schema: &'a CompiledSchema,

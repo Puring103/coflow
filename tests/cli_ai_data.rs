@@ -517,8 +517,8 @@ fn data_patch_writes_then_returns_check_diagnostics_and_nonzero_exit() {
 }
 
 #[test]
-fn data_patch_returns_nonzero_when_check_after_write_is_false_but_errors_remain() {
-    let root = temp_project_dir("cli-data-patch-check-after-false");
+fn data_patch_rejects_removed_check_after_write_field() {
+    let root = temp_project_dir("cli-data-patch-removed-check-after-write");
     let _cleanup = TempDirCleanup(root.clone());
     write_project(&root);
     let patch_path = root.join("patch.json");
@@ -551,21 +551,17 @@ fn data_patch_returns_nonzero_when_check_after_write_is_false_but_errors_remain(
 
     assert!(
         !output.status.success(),
-        "final error diagnostics should produce non-zero exit\nstdout: {}\nstderr: {}",
+        "removed patch fields should produce non-zero exit\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let json: Value = serde_json::from_slice(&output.stdout).expect("data patch json");
-    assert_eq!(json["write_ok"], true);
-    assert_eq!(json["check_ok"], false);
     assert!(
-        json["diagnostics"]
-            .as_array()
-            .expect("diagnostics")
-            .iter()
-            .any(|diagnostic| diagnostic["severity"] == "error" && diagnostic["stage"] == "CHECK"),
-        "patch output: {json:?}"
+        String::from_utf8_lossy(&output.stderr).contains("unknown field `check_after_write`"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
+    assert!(!text.contains("unchecked_bad_sword"), "items.cfd:\n{text}");
 }
 
 #[test]

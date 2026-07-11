@@ -277,7 +277,6 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![
                     DataPatchOp::InsertRecord {
@@ -309,6 +308,7 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     assert!(report.write_ok);
     assert!(!report.check_ok);
     assert_eq!(report.applied.len(), 2);
+    assert_eq!(session.revision(), 1, "the batch publishes one generation");
     assert!(report.failed.is_empty());
     assert!(report
         .diagnostics
@@ -354,7 +354,6 @@ fn patch_rejects_insert_and_delete_on_dimension_variant_tables() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: false,
                 ops: vec![
                     DataPatchOp::InsertRecord {
@@ -406,7 +405,6 @@ fn rename_record_updates_refs_inside_polymorphic_cfd_values() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::RenameRecord {
                     record: PatchRecordSelector {
@@ -460,7 +458,6 @@ fn patch_writes_group_record_without_required_commas() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::SetField {
                     record: PatchRecordSelector {
@@ -515,7 +512,6 @@ fn patch_insert_minimal_does_not_materialize_explicit_schema_defaults() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
@@ -587,7 +583,6 @@ fn patch_insert_minimal_requires_explicit_values_for_required_ref_fields() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
@@ -771,7 +766,6 @@ fn patch_insert_minimal_seeds_nullable_refs_and_required_enums_without_defaults(
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
@@ -832,7 +826,6 @@ fn patch_insert_minimal_accepts_explicit_required_ref_fields() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
@@ -871,7 +864,6 @@ fn patch_rejects_explicit_values_that_violate_ref_shapes() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: false,
                 ops: vec![
                     DataPatchOp::InsertRecord {
@@ -937,7 +929,6 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/records.cfd".to_string(),
@@ -960,7 +951,6 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: false,
                 ops: vec![
                     DataPatchOp::SetField {
@@ -1023,7 +1013,6 @@ fn direct_write_field_rejects_values_that_violate_ref_shapes_before_file_write()
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/records.cfd".to_string(),
@@ -1057,7 +1046,7 @@ fn direct_write_field_rejects_values_that_violate_ref_shapes_before_file_write()
         .expect_err("direct write should fail before writer mutation");
     assert!(err
         .iter()
-        .any(|diagnostic| diagnostic.code == "WRITE-SHAPE"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
     let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
     assert_eq!(before, after);
 
@@ -1077,7 +1066,6 @@ fn direct_write_field_rejects_missing_ref_target_before_file_write() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/records.cfd".to_string(),
@@ -1110,7 +1098,7 @@ fn direct_write_field_rejects_missing_ref_target_before_file_write() {
         )
         .expect_err("direct write should reject missing ref target before writer mutation");
     assert!(err.iter().any(|diagnostic| {
-        diagnostic.code == "WRITE-SHAPE" && diagnostic.message.contains("was not found")
+        diagnostic.code == "MUTATION-SHAPE" && diagnostic.message.contains("was not found")
     }));
     let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
     assert_eq!(before, after);
@@ -1164,7 +1152,7 @@ holder: Holder { item_reward: &item }
         )
         .expect_err("direct write should reject sibling-type ref target before writer mutation");
     assert!(err.iter().any(|diagnostic| {
-        diagnostic.code == "WRITE-SHAPE" && diagnostic.message.contains("not assignable")
+        diagnostic.code == "MUTATION-SHAPE" && diagnostic.message.contains("not assignable")
     }));
     let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
     assert_eq!(before, after);
@@ -1194,7 +1182,10 @@ fn direct_write_field_rejects_primitive_mismatch_before_file_write() {
         )
         .expect_err("direct write should reject primitive mismatch before writer mutation");
     assert!(err.iter().any(|diagnostic| {
-        diagnostic.code == "WRITE-SHAPE" && diagnostic.message.contains("expected int")
+        diagnostic.code == "MUTATION-VALUE"
+            && diagnostic
+                .message
+                .contains("does not match expected schema type")
     }));
     let after = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read after");
     assert_eq!(before, after);
@@ -1217,7 +1208,6 @@ fn insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_write() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/records.cfd".to_string(),
@@ -1275,7 +1265,7 @@ fn direct_insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_wr
         .expect_err("direct insert should reject domain duplicate");
     assert!(err
         .iter()
-        .any(|diagnostic| diagnostic.code == "WRITE-INSERT"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-INSERT-CONFLICT"));
     let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
     assert_eq!(before, after);
 
@@ -1326,7 +1316,7 @@ fn direct_insert_rejects_missing_ref_target_before_file_write() {
         )
         .expect_err("direct insert should reject missing ref target");
     assert!(err.iter().any(|diagnostic| {
-        diagnostic.code == "WRITE-SHAPE" && diagnostic.message.contains("was not found")
+        diagnostic.code == "MUTATION-SHAPE" && diagnostic.message.contains("was not found")
     }));
     let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
     assert_eq!(before, after);
@@ -1361,7 +1351,6 @@ fn json_patch_insert_accepts_ref_object_form() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/records.cfd".to_string(),
@@ -1394,7 +1383,6 @@ fn data_patch_report_includes_remaining_ops_after_failure() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![
                     DataPatchOp::InsertRecord {
@@ -1469,6 +1457,145 @@ fn direct_insert_allows_self_references() {
 }
 
 #[test]
+fn batch_insert_can_reference_an_earlier_pending_insert() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-batch-insert-pending-ref-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Node { parent: &Node? = null; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/nodes.cfd"), "").expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/nodes.cfd\n",
+    )
+    .expect("write config");
+    let mut session = session(&root);
+
+    let report = session
+        .apply_data_patch(DataPatchRequest {
+            stop_on_write_error: true,
+            ops: vec![
+                DataPatchOp::InsertRecord {
+                    file: "data/nodes.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Node".to_string(),
+                    key: "root".to_string(),
+                    fields: Default::default(),
+                    materialization: DefaultMaterialization::Minimal,
+                },
+                DataPatchOp::InsertRecord {
+                    file: "data/nodes.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Node".to_string(),
+                    key: "child".to_string(),
+                    fields: serde_json::from_value(json!({ "parent": "root" }))
+                        .expect("fields map"),
+                    materialization: DefaultMaterialization::Minimal,
+                },
+            ],
+        })
+        .expect("apply dependent inserts");
+
+    assert!(report.write_ok, "failures: {:?}", report.failed);
+    assert_eq!(report.applied.len(), 2);
+    assert_eq!(session.revision(), 1);
+    let child = session
+        .queries()
+        .record_view("Node", "child")
+        .expect("inserted child");
+    assert_eq!(
+        child.record.fields().get("parent"),
+        Some(&coflow_data_model::CfdValue::Ref("root".to_string()))
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn batch_rename_of_pending_insert_rewrites_self_references() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-batch-rename-pending-self-ref-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Node { parent: &Node? = null; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/nodes.cfd"), "").expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/nodes.cfd\n",
+    )
+    .expect("write config");
+    let mut session = session(&root);
+
+    let report = session
+        .apply_data_patch(DataPatchRequest {
+            stop_on_write_error: true,
+            ops: vec![
+                DataPatchOp::InsertRecord {
+                    file: "data/nodes.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Node".to_string(),
+                    key: "root".to_string(),
+                    fields: serde_json::from_value(json!({ "parent": "root" }))
+                        .expect("fields map"),
+                    materialization: DefaultMaterialization::Minimal,
+                },
+                DataPatchOp::InsertRecord {
+                    file: "data/nodes.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Node".to_string(),
+                    key: "child".to_string(),
+                    fields: serde_json::from_value(json!({ "parent": "root" }))
+                        .expect("fields map"),
+                    materialization: DefaultMaterialization::Minimal,
+                },
+                DataPatchOp::RenameRecord {
+                    record: PatchRecordSelector {
+                        actual_type: "Node".to_string(),
+                        key: "root".to_string(),
+                    },
+                    file: None,
+                    new_key: "tree".to_string(),
+                },
+            ],
+        })
+        .expect("apply pending insert rename");
+
+    assert!(report.write_ok, "failures: {:?}", report.failed);
+    assert_eq!(report.applied.len(), 3);
+    assert_eq!(session.revision(), 1);
+    let tree = session
+        .queries()
+        .record_view("Node", "tree")
+        .expect("renamed node");
+    assert_eq!(
+        tree.record.fields().get("parent"),
+        Some(&coflow_data_model::CfdValue::Ref("tree".to_string()))
+    );
+    let child = session
+        .queries()
+        .record_view("Node", "child")
+        .expect("dependent node");
+    assert_eq!(
+        child.record.fields().get("parent"),
+        Some(&coflow_data_model::CfdValue::Ref("tree".to_string()))
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn insert_allows_same_key_for_unrelated_type() {
     let root =
         std::env::temp_dir().join(format!("coflow-domain-insert-allow-{}", std::process::id()));
@@ -1479,7 +1606,6 @@ fn insert_allows_same_key_for_unrelated_type() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/records.cfd".to_string(),
@@ -1596,7 +1722,6 @@ fn patch_insert_minimal_rejects_recursive_required_inline_defaults() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/nodes.cfd".to_string(),
@@ -1659,7 +1784,6 @@ fn default_materialization_rejects_abstract_objects() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/records.cfd".to_string(),
@@ -1733,7 +1857,6 @@ fn patch_file_guard_stops_batch_with_failed_report() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![
                     DataPatchOp::SetField {
@@ -1787,7 +1910,6 @@ fn patch_coerces_ref_inline_object_and_enum_key_dict_values() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
@@ -1850,7 +1972,6 @@ fn patch_supports_dict_key_path_writes() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
@@ -1872,7 +1993,6 @@ fn patch_supports_dict_key_path_writes() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::SetField {
                     record: PatchRecordSelector {
@@ -1917,7 +2037,6 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
     let report = session
         .apply_mutation(
             MutationRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![MutationOp::SetField {
                     record: RecordCoordinate::new("Loot", "starter_loot"),
@@ -1938,7 +2057,6 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
@@ -1956,7 +2074,6 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
     let report = session
         .apply_mutation(
             MutationRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![MutationOp::SetField {
                     record: RecordCoordinate::new("Loot", "starter_loot"),
@@ -2010,7 +2127,6 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
@@ -2028,7 +2144,6 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
     let report = session
         .apply_mutation(
             MutationRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![MutationOp::SetField {
                     record: RecordCoordinate::new("Loot", "starter_loot"),
@@ -2064,7 +2179,6 @@ fn mutation_complete_value_rejects_missing_nested_required_fields_before_write()
     let insert = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
@@ -2091,7 +2205,6 @@ fn mutation_complete_value_rejects_missing_nested_required_fields_before_write()
     let report = session
         .apply_mutation(
             MutationRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![MutationOp::SetField {
                     record: RecordCoordinate::new("Loot", "starter_loot"),
@@ -2131,7 +2244,6 @@ fn patch_collects_validation_failures_when_stop_disabled() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: false,
                 ops: vec![
                     DataPatchOp::SetField {
@@ -2206,7 +2318,6 @@ fn patch_stops_on_terminal_writer_error_even_when_stop_disabled() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: false,
                 ops: vec![
                     DataPatchOp::InsertRecord {
@@ -2267,7 +2378,6 @@ fn patch_set_field_file_guard_uses_spread_source_file() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::SetField {
                     record: PatchRecordSelector {
@@ -2295,7 +2405,6 @@ fn patch_set_field_file_guard_uses_spread_source_file() {
     let report = session
         .apply_data_patch(
             DataPatchRequest {
-                check_after_write: true,
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::SetField {
                     record: PatchRecordSelector {

@@ -30,6 +30,14 @@ pub trait CfdValueSemanticContext {
     fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId>;
     fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId>;
     fn record_actual_type(&self, id: CfdRecordId) -> Option<&str>;
+
+    fn pending_record_actual_type(
+        &self,
+        _domain_id: CfdDomainId,
+        _key: &str,
+    ) -> Option<&str> {
+        None
+    }
 }
 
 /// Validates that a complete CFD value matches a schema type and semantic context.
@@ -378,6 +386,14 @@ fn validate_ref_target<C: CfdValueSemanticContext>(
         let Some(actual_type) = context.record_actual_type(target_id) else {
             return Err(ref_not_found(expected_type, target_key));
         };
+        if !schema.is_assignable(actual_type, expected_type) {
+            return Err(CfdValueSemanticError::new(format!(
+                "ref target actual type `{actual_type}` is not assignable to `{expected_type}`"
+            )));
+        }
+        return Ok(());
+    }
+    if let Some(actual_type) = context.pending_record_actual_type(domain, target_key) {
         if !schema.is_assignable(actual_type, expected_type) {
             return Err(CfdValueSemanticError::new(format!(
                 "ref target actual type `{actual_type}` is not assignable to `{expected_type}`"

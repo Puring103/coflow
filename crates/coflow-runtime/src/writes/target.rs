@@ -1,7 +1,6 @@
 use coflow_api::{Diagnostic, DiagnosticSet, WriteFieldPathSegment};
 use coflow_data_model::CfdPath;
 use coflow_data_model::RecordOrigin;
-use coflow_data_model::CfdValue;
 
 use crate::{ProjectSession, RecordCoordinate, RecordRef};
 
@@ -11,35 +10,6 @@ pub(super) fn not_found(actual_type: &str, key: &str) -> Diagnostic {
         "WRITE",
         format!("record `{actual_type}.{key}` was not found in the session"),
     )
-}
-
-/// Compute the post-write coordinate. Writers don't tell us the new key, so
-/// we walk the path: only a write at exactly `[Field("id")]` can rename the
-/// record. Everything else preserves the original coordinate.
-pub(super) fn guess_new_coordinate(
-    session: &ProjectSession,
-    old: &RecordCoordinate,
-    path: &[WriteFieldPathSegment],
-    new_value: &CfdValue,
-) -> RecordCoordinate {
-    if path.len() == 1 {
-        if let WriteFieldPathSegment::Field(name) = &path[0] {
-            if name == "id" {
-                if let CfdValue::String(new_key) = new_value {
-                    if session
-                        .records
-                        .get_by_coordinate(&old.actual_type, new_key)
-                        .is_some()
-                    {
-                        return RecordCoordinate::new(&old.actual_type, new_key.clone());
-                    }
-                }
-            }
-        }
-    }
-    let _ = session;
-    let _ = (path, new_value);
-    old.clone()
 }
 
 pub(super) fn is_id_path(path: &[WriteFieldPathSegment]) -> bool {

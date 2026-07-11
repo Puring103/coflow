@@ -14,12 +14,13 @@ pub(super) fn coerce_mutation_value(
     session: &ProjectSession,
     expected: &CftSchemaTypeRef,
     value: MutationValue,
+    pending_records: &[crate::RecordCoordinate],
 ) -> Result<CfdValue, DiagnosticSet> {
     let value = match value {
         MutationValue::Json(value) => coerce_json_value(session, expected, &value),
         MutationValue::Cfd(value) => coerce_cfd_value(session, expected, value),
     }?;
-    validate_value_for_write(session, expected, &value)?;
+    validate_value_for_write(session, expected, &value, pending_records)?;
     Ok(value)
 }
 
@@ -28,9 +29,7 @@ pub(super) fn coerce_json_field_value(
     field_ty: &CftSchemaTypeRef,
     value: &Value,
 ) -> Result<CfdValue, DiagnosticSet> {
-    let value = coerce_json_value(session, field_ty, value)?;
-    validate_value_for_write(session, field_ty, &value)?;
-    Ok(value)
+    coerce_json_value(session, field_ty, value)
 }
 
 pub(super) fn coerce_cfd_field_value(
@@ -38,9 +37,7 @@ pub(super) fn coerce_cfd_field_value(
     field_ty: &CftSchemaTypeRef,
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
-    let value = coerce_cfd_value(session, field_ty, value)?;
-    validate_value_for_write(session, field_ty, &value)?;
-    Ok(value)
+    coerce_cfd_value(session, field_ty, value)
 }
 
 fn coerce_json_value(
@@ -182,8 +179,18 @@ fn validate_value_for_write(
     session: &ProjectSession,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
+    pending_records: &[crate::RecordCoordinate],
 ) -> Result<(), DiagnosticSet> {
-    write_rules::validate_value_for_write(session, expected, value, "MUTATION-SHAPE", "MUTATION")
+    let schema = session.compiled_schema();
+    write_rules::validate_value_for_write_with_pending_in_view(
+        session,
+        &schema,
+        expected,
+        value,
+        pending_records,
+        "MUTATION-SHAPE",
+        "MUTATION",
+    )
 }
 
 fn coerce_cfd_dict_key(

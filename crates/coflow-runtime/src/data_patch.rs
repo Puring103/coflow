@@ -12,9 +12,8 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DataPatchRequest {
-    #[serde(default = "default_true")]
-    pub check_after_write: bool,
     #[serde(default = "default_true")]
     pub stop_on_write_error: bool,
     pub ops: Vec<DataPatchOp>,
@@ -122,7 +121,6 @@ impl WriteProjectSession {
 impl DataPatchRequest {
     fn into_mutation_request(self) -> MutationRequest {
         MutationRequest {
-            check_after_write: self.check_after_write,
             stop_on_write_error: self.stop_on_write_error,
             ops: self
                 .ops

@@ -1,63 +1,123 @@
-use coflow_api::{DiagnosticSet, ProviderRegistry};
+use coflow_api::{Diagnostic, DiagnosticSet, ProviderRegistry, Severity, WriteContext};
 
+use crate::writes::{
+    mutation_sources, preflight_mutation_op, rebuild_after_mutation, stage_mutation_op,
+    MutationTransaction,
+};
 use crate::{ProjectSession, RecordCoordinate};
 
-use super::prepare::{prepare_mutation_request, prepare_one};
-use super::types::{PreparedMutation, PreparedMutationOp};
-use super::{
-    MutationAppliedOp, MutationFailedOp, MutationOp, MutationReport, MutationRequest,
-};
+use super::plan::{mutation_op_name, plan_mutations, PlannedMutationOp};
+use super::prepare::prepare_mutation_request;
+use super::types::PreparedMutationOp;
+use super::{MutationAppliedOp, MutationFailedOp, MutationReport, MutationRequest};
 
 impl ProjectSession {
-    /// Execute a prepared mutation request through provider writers.
+    /// Prepare, stage, and atomically publish a mutation request.
     ///
     /// # Errors
     ///
     /// Returns diagnostics only when execution cannot produce a report.
-    /// Per-operation validation and writer failures are represented in the
-    /// returned [`MutationReport`].
-    fn apply_prepared_mutation(
+    /// Validation, provider, transaction, and rebuild failures are represented
+    /// in the returned report.
+    pub fn apply_mutation(
         &mut self,
         registry: &ProviderRegistry,
-        prepared: PreparedMutation,
+        request: MutationRequest,
     ) -> Result<MutationReport, DiagnosticSet> {
-        let PreparedMutation {
-            stop_on_write_error,
-            ops,
-        } = prepared;
-        let mut applied = Vec::new();
-        let mut failed = Vec::new();
-        let mut write_ok = true;
+        let prepared = prepare_mutation_request(request);
+        let (planned, mut failed, mut write_ok, stopped) = plan_mutations(self, prepared);
+        if stopped || planned.is_empty() {
+            return Ok(report_without_publish(self, write_ok, failed));
+        }
 
-        for (index, op) in ops.iter().enumerate() {
-            match apply_prepared_one(self, registry, op) {
-                Ok(applied_op) => applied.push(MutationAppliedOp {
-                    index,
-                    ..applied_op
-                }),
-                Err(err) => {
+        for planned_op in &planned {
+            if let Err(diagnostics) = preflight_mutation_op(self, registry, &planned_op.op) {
+                failed.push(failed_op(planned_op, &diagnostics));
+                return Ok(report_without_publish(self, false, failed));
+            }
+        }
+
+        let mut enlisted = Vec::new();
+        for planned_op in &planned {
+            match mutation_sources(self, registry, &planned_op.op) {
+                Ok(sources) => enlisted.extend(sources),
+                Err(diagnostics) => {
                     write_ok = false;
-                    let diagnostics = err.diagnostics();
-                    let flat = diagnostics.flat_diagnostics();
-                    failed.push(MutationFailedOp {
-                        index,
-                        op: prepared_op_name(op),
-                        diagnostics: flat.clone(),
-                    });
-                    if stop_on_write_error || err.is_terminal() {
-                        return Ok(MutationReport {
-                            write_ok: false,
-                            check_ok: false,
-                            applied,
-                            failed,
-                            diagnostics: self.diagnostics.flat_diagnostics(),
-                        });
-                    }
+                    failed.push(failed_op(planned_op, &diagnostics));
+                    return Ok(report_without_publish(self, write_ok, failed));
                 }
             }
         }
 
-        let diagnostics = self.diagnostics.flat_diagnostics();
+        let compiled_schema = self.compiled_schema();
+        let ctx = WriteContext {
+            project_root: &self.project.root_dir,
+            schema: &compiled_schema,
+            model: Some(&self.model),
+        };
+        let transaction = match MutationTransaction::begin(ctx, enlisted) {
+            Ok(transaction) => transaction,
+            Err(diagnostics) => {
+                if let Some(first_planned) = planned.first() {
+                    failed.push(failed_op(first_planned, &diagnostics));
+                }
+                return Ok(report_without_publish(self, false, failed));
+            }
+        };
+
+        let mut staged = Vec::with_capacity(planned.len());
+        for planned_op in &planned {
+            match stage_mutation_op(self, registry, &planned_op.op) {
+                Ok(outcome) => match applied_op(planned_op, outcome) {
+                    Ok(applied) => staged.push(applied),
+                    Err(mut diagnostics) => {
+                        transaction.compensate_into(&mut diagnostics);
+                        failed.push(failed_op(planned_op, &diagnostics));
+                        return Ok(report_without_publish(self, false, failed));
+                    }
+                },
+                Err(mut diagnostics) => {
+                    transaction.compensate_into(&mut diagnostics);
+                    failed.push(failed_op(planned_op, &diagnostics));
+                    return Ok(report_without_publish(self, false, failed));
+                }
+            }
+        }
+
+        let new_session = match rebuild_after_mutation(self, registry) {
+            Ok(session) => session,
+            Err(mut diagnostics) => {
+                transaction.compensate_into(&mut diagnostics);
+                if let Some(last_planned) = planned.last() {
+                    failed.push(failed_op(last_planned, &diagnostics));
+                }
+                return Ok(report_without_publish(self, false, failed));
+            }
+        };
+        let mut rebuild_diagnostics = blocking_rebuild_diagnostics(&new_session);
+        if !rebuild_diagnostics.is_empty() {
+            transaction.compensate_into(&mut rebuild_diagnostics);
+            if let Some(last_planned) = planned.last() {
+                failed.push(failed_op(last_planned, &rebuild_diagnostics));
+            }
+            return Ok(report_without_publish(self, false, failed));
+        }
+
+        if let Err(diagnostics) = transaction.commit() {
+            if let Some(last_planned) = planned.last() {
+                failed.push(failed_op(last_planned, &diagnostics));
+            }
+            return Ok(report_without_publish(self, false, failed));
+        }
+
+        let diagnostics_set = new_session.diagnostics.as_set().clone();
+        let diagnostics = new_session.diagnostics.flat_diagnostics();
+        for applied in &mut staged {
+            applied.outcome.diagnostics = diagnostics_set.clone();
+        }
+        *self = new_session;
+        staged.sort_by_key(|applied| applied.index);
+        failed.sort_by_key(|failure| failure.index);
         let check_ok = write_ok
             && diagnostics
                 .iter()
@@ -65,161 +125,138 @@ impl ProjectSession {
         Ok(MutationReport {
             write_ok,
             check_ok,
-            applied,
+            applied: staged,
             failed,
             diagnostics,
         })
     }
-
-    /// Prepare and execute a mutation request.
-    ///
-    /// # Errors
-    ///
-    /// Returns diagnostics only when mutation execution cannot produce a
-    /// report. Per-operation validation and writer failures are represented in
-    /// the returned [`MutationReport`].
-    pub fn apply_mutation(
-        &mut self,
-        registry: &ProviderRegistry,
-        request: MutationRequest,
-    ) -> Result<MutationReport, DiagnosticSet> {
-        let prepared = prepare_mutation_request(request);
-        self.apply_prepared_mutation(registry, prepared)
-    }
 }
 
-fn apply_prepared_one(
-    session: &mut ProjectSession,
-    registry: &ProviderRegistry,
-    op: &PreparedMutationOp,
-) -> Result<MutationAppliedOp, MutationApplyError> {
-    match op {
-        PreparedMutationOp::Pending { op } => {
-            let prepared = prepare_one(session, op.clone())
-                .map_err(|diagnostics| classify_prepare_error(op, diagnostics))?;
-            apply_prepared_one(session, registry, &prepared)
-        }
+fn blocking_rebuild_diagnostics(session: &ProjectSession) -> DiagnosticSet {
+    session
+        .diagnostics
+        .as_set()
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic.severity == Severity::Error && diagnostic.stage != "CHECK"
+        })
+        .cloned()
+        .collect::<Vec<_>>()
+        .into()
+}
+
+fn applied_op(
+    planned: &PlannedMutationOp,
+    outcome: crate::WriteOutcome,
+) -> Result<MutationAppliedOp, DiagnosticSet> {
+    let (op, record, file) = match &planned.op {
         PreparedMutationOp::InsertRecord {
             file,
-            sheet,
             actual_type,
             key,
-            fields,
-        } => {
-            let outcome = session
-                .insert_record(registry, file, sheet.as_deref(), key, actual_type, fields)
-                .map_err(MutationApplyError::Terminal)?;
-            Ok(MutationAppliedOp {
-                index: 0,
-                op: "insert_record".to_string(),
-                record: Some(RecordCoordinate::new(actual_type, key)),
-                file: Some(file.clone()),
-                outcome,
-            })
-        }
-        PreparedMutationOp::SetField {
+            ..
+        } => (
+            "insert_record",
+            Some(RecordCoordinate::new(actual_type, key)),
+            Some(file.clone()),
+        ),
+        PreparedMutationOp::CancelledInsert {
             record,
             write_file,
-            path,
-            value,
-            ..
-        } => {
-            let outcome = session
-                .write_field(registry, &record.actual_type, &record.key, path, value)
-                .map_err(MutationApplyError::Terminal)?;
-            Ok(MutationAppliedOp {
-                index: 0,
-                op: "set_field".to_string(),
-                record: Some(record.clone()),
-                file: Some(write_file.clone()),
-                outcome,
-            })
+        } => (
+            "insert_record",
+            Some(record.clone()),
+            Some(write_file.clone()),
+        ),
+        PreparedMutationOp::SetField {
+            record, write_file, ..
         }
+        | PreparedMutationOp::FoldedSetField {
+            record,
+            write_file,
+        } => ("set_field", Some(record.clone()), Some(write_file.clone())),
         PreparedMutationOp::RenameRecord {
             record,
             new_key,
             report_file,
-        } => {
-            let outcome = session
-                .rename_record_key(registry, &record.actual_type, &record.key, new_key)
-                .map_err(MutationApplyError::Terminal)?;
-            let record = outcome.renamed.as_ref().map_or_else(
-                || RecordCoordinate::new(&record.actual_type, new_key),
-                |(_, new)| new.clone(),
-            );
-            Ok(MutationAppliedOp {
-                index: 0,
-                op: "rename_record".to_string(),
-                record: Some(record),
-                file: report_file.clone(),
-                outcome,
-            })
-        }
+        } => (
+            "rename_record",
+            Some(RecordCoordinate::new(&record.actual_type, new_key)),
+            report_file.clone(),
+        ),
+        PreparedMutationOp::FoldedRenameRecord {
+            new_record,
+            write_file,
+            ..
+        } => (
+            "rename_record",
+            Some(new_record.clone()),
+            Some(write_file.clone()),
+        ),
         PreparedMutationOp::DeleteRecord {
             record,
             report_file,
-            ..
-        } => {
-            let outcome = session
-                .delete_record(registry, &record.actual_type, &record.key)
-                .map_err(MutationApplyError::Terminal)?;
-            Ok(MutationAppliedOp {
-                index: 0,
-                op: "delete_record".to_string(),
-                record: Some(record.clone()),
-                file: report_file.clone(),
-                outcome,
-            })
+        } => ("delete_record", Some(record.clone()), report_file.clone()),
+        PreparedMutationOp::FoldedDeleteRecord {
+            record,
+            write_file,
+        } => (
+            "delete_record",
+            Some(record.clone()),
+            Some(write_file.clone()),
+        ),
+        PreparedMutationOp::Pending { .. } => {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "MUTATION-TXN-INVARIANT",
+                "MUTATION",
+                "pending operation reached applied mutation reporting",
+            )));
         }
+    };
+    Ok(MutationAppliedOp {
+        index: planned.index,
+        op: op.to_string(),
+        record,
+        file,
+        outcome,
+    })
+}
+
+fn failed_op(planned: &PlannedMutationOp, diagnostics: &DiagnosticSet) -> MutationFailedOp {
+    MutationFailedOp {
+        index: planned.index,
+        op: prepared_op_name(&planned.op).to_string(),
+        diagnostics: diagnostics.flat_diagnostics(),
     }
 }
 
-#[derive(Debug)]
-enum MutationApplyError {
-    Recoverable(DiagnosticSet),
-    Terminal(DiagnosticSet),
+fn report_without_publish(
+    session: &ProjectSession,
+    write_ok: bool,
+    mut failed: Vec<MutationFailedOp>,
+) -> MutationReport {
+    failed.sort_by_key(|failure| failure.index);
+    MutationReport {
+        write_ok,
+        check_ok: false,
+        applied: Vec::new(),
+        failed,
+        diagnostics: session.diagnostics.flat_diagnostics(),
+    }
 }
 
-impl MutationApplyError {
-    const fn is_terminal(&self) -> bool {
-        matches!(self, Self::Terminal(_))
-    }
-
-    const fn diagnostics(&self) -> &DiagnosticSet {
-        match self {
-            Self::Recoverable(diagnostics) | Self::Terminal(diagnostics) => diagnostics,
+fn prepared_op_name(op: &PreparedMutationOp) -> &'static str {
+    match op {
+        PreparedMutationOp::Pending { op } => mutation_op_name(op),
+        PreparedMutationOp::InsertRecord { .. } | PreparedMutationOp::CancelledInsert { .. } => {
+            "insert_record"
         }
+        PreparedMutationOp::SetField { .. } | PreparedMutationOp::FoldedSetField { .. } => {
+            "set_field"
+        }
+        PreparedMutationOp::RenameRecord { .. }
+        | PreparedMutationOp::FoldedRenameRecord { .. } => "rename_record",
+        PreparedMutationOp::DeleteRecord { .. }
+        | PreparedMutationOp::FoldedDeleteRecord { .. } => "delete_record",
     }
 }
-
-fn prepared_op_name(op: &PreparedMutationOp) -> String {
-    match op {
-        PreparedMutationOp::Pending { op } => mutation_op_name(op).to_string(),
-        PreparedMutationOp::InsertRecord { .. } => "insert_record".to_string(),
-        PreparedMutationOp::SetField { .. } => "set_field".to_string(),
-        PreparedMutationOp::RenameRecord { .. } => "rename_record".to_string(),
-        PreparedMutationOp::DeleteRecord { .. } => "delete_record".to_string(),
-    }
-}
-
-const fn mutation_op_name(op: &MutationOp) -> &'static str {
-    match op {
-        MutationOp::InsertRecord { .. } => "insert_record",
-        MutationOp::SetField { .. } => "set_field",
-        MutationOp::RenameRecord { .. } => "rename_record",
-        MutationOp::DeleteRecord { .. } => "delete_record",
-    }
-}
-
-fn classify_prepare_error(op: &MutationOp, diagnostics: DiagnosticSet) -> MutationApplyError {
-    let terminal_insert_conflict = matches!(op, MutationOp::InsertRecord { .. })
-        && diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "MUTATION-INSERT-CONFLICT"
-        });
-    if terminal_insert_conflict {
-        MutationApplyError::Terminal(diagnostics)
-    } else {
-        MutationApplyError::Recoverable(diagnostics)
-    }
-}
-

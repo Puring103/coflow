@@ -8,8 +8,8 @@ use crate::schema_build::build_project_schema_session;
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::session_build::{open_project_session, SessionOpenOptions};
 use crate::{
-    CreateRecordDraft, DefaultMaterialization, MutationReport, MutationRequest, ProjectQueries,
-    WriteOutcome,
+    CreateRecordDraft, DefaultMaterialization, MutationFields, MutationOp, MutationReport,
+    MutationRequest, MutationValue, ProjectQueries, RecordCoordinate, WriteOutcome,
 };
 
 #[derive(Debug, Clone)]
@@ -212,9 +212,9 @@ impl WriteProjectSession {
         request: MutationRequest,
     ) -> Result<MutationReport, DiagnosticSet> {
         let report = self.session.apply_mutation(&self.registry, request)?;
-        self.revision = self
-            .revision
-            .saturating_add(u64::try_from(report.applied.len()).unwrap_or(u64::MAX));
+        if !report.applied.is_empty() {
+            self.revision = self.revision.saturating_add(1);
+        }
         Ok(report)
     }
 
@@ -225,11 +225,12 @@ impl WriteProjectSession {
         path: &[CfdPathSegment],
         new_value: &CfdValue,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let outcome = self
-            .session
-            .write_field(&self.registry, actual_type, key, path, new_value)?;
-        self.revision = self.revision.saturating_add(1);
-        Ok(outcome)
+        self.apply_one(MutationOp::SetField {
+            record: RecordCoordinate::new(actual_type, key),
+            file: None,
+            path: path.to_vec(),
+            value: MutationValue::Cfd(new_value.clone()),
+        })
     }
 
     pub fn rename_record_key(
@@ -238,14 +239,11 @@ impl WriteProjectSession {
         old_key: &str,
         new_key: &str,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let outcome = self.session.rename_record_key(
-            &self.registry,
-            actual_type,
-            old_key,
-            new_key,
-        )?;
-        self.revision = self.revision.saturating_add(1);
-        Ok(outcome)
+        self.apply_one(MutationOp::RenameRecord {
+            record: RecordCoordinate::new(actual_type, old_key),
+            file: None,
+            new_key: new_key.to_string(),
+        })
     }
 
     pub fn insert_record(
@@ -256,16 +254,14 @@ impl WriteProjectSession {
         actual_type: &str,
         fields: &BTreeMap<String, CfdValue>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let outcome = self.session.insert_record(
-            &self.registry,
-            file,
-            sheet,
-            record_key,
-            actual_type,
-            fields,
-        )?;
-        self.revision = self.revision.saturating_add(1);
-        Ok(outcome)
+        self.apply_one(MutationOp::InsertRecord {
+            file: file.to_string(),
+            sheet: sheet.map(ToOwned::to_owned),
+            actual_type: actual_type.to_string(),
+            key: record_key.to_string(),
+            fields: MutationFields::Cfd(fields.clone()),
+            materialization: DefaultMaterialization::Minimal,
+        })
     }
 
     pub fn delete_record(
@@ -273,10 +269,37 @@ impl WriteProjectSession {
         actual_type: &str,
         key: &str,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let outcome = self
-            .session
-            .delete_record(&self.registry, actual_type, key)?;
-        self.revision = self.revision.saturating_add(1);
-        Ok(outcome)
+        self.apply_one(MutationOp::DeleteRecord {
+            record: RecordCoordinate::new(actual_type, key),
+            file: None,
+        })
+    }
+
+    fn apply_one(&mut self, op: MutationOp) -> Result<WriteOutcome, DiagnosticSet> {
+        let report = self.apply_mutation(MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![op],
+        })?;
+        if let Some(applied) = report.applied.into_iter().next() {
+            return Ok(applied.outcome);
+        }
+        let mut diagnostics = DiagnosticSet::empty();
+        for failed in report.failed {
+            for diagnostic in failed.diagnostics {
+                diagnostics.push(coflow_api::Diagnostic::error(
+                    diagnostic.code,
+                    diagnostic.stage,
+                    diagnostic.message,
+                ));
+            }
+        }
+        if diagnostics.is_empty() {
+            diagnostics.push(coflow_api::Diagnostic::error(
+                "WRITE-TXN-NO-OUTCOME",
+                "WRITE",
+                "mutation transaction produced neither an applied operation nor a failure",
+            ));
+        }
+        Err(diagnostics)
     }
 }

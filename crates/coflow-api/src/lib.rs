@@ -48,7 +48,8 @@ pub use registry::{
 };
 pub use writer::{
     DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest,
-    SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteContext, WriteFieldPathSegment,
-    WriteOutcome, WriterCapabilities, WriterDescriptor,
+    SourceTransaction, SourceTransactionCompensation, SourceWriter, SpreadRewriteTarget,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriterCapabilities,
+    WriterDescriptor,
 };
 

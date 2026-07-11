@@ -18,7 +18,6 @@
 
 ```json
 {
-  "check_after_write": true,
   "stop_on_write_error": true,
   "ops": [
     {
@@ -40,7 +39,6 @@
 
 ```json
 {
-  "check_after_write": true,
   "stop_on_write_error": true,
   "ops": [
     {

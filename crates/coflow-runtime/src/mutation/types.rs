@@ -8,9 +8,8 @@ use serde_json::Value;
 use crate::{RecordCoordinate, WriteOutcome};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MutationRequest {
-    #[serde(default = "default_true")]
-    pub check_after_write: bool,
     #[serde(default = "default_true")]
     pub stop_on_write_error: bool,
     pub ops: Vec<MutationOp>,
@@ -124,7 +123,7 @@ pub(super) struct PreparedMutation {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum PreparedMutationOp {
+pub(crate) enum PreparedMutationOp {
     Pending {
         op: MutationOp,
     },
@@ -137,6 +136,7 @@ pub(super) enum PreparedMutationOp {
     },
     SetField {
         record: RecordCoordinate,
+        write_record: RecordCoordinate,
         write_file: String,
         path: Vec<coflow_api::WriteFieldPathSegment>,
         value: CfdValue,
@@ -149,6 +149,23 @@ pub(super) enum PreparedMutationOp {
     DeleteRecord {
         record: RecordCoordinate,
         report_file: Option<String>,
+    },
+    FoldedSetField {
+        record: RecordCoordinate,
+        write_file: String,
+    },
+    FoldedRenameRecord {
+        old_record: RecordCoordinate,
+        new_record: RecordCoordinate,
+        write_file: String,
+    },
+    FoldedDeleteRecord {
+        record: RecordCoordinate,
+        write_file: String,
+    },
+    CancelledInsert {
+        record: RecordCoordinate,
+        write_file: String,
     },
 }
 

@@ -1,33 +1,30 @@
-//! Write transaction surface on `ProjectSession`.
+//! Source-write staging behind the runtime mutation transaction.
 //!
-//! Hosts call `session.write_field(...)` / `insert_record` / `delete_record`
-//! with stable `(actual_type, key)` coordinates. The engine resolves the
-//! coordinate to an internal record id, dispatches the edit to the
-//! registered writer, then rebuilds itself in place so subsequent queries
-//! see the post-write state.
+//! Hosts write through [`crate::WriteProjectSession`]. This module resolves
+//! stable record coordinates, performs provider I/O, and leaves transaction
+//! compensation plus the single post-write rebuild to `mutation::apply`.
 
 mod plan;
 mod rebuild;
 mod refs;
+mod stage;
 mod target;
 mod transaction;
 mod writer;
 
-use coflow_api::{
-    DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, ProviderRegistry,
-    RenameRecordRequest, WriteCellRequest, WriteContext, WriteFieldPathSegment,
-};
-use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RecordOrigin};
+use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
+use coflow_data_model::{CfdPath, CfdRecord, CfdValue};
+use std::sync::Arc;
 
-use super::records::WriteOutcome;
-use super::write_rules;
 use super::{ProjectSession, RecordCoordinate, RecordRef};
-use plan::prepare_write_field;
 use rebuild::rebuild_session_after_write;
 use refs::{reference_update_actions, source_rewrite_actions};
-use target::{guess_new_coordinate, is_id_path, not_found};
-use transaction::LocalFileTransaction;
+use target::not_found;
+pub(crate) use stage::{preflight_mutation_op, stage_mutation_op};
+pub(crate) use transaction::MutationTransaction;
 use writer::{lookup_source_writer, source_for_file};
+
+use crate::mutation::PreparedMutationOp;
 
 pub(crate) fn record_value_at_path<'a>(
     record: &'a CfdRecord,
@@ -40,402 +37,80 @@ pub(crate) fn effective_write_target_for_path(
     session: &ProjectSession,
     host_ref: &RecordRef,
     path: &[WriteFieldPathSegment],
-) -> Result<(String, Vec<WriteFieldPathSegment>), DiagnosticSet> {
+) -> Result<
+    (RecordCoordinate, String, Vec<WriteFieldPathSegment>),
+    DiagnosticSet,
+> {
     let target = target::write_target_for_path(session, host_ref, path)?;
-    Ok((target.display_path, target.field_path))
+    Ok((target.coordinate, target.display_path, target.field_path))
 }
 
-impl ProjectSession {
-    /// Persist a single field edit and rebuild the session in place.
-    ///
-    /// `actual_type` + `key` identify the host record. The writer
-    /// preflights before mutating the source — diagnostics from preflight
-    /// are returned without rebuilding.
-    ///
-    /// On success the engine rebuilds with [`SessionOpenOptions::build`] to
-    /// refresh model, diagnostics, and indexes. The
-    /// [`WriteOutcome`] reports the post-write coordinate (which differs
-    /// when the write changed the host record's `id` field).
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`DiagnosticSet`] when the record is unknown, no writer is
-    /// registered for the host provider, preflight reports a problem, the
-    /// writer rejects the edit, or the post-write rebuild fails.
-    pub fn write_field(
-        &mut self,
-        registry: &ProviderRegistry,
-        actual_type: &str,
-        key: &str,
-        path: &[WriteFieldPathSegment],
-        new_value: &CfdValue,
-    ) -> Result<WriteOutcome, DiagnosticSet> {
-        if is_id_path(path) {
-            let CfdValue::String(new_key) = new_value else {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "WRITE-RENAME",
-                    "WRITE",
-                    "record key writes require a string value",
+pub(crate) fn rebuild_after_mutation(
+    session: &ProjectSession,
+    registry: &ProviderRegistry,
+) -> Result<ProjectSession, DiagnosticSet> {
+    rebuild_session_after_write(session, registry)
+}
+
+pub(crate) fn mutation_sources(
+    session: &ProjectSession,
+    registry: &ProviderRegistry,
+    op: &PreparedMutationOp,
+) -> Result<Vec<(coflow_api::ResolvedSource, Arc<dyn coflow_api::SourceWriter>)>, DiagnosticSet> {
+    match op {
+        PreparedMutationOp::InsertRecord { file, .. }
+        | PreparedMutationOp::SetField {
+            write_file: file, ..
+        } => {
+            let source = source_for_file(session, file)?;
+            let writer = lookup_source_writer(registry, &source)?;
+            Ok(vec![(source, writer)])
+        }
+        PreparedMutationOp::DeleteRecord { record, .. } => {
+            let file = session
+                .file_for_record(&record.actual_type, &record.key)
+                .ok_or_else(|| DiagnosticSet::one(not_found(&record.actual_type, &record.key)))?;
+            let source = source_for_file(session, file)?;
+            let writer = lookup_source_writer(registry, &source)?;
+            Ok(vec![(source, writer)])
+        }
+        PreparedMutationOp::RenameRecord {
+            record, new_key, ..
+        } => {
+            let Some(target_ref) = session
+                .records
+                .get_by_coordinate(&record.actual_type, &record.key)
+            else {
+                return Err(DiagnosticSet::one(not_found(
+                    &record.actual_type,
+                    &record.key,
                 )));
             };
-            return self.rename_record_key(registry, actual_type, key, new_key);
+            let target_source = source_for_file(session, &target_ref.display_path)?;
+            let target_writer = lookup_source_writer(registry, &target_source)?;
+            let mut sources = vec![(target_source, target_writer)];
+            sources.extend(
+                reference_update_actions(session, registry, target_ref.id, new_key)?
+                    .into_iter()
+                    .map(|action| (action.source().clone(), action.writer)),
+            );
+            sources.extend(
+                source_rewrite_actions(
+                    session,
+                    registry,
+                    target_ref.id,
+                    &record.key,
+                    new_key,
+                )?
+                .into_iter()
+                .map(|action| (action.source().clone(), action.writer)),
+            );
+            Ok(sources)
         }
-        let plan = prepare_write_field(self, registry, actual_type, key, path, new_value)?;
-        let compiled_schema = self.compiled_schema();
-
-        let write_request = WriteCellRequest {
-            origin: &plan.target.origin,
-            record_key: &plan.target.coordinate.key,
-            actual_type: &plan.target.coordinate.actual_type,
-            field_path: &plan.target.field_path,
-            new_value,
-            schema: &compiled_schema,
-            source: &plan.source,
-        };
-        let write_ctx = WriteContext {
-            project_root: &self.project.root_dir,
-            schema: &compiled_schema,
-            model: Some(&self.model),
-        };
-        let preflight = plan.writer.preflight(write_ctx, &write_request);
-        if !preflight.is_empty() {
-            return Err(preflight);
-        }
-        plan.writer.write_field(write_ctx, &write_request)?;
-
-        let new_session = rebuild_session_after_write(self, registry)?;
-        let new_write_coordinate =
-            guess_new_coordinate(&new_session, &plan.target.coordinate, path, new_value);
-        let renamed = (new_write_coordinate != plan.target.coordinate)
-            .then(|| (plan.target.coordinate.clone(), new_write_coordinate.clone()));
-        let diagnostics = new_session.diagnostics.as_set().clone();
-        *self = new_session;
-        let mut touched = vec![plan.host_coordinate.clone()];
-        if new_write_coordinate != plan.host_coordinate {
-            touched.push(new_write_coordinate);
-        }
-        Ok(WriteOutcome {
-            touched,
-            inserted: None,
-            deleted: None,
-            renamed,
-            diagnostics,
-        })
+        PreparedMutationOp::FoldedSetField { .. }
+        | PreparedMutationOp::FoldedRenameRecord { .. }
+        | PreparedMutationOp::FoldedDeleteRecord { .. }
+        | PreparedMutationOp::CancelledInsert { .. }
+        | PreparedMutationOp::Pending { .. } => Ok(Vec::new()),
     }
-
-    /// Rename a top-level record key and update references across loaded
-    /// sources before rebuilding the session.
-    ///
-    /// # Errors
-    /// Returns diagnostics when the record is unknown, the new key is invalid
-    /// or collides in the target type/range, any affected source has no writer,
-    /// a writer rejects one of the edits, or the post-write rebuild fails.
-    pub fn rename_record_key(
-        &mut self,
-        registry: &ProviderRegistry,
-        actual_type: &str,
-        old_key: &str,
-        new_key: &str,
-    ) -> Result<WriteOutcome, DiagnosticSet> {
-        validate_new_record_key(new_key)?;
-        let Some(target_ref) = self.records.get_by_coordinate(actual_type, old_key) else {
-            return Err(DiagnosticSet::one(not_found(actual_type, old_key)));
-        };
-        if old_key == new_key {
-            return Ok(WriteOutcome::touch(target_ref.coordinate.clone()));
-        }
-        ensure_rename_key_available(self, actual_type, new_key, target_ref.id)?;
-
-        let target_id = target_ref.id;
-        let old_coordinate = target_ref.coordinate.clone();
-        let target_origin = target_ref.origin.clone();
-        let target_display_path = target_ref.display_path.clone();
-        let target_source = source_for_file(self, &target_display_path)?;
-        let target_writer = lookup_source_writer(registry, &target_source)?;
-        let compiled_schema = self.compiled_schema();
-        let ctx = WriteContext {
-            project_root: &self.project.root_dir,
-            schema: &compiled_schema,
-            model: Some(&self.model),
-        };
-        let target_request = RenameRecordRequest {
-            origin: &target_origin,
-            old_key,
-            new_key,
-            actual_type,
-            source: &target_source,
-            schema: &compiled_schema,
-        };
-
-        let reference_actions = reference_update_actions(self, registry, target_id, new_key)?;
-        let rewrite_actions = source_rewrite_actions(self, registry, target_id, old_key, new_key)?;
-        let transaction = LocalFileTransaction::begin(
-            std::iter::once(&target_source)
-                .chain(reference_actions.iter().map(|action| action.source()))
-                .chain(rewrite_actions.iter().map(|action| action.source())),
-        )?;
-
-        if let Err(mut diagnostics) = target_writer.rename_record(ctx, &target_request) {
-            rollback_transaction(transaction, &mut diagnostics);
-            return Err(diagnostics);
-        }
-        for action in &reference_actions {
-            let request = action.request.as_request(&compiled_schema);
-            if let Err(mut diagnostics) = action.writer.write_field(ctx, &request) {
-                rollback_transaction(transaction, &mut diagnostics);
-                return Err(diagnostics);
-            }
-        }
-        for action in &rewrite_actions {
-            let request = action.request.as_request(&compiled_schema);
-            if let Err(mut diagnostics) = action.writer.rewrite_record_references(ctx, &request) {
-                rollback_transaction(transaction, &mut diagnostics);
-                return Err(diagnostics);
-            }
-        }
-
-        let new_session = match rebuild_session_after_write(self, registry) {
-            Ok(session) => session,
-            Err(mut diagnostics) => {
-                rollback_transaction(transaction, &mut diagnostics);
-                return Err(diagnostics);
-            }
-        };
-        let new_coordinate = RecordCoordinate::new(actual_type, new_key);
-        let diagnostics = new_session.diagnostics.as_set().clone();
-        *self = new_session;
-        Ok(WriteOutcome {
-            touched: vec![old_coordinate.clone(), new_coordinate.clone()],
-            inserted: None,
-            deleted: None,
-            renamed: Some((old_coordinate, new_coordinate)),
-            diagnostics,
-        })
-    }
-
-    /// Persist a new top-level record and rebuild the session.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`DiagnosticSet`] when the file is unknown, no writer is
-    /// registered, the writer rejects insertion, or the rebuild fails.
-    pub fn insert_record(
-        &mut self,
-        registry: &ProviderRegistry,
-        file: &str,
-        sheet: Option<&str>,
-        record_key: &str,
-        actual_type: &str,
-        fields: &std::collections::BTreeMap<String, CfdValue>,
-    ) -> Result<WriteOutcome, DiagnosticSet> {
-        let source = source_for_file(self, file)?;
-        ensure_insert_type_can_insert(self, actual_type)?;
-        ensure_insert_key_available(self, actual_type, record_key)?;
-        validate_insert_fields(self, actual_type, record_key, fields)?;
-        let sheet = sheet
-            .map(ToOwned::to_owned)
-            .or_else(|| sheet_for_file_type(self, file, actual_type));
-        let writer = lookup_source_writer(registry, &source)?;
-        let compiled_schema = self.compiled_schema();
-        let request = InsertRecordRequest {
-            source: &source,
-            sheet: sheet.as_deref(),
-            record_key,
-            actual_type,
-            fields,
-            schema: &compiled_schema,
-        };
-        let ctx = WriteContext {
-            project_root: &self.project.root_dir,
-            schema: &compiled_schema,
-            model: Some(&self.model),
-        };
-        writer.insert_record(ctx, &request)?;
-
-        let new_session = rebuild_session_after_write(self, registry)?;
-        let inserted = RecordCoordinate::new(actual_type, record_key);
-        let diagnostics = new_session.diagnostics.as_set().clone();
-        *self = new_session;
-        Ok(WriteOutcome {
-            touched: vec![inserted.clone()],
-            inserted: Some(inserted),
-            deleted: None,
-            renamed: None,
-            diagnostics,
-        })
-    }
-
-    /// Delete a top-level record and rebuild the session.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`DiagnosticSet`] when the record is unknown, no writer is
-    /// registered, the writer rejects deletion, or the rebuild fails.
-    pub fn delete_record(
-        &mut self,
-        registry: &ProviderRegistry,
-        actual_type: &str,
-        key: &str,
-    ) -> Result<WriteOutcome, DiagnosticSet> {
-        let Some(record_ref) = self.records.get_by_coordinate(actual_type, key) else {
-            return Err(DiagnosticSet::one(not_found(actual_type, key)));
-        };
-        let Some(record) = self.model.record(record_ref.id) else {
-            return Err(DiagnosticSet::one(not_found(actual_type, key)));
-        };
-        let coordinate = record_ref.coordinate.clone();
-        let display_path = record_ref.display_path.clone();
-        let origin = record.origin.clone();
-        let source = source_for_file(self, &display_path)?;
-        let writer = lookup_source_writer(registry, &source)?;
-        let compiled_schema = self.compiled_schema();
-        let request = DeleteRecordRequest {
-            origin: &origin,
-            record_key: key,
-            actual_type,
-            source: &source,
-        };
-        let ctx = WriteContext {
-            project_root: &self.project.root_dir,
-            schema: &compiled_schema,
-            model: Some(&self.model),
-        };
-        writer.delete_record(ctx, &request)?;
-
-        let new_session = rebuild_session_after_write(self, registry)?;
-        let diagnostics = new_session.diagnostics.as_set().clone();
-        *self = new_session;
-        Ok(WriteOutcome {
-            touched: Vec::new(),
-            inserted: None,
-            deleted: Some(coordinate),
-            renamed: None,
-            diagnostics,
-        })
-    }
-}
-
-fn rollback_transaction(
-    transaction: Option<LocalFileTransaction>,
-    diagnostics: &mut DiagnosticSet,
-) {
-    if let Some(transaction) = transaction {
-        transaction.rollback_into(diagnostics);
-    }
-}
-
-/// Pick the sheet name to target when inserting a record into a table source.
-fn sheet_for_file_type(session: &ProjectSession, file: &str, actual_type: &str) -> Option<String> {
-    for id in session.records.ids_in_file(file) {
-        let Some(record_ref) = session.records.get(*id) else {
-            continue;
-        };
-        let RecordOrigin::Table { sheet, .. } = &record_ref.origin else {
-            continue;
-        };
-        if record_ref.coordinate.actual_type == actual_type {
-            return Some(sheet.clone());
-        }
-    }
-    None
-}
-
-fn validate_new_record_key(key: &str) -> Result<(), DiagnosticSet> {
-    write_rules::validate_record_key(key, "WRITE-RENAME")
-}
-
-fn ensure_insert_key_available(
-    session: &ProjectSession,
-    actual_type: &str,
-    key: &str,
-) -> Result<(), DiagnosticSet> {
-    write_rules::ensure_record_key_available(
-        session,
-        actual_type,
-        key,
-        None,
-        "WRITE-INSERT",
-        "WRITE",
-    )
-}
-
-fn ensure_insert_type_can_insert(
-    session: &ProjectSession,
-    actual_type: &str,
-) -> Result<(), DiagnosticSet> {
-    let compiled_schema = session.compiled_schema();
-    let Some(schema_type) = compiled_schema.type_meta(actual_type) else {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-INSERT",
-            "WRITE",
-            format!("unknown insert type `{actual_type}`"),
-        )));
-    };
-    if schema_type.is_abstract {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-INSERT",
-            "WRITE",
-            format!("abstract type `{actual_type}` cannot be inserted"),
-        )));
-    }
-    if schema_type.is_singleton {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-INSERT",
-            "WRITE",
-            format!("singleton type `{actual_type}` cannot be inserted"),
-        )));
-    }
-    Ok(())
-}
-
-fn validate_insert_fields(
-    session: &ProjectSession,
-    actual_type: &str,
-    record_key: &str,
-    fields: &std::collections::BTreeMap<String, CfdValue>,
-) -> Result<(), DiagnosticSet> {
-    let compiled_schema = session.compiled_schema();
-    if !compiled_schema.has_type(actual_type) {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-INSERT",
-            "WRITE",
-            format!("unknown insert type `{actual_type}`"),
-        )));
-    }
-    for (name, value) in fields {
-        let Some(field_ty) = compiled_schema.field_type(actual_type, name) else {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "WRITE-INSERT",
-                "WRITE",
-                format!("unknown field `{name}` on type `{actual_type}`"),
-            )));
-        };
-        write_rules::validate_value_for_insert_in_view(
-            session,
-            &compiled_schema,
-            actual_type,
-            record_key,
-            field_ty,
-            value,
-            "WRITE-SHAPE",
-            "WRITE",
-        )?;
-    }
-    Ok(())
-}
-
-fn ensure_rename_key_available(
-    session: &ProjectSession,
-    actual_type: &str,
-    new_key: &str,
-    current_record: CfdRecordId,
-) -> Result<(), DiagnosticSet> {
-    write_rules::ensure_record_key_available(
-        session,
-        actual_type,
-        new_key,
-        Some(current_record),
-        "WRITE-RENAME",
-        "WRITE",
-    )
 }

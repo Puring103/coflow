@@ -7,10 +7,6 @@ use coflow_data_model::{
 
 use crate::ProjectSession;
 
-pub fn validate_record_key(key: &str, code: &'static str) -> Result<(), DiagnosticSet> {
-    validate_record_key_for_stage(key, code, "WRITE")
-}
-
 fn validate_record_key_for_stage(
     key: &str,
     code: &'static str,
@@ -24,25 +20,6 @@ fn validate_record_key_for_stage(
         ));
     }
     Ok(())
-}
-
-pub fn ensure_record_key_available(
-    session: &ProjectSession,
-    actual_type: &str,
-    key: &str,
-    current_record: Option<CfdRecordId>,
-    code: &'static str,
-    stage: &'static str,
-) -> Result<(), DiagnosticSet> {
-    ensure_record_key_available_with_conflict_code(
-        session,
-        actual_type,
-        key,
-        current_record,
-        code,
-        code,
-        stage,
-    )
 }
 
 pub fn ensure_record_key_available_with_conflict_code(
@@ -180,17 +157,6 @@ pub(crate) fn expected_type_for_cfd_path_in_view(
     Ok(current)
 }
 
-pub fn validate_value_for_write(
-    session: &ProjectSession,
-    expected: &CftSchemaTypeRef,
-    value: &CfdValue,
-    code: &'static str,
-    stage: &'static str,
-) -> Result<(), DiagnosticSet> {
-    let schema = session.compiled_schema();
-    validate_value_for_write_in_view(session, &schema, expected, value, code, stage)
-}
-
 pub(crate) fn validate_value_for_write_in_view(
     session: &ProjectSession,
     schema: &CompiledSchema,
@@ -199,7 +165,28 @@ pub(crate) fn validate_value_for_write_in_view(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    validate_value_semantics(session, schema, expected, value, None, code, stage)
+    validate_value_semantics(session, schema, expected, value, &[], None, code, stage)
+}
+
+pub(crate) fn validate_value_for_write_with_pending_in_view(
+    session: &ProjectSession,
+    schema: &CompiledSchema,
+    expected: &CftSchemaTypeRef,
+    value: &CfdValue,
+    pending_records: &[crate::RecordCoordinate],
+    code: &'static str,
+    stage: &'static str,
+) -> Result<(), DiagnosticSet> {
+    validate_value_semantics(
+        session,
+        schema,
+        expected,
+        value,
+        pending_records,
+        None,
+        code,
+        stage,
+    )
 }
 
 pub(crate) fn validate_value_for_insert_in_view(
@@ -209,6 +196,7 @@ pub(crate) fn validate_value_for_insert_in_view(
     inserted_key: &str,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
+    pending_records: &[crate::RecordCoordinate],
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
@@ -217,6 +205,7 @@ pub(crate) fn validate_value_for_insert_in_view(
         schema,
         expected,
         value,
+        pending_records,
         Some(PendingInsertRef {
             actual_type: inserted_actual_type,
             key: inserted_key,
@@ -231,11 +220,15 @@ fn validate_value_semantics(
     schema: &CompiledSchema,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
+    pending_records: &[crate::RecordCoordinate],
     pending_insert: Option<PendingInsertRef<'_>>,
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    let context = ProjectValueSemanticContext { session };
+    let context = ProjectValueSemanticContext {
+        session,
+        pending_records,
+    };
     coflow_data_model::validate_complete_value_for_schema(
         schema,
         &context,
@@ -275,6 +268,7 @@ pub(crate) fn ensure_object_type_assignable_in_view(
 
 struct ProjectValueSemanticContext<'a> {
     session: &'a ProjectSession,
+    pending_records: &'a [crate::RecordCoordinate],
 }
 
 impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
@@ -291,6 +285,16 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
             .model
             .record(id)
             .map(coflow_data_model::CfdRecord::actual_type)
+    }
+
+    fn pending_record_actual_type(&self, domain_id: CfdDomainId, key: &str) -> Option<&str> {
+        self.pending_records
+            .iter()
+            .find(|record| {
+                record.key == key
+                    && self.session.model.type_domain_id(&record.actual_type) == Some(domain_id)
+            })
+            .map(|record| record.actual_type.as_str())
     }
 }
 

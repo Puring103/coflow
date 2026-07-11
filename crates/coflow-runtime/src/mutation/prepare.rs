@@ -22,7 +22,6 @@ use super::{
 
 pub(super) fn prepare_mutation_request(request: MutationRequest) -> PreparedMutation {
     let MutationRequest {
-        check_after_write: _,
         stop_on_write_error,
         ops,
     } = request;
@@ -119,6 +118,7 @@ impl ProjectSession {
 pub(super) fn prepare_one(
     session: &ProjectSession,
     op: MutationOp,
+    pending_records: &[RecordCoordinate],
 ) -> Result<PreparedMutationOp, DiagnosticSet> {
     match op {
         MutationOp::InsertRecord {
@@ -132,8 +132,23 @@ pub(super) fn prepare_one(
             ensure_source_file(session, &file)?;
             ensure_type_can_insert(session, &actual_type)?;
             ensure_not_dimension_storage_type(session, &actual_type, "insert")?;
-            ensure_record_key_can_insert(session, &actual_type, &key, None)?;
-            let fields = prepare_insert_fields(session, &actual_type, fields, materialization)?;
+            ensure_record_key_available(
+                session,
+                &actual_type,
+                &key,
+                None,
+                "MUTATION-INSERT",
+                "MUTATION-INSERT-CONFLICT",
+            )?;
+            let fields =
+                prepare_insert_fields(
+                    session,
+                    &actual_type,
+                    &key,
+                    fields,
+                    materialization,
+                    pending_records,
+                )?;
             Ok(PreparedMutationOp::InsertRecord {
                 file,
                 sheet,
@@ -150,11 +165,13 @@ pub(super) fn prepare_one(
         } => {
             let expected = expected_value_for_path(session, &record, &path)?;
             let path = validated_write_path(&path)?;
-            let (write_file, path) = effective_write_target_for_set_field(session, &record, &path)?;
+            let (write_record, write_file, path) =
+                effective_write_target_for_set_field(session, &record, &path)?;
             ensure_file_guard_for_file(&record, &write_file, file.as_deref())?;
-            let value = coerce_mutation_value(session, &expected.ty, value)?;
+            let value = coerce_mutation_value(session, &expected.ty, value, pending_records)?;
             Ok(PreparedMutationOp::SetField {
                 record,
+                write_record,
                 write_file,
                 path,
                 value,
@@ -166,6 +183,26 @@ pub(super) fn prepare_one(
             new_key,
         } => {
             ensure_file_guard(session, &record, file.as_deref())?;
+            let current_record = session
+                .records
+                .id_for_coordinate(&record.actual_type, &record.key)
+                .ok_or_else(|| {
+                    one_mutation_error(
+                        "MUTATION-RENAME",
+                        format!(
+                            "record `{}.{}` was not found",
+                            record.actual_type, record.key
+                        ),
+                    )
+                })?;
+            ensure_record_key_available(
+                session,
+                &record.actual_type,
+                &new_key,
+                Some(current_record),
+                "MUTATION-RENAME",
+                "MUTATION-RENAME-CONFLICT",
+            )?;
             let report_file = file.or_else(|| record_file(session, &record).map(ToOwned::to_owned));
             Ok(PreparedMutationOp::RenameRecord {
                 record,
@@ -185,11 +222,243 @@ pub(super) fn prepare_one(
     }
 }
 
+pub(super) fn prepare_set_on_pending_insert(
+    session: &ProjectSession,
+    insert_file: &str,
+    actual_type: &str,
+    key: &str,
+    fields: &mut BTreeMap<String, CfdValue>,
+    file_guard: Option<&str>,
+    path: &[CfdPathSegment],
+    value: super::MutationValue,
+    pending_records: &[RecordCoordinate],
+) -> Result<PreparedMutationOp, DiagnosticSet> {
+    ensure_file_guard_for_file(
+        &RecordCoordinate::new(actual_type, key),
+        insert_file,
+        file_guard,
+    )?;
+    let expected = write_rules::expected_type_for_cfd_path(
+        &session.schema,
+        actual_type,
+        path,
+        "MUTATION-PATH",
+        "MUTATION",
+    )?;
+    let path = validated_write_path(path)?;
+    let value = coerce_mutation_value(session, &expected, value, pending_records)?;
+    set_pending_insert_value(fields, &path, value)?;
+    Ok(PreparedMutationOp::FoldedSetField {
+        record: RecordCoordinate::new(actual_type, key),
+        write_file: insert_file.to_string(),
+    })
+}
+
+pub(super) fn prepare_rename_on_pending_insert(
+    session: &ProjectSession,
+    insert_file: &str,
+    record: &RecordCoordinate,
+    file_guard: Option<&str>,
+    new_key: &str,
+) -> Result<PreparedMutationOp, DiagnosticSet> {
+    ensure_file_guard_for_file(record, insert_file, file_guard)?;
+    ensure_record_key_available(
+        session,
+        &record.actual_type,
+        new_key,
+        None,
+        "MUTATION-RENAME",
+        "MUTATION-RENAME-CONFLICT",
+    )?;
+    Ok(PreparedMutationOp::FoldedRenameRecord {
+        old_record: record.clone(),
+        new_record: RecordCoordinate::new(&record.actual_type, new_key),
+        write_file: insert_file.to_string(),
+    })
+}
+
+pub(super) fn prepare_delete_on_pending_insert(
+    insert_file: &str,
+    record: &RecordCoordinate,
+    file_guard: Option<&str>,
+) -> Result<PreparedMutationOp, DiagnosticSet> {
+    ensure_file_guard_for_file(record, insert_file, file_guard)?;
+    Ok(PreparedMutationOp::FoldedDeleteRecord {
+        record: record.clone(),
+        write_file: insert_file.to_string(),
+    })
+}
+
+pub(super) fn rename_pending_insert_references(
+    session: &ProjectSession,
+    target_actual_type: &str,
+    host_actual_type: &str,
+    fields: &mut BTreeMap<String, CfdValue>,
+    old_key: &str,
+    new_key: &str,
+) -> Result<(), DiagnosticSet> {
+    let schema = session.compiled_schema();
+    for (name, value) in fields {
+        let field = schema_field(&schema, host_actual_type, name)?;
+        rename_pending_value_references(
+            &schema,
+            target_actual_type,
+            &field.ty_ref,
+            value,
+            old_key,
+            new_key,
+        );
+    }
+    Ok(())
+}
+
+pub(super) fn rename_prepared_field_references(
+    session: &ProjectSession,
+    target_actual_type: &str,
+    host_actual_type: &str,
+    path: &[WriteFieldPathSegment],
+    value: &mut CfdValue,
+    old_key: &str,
+    new_key: &str,
+) -> Result<(), DiagnosticSet> {
+    let schema = session.compiled_schema();
+    let expected = write_rules::expected_type_for_cfd_path_in_view(
+        &schema,
+        host_actual_type,
+        path,
+        "MUTATION-PATH",
+        "MUTATION",
+    )?;
+    rename_pending_value_references(
+        &schema,
+        target_actual_type,
+        &expected,
+        value,
+        old_key,
+        new_key,
+    );
+    Ok(())
+}
+
+fn rename_pending_value_references(
+    schema: &coflow_cft::CompiledSchema,
+    target_actual_type: &str,
+    expected: &CftSchemaTypeRef,
+    value: &mut CfdValue,
+    old_key: &str,
+    new_key: &str,
+) {
+    match (expected, value) {
+        (CftSchemaTypeRef::Nullable(inner), value) => rename_pending_value_references(
+            schema,
+            target_actual_type,
+            inner,
+            value,
+            old_key,
+            new_key,
+        ),
+        (CftSchemaTypeRef::Ref(target_type), CfdValue::Ref(key))
+            if key == old_key && schema.is_assignable(target_actual_type, target_type) =>
+        {
+            *key = new_key.to_string();
+        }
+        (CftSchemaTypeRef::Array(inner), CfdValue::Array(items)) => {
+            for item in items {
+                rename_pending_value_references(
+                    schema,
+                    target_actual_type,
+                    inner,
+                    item,
+                    old_key,
+                    new_key,
+                );
+            }
+        }
+        (CftSchemaTypeRef::Dict(_, item_type), CfdValue::Dict(entries)) => {
+            for (_, item) in entries {
+                rename_pending_value_references(
+                    schema,
+                    target_actual_type,
+                    item_type,
+                    item,
+                    old_key,
+                    new_key,
+                );
+            }
+        }
+        (CftSchemaTypeRef::Named(_), CfdValue::Object(object)) => {
+            let actual_type = object.actual_type().to_string();
+            for (name, field_value) in object.fields_mut() {
+                let Some(field_type) = schema.field_type(&actual_type, name) else {
+                    continue;
+                };
+                rename_pending_value_references(
+                    schema,
+                    target_actual_type,
+                    field_type,
+                    field_value,
+                    old_key,
+                    new_key,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn set_pending_insert_value(
+    fields: &mut BTreeMap<String, CfdValue>,
+    path: &[CfdPathSegment],
+    value: CfdValue,
+) -> Result<(), DiagnosticSet> {
+    let Some(CfdPathSegment::Field(field)) = path.first() else {
+        return Err(one_path_error(
+            "pending insert paths must start with a field name",
+        ));
+    };
+    if path.len() == 1 {
+        fields.insert(field.clone(), value);
+        return Ok(());
+    }
+    let Some(current) = fields.get_mut(field) else {
+        return Err(one_path_error(format!(
+            "field `{field}` has no materialized value for a nested pending-insert write"
+        )));
+    };
+    set_nested_value(current, &path[1..], value)
+}
+
+fn set_nested_value(
+    current: &mut CfdValue,
+    path: &[CfdPathSegment],
+    value: CfdValue,
+) -> Result<(), DiagnosticSet> {
+    let Some((segment, rest)) = path.split_first() else {
+        *current = value;
+        return Ok(());
+    };
+    let next = match (current, segment) {
+        (CfdValue::Object(object), CfdPathSegment::Field(field)) => {
+            object.fields.get_mut(field)
+        }
+        (CfdValue::Array(items), CfdPathSegment::Index(index)) => items.get_mut(*index),
+        (CfdValue::Dict(entries), CfdPathSegment::DictKey(key)) => entries
+            .iter_mut()
+            .find(|(entry_key, _)| crate::dict_key_path_text(entry_key) == *key)
+            .map(|(_, entry_value)| entry_value),
+        _ => None,
+    }
+    .ok_or_else(|| one_path_error("pending insert nested path was not materialized"))?;
+    set_nested_value(next, rest, value)
+}
+
 fn prepare_insert_fields(
     session: &ProjectSession,
     actual_type: &str,
+    key: &str,
     fields: MutationFields,
     materialization: DefaultMaterialization,
+    pending_records: &[RecordCoordinate],
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
     let provided = prepare_provided_insert_fields(session, actual_type, fields)?;
     let provided_names = provided.keys().cloned().collect::<BTreeSet<_>>();
@@ -200,6 +469,21 @@ fn prepare_insert_fields(
         &provided_names,
     )?;
     out.extend(provided);
+    let schema = session.compiled_schema();
+    for (name, value) in &out {
+        let field = schema_field(&schema, actual_type, name)?;
+        write_rules::validate_value_for_insert_in_view(
+            session,
+            &schema,
+            actual_type,
+            key,
+            &field.ty_ref,
+            value,
+            pending_records,
+            "MUTATION-SHAPE",
+            "MUTATION",
+        )?;
+    }
     Ok(out)
 }
 
@@ -264,7 +548,10 @@ fn effective_write_target_for_set_field(
     session: &ProjectSession,
     coordinate: &RecordCoordinate,
     path: &[WriteFieldPathSegment],
-) -> Result<(String, Vec<WriteFieldPathSegment>), DiagnosticSet> {
+) -> Result<
+    (RecordCoordinate, String, Vec<WriteFieldPathSegment>),
+    DiagnosticSet,
+> {
     let record_ref = session
         .records
         .get_by_coordinate(&coordinate.actual_type, &coordinate.key)
@@ -384,19 +671,21 @@ fn ensure_not_dimension_storage_type(
     Ok(())
 }
 
-fn ensure_record_key_can_insert(
+fn ensure_record_key_available(
     session: &ProjectSession,
     actual_type: &str,
     key: &str,
     current_record: Option<coflow_data_model::CfdRecordId>,
+    code: &'static str,
+    conflict_code: &'static str,
 ) -> Result<(), DiagnosticSet> {
     write_rules::ensure_record_key_available_with_conflict_code(
         session,
         actual_type,
         key,
         current_record,
-        "MUTATION-INSERT",
-        "MUTATION-INSERT-CONFLICT",
+        code,
+        conflict_code,
         "MUTATION",
     )
 }

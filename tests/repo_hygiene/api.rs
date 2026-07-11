@@ -364,6 +364,52 @@ fn api_writer_contract_is_split_by_responsibility() {
 }
 
 #[test]
+fn api_source_writers_declare_transaction_compensation() {
+    let writer =
+        std::fs::read_to_string("crates/coflow-api/src/writer.rs").expect("read API writer");
+    let transaction = std::fs::read_to_string("crates/coflow-api/src/writer/transaction.rs")
+        .expect("read writer transaction contract");
+    let lark = std::fs::read_to_string("crates/coflow-loader-lark/src/write.rs")
+        .expect("read Lark writer");
+
+    assert!(
+        writer.contains("fn begin_transaction(")
+            && writer.contains("SourceTransaction::RuntimeSnapshot")
+            && writer.contains("SourceTransaction::Unsupported"),
+        "SourceWriter must require an explicit local snapshot or remote compensation contract"
+    );
+    for expected in [
+        "pub trait SourceTransactionCompensation",
+        "fn abort(&mut self)",
+        "fn compensate(&mut self)",
+        "fn commit(&mut self)",
+        "RuntimeSnapshot",
+        "Compensation(",
+        "Unsupported",
+    ] {
+        assert!(
+            transaction.contains(expected),
+            "writer transaction contract should contain `{expected}`"
+        );
+    }
+    assert!(
+        lark.contains("Ok(SourceTransaction::Unsupported)"),
+        "remote writers without compensation must explicitly reject atomic mutation"
+    );
+    for capability in [
+        "can_edit_field: false",
+        "can_edit_key: false",
+        "can_insert_record: false",
+        "can_delete_record: false",
+    ] {
+        assert!(
+            lark.contains(capability),
+            "unsupported remote mutation must not advertise `{capability}`"
+        );
+    }
+}
+
+#[test]
 fn api_table_operations_do_not_expose_schema_owner() {
     let operations =
         std::fs::read_to_string("crates/coflow-api/src/operations.rs").expect("read operations");

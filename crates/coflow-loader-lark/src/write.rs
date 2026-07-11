@@ -3,7 +3,7 @@ use coflow_api::{
     RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter,
     SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions, TableManager,
     TableManagerDescriptor, TableOperationResult, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor, SourceTransaction,
 };
 use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{
@@ -28,11 +28,11 @@ pub static LARK_SHEET_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     display_name: "Lark Sheet",
     capabilities: WriterCapabilities {
         provider_id: String::new(),
-        can_edit_field: true,
-        can_edit_key: true,
-        can_insert_record: true,
-        can_delete_record: true,
-        requires_full_refresh_after_write: true,
+        can_edit_field: false,
+        can_edit_key: false,
+        can_insert_record: false,
+        can_delete_record: false,
+        requires_full_refresh_after_write: false,
         is_remote: true,
     },
 };
@@ -51,6 +51,14 @@ where
 {
     fn descriptor(&self) -> &'static WriterDescriptor {
         &LARK_SHEET_WRITER_DESCRIPTOR
+    }
+
+    fn begin_transaction(
+        &self,
+        _ctx: WriteContext<'_>,
+        _source: &coflow_api::ResolvedSource,
+    ) -> Result<SourceTransaction, DiagnosticSet> {
+        Ok(SourceTransaction::Unsupported)
     }
 
     fn write_field(

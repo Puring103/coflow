@@ -566,12 +566,12 @@ fn engine_record_index_keeps_rejected_source_rows() {
 
 #[test]
 fn engine_writes_use_cft_compiler_context_for_insert_schema_checks() {
-    let writes =
-        std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
+    let prepare = std::fs::read_to_string("crates/coflow-runtime/src/mutation/prepare.rs")
+        .expect("read mutation prepare");
 
     assert!(
-        writes.contains("session.compiled_schema()") || writes.contains("self.compiled_schema()"),
-        "engine writes should borrow the session's compiled schema view"
+        prepare.contains("session.compiled_schema()"),
+        "mutation preparation should borrow the session's compiled schema view"
     );
     for forbidden in [
         "session.schema.resolve_type",
@@ -580,8 +580,8 @@ fn engine_writes_use_cft_compiler_context_for_insert_schema_checks() {
         ".types.contains_key(",
     ] {
         assert!(
-            !writes.contains(forbidden),
-            "engine writes should not use raw schema query `{forbidden}`"
+            !prepare.contains(forbidden),
+            "mutation preparation should not use raw schema query `{forbidden}`"
         );
     }
 }
@@ -624,7 +624,6 @@ fn engine_write_target_resolution_does_not_live_in_writes_rs() {
         .expect("read engine write target helpers");
 
     for expected in [
-        "pub(super) fn guess_new_coordinate",
         "pub(super) fn is_id_path",
         "pub(super) struct WriteTarget",
         "pub(super) fn write_target_for_path",
@@ -638,6 +637,41 @@ fn engine_write_target_resolution_does_not_live_in_writes_rs() {
             "engine write target helper `{expected}` should not live in writes.rs"
         );
     }
+    assert!(
+        !target.contains("guess_new_coordinate"),
+        "post-write coordinates must come from explicit mutation outcomes, not inference"
+    );
+}
+
+#[test]
+fn engine_provider_io_lives_in_the_write_stage_module() {
+    let writes =
+        std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
+    let stage = std::fs::read_to_string("crates/coflow-runtime/src/writes/stage.rs")
+        .expect("read engine write stage");
+
+    for expected in [
+        "pub(crate) fn preflight_mutation_op",
+        "pub(crate) fn stage_mutation_op",
+        "fn stage_write_field",
+        "fn stage_rename_record_key",
+        "fn stage_insert_record",
+        "fn stage_delete_record",
+    ] {
+        assert!(
+            stage.contains(expected),
+            "provider I/O entry `{expected}` should live in writes/stage.rs"
+        );
+        assert!(
+            !writes.contains(expected),
+            "provider I/O entry `{expected}` should not live in writes.rs"
+        );
+    }
+    assert!(
+        !stage.contains("rebuild_session_after_write")
+            && !stage.contains("MutationTransaction"),
+        "provider staging must not rebuild or own transaction publication"
+    );
 }
 
 #[test]
@@ -940,10 +974,9 @@ fn engine_mutation_apply_does_not_live_in_mutation_mod_rs() {
         .expect("read mutation apply module");
 
     for expected in [
-        "fn apply_prepared_mutation",
         "pub fn apply_mutation",
-        "fn apply_prepared_one",
-        "enum MutationApplyError",
+        "fn blocking_rebuild_diagnostics",
+        "fn report_without_publish",
     ] {
         assert!(
             apply.contains(expected),
@@ -957,6 +990,63 @@ fn engine_mutation_apply_does_not_live_in_mutation_mod_rs() {
     assert!(
         !apply.contains("fn session_flat_diagnostics") && !apply.contains("fn flat_diagnostics"),
         "mutation apply should use the diagnostic interface instead of owning flat conversion"
+    );
+    assert_eq!(
+        apply.matches("rebuild_after_mutation(self, registry)").count(),
+        1,
+        "one mutation transaction must build exactly one candidate generation"
+    );
+    for expected in [
+        "preflight_mutation_op",
+        "MutationTransaction::begin",
+        "transaction.compensate_into",
+        "transaction.commit()",
+    ] {
+        assert!(
+            apply.contains(expected),
+            "mutation publication must retain transaction step `{expected}`"
+        );
+    }
+    for forbidden in [
+        ".write_field(ctx",
+        ".insert_record(ctx",
+        ".rename_record(ctx",
+        ".delete_record(ctx",
+    ] {
+        assert!(
+            !apply.contains(forbidden),
+            "mutation publication must delegate provider I/O instead of calling `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn engine_mutation_batch_planning_lives_in_its_own_module() {
+    let mutation = std::fs::read_to_string("crates/coflow-runtime/src/mutation/mod.rs")
+        .expect("read mutation module");
+    let apply = std::fs::read_to_string("crates/coflow-runtime/src/mutation/apply.rs")
+        .expect("read mutation apply module");
+    let plan = std::fs::read_to_string("crates/coflow-runtime/src/mutation/plan.rs")
+        .expect("read mutation plan module");
+
+    for expected in [
+        "pub(super) struct PlannedMutationOp",
+        "pub(super) fn plan_mutations",
+        "fn fold_pending_insert_rename",
+        "fn fold_pending_insert_delete",
+    ] {
+        assert!(
+            plan.contains(expected),
+            "batch planner item `{expected}` should live in mutation/plan.rs"
+        );
+        assert!(
+            !apply.contains(expected) && !mutation.contains(expected),
+            "batch planner item `{expected}` should not leak into apply.rs or mod.rs"
+        );
+    }
+    assert!(
+        !apply.contains("pending_inserts") && !apply.contains("BTreeMap"),
+        "mutation publication should not own pending-record planning state"
     );
 }
 
