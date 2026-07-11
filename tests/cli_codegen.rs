@@ -97,7 +97,7 @@ fn codegen_csharp_uses_messagepack_loader_when_data_output_is_messagepack() {
 }
 
 #[test]
-fn codegen_csharp_preflight_outputs_multiple_diagnostics_without_writing_files() {
+fn codegen_csharp_validation_outputs_multiple_diagnostics_without_writing_files() {
     let root = temp_project_dir("codegen-preflight");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");

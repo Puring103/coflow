@@ -11,6 +11,7 @@ use super::*;
 use coflow_cft::{CftContainer, ModuleId};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::PathBuf;
 
 fn compile_schema(source: &str) -> Result<CftContainer, String> {
     let mut container = CftContainer::new();
@@ -805,15 +806,106 @@ fn codegen_json_allows_cyclic_table_references() -> Result<(), String> {
 }
 
 #[test]
+fn codegen_json_allows_mutually_cyclic_table_references() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Left {
+                right: &Right;
+            }
+
+            type Right {
+                left: &Left;
+            }
+        "#,
+    )?;
+
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let database = generated_file(&files, "CoflowTables.cs")?;
+    require_contains(database, "var context = new LoadContext(leftIndex, rightIndex);")?;
+    require_contains(database, "Left.HydrateAll(lefts, leftRawRows, context);")?;
+    require_contains(database, "Right.HydrateAll(rights, rightRawRows, context);")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_handles_self_recursive_inline_types_iteratively() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Node {
+                child: Node?;
+            }
+        "#,
+    )?;
+
+    let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let node = generated_file(&files, "Node.cs")?;
+    require_contains(node, "public Node? Child { get; }")?;
+    require_contains(node, "Node.LoadInline(ref reader, context)")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_handles_mutually_recursive_inline_types_iteratively() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Left {
+                right: Right?;
+            }
+
+            type Right {
+                left: Left?;
+            }
+        "#,
+    )?;
+
+    let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    require_contains(generated_file(&files, "Left.cs")?, "public Right? Right { get; }")?;
+    require_contains(generated_file(&files, "Right.cs")?, "public Left? Left { get; }")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_messagepack_rejects_self_referencing_table_component() -> Result<(), String> {
+    let schema = compile_schema("type Item { next: &Item; }")?;
+    let error = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .expect_err("MessagePack immediate reference loading must reject a table self-cycle");
+    require_contains(
+        &error.to_string(),
+        "cyclic table reference component: Item -> Item",
+    )?;
+    Ok(())
+}
+
+#[test]
+fn codegen_messagepack_rejects_mutually_referencing_table_component() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Left { right: &Right; }
+            type Right { left: &Left; }
+        "#,
+    )?;
+    let error = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .expect_err("MessagePack immediate reference loading must reject a table cycle");
+    require_contains(
+        &error.to_string(),
+        "cyclic table reference component: Left -> Right -> Left",
+    )?;
+    Ok(())
+}
+
+#[test]
 fn codegen_messagepack_emits_coflow_tables_and_messagepack_loaders() -> Result<(), String> {
     let schema = compile_schema(
         r#"
-            type Reward {
-                amount: int;
-            }
-
             type Item {
                 reward: &Reward;
+            }
+
+            type Reward {
+                amount: int;
             }
         "#,
     )?;
@@ -824,6 +916,16 @@ fn codegen_messagepack_emits_coflow_tables_and_messagepack_loaders() -> Result<(
     require_contains(database, "using MessagePack;")?;
     require_contains(database, "Path.Combine(dataDir, \"Reward.msgpack\")")?;
     require_contains(database, "Path.Combine(dataDir, \"Item.msgpack\")")?;
+    let reward_load = database
+        .find("Path.Combine(dataDir, \"Reward.msgpack\")")
+        .ok_or_else(|| "missing Reward load".to_string())?;
+    let item_load = database
+        .find("Path.Combine(dataDir, \"Item.msgpack\")")
+        .ok_or_else(|| "missing Item load".to_string())?;
+    assert!(
+        reward_load < item_load,
+        "MessagePack should load a referenced table before its dependent table"
+    );
     require_contains(database, "public Table<string, Item> TbItem { get; }")?;
     require_not_contains(database, "Newtonsoft.Json")?;
 
@@ -835,6 +937,78 @@ fn codegen_messagepack_emits_coflow_tables_and_messagepack_loaders() -> Result<(
         "context.GetReward(CoflowMessagePack.ReadString(ref reader))",
     )?;
     require_not_contains(item, "CoflowMessagePack.NextIsString")?;
+    Ok(())
+}
+
+#[test]
+fn provider_generation_preserves_multiple_validation_diagnostics() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            enum Rarity {
+                common_item,
+                commonItem,
+            }
+
+            type FooBar {}
+            type foo_bar {}
+        "#,
+    )?;
+    let compiled_schema = schema.compiled_schema();
+    let output = OutputSpec {
+        output_type: "csharp".to_string(),
+        dir: PathBuf::new(),
+        options: serde_json::json!({"namespace": "invalid namespace"}),
+    };
+    let diagnostics = CsharpCodeGenerator
+        .generate(
+            CodegenContext {
+                schema: &compiled_schema,
+                model: None,
+                data_format: "json",
+            },
+            &output,
+        )
+        .expect_err("invalid generated names should fail");
+    assert!(
+        diagnostics.diagnostics.len() >= 3,
+        "namespace, enum variant, and file collisions should remain separate diagnostics"
+    );
+    Ok(())
+}
+
+#[test]
+fn provider_generation_honors_database_class_option() -> Result<(), String> {
+    let schema = compile_schema("type Item {}")?;
+    let compiled_schema = schema.compiled_schema();
+    let output = OutputSpec {
+        output_type: "csharp".to_string(),
+        dir: PathBuf::new(),
+        options: serde_json::json!({"database_class": "RuntimeConfig"}),
+    };
+    let artifacts = CsharpCodeGenerator
+        .generate(
+            CodegenContext {
+                schema: &compiled_schema,
+                model: None,
+                data_format: "json",
+            },
+            &output,
+        )
+        .map_err(|diagnostics| {
+            diagnostics
+                .diagnostics
+                .into_iter()
+                .map(|diagnostic| diagnostic.message)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?;
+    assert!(
+        artifacts
+            .files()
+            .iter()
+            .any(|file| file.relative_path.as_os_str() == "RuntimeConfig.cs"),
+        "provider output should use the configured database class file name"
+    );
     Ok(())
 }
 

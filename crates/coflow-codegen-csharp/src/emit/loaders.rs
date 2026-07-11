@@ -13,14 +13,14 @@ use crate::emit::types::{
 };
 use crate::model::{CsharpLoadField, CsharpLoader, CsharpPolymorphicCase};
 use crate::names::escape_csharp_string;
-use crate::schema_context::CsharpSchemaContext;
+use crate::lowering::CsharpLoweringPlan;
 use crate::CsharpCodegenError;
 use coflow_cft::CftFieldMeta;
 use coflow_cft::CftSchemaTypeRef;
 
 pub(super) fn loader_method(
     type_name: &str,
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
 ) -> Result<CsharpLoader, CsharpCodegenError> {
     let ty = view.type_meta(type_name)?;
     let schema_fields = view.fields(type_name)?.collect::<Vec<_>>();
@@ -79,7 +79,7 @@ pub(super) fn loader_method(
 
 pub(super) fn polymorphic_loader(
     type_name: &str,
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
 ) -> Result<CsharpLoader, CsharpCodegenError> {
     let is_table = type_is_table(type_name, view);
     let is_singleton = view.type_meta(type_name)?.is_singleton;
@@ -104,7 +104,7 @@ pub(super) fn polymorphic_loader(
 
 fn polymorphic_cases(
     type_name: &str,
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
 ) -> Result<Vec<CsharpPolymorphicCase>, CsharpCodegenError> {
     Ok(view
         .concrete_assignable_types(type_name)?
@@ -121,7 +121,7 @@ fn load_field(
     owner_type_name: &str,
     owner_is_singleton: bool,
     used_local_names: &mut HashSet<String>,
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
 ) -> Result<CsharpLoadField, CsharpCodegenError> {
     let local_name = field_local_name(&field.name, used_local_names)?;
     let default_expr = default_value_expr(field.default.as_ref(), &field.ty_ref, view)?;
@@ -194,7 +194,7 @@ fn load_field(
 
 pub(super) fn field_type_requires_context(
     ty: &CftSchemaTypeRef,
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
 ) -> Result<bool, CsharpCodegenError> {
     let mut visited = BTreeSet::new();
     field_type_requires_context_inner(ty, view, &mut visited)
@@ -202,7 +202,7 @@ pub(super) fn field_type_requires_context(
 
 fn field_type_requires_context_inner(
     ty: &CftSchemaTypeRef,
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
     visited: &mut BTreeSet<String>,
 ) -> Result<bool, CsharpCodegenError> {
     match ty {
@@ -232,6 +232,6 @@ fn field_type_requires_context_inner(
     }
 }
 
-fn type_is_table(type_name: &str, view: &CsharpSchemaContext) -> bool {
+fn type_is_table(type_name: &str, view: &CsharpLoweringPlan<'_>) -> bool {
     view.is_ref_target_loadable(type_name)
 }

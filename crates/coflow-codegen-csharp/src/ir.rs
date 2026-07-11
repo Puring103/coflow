@@ -4,7 +4,7 @@ use crate::names::{
     camel_case, csharp_ident_error, csharp_member_ident_error, csharp_namespace_error,
     csharp_type_name, has_annotation, index_param_name, pluralize,
 };
-use crate::schema_context::CsharpSchemaContext;
+use crate::lowering::CsharpLoweringPlan;
 use crate::CsharpCodegenError;
 use coflow_cft::CompiledSchema;
 use serde::{Deserialize, Serialize};
@@ -34,10 +34,8 @@ pub struct CsharpIdAsEnumVariant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CsharpCodegenDiagnostic {
-    pub code: String,
-    pub stage: String,
-    pub message: String,
+struct CsharpCodegenDiagnostic {
+    message: String,
 }
 
 impl CsharpCodegenOptions {
@@ -77,32 +75,24 @@ pub fn build_project(
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
-    let view = CsharpSchemaContext::new(schema)
-        .with_int_32(options.int_32)
-        .with_float_32(options.float_32);
-    let diagnostics = preflight_csharp_codegen_with_view(&view, options, &id_as_enum_variants);
+    let view = CsharpLoweringPlan::lower(
+        schema,
+        options.int_32,
+        options.float_32,
+        non_empty_tables,
+    )?;
+    let diagnostics = validate_csharp_codegen(&view, options, &id_as_enum_variants);
     if !diagnostics.is_empty() {
-        return Err(CsharpCodegenError::new(
+        return Err(CsharpCodegenError::from_messages(
             diagnostics
                 .into_iter()
-                .map(|diagnostic| diagnostic.message)
-                .collect::<Vec<_>>()
-                .join("\n"),
+                .map(|diagnostic| diagnostic.message),
         ));
     }
-    let id_as_enum_names = view.id_as_enum_names();
-    let tables: Vec<String> = view
-        .table_names()
-        .into_iter()
-        .filter(|name| non_empty_tables.is_none_or(|set| set.contains(name)))
-        .collect();
-    let loadable: BTreeSet<String> = tables.iter().cloned().collect();
-    let view = CsharpSchemaContext::new(schema)
-        .with_int_32(options.int_32)
-        .with_float_32(options.float_32)
-        .with_loadable_tables(loadable);
+    let tables = view.table_names().to_vec();
 
-    let mut id_as_enum_variants = build_id_as_enums(&view, &id_as_enum_names, id_as_enum_variants);
+    let mut id_as_enum_variants =
+        build_id_as_enums(&view, view.id_as_enum_names(), id_as_enum_variants);
     let enums = view
         .cft_enum_metas()
         .map(|schema_enum| {
@@ -139,9 +129,10 @@ pub fn build_project(
     })
 }
 
-fn build_csharp_singletons(view: &CsharpSchemaContext) -> Vec<crate::model::CsharpSingleton> {
+fn build_csharp_singletons(view: &CsharpLoweringPlan<'_>) -> Vec<crate::model::CsharpSingleton> {
     view.singleton_type_names()
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|name| {
             let csharp_name = view.csharp_type_name(&name);
             crate::model::CsharpSingleton {
@@ -154,36 +145,25 @@ fn build_csharp_singletons(view: &CsharpSchemaContext) -> Vec<crate::model::Csha
         .collect()
 }
 
-#[must_use]
-pub fn preflight_csharp_codegen(
-    schema: &CompiledSchema,
-    options: &CsharpCodegenOptions,
-    id_as_enum_variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
-) -> Vec<CsharpCodegenDiagnostic> {
-    let view = CsharpSchemaContext::new(schema)
-        .with_int_32(options.int_32)
-        .with_float_32(options.float_32);
-    preflight_csharp_codegen_with_view(&view, options, id_as_enum_variants)
-}
-
-fn preflight_csharp_codegen_with_view(
-    view: &CsharpSchemaContext,
+fn validate_csharp_codegen(
+    view: &CsharpLoweringPlan<'_>,
     options: &CsharpCodegenOptions,
     id_as_enum_variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Vec<CsharpCodegenDiagnostic> {
     let mut diagnostics = Vec::new();
     validate_options(options, &mut diagnostics);
     validate_schema_names(view, &mut diagnostics);
-    let id_as_enum_names = view.id_as_enum_names();
-    validate_id_as_enum_variants(&id_as_enum_names, id_as_enum_variants, &mut diagnostics);
+    validate_id_as_enum_variants(
+        view.id_as_enum_names(),
+        id_as_enum_variants,
+        &mut diagnostics,
+    );
     validate_generated_names(view, options, &mut diagnostics);
     diagnostics
 }
 
 fn codegen_diagnostic(message: impl Into<String>) -> CsharpCodegenDiagnostic {
     CsharpCodegenDiagnostic {
-        code: "CODEGEN-CSHARP-001".to_string(),
-        stage: "CODEGEN".to_string(),
         message: message.into(),
     }
 }
@@ -217,7 +197,7 @@ fn validate_options(
 }
 
 fn validate_schema_names(
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
     for schema_enum in view.cft_enum_metas() {
@@ -252,17 +232,17 @@ fn validate_schema_names(
 }
 
 fn validate_generated_names(
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
     options: &CsharpCodegenOptions,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
-    let tables = view.table_names();
+    let tables = view.declared_table_names();
     let ref_targets = view.ref_target_names();
 
     validate_generated_file_names(view, options, diagnostics);
     validate_generated_member_names(view, diagnostics);
 
-    for table_name in &tables {
+    for table_name in tables {
         let csharp_table = view.csharp_type_name(table_name);
         let list_property = format!("Tb{csharp_table}");
         validate_member_ident("table accessor property", &list_property, diagnostics);
@@ -274,16 +254,16 @@ fn validate_generated_names(
         validate_ident("table index parameter", &index_param, diagnostics);
     }
 
-    for target in &ref_targets {
+    for target in ref_targets {
         let csharp_target = view.csharp_type_name(target);
         let lookup_method = format!("Get{csharp_target}");
         validate_member_ident("context lookup method", &lookup_method, diagnostics);
     }
 
     for type_name in view.polymorphic_type_names() {
-        if let Ok(case_names) = view.concrete_assignable_types(&type_name) {
+        if let Ok(case_names) = view.concrete_assignable_types(type_name) {
             for case_name in case_names {
-                let var_name = camel_case(&view.csharp_type_name(&case_name));
+                let var_name = camel_case(&view.csharp_type_name(case_name));
                 validate_ident("polymorphic case variable", &var_name, diagnostics);
             }
         }
@@ -291,7 +271,7 @@ fn validate_generated_names(
 }
 
 fn validate_generated_file_names(
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
     options: &CsharpCodegenOptions,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
@@ -314,13 +294,13 @@ fn validate_generated_file_names(
         );
     }
     for type_name in view.all_type_names() {
-        let file_name = format!("{}.cs", view.csharp_type_name(&type_name));
+        let file_name = format!("{}.cs", view.csharp_type_name(type_name));
         insert_generated_file_name(
             &mut file_sources,
             &reserved,
             &file_name,
             "type",
-            &type_name,
+            type_name,
             diagnostics,
         );
     }
@@ -356,7 +336,7 @@ fn validate_id_as_enum_variants(
 }
 
 fn build_id_as_enums(
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
     declared: &BTreeSet<String>,
     mut variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> BTreeMap<String, CsharpEnum> {
@@ -427,7 +407,7 @@ fn case_insensitive_file_key(file_name: &str) -> String {
 }
 
 fn validate_generated_member_names(
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
     for ty in view.type_metas() {

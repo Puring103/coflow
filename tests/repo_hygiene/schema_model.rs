@@ -1334,37 +1334,57 @@ fn cft_parser_check_expression_parser_is_split_out() {
 
 #[test]
 
-fn csharp_codegen_schema_projection_uses_cft_schema_context() {
+fn csharp_codegen_lowers_compiled_schema_once() {
 
-    let schema_context =
+    let lowering = std::fs::read_to_string("crates/coflow-codegen-csharp/src/lowering.rs")
 
-        std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_context.rs")
-
-            .expect("read C# codegen schema context");
+        .expect("read C# lowering plan");
 
     let ir = std::fs::read_to_string("crates/coflow-codegen-csharp/src/ir.rs").expect("read C# IR");
 
-    let lib =
+    let api = std::fs::read_to_string("crates/coflow-api/src/codegen.rs")
 
-        std::fs::read_to_string("crates/coflow-codegen-csharp/src/lib.rs").expect("read C# lib");
+        .expect("read codegen interface");
 
-    let emit =
-
-        std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit.rs").expect("read C# emit");
-
-    let codegen = format!("{schema_context}\n{ir}\n{lib}\n{emit}");
+    let commands = std::fs::read_to_string("src/commands.rs").expect("read command orchestration");
 
 
 
     assert!(
 
-        schema_context.contains("pub fn new(schema: &CompiledSchema)")
+        lowering.contains("pub struct CsharpLoweringPlan<'a>")
 
-            && ir.contains("schema: &CompiledSchema")
+            && lowering.contains("schema: &'a CompiledSchema"),
 
-            && lib.contains("schema: &CompiledSchema"),
+        "C# lowering should borrow one canonical CompiledSchema"
 
-        "C# codegen should receive coflow-cft CompiledSchema instead of full schema container"
+    );
+
+    assert_eq!(
+
+        ir.matches("CsharpLoweringPlan::lower(").count(),
+
+        1,
+
+        "one C# project generation should lower the schema exactly once"
+
+    );
+
+    assert!(
+
+        !api.contains("fn preflight("),
+
+        "CodeGenerator should validate while generating instead of exposing a duplicate preflight traversal"
+
+    );
+
+    assert!(
+
+        commands.contains("generate_build_code_artifacts")
+
+            && commands.contains("let staged_data = match stage_artifacts"),
+
+        "build should generate code before starting artifact staging"
 
     );
 
@@ -1376,119 +1396,29 @@ fn csharp_codegen_schema_projection_uses_cft_schema_context() {
 
         "schema.all_enums()",
 
-        "pub fn all_types",
-
-        "pub fn all_enums",
-
         "pub struct TypeMeta",
 
         "pub struct FieldMeta",
 
         "pub enum FieldType",
 
-        "children:",
-
         "fill_concrete_descendants",
 
-        "pub enums:",
+        "fn visit_table",
 
-        "view.enums",
-
-        ".types.get(",
-
-        ".types.values()",
-
-        ".types.keys()",
-
-        ".enums.get(",
-
-        ".enums.values()",
-
-        ".enums.keys()",
-
-        ".enums.contains_key(",
-
-        "CftSchemaType,",
-
-        "CftSchemaEnum,",
-
-        "CftSchemaField,",
+        "fn collect_table_dependencies_for_field_type",
 
     ] {
 
         assert!(
 
-            !codegen.contains(forbidden),
+            !format!("{lowering}\n{ir}").contains(forbidden),
 
-            "C# codegen should not rebuild schema projection from `{forbidden}`"
-
-        );
-
-    }
-
-    assert!(
-
-        codegen.contains("CftTypeMeta") && codegen.contains("CftFieldMeta"),
-
-        "C# codegen should consume coflow-cft type/field metadata directly instead of defining local copies"
-
-    );
-
-    for expected in [
-
-        "self.cft.id_as_enum_names()",
-
-        "self.cft.inherited_id_as_enum(type_name)",
-
-        "self.cft.ref_target_names()",
-
-        "self.cft.type_is_struct(&ty.name)",
-
-    ] {
-
-        assert!(
-
-            schema_context.contains(expected),
-
-            "C# codegen schema facade should delegate `{expected}` to coflow-cft"
+            "C# lowering should not rebuild or recursively walk schema through `{forbidden}`"
 
         );
 
     }
-
-    for forbidden in [
-
-        "fn type_id_as_enum",
-
-        "fn collect_ref_targets_for_type",
-
-        "fn collect_ref_targets_in_field",
-
-        "fn collect_ref_targets_in_type",
-
-        "annotation_name_arg(&ty.annotations",
-
-        "has_annotation(&ty.annotations",
-
-    ] {
-
-        assert!(
-
-            !schema_context.contains(forbidden),
-
-            "C# codegen schema facade should not keep local schema semantic helper `{forbidden}`"
-
-        );
-
-    }
-
-    assert!(
-
-        codegen.contains("CftSchemaTypeRef"),
-
-        "C# codegen emit path should consume coflow-cft type refs directly"
-
-    );
 
 }
 
@@ -1636,6 +1566,10 @@ fn csharp_codegen_emit_database_helpers_do_not_live_in_emit_rs() {
 
         .expect("read C# emit database");
 
+    let lowering = std::fs::read_to_string("crates/coflow-codegen-csharp/src/lowering.rs")
+
+        .expect("read C# lowering plan");
+
 
 
     for expected in [
@@ -1649,10 +1583,6 @@ fn csharp_codegen_emit_database_helpers_do_not_live_in_emit_rs() {
         "fn build_messagepack_load_steps",
 
         "fn build_table_model",
-
-        "fn sort_tables_by_dependencies",
-
-        "fn collect_table_dependencies",
 
     ] {
 
@@ -1669,6 +1599,36 @@ fn csharp_codegen_emit_database_helpers_do_not_live_in_emit_rs() {
             !emit.contains(expected),
 
             "C# emit database helper `{expected}` should not live in emit.rs"
+
+        );
+
+    }
+
+    for expected in [
+
+        "fn compile_messagepack_table_order",
+
+        "fn table_dependencies",
+
+        "fn topological_order",
+
+        "fn first_cyclic_component",
+
+    ] {
+
+        assert!(
+
+            lowering.contains(expected),
+
+            "C# dependency lowering helper `{expected}` should live in lowering.rs"
+
+        );
+
+        assert!(
+
+            !database.contains(expected) && !emit.contains(expected),
+
+            "C# emit modules should consume lowered dependency order instead of defining `{expected}`"
 
         );
 

@@ -22,11 +22,7 @@ pub struct CodegenDescriptor {
 pub trait CodeGenerator: Send + Sync {
     fn descriptor(&self) -> &'static CodegenDescriptor;
 
-    fn preflight(&self, _ctx: CodegenContext<'_>, _output: &OutputSpec) -> DiagnosticSet {
-        DiagnosticSet::empty()
-    }
-
-    /// Generates code artifact files.
+    /// Validates the request and generates code artifact files in memory.
     ///
     /// # Errors
     ///

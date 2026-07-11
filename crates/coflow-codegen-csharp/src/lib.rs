@@ -19,10 +19,10 @@
 
 mod emit;
 mod ir;
+mod lowering;
 mod model;
 mod names;
 mod render;
-mod schema_context;
 
 use coflow_api::{
     ArtifactFile, ArtifactSet, CodeGenerator, CodegenContext, CodegenDescriptor, Diagnostic,
@@ -34,8 +34,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 pub use ir::{
-    preflight_csharp_codegen, CsharpCodegenDiagnostic, CsharpCodegenOptions, CsharpDataFormat,
-    CsharpIdAsEnumVariant,
+    CsharpCodegenOptions, CsharpDataFormat, CsharpIdAsEnumVariant,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,21 +57,31 @@ pub struct CsharpDatabaseTemplates {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CsharpCodegenError {
-    message: String,
+    messages: Vec<String>,
 }
 
 impl CsharpCodegenError {
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
         Self {
-            message: message.into(),
+            messages: vec![message.into()],
         }
+    }
+
+    fn from_messages(messages: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            messages: messages.into_iter().collect(),
+        }
+    }
+
+    fn messages(&self) -> impl Iterator<Item = &str> {
+        self.messages.iter().map(String::as_str)
     }
 }
 
 impl fmt::Display for CsharpCodegenError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.message.fmt(f)
+        self.messages.join("\n").fmt(f)
     }
 }
 
@@ -258,58 +267,12 @@ impl CodeGenerator for CsharpCodeGenerator {
         &CSHARP_CODEGEN_DESCRIPTOR
     }
 
-    fn preflight(&self, ctx: CodegenContext<'_>, output: &OutputSpec) -> DiagnosticSet {
-        let namespace = output
-            .options
-            .get("namespace")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("Game.Config");
-        let int_32 = output
-            .options
-            .get("int_32")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        let float_32 = output
-            .options
-            .get("float_32")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        let options = CsharpCodegenOptions::new(namespace)
-            .with_int_32(int_32)
-            .with_float_32(float_32);
-        DiagnosticSet {
-            diagnostics: preflight_csharp_codegen(ctx.schema, &options, &BTreeMap::new())
-                .into_iter()
-                .map(|diagnostic| {
-                    Diagnostic::error(diagnostic.code, diagnostic.stage, diagnostic.message)
-                })
-                .collect(),
-        }
-    }
-
     fn generate(
         &self,
         ctx: CodegenContext<'_>,
         output: &OutputSpec,
     ) -> Result<ArtifactSet, DiagnosticSet> {
-        let namespace = output
-            .options
-            .get("namespace")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("Game.Config");
-        let int_32 = output
-            .options
-            .get("int_32")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        let float_32 = output
-            .options
-            .get("float_32")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        let options = CsharpCodegenOptions::new(namespace)
-            .with_int_32(int_32)
-            .with_float_32(float_32);
+        let options = csharp_options_from_output(output);
         let id_as_enum_variants = id_as_enum_variants_from_options(&output.options)?;
         let non_empty_tables = ctx.model.map(|model| {
             model
@@ -339,12 +302,11 @@ impl CodeGenerator for CsharpCodeGenerator {
                 )))
             }
         }
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "CSHARP-CODEGEN",
-                "CODEGEN",
-                err.to_string(),
-            ))
+        .map_err(|err| DiagnosticSet {
+            diagnostics: err
+                .messages()
+                .map(|message| Diagnostic::error("CODEGEN-CSHARP-001", "CODEGEN", message))
+                .collect(),
         })?;
         ArtifactSet::new(
             generated
@@ -360,6 +322,33 @@ impl CodeGenerator for CsharpCodeGenerator {
             ))
         })
     }
+}
+
+fn csharp_options_from_output(output: &OutputSpec) -> CsharpCodegenOptions {
+    let namespace = output
+        .options
+        .get("namespace")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Game.Config");
+    let database_class = output
+        .options
+        .get("database_class")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("CoflowTables");
+    let int_32 = output
+        .options
+        .get("int_32")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let float_32 = output
+        .options
+        .get("float_32")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    CsharpCodegenOptions::new(namespace)
+        .with_database_class(database_class)
+        .with_int_32(int_32)
+        .with_float_32(float_32)
 }
 
 fn id_as_enum_variants_from_options(

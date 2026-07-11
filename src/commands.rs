@@ -1,17 +1,20 @@
 use crate::artifacts::{
-    configured_data_format, configured_data_output, output_dir, preflight_codegen,
-    publish_artifacts, required_code_output, required_data_output, stage_codegen_artifacts,
-    stage_data_tables, CodegenArtifactRequest, EnumLockUpdate, CODE_OUTPUT_SLOT,
-    DATA_OUTPUT_SLOT,
+    configured_data_format, configured_data_output, generate_codegen_artifacts,
+    generate_data_tables, output_dir, publish_artifacts, required_code_output,
+    required_data_output, stage_artifacts, CodegenArtifactRequest, EnumLockUpdate,
+    CODE_OUTPUT_SLOT, DATA_OUTPUT_SLOT,
 };
 use artifact_safety::{artifact_safety_diagnostics, ArtifactOutputPlan};
-use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
+use coflow_api::{
+    ArtifactSet, Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation,
+};
 use coflow_cft::CompiledSchema;
 use coflow_project::{OutputConfig, Project};
 use coflow_runtime::{ProjectQueries, Runtime};
 use id_as_enum::{
     id_as_enum_variants_for_schema_only, prepare_id_as_enum_artifacts_for_build,
 };
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 mod artifact_safety;
@@ -113,17 +116,24 @@ pub fn build_project(
     let queries = session.queries();
     let compiled_schema = queries.compiled_schema();
 
-    let mut preflight_diagnostics =
-        build_codegen_preflight_diagnostics(registry, queries, compiled_schema, &plan)?;
-    preflight_diagnostics.extend(artifact_safety_diagnostics(
+    let artifact_diagnostics = artifact_safety_diagnostics(
         queries.project(),
         &plan.artifact_outputs,
-    ));
-    if !preflight_diagnostics.is_empty() {
-        return Ok(CommandOutcome::Diagnostics(preflight_diagnostics));
+    );
+    if !artifact_diagnostics.is_empty() {
+        return Ok(CommandOutcome::Diagnostics(artifact_diagnostics));
     }
 
-    let staged_data = match stage_data_tables(
+    let generated_code = match generate_build_code_artifacts(
+        registry,
+        queries,
+        compiled_schema,
+        &plan,
+    ) {
+        Ok(generated) => generated,
+        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
+    };
+    let data_artifacts = match generate_data_tables(
         registry,
         compiled_schema,
         queries.model(),
@@ -131,16 +141,21 @@ pub fn build_project(
         &plan.data.output,
         &plan.data.dir,
     ) {
-        Ok(staged_data) => staged_data,
+        Ok(artifacts) => artifacts,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    let (data_dir, code) = match commit_build_artifacts(
-        queries,
-        compiled_schema,
-        registry,
-        staged_data,
-        &plan,
-    ) {
+    let staged_data = match stage_artifacts(&plan.data.dir, data_artifacts) {
+        Ok(staged) => staged,
+        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
+    };
+    let staged_code = match generated_code {
+        Some(generated) => match stage_artifacts(&generated.dir, generated.artifacts) {
+            Ok(staged) => Some((staged, generated.lock_state)),
+            Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
+        },
+        None => None,
+    };
+    let (data_dir, code) = match commit_build_artifacts(queries, staged_data, staged_code, &plan) {
         Ok(published) => published,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
@@ -199,7 +214,7 @@ pub fn export_project_data(
     if !artifact_diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(artifact_diagnostics));
     }
-    let staged_data = match stage_data_tables(
+    let data_artifacts = match generate_data_tables(
         registry,
         compiled_schema,
         queries.model(),
@@ -207,6 +222,10 @@ pub fn export_project_data(
         &output,
         &dir,
     ) {
+        Ok(artifacts) => artifacts,
+        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
+    };
+    let staged_data = match stage_artifacts(&dir, data_artifacts) {
         Ok(staged) => staged,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
@@ -271,17 +290,6 @@ pub fn generate_project_code(
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
     let compiled_schema = session.compiled_schema();
-    let codegen_diagnostics = preflight_codegen(
-        registry,
-        &compiled_schema,
-        None,
-        codegen_id,
-        &data_format,
-        &output,
-    )?;
-    if !codegen_diagnostics.is_empty() {
-        return Ok(CommandOutcome::Diagnostics(codegen_diagnostics));
-    }
     let artifact_diagnostics = artifact_safety_diagnostics(
         session.project(),
         &[ArtifactOutputPlan::new("outputs.code.dir", dir.clone())],
@@ -289,11 +297,10 @@ pub fn generate_project_code(
     if !artifact_diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(artifact_diagnostics));
     }
-    let id_as_enum_variants = match id_as_enum_variants_for_schema_only(session.project()) {
-        Ok(variants) => variants,
-        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-    };
-    let staged_code = match stage_codegen_artifacts(
+    let id_as_enum_variants = id_as_enum_variants_for_schema_only(session.project());
+    let no_variants = Value::Null;
+    let variants = id_as_enum_variants.as_ref().unwrap_or(&no_variants);
+    let code_artifacts = match generate_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
             schema: &compiled_schema,
@@ -302,10 +309,17 @@ pub fn generate_project_code(
             data_format: &data_format,
             output_config: &output,
             dir: &dir,
-            id_as_enum_variants: &id_as_enum_variants,
+            id_as_enum_variants: variants,
         },
     ) {
-        Ok(staged_code) => staged_code,
+        Ok(artifacts) => artifacts,
+        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
+    };
+    if let Err(diagnostics) = id_as_enum_variants {
+        return Ok(CommandOutcome::Diagnostics(diagnostics));
+    }
+    let staged_code = match stage_artifacts(&dir, code_artifacts) {
+        Ok(staged) => staged,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
     let published = match publish_artifacts(
@@ -346,6 +360,13 @@ struct BuildCodegenPlan {
     display_name: &'static str,
     dir: PathBuf,
     needs_model_for_build: bool,
+}
+
+#[derive(Debug)]
+struct GeneratedBuildCode {
+    artifacts: ArtifactSet,
+    dir: PathBuf,
+    lock_state: Value,
 }
 
 fn build_config_diagnostics(project: &Project) -> DiagnosticSet {
@@ -433,48 +454,22 @@ fn build_codegen_plan<'a>(
     }))
 }
 
-fn build_codegen_preflight_diagnostics(
+fn generate_build_code_artifacts(
     registry: &ProviderRegistry,
     queries: ProjectQueries<'_>,
     schema: &CompiledSchema,
     plan: &BuildProviderPlan,
-) -> Result<DiagnosticSet, DiagnosticSet> {
+) -> Result<Option<GeneratedBuildCode>, DiagnosticSet> {
     let Some(code) = plan.code.as_ref() else {
-        return Ok(DiagnosticSet::empty());
+        return Ok(None);
     };
-    preflight_codegen(
-        registry,
-        schema,
-        code.needs_model_for_build.then_some(queries.model()),
-        &code.codegen_id,
-        &plan.data.exporter_id,
-        &code.output,
-    )
-}
-
-fn commit_build_artifacts(
-    queries: ProjectQueries<'_>,
-    schema: &CompiledSchema,
-    registry: &ProviderRegistry,
-    staged_data: crate::artifacts::StagedArtifactDir,
-    plan: &BuildProviderPlan,
-) -> Result<(PathBuf, Option<CodegenReport>), DiagnosticSet> {
-    let Some(code) = plan.code.as_ref() else {
-        let published = publish_artifacts(
-            queries.project(),
-            vec![(DATA_OUTPUT_SLOT, staged_data)],
-            &[CODE_OUTPUT_SLOT],
-            EnumLockUpdate::Preserve,
-        )?;
-        return Ok((
-            published.output_dir(DATA_OUTPUT_SLOT)?.to_path_buf(),
-            None,
-        ));
-    };
-
     let id_as_enum_artifacts =
-        prepare_id_as_enum_artifacts_for_build(queries.project(), schema, queries.model())?;
-    let staged_code = stage_codegen_artifacts(
+        prepare_id_as_enum_artifacts_for_build(queries.project(), schema, queries.model());
+    let no_variants = Value::Null;
+    let variants = id_as_enum_artifacts
+        .as_ref()
+        .map_or(&no_variants, |artifacts| &artifacts.variants);
+    let artifacts = generate_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
             schema,
@@ -483,25 +478,63 @@ fn commit_build_artifacts(
             data_format: &plan.data.exporter_id,
             output_config: &code.output,
             dir: &code.dir,
-            id_as_enum_variants: &id_as_enum_artifacts.variants,
+            id_as_enum_variants: variants,
         },
     )?;
-    let published = publish_artifacts(
-        queries.project(),
-        vec![
-            (DATA_OUTPUT_SLOT, staged_data),
-            (CODE_OUTPUT_SLOT, staged_code),
-        ],
-        &[],
-        EnumLockUpdate::Replace(id_as_enum_artifacts.lock_state),
-    )?;
-    let data_dir = published.output_dir(DATA_OUTPUT_SLOT)?.to_path_buf();
-    let code_dir = published.output_dir(CODE_OUTPUT_SLOT)?.to_path_buf();
-    Ok((data_dir, Some(CodegenReport {
-        codegen_id: code.codegen_id.clone(),
-        display_name: code.display_name.to_string(),
-        dir: code_dir,
-    })))
+    let id_as_enum_artifacts = id_as_enum_artifacts?;
+    Ok(Some(GeneratedBuildCode {
+        artifacts,
+        dir: code.dir.clone(),
+        lock_state: id_as_enum_artifacts.lock_state,
+    }))
+}
+
+fn commit_build_artifacts(
+    queries: ProjectQueries<'_>,
+    staged_data: crate::artifacts::StagedArtifactDir,
+    staged_code: Option<(crate::artifacts::StagedArtifactDir, Value)>,
+    plan: &BuildProviderPlan,
+) -> Result<(PathBuf, Option<CodegenReport>), DiagnosticSet> {
+    match (plan.code.as_ref(), staged_code) {
+        (None, None) => {
+            let published = publish_artifacts(
+                queries.project(),
+                vec![(DATA_OUTPUT_SLOT, staged_data)],
+                &[CODE_OUTPUT_SLOT],
+                EnumLockUpdate::Preserve,
+            )?;
+            Ok((
+                published.output_dir(DATA_OUTPUT_SLOT)?.to_path_buf(),
+                None,
+            ))
+        }
+        (Some(code), Some((staged_code, lock_state))) => {
+            let published = publish_artifacts(
+                queries.project(),
+                vec![
+                    (DATA_OUTPUT_SLOT, staged_data),
+                    (CODE_OUTPUT_SLOT, staged_code),
+                ],
+                &[],
+                EnumLockUpdate::Replace(lock_state),
+            )?;
+            let data_dir = published.output_dir(DATA_OUTPUT_SLOT)?.to_path_buf();
+            let code_dir = published.output_dir(CODE_OUTPUT_SLOT)?.to_path_buf();
+            Ok((
+                data_dir,
+                Some(CodegenReport {
+                    codegen_id: code.codegen_id.clone(),
+                    display_name: code.display_name.to_string(),
+                    dir: code_dir,
+                }),
+            ))
+        }
+        _ => Err(project_diagnostic_set(
+            &queries.project().config_path,
+            "internal build code artifact plan mismatch",
+            ["outputs", "code"],
+        )),
+    }
 }
 
 fn project_diagnostic_set(

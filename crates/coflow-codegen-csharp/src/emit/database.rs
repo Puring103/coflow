@@ -1,27 +1,23 @@
-use std::collections::{BTreeMap, BTreeSet};
-
 use crate::ir::CsharpDataFormat;
 use crate::model::{
     CsharpContextAssignment, CsharpContextField, CsharpContextLookup, CsharpContextLookupField,
     CsharpDatabase, CsharpParameter, CsharpTable,
 };
 use crate::names::camel_case;
-use crate::schema_context::CsharpSchemaContext;
+use crate::lowering::CsharpLoweringPlan;
 use crate::CsharpCodegenError;
-use coflow_cft::CftSchemaTypeRef;
-
 use super::identifiers::{context_index_field_name, plural_records_var};
 use super::types::csharp_type;
 
 pub fn build_csharp_database(
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
     tables: &[String],
     _database_class: &str,
     data_format: CsharpDataFormat,
 ) -> Result<CsharpDatabase, CsharpCodegenError> {
     let ordered_tables = match data_format {
         CsharpDataFormat::Json => tables.to_vec(),
-        CsharpDataFormat::MessagePack => sort_tables_by_dependencies(view, tables)?,
+        CsharpDataFormat::MessagePack => view.messagepack_table_order()?.to_vec(),
     };
     let table_models = ordered_tables
         .iter()
@@ -93,7 +89,7 @@ pub fn build_csharp_database(
 }
 
 fn build_context_lookups(
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
     tables: &[String],
 ) -> Result<Vec<CsharpContextLookup>, CsharpCodegenError> {
     let mut context_lookups = Vec::new();
@@ -184,7 +180,7 @@ fn build_messagepack_load_steps(table_models: &[CsharpTable], load_extension: &s
     load_steps
 }
 
-fn build_table_model(view: &CsharpSchemaContext, table_name: &str) -> CsharpTable {
+fn build_table_model(view: &CsharpLoweringPlan<'_>, table_name: &str) -> CsharpTable {
     let csharp_name = view.csharp_type_name(table_name);
     let id_ty = view.key_field_type(table_name);
     CsharpTable {
@@ -199,126 +195,4 @@ fn build_table_model(view: &CsharpSchemaContext, table_name: &str) -> CsharpTabl
         id_source_name: "id".to_string(),
         index_var: format!("{}Index", camel_case(&csharp_name)),
     }
-}
-
-fn sort_tables_by_dependencies(
-    view: &CsharpSchemaContext,
-    tables: &[String],
-) -> Result<Vec<String>, CsharpCodegenError> {
-    let table_set = tables.iter().cloned().collect::<BTreeSet<_>>();
-    let mut deps = BTreeMap::<String, BTreeSet<String>>::new();
-    for table in tables {
-        let mut table_deps = BTreeSet::new();
-        collect_table_dependencies(view, table, &table_set, &mut table_deps)?;
-        deps.insert(table.clone(), table_deps);
-    }
-
-    let mut ordered = Vec::new();
-    let mut temporary = BTreeSet::new();
-    let mut permanent = BTreeSet::new();
-    let mut stack = Vec::new();
-
-    for table in tables {
-        visit_table(
-            table,
-            &deps,
-            &mut temporary,
-            &mut permanent,
-            &mut stack,
-            &mut ordered,
-        )?;
-    }
-
-    Ok(ordered)
-}
-
-fn visit_table(
-    table: &str,
-    deps: &BTreeMap<String, BTreeSet<String>>,
-    temporary: &mut BTreeSet<String>,
-    permanent: &mut BTreeSet<String>,
-    stack: &mut Vec<String>,
-    ordered: &mut Vec<String>,
-) -> Result<(), CsharpCodegenError> {
-    if permanent.contains(table) {
-        return Ok(());
-    }
-    if temporary.contains(table) {
-        let start = stack
-            .iter()
-            .position(|entry| entry == table)
-            .unwrap_or_default();
-        let mut cycle = stack[start..].to_vec();
-        cycle.push(table.to_string());
-        return Err(CsharpCodegenError::new(format!(
-            "C# read-only immediate reference loading does not support cyclic table references: {}",
-            cycle.join(" -> ")
-        )));
-    }
-
-    temporary.insert(table.to_string());
-    stack.push(table.to_string());
-    for dep in deps.get(table).into_iter().flatten() {
-        visit_table(dep, deps, temporary, permanent, stack, ordered)?;
-    }
-    stack.pop();
-    temporary.remove(table);
-    permanent.insert(table.to_string());
-    ordered.push(table.to_string());
-    Ok(())
-}
-
-fn collect_table_dependencies(
-    view: &CsharpSchemaContext,
-    type_name: &str,
-    table_set: &BTreeSet<String>,
-    out: &mut BTreeSet<String>,
-) -> Result<(), CsharpCodegenError> {
-    for field in view.fields(type_name)? {
-        collect_table_dependencies_for_field_type(view, &field.ty_ref, table_set, out)?;
-    }
-    Ok(())
-}
-
-fn collect_table_dependencies_for_field_type(
-    view: &CsharpSchemaContext,
-    ty: &CftSchemaTypeRef,
-    table_set: &BTreeSet<String>,
-    out: &mut BTreeSet<String>,
-) -> Result<(), CsharpCodegenError> {
-    match ty {
-        CftSchemaTypeRef::Ref(name) => {
-            let mut hit_table = false;
-            for concrete in view.concrete_assignable_types(name)? {
-                if table_set.contains(&concrete) {
-                    out.insert(concrete.clone());
-                    hit_table = true;
-                }
-            }
-            if !hit_table && view.type_meta(name).is_ok() {
-                for field in view.fields(name)? {
-                    collect_table_dependencies_for_field_type(view, &field.ty_ref, table_set, out)?;
-                }
-            }
-        }
-        CftSchemaTypeRef::Named(name) if view.is_schema_enum(name) => {}
-        CftSchemaTypeRef::Named(name) => {
-            if view.type_meta(name).is_ok() {
-                for field in view.fields(name)? {
-                    collect_table_dependencies_for_field_type(view, &field.ty_ref, table_set, out)?;
-                }
-            }
-        }
-        CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
-            collect_table_dependencies_for_field_type(view, inner, table_set, out)?;
-        }
-        CftSchemaTypeRef::Dict(_, value) => {
-            collect_table_dependencies_for_field_type(view, value, table_set, out)?;
-        }
-        CftSchemaTypeRef::Int
-        | CftSchemaTypeRef::Float
-        | CftSchemaTypeRef::Bool
-        | CftSchemaTypeRef::String => {}
-    }
-    Ok(())
 }

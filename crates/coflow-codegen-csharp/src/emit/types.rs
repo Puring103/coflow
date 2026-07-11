@@ -1,13 +1,13 @@
 use coflow_cft::{CftSchemaDefaultValue, CftSchemaTypeRef};
 
 use crate::names::{escape_csharp_string, format_float};
-use crate::schema_context::CsharpSchemaContext;
+use crate::lowering::CsharpLoweringPlan;
 use crate::CsharpCodegenError;
 use coflow_cft::CftFieldMeta;
 
 use super::identifiers::csharp_public_member_name;
 
-pub(super) fn csharp_type(ty: &CftSchemaTypeRef, view: &CsharpSchemaContext) -> String {
+pub(super) fn csharp_type(ty: &CftSchemaTypeRef, view: &CsharpLoweringPlan<'_>) -> String {
     match ty {
         CftSchemaTypeRef::Int => {
             if view.int_32 {
@@ -44,7 +44,7 @@ pub(super) fn csharp_type(ty: &CftSchemaTypeRef, view: &CsharpSchemaContext) -> 
 /// for collection fields).
 pub(super) fn csharp_field_property_type(
     field: &CftFieldMeta,
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
 ) -> String {
     let inner = csharp_property_type(&field.ty_ref, view);
     if field.dimension.is_some() {
@@ -54,7 +54,7 @@ pub(super) fn csharp_field_property_type(
     }
 }
 
-pub(super) fn csharp_property_type(ty: &CftSchemaTypeRef, view: &CsharpSchemaContext) -> String {
+pub(super) fn csharp_property_type(ty: &CftSchemaTypeRef, view: &CsharpLoweringPlan<'_>) -> String {
     match ty {
         CftSchemaTypeRef::Array(inner) => format!("IReadOnlyList<{}>", csharp_type(inner, view)),
         CftSchemaTypeRef::Dict(key, value) => {
@@ -72,7 +72,7 @@ pub(super) fn csharp_property_type(ty: &CftSchemaTypeRef, view: &CsharpSchemaCon
 pub(super) fn default_value_expr(
     default: Option<&CftSchemaDefaultValue>,
     ty: &CftSchemaTypeRef,
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
 ) -> Result<Option<String>, CsharpCodegenError> {
     let Some(default) = default else {
         return Ok(None);
@@ -108,7 +108,7 @@ pub(super) fn default_value_expr(
     }))
 }
 
-fn string_default_expr(value: &str, ty: &CftSchemaTypeRef, view: &CsharpSchemaContext) -> String {
+fn string_default_expr(value: &str, ty: &CftSchemaTypeRef, view: &CsharpLoweringPlan<'_>) -> String {
     match ty.non_nullable() {
         CftSchemaTypeRef::Named(name) if view.is_id_as_enum(name) => {
             let enum_name = view.csharp_enum_name(name);
@@ -121,7 +121,7 @@ fn string_default_expr(value: &str, ty: &CftSchemaTypeRef, view: &CsharpSchemaCo
 
 pub(super) fn collection_default_expr(
     ty: &CftSchemaTypeRef,
-    view: &CsharpSchemaContext,
+    view: &CsharpLoweringPlan<'_>,
 ) -> Result<String, CsharpCodegenError> {
     match ty {
         CftSchemaTypeRef::Array(inner) => Ok(format!("new List<{}>()", csharp_type(inner, view))),
