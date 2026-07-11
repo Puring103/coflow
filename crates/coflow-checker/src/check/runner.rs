@@ -1,10 +1,13 @@
 use super::deps::{DependencyCollector, DependencyGraphBuilder};
+use super::dimensions::{DimensionRoundView, DimensionVariantAbort};
 use super::evaluator::CheckEvaluator;
 use super::statements;
 use super::value::{CheckRecordRef, CheckValue, ValueLocation};
 use crate::{DependencyGraph, DimensionCheckContext};
 use coflow_cft::CompiledSchema;
-use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdRecordId, CfdValue};
+use coflow_data_model::{
+    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdRecordId, CfdValue,
+};
 use std::collections::BTreeMap;
 
 pub(crate) struct CheckRunner<'a> {
@@ -15,6 +18,14 @@ pub(crate) struct CheckRunner<'a> {
     /// record. The current root is the most recently pushed entry.
     deps: Option<DependencyGraphBuilder>,
     dimension_context: Option<DimensionCheckContext>,
+    dimension_round: Option<DimensionRoundView>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CheckSelection {
+    Default,
+    DimensionRelevant,
+    FullVariantSubtree,
 }
 
 impl<'a> CheckRunner<'a> {
@@ -25,6 +36,7 @@ impl<'a> CheckRunner<'a> {
             diagnostics: Vec::new(),
             deps: None,
             dimension_context: None,
+            dimension_round: None,
         }
     }
 
@@ -33,12 +45,14 @@ impl<'a> CheckRunner<'a> {
         model: &'a CfdDataModel,
         dimension_context: DimensionCheckContext,
     ) -> Self {
+        let dimension_round = DimensionRoundView::compile(schema, model, &dimension_context);
         Self {
             schema,
             model,
             diagnostics: Vec::new(),
             deps: None,
             dimension_context: Some(dimension_context),
+            dimension_round: Some(dimension_round),
         }
     }
 
@@ -71,13 +85,30 @@ impl<'a> CheckRunner<'a> {
     }
 
     fn run_one_record(&mut self, record_id: CfdRecordId, record: &coflow_data_model::CfdRecord) {
+        if self.schema.is_dimension_storage_type(record.actual_type()) {
+            return;
+        }
         let location = ValueLocation::root(record_id);
         self.run_record_checks(
             CheckRecordRef::Resolved(location.clone()),
             Some(record_id),
             location.clone(),
+            if self.dimension_round.is_some() {
+                CheckSelection::DimensionRelevant
+            } else {
+                CheckSelection::Default
+            },
         );
-        self.run_nested_field_checks(Some(record_id), record.fields(), location);
+        if self.dimension_round.is_some() {
+            self.run_dimension_nested_checks(record_id, location);
+        } else {
+            self.run_nested_field_checks(
+                Some(record_id),
+                record.fields(),
+                location,
+                CheckSelection::Default,
+            );
+        }
     }
 
     fn into_result(self) -> Result<(), CfdDiagnostics> {
@@ -93,25 +124,28 @@ impl<'a> CheckRunner<'a> {
         record: CheckRecordRef,
         root_record: Option<CfdRecordId>,
         root_location: ValueLocation,
+        selection: CheckSelection,
     ) {
         let Some(actual_type) = record.actual_type(self.model).map(ToOwned::to_owned) else {
             return;
         };
-        let checks = self.schema.check_schedule(
-            &actual_type,
-            self.dimension_context
+        let dimension = match selection {
+            CheckSelection::DimensionRelevant => self
+                .dimension_context
                 .as_ref()
                 .map(|context| context.dimension.as_str()),
-        );
+            CheckSelection::Default | CheckSelection::FullVariantSubtree => None,
+        };
+        let checks = self.schema.check_schedule(&actual_type, dimension);
         let root = CheckValue::Record(record);
         let deps = self.deps.as_ref().map_or_else(
             || DependencyCollector::disabled(root_record),
             |deps| deps.collector_for(root_record),
         );
         let mut evaluator = CheckEvaluator::new(self.schema, self.model, root_location, root, deps);
-        evaluator
-            .dimension_context
-            .clone_from(&self.dimension_context);
+        if matches!(selection, CheckSelection::DimensionRelevant) {
+            evaluator.dimension_round.clone_from(&self.dimension_round);
+        }
         for check in checks {
             let _ = statements::eval_check_block(&mut evaluator, check);
         }
@@ -127,13 +161,68 @@ impl<'a> CheckRunner<'a> {
         root_record: Option<CfdRecordId>,
         fields: &BTreeMap<String, CfdValue>,
         root_location: ValueLocation,
+        selection: CheckSelection,
     ) {
-        if self.dimension_context.is_some() {
-            return;
-        }
         for (name, value) in fields {
-            self.run_nested_value_checks(root_record, value, root_location.field(name));
+            self.run_nested_value_checks(root_record, value, root_location.field(name), selection);
         }
+    }
+
+    fn run_dimension_nested_checks(
+        &mut self,
+        root_record: CfdRecordId,
+        root_location: ValueLocation,
+    ) {
+        let Some(round) = self.dimension_round.clone() else {
+            return;
+        };
+        for (field, message) in round.errors_for(root_record) {
+            self.diagnostics.push(
+                CfdDiagnostic::error(CfdErrorCode::CheckEvalTypeError, message).with_primary(
+                    Some(root_record),
+                    root_location.clone().field(field).blame.path,
+                ),
+            );
+        }
+        let fields = round
+            .field_names(root_record)
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        for field in fields {
+            let logical_location = root_location.field(&field);
+            match round.materialize(self.model, root_record, &field, &logical_location) {
+                Ok(Some(materialized)) => {
+                    self.note_read_from(root_record, materialized.storage_record);
+                    self.run_nested_value_checks(
+                        Some(root_record),
+                        materialized.value,
+                        materialized.location,
+                        CheckSelection::FullVariantSubtree,
+                    );
+                }
+                Ok(None) | Err(DimensionVariantAbort::Skipped) => {}
+                Err(DimensionVariantAbort::Error {
+                    code,
+                    location,
+                    message,
+                }) => {
+                    let location = location.unwrap_or_else(|| logical_location.clone());
+                    self.diagnostics.push(
+                        CfdDiagnostic::error(code, message)
+                            .with_primary(Some(location.blame.record), location.blame.path),
+                    );
+                }
+            }
+        }
+    }
+
+    fn note_read_from(&mut self, root: CfdRecordId, target: CfdRecordId) {
+        let Some(deps) = self.deps.as_mut() else {
+            return;
+        };
+        let mut collector = deps.collector_for(Some(root));
+        collector.note_read_from(target);
+        deps.extend_root(Some(root), collector);
     }
 
     fn run_nested_value_checks(
@@ -141,6 +230,7 @@ impl<'a> CheckRunner<'a> {
         root_record: Option<CfdRecordId>,
         value: &CfdValue,
         location: ValueLocation,
+        selection: CheckSelection,
     ) {
         match value {
             CfdValue::Object(record) => {
@@ -151,17 +241,28 @@ impl<'a> CheckRunner<'a> {
                     CheckRecordRef::Resolved(location.clone()),
                     root_record,
                     location.clone(),
+                    selection,
                 );
-                self.run_nested_field_checks(root_record, record.fields(), location);
+                self.run_nested_field_checks(root_record, record.fields(), location, selection);
             }
             CfdValue::Array(items) => {
                 for (index, item) in items.iter().enumerate() {
-                    self.run_nested_value_checks(root_record, item, location.index(index));
+                    self.run_nested_value_checks(
+                        root_record,
+                        item,
+                        location.index(index),
+                        selection,
+                    );
                 }
             }
             CfdValue::Dict(entries) => {
                 for (key, item) in entries {
-                    self.run_nested_value_checks(root_record, item, location.dict_key_value(key));
+                    self.run_nested_value_checks(
+                        root_record,
+                        item,
+                        location.dict_key_value(key),
+                        selection,
+                    );
                 }
             }
             CfdValue::Ref(_)

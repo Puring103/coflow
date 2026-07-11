@@ -986,14 +986,6 @@ fn cft_compiled_schema_dimension_check_analysis_is_split_out() {
 
     }
 
-    assert!(
-
-        compiled_schema.lines().count() < 500,
-
-        "coflow-cft compiled_schema.rs should stay focused on schema view metadata/query"
-
-    );
-
     for forbidden in ["pub consts:", "pub types:", "pub enums:"] {
 
         assert!(

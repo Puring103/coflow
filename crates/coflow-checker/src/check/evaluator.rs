@@ -10,7 +10,6 @@ use super::evaluation_trace::EvaluationTrace;
 use super::fields;
 use super::ops::{self, OpsResult};
 use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
-use crate::DimensionCheckContext;
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp, CompiledSchema,
 };
@@ -28,7 +27,7 @@ pub(super) struct CheckEvaluator<'a> {
     pub(super) contexts: Vec<String>,
     pub(super) diagnostics: Vec<CfdDiagnostic>,
     deps: DependencyCollector,
-    pub(super) dimension_context: Option<DimensionCheckContext>,
+    pub(super) dimension_round: Option<dimensions::DimensionRoundView>,
     trace: Option<EvaluationTrace>,
 }
 
@@ -71,7 +70,7 @@ impl<'a> CheckEvaluator<'a> {
             contexts: Vec::new(),
             diagnostics: Vec::new(),
             deps,
-            dimension_context: None,
+            dimension_round: None,
             trace: None,
         }
     }
@@ -99,9 +98,8 @@ impl<'a> CheckEvaluator<'a> {
         located: &mut LocatedCheckValue,
     ) -> EvalResult<()> {
         match dimensions::apply_dimension_variant(
-            self.schema,
             self.model,
-            self.dimension_context.as_ref(),
+            self.dimension_round.as_ref(),
             record,
             field_name,
             located,

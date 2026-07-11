@@ -240,6 +240,15 @@ impl CompiledSchema {
     }
 
     #[must_use]
+    pub fn is_dimension_storage_type(&self, type_name: &str) -> bool {
+        self.types.get(type_name).is_some_and(|meta| {
+            meta.annotations
+                .iter()
+                .any(|annotation| annotation.name == "__coflow_dimension_storage")
+        })
+    }
+
+    #[must_use]
     pub fn field_type(&self, actual_type: &str, field_name: &str) -> Option<&CftSchemaTypeRef> {
         self.types
             .get(actual_type)

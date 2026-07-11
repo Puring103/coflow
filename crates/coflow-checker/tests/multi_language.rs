@@ -526,10 +526,7 @@ fn dimension_variant_inline_objects_resolve_refs_from_storage_paths() {
         "#,
     );
     let snapshot = |target| {
-        CfdInputValue::object_with_declared_type([(
-            "target",
-            CfdInputValue::record_ref(target),
-        )])
+        CfdInputValue::object_with_declared_type([("target", CfdInputValue::record_ref(target))])
     };
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_input_record(CfdInputRecord::new(
@@ -550,10 +547,7 @@ fn dimension_variant_inline_objects_resolve_refs_from_storage_paths() {
     builder.add_input_record(CfdInputRecord::new(
         "item",
         "Item_copyVariants",
-        [
-            ("default", snapshot("good")),
-            ("zh", snapshot("bad")),
-        ],
+        [("default", snapshot("good")), ("zh", snapshot("bad"))],
     ));
     let model = builder.build().expect("model builds");
 
@@ -575,6 +569,368 @@ fn dimension_variant_inline_objects_resolve_refs_from_storage_paths() {
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == CfdErrorCode::CheckEvalTypeError));
+}
+
+#[test]
+fn localized_object_variants_run_nested_type_checks_at_logical_paths() {
+    let schema = compile_schema(
+        r#"
+            type Text {
+                label: string;
+                check { label != ""; }
+            }
+            type Item {
+                @localized
+                text: Text;
+            }
+
+            @__coflow_dimension_storage("language", "Item", "text")
+            type Item_textVariants {
+                default: Text?;
+                zh: Text?;
+                en: Text?;
+            }
+        "#,
+    );
+    let text =
+        |label| CfdInputValue::object_with_declared_type([("label", CfdInputValue::from(label))]);
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item",
+        [("text", text("Potion"))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item_textVariants",
+        [
+            ("default", text("Potion")),
+            ("zh", text("")),
+            ("en", text("Potion")),
+        ],
+    ));
+    let model = builder.build().expect("model builds");
+
+    let err = run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &language_dimensions(),
+    )
+    .expect_err("the zh materialized object should run Text checks");
+    let failures = err
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
+        .collect::<Vec<_>>();
+
+    assert_eq!(failures.len(), 1, "diagnostics: {err:?}");
+    assert!(failures[0].message.contains("[language=zh]"));
+    let primary = failures[0].primary.as_ref().expect("primary location");
+    assert_eq!(primary.record, model.lookup_assignable("Item", "item"));
+    assert_eq!(primary.path, CfdPath::root().field("text").field("label"));
+    assert!(failures[0].related.iter().any(|label| {
+        label.record == model.lookup_assignable("Item_textVariants", "item")
+            && label.path == CfdPath::root().field("zh").field("label")
+    }));
+}
+
+#[test]
+fn localized_aggregate_variants_preserve_array_paths() {
+    let schema = compile_schema(
+        r#"
+            type Text {
+                label: string;
+                check { label != ""; }
+            }
+            type Item {
+                @localized
+                texts: [Text];
+            }
+
+            @__coflow_dimension_storage("language", "Item", "texts")
+            type Item_textsVariants {
+                default: [Text]?;
+                zh: [Text]?;
+            }
+        "#,
+    );
+    let text =
+        |label| CfdInputValue::object_with_declared_type([("label", CfdInputValue::from(label))]);
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item",
+        [(
+            "texts",
+            CfdInputValue::Array(vec![text("One"), text("Two")]),
+        )],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item_textsVariants",
+        [
+            (
+                "default",
+                CfdInputValue::Array(vec![text("One"), text("Two")]),
+            ),
+            ("zh", CfdInputValue::Array(vec![text("一"), text("")])),
+        ],
+    ));
+    let model = builder.build().expect("model builds");
+
+    let err = run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &DimensionCheckPlan::from_variants("language", ["zh"]),
+    )
+    .expect_err("the second zh array item should fail");
+    let diagnostic = err
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
+        .expect("comparison diagnostic");
+
+    assert_eq!(
+        diagnostic.primary.as_ref().map(|label| label.path.clone()),
+        Some(CfdPath::root().field("texts").index(1).field("label"))
+    );
+    assert!(diagnostic
+        .related
+        .iter()
+        .any(|label| { label.path == CfdPath::root().field("zh").index(1).field("label") }));
+}
+
+#[test]
+fn localized_aggregate_variants_preserve_dict_paths() {
+    let schema = compile_schema(
+        r#"
+            type Text {
+                label: string;
+                check { label != ""; }
+            }
+            type Item {
+                @localized
+                texts_by_slot: {string: Text};
+            }
+
+            @__coflow_dimension_storage("language", "Item", "texts_by_slot")
+            type Item_textsBySlotVariants {
+                default: {string: Text}?;
+                zh: {string: Text}?;
+            }
+        "#,
+    );
+    let text =
+        |label| CfdInputValue::object_with_declared_type([("label", CfdInputValue::from(label))]);
+    let entries = |label| CfdInputValue::dict([(CfdInputDictKey::from("ui"), text(label))]);
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item",
+        [("texts_by_slot", entries("Menu"))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item_textsBySlotVariants",
+        [("default", entries("Menu")), ("zh", entries(""))],
+    ));
+    let model = builder.build().expect("model builds");
+
+    let err = run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &DimensionCheckPlan::from_variants("language", ["zh"]),
+    )
+    .expect_err("the zh dict value should fail");
+    let diagnostic = err
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
+        .expect("comparison diagnostic");
+
+    assert_eq!(
+        diagnostic.primary.as_ref().map(|label| label.path.clone()),
+        Some(
+            CfdPath::root()
+                .field("texts_by_slot")
+                .dict_key("\"ui\"")
+                .field("label")
+        )
+    );
+    assert!(diagnostic.related.iter().any(|label| {
+        label.path
+            == CfdPath::root()
+                .field("zh")
+                .dict_key("\"ui\"")
+                .field("label")
+    }));
+}
+
+#[test]
+fn null_localized_aggregate_variants_skip_nested_checks() {
+    let schema = compile_schema(
+        r#"
+            type Text {
+                label: string;
+                check { label != ""; }
+            }
+            type Item {
+                @localized
+                text: Text;
+            }
+
+            @__coflow_dimension_storage("language", "Item", "text")
+            type Item_textVariants {
+                default: Text?;
+                zh: Text?;
+            }
+        "#,
+    );
+    let text = CfdInputValue::object_with_declared_type([("label", CfdInputValue::from("Potion"))]);
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item",
+        [("text", text.clone())],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item_textVariants",
+        [("default", text), ("zh", CfdInputValue::Null)],
+    ));
+    let model = builder.build().expect("model builds");
+
+    run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &DimensionCheckPlan::from_variants("language", ["zh"]),
+    )
+    .expect("null aggregate variants skip the complete nested subtree");
+}
+
+#[test]
+fn localized_object_nested_checks_resolve_refs_from_variant_storage() {
+    let schema = compile_schema(
+        r#"
+            type Target { value: int; }
+            type Snapshot {
+                target: &Target;
+                check { target.value > 0; }
+            }
+            type Item {
+                @localized
+                copy: Snapshot;
+            }
+
+            @__coflow_dimension_storage("language", "Item", "copy")
+            type Item_copyVariants {
+                default: Snapshot?;
+                zh: Snapshot?;
+            }
+        "#,
+    );
+    let snapshot = |target| {
+        CfdInputValue::object_with_declared_type([("target", CfdInputValue::record_ref(target))])
+    };
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "good",
+        "Target",
+        [("value", CfdInputValue::from(1_i64))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "bad",
+        "Target",
+        [("value", CfdInputValue::from(0_i64))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item",
+        [("copy", snapshot("good"))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item_copyVariants",
+        [("default", snapshot("good")), ("zh", snapshot("bad"))],
+    ));
+    let model = builder.build().expect("model builds");
+
+    let err = run_checks_for_dimensions(
+        &CompiledSchema::new(&schema),
+        &model,
+        &DimensionCheckPlan::from_variants("language", ["zh"]),
+    )
+    .expect_err("the ref inside the zh storage object should resolve to bad");
+    let diagnostic = err
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
+        .expect("comparison diagnostic");
+
+    assert_eq!(
+        diagnostic.primary.as_ref().and_then(|label| label.record),
+        model.lookup_assignable("Target", "bad")
+    );
+    assert_eq!(
+        diagnostic.primary.as_ref().map(|label| label.path.clone()),
+        Some(CfdPath::root().field("value"))
+    );
+    assert!(!err
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == CfdErrorCode::CheckEvalTypeError));
+}
+
+#[test]
+fn nested_variant_checks_record_storage_dependencies_without_parent_checks() {
+    let schema = compile_schema(
+        r#"
+            type Text {
+                label: string;
+                check { label != ""; }
+            }
+            type Item {
+                @localized
+                text: Text;
+            }
+
+            @__coflow_dimension_storage("language", "Item", "text")
+            type Item_textVariants {
+                default: Text?;
+                zh: Text?;
+            }
+        "#,
+    );
+    let text =
+        |label| CfdInputValue::object_with_declared_type([("label", CfdInputValue::from(label))]);
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item",
+        [("text", text("Potion"))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "item",
+        "Item_textVariants",
+        [("default", text("Potion")), ("zh", text("药水"))],
+    ));
+    let model = builder.build().expect("model builds");
+    let item = model.lookup_assignable("Item", "item").expect("item");
+    let storage = model
+        .lookup_assignable("Item_textVariants", "item")
+        .expect("storage");
+
+    let (result, graph) = run_checks_for_dimensions_with_deps(
+        &CompiledSchema::new(&schema),
+        &model,
+        &DimensionCheckPlan::from_variants("language", ["zh"]),
+    );
+
+    result.expect("all nested checks pass");
+    assert!(graph
+        .reads_from
+        .get(&item)
+        .is_some_and(|reads| reads.contains(&storage)));
 }
 
 #[test]
