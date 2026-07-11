@@ -40,6 +40,15 @@ impl DiagnosticSet {
         self.diagnostics.push(diagnostic);
     }
 
+    /// Flatten diagnostics that do not have additional record-level context.
+    #[must_use]
+    pub fn flat_diagnostics(&self) -> Vec<FlatDiagnostic> {
+        self.diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.flat_view(None, None, None))
+            .collect()
+    }
+
     #[must_use]
     pub fn contains(&self, needle: &str) -> bool {
         self.to_string().contains(needle)

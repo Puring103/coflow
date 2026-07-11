@@ -653,7 +653,6 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
         "pub(super) fn write_file_report_human",
         "pub(super) fn write_data_write_file_human",
         "fn write_flat_diagnostics",
-        "pub(super) fn flat_diagnostics",
         "pub(super) fn file_error_report",
     ] {
         assert!(
@@ -665,6 +664,10 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
             "data command output helper `{expected}` should not live in data_commands.rs"
         );
     }
+    assert!(
+        !output.contains("fn flat_diagnostics"),
+        "data command output should use DiagnosticSet::flat_diagnostics instead of owning flat conversion"
+    );
     for expected in [
         "pub(super) fn run_write_file",
         "struct DataWriteTarget",
@@ -1617,6 +1620,39 @@ fn engine_runtime_indexes_do_not_live_in_lib_rs() {
         assert!(
             !engine.contains(expected),
             "engine runtime index type `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
+fn diagnostic_flat_views_live_with_diagnostic_types() {
+    let api_diagnostics = std::fs::read_to_string("crates/coflow-api/src/diagnostics.rs")
+        .expect("read coflow-api diagnostics");
+    let runtime_indexes = std::fs::read_to_string("crates/coflow-runtime/src/indexes.rs")
+        .expect("read runtime indexes");
+    let data_read = std::fs::read_to_string("crates/coflow-runtime/src/data_read.rs")
+        .expect("read runtime data read");
+    let schema_inspect = std::fs::read_to_string("crates/coflow-runtime/src/schema_inspect.rs")
+        .expect("read runtime schema inspect");
+    let mutation_apply = std::fs::read_to_string("crates/coflow-runtime/src/mutation/apply.rs")
+        .expect("read runtime mutation apply");
+
+    assert!(
+        api_diagnostics.contains("pub fn flat_diagnostics(&self) -> Vec<FlatDiagnostic>"),
+        "DiagnosticSet should own flat diagnostics without logical record context"
+    );
+    assert!(
+        runtime_indexes.contains("pub fn flat_diagnostics(&self) -> Vec<FlatDiagnostic>"),
+        "DiagnosticsStore should own flat diagnostics with logical record context"
+    );
+    for (name, source) in [
+        ("data_read.rs", data_read),
+        ("schema_inspect.rs", schema_inspect),
+        ("mutation/apply.rs", mutation_apply),
+    ] {
+        assert!(
+            !source.contains("fn flat_diagnostics") && !source.contains("fn session_flat_diagnostics"),
+            "{name} should call the diagnostic interface instead of owning flat conversion"
         );
     }
 }
@@ -3287,8 +3323,6 @@ fn engine_mutation_apply_does_not_live_in_mutation_mod_rs() {
         "pub fn apply_mutation",
         "fn apply_prepared_one",
         "enum MutationApplyError",
-        "fn session_flat_diagnostics",
-        "fn flat_diagnostics",
     ] {
         assert!(
             apply.contains(expected),
@@ -3299,6 +3333,10 @@ fn engine_mutation_apply_does_not_live_in_mutation_mod_rs() {
             "mutation apply helper `{expected}` should not live in mutation/mod.rs"
         );
     }
+    assert!(
+        !apply.contains("fn session_flat_diagnostics") && !apply.contains("fn flat_diagnostics"),
+        "mutation apply should use the diagnostic interface instead of owning flat conversion"
+    );
 }
 
 #[test]

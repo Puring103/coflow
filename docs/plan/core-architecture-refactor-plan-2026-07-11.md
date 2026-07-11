@@ -27,6 +27,8 @@ Do not run `cargo fmt` or `cargo clippy` for these normal refactor commits.
 
 ### 1. Diagnostics flat view and source positions
 
+Status: completed.
+
 Goal: move diagnostic flattening locality into diagnostics-owning modules.
 
 Implementation:

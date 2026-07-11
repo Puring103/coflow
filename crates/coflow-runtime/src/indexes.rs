@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_api::{source_location_display_path, DiagnosticSet, ResolvedSource};
+use coflow_api::{source_location_display_path, DiagnosticSet, FlatDiagnostic, ResolvedSource};
 use coflow_data_model::RecordOrigin;
 use coflow_data_model::{CfdDataModel, CfdRecordId};
 
@@ -78,6 +78,22 @@ impl DiagnosticsStore {
     #[must_use]
     pub fn logical_location(&self, index: usize) -> Option<&DiagnosticLogicalLocation> {
         self.logical_locations.get(&index)
+    }
+
+    #[must_use]
+    pub fn flat_diagnostics(&self) -> Vec<FlatDiagnostic> {
+        self.diagnostics
+            .diagnostics
+            .iter()
+            .enumerate()
+            .map(|(index, diagnostic)| {
+                let location = self.logical_location(index);
+                let actual_type = location.and_then(|location| location.actual_type.clone());
+                let record_key = location.and_then(|location| location.record_key.clone());
+                let field_path = location.and_then(|location| location.field_path.clone());
+                diagnostic.flat_view(actual_type, record_key, field_path)
+            })
+            .collect()
     }
 
     #[must_use]

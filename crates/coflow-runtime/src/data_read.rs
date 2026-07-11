@@ -95,7 +95,7 @@ pub fn data_sources(session: &ProjectSession, registry: &ProviderRegistry) -> Da
 
     DataSourcesReport {
         sources,
-        diagnostics: flat_diagnostics(session),
+        diagnostics: session.diagnostics.flat_diagnostics(),
     }
 }
 
@@ -106,7 +106,7 @@ pub fn data_list(session: &ProjectSession, query: &DataListQuery) -> DataListRep
 
     DataListReport {
         records,
-        diagnostics: flat_diagnostics(session),
+        diagnostics: session.diagnostics.flat_diagnostics(),
     }
 }
 
@@ -156,7 +156,7 @@ pub fn data_get(
 
     Ok(DataGetReport {
         records,
-        diagnostics: flat_diagnostics(session),
+        diagnostics: session.diagnostics.flat_diagnostics(),
     })
 }
 
@@ -281,19 +281,3 @@ fn not_found(coordinate: &RecordCoordinate) -> Diagnostic {
     )
 }
 
-fn flat_diagnostics(session: &ProjectSession) -> Vec<FlatDiagnostic> {
-    session
-        .diagnostics
-        .as_set()
-        .diagnostics
-        .iter()
-        .enumerate()
-        .map(|(index, diagnostic)| {
-            let location = session.diagnostics.logical_location(index);
-            let actual_type = location.and_then(|l| l.actual_type.clone());
-            let record_key = location.and_then(|l| l.record_key.clone());
-            let field_path = location.and_then(|l| l.field_path.clone());
-            diagnostic.flat_view(actual_type, record_key, field_path)
-        })
-        .collect()
-}

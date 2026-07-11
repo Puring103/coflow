@@ -149,14 +149,6 @@ fn output_error(err: io::Error) -> DiagnosticSet {
     cli_error("CLI-OUTPUT", format!("failed to write output: {err}"))
 }
 
-pub(super) fn flat_diagnostics(diagnostics: &DiagnosticSet) -> Vec<FlatDiagnostic> {
-    diagnostics
-        .diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.flat_view(None, None, None))
-        .collect()
-}
-
 pub(super) fn file_error_report(diagnostics: &DiagnosticSet) -> DataFileReport {
     DataFileReport {
         file: String::new(),
@@ -166,6 +158,6 @@ pub(super) fn file_error_report(diagnostics: &DiagnosticSet) -> DataFileReport {
         headers: Vec::new(),
         added: Vec::new(),
         removed: Vec::new(),
-        diagnostics: flat_diagnostics(diagnostics),
+        diagnostics: diagnostics.flat_diagnostics(),
     }
 }

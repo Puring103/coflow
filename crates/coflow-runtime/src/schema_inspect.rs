@@ -199,7 +199,7 @@ pub fn inspect_schema(
         types,
         enums,
         consts: consts(&session.schema),
-        diagnostics: flat_schema_diagnostics(session),
+        diagnostics: session.diagnostics.flat_diagnostics(),
     }
 }
 
@@ -217,7 +217,7 @@ pub fn schema_files(session: &ProjectSchemaSession) -> SchemaFilesReport {
         .collect();
     SchemaFilesReport {
         files,
-        diagnostics: flat_schema_diagnostics(session),
+        diagnostics: session.diagnostics.flat_diagnostics(),
     }
 }
 
@@ -331,19 +331,3 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
     }
 }
 
-fn flat_schema_diagnostics(session: &ProjectSchemaSession) -> Vec<FlatDiagnostic> {
-    session
-        .diagnostics
-        .as_set()
-        .diagnostics
-        .iter()
-        .enumerate()
-        .map(|(index, diagnostic)| {
-            let location = session.diagnostics.logical_location(index);
-            let actual_type = location.and_then(|l| l.actual_type.clone());
-            let record_key = location.and_then(|l| l.record_key.clone());
-            let field_path = location.and_then(|l| l.field_path.clone());
-            diagnostic.flat_view(actual_type, record_key, field_path)
-        })
-        .collect()
-}

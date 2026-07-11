@@ -252,11 +252,7 @@ fn check_schema_source(
         &build.sources,
         &build.paths,
     ));
-    Ok(diagnostics
-        .diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.flat_view(None, None, None))
-        .collect())
+    Ok(diagnostics.flat_diagnostics())
 }
 
 fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), DiagnosticSet> {

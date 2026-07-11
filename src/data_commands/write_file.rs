@@ -147,11 +147,5 @@ fn check_project_after_data_write(
     config_or_dir: Option<&Path>,
 ) -> Result<Vec<FlatDiagnostic>, DiagnosticSet> {
     let (session, _registry) = open_session(config_or_dir)?;
-    Ok(session
-        .diagnostics()
-        .as_set()
-        .diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.flat_view(None, None, None))
-        .collect())
+    Ok(session.diagnostics().flat_diagnostics())
 }

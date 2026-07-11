@@ -1,4 +1,4 @@
-use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
+use coflow_api::{DiagnosticSet, ProviderRegistry};
 
 use crate::{ProjectSession, RecordCoordinate};
 
@@ -39,7 +39,7 @@ impl ProjectSession {
                 Err(err) => {
                     write_ok = false;
                     let diagnostics = err.diagnostics();
-                    let flat = flat_diagnostics(diagnostics);
+                    let flat = diagnostics.flat_diagnostics();
                     failed.push(MutationFailedOp {
                         index,
                         op: prepared_op_name(op),
@@ -51,14 +51,14 @@ impl ProjectSession {
                             check_ok: false,
                             applied,
                             failed,
-                            diagnostics: session_flat_diagnostics(self),
+                            diagnostics: self.diagnostics.flat_diagnostics(),
                         });
                     }
                 }
             }
         }
 
-        let diagnostics = session_flat_diagnostics(self);
+        let diagnostics = self.diagnostics.flat_diagnostics();
         let check_ok = write_ok
             && diagnostics
                 .iter()
@@ -224,27 +224,3 @@ fn classify_prepare_error(op: &MutationOp, diagnostics: DiagnosticSet) -> Mutati
     }
 }
 
-fn session_flat_diagnostics(session: &ProjectSession) -> Vec<FlatDiagnostic> {
-    session
-        .diagnostics
-        .as_set()
-        .diagnostics
-        .iter()
-        .enumerate()
-        .map(|(index, diagnostic)| {
-            let location = session.diagnostics.logical_location(index);
-            let actual_type = location.and_then(|l| l.actual_type.clone());
-            let record_key = location.and_then(|l| l.record_key.clone());
-            let field_path = location.and_then(|l| l.field_path.clone());
-            diagnostic.flat_view(actual_type, record_key, field_path)
-        })
-        .collect()
-}
-
-fn flat_diagnostics(diagnostics: &DiagnosticSet) -> Vec<FlatDiagnostic> {
-    diagnostics
-        .diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.flat_view(None, None, None))
-        .collect()
-}

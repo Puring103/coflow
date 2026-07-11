@@ -6,8 +6,8 @@ use coflow_runtime::{
     DataPatchRequest, ProjectSchemaSession, ProjectSession, RecordCoordinate, Runtime,
 };
 use output::{
-    file_error_report, flat_diagnostics, write_data_write_file_human, write_file_report_human,
-    write_get_human, write_json, write_list_human, write_patch_human, write_sources_human,
+    file_error_report, write_data_write_file_human, write_file_report_human, write_get_human,
+    write_json, write_list_human, write_patch_human, write_sources_human,
 };
 use serde::Serialize;
 use std::io::Read;
@@ -164,7 +164,7 @@ pub fn get(options: DataGetOptions) -> Result<bool, DiagnosticSet> {
         Err(diagnostics) => {
             let report = DataGetReport {
                 records: Vec::new(),
-                diagnostics: flat_diagnostics(&diagnostics),
+                diagnostics: diagnostics.flat_diagnostics(),
             };
             if options.human {
                 write_get_human(&report)?;
@@ -233,7 +233,7 @@ pub fn patch(
             applied: Vec::new(),
             failed: Vec::new(),
             remaining_ops: Vec::new(),
-            diagnostics: flat_diagnostics(&diagnostics),
+            diagnostics: diagnostics.flat_diagnostics(),
         },
     };
     let ok = report.write_ok && !has_error_diagnostics(&report.diagnostics);
