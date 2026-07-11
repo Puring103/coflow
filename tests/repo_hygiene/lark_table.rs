@@ -400,6 +400,8 @@ fn lark_loader_writer_cache_does_not_live_in_lib_rs() {
 
         "pub(crate) fn cached_tenant_token",
 
+        "pub(crate) fn cached_sheet_metadata",
+
         "pub(crate) fn cached_sheet_id",
 
         "pub(crate) fn invalidate_caches",
@@ -408,7 +410,7 @@ fn lark_loader_writer_cache_does_not_live_in_lib_rs() {
 
         "fn lark_tenant_token_with_ttl",
 
-        "pub(crate) fn fetch_sheet_id_map",
+        "pub(crate) fn fetch_sheet_metadata_map",
 
     ] {
 
@@ -564,6 +566,78 @@ fn lark_loader_write_operations_do_not_live_in_lib_rs() {
         !write.contains("resolve_lark_column"),
         "Lark field writes should not duplicate table-core column resolution"
     );
+
+}
+
+
+
+#[test]
+
+fn table_header_reconciliation_lives_in_table_core() {
+
+    let header = std::fs::read_to_string(
+
+        "crates/coflow-loader-table-core/src/writer/header.rs",
+
+    )
+
+    .expect("read table header reconciliation");
+
+    let csv = std::fs::read_to_string(
+
+        "crates/coflow-loader-csv/src/writer/table_manager.rs",
+
+    )
+
+    .expect("read CSV table manager");
+
+    let excel = std::fs::read_to_string(
+
+        "crates/coflow-loader-excel/src/writer/table_manager.rs",
+
+    )
+
+    .expect("read Excel table manager");
+
+    let lark = std::fs::read_to_string("crates/coflow-loader-lark/src/write.rs")
+
+        .expect("read Lark table manager");
+
+
+
+    assert!(
+
+        header.contains("pub struct HeaderReconciliationPlan")
+
+            && header.contains("pub fn project_rows"),
+
+        "table-core should own header identity and row projection"
+
+    );
+
+    for (provider, source) in [("CSV", csv), ("Excel", excel), ("Lark", lark)] {
+
+        assert!(
+
+            source.contains("HeaderReconciliationPlan::new"),
+
+            "{provider} should consume the shared header reconciliation plan"
+
+        );
+
+        for duplicate in ["fn added_columns", "fn removed_columns"] {
+
+            assert!(
+
+                !source.contains(duplicate),
+
+                "{provider} should not duplicate header helper `{duplicate}`"
+
+            );
+
+        }
+
+    }
 
 }
 

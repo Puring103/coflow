@@ -4,7 +4,7 @@ use coflow_api::{DiagnosticSet, ResolvedSource};
 use serde_json::json;
 
 use crate::diagnostics::diag;
-use crate::dto::{ApiEnvelope, AuthResponse, SheetsQueryData};
+use crate::dto::{ApiEnvelope, AuthResponse, LarkSheetMetadata, SheetsQueryData};
 use crate::http::{LarkHttpClient, UreqLarkHttpClient};
 use crate::load::spreadsheet_token;
 use crate::source::lark_source_from_spec;
@@ -15,9 +15,9 @@ pub(crate) struct LarkWriterCache {
     /// Keyed by `app_id` — values represent a tenant access token + the
     /// instant after which it is considered stale.
     tokens: HashMap<String, CachedToken>,
-    /// Keyed by `spreadsheet_token` — values are the sheet-title → sheet-id
-    /// map captured the first time we hit the spreadsheet.
-    sheet_ids: HashMap<String, HashMap<String, String>>,
+    /// Keyed by `spreadsheet_token` — values are sheet-title/id → metadata
+    /// captured the first time we hit the spreadsheet.
+    sheets: HashMap<String, HashMap<String, LarkSheetMetadata>>,
 }
 
 #[derive(Debug, Clone)]
@@ -93,26 +93,26 @@ where
         Ok(token)
     }
 
-    /// Look up the sheet id for a sheet title in a given spreadsheet,
+    /// Look up sheet metadata for a sheet title or id in a given spreadsheet,
     /// fetching the spreadsheet's metadata once and caching the full
-    /// title->id map for subsequent lookups.
-    pub(crate) fn cached_sheet_id(
+    /// title/id map for subsequent lookups.
+    pub(crate) fn cached_sheet_metadata(
         &self,
         spreadsheet_token: &str,
         sheet_title: &str,
         tenant_token: &str,
-    ) -> Result<String, DiagnosticSet> {
+    ) -> Result<LarkSheetMetadata, DiagnosticSet> {
         if let Ok(cache) = self.cache.lock() {
-            if let Some(map) = cache.sheet_ids.get(spreadsheet_token) {
-                if let Some(id) = map.get(sheet_title) {
-                    return Ok(id.clone());
+            if let Some(map) = cache.sheets.get(spreadsheet_token) {
+                if let Some(metadata) = map.get(sheet_title) {
+                    return Ok(metadata.clone());
                 }
                 // The same spreadsheet might already be cached, but the
                 // particular title has not been resolved yet. Fall through
                 // to fetch + insert without invalidating siblings.
             }
         }
-        let map = fetch_sheet_id_map(&self.client, spreadsheet_token, tenant_token)?;
+        let map = fetch_sheet_metadata_map(&self.client, spreadsheet_token, tenant_token)?;
         let resolved = map.get(sheet_title).cloned().ok_or_else(|| {
             DiagnosticSet::one(diag(
                 "LARK-WRITE",
@@ -120,9 +120,19 @@ where
             ))
         })?;
         if let Ok(mut cache) = self.cache.lock() {
-            cache.sheet_ids.insert(spreadsheet_token.to_string(), map);
+            cache.sheets.insert(spreadsheet_token.to_string(), map);
         }
         Ok(resolved)
+    }
+
+    pub(crate) fn cached_sheet_id(
+        &self,
+        spreadsheet_token: &str,
+        sheet_title: &str,
+        tenant_token: &str,
+    ) -> Result<String, DiagnosticSet> {
+        self.cached_sheet_metadata(spreadsheet_token, sheet_title, tenant_token)
+            .map(|metadata| metadata.sheet_id)
     }
 
     /// Drop cached entries for an `app_id` / spreadsheet pair after a write
@@ -134,7 +144,7 @@ where
                 cache.tokens.remove(app);
             }
             if let Some(token) = spreadsheet_token {
-                cache.sheet_ids.remove(token);
+                cache.sheets.remove(token);
             }
         }
     }
@@ -199,14 +209,13 @@ fn lark_tenant_token_with_ttl(
     Ok((token, envelope.expire))
 }
 
-/// Fetch the sheet metadata for a spreadsheet and return a `title -> sheet_id`
-/// map keyed by sheet title (and also containing `sheet_id -> sheet_id`
-/// self-entries so callers passing a sheet id directly still get a hit).
-pub(crate) fn fetch_sheet_id_map(
+/// Fetch sheet metadata keyed by both title and id so either form can be used
+/// without discarding row/column bounds needed by table operations.
+pub(crate) fn fetch_sheet_metadata_map(
     client: &impl LarkHttpClient,
     spreadsheet_token: &str,
     tenant_token: &str,
-) -> Result<HashMap<String, String>, DiagnosticSet> {
+) -> Result<HashMap<String, LarkSheetMetadata>, DiagnosticSet> {
     let endpoint = format!(
         "{API_BASE}/sheets/v3/spreadsheets/{}/sheets/query",
         url_component(spreadsheet_token)
@@ -230,8 +239,8 @@ pub(crate) fn fetch_sheet_id_map(
     })?;
     let mut map = HashMap::new();
     for sheet in data.sheets {
-        map.insert(sheet.title.clone(), sheet.sheet_id.clone());
-        map.insert(sheet.sheet_id.clone(), sheet.sheet_id);
+        map.insert(sheet.title.clone(), sheet.clone());
+        map.insert(sheet.sheet_id.clone(), sheet);
     }
     Ok(map)
 }

@@ -661,7 +661,7 @@ fn creates_lark_sheet_and_writes_header() {
 }
 
 #[test]
-fn syncs_lark_sheet_header() {
+fn syncs_lark_sheet_header_and_reconciles_existing_rows() {
     let client = ScriptedClient::new([
         ScriptedResponse::post(
             "auth/v3/tenant_access_token/internal",
@@ -669,11 +669,15 @@ fn syncs_lark_sheet_header() {
         ),
         ScriptedResponse::get(
             "/sheets/v3/spreadsheets/sht_test/sheets/query",
-            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":2}}]}}"#,
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":4}}]}}"#,
         ),
         ScriptedResponse::get(
             "/sheets/v2/spreadsheets/sht_test/values/shtid_items%21A1%3AIV1?valueRenderOption=ToString",
-            r#"{"code":0,"data":{"valueRange":{"values":[["id","name"]]}}}"#,
+            r#"{"code":0,"data":{"valueRange":{"values":[["id","name","obsolete","power"]]}}}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v2/spreadsheets/sht_test/values/shtid_items%21A1%3AD2?valueRenderOption=ToString",
+            r#"{"code":0,"data":{"valueRange":{"values":[["id","name","obsolete","power"],["sword","Sword","legacy","10"]]}}}"#,
         ),
         ScriptedResponse::put(
             "/sheets/v2/spreadsheets/sht_test/values",
@@ -682,7 +686,7 @@ fn syncs_lark_sheet_header() {
     ]);
     let table_manager = LarkSheetWriter::new(client.clone());
     let source = lark_source();
-    let headers = vec!["id".to_string(), "name".to_string(), "power".to_string()];
+    let headers = vec!["power".to_string(), "id".to_string(), "name".to_string()];
     let request = coflow_api::SyncHeaderRequest {
         source: &source,
         sheet: Some("Items"),
@@ -698,8 +702,8 @@ fn syncs_lark_sheet_header() {
         .sync_header(ctx, &request)
         .expect("sync header");
 
-    assert_eq!(result.added, vec!["power".to_string()]);
-    assert!(result.removed.is_empty());
+    assert!(result.added.is_empty());
+    assert_eq!(result.removed, vec!["obsolete".to_string()]);
     let calls = client.calls();
     let Some((_, _, Some(body))) = calls
         .iter()
@@ -713,8 +717,11 @@ fn syncs_lark_sheet_header() {
         body,
         &serde_json::json!({
             "valueRange": {
-                "range": "shtid_items!A1:C1",
-                "values": [["id", "name", "power"]],
+                "range": "shtid_items!A1:D2",
+                "values": [
+                    ["power", "id", "name", ""],
+                    ["10", "sword", "Sword", ""],
+                ],
             }
         })
     );

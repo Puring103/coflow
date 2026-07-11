@@ -6,6 +6,7 @@
 //! using their own storage/API layer.
 mod cells;
 mod diagnostics;
+mod header;
 
 use coflow_data_model::{CfdDataModel, CfdPathSegment, CfdValue, RecordOrigin, SourceDocument};
 use std::collections::BTreeMap;
@@ -13,6 +14,7 @@ use std::collections::BTreeMap;
 use cells::{render_field_cells, render_insert_value};
 use diagnostics::one_error;
 pub use diagnostics::{TableWriteDiagnostic, TableWriteDiagnostics};
+pub use header::HeaderReconciliationPlan;
 
 pub type WriteFieldPathSegment = CfdPathSegment;
 

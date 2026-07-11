@@ -3,8 +3,8 @@ use coflow_api::{
     CreateTableRequest, DiagnosticSet, SourceLocationSpec, SyncHeaderRequest, TableAddressing,
     TableContext, TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
 };
+use coflow_loader_table_core::writer::HeaderReconciliationPlan;
 use coflow_loader_table_core::TableSheetConfig;
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::{diag, excel_cell_to_text, ExcelWriter};
@@ -112,15 +112,14 @@ impl TableManager for ExcelWriter {
                 Err(diagnostics)
             }
         })?;
-        let added = added_columns(request.headers, &old_header);
-        let removed = removed_columns(request.headers, &old_header);
+        let plan = HeaderReconciliationPlan::new(&old_header, request.headers);
         if !created_sheet {
-            sync_excel_header(path, sheet, request.headers)?;
+            sync_excel_header(path, sheet, &plan)?;
         }
         Ok(TableOperationResult {
             headers: request.headers.to_vec(),
-            added,
-            removed,
+            added: plan.added().to_vec(),
+            removed: plan.removed().to_vec(),
             diagnostics: DiagnosticSet::empty(),
         })
     }
@@ -233,15 +232,8 @@ fn excel_sheet_missing(diagnostics: &DiagnosticSet) -> bool {
 fn sync_excel_header(
     path: &Path,
     sheet_name: &str,
-    new_header: &[String],
+    plan: &HeaderReconciliationPlan,
 ) -> Result<(), DiagnosticSet> {
-    let old_header = excel_header(path, sheet_name)?;
-    let mut old_index = BTreeMap::new();
-    for (index, header) in old_header.iter().enumerate() {
-        let column = u32::try_from(index + 1)
-            .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel")))?;
-        old_index.insert(header.clone(), column);
-    }
     let mut book = umya_spreadsheet::reader::xlsx::read(path).map_err(|err| {
         DiagnosticSet::one(diag(
             EXCEL_TABLE,
@@ -255,25 +247,32 @@ fn sync_excel_header(
         ))
     })?;
     let (_max_column, max_row) = sheet.get_highest_column_and_row();
+    let source_columns = (0..plan.target_width())
+        .map(|target_column| {
+            plan.source_column(target_column)
+                .map(|source_column| u32::try_from(source_column + 1))
+                .transpose()
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel")))?;
     let mut rows = Vec::new();
     for row in 2..=max_row {
-        let values = new_header
+        let values = source_columns
             .iter()
-            .map(|header| {
-                old_index
-                    .get(header)
-                    .and_then(|column| sheet.get_cell((*column, row)))
+            .map(|source_column| {
+                source_column
+                    .and_then(|column| sheet.get_cell((column, row)))
                     .map_or_else(String::new, |cell| cell.get_value().to_string())
             })
             .collect::<Vec<_>>();
         rows.push(values);
     }
-    if !old_header.is_empty() {
-        let count = u32::try_from(old_header.len())
+    if plan.source_width() > 0 {
+        let count = u32::try_from(plan.source_width())
             .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel")))?;
         sheet.remove_column_by_index(&1, &count);
     }
-    for (index, header) in new_header.iter().enumerate() {
+    for (index, header) in plan.target_header().iter().enumerate() {
         let column = u32::try_from(index + 1)
             .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel")))?;
         sheet.get_cell_mut((column, 1_u32)).set_value(header);
@@ -296,22 +295,4 @@ fn sync_excel_header(
             format!("failed to write `{}`: {err:?}", path.display()),
         ))
     })
-}
-
-fn added_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
-    let old = old_header.iter().collect::<std::collections::BTreeSet<_>>();
-    new_header
-        .iter()
-        .filter(|header| !old.contains(header))
-        .cloned()
-        .collect()
-}
-
-fn removed_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
-    let new = new_header.iter().collect::<std::collections::BTreeSet<_>>();
-    old_header
-        .iter()
-        .filter(|header| !new.contains(header))
-        .cloned()
-        .collect()
 }

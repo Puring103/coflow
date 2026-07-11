@@ -150,9 +150,6 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
         "pub static CSV_TABLE_MANAGER_DESCRIPTOR",
         "fn create_table",
         "fn sync_header",
-        "fn added_columns",
-        "fn removed_columns",
-        "fn sync_rows_to_header",
     ] {
         assert!(
             table_manager.contains(expected),
@@ -163,6 +160,13 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
             "CSV table manager item `{expected}` should not live in writer.rs"
         );
     }
+    assert!(
+        table_manager.contains("HeaderReconciliationPlan::new")
+            && !table_manager.contains("fn sync_rows_to_header")
+            && !table_manager.contains("fn added_columns")
+            && !table_manager.contains("fn removed_columns"),
+        "CSV table header reconciliation should use the shared table-core plan"
+    );
     assert!(
         writer.lines().count() < 360,
         "coflow-loader-csv writer.rs should stay below the 360-line focused-module threshold"

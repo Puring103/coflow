@@ -1524,7 +1524,7 @@ fn data_sync_header_adds_and_removes_csv_columns_while_preserving_rows() {
     );
     std::fs::write(
         root.join("data").join("items.csv"),
-        "id,name,price\nsword,Sword,100\n",
+        "name,id,price\nSword,sword,100\n",
     )
     .expect("write csv");
 
@@ -1553,6 +1553,84 @@ fn data_sync_header_adds_and_removes_csv_columns_while_preserving_rows() {
     assert_eq!(json["removed"], json!(["price"]));
     let text = std::fs::read_to_string(root.join("data").join("items.csv")).expect("read csv");
     assert_eq!(text, "id,name,rarity\nsword,Sword,\n");
+}
+
+#[test]
+fn data_sync_header_reorders_excel_columns_without_rebinding_rows() {
+    let root = temp_project_dir("cli-data-sync-header-reorder-xlsx");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                name: string;
+                rarity: string;
+            }
+        ",
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("tables.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet = workbook.add_worksheet().set_name("Items").expect("sheet");
+    sheet.write_string(0, 0, "name").expect("write name");
+    sheet
+        .write_string(0, 1, "obsolete")
+        .expect("write obsolete");
+    sheet.write_string(0, 2, "id").expect("write id");
+    sheet.write_string(1, 0, "Sword").expect("write name value");
+    sheet
+        .write_string(1, 1, "legacy")
+        .expect("write obsolete value");
+    sheet.write_string(1, 2, "sword").expect("write key");
+    workbook.save(&workbook_path).expect("write workbook");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/tables.xlsx\n    type: excel\n    sheets:\n      - sheet: Items\n        type: Item\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args([
+            "data",
+            "sync-header",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/tables.xlsx",
+            "--type",
+            "Item",
+            "--provider",
+            "excel",
+            "--sheet",
+            "Items",
+        ])
+        .output()
+        .expect("run data sync-header");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("sync json");
+    assert_eq!(json["headers"], json!(["id", "name", "rarity"]));
+    assert_eq!(json["added"], json!(["rarity"]));
+    assert_eq!(json["removed"], json!(["obsolete"]));
+
+    let mut workbook = calamine::open_workbook_auto(&workbook_path).expect("read workbook");
+    let range = workbook.worksheet_range("Items").expect("read Items");
+    let rows = range
+        .rows()
+        .map(|row| row.iter().map(ToString::to_string).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rows,
+        vec![
+            vec!["id".to_string(), "name".to_string(), "rarity".to_string()],
+            vec!["sword".to_string(), "Sword".to_string(), String::new()],
+        ]
+    );
 }
 
 #[test]

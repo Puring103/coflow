@@ -10,8 +10,8 @@ use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue, RecordOrigin, SourceDocument,
 };
 use coflow_loader_table_core::writer::{
-    plan_field_write, plan_insert_record, TableFieldWrite, TableInsertRecord, TableSetCell,
-    TableWritePlan, WriteFieldPathSegment,
+    plan_field_write, plan_insert_record, HeaderReconciliationPlan, TableFieldWrite,
+    TableInsertRecord, TableSetCell, TableWritePlan, WriteFieldPathSegment,
 };
 use coflow_loader_table_core::{resolve_table_write_layout, TableSheetConfig};
 use std::collections::BTreeMap;
@@ -38,6 +38,85 @@ fn table_origin(field_columns: BTreeMap<Vec<String>, usize>) -> RecordOrigin {
 
 fn field_path(name: &str) -> Vec<WriteFieldPathSegment> {
     vec![WriteFieldPathSegment::Field(name.to_string())]
+}
+
+#[test]
+fn header_reconciliation_preserves_values_across_add_remove_and_reorder() {
+    let source = vec![
+        "id".to_string(),
+        "name".to_string(),
+        "obsolete".to_string(),
+    ];
+    let target = vec!["name".to_string(), "id".to_string(), "power".to_string()];
+    let plan = HeaderReconciliationPlan::new(&source, &target);
+
+    assert_eq!(plan.added(), &["power".to_string()]);
+    assert_eq!(plan.removed(), &["obsolete".to_string()]);
+    assert_eq!(plan.source_column(0), Some(1));
+    assert_eq!(plan.source_column(1), Some(0));
+    assert_eq!(plan.source_column(2), None);
+    assert_eq!(plan.storage_width(), 3);
+    assert_eq!(
+        plan.project_rows(&[
+            source,
+            vec!["sword".to_string(), "Sword".to_string(), "legacy".to_string()],
+        ]),
+        vec![
+            target,
+            vec!["Sword".to_string(), "sword".to_string(), String::new()],
+        ]
+    );
+}
+
+#[test]
+fn header_reconciliation_matches_repeated_expand_columns_by_occurrence() {
+    let source = vec![
+        "id".to_string(),
+        "env".to_string(),
+        String::new(),
+        String::new(),
+        "name".to_string(),
+    ];
+    let target = vec![
+        "id".to_string(),
+        "name".to_string(),
+        "env".to_string(),
+        String::new(),
+        String::new(),
+    ];
+    let plan = HeaderReconciliationPlan::new(&source, &target);
+
+    assert!(plan.added().is_empty());
+    assert!(plan.removed().is_empty());
+    assert_eq!(
+        plan.project_row(&[
+            "water".to_string(),
+            "4".to_string(),
+            "20".to_string(),
+            "0.5".to_string(),
+            "Lake".to_string(),
+        ]),
+        vec![
+            "water".to_string(),
+            "Lake".to_string(),
+            "4".to_string(),
+            "20".to_string(),
+            "0.5".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn header_reconciliation_tracks_duplicate_column_cardinality() {
+    let source = vec!["id".to_string(), String::new(), String::new()];
+    let target = vec!["id".to_string(), String::new()];
+    let plan = HeaderReconciliationPlan::new(&source, &target);
+
+    assert!(plan.added().is_empty());
+    assert_eq!(plan.removed(), &[String::new()]);
+    assert_eq!(plan.source_width(), 3);
+    assert_eq!(plan.target_width(), 2);
+    assert_eq!(plan.storage_width(), 3);
 }
 
 #[test]

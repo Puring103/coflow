@@ -2,8 +2,8 @@ use coflow_api::{
     CreateTableRequest, DiagnosticSet, SourceLocationSpec, SyncHeaderRequest, TableAddressing,
     TableContext, TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
 };
+use coflow_loader_table_core::writer::HeaderReconciliationPlan;
 use coflow_loader_table_core::TableSheetConfig;
-use std::collections::BTreeMap;
 use std::fs;
 
 use super::{diag, CsvWriter};
@@ -119,9 +119,8 @@ impl TableManager for CsvWriter {
             ))
         })?;
         let old_header = rows.first().cloned().unwrap_or_default();
-        let added = added_columns(request.headers, &old_header);
-        let removed = removed_columns(request.headers, &old_header);
-        rows = sync_rows_to_header(rows, request.headers);
+        let plan = HeaderReconciliationPlan::new(&old_header, request.headers);
+        rows = plan.project_rows(&rows);
         fs::write(path, write(&rows)).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-TABLE",
@@ -130,8 +129,8 @@ impl TableManager for CsvWriter {
         })?;
         Ok(TableOperationResult {
             headers: request.headers.to_vec(),
-            added,
-            removed,
+            added: plan.added().to_vec(),
+            removed: plan.removed().to_vec(),
             diagnostics: DiagnosticSet::empty(),
         })
     }
@@ -146,49 +145,4 @@ fn table_header_options(config: TableSheetConfig) -> TableHeaderOptions {
         out = out.with_key(key);
     }
     out.with_columns(config.columns)
-}
-
-fn added_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
-    let old = old_header.iter().collect::<std::collections::BTreeSet<_>>();
-    new_header
-        .iter()
-        .filter(|header| !old.contains(header))
-        .cloned()
-        .collect()
-}
-
-fn removed_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
-    let new = new_header.iter().collect::<std::collections::BTreeSet<_>>();
-    old_header
-        .iter()
-        .filter(|header| !new.contains(header))
-        .cloned()
-        .collect()
-}
-
-fn sync_rows_to_header(mut rows: Vec<Vec<String>>, new_header: &[String]) -> Vec<Vec<String>> {
-    let Some(old_header) = rows.first().cloned() else {
-        return vec![new_header.to_vec()];
-    };
-    let old_index = old_header
-        .iter()
-        .enumerate()
-        .map(|(index, header)| (header.clone(), index))
-        .collect::<BTreeMap<_, _>>();
-    let mut out = vec![new_header.to_vec()];
-    for row in rows.drain(1..) {
-        out.push(
-            new_header
-                .iter()
-                .map(|header| {
-                    old_index
-                        .get(header)
-                        .and_then(|index| row.get(*index))
-                        .cloned()
-                        .unwrap_or_default()
-                })
-                .collect(),
-        );
-    }
-    out
 }

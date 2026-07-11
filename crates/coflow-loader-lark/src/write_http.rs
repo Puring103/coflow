@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use crate::diagnostics::diag;
 use crate::dto::{ApiEnvelope, ValuesData};
 use crate::http::LarkHttpClient;
-use crate::writer_cache::{fetch_sheet_id_map, LarkWriteAuth};
+use crate::writer_cache::{fetch_sheet_metadata_map, LarkWriteAuth};
 use crate::{
     api_error_message, column_name, json_cell_text, url_component, LarkSheetWriter, API_BASE,
 };
@@ -67,8 +67,8 @@ where
             auth,
             LarkHttpMethod::Post,
         )?;
-        let map = fetch_sheet_id_map(&self.client, spreadsheet_token, &auth.token)?;
-        map.get(sheet).cloned().ok_or_else(|| {
+        let map = fetch_sheet_metadata_map(&self.client, spreadsheet_token, &auth.token)?;
+        map.get(sheet).map(|metadata| metadata.sheet_id.clone()).ok_or_else(|| {
             DiagnosticSet::one(diag(
                 "LARK-WRITE",
                 format!("created lark sheet `{sheet}` was not found in metadata"),
@@ -92,6 +92,29 @@ where
             "valueRange": {
                 "range": format!("{sheet_id}!A1:{last_column}1"),
                 "values": [headers],
+            }
+        });
+        self.send_lark_write("values", &endpoint, &body, auth, LarkHttpMethod::Put)
+    }
+
+    pub(crate) fn write_lark_rows(
+        &self,
+        spreadsheet_token: &str,
+        sheet_id: &str,
+        rows: &[Vec<String>],
+        width: usize,
+        auth: &LarkWriteAuth,
+    ) -> Result<(), DiagnosticSet> {
+        let last_column = column_name(width.max(1));
+        let last_row = rows.len().max(1);
+        let endpoint = format!(
+            "{API_BASE}/sheets/v2/spreadsheets/{}/values",
+            url_component(spreadsheet_token)
+        );
+        let body = json!({
+            "valueRange": {
+                "range": format!("{sheet_id}!A1:{last_column}{last_row}"),
+                "values": rows,
             }
         });
         self.send_lark_write("values", &endpoint, &body, auth, LarkHttpMethod::Put)
@@ -229,6 +252,57 @@ where
             .unwrap_or_default()
             .into_iter()
             .map(json_cell_text)
+            .collect())
+    }
+
+    pub(crate) fn read_lark_rows(
+        &self,
+        spreadsheet_token: &str,
+        sheet_id: &str,
+        width: usize,
+        row_count: usize,
+        token: &str,
+    ) -> Result<Vec<Vec<String>>, DiagnosticSet> {
+        let last_column = column_name(width.max(1));
+        let range = format!("{sheet_id}!A1:{last_column}{}", row_count.max(1));
+        let endpoint = format!(
+            "{API_BASE}/sheets/v2/spreadsheets/{}/values/{}?valueRenderOption=ToString",
+            url_component(spreadsheet_token),
+            url_component(&range)
+        );
+        let response = self.client.get(&endpoint, token).map_err(|message| {
+            DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!("failed to read lark table before header sync: {message}"),
+            ))
+        })?;
+        let envelope: ApiEnvelope<ValuesData> = serde_json::from_str(&response).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!("failed to parse lark table before header sync: {err}"),
+            ))
+        })?;
+        if envelope.code != 0 {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                api_error_message(
+                    "read lark table before header sync",
+                    envelope.code,
+                    envelope.msg.as_deref(),
+                ),
+            )));
+        }
+        let data = envelope.data.ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "read lark table response did not include `data`",
+            ))
+        })?;
+        Ok(data
+            .value_range
+            .values
+            .into_iter()
+            .map(|row| row.into_iter().map(json_cell_text).collect())
             .collect())
     }
 

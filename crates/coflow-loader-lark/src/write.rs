@@ -6,10 +6,11 @@ use coflow_api::{
     WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
-use coflow_loader_table_core::TableSheetConfig;
 use coflow_loader_table_core::writer::{
-    plan_field_write, plan_insert_record, TableFieldWrite, TableInsertRecord, TableWritePlan,
+    plan_field_write, plan_insert_record, HeaderReconciliationPlan, TableFieldWrite,
+    TableInsertRecord, TableWritePlan,
 };
+use coflow_loader_table_core::TableSheetConfig;
 use serde_json::json;
 
 use crate::diagnostics::{diag, table_write_diagnostics_to_api};
@@ -392,15 +393,33 @@ where
         let spreadsheet_token =
             self.lark_spreadsheet_token_from_source(request.source, &auth.token)?;
         let sheet = request.sheet.unwrap_or(request.actual_type);
-        let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet, &auth.token)?;
-        let old_header = self.read_lark_header(&spreadsheet_token, &sheet_id, &auth.token)?;
-        let added = added_columns(request.headers, &old_header);
-        let removed = removed_columns(request.headers, &old_header);
-        self.write_lark_header(&spreadsheet_token, &sheet_id, request.headers, &auth)?;
+        let metadata = self.cached_sheet_metadata(&spreadsheet_token, sheet, &auth.token)?;
+        let mut old_header =
+            self.read_lark_header(&spreadsheet_token, &metadata.sheet_id, &auth.token)?;
+        old_header.resize(metadata.column_count().max(old_header.len()), String::new());
+        let plan = HeaderReconciliationPlan::new(&old_header, request.headers);
+        let source_rows = self.read_lark_rows(
+            &spreadsheet_token,
+            &metadata.sheet_id,
+            plan.source_width(),
+            metadata.row_count(),
+            &auth.token,
+        )?;
+        let mut target_rows = plan.project_rows(&source_rows);
+        for row in &mut target_rows {
+            row.resize(plan.storage_width(), String::new());
+        }
+        self.write_lark_rows(
+            &spreadsheet_token,
+            &metadata.sheet_id,
+            &target_rows,
+            plan.storage_width(),
+            &auth,
+        )?;
         Ok(TableOperationResult {
             headers: request.headers.to_vec(),
-            added,
-            removed,
+            added: plan.added().to_vec(),
+            removed: plan.removed().to_vec(),
             diagnostics: DiagnosticSet::empty(),
         })
     }
@@ -415,22 +434,4 @@ fn table_header_options(config: TableSheetConfig) -> TableHeaderOptions {
         out = out.with_key(key);
     }
     out.with_columns(config.columns)
-}
-
-fn added_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
-    let old = old_header.iter().collect::<std::collections::BTreeSet<_>>();
-    new_header
-        .iter()
-        .filter(|header| !old.contains(header))
-        .cloned()
-        .collect()
-}
-
-fn removed_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
-    let new = new_header.iter().collect::<std::collections::BTreeSet<_>>();
-    old_header
-        .iter()
-        .filter(|header| !new.contains(header))
-        .cloned()
-        .collect()
 }
