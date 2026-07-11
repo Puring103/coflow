@@ -760,6 +760,10 @@ fn engine_public_mutation_api_does_not_expose_prepared_ops() {
         .replace("\r\n", "\n");
 
     assert!(
+        !engine.contains("PreparedMutation"),
+        "prepared mutation is an engine-internal execution detail and must not be re-exported"
+    );
+    assert!(
         !engine.contains("PreparedMutationOp"),
         "prepared mutation ops are an engine-internal execution detail and must not be re-exported"
     );
@@ -767,14 +771,13 @@ fn engine_public_mutation_api_does_not_expose_prepared_ops() {
         !mutation.contains("pub enum PreparedMutationOp"),
         "external callers must not be able to construct prepared ops that bypass mutation validation"
     );
-    let prepared_struct = mutation
-        .split("pub struct PreparedMutation {")
-        .nth(1)
-        .and_then(|rest| rest.split("\n}").next())
-        .expect("PreparedMutation struct");
     assert!(
-        !prepared_struct.contains("pub "),
-        "PreparedMutation should be opaque; found public field in `{prepared_struct}`"
+        !mutation.contains("pub struct PreparedMutation"),
+        "external callers must not receive PreparedMutation as a public runtime type"
+    );
+    assert!(
+        mutation.contains("pub(super) struct PreparedMutation"),
+        "PreparedMutation should stay scoped to the mutation module"
     );
 }
 
@@ -861,7 +864,7 @@ fn engine_mutation_prepare_does_not_live_in_mutation_mod_rs() {
         .expect("read mutation prepare module");
 
     for expected in [
-        "pub fn prepare_mutation",
+        "fn prepare_mutation_request",
         "fn prepare_one",
         "fn prepare_insert_fields",
         "fn expected_value_for_path",
@@ -890,7 +893,7 @@ fn engine_mutation_apply_does_not_live_in_mutation_mod_rs() {
         .expect("read mutation apply module");
 
     for expected in [
-        "pub fn apply_prepared_mutation",
+        "fn apply_prepared_mutation",
         "pub fn apply_mutation",
         "fn apply_prepared_one",
         "enum MutationApplyError",

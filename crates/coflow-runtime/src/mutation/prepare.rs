@@ -12,41 +12,29 @@ use super::defaults::{
     create_record_draft_for_type, default_missing_fields_for_type, default_record_for_type,
     default_value_for_type_ref,
 };
-use super::types::PreparedMutationOp;
+use super::types::{PreparedMutation, PreparedMutationOp};
 use super::{one_mutation_error, one_path_error, schema_field};
 use super::{
     CreateRecordDraft, DefaultMaterialization, MutationFields, MutationOp, MutationRequest,
-    PreparedMutation,
 };
 
-impl ProjectSession {
-    /// Prepare a mutation request for later execution.
-    ///
-    /// # Errors
-    ///
-    /// This function currently reserves `Err` for future whole-request
-    /// validation failures. Individual operations stay pending until apply
-    /// time so each op can be validated against the latest session state
-    /// after earlier ops in the same batch have run.
-    pub fn prepare_mutation(
-        &self,
-        request: MutationRequest,
-    ) -> Result<PreparedMutation, DiagnosticSet> {
-        let MutationRequest {
-            check_after_write: _,
-            stop_on_write_error,
-            ops,
-        } = request;
-        let prepared_ops = ops
-            .into_iter()
-            .map(|op| PreparedMutationOp::Pending { op })
-            .collect();
-        Ok(PreparedMutation {
-            stop_on_write_error,
-            ops: prepared_ops,
-        })
+pub(super) fn prepare_mutation_request(request: MutationRequest) -> PreparedMutation {
+    let MutationRequest {
+        check_after_write: _,
+        stop_on_write_error,
+        ops,
+    } = request;
+    let prepared_ops = ops
+        .into_iter()
+        .map(|op| PreparedMutationOp::Pending { op })
+        .collect();
+    PreparedMutation {
+        stop_on_write_error,
+        ops: prepared_ops,
     }
+}
 
+impl ProjectSession {
     /// Build a schema-shaped default record value.
     ///
     /// # Errors

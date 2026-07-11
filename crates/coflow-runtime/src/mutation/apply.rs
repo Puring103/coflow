@@ -2,11 +2,10 @@ use coflow_api::{DiagnosticSet, ProviderRegistry};
 
 use crate::{ProjectSession, RecordCoordinate};
 
-use super::prepare::prepare_one;
-use super::types::PreparedMutationOp;
+use super::prepare::{prepare_mutation_request, prepare_one};
+use super::types::{PreparedMutation, PreparedMutationOp};
 use super::{
     MutationAppliedOp, MutationFailedOp, MutationOp, MutationReport, MutationRequest,
-    PreparedMutation,
 };
 
 impl ProjectSession {
@@ -17,7 +16,7 @@ impl ProjectSession {
     /// Returns diagnostics only when execution cannot produce a report.
     /// Per-operation validation and writer failures are represented in the
     /// returned [`MutationReport`].
-    pub fn apply_prepared_mutation(
+    fn apply_prepared_mutation(
         &mut self,
         registry: &ProviderRegistry,
         prepared: PreparedMutation,
@@ -84,7 +83,7 @@ impl ProjectSession {
         registry: &ProviderRegistry,
         request: MutationRequest,
     ) -> Result<MutationReport, DiagnosticSet> {
-        let prepared = self.prepare_mutation(request)?;
+        let prepared = prepare_mutation_request(request);
         self.apply_prepared_mutation(registry, prepared)
     }
 }

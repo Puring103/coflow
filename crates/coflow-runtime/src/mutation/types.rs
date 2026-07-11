@@ -118,7 +118,7 @@ pub enum CreateRequiredInput {
 }
 
 #[derive(Debug, Clone)]
-pub struct PreparedMutation {
+pub(super) struct PreparedMutation {
     pub(super) stop_on_write_error: bool,
     pub(super) ops: Vec<PreparedMutationOp>,
 }

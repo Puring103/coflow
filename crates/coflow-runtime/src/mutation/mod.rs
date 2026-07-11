@@ -13,7 +13,7 @@ mod types;
 pub use types::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
-    MutationReport, MutationRequest, MutationValue, PreparedMutation,
+    MutationReport, MutationRequest, MutationValue,
 };
 
 pub(super) fn schema_field<'a>(
