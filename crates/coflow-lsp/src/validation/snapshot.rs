@@ -50,6 +50,10 @@ impl ValidationInput {
             open_documents: open_documents.clone(),
         }
     }
+
+    pub(crate) const fn revision(&self) -> ValidationRevision {
+        self.revision
+    }
 }
 
 pub(crate) struct ValidationSnapshot {
@@ -61,7 +65,7 @@ pub(crate) struct ValidationSnapshot {
 }
 
 impl ValidationSnapshot {
-    pub(super) fn empty(revision: ValidationRevision) -> Self {
+    pub(crate) fn empty(revision: ValidationRevision) -> Self {
         Self {
             revision,
             build: None,
@@ -70,6 +74,7 @@ impl ValidationSnapshot {
             document_versions: BTreeMap::new(),
         }
     }
+
 }
 
 pub(crate) fn build_snapshot(input: ValidationInput) -> ValidationSnapshot {

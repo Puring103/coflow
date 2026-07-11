@@ -1,4 +1,5 @@
 mod snapshot;
+mod worker;
 
 use coflow_cfd::{parse_cfd, CfdAst};
 use coflow_cft::CftContainer;
@@ -13,6 +14,7 @@ use crate::path_from_file_uri;
 pub(crate) use snapshot::{
     build_snapshot, ValidationInput, ValidationRevision, ValidationSnapshot,
 };
+pub(crate) use worker::ValidationWorker;
 
 pub(crate) struct LspValidationCore {
     project: Project,
@@ -141,6 +143,12 @@ impl LspValidationCore {
 
     pub(crate) fn validation_input(&self) -> ValidationInput {
         ValidationInput::new(self.revision, &self.project, &self.open_documents)
+    }
+
+    pub(crate) fn is_current(&self) -> bool {
+        self.snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.revision == self.revision)
     }
 
     pub(crate) fn commit_snapshot(

@@ -67,7 +67,10 @@ pub(crate) use state::{
     enum_variant_exists, field_by_chain, field_by_type, quantifier_bindings_at,
     type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
+use std::collections::VecDeque;
 use std::io::{self, BufReader, Write};
+use std::sync::mpsc::{self, Sender};
+use std::thread;
 #[cfg(test)]
 use std::path::PathBuf;
 pub(crate) use text::{
@@ -78,8 +81,16 @@ use uri::path_from_file_uri;
 #[cfg(test)]
 pub(crate) use uri::path_to_file_uri;
 pub(crate) use validation::{
-    DiagnosticPublication, LspRequestDocument, LspValidationCore,
+    DiagnosticPublication, LspRequestDocument, LspValidationCore, ValidationSnapshot,
+    ValidationWorker,
 };
+
+enum RunEvent {
+    Incoming(Vec<u8>),
+    ReadError(String),
+    EndOfInput,
+    Validation(ValidationSnapshot),
+}
 
 /// Runs the CFT language server over stdio.
 ///
@@ -88,26 +99,139 @@ pub(crate) use validation::{
 /// Returns an error when reading LSP messages, parsing JSON, handling a request,
 /// or writing a response fails.
 pub fn run(project: Project) -> Result<bool, String> {
-    let stdin = io::stdin();
+    let (events_tx, events_rx) = mpsc::channel();
+    spawn_input_reader(events_tx.clone());
+    let _validation_worker = ValidationWorker::spawn(events_tx);
     let stdout = io::stdout();
     let mut server = LspServer::new(project, stdout.lock());
-    let mut reader = BufReader::new(stdin.lock());
+    let mut pending_requests = VecDeque::new();
 
-    while let Some(bytes) = read_message(&mut reader)? {
-        let message: Value = match serde_json::from_slice(&bytes) {
-            Ok(message) => message,
-            Err(err) => {
-                server.write_parse_error(&format!("failed to parse LSP JSON message: {err}"))?;
-                continue;
+    while let Ok(event) = events_rx.recv() {
+        match event {
+            RunEvent::Incoming(bytes) => {
+                let message: Value = match serde_json::from_slice(&bytes) {
+                    Ok(message) => message,
+                    Err(err) => {
+                        server.write_parse_error(&format!(
+                            "failed to parse LSP JSON message: {err}"
+                        ))?;
+                        continue;
+                    }
+                };
+                if !server.shutdown_requested {
+                    if let Some(changed) = apply_runtime_document_notification(
+                        &mut server.core,
+                        &message,
+                    )? {
+                        if changed {
+                            _validation_worker.schedule(server.core.validation_input());
+                        }
+                        continue;
+                    }
+                }
+                if request_requires_snapshot(&message) && !server.core.is_current() {
+                    pending_requests.push_back(message);
+                    _validation_worker.schedule(server.core.validation_input());
+                    continue;
+                }
+                server.handle_message(&message)?;
             }
-        };
-        server.handle_message(&message)?;
+            RunEvent::Validation(candidate) => {
+                let publications = server.core.commit_snapshot(candidate);
+                server.publish_diagnostic_publications(publications)?;
+                if server.core.is_current() {
+                    while let Some(request) = pending_requests.pop_front() {
+                        server.handle_message(&request)?;
+                    }
+                }
+            }
+            RunEvent::ReadError(error) => return Err(error),
+            RunEvent::EndOfInput => break,
+        }
         if server.should_exit {
             break;
         }
     }
 
     Ok(true)
+}
+
+fn spawn_input_reader(events: Sender<RunEvent>) {
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        let mut reader = BufReader::new(stdin.lock());
+        loop {
+            match read_message(&mut reader) {
+                Ok(Some(bytes)) => {
+                    if events.send(RunEvent::Incoming(bytes)).is_err() {
+                        break;
+                    }
+                }
+                Ok(None) => {
+                    let _ = events.send(RunEvent::EndOfInput);
+                    break;
+                }
+                Err(error) => {
+                    let _ = events.send(RunEvent::ReadError(error));
+                    break;
+                }
+            }
+        }
+    });
+}
+
+fn apply_runtime_document_notification(
+    core: &mut LspValidationCore,
+    message: &Value,
+) -> Result<Option<bool>, String> {
+    if message.get("id").is_some() {
+        return Ok(None);
+    }
+    let Some(method) = message.get("method").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let params = message.get("params").unwrap_or(&Value::Null);
+    match method {
+        "textDocument/didOpen" => did_open_document(params).map_or(Ok(Some(false)), |update| {
+            let (uri, text, version) = update;
+            core.apply_open_document(uri, text, version).map(Some)
+        }),
+        "textDocument/didChange" => {
+            did_change_document(params).map_or(Ok(Some(false)), |update| {
+                let (uri, text, version) = update;
+                core.apply_change_document(uri, text, version).map(Some)
+            })
+        }
+        "textDocument/didSave" => did_save_document(params).map_or(Ok(Some(false)), |update| {
+            let (uri, text) = update;
+            if let Some(text) = text {
+                core.apply_change_document(uri, text, None).map(Some)
+            } else {
+                core.mark_project_changed().map(|()| Some(true))
+            }
+        }),
+        "textDocument/didClose" => text_document_uri(params).map_or(Ok(Some(false)), |uri| {
+            core.apply_close_document(&uri).map(Some)
+        }),
+        _ => Ok(None),
+    }
+}
+
+fn request_requires_snapshot(message: &Value) -> bool {
+    if message.get("id").is_none() {
+        return false;
+    }
+    matches!(
+        message.get("method").and_then(Value::as_str),
+        Some(
+            "textDocument/completion"
+                | "textDocument/hover"
+                | "textDocument/definition"
+                | "textDocument/documentSymbol"
+                | "textDocument/formatting"
+                | "textDocument/semanticTokens/full"
+        )
+    )
 }
 
 struct LspServer<W> {

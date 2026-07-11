@@ -138,6 +138,91 @@ fn root_lsp_starts_language_server() {
 }
 
 #[test]
+fn lsp_feature_request_waits_for_latest_rapid_change_revision() {
+    let suffix = unique_suffix();
+    let project_dir = std::env::temp_dir().join(format!("coflow-lsp-latest-revision-{suffix}"));
+    let _cleanup = TempDirCleanup(project_dir.clone());
+    let schema_dir = project_dir.join("schema");
+    std::fs::create_dir_all(&schema_dir).expect("create schema dir");
+    std::fs::write(project_dir.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+    let schema_path = schema_dir.join("main.cft");
+    std::fs::write(&schema_path, "type First {}\n").expect("write schema");
+
+    let mut child = coflow()
+        .args(["lsp", project_dir.to_str().expect("utf8 temp path")])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn coflow lsp");
+    let mut stdin = child.stdin.take().expect("lsp stdin");
+    let mut stdout = child.stdout.take().expect("lsp stdout");
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }),
+    );
+    read_lsp_response(&mut stdout, 1);
+
+    let uri = file_uri(&std::fs::canonicalize(&schema_path).expect("schema path"));
+    let latest = "type Third {}\ntype Holder { target: Third; }\n";
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": { "textDocument": {
+                "uri": uri, "languageId": "cft", "version": 1, "text": "type First {}\n"
+            }}
+        }),
+    );
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didChange",
+            "params": {
+                "textDocument": { "uri": uri, "version": 2 },
+                "contentChanges": [{ "text": "type Broken { missing: Missing; }\n" }]
+            }
+        }),
+    );
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didChange",
+            "params": {
+                "textDocument": { "uri": uri, "version": 3 },
+                "contentChanges": [{ "text": latest }]
+            }
+        }),
+    );
+
+    let definition = request_definition_at(
+        &mut stdin,
+        &mut stdout,
+        2,
+        &uri,
+        latest,
+        position_after(latest, "target: Third"),
+    );
+    let location = definition
+        .as_array()
+        .and_then(|locations| locations.first())
+        .expect("latest definition location");
+    assert_eq!(location["uri"], uri);
+    assert_eq!(location["range"]["start"]["line"], 0);
+    assert_eq!(location["range"]["start"]["character"], 5);
+    assert_eq!(location["range"]["end"]["character"], 10);
+
+    shutdown_lsp(stdin, &mut stdout, &mut child, 3);
+}
+
+#[test]
 fn lsp_prefers_open_document_uri_for_project_diagnostics() {
     let suffix = format!(
         "{}-{}",

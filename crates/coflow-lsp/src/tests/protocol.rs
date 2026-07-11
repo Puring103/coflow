@@ -1,6 +1,6 @@
 use super::common::*;
 use super::*;
-use crate::validation::build_snapshot;
+use crate::validation::{build_snapshot, ValidationInput};
 
 #[test]
 fn request_errors_are_reported_without_returning_from_handler() {
@@ -326,6 +326,67 @@ fn stale_document_version_does_not_replace_newer_text() {
         .expect("open document state");
     assert_eq!(document.text, "type Newer {}\n");
     assert_eq!(document.version, Some(7));
+}
+
+#[test]
+fn validation_worker_coalesces_pending_revisions_and_commits_only_latest() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{mpsc, Arc, Barrier};
+    use std::time::Duration;
+
+    let (_cleanup, project) = test_project("lsp-validation-coalescing", "type First {}\n");
+    let uri = path_to_file_uri(&project.root_dir.join("schema").join("main.cft"));
+    let mut core = LspValidationCore::new(project);
+    core.apply_open_document(uri.clone(), "type First {}\n".to_string(), Some(1))
+        .expect("open first revision");
+    let first = core.validation_input();
+
+    let entered = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    let build_count = Arc::new(AtomicUsize::new(0));
+    let builder_entered = Arc::clone(&entered);
+    let builder_release = Arc::clone(&release);
+    let builder_count = Arc::clone(&build_count);
+    let (events_tx, events_rx) = mpsc::channel();
+    let worker = ValidationWorker::spawn_test(
+        events_tx,
+        Arc::new(move |input: ValidationInput| {
+            if builder_count.fetch_add(1, Ordering::SeqCst) == 0 {
+                builder_entered.wait();
+                builder_release.wait();
+            }
+            ValidationSnapshot::empty(input.revision())
+        }),
+    );
+
+    assert!(worker.schedule(first));
+    entered.wait();
+    core.apply_change_document(uri.clone(), "type Second {}\n".to_string(), Some(2))
+        .expect("second revision");
+    assert!(worker.schedule(core.validation_input()));
+    core.apply_change_document(uri, "type Third {}\n".to_string(), Some(3))
+        .expect("third revision");
+    let latest = core.validation_input();
+    assert!(worker.schedule(latest.clone()));
+    release.wait();
+
+    let mut snapshots = Vec::new();
+    while snapshots.len() < 2 {
+        match events_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("validation worker result")
+        {
+            RunEvent::Validation(snapshot) => snapshots.push(snapshot),
+            RunEvent::Incoming(_) | RunEvent::ReadError(_) | RunEvent::EndOfInput => {}
+        }
+    }
+    assert_eq!(build_count.load(Ordering::SeqCst), 2);
+    assert!(core.commit_snapshot(snapshots.remove(0)).is_empty());
+    assert!(!core.is_current());
+    core.commit_snapshot(snapshots.remove(0));
+    assert!(core.is_current());
+    assert_eq!(latest.revision(), core.validation_input().revision());
+    drop(worker);
 }
 
 #[test]
