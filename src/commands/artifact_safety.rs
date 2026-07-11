@@ -1,6 +1,7 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, SourceLocationSpec};
 use coflow_project::Project;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -20,6 +21,7 @@ pub(super) fn artifact_safety_diagnostics(
     outputs: &[ArtifactOutputPlan],
 ) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
+    let mut resolved_outputs = Vec::new();
     for output in outputs {
         if output.dir.exists() && !output.dir.is_dir() {
             diagnostics.push(artifact_diagnostic(
@@ -30,18 +32,39 @@ pub(super) fn artifact_safety_diagnostics(
                 ),
             ));
         }
-        diagnostics.extend(output_scope_diagnostics(project, output));
+        match normalized_existing_or_future_path(&output.dir) {
+            Ok(output_dir) => {
+                diagnostics.extend(output_scope_diagnostics(project, output, &output_dir));
+                resolved_outputs.push((output, output_dir));
+            }
+            Err(err) => diagnostics.push(artifact_diagnostic(
+                &output.dir,
+                format!(
+                    "failed to resolve existing ancestor of {} `{}`: {err}",
+                    output.label,
+                    output.dir.display()
+                ),
+            )),
+        }
     }
-    diagnostics.extend(overlapping_output_diagnostics(outputs));
+    diagnostics.extend(overlapping_output_diagnostics(&resolved_outputs));
     diagnostics
 }
 
-fn output_scope_diagnostics(project: &Project, output: &ArtifactOutputPlan) -> DiagnosticSet {
-    let output_dir = normalized_existing_or_future_path(&output.dir);
-    let project_root = normalized_existing_or_future_path(&project.root_dir);
+fn output_scope_diagnostics(
+    project: &Project,
+    output: &ArtifactOutputPlan,
+    output_dir: &Path,
+) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
 
-    if output_dir == project_root {
+    let project_root = resolve_input_path(
+        &project.root_dir,
+        "project root",
+        output,
+        &mut diagnostics,
+    );
+    if project_root.as_deref() == Some(output_dir) {
         diagnostics.push(artifact_diagnostic(
             &output.dir,
             format!(
@@ -52,8 +75,16 @@ fn output_scope_diagnostics(project: &Project, output: &ArtifactOutputPlan) -> D
         ));
     }
 
-    let config_path = normalized_existing_or_future_path(&project.config_path);
-    if paths_overlap(&output_dir, &config_path) {
+    let config_path = resolve_input_path(
+        &project.config_path,
+        "project config",
+        output,
+        &mut diagnostics,
+    );
+    if config_path
+        .as_deref()
+        .is_some_and(|path| paths_overlap(output_dir, path))
+    {
         diagnostics.push(artifact_diagnostic(
             &output.dir,
             format!(
@@ -66,8 +97,11 @@ fn output_scope_diagnostics(project: &Project, output: &ArtifactOutputPlan) -> D
     }
 
     for schema_path in configured_schema_paths(project) {
-        let schema_path = normalized_existing_or_future_path(&schema_path);
-        if paths_overlap(&output_dir, &schema_path) {
+        let resolved = resolve_input_path(&schema_path, "schema path", output, &mut diagnostics);
+        if resolved
+            .as_deref()
+            .is_some_and(|path| paths_overlap(output_dir, path))
+        {
             diagnostics.push(artifact_diagnostic(
                 &output.dir,
                 format!(
@@ -81,8 +115,12 @@ fn output_scope_diagnostics(project: &Project, output: &ArtifactOutputPlan) -> D
     }
 
     for source_path in configured_source_paths(project) {
-        let source_path = normalized_existing_or_future_path(&source_path);
-        if paths_overlap(&output_dir, &source_path) {
+        let resolved =
+            resolve_input_path(&source_path, "data source", output, &mut diagnostics);
+        if resolved
+            .as_deref()
+            .is_some_and(|path| paths_overlap(output_dir, path))
+        {
             diagnostics.push(artifact_diagnostic(
                 &output.dir,
                 format!(
@@ -98,21 +136,44 @@ fn output_scope_diagnostics(project: &Project, output: &ArtifactOutputPlan) -> D
     diagnostics
 }
 
-fn overlapping_output_diagnostics(outputs: &[ArtifactOutputPlan]) -> DiagnosticSet {
+fn resolve_input_path(
+    path: &Path,
+    label: &str,
+    output: &ArtifactOutputPlan,
+    diagnostics: &mut DiagnosticSet,
+) -> Option<PathBuf> {
+    match normalized_existing_or_future_path(path) {
+        Ok(path) => Some(path),
+        Err(err) => {
+            diagnostics.push(artifact_diagnostic(
+                &output.dir,
+                format!(
+                    "cannot verify {} `{}` against {label} `{}`: {err}",
+                    output.label,
+                    output.dir.display(),
+                    path.display()
+                ),
+            ));
+            None
+        }
+    }
+}
+
+fn overlapping_output_diagnostics(
+    outputs: &[(&ArtifactOutputPlan, PathBuf)],
+) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
     for (index, left) in outputs.iter().enumerate() {
-        let left_dir = normalized_existing_or_future_path(&left.dir);
         for right in outputs.iter().skip(index + 1) {
-            let right_dir = normalized_existing_or_future_path(&right.dir);
-            if paths_overlap(&left_dir, &right_dir) {
+            if paths_overlap(&left.1, &right.1) {
                 diagnostics.push(artifact_diagnostic(
-                    &left.dir,
+                    &left.0.dir,
                     format!(
                         "{} `{}` and {} `{}` overlap; choose separate generated output directories",
-                        left.label,
-                        left.dir.display(),
-                        right.label,
-                        right.dir.display()
+                        left.0.label,
+                        left.0.dir.display(),
+                        right.0.label,
+                        right.0.dir.display()
                     ),
                 ));
             }
@@ -157,8 +218,38 @@ fn source_overlap_paths(path: PathBuf) -> Vec<PathBuf> {
     paths
 }
 
-fn normalized_existing_or_future_path(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| normalize_path_lexically(path))
+fn normalized_existing_or_future_path(path: &Path) -> io::Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let absolute = normalize_path_lexically(&absolute);
+    let mut ancestor = absolute.as_path();
+    let mut missing_components = Vec::new();
+
+    loop {
+        match fs::symlink_metadata(ancestor) {
+            Ok(_) => {
+                let mut resolved = fs::canonicalize(ancestor)?;
+                for component in missing_components.iter().rev() {
+                    resolved.push(component);
+                }
+                return Ok(resolved);
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                let Some(component) = ancestor.file_name() else {
+                    return Err(err);
+                };
+                missing_components.push(component.to_os_string());
+                let Some(parent) = ancestor.parent() else {
+                    return Err(err);
+                };
+                ancestor = parent;
+            }
+            Err(err) => return Err(err),
+        }
+    }
 }
 
 fn normalize_path_lexically(path: &Path) -> PathBuf {
@@ -176,7 +267,21 @@ fn normalize_path_lexically(path: &Path) -> PathBuf {
 }
 
 fn paths_overlap(left: &Path, right: &Path) -> bool {
-    left == right || left.starts_with(right) || right.starts_with(left)
+    let left = windows_path_key(left);
+    let right = windows_path_key(right);
+    left == right || left.starts_with(&right) || right.starts_with(&left)
+}
+
+fn windows_path_key(path: &Path) -> Vec<String> {
+    path.components()
+        .map(|component| {
+            component
+                .as_os_str()
+                .to_string_lossy()
+                .trim_end_matches([' ', '.'])
+                .to_lowercase()
+        })
+        .collect()
 }
 
 pub(super) fn artifact_diagnostic(path: &Path, message: impl Into<String>) -> Diagnostic {

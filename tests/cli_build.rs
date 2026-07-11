@@ -246,3 +246,64 @@ outputs:
         "stderr: {file_source_nested_stderr}"
     );
 }
+
+#[test]
+fn build_resolves_existing_output_alias_before_scope_check() {
+    let root = temp_project_dir("build-output-alias-overlap");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { value: int; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        "item: Item { value: 1 }\n",
+    )
+    .expect("write data");
+    create_directory_alias(&root.join("output-alias"), &root.join("data"));
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - path: data
+outputs:
+  data:
+    type: json
+    dir: output-alias/future
+",
+    )
+    .expect("write alias output config");
+
+    let output = coflow()
+        .args(["build", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run aliased output build");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("overlaps data source"), "stderr: {stderr}");
+    assert!(!root.join("data").join("future").exists());
+}
+
+#[cfg(unix)]
+fn create_directory_alias(alias: &std::path::Path, target: &std::path::Path) {
+    std::os::unix::fs::symlink(target, alias).expect("create directory symlink");
+}
+
+#[cfg(windows)]
+fn create_directory_alias(alias: &std::path::Path, target: &std::path::Path) {
+    let output = Command::new("cmd")
+        .args(["/c", "mklink", "/J"])
+        .arg(alias)
+        .arg(target)
+        .output()
+        .expect("create directory junction");
+    assert!(
+        output.status.success(),
+        "failed to create junction: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
