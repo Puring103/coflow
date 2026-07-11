@@ -14,9 +14,9 @@ fn data_model_schema_projection_uses_cft_compiler_context() {
 
     assert!(
 
-        compiler_context.contains("CftSchemaView::new(schema)"),
+        compiler_context.contains("CompiledSchema::new(schema)"),
 
-        "data-model schema projection should be built from coflow-cft CftSchemaView"
+        "data-model schema projection should be built from coflow-cft CompiledSchema"
 
     );
 
@@ -98,15 +98,15 @@ fn data_model_value_semantics_uses_cft_compiler_context() {
 
     assert!(
 
-        value_semantics.contains("schema: &CftSchemaView"),
+        value_semantics.contains("schema: &CompiledSchema"),
 
-        "data-model value semantics should accept coflow-cft CftSchemaView as its schema query"
+        "data-model value semantics should accept coflow-cft CompiledSchema as its schema query"
 
     );
 
     for forbidden in [
 
-        "CftSchemaView::new(schema)",
+        "CompiledSchema::new(schema)",
 
         ".resolve_type(",
 
@@ -902,19 +902,19 @@ fn cft_type_checker_function_rules_are_split_out() {
 
 #[test]
 
-fn cft_schema_view_dimension_check_analysis_is_split_out() {
+fn cft_compiled_schema_dimension_check_analysis_is_split_out() {
 
-    let schema_view =
+    let compiled_schema =
 
-        std::fs::read_to_string("crates/coflow-cft/src/schema_view.rs").expect("read schema view");
+        std::fs::read_to_string("crates/coflow-cft/src/compiled_schema.rs").expect("read schema view");
 
     let dimension_checks =
 
-        std::fs::read_to_string("crates/coflow-cft/src/schema_view/dimension_checks.rs")
+        std::fs::read_to_string("crates/coflow-cft/src/compiled_schema/dimension_checks.rs")
 
             .expect("read schema view dimension check analysis");
 
-    let queries = std::fs::read_to_string("crates/coflow-cft/src/schema_view/queries.rs")
+    let queries = std::fs::read_to_string("crates/coflow-cft/src/compiled_schema/queries.rs")
 
         .expect("read schema view query helpers");
 
@@ -938,15 +938,15 @@ fn cft_schema_view_dimension_check_analysis_is_split_out() {
 
             dimension_checks.contains(expected),
 
-            "CFT schema view dimension check helper `{expected}` should live in schema_view/dimension_checks.rs"
+            "CFT schema view dimension check helper `{expected}` should live in compiled_schema/dimension_checks.rs"
 
         );
 
         assert!(
 
-            !schema_view.contains(expected),
+            !compiled_schema.contains(expected),
 
-            "CFT schema view dimension check helper `{expected}` should not live in schema_view.rs"
+            "CFT schema view dimension check helper `{expected}` should not live in compiled_schema.rs"
 
         );
 
@@ -954,9 +954,9 @@ fn cft_schema_view_dimension_check_analysis_is_split_out() {
 
     assert!(
 
-        schema_view.lines().count() < 500,
+        compiled_schema.lines().count() < 500,
 
-        "coflow-cft schema_view.rs should stay focused on schema view metadata/query"
+        "coflow-cft compiled_schema.rs should stay focused on schema view metadata/query"
 
     );
 
@@ -964,7 +964,7 @@ fn cft_schema_view_dimension_check_analysis_is_split_out() {
 
         assert!(
 
-            !schema_view.contains(forbidden),
+            !compiled_schema.contains(forbidden),
 
             "CFT schema view should expose query methods instead of public map field `{forbidden}`"
 
@@ -984,7 +984,7 @@ fn cft_schema_view_dimension_check_analysis_is_split_out() {
 
         assert!(
 
-            !schema_view.contains(forbidden),
+            !compiled_schema.contains(forbidden),
 
             "CFT schema metadata should not expose lookup index field `{forbidden}`"
 
@@ -1016,15 +1016,15 @@ fn cft_schema_view_dimension_check_analysis_is_split_out() {
 
             queries.contains(expected),
 
-            "CFT schema query helper `{expected}` should live in schema_view/queries.rs"
+            "CFT schema query helper `{expected}` should live in compiled_schema/queries.rs"
 
         );
 
         assert!(
 
-            !schema_view.contains(expected),
+            !compiled_schema.contains(expected),
 
-            "CFT schema query helper `{expected}` should not bloat schema_view.rs"
+            "CFT schema query helper `{expected}` should not bloat compiled_schema.rs"
 
         );
 
@@ -1326,13 +1326,13 @@ fn csharp_codegen_schema_projection_uses_cft_schema_context() {
 
     assert!(
 
-        schema_context.contains("pub fn new(schema: &CftSchemaView)")
+        schema_context.contains("pub fn new(schema: &CompiledSchema)")
 
-            && ir.contains("schema: &CftSchemaView")
+            && ir.contains("schema: &CompiledSchema")
 
-            && lib.contains("schema: &CftSchemaView"),
+            && lib.contains("schema: &CompiledSchema"),
 
-        "C# codegen should receive coflow-cft CftSchemaView instead of full schema container"
+        "C# codegen should receive coflow-cft CompiledSchema instead of full schema container"
 
     );
 
@@ -1770,9 +1770,9 @@ fn exporter_core_schema_projection_uses_cft_compiler_context() {
 
     assert!(
 
-        exporter.contains("schema: &CftSchemaView"),
+        exporter.contains("schema: &CompiledSchema"),
 
-        "exporter core schema traversal should receive coflow-cft CftSchemaView"
+        "exporter core schema traversal should receive coflow-cft CompiledSchema"
 
     );
 

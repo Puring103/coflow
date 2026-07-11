@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchemaTypeRef, CftSchemaView};
+use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
 use coflow_data_model::{CfdDataModel, CfdErrorCode, CfdPath, CfdRecord, CfdRecordId};
 
 use super::diagnostics::format_value_for_message;
@@ -6,7 +6,7 @@ use super::ops::{OpsError, OpsResult};
 use super::value::{CheckRecordRef, CheckValue, LocatedCheckValue};
 
 pub(super) fn field_type_for_record<'a>(
-    schema: &'a CftSchemaView,
+    schema: &'a CompiledSchema,
     model: &CfdDataModel,
     record: &CheckRecordRef,
     name: &str,
@@ -17,7 +17,7 @@ pub(super) fn field_type_for_record<'a>(
 }
 
 pub(super) fn current_field(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
     root_record: Option<CfdRecordId>,
     root_path: &CfdPath,
@@ -38,7 +38,7 @@ pub(super) fn current_field(
 }
 
 pub(super) fn field_value(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
     root_record: Option<CfdRecordId>,
     root_path: &CfdPath,

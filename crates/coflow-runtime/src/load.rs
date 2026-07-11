@@ -3,7 +3,7 @@ use coflow_api::{
     ProjectSourceRef, ProviderRegistry, ResolvedSource, Severity, SourceLoadContext,
     SourceLocation, SourceLocationSpec, SourceProviderSelectionError, SourceResolveContext,
 };
-use coflow_cft::{CftContainer, CftSchemaView};
+use coflow_cft::{CftContainer, CompiledSchema};
 use coflow_checker::{run_checks_for_dimensions, DimensionCheckPlan, DimensionCheckRound};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostics, CfdInputRecord, CfdPath, CfdPathSegment, CfdRecordId,
@@ -68,7 +68,7 @@ pub(crate) fn load_project_data(
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
     let mut diagnostics = DiagnosticSet::empty();
-    let schema_view = CftSchemaView::new(schema);
+    let compiled_schema = CompiledSchema::new(schema);
 
     for source in &project.config.sources {
         let configured = configured_source(project, source);
@@ -82,7 +82,7 @@ pub(crate) fn load_project_data(
 
         diagnostics.extend(load_resolved_sources(
             project,
-            &schema_view,
+            &compiled_schema,
             sources,
             records_index,
             files,
@@ -92,7 +92,7 @@ pub(crate) fn load_project_data(
     }
 
     if options.include_implicit_dimension_sources {
-        let dimension_fields = dimensions::dimension_fields(&schema_view);
+        let dimension_fields = dimensions::dimension_fields(&compiled_schema);
         for configured in dimensions::dimension_sources(project, &dimension_fields) {
             let resolved_sources =
                 match resolve_implicit_source(project, registry, &configured) {
@@ -104,7 +104,7 @@ pub(crate) fn load_project_data(
                 };
             diagnostics.extend(load_resolved_sources(
                 project,
-                &schema_view,
+                &compiled_schema,
                 sources,
                 records_index,
                 files,
@@ -160,7 +160,7 @@ pub(crate) fn load_project_data(
 
 fn load_resolved_sources(
     project: &Project,
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     sources: &mut SourceIndex,
     records_index: &mut RecordIndex,
     files: &mut FileIndex,

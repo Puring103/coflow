@@ -3,14 +3,14 @@ use super::evaluator::CheckEvaluator;
 use super::statements;
 use super::value::{CheckRecordRef, CheckValue};
 use crate::{DependencyGraph, DimensionCheckContext};
-use coflow_cft::{CftContainer, CftSchemaView};
+use coflow_cft::{CftContainer, CompiledSchema};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdPath, CfdRecordId, CfdValue,
 };
 use std::collections::BTreeMap;
 
 pub(crate) struct CheckRunner<'a> {
-    schema: CftSchemaView,
+    schema: CompiledSchema,
     source_schema: &'a CftContainer,
     model: &'a CfdDataModel,
     diagnostics: Vec<CfdDiagnostic>,
@@ -23,7 +23,7 @@ pub(crate) struct CheckRunner<'a> {
 impl<'a> CheckRunner<'a> {
     pub(crate) fn new(schema: &'a CftContainer, model: &'a CfdDataModel) -> Self {
         Self {
-            schema: CftSchemaView::new(schema),
+            schema: CompiledSchema::new(schema),
             source_schema: schema,
             model,
             diagnostics: Vec::new(),
@@ -38,7 +38,7 @@ impl<'a> CheckRunner<'a> {
         dimension_context: DimensionCheckContext,
     ) -> Self {
         Self {
-            schema: CftSchemaView::new(schema),
+            schema: CompiledSchema::new(schema),
             source_schema: schema,
             model,
             diagnostics: Vec::new(),

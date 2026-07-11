@@ -1,6 +1,6 @@
 use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnumMeta, CftFieldMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta};
+use coflow_cft::{CftEnumMeta, CftFieldMeta, CftSchemaTypeRef, CompiledSchema, CftTypeMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -8,13 +8,13 @@ pub struct CsharpSchemaContext {
     pub int_32: bool,
     pub float_32: bool,
     pub loadable_tables: BTreeSet<String>,
-    pub cft: CftSchemaView,
+    pub cft: CompiledSchema,
     csharp_types: BTreeMap<String, String>,
     csharp_enums: BTreeMap<String, String>,
 }
 
 impl CsharpSchemaContext {
-    pub fn new(schema: &CftSchemaView) -> Self {
+    pub fn new(schema: &CompiledSchema) -> Self {
         let cft = schema.clone();
         let csharp_types = cft
             .type_names()

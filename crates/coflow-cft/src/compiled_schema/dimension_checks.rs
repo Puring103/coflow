@@ -1,4 +1,4 @@
-use super::CftSchemaView;
+use super::CompiledSchema;
 use crate::{
     CftConstValue, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaTypeRef,
@@ -6,7 +6,7 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn dimension_checks_for_type(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     type_name: &str,
 ) -> BTreeMap<String, CftSchemaCheckBlock> {
     let Some(check) = schema.type_meta(type_name).and_then(|meta| meta.check.as_ref()) else {
@@ -77,13 +77,13 @@ impl ExprUsage {
 }
 
 struct DimensionCheckAnalyzer<'a> {
-    schema: &'a CftSchemaView,
+    schema: &'a CompiledSchema,
     current_type: String,
     scopes: Vec<BTreeMap<String, CheckTy>>,
 }
 
 impl<'a> DimensionCheckAnalyzer<'a> {
-    fn new(schema: &'a CftSchemaView, current_type: &str) -> Self {
+    fn new(schema: &'a CompiledSchema, current_type: &str) -> Self {
         Self {
             schema,
             current_type: current_type.to_string(),

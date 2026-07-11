@@ -168,7 +168,7 @@ fn coerce_cfd_object_fields(
     actual_type: &str,
     fields: BTreeMap<String, CfdValue>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
-    let schema = session.schema_view();
+    let schema = session.compiled_schema();
     fields
         .into_iter()
         .map(|(name, value)| {
@@ -220,7 +220,7 @@ fn coerce_cfd_enum_value(
     if let Some(variant) = value.variant.as_ref() {
         // The variant name is authoritative; the backing int on the wire may
         // be stale if the editor reuses a previous selection.
-        let schema = session.schema_view();
+        let schema = session.compiled_schema();
         let expected_value = schema
             .enum_variant_value(enum_name, variant)
             .ok_or_else(|| {
@@ -378,7 +378,7 @@ fn coerce_json_object_fields(
     actual_type: &str,
     object: &Map<String, Value>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
-    let schema = session.schema_view();
+    let schema = session.compiled_schema();
     if !schema.has_type(actual_type) {
         return Err(one_value_error(format!(
             "unknown object type `{actual_type}`"

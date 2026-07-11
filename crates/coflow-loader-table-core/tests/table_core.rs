@@ -1,6 +1,6 @@
 #![allow(clippy::panic_in_result_fn)]
 
-use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
+use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
 use coflow_data_model::RecordOrigin;
 use coflow_loader_table_core::{
     collect_table_input_records, TableSheet, TableSheetConfig, TableSource,
@@ -23,7 +23,7 @@ fn collects_table_rows_as_input_records() -> TestResult {
         vec![TableSheetConfig::new("Item")],
     );
 
-    let loaded = collect_table_input_records(&CftSchemaView::new(&schema), &[source])
+    let loaded = collect_table_input_records(&CompiledSchema::new(&schema), &[source])
         .map_err(|err| format!("{err:?}"))?;
 
     assert_eq!(loaded.records.len(), 1);

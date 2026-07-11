@@ -8,7 +8,7 @@
 )]
 
 use coflow_api::origins_of;
-use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
+use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdErrorCode, CfdValue};
 use coflow_loader_excel::{
     collect_input_records, ExcelDiagnostic, ExcelDiagnostics, ExcelSheet, ExcelSource,
@@ -41,8 +41,8 @@ fn build_model_from_excel_records(
     schema: &CftContainer,
     sources: &[ExcelSource],
 ) -> Result<CfdDataModel, ExcelDiagnostics> {
-    let schema_view = CftSchemaView::new(schema);
-    let loaded = collect_input_records(&schema_view, sources)?;
+    let compiled_schema = CompiledSchema::new(schema);
+    let loaded = collect_input_records(&compiled_schema, sources)?;
     let origins = origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {

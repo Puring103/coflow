@@ -13,7 +13,7 @@ use super::value::{CheckValue, LocatedCheckValue};
 use crate::DimensionCheckContext;
 use coflow_cft::{
     CftContainer, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp,
-    CftSchemaView,
+    CompiledSchema,
 };
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdPath, CfdRecordId};
 use std::collections::BTreeMap;
@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use super::value::CheckRecordRef;
 
 pub(super) struct CheckEvaluator<'a> {
-    pub(super) schema: &'a CftSchemaView,
+    pub(super) schema: &'a CompiledSchema,
     pub(super) source_schema: &'a CftContainer,
     pub(super) model: &'a CfdDataModel,
     pub(super) root_record: Option<CfdRecordId>,
@@ -79,7 +79,7 @@ pub(super) type EvalResult<T> = Result<T, EvalAbort>;
 
 impl<'a> CheckEvaluator<'a> {
     pub(super) fn new(
-        schema: &'a CftSchemaView,
+        schema: &'a CompiledSchema,
         source_schema: &'a CftContainer,
         model: &'a CfdDataModel,
         root_record: Option<CfdRecordId>,

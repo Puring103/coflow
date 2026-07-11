@@ -6,7 +6,7 @@ use crate::artifacts::{
 };
 use artifact_safety::{artifact_safety_diagnostics, ArtifactOutputPlan};
 use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
-use coflow_cft::CftSchemaView;
+use coflow_cft::CompiledSchema;
 use coflow_project::{OutputConfig, Project};
 use coflow_runtime::{ProjectSession, Runtime};
 use id_as_enum::{id_as_enum_variants_for_schema_only, stage_id_as_enum_lockfile_for_build};
@@ -108,10 +108,10 @@ pub fn build_project(
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let schema_view = session.schema_view();
+    let compiled_schema = session.compiled_schema();
 
     let mut preflight_diagnostics =
-        build_codegen_preflight_diagnostics(registry, &session, &schema_view, &plan)?;
+        build_codegen_preflight_diagnostics(registry, &session, &compiled_schema, &plan)?;
     preflight_diagnostics.extend(artifact_safety_diagnostics(
         session.project(),
         &plan.artifact_outputs,
@@ -122,7 +122,7 @@ pub fn build_project(
 
     let staged_data = match stage_data_tables(
         registry,
-        &schema_view,
+        &compiled_schema,
         session.model(),
         &plan.data.exporter_id,
         &plan.data.output,
@@ -131,7 +131,7 @@ pub fn build_project(
         Ok(staged_data) => staged_data,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    let code = match commit_build_artifacts(&session, &schema_view, registry, staged_data, &plan) {
+    let code = match commit_build_artifacts(&session, &compiled_schema, registry, staged_data, &plan) {
         Ok(code) => code,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
@@ -181,7 +181,7 @@ pub fn export_project_data(
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let schema_view = session.schema_view();
+    let compiled_schema = session.compiled_schema();
     let artifact_diagnostics = artifact_safety_diagnostics(
         session.project(),
         &[ArtifactOutputPlan::new("outputs.data.dir", dir.clone())],
@@ -191,7 +191,7 @@ pub fn export_project_data(
     }
     if let Err(diagnostics) = write_data_tables(
         registry,
-        &schema_view,
+        &compiled_schema,
         session.model(),
         exporter_id,
         &output,
@@ -250,10 +250,10 @@ pub fn generate_project_code(
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let schema_view = session.schema_view();
+    let compiled_schema = session.compiled_schema();
     let codegen_diagnostics = preflight_codegen(
         registry,
-        &schema_view,
+        &compiled_schema,
         None,
         codegen_id,
         &data_format,
@@ -276,7 +276,7 @@ pub fn generate_project_code(
     let staged_code = match stage_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
-            schema: &schema_view,
+            schema: &compiled_schema,
             model: None,
             codegen_id,
             data_format: &data_format,
@@ -410,7 +410,7 @@ fn build_codegen_plan<'a>(
 fn build_codegen_preflight_diagnostics(
     registry: &ProviderRegistry,
     session: &ProjectSession,
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     plan: &BuildProviderPlan,
 ) -> Result<DiagnosticSet, DiagnosticSet> {
     let Some(code) = plan.code.as_ref() else {
@@ -428,7 +428,7 @@ fn build_codegen_preflight_diagnostics(
 
 fn commit_build_artifacts(
     session: &ProjectSession,
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     registry: &ProviderRegistry,
     staged_data: crate::artifacts::StagedArtifactDir,
     plan: &BuildProviderPlan,

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::DiagnosticSet;
 use coflow_cft::{
-    CftContainer, CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView,
+    CftContainer, CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CompiledSchema,
 };
 use coflow_data_model::{CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordOrigin};
 
@@ -16,7 +16,7 @@ pub(super) fn default_record_for_type(
     type_name: &str,
     materialization: DefaultMaterialization,
 ) -> Result<CfdRecord, DiagnosticSet> {
-    let schema = CftSchemaView::new(schema);
+    let schema = CompiledSchema::new(schema);
     ensure_type_can_materialize(&schema, type_name)?;
     let mut stack = BTreeSet::new();
     let fields =
@@ -33,7 +33,7 @@ pub fn default_value_for_type_ref(
     ty: &CftSchemaTypeRef,
     materialization: DefaultMaterialization,
 ) -> Result<CfdValue, DiagnosticSet> {
-    let schema = CftSchemaView::new(schema);
+    let schema = CompiledSchema::new(schema);
     let mut stack = BTreeSet::new();
     default_value_for_ty(&schema, ty, None, materialization, &mut stack)
 }
@@ -44,7 +44,7 @@ pub(super) fn default_missing_fields_for_type(
     materialization: DefaultMaterialization,
     provided_names: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
-    let schema = CftSchemaView::new(schema);
+    let schema = CompiledSchema::new(schema);
     let mut stack = BTreeSet::new();
     default_fields_for_type_inner(
         &schema,
@@ -59,7 +59,7 @@ pub(super) fn create_record_draft_for_type(
     schema: &CftContainer,
     type_name: &str,
 ) -> Result<CreateRecordDraft, DiagnosticSet> {
-    let schema = CftSchemaView::new(schema);
+    let schema = CompiledSchema::new(schema);
     ensure_type_can_materialize(&schema, type_name)?;
     let Some(schema_type) = schema.type_meta(type_name) else {
         return Err(one_mutation_error(
@@ -80,7 +80,7 @@ pub(super) fn create_record_draft_for_type(
 }
 
 fn default_fields_for_type_inner(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     type_name: &str,
     materialization: DefaultMaterialization,
     stack: &mut BTreeSet<String>,
@@ -138,7 +138,7 @@ fn default_fields_for_type_inner(
 }
 
 fn default_minimal_for_field(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     field: &CftFieldMeta,
     stack: &mut BTreeSet<String>,
 ) -> Result<Option<CfdValue>, DiagnosticSet> {
@@ -183,7 +183,7 @@ fn default_minimal_for_field(
 }
 
 fn create_field_draft(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     field: &CftFieldMeta,
     stack: &mut BTreeSet<String>,
 ) -> CreateRecordFieldDraft {
@@ -228,7 +228,7 @@ fn create_field_draft(
 }
 
 fn required_field_draft(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     field: &CftFieldMeta,
     err: Option<DiagnosticSet>,
     value: Option<CfdValue>,
@@ -242,7 +242,7 @@ fn required_field_draft(
 }
 
 fn required_input_for_field(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     field: &CftFieldMeta,
     err: Option<&DiagnosticSet>,
 ) -> CreateRequiredInput {
@@ -284,7 +284,7 @@ fn required_input_for_field(
 }
 
 fn default_value_for_ty(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     ty: &CftSchemaTypeRef,
     declared_default: Option<&CftSchemaDefaultValue>,
     materialization: DefaultMaterialization,
@@ -297,7 +297,7 @@ fn default_value_for_ty(
 }
 
 fn default_from_schema_default(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     ty: &CftSchemaTypeRef,
     default: &CftSchemaDefaultValue,
     materialization: DefaultMaterialization,
@@ -344,7 +344,7 @@ fn default_from_schema_default(
 }
 
 fn default_zero_for_ty_inner(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     ty: &CftSchemaTypeRef,
     stack: &mut BTreeSet<String>,
 ) -> Result<CfdValue, DiagnosticSet> {
@@ -395,7 +395,7 @@ fn default_zero_for_ty_inner(
 }
 
 fn ensure_type_can_materialize(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     type_name: &str,
 ) -> Result<(), DiagnosticSet> {
     let Some(schema_type) = schema.type_meta(type_name) else {

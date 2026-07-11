@@ -1,4 +1,4 @@
-use coflow_cft::{record_key_ident_error, CftFieldMeta, CftSchemaTypeRef, CftSchemaView};
+use coflow_cft::{record_key_ident_error, CftFieldMeta, CftSchemaTypeRef, CompiledSchema};
 use coflow_data_model::CfdInputValue;
 use std::collections::BTreeMap;
 
@@ -28,7 +28,7 @@ pub(super) fn validate_record_key(key: &str, pos: usize) -> Result<(), CfdTextDi
 }
 
 pub(super) fn validate_group_type(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     type_name: &str,
     pos: usize,
 ) -> Result<(), CfdTextDiagnostics> {
@@ -43,7 +43,7 @@ pub(super) fn validate_group_type(
 }
 
 pub(super) fn validate_record_type(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     actual_type: &str,
     pos: usize,
 ) -> Result<(), CfdTextDiagnostics> {
@@ -65,7 +65,7 @@ pub(super) fn validate_record_type(
 }
 
 pub(super) fn validate_actual_type(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     expected_type: &str,
     actual_type: &str,
     pos: usize,
@@ -95,7 +95,7 @@ pub(super) fn validate_actual_type(
 }
 
 pub(super) fn full_fields(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     type_name: &str,
 ) -> Result<Vec<FieldMeta>, CfdTextDiagnostics> {
     let Some(fields) = schema.fields(type_name) else {

@@ -1,4 +1,4 @@
-use coflow_cft::{CftContainer, CftSchemaView};
+use coflow_cft::{CftContainer, CompiledSchema};
 use coflow_data_model::{CfdDataModel, CfdErrorCode, CfdPath, CfdRecordId};
 
 use super::diagnostics::dimension_lookup_error_message;
@@ -15,7 +15,7 @@ pub(super) enum DimensionVariantAbort {
 }
 
 pub(super) fn apply_dimension_variant(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     source_schema: &CftContainer,
     model: &CfdDataModel,
     context: Option<&DimensionCheckContext>,

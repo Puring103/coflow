@@ -1,5 +1,5 @@
 use crate::DiagnosticSet;
-use coflow_cft::CftSchemaView;
+use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdInputRecord;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -91,7 +91,7 @@ impl ProbeResult {
 #[derive(Debug, Clone, Copy)]
 pub struct SourceLoadContext<'a> {
     pub project_root: &'a Path,
-    pub schema: &'a CftSchemaView,
+    pub schema: &'a CompiledSchema,
 }
 
 #[derive(Debug, Clone)]

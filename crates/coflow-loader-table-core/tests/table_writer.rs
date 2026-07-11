@@ -5,7 +5,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
+use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue, RecordOrigin, SourceDocument,
 };
@@ -371,7 +371,7 @@ fn write_layout_resolves_expand_child_columns_from_header() {
         }
         ",
     );
-    let schema_view = CftSchemaView::new(&schema);
+    let compiled_schema = CompiledSchema::new(&schema);
     let header = vec![
         "id".to_string(),
         "name".to_string(),
@@ -381,7 +381,7 @@ fn write_layout_resolves_expand_child_columns_from_header() {
     ];
 
     let layout = resolve_table_write_layout(
-        &schema_view,
+        &compiled_schema,
         &PathBuf::from("terrain.xlsx"),
         &TableSheetConfig::new("Terrain"),
         &header,

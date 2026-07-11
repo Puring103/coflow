@@ -1,7 +1,7 @@
 use coflow_api::FlatDiagnostic;
 use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftConstValue, CftContainer, CftSchemaDefaultValue,
-    CftSchemaTypeRef, CftSchemaView, ModuleId,
+    CftSchemaTypeRef, CompiledSchema, ModuleId,
 };
 use serde::Serialize;
 
@@ -137,7 +137,7 @@ pub fn inspect_schema(
     type_filter: Option<&str>,
     include_derived: bool,
 ) -> SchemaInspectReport {
-    let view = session.schema_view();
+    let view = session.compiled_schema();
     let mut type_names = view.type_names().cloned().collect::<Vec<_>>();
     type_names.sort();
     if let Some(filter) = type_filter {
@@ -245,7 +245,7 @@ fn append_module_consts(
     }));
 }
 
-fn type_ref_info(schema: &CftSchemaView, ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
+fn type_ref_info(schema: &CompiledSchema, ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
     match ty {
         CftSchemaTypeRef::Int => SchemaTypeRefInfo::Int,
         CftSchemaTypeRef::Float => SchemaTypeRefInfo::Float,

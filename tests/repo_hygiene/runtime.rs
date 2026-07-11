@@ -148,11 +148,11 @@ fn engine_session_api_does_not_live_in_lib_rs() {
     }
 
     assert!(
-        session.matches("pub(crate) schema_view: CftSchemaView").count() == 2,
+        session.matches("pub(crate) compiled_schema: CompiledSchema").count() == 2,
         "schema-only and full sessions should each retain one compiled schema view"
     );
     assert!(
-        session.contains("pub const fn schema_view(&self) -> &CftSchemaView"),
+        session.contains("pub const fn compiled_schema(&self) -> &CompiledSchema"),
         "session schema queries should borrow the retained view"
     );
 }
@@ -357,8 +357,8 @@ fn engine_dimension_synthesis_uses_cft_compiler_context() {
         .expect("read dimension synthesis");
 
     assert!(
-        synthesize.contains("CftSchemaView::new(schema)"),
-        "dimension synthesis should derive schema metadata from coflow-cft CftSchemaView"
+        synthesize.contains("CompiledSchema::new(schema)"),
+        "dimension synthesis should derive schema metadata from coflow-cft CompiledSchema"
     );
     for forbidden in ["schema.all_types()", "schema.resolve_type(", ".types.get("] {
         assert!(
@@ -374,7 +374,7 @@ fn engine_schema_inspect_uses_cft_compiler_context_for_schema_traversal() {
         .expect("read schema inspect");
 
     assert!(
-        schema_inspect.contains("session.schema_view()"),
+        schema_inspect.contains("session.compiled_schema()"),
         "schema inspect should borrow the session's compiled schema view"
     );
     for forbidden in [
@@ -396,8 +396,8 @@ fn engine_write_rules_use_cft_compiler_context_for_path_types() {
         .expect("read engine write rules");
 
     assert!(
-        write_rules.contains("CftSchemaView::new(schema)"),
-        "engine write rules should use coflow-cft CftSchemaView for schema path lookup"
+        write_rules.contains("CompiledSchema::new(schema)"),
+        "engine write rules should use coflow-cft CompiledSchema for schema path lookup"
     );
     for forbidden in [
         ".resolve_type(",
@@ -419,7 +419,7 @@ fn engine_data_file_headers_use_cft_compiler_context() {
         .expect("read engine data file commands");
 
     assert!(
-        data_files.contains("session.schema_view()"),
+        data_files.contains("session.compiled_schema()"),
         "data file header planning should request schema metadata through the session facade"
     );
     for expected in [
@@ -512,7 +512,7 @@ fn engine_writes_use_cft_compiler_context_for_insert_schema_checks() {
         std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
 
     assert!(
-        writes.contains("session.schema_view()") || writes.contains("self.schema_view()"),
+        writes.contains("session.compiled_schema()") || writes.contains("self.compiled_schema()"),
         "engine writes should borrow the session's compiled schema view"
     );
     for forbidden in [
@@ -690,8 +690,8 @@ fn engine_mutation_defaults_use_cft_compiler_context() {
         .replace("\r\n", "\n");
 
     assert!(
-        defaults.contains("CftSchemaView::new(schema)"),
-        "mutation default materialization should use coflow-cft CftSchemaView"
+        defaults.contains("CompiledSchema::new(schema)"),
+        "mutation default materialization should use coflow-cft CompiledSchema"
     );
     for forbidden in [
         ".resolve_type(",
@@ -716,7 +716,7 @@ fn engine_mutation_field_coercion_uses_cft_compiler_context() {
         .replace("\r\n", "\n");
 
     assert!(
-        coercion.contains("session.schema_view()"),
+        coercion.contains("session.compiled_schema()"),
         "mutation field coercion should borrow the session's compiled schema view"
     );
     for forbidden in [
@@ -740,8 +740,8 @@ fn engine_mutation_uses_cft_compiler_context_for_schema_queries() {
         .expect("read mutation coercion");
 
     assert!(
-        mutation.contains("session.schema_view()") || coercion.contains("session.schema_view()"),
-        "mutation schema queries should go through coflow-cft CftSchemaView"
+        mutation.contains("session.compiled_schema()") || coercion.contains("session.compiled_schema()"),
+        "mutation schema queries should go through coflow-cft CompiledSchema"
     );
     for forbidden in [
         ".resolve_type(",

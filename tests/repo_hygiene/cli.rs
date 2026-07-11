@@ -298,15 +298,15 @@ fn root_cli_id_as_enum_lockfile_does_not_live_in_commands_rs() {
 
     assert!(
 
-        id_as_enum.contains("use coflow_cft::{CftAnnotation, CftAnnotationValue, CftSchemaView};")
+        id_as_enum.contains("use coflow_cft::{CftAnnotation, CftAnnotationValue, CompiledSchema};")
 
-            && id_as_enum.contains("schema: &CftSchemaView")
+            && id_as_enum.contains("schema: &CompiledSchema")
 
             && id_as_enum.contains("schema.type_metas()")
 
             && id_as_enum.contains(".enum_meta(&enum_name)"),
 
-        "root CLI @idAsEnum helper should use CftSchemaView"
+        "root CLI @idAsEnum helper should use CompiledSchema"
 
     );
 
@@ -402,17 +402,17 @@ fn root_cli_artifact_staging_does_not_live_in_artifacts_rs() {
 
     assert!(
 
-        artifacts.contains("use coflow_cft::CftSchemaView;")
+        artifacts.contains("use coflow_cft::CompiledSchema;")
 
-            && artifacts.contains("pub schema: &'a CftSchemaView")
+            && artifacts.contains("pub schema: &'a CompiledSchema")
 
-            && artifacts.contains("schema: &CftSchemaView"),
+            && artifacts.contains("schema: &CompiledSchema"),
 
         "root CLI artifact helpers should receive the schema query facade"
 
     );
 
-    for forbidden in ["CftContainer", "CftSchemaView::new("] {
+    for forbidden in ["CftContainer", "CompiledSchema::new("] {
 
         assert!(
 
@@ -628,9 +628,9 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
 
         "filter_map(serde_json::Value::as_object)",
 
-        "CftSchemaView::new(session.schema())",
+        "CompiledSchema::new(session.schema())",
 
-        "session.schema_view()",
+        "session.compiled_schema()",
 
         "fn lark_table_layout",
 
@@ -748,8 +748,8 @@ fn root_cli_schema_queries_go_through_session_facade() {
 
     assert!(
 
-        session.contains("pub const fn schema_view(&self) -> &CftSchemaView")
-            && session.contains("pub(crate) schema_view: CftSchemaView"),
+        session.contains("pub const fn compiled_schema(&self) -> &CompiledSchema")
+            && session.contains("pub(crate) compiled_schema: CompiledSchema"),
 
         "runtime session should retain and lend the schema query facade"
 
@@ -759,7 +759,7 @@ fn root_cli_schema_queries_go_through_session_facade() {
 
     assert!(
 
-        commands.contains("session.schema_view()"),
+        commands.contains("session.compiled_schema()"),
 
         "root CLI build/export/codegen commands should request schema queries through the runtime session facade"
 
@@ -767,7 +767,7 @@ fn root_cli_schema_queries_go_through_session_facade() {
 
     assert!(
 
-        !commands.contains("CftSchemaView::new(session.schema())"),
+        !commands.contains("CompiledSchema::new(session.schema())"),
 
         "root CLI commands should not reconstruct schema views from the raw schema getter"
 
@@ -783,9 +783,9 @@ fn root_cli_schema_queries_go_through_session_facade() {
 
     assert!(
 
-        !lark.contains("session.schema_view()")
+        !lark.contains("session.compiled_schema()")
 
-            && !lark.contains("CftSchemaView::new(session.schema())"),
+            && !lark.contains("CompiledSchema::new(session.schema())"),
 
         "root CLI Lark helper should not own schema query construction"
 

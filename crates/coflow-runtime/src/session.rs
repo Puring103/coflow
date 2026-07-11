@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use coflow_api::DiagnosticSet;
-use coflow_cft::{CftContainer, CftSchemaView};
+use coflow_cft::{CftContainer, CompiledSchema};
 use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::{path_to_slash, Project};
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,7 @@ impl RecordCoordinate {
 pub struct ProjectSession {
     pub(crate) project: Project,
     pub(crate) schema: CftContainer,
-    pub(crate) schema_view: CftSchemaView,
+    pub(crate) compiled_schema: CompiledSchema,
     pub(crate) model: CfdDataModel,
     pub(crate) diagnostics: DiagnosticsStore,
     pub(crate) sources: SourceIndex,
@@ -64,8 +64,8 @@ impl ProjectSession {
     }
 
     #[must_use]
-    pub const fn schema_view(&self) -> &CftSchemaView {
-        &self.schema_view
+    pub const fn compiled_schema(&self) -> &CompiledSchema {
+        &self.compiled_schema
     }
 
     #[must_use]
@@ -103,7 +103,7 @@ impl ProjectSession {
         ProjectSchemaSession {
             project: self.project,
             schema: self.schema,
-            schema_view: self.schema_view,
+            compiled_schema: self.compiled_schema,
             diagnostics: self.diagnostics,
         }
     }
@@ -159,7 +159,7 @@ impl ProjectSession {
 
     #[must_use]
     pub fn enum_variants(&self, enum_name: &str) -> Vec<String> {
-        self.schema_view()
+        self.compiled_schema()
             .enum_meta(enum_name)
             .map(|meta| {
                 meta.all_variants
@@ -173,7 +173,7 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub fn dimensions(&self) -> Vec<DimensionInfo> {
-        let view = self.schema_view();
+        let view = self.compiled_schema();
         let fields = dimensions::dimension_fields(&view);
         dimensions_for_project(&self.project, &fields)
     }
@@ -184,7 +184,7 @@ impl ProjectSession {
     /// without re-deriving the naming convention themselves.
     #[must_use]
     pub fn dimension_synthesized_types(&self) -> BTreeSet<String> {
-        let view = self.schema_view();
+        let view = self.compiled_schema();
         dimensions::dimension_fields(&view)
             .into_iter()
             .map(|field| field.synthesized_type)
@@ -393,7 +393,7 @@ impl ProjectSession {
 pub struct ProjectSchemaSession {
     pub(crate) project: Project,
     pub(crate) schema: CftContainer,
-    pub(crate) schema_view: CftSchemaView,
+    pub(crate) compiled_schema: CompiledSchema,
     pub(crate) diagnostics: DiagnosticsStore,
 }
 
@@ -409,8 +409,8 @@ impl ProjectSchemaSession {
     }
 
     #[must_use]
-    pub const fn schema_view(&self) -> &CftSchemaView {
-        &self.schema_view
+    pub const fn compiled_schema(&self) -> &CompiledSchema {
+        &self.compiled_schema
     }
 
     #[must_use]

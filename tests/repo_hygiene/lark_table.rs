@@ -853,9 +853,9 @@ fn table_loader_core_table_rs_is_split_by_responsibility() {
 
     assert!(
 
-        table.contains("pub fn resolve_table_write_layout(\r\n    schema: &CftSchemaView")
+        table.contains("pub fn resolve_table_write_layout(\r\n    schema: &CompiledSchema")
 
-            || table.contains("pub fn resolve_table_write_layout(\n    schema: &CftSchemaView"),
+            || table.contains("pub fn resolve_table_write_layout(\n    schema: &CompiledSchema"),
 
         "table write layout should receive the shared schema view instead of rebuilding it"
 
@@ -863,7 +863,7 @@ fn table_loader_core_table_rs_is_split_by_responsibility() {
 
     assert!(
 
-        !table.contains("CftSchemaView::new(schema)"),
+        !table.contains("CompiledSchema::new(schema)"),
 
         "table write layout should not rebuild schema view internally"
 

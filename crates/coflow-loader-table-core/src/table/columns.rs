@@ -1,4 +1,4 @@
-use coflow_cft::CftSchemaView;
+use coflow_cft::CompiledSchema;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -58,7 +58,7 @@ pub(super) fn field_columns_from_resolved(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn resolve_columns(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     source_name: &Path,
     sheet: &TableSheetConfig,
     type_name: &str,
@@ -103,7 +103,7 @@ struct ColumnResolution<'a> {
 impl<'a> ColumnResolution<'a> {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        schema: &CftSchemaView,
+        schema: &CompiledSchema,
         source_name: &'a Path,
         sheet: &'a TableSheetConfig,
         type_name: &'a str,
@@ -423,7 +423,7 @@ fn is_key_column(column_text: &str, field: &str, key_column: &str, has_explicit_
 }
 
 fn expand_field_index(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     type_name: &str,
 ) -> BTreeMap<String, BTreeMap<String, String>> {
     let mut out = BTreeMap::new();
@@ -450,7 +450,7 @@ fn expand_field_index(
 }
 
 fn expand_field_order_index(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     type_name: &str,
 ) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();

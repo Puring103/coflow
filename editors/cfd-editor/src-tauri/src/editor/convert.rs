@@ -6,7 +6,7 @@
 //! collected into `FieldAnnotation` on the side.
 
 use coflow_api::FlatDiagnostic;
-use coflow_cft::{CftSchemaTypeRef, CftSchemaView};
+use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
 use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite};
 use coflow_runtime::{
     dict_key_path_text, value_summary, ProjectSession, RecordCoordinate, RecordView,
@@ -18,7 +18,7 @@ use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRo
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
     pub session: &'a ProjectSession,
-    pub schema: &'a CftSchemaView,
+    pub schema: &'a CompiledSchema,
     pub diagnostics: Vec<FlatDiagnostic>,
     /// Set of dimension-synthesized type names (e.g. `Item_nameVariants`).
     /// Passed in once per snapshot so the annotator can flag the derived
@@ -34,7 +34,7 @@ impl<'a> WireContext<'a> {
     pub fn new(session: &'a ProjectSession, diagnostics: Vec<FlatDiagnostic>) -> Self {
         Self {
             session,
-            schema: session.schema_view(),
+            schema: session.compiled_schema(),
             diagnostics,
             dimension_synth_types: session.dimension_synthesized_types(),
         }
@@ -348,7 +348,7 @@ fn ref_target_type(ty: &CftSchemaTypeRef) -> Option<&str> {
 
 fn enum_type_name<'a>(
     ty: &'a CftSchemaTypeRef,
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
 ) -> Option<&'a str> {
     match ty {
         CftSchemaTypeRef::Named(name) if schema.is_schema_enum(name) => Some(name),
@@ -397,7 +397,7 @@ fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
 /// with at least two concrete descendants — a single-concrete case can't be
 /// "switched" so we save the wire bytes and skip. Ref / enum / collection
 /// / non-abstract object all return empty.
-fn polymorphic_types_for(ty: &CftSchemaTypeRef, schema: &CftSchemaView) -> Vec<String> {
+fn polymorphic_types_for(ty: &CftSchemaTypeRef, schema: &CompiledSchema) -> Vec<String> {
     let CftSchemaTypeRef::Named(name) = non_nullable(ty) else {
         return Vec::new();
     };

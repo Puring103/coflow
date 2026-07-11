@@ -1,5 +1,5 @@
 use coflow_api::{DiagnosticSet, WriteCellRequest, WriteFieldPathSegment};
-use coflow_cft::CftSchemaView;
+use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdValue;
 use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
 use coflow_cfd::CfdAst;
@@ -173,7 +173,7 @@ pub(super) fn validate_record_key(key: &str) -> Result<(), DiagnosticSet> {
 }
 
 pub(super) fn serialize_record(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     key: &str,
     actual_type: &str,
     fields: &BTreeMap<String, CfdValue>,

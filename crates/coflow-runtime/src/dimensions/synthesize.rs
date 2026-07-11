@@ -1,7 +1,7 @@
 use coflow_api::{ResolvedSource, SourceLocationSpec};
 use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaType,
-    CftSchemaTypeRef, CftSchemaView, ModuleId, Span,
+    CftSchemaTypeRef, CompiledSchema, ModuleId, Span,
 };
 use coflow_project::{DimensionConfig, Project};
 use serde_json::{json, Value};
@@ -22,7 +22,7 @@ pub fn inject_dimension_types(
     schema: &mut CftContainer,
     configs: &std::collections::BTreeMap<String, DimensionConfig>,
 ) -> Result<Vec<DimensionField>, coflow_cft::CftDiagnostics> {
-    let view = CftSchemaView::new(schema);
+    let view = CompiledSchema::new(schema);
     let fields = dimension_fields(&view);
     for field in &fields {
         let Some(config) = configs.get(&field.dimension) else {
@@ -83,7 +83,7 @@ pub fn dimension_sources(project: &Project, fields: &[DimensionField]) -> Vec<Re
     sources
 }
 
-pub fn dimension_fields(schema: &CftSchemaView) -> Vec<DimensionField> {
+pub fn dimension_fields(schema: &CompiledSchema) -> Vec<DimensionField> {
     let mut fields = Vec::new();
     for schema_type in schema.type_metas() {
         for field in &schema_type.own_fields {

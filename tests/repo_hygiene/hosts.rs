@@ -58,13 +58,13 @@ fn editor_backend_schema_queries_use_runtime_facade() {
 
     assert!(
 
-        convert.contains("schema: session.schema_view()")
+        convert.contains("schema: session.compiled_schema()")
 
             && convert.contains("enum_type_name(ty, &ctx.schema)")
 
             && convert.contains("schema.is_schema_enum(name)"),
 
-        "editor convert should use CftSchemaView supplied by the runtime session"
+        "editor convert should use CompiledSchema supplied by the runtime session"
 
     );
 
@@ -78,7 +78,7 @@ fn editor_backend_schema_queries_use_runtime_facade() {
 
     for forbidden in [
 
-        "CftSchemaView::new(session.schema())",
+        "CompiledSchema::new(session.schema())",
 
         "ctx.session.schema()",
 

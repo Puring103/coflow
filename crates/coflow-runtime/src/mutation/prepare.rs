@@ -212,7 +212,7 @@ fn prepare_provided_insert_fields(
     fields: MutationFields,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
     let mut out = BTreeMap::new();
-    let schema = session.schema_view();
+    let schema = session.compiled_schema();
     match fields {
         MutationFields::Empty => {}
         MutationFields::Json(fields) => {
@@ -349,7 +349,7 @@ fn ensure_type_can_insert(
     session: &ProjectSession,
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
-    let schema = session.schema_view();
+    let schema = session.compiled_schema();
     let Some(schema_type) = schema.type_meta(actual_type) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",

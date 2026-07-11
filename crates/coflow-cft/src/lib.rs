@@ -37,7 +37,7 @@ mod identifier;
 pub mod lexer;
 pub mod parser;
 mod schema;
-mod schema_view;
+mod compiled_schema;
 mod span;
 
 pub use container::{CftContainer, ModuleId};
@@ -50,8 +50,8 @@ pub use schema::{
     CftSchemaField, CftSchemaModule, CftSchemaQuantifierKind, CftSchemaType,
     CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp, Dimension, DimensionSpec,
 };
-pub use schema_view::{
+pub use compiled_schema::{
     CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftEnumVariantMeta, CftFieldMeta,
-    CftSchemaView, CftTypeMeta,
+    CompiledSchema, CftTypeMeta,
 };
 pub use span::Span;

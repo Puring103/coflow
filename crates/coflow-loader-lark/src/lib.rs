@@ -244,10 +244,10 @@ mod tests {
             }),
             display_name: "https://example.feishu.cn/wiki/wiki_token".to_string(),
         };
-        let schema_view = coflow_cft::CftSchemaView::new(&schema);
+        let compiled_schema = coflow_cft::CompiledSchema::new(&schema);
         let ctx = SourceLoadContext {
             project_root: Path::new("."),
-            schema: &schema_view,
+            schema: &compiled_schema,
         };
 
         loader

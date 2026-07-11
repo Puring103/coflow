@@ -1,7 +1,7 @@
 use crate::artifacts::{stage_json_file, StagedArtifactFile};
 use crate::commands::artifact_safety::artifact_diagnostic_set;
 use coflow_api::DiagnosticSet;
-use coflow_cft::{CftAnnotation, CftAnnotationValue, CftSchemaView};
+use coflow_cft::{CftAnnotation, CftAnnotationValue, CompiledSchema};
 use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 use serde::Serialize;
@@ -43,7 +43,7 @@ pub(super) fn id_as_enum_variants_for_schema_only(
 
 pub(super) fn stage_id_as_enum_lockfile_for_build(
     project: &Project,
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
 ) -> Result<IdAsEnumArtifacts, DiagnosticSet> {
     let lockfile = enum_lockfile_path(project);
@@ -55,7 +55,7 @@ pub(super) fn stage_id_as_enum_lockfile_for_build(
 }
 
 fn collect_declared_id_as_enum_ids(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
 ) -> BTreeMap<String, IdAsEnumIds> {
     let mut out = BTreeMap::new();
     for schema_type in schema.type_metas() {
@@ -73,7 +73,7 @@ fn collect_declared_id_as_enum_ids(
 }
 
 fn collect_id_as_enum_ids(
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
 ) -> BTreeMap<String, IdAsEnumIds> {
     let mut out = collect_declared_id_as_enum_ids(schema);

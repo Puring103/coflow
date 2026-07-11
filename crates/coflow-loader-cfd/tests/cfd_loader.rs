@@ -10,7 +10,7 @@ use coflow_api::{
     ResolvedSource, SourceLoadContext, SourceLocation, SourceLocationSpec, SourceProvider,
     SourceResolveContext,
 };
-use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
+use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
 use coflow_data_model::CfdDataModel;
 use coflow_data_model::{CfdInputValue, CfdValue};
 use coflow_loader_cfd::{
@@ -582,7 +582,7 @@ fn explicit_cfd_loader_rejects_url_source() -> TestResult {
 #[test]
 fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let schema = compile_schema("type Item { value: int; }");
-    let schema_view = CftSchemaView::new(&schema);
+    let compiled_schema = CompiledSchema::new(&schema);
     let root = std::env::temp_dir().join("coflow-cfd-loader-origin-spans");
     if root.exists() {
         fs::remove_dir_all(&root)?;
@@ -599,7 +599,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
         .load(
             SourceLoadContext {
                 project_root: &root,
-                schema: &schema_view,
+                schema: &compiled_schema,
             },
             &ResolvedSource {
                 provider_id: "cfd".to_string(),

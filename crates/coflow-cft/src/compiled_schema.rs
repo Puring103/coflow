@@ -8,14 +8,14 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
-pub struct CftSchemaView {
+pub struct CompiledSchema {
     consts: BTreeMap<String, CftConstValue>,
     types: BTreeMap<String, CftTypeMeta>,
     enums: BTreeMap<String, CftEnumMeta>,
     children_by_parent: BTreeMap<String, BTreeSet<String>>,
 }
 
-impl CftSchemaView {
+impl CompiledSchema {
     #[must_use]
     pub fn new(schema: &CftContainer) -> Self {
         let consts = schema

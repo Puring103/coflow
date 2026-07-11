@@ -1,14 +1,14 @@
 use super::*;
 
 #[test]
-fn api_source_contexts_use_schema_view_not_full_container() {
+fn api_source_contexts_use_compiled_schema_not_full_container() {
     let provider =
         std::fs::read_to_string("crates/coflow-api/src/provider.rs").expect("read API provider");
     let resolve_context = struct_block(&provider, "pub struct SourceResolveContext")
         .expect("find SourceResolveContext");
 
     assert!(
-        provider.contains("use coflow_cft::CftSchemaView;"),
+        provider.contains("use coflow_cft::CompiledSchema;"),
         "source provider contexts should depend on the schema query facade"
     );
     assert!(
@@ -28,18 +28,18 @@ fn api_source_contexts_use_schema_view_not_full_container() {
 }
 
 #[test]
-fn api_export_context_uses_schema_view_not_full_container() {
+fn api_export_context_uses_compiled_schema_not_full_container() {
     let data_output = std::fs::read_to_string("crates/coflow-api/src/data_output.rs")
         .expect("read API data output");
     let export_context =
         struct_block(&data_output, "pub struct ExportContext").expect("find ExportContext");
 
     assert!(
-        data_output.contains("use coflow_cft::CftSchemaView;"),
+        data_output.contains("use coflow_cft::CompiledSchema;"),
         "export context should depend on the schema query facade"
     );
     assert!(
-        export_context.contains("pub schema: &'a CftSchemaView"),
+        export_context.contains("pub schema: &'a CompiledSchema"),
         "export context should expose schema view"
     );
     assert!(
@@ -49,18 +49,18 @@ fn api_export_context_uses_schema_view_not_full_container() {
 }
 
 #[test]
-fn api_codegen_context_uses_schema_view_not_full_container() {
+fn api_codegen_context_uses_compiled_schema_not_full_container() {
     let codegen =
         std::fs::read_to_string("crates/coflow-api/src/codegen.rs").expect("read API codegen");
     let codegen_context =
         struct_block(&codegen, "pub struct CodegenContext").expect("find CodegenContext");
 
     assert!(
-        codegen.contains("use coflow_cft::CftSchemaView;"),
+        codegen.contains("use coflow_cft::CompiledSchema;"),
         "codegen context should depend on the schema query facade"
     );
     assert!(
-        codegen_context.contains("pub schema: &'a CftSchemaView"),
+        codegen_context.contains("pub schema: &'a CompiledSchema"),
         "codegen context should expose schema view"
     );
     assert!(
@@ -298,7 +298,7 @@ fn api_writer_contract_is_split_by_responsibility() {
         );
     }
     assert!(
-        requests.contains("use coflow_cft::CftSchemaView;"),
+        requests.contains("use coflow_cft::CompiledSchema;"),
         "API writer requests should depend on the schema query facade"
     );
     for forbidden in [
@@ -312,7 +312,7 @@ fn api_writer_contract_is_split_by_responsibility() {
         );
     }
     assert!(
-        requests.contains("pub schema: &'a CftSchemaView"),
+        requests.contains("pub schema: &'a CompiledSchema"),
         "writer schema-bearing requests should expose schema view"
     );
     assert!(
@@ -361,11 +361,11 @@ fn api_table_operations_do_not_expose_schema_owner() {
         );
     }
     assert!(
-        operations.contains("use coflow_cft::CftSchemaView;"),
+        operations.contains("use coflow_cft::CompiledSchema;"),
         "sync header should depend on the schema query facade"
     );
     assert!(
-        sync_request.contains("pub schema: Option<&'a CftSchemaView>"),
+        sync_request.contains("pub schema: Option<&'a CompiledSchema>"),
         "sync header should expose only optional schema view metadata"
     );
     assert!(

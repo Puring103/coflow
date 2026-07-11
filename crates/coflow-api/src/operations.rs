@@ -1,5 +1,5 @@
 use crate::{Diagnostic, DiagnosticSet, ResolvedSource};
-use coflow_cft::CftSchemaView;
+use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdValue;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -24,7 +24,7 @@ pub struct SyncHeaderRequest<'a> {
     pub sheet: Option<&'a str>,
     pub actual_type: &'a str,
     pub headers: &'a [String],
-    pub schema: Option<&'a CftSchemaView>,
+    pub schema: Option<&'a CompiledSchema>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

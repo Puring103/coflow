@@ -82,7 +82,7 @@ impl ProjectSession {
             return self.rename_record_key(registry, actual_type, key, new_key);
         }
         let plan = prepare_write_field(self, registry, actual_type, key, path, new_value)?;
-        let schema_view = self.schema_view();
+        let compiled_schema = self.compiled_schema();
 
         let write_request = WriteCellRequest {
             origin: &plan.target.origin,
@@ -90,12 +90,12 @@ impl ProjectSession {
             actual_type: &plan.target.coordinate.actual_type,
             field_path: &plan.target.field_path,
             new_value,
-            schema: &schema_view,
+            schema: &compiled_schema,
             source: &plan.source,
         };
         let write_ctx = WriteContext {
             project_root: &self.project.root_dir,
-            schema: &schema_view,
+            schema: &compiled_schema,
             model: Some(&self.model),
         };
         let preflight = plan.writer.preflight(write_ctx, &write_request);
@@ -153,10 +153,10 @@ impl ProjectSession {
         let target_display_path = target_ref.display_path.clone();
         let target_source = source_for_file(self, &target_display_path)?;
         let target_writer = lookup_source_writer(registry, &target_source)?;
-        let schema_view = self.schema_view();
+        let compiled_schema = self.compiled_schema();
         let ctx = WriteContext {
             project_root: &self.project.root_dir,
-            schema: &schema_view,
+            schema: &compiled_schema,
             model: Some(&self.model),
         };
         let target_request = RenameRecordRequest {
@@ -165,7 +165,7 @@ impl ProjectSession {
             new_key,
             actual_type,
             source: &target_source,
-            schema: &schema_view,
+            schema: &compiled_schema,
         };
 
         let reference_actions = reference_update_actions(self, registry, target_id, new_key)?;
@@ -181,14 +181,14 @@ impl ProjectSession {
             return Err(diagnostics);
         }
         for action in &reference_actions {
-            let request = action.request.as_request(&schema_view);
+            let request = action.request.as_request(&compiled_schema);
             if let Err(mut diagnostics) = action.writer.write_field(ctx, &request) {
                 rollback_transaction(transaction, &mut diagnostics);
                 return Err(diagnostics);
             }
         }
         for action in &rewrite_actions {
-            let request = action.request.as_request(&schema_view);
+            let request = action.request.as_request(&compiled_schema);
             if let Err(mut diagnostics) = action.writer.rewrite_record_references(ctx, &request) {
                 rollback_transaction(transaction, &mut diagnostics);
                 return Err(diagnostics);
@@ -237,18 +237,18 @@ impl ProjectSession {
             .map(ToOwned::to_owned)
             .or_else(|| sheet_for_file_type(self, file, actual_type));
         let writer = lookup_source_writer(registry, &source)?;
-        let schema_view = self.schema_view();
+        let compiled_schema = self.compiled_schema();
         let request = InsertRecordRequest {
             source: &source,
             sheet: sheet.as_deref(),
             record_key,
             actual_type,
             fields,
-            schema: &schema_view,
+            schema: &compiled_schema,
         };
         let ctx = WriteContext {
             project_root: &self.project.root_dir,
-            schema: &schema_view,
+            schema: &compiled_schema,
             model: Some(&self.model),
         };
         writer.insert_record(ctx, &request)?;
@@ -289,7 +289,7 @@ impl ProjectSession {
         let origin = record.origin.clone();
         let source = source_for_file(self, &display_path)?;
         let writer = lookup_source_writer(registry, &source)?;
-        let schema_view = self.schema_view();
+        let compiled_schema = self.compiled_schema();
         let request = DeleteRecordRequest {
             origin: &origin,
             record_key: key,
@@ -298,7 +298,7 @@ impl ProjectSession {
         };
         let ctx = WriteContext {
             project_root: &self.project.root_dir,
-            schema: &schema_view,
+            schema: &compiled_schema,
             model: Some(&self.model),
         };
         writer.delete_record(ctx, &request)?;
@@ -364,8 +364,8 @@ fn ensure_insert_type_can_insert(
     session: &ProjectSession,
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
-    let schema_view = session.schema_view();
-    let Some(schema_type) = schema_view.type_meta(actual_type) else {
+    let compiled_schema = session.compiled_schema();
+    let Some(schema_type) = compiled_schema.type_meta(actual_type) else {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-INSERT",
             "WRITE",
@@ -395,8 +395,8 @@ fn validate_insert_fields(
     record_key: &str,
     fields: &std::collections::BTreeMap<String, CfdValue>,
 ) -> Result<(), DiagnosticSet> {
-    let schema_view = session.schema_view();
-    if !schema_view.has_type(actual_type) {
+    let compiled_schema = session.compiled_schema();
+    if !compiled_schema.has_type(actual_type) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-INSERT",
             "WRITE",
@@ -404,7 +404,7 @@ fn validate_insert_fields(
         )));
     }
     for (name, value) in fields {
-        let Some(field_ty) = schema_view.field_type(actual_type, name) else {
+        let Some(field_ty) = compiled_schema.field_type(actual_type, name) else {
             return Err(DiagnosticSet::one(Diagnostic::error(
                 "WRITE-INSERT",
                 "WRITE",
@@ -413,7 +413,7 @@ fn validate_insert_fields(
         };
         write_rules::validate_value_for_insert_in_view(
             session,
-            &schema_view,
+            &compiled_schema,
             actual_type,
             record_key,
             field_ty,

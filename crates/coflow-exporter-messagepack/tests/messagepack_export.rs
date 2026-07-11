@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
+use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_messagepack::export_messagepack_model;
 use rmpv::Value;
@@ -37,7 +37,7 @@ fn export_tables(
     schema: &CftContainer,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, Value>, String> {
-    let bytes_by_table = export_messagepack_model(&CftSchemaView::new(schema), model)
+    let bytes_by_table = export_messagepack_model(&CompiledSchema::new(schema), model)
         .map_err(|err| format!("export msgpack: {err:?}"))?;
     bytes_by_table
         .into_iter()

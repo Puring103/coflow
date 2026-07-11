@@ -1,7 +1,7 @@
 use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
-    CftAnnotationValue, CftContainer, CftFieldMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta,
+    CftAnnotationValue, CftContainer, CftFieldMeta, CftSchemaTypeRef, CompiledSchema, CftTypeMeta,
 };
 use std::collections::BTreeMap;
 
@@ -54,14 +54,14 @@ pub(crate) enum CfdValueDraft {
 
 #[derive(Debug, Clone)]
 pub(crate) struct DataModelCompilerContext {
-    cft: CftSchemaView,
+    cft: CompiledSchema,
     dimension_storage_types: BTreeMap<DimensionStorageKey, String>,
     domain_index: CfdDomainIndex,
 }
 
 impl DataModelCompilerContext {
     pub(crate) fn new(schema: &CftContainer) -> Self {
-        let cft_view = CftSchemaView::new(schema);
+        let cft_view = CompiledSchema::new(schema);
         let domain_index = Self::build_domain_index(&cft_view);
         let dimension_storage_types = Self::build_dimension_storage_index(&cft_view);
 
@@ -73,7 +73,7 @@ impl DataModelCompilerContext {
     }
 
     fn build_dimension_storage_index(
-        cft_view: &CftSchemaView,
+        cft_view: &CompiledSchema,
     ) -> BTreeMap<DimensionStorageKey, String> {
         let mut out = BTreeMap::new();
         for schema_type in cft_view.type_metas() {
@@ -118,7 +118,7 @@ impl DataModelCompilerContext {
             .find(|field| field.name == field_name)
     }
 
-    fn build_domain_index(cft_view: &CftSchemaView) -> CfdDomainIndex {
+    fn build_domain_index(cft_view: &CompiledSchema) -> CfdDomainIndex {
         let type_names = cft_view.type_names().cloned().collect::<Vec<_>>();
         let type_id_by_name = type_names
             .iter()
@@ -154,7 +154,7 @@ impl DataModelCompilerContext {
         )
     }
 
-    fn domain_root_name(cft_view: &CftSchemaView, type_name: &str) -> String {
+    fn domain_root_name(cft_view: &CompiledSchema, type_name: &str) -> String {
         let mut current = type_name;
         while let Some(parent) = cft_view
             .type_meta(current)
@@ -166,7 +166,7 @@ impl DataModelCompilerContext {
     }
 
     fn ancestor_type_ids(
-        cft_view: &CftSchemaView,
+        cft_view: &CompiledSchema,
         type_id_by_name: &BTreeMap<String, CfdTypeId>,
         type_name: &str,
     ) -> Vec<CfdTypeId> {

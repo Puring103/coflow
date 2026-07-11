@@ -445,7 +445,7 @@ fn read_sheet_layout(
     sheet: &str,
     actual_type: &str,
     options: &serde_json::Value,
-    schema: &coflow_cft::CftSchemaView,
+    schema: &coflow_cft::CompiledSchema,
 ) -> Result<SheetLayout, DiagnosticSet> {
     let config = excel_sheet_config_from_options(options, sheet, actual_type)?;
     let mut workbook = calamine::open_workbook_auto(path).map_err(|err| {

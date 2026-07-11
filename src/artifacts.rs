@@ -8,7 +8,7 @@ use coflow_api::{
     CodegenContext, Diagnostic, DiagnosticSet, ExportContext, Label, OutputSpec, ProviderRegistry,
     Severity, SourceLocation,
 };
-use coflow_cft::CftSchemaView;
+use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdDataModel;
 use coflow_project::{OutputConfig, Project};
 use serde::Serialize;
@@ -29,7 +29,7 @@ pub fn output_dir(
 
 pub fn write_data_tables(
     registry: &ProviderRegistry,
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
     exporter_id: &str,
     output: &OutputConfig,
@@ -40,7 +40,7 @@ pub fn write_data_tables(
 
 pub fn stage_data_tables(
     registry: &ProviderRegistry,
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     model: &CfdDataModel,
     exporter_id: &str,
     output_config: &OutputConfig,
@@ -69,7 +69,7 @@ pub fn stage_data_tables(
 
 #[derive(Debug, Clone, Copy)]
 pub struct CodegenArtifactRequest<'a> {
-    pub schema: &'a CftSchemaView,
+    pub schema: &'a CompiledSchema,
     pub model: Option<&'a CfdDataModel>,
     pub codegen_id: &'a str,
     pub data_format: &'a str,
@@ -106,7 +106,7 @@ pub fn stage_codegen_artifacts(
 
 pub fn preflight_codegen(
     registry: &ProviderRegistry,
-    schema: &CftSchemaView,
+    schema: &CompiledSchema,
     model: Option<&CfdDataModel>,
     codegen_id: &str,
     data_format: &str,

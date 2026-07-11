@@ -1,7 +1,7 @@
 #![allow(clippy::panic_in_result_fn)]
 
 use coflow_api::origins_of;
-use coflow_cft::{CftContainer, CftSchemaView, ModuleId};
+use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdValue};
 use coflow_loader_csv::{collect_input_records, CsvSheet, CsvSource};
 use coflow_loader_table_core::map_table_diagnostics;
@@ -24,8 +24,8 @@ fn compile_schema(source: &str) -> Result<CftContainer, String> {
 }
 
 fn build_model(schema: &CftContainer, sources: &[CsvSource]) -> Result<CfdDataModel, String> {
-    let schema_view = CftSchemaView::new(schema);
-    let loaded = collect_input_records(&schema_view, sources).map_err(|err| format!("{err:?}"))?;
+    let compiled_schema = CompiledSchema::new(schema);
+    let loaded = collect_input_records(&compiled_schema, sources).map_err(|err| format!("{err:?}"))?;
     let origins = origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {
