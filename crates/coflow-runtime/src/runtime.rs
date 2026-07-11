@@ -3,7 +3,7 @@ use coflow_project::Project;
 
 use crate::schema_build::build_project_schema_session;
 use crate::session::{ProjectSchemaSession, ProjectSession};
-use crate::session_build::{build_project_session_for_build, open_project_session_read_only};
+use crate::session_build::{open_project_session, SessionOpenOptions};
 
 #[derive(Debug, Clone)]
 pub struct Runtime {
@@ -40,7 +40,8 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
-        open_project_session_read_only(project, &self.registry).map(ReadOnlyProjectSession::new)
+        open_project_session(project, &self.registry, SessionOpenOptions::read_only())
+            .map(ReadOnlyProjectSession::new)
     }
 
     /// Builds data for the normal build pipeline. This may write generated
@@ -53,7 +54,8 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<BuildProjectSession, DiagnosticSet> {
-        build_project_session_for_build(project, &self.registry).map(BuildProjectSession::new)
+        open_project_session(project, &self.registry, SessionOpenOptions::build())
+            .map(BuildProjectSession::new)
     }
 }
 

@@ -61,6 +61,8 @@ Commit boundary: `refactor: centralize schema path policy`
 
 ### 3. Runtime session intent
 
+Status: completed.
+
 Goal: make session side effects visible in the runtime interface.
 
 Implementation:

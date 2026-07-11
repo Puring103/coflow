@@ -15,38 +15,56 @@ use crate::load::{
 use crate::schema_build::build_project_schema_with_diagnostics;
 use crate::session::{ProjectSchemaSession, ProjectSession};
 
-/// Builds a project into a reusable runtime session for the normal `build`
-/// pipeline.
+/// Opens a project into a reusable runtime session using explicit side-effect
+/// intent.
 ///
-/// This entry point may write generated dimension sources before the final
-/// reload. Use [`open_project_session_read_only`] for editor, inspection, and
-/// background tasks that must not mutate project files.
+/// [`SessionOpenOptions::build`] may write generated dimension sources before
+/// the final reload. [`SessionOpenOptions::read_only`] is for editor,
+/// inspection, and background tasks that must not mutate project files.
 ///
 /// # Errors
 ///
 /// Returns unrecoverable project/config/schema I/O errors. User-fixable
 /// project, schema, loader, model, and check problems are captured in the
 /// returned session diagnostics.
-pub(crate) fn build_project_session_for_build(
+pub(crate) fn open_project_session(
     project: Project,
     registry: &ProviderRegistry,
+    options: SessionOpenOptions,
 ) -> Result<ProjectSession, DiagnosticSet> {
-    build_project_session_with_mode(project, registry, DimensionBuildMode::Generate)
+    build_project_session_with_options(project, registry, options)
 }
 
-/// Opens, loads, and checks a project without writing generated dimension
-/// sources or other derived files.
-///
-/// # Errors
-///
-/// Returns unrecoverable project/config/schema I/O errors. User-fixable
-/// project, schema, loader, model, and check problems are captured in the
-/// returned session diagnostics.
-pub(crate) fn open_project_session_read_only(
-    project: Project,
-    registry: &ProviderRegistry,
-) -> Result<ProjectSession, DiagnosticSet> {
-    build_project_session_with_mode(project, registry, DimensionBuildMode::ReadOnly)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SessionOpenOptions {
+    intent: SessionIntent,
+}
+
+impl SessionOpenOptions {
+    pub(crate) const fn build() -> Self {
+        Self {
+            intent: SessionIntent::Build,
+        }
+    }
+
+    pub(crate) const fn read_only() -> Self {
+        Self {
+            intent: SessionIntent::ReadOnly,
+        }
+    }
+
+    const fn dimension_mode(self) -> DimensionBuildMode {
+        match self.intent {
+            SessionIntent::Build => DimensionBuildMode::Generate,
+            SessionIntent::ReadOnly => DimensionBuildMode::ReadOnly,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SessionIntent {
+    Build,
+    ReadOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,10 +73,10 @@ enum DimensionBuildMode {
     ReadOnly,
 }
 
-fn build_project_session_with_mode(
+fn build_project_session_with_options(
     project: Project,
     registry: &ProviderRegistry,
-    dimension_mode: DimensionBuildMode,
+    options: SessionOpenOptions,
 ) -> Result<ProjectSession, DiagnosticSet> {
     let ProjectSchemaSession {
         project,
@@ -72,7 +90,7 @@ fn build_project_session_with_mode(
         project,
         schema,
         registry,
-        dimension_mode,
+        dimension_mode: options.dimension_mode(),
         dimension_fields,
     };
 

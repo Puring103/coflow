@@ -1820,9 +1820,10 @@ fn engine_load_pipeline_does_not_live_in_lib_rs() {
         "coflow-runtime lib.rs should stay below the 300-line orchestration threshold"
     );
     for expected in [
-        "pub(crate) fn build_project_session_for_build",
-        "pub(crate) fn open_project_session_read_only",
-        "fn build_project_session_with_mode",
+        "pub(crate) fn open_project_session",
+        "pub(crate) struct SessionOpenOptions",
+        "pub(crate) enum SessionIntent",
+        "fn build_project_session_with_options",
         "fn build_schema_session",
         "fn build_data_pipeline",
         "fn load_base_data",
@@ -1839,6 +1840,16 @@ fn engine_load_pipeline_does_not_live_in_lib_rs() {
         assert!(
             !engine.contains(expected),
             "engine session build item `{expected}` should not live in lib.rs"
+        );
+    }
+    for forbidden in [
+        "pub(crate) fn build_project_session_for_build",
+        "pub(crate) fn open_project_session_read_only",
+        "fn build_project_session_with_mode",
+    ] {
+        assert!(
+            !session_build.contains(forbidden),
+            "session build should use explicit SessionOpenOptions instead of `{forbidden}`"
         );
     }
     for forbidden in ["load_project_data(", "regenerate_dimension_sources("] {
@@ -3131,6 +3142,25 @@ fn engine_write_writer_dispatch_does_not_live_in_writes_rs() {
         writes.lines().count() < 460,
         "coflow-runtime writes.rs should stay below the 460-line focused-module threshold"
     );
+}
+
+#[test]
+fn engine_write_rebuild_intent_does_not_live_in_writes_rs() {
+    let writes =
+        std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
+    let rebuild = std::fs::read_to_string("crates/coflow-runtime/src/writes/rebuild.rs")
+        .expect("read engine write rebuild helper");
+
+    for expected in ["pub(super) fn rebuild_session_after_write", "SessionOpenOptions::build()"] {
+        assert!(
+            rebuild.contains(expected),
+            "engine write rebuild helper `{expected}` should live in writes/rebuild.rs"
+        );
+        assert!(
+            !writes.contains(expected),
+            "engine write rebuild helper `{expected}` should not live in writes.rs"
+        );
+    }
 }
 
 #[test]

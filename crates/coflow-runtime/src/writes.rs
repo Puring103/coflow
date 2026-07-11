@@ -7,6 +7,7 @@
 //! see the post-write state.
 
 mod path;
+mod rebuild;
 mod refs;
 mod target;
 mod transaction;
@@ -21,8 +22,8 @@ use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RecordOrigin}
 
 use super::records::WriteOutcome;
 use super::write_rules;
-use super::session_build::build_project_session_for_build;
 use super::{ProjectSession, RecordCoordinate};
+use rebuild::rebuild_session_after_write;
 use refs::{reference_update_actions, source_rewrite_actions};
 use target::{guess_new_coordinate, is_id_path, write_target_for_path};
 use transaction::LocalFileTransaction;
@@ -42,7 +43,7 @@ impl ProjectSession {
     /// preflights before mutating the source — diagnostics from preflight
     /// are returned without rebuilding.
     ///
-    /// On success the engine triggers `build_project_session_for_build` again to
+    /// On success the engine rebuilds with [`SessionOpenOptions::build`] to
     /// refresh model, diagnostics, and indexes. The
     /// [`WriteOutcome`] reports the post-write coordinate (which differs
     /// when the write changed the host record's `id` field).
@@ -88,7 +89,6 @@ impl ProjectSession {
         )?;
         let source = source_for_file(self, &target.display_path)?;
         let writer = lookup_source_writer(registry, &source)?;
-        let yaml_path = self.project.config_path.clone();
         let schema_view = CftSchemaView::new(&self.schema);
 
         let write_request = WriteCellRequest {
@@ -111,14 +111,13 @@ impl ProjectSession {
         }
         writer.write_field(write_ctx, &write_request)?;
 
-        let new_session = build_project_session_for_build(self.project.clone(), registry)?;
+        let new_session = rebuild_session_after_write(self, registry)?;
         let new_write_coordinate =
             guess_new_coordinate(&new_session, &target.coordinate, path, new_value);
         let renamed = (new_write_coordinate != target.coordinate)
             .then(|| (target.coordinate.clone(), new_write_coordinate.clone()));
         let diagnostics = new_session.diagnostics.as_set().clone();
         *self = new_session;
-        let _ = yaml_path;
         let mut touched = vec![coordinate.clone()];
         if new_write_coordinate != coordinate {
             touched.push(new_write_coordinate);
@@ -203,7 +202,7 @@ impl ProjectSession {
             }
         }
 
-        let new_session = match build_project_session_for_build(self.project.clone(), registry) {
+        let new_session = match rebuild_session_after_write(self, registry) {
             Ok(session) => session,
             Err(mut diagnostics) => {
                 rollback_transaction(transaction, &mut diagnostics);
@@ -261,7 +260,7 @@ impl ProjectSession {
         };
         writer.insert_record(ctx, &request)?;
 
-        let new_session = build_project_session_for_build(self.project.clone(), registry)?;
+        let new_session = rebuild_session_after_write(self, registry)?;
         let inserted = RecordCoordinate::new(actual_type, record_key);
         let diagnostics = new_session.diagnostics.as_set().clone();
         *self = new_session;
@@ -311,7 +310,7 @@ impl ProjectSession {
         };
         writer.delete_record(ctx, &request)?;
 
-        let new_session = build_project_session_for_build(self.project.clone(), registry)?;
+        let new_session = rebuild_session_after_write(self, registry)?;
         let diagnostics = new_session.diagnostics.as_set().clone();
         *self = new_session;
         Ok(WriteOutcome {
