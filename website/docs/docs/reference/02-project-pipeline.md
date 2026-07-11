@@ -134,6 +134,11 @@ ResolvedSource
 
 Input record 保留来源定位，但不执行最终业务规则。不同 Provider 输出相同的来源无关结构，后续统一交给 DataModel。
 
+CFD 使用唯一的两阶段前端：`coflow-cfd` 先把文本解析成带 source span 的
+canonical AST，`coflow-loader-cfd` 再根据已编译 schema 将 AST lowering 为
+`CfdInputRecord`。LSP、writer 和 loader 共享同一套 CFD syntax parser；loader
+不维护第二套 lexer/parser，也不在 syntax 阶段执行 schema 语义。
+
 ## DataModel 与 Check
 
 完整项目检查的数据主线是：

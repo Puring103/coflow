@@ -22,15 +22,16 @@ use coflow_api::{
 };
 
 mod diagnostics;
-mod parser;
+mod lower;
 pub mod writer;
+use coflow_cfd::parse_cfd;
 use coflow_cft::{CftContainer, CompiledSchema};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, RecordOrigin};
 use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
 };
-use parser::{ParsedCfdInputRecord, Parser};
+use lower::{lower_records, syntax_diagnostics, ParsedCfdInputRecord};
 use std::fs;
 use std::path::{Path, PathBuf};
 pub use writer::{CfdWriter, CFD_WRITER_DESCRIPTOR};
@@ -59,9 +60,11 @@ fn parse_cfd_input_records_with_spans(
     schema: &CompiledSchema,
     source: &str,
 ) -> Result<Vec<ParsedCfdInputRecord>, CfdTextLoadError> {
-    Parser::new(schema, source)
-        .parse_records_with_spans()
-        .map_err(CfdTextLoadError::Text)
+    let (ast, diagnostics) = parse_cfd(source);
+    if !diagnostics.is_empty() {
+        return Err(CfdTextLoadError::Text(syntax_diagnostics(diagnostics)));
+    }
+    lower_records(schema, &ast).map_err(CfdTextLoadError::Text)
 }
 
 /// Parses `.cfd` text and builds a validated [`CfdDataModel`].

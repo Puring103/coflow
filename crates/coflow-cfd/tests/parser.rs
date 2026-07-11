@@ -33,12 +33,18 @@ fn simple_record_with_scalar_field() {
 
 #[test]
 fn group_record_expands_to_multiple_records() {
-    let ast = parse_ok("Item { sword {}, shield {}, }");
+    let source = "Item { sword {}, shield {}, }";
+    let ast = parse_ok(source);
     assert_eq!(ast.records.len(), 2);
     assert_eq!(ast.records[0].key, "sword");
     assert_eq!(ast.records[0].type_name, "Item");
     assert_eq!(ast.records[1].key, "shield");
     assert_eq!(ast.records[1].type_name, "Item");
+    for record in &ast.records {
+        let (group_type, span) = record.group_type.as_ref().expect("group declaration type");
+        assert_eq!(group_type, "Item");
+        assert_eq!(&source[span.start..span.end], "Item");
+    }
 }
 
 #[test]

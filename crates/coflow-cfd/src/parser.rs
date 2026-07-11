@@ -81,6 +81,7 @@ impl<'a> Parser<'a> {
             Ok(vec![CfdRecord {
                 key: first.text,
                 key_span: first.span,
+                group_type: None,
                 type_name,
                 type_span,
                 entries,
@@ -124,6 +125,7 @@ impl<'a> Parser<'a> {
             records.push(CfdRecord {
                 key: key.text,
                 key_span: key.span,
+                group_type: Some((group_token.text.clone(), group_token.span)),
                 type_name,
                 type_span,
                 entries,

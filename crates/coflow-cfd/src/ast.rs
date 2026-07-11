@@ -10,6 +10,8 @@ pub struct CfdAst {
 pub struct CfdRecord {
     pub key: String,
     pub key_span: Span,
+    /// Group declaration type for records nested in `Type { ... }`.
+    pub group_type: Option<(String, Span)>,
     pub type_name: String,
     pub type_span: Span,
     pub entries: Vec<CfdBlockEntry>,
