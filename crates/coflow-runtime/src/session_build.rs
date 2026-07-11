@@ -7,7 +7,7 @@ use coflow_project::Project;
 
 use crate::dimensions;
 use crate::dimensions::{DimensionField, DimensionGenerationTransaction};
-use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
+use crate::indexes::{DiagnosticsStore, SessionIndexes};
 use crate::load::{
     empty_load_output, empty_model, load_project_data, LoadDiagnostics, LoadProjectDataOptions,
     ProjectLoadOutput,
@@ -127,13 +127,6 @@ impl SessionBuildContext<'_> {
     }
 }
 
-#[derive(Default)]
-struct SessionIndexes {
-    sources: SourceIndex,
-    records: RecordIndex,
-    files: FileIndex,
-}
-
 struct LoadedSessionData {
     model: CfdDataModel,
     indexes: SessionIndexes,
@@ -214,9 +207,7 @@ fn load_data(
         &ctx.schema,
         ctx.schema.compiled_schema(),
         ctx.registry,
-        &mut indexes.sources,
-        &mut indexes.records,
-        &mut indexes.files,
+        &mut indexes,
         LoadProjectDataOptions {
             include_implicit_dimension_sources,
             run_checks,

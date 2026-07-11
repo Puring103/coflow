@@ -204,13 +204,13 @@ struct FileSnapshot {
 
 impl FileSnapshot {
     fn restore(&self) -> std::io::Result<()> {
-        match &self.original {
-            Some(bytes) => fs::write(&self.path, bytes),
-            None => match fs::remove_file(&self.path) {
+        self.original.as_ref().map_or_else(
+            || match fs::remove_file(&self.path) {
                 Ok(()) => Ok(()),
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 Err(err) => Err(err),
             },
-        }
+            |bytes| fs::write(&self.path, bytes),
+        )
     }
 }

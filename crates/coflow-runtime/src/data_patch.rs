@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use coflow_api::{DiagnosticSet, FlatDiagnostic};
+use coflow_api::FlatDiagnostic;
 use coflow_data_model::CfdPathSegment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -100,21 +100,13 @@ impl WriteProjectSession {
     /// This keeps the CLI-facing data patch DTOs as a thin adapter while all
     /// mutation semantics live in the shared engine path.
     ///
-    /// # Errors
-    ///
-    /// Returns diagnostics only when mutation execution cannot produce a
-    /// report. Per-operation validation and writer failures are represented in
-    /// the returned [`DataPatchReport`].
-    pub fn apply_data_patch(
-        &mut self,
-        request: DataPatchRequest,
-    ) -> Result<DataPatchReport, DiagnosticSet> {
+    pub fn apply_data_patch(&mut self, request: DataPatchRequest) -> DataPatchReport {
         let original_ops = request.ops.clone();
         let mutation_request = request.into_mutation_request();
-        let mutation_report = self.apply_mutation(mutation_request)?;
+        let mutation_report = self.apply_mutation(mutation_request);
         let remaining_ops =
             DataPatchRequest::remaining_after_failure(&original_ops, &mutation_report);
-        Ok(mutation_report.into_data_patch_report(remaining_ops))
+        mutation_report.into_data_patch_report(remaining_ops)
     }
 }
 

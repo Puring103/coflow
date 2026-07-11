@@ -220,7 +220,11 @@ fn provider_bundle_registration_is_atomic() -> Result<(), String> {
         .register_bundle(bundle)
         .err()
         .ok_or_else(|| "bundle with a conflicting final role should fail".to_string())?;
-    ensure_eq(err.provider_kind(), "source writer", "conflicting bundle role")?;
+    ensure_eq(
+        err.provider_kind(),
+        "source writer",
+        "conflicting bundle role",
+    )?;
     ensure_eq(err.id(), "csv", "conflicting bundle id")?;
     ensure(
         registry.source_provider("csv").is_none(),
@@ -252,7 +256,11 @@ fn provider_package_bundle_merge_is_atomic() -> Result<(), String> {
         .merge(additions)
         .err()
         .ok_or_else(|| "bundle merge with a conflicting final role should fail".to_string())?;
-    ensure_eq(err.provider_kind(), "source writer", "conflicting merge role")?;
+    ensure_eq(
+        err.provider_kind(),
+        "source writer",
+        "conflicting merge role",
+    )?;
     ensure_eq(err.id(), "csv", "conflicting merge id")?;
 
     let mut registry = coflow_api::ProviderRegistry::default();

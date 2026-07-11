@@ -205,6 +205,11 @@ pub struct DimensionSourceResult {
 pub trait DimensionSourceManager: Send + Sync {
     fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor;
 
+    /// Decodes provider options for a generated dimension source.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the provider-specific options are invalid.
     fn source_options(
         &self,
         _request: &DimensionSourceOptionsRequest<'_>,

@@ -122,4 +122,3 @@ fn table_label_to_api(label: TableLabel) -> Label {
 pub(crate) fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic {
     Diagnostic::error(code, "LARK", message)
 }
-

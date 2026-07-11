@@ -19,7 +19,7 @@ pub struct Runtime {
 
 impl Runtime {
     #[must_use]
-    pub fn new(registry: ProviderRegistry) -> Self {
+    pub const fn new(registry: ProviderRegistry) -> Self {
         Self { registry }
     }
 
@@ -96,7 +96,7 @@ pub struct ReadOnlyProjectSession {
 }
 
 impl ReadOnlyProjectSession {
-    fn new(session: ProjectSession) -> Self {
+    const fn new(session: ProjectSession) -> Self {
         Self { session }
     }
 
@@ -122,7 +122,7 @@ pub struct BuildProjectSession {
 }
 
 impl BuildProjectSession {
-    fn new(session: ProjectSession) -> Self {
+    const fn new(session: ProjectSession) -> Self {
         Self { session }
     }
 
@@ -145,7 +145,7 @@ pub struct WriteProjectSession {
 }
 
 impl WriteProjectSession {
-    fn new(session: ProjectSession, registry: ProviderRegistry) -> Self {
+    const fn new(session: ProjectSession, registry: ProviderRegistry) -> Self {
         Self {
             session,
             registry,
@@ -209,22 +209,20 @@ impl WriteProjectSession {
 
     /// Apply a batch of mutation commands using the registry owned by this
     /// capability.
-    ///
-    /// # Errors
-    ///
-    /// Returns diagnostics only when mutation execution cannot produce a
-    /// report. Per-operation failures are included in the report.
-    pub fn apply_mutation(
-        &mut self,
-        request: MutationRequest,
-    ) -> Result<MutationReport, DiagnosticSet> {
-        let report = self.session.apply_mutation(&self.registry, request)?;
+    pub fn apply_mutation(&mut self, request: MutationRequest) -> MutationReport {
+        let report = self.session.apply_mutation(&self.registry, request);
         if !report.applied.is_empty() {
             self.revision = self.revision.saturating_add(1);
         }
-        Ok(report)
+        report
     }
 
+    /// Writes one field and returns its provider outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the mutation is rejected or produces no
+    /// applied operation.
     pub fn write_field(
         &mut self,
         actual_type: &str,
@@ -240,6 +238,12 @@ impl WriteProjectSession {
         })
     }
 
+    /// Renames one record key and its references.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the mutation is rejected or produces no
+    /// applied operation.
     pub fn rename_record_key(
         &mut self,
         actual_type: &str,
@@ -253,6 +257,12 @@ impl WriteProjectSession {
         })
     }
 
+    /// Inserts one record into the selected source.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the mutation is rejected or produces no
+    /// applied operation.
     pub fn insert_record(
         &mut self,
         file: &str,
@@ -271,6 +281,12 @@ impl WriteProjectSession {
         })
     }
 
+    /// Deletes one record and updates affected references.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the mutation is rejected or produces no
+    /// applied operation.
     pub fn delete_record(
         &mut self,
         actual_type: &str,
@@ -286,7 +302,7 @@ impl WriteProjectSession {
         let report = self.apply_mutation(MutationRequest {
             stop_on_write_error: true,
             ops: vec![op],
-        })?;
+        });
         if let Some(applied) = report.applied.into_iter().next() {
             return Ok(applied.outcome);
         }

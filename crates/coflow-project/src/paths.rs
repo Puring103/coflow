@@ -21,7 +21,10 @@ pub fn resolve_config_path(config_or_dir: Option<&Path>) -> Result<PathBuf, Diag
         return Err(plain_error(
             "PROJECT-CONFIG-NOT-FOUND",
             "PROJECT",
-            format!("config or directory `{}` does not exist", candidate.display()),
+            format!(
+                "config or directory `{}` does not exist",
+                candidate.display()
+            ),
         ));
     }
     let dir = if candidate.is_dir() {

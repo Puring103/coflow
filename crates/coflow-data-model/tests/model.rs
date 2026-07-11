@@ -230,13 +230,7 @@ fn dimension_field_lookup_reads_variant_storage_without_exposing_storage_to_call
     let item_id = model.lookup_assignable("Item", "potion").expect("item");
 
     let resolved = model
-        .dimension_field_value(
-            schema.compiled_schema(),
-            item_id,
-            "name",
-            "platform",
-            "pc",
-        )
+        .dimension_field_value(schema.compiled_schema(), item_id, "name", "platform", "pc")
         .expect("variant lookup should resolve");
 
     assert_eq!(
@@ -626,9 +620,8 @@ fn record_value_lookup_traverses_object_array_and_dict_paths() {
             }
         "#,
     );
-    let nested = |value| {
-        CfdInputValue::object_with_declared_type([("value", CfdInputValue::from(value))])
-    };
+    let nested =
+        |value| CfdInputValue::object_with_declared_type([("value", CfdInputValue::from(value))]);
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",
@@ -643,7 +636,9 @@ fn record_value_lookup_traverses_object_array_and_dict_paths() {
         ],
     );
     let model = builder.build().expect("model builds");
-    let record = model.record(record_id_at(&model, 0)).expect("record exists");
+    let record = model
+        .record(record_id_at(&model, 0))
+        .expect("record exists");
 
     assert_eq!(
         record.value_at_path(&CfdPath::root().field("nested").field("value")),

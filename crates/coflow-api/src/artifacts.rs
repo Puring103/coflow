@@ -1,5 +1,5 @@
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtifactContentKind {
@@ -123,7 +123,7 @@ fn is_component_prefix(left: &[String], right: &[String]) -> bool {
     left.len() < right.len() && right.starts_with(left)
 }
 
-fn path_prefix_error(parent: &PathBuf, child: &PathBuf) -> ArtifactSetError {
+fn path_prefix_error(parent: &Path, child: &Path) -> ArtifactSetError {
     ArtifactSetError::new(format!(
         "artifact path `{}` cannot be both a file and the parent of `{}`",
         parent.display(),
@@ -163,6 +163,8 @@ pub enum ArtifactContent {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::{ArtifactFile, ArtifactSet};
 
     #[test]

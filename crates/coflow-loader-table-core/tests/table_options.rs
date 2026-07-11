@@ -1,4 +1,4 @@
-#![allow(clippy::panic)]
+#![allow(clippy::expect_used, clippy::panic)]
 
 use coflow_loader_table_core::TableSourceOptions;
 use serde_json::json;

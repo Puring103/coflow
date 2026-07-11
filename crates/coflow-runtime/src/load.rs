@@ -18,7 +18,8 @@ use std::sync::Arc;
 
 use crate::dimensions;
 use crate::indexes::{
-    DiagnosticLogicalLocation, FileIndex, PendingRecordRef, RecordIndex, SourceId, SourceIndex,
+    DiagnosticLogicalLocation, FileIndex, PendingRecordRef, RecordIndex, SessionIndexes, SourceId,
+    SourceIndex,
 };
 use crate::session::RecordCoordinate;
 
@@ -71,9 +72,7 @@ pub(crate) fn load_project_data(
     schema: &CftContainer,
     compiled_schema: &CompiledSchema,
     registry: &ProviderRegistry,
-    sources: &mut SourceIndex,
-    records_index: &mut RecordIndex,
-    files: &mut FileIndex,
+    indexes: &mut SessionIndexes,
     options: LoadProjectDataOptions,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
@@ -91,9 +90,9 @@ pub(crate) fn load_project_data(
         diagnostics.extend(load_resolved_sources(
             project,
             compiled_schema,
-            sources,
-            records_index,
-            files,
+            &mut indexes.sources,
+            &mut indexes.records,
+            &mut indexes.files,
             &mut records,
             resolved_sources,
         ));
@@ -112,9 +111,9 @@ pub(crate) fn load_project_data(
             diagnostics.extend(load_resolved_sources(
                 project,
                 compiled_schema,
-                sources,
-                records_index,
-                files,
+                &mut indexes.sources,
+                &mut indexes.records,
+                &mut indexes.files,
                 &mut records,
                 resolved_sources,
             ));
@@ -140,7 +139,7 @@ pub(crate) fn load_project_data(
     let model = match builder.build() {
         Ok(model) => model,
         Err(err) => {
-            records_index.finalize_rejected_pending();
+            indexes.records.finalize_rejected_pending();
             let logical_locations =
                 logical_locations_from_cfd(&err, |id| record_coordinates.get(id.index()).cloned());
             let diagnostics = map_diagnostics_with_origins(err, &origins);

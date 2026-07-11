@@ -58,12 +58,8 @@ fn output_scope_diagnostics(
 ) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
 
-    let project_root = resolve_input_path(
-        &project.root_dir,
-        "project root",
-        output,
-        &mut diagnostics,
-    );
+    let project_root =
+        resolve_input_path(&project.root_dir, "project root", output, &mut diagnostics);
     if project_root.as_deref() == Some(output_dir) {
         diagnostics.push(artifact_diagnostic(
             &output.dir,
@@ -115,8 +111,7 @@ fn output_scope_diagnostics(
     }
 
     for source_path in configured_source_paths(project) {
-        let resolved =
-            resolve_input_path(&source_path, "data source", output, &mut diagnostics);
+        let resolved = resolve_input_path(&source_path, "data source", output, &mut diagnostics);
         if resolved
             .as_deref()
             .is_some_and(|path| paths_overlap(output_dir, path))
@@ -159,9 +154,7 @@ fn resolve_input_path(
     }
 }
 
-fn overlapping_output_diagnostics(
-    outputs: &[(&ArtifactOutputPlan, PathBuf)],
-) -> DiagnosticSet {
+fn overlapping_output_diagnostics(outputs: &[(&ArtifactOutputPlan, PathBuf)]) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
     for (index, left) in outputs.iter().enumerate() {
         for right in outputs.iter().skip(index + 1) {
@@ -201,15 +194,16 @@ fn configured_source_paths(project: &Project) -> Vec<PathBuf> {
             SourceLocationSpec::Path(path) => Some(path),
             SourceLocationSpec::Uri(_) => None,
         })
-        .flat_map(|path| source_overlap_paths(project.resolve_path(path)))
+        .flat_map(|path| source_overlap_paths(&project.resolve_path(path)))
         .collect()
 }
 
-fn source_overlap_paths(path: PathBuf) -> Vec<PathBuf> {
-    let mut paths = vec![path.clone()];
-    let is_file_source = fs::metadata(&path)
-        .map(|metadata| metadata.is_file())
-        .unwrap_or_else(|_| path.extension().is_some());
+fn source_overlap_paths(path: &Path) -> Vec<PathBuf> {
+    let mut paths = vec![path.to_path_buf()];
+    let is_file_source = fs::metadata(path).map_or_else(
+        |_| path.extension().is_some(),
+        |metadata| metadata.is_file(),
+    );
     if is_file_source {
         if let Some(parent) = path.parent() {
             paths.push(parent.to_path_buf());

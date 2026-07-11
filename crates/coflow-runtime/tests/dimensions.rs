@@ -25,16 +25,14 @@ fn build_session(
     project: Project,
     registry: &ProviderRegistry,
 ) -> Result<BuildProjectSession, DiagnosticSet> {
-    Runtime::new(registry.clone())
-        .build_project_session(project)
+    Runtime::new(registry.clone()).build_project_session(project)
 }
 
 fn open_read_only_session(
     project: Project,
     registry: &ProviderRegistry,
 ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
-    Runtime::new(registry.clone())
-        .open_read_only_session(project)
+    Runtime::new(registry.clone()).open_read_only_session(project)
 }
 
 fn schema_with_localized_string() -> CftContainer {
@@ -218,11 +216,7 @@ fn language_dimension_injects_variant_type_and_implicit_sources() {
         "#,
     )
     .expect("write schema");
-    std::fs::write(
-        root.join("data/items.csv"),
-        "id,name\npotion,Potion\n",
-    )
-    .expect("write items");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write items");
     std::fs::write(
         root.join("data/dimensions/language/Item_name.csv"),
         "id,default,zh,en\npotion,Potion,药水,Potion\n",
@@ -534,9 +528,8 @@ dimensions:
         .queries()
         .compiled_schema()
         .has_type("Child_nameVariants"));
-    let generated =
-        std::fs::read_to_string(root.join("data/dimensions/language/Base_name.csv"))
-            .expect("read inherited dimension csv");
+    let generated = std::fs::read_to_string(root.join("data/dimensions/language/Base_name.csv"))
+        .expect("read inherited dimension csv");
     assert_eq!(generated, "id,default,zh\nchild,Potion,null\n");
     assert!(
         !root
@@ -1551,7 +1544,7 @@ sources:
     );
     drop(session);
     let project = Project::open_schema_only(Some(&root)).expect("reopen project");
-    let mut session = Runtime::new(registry.clone())
+    let mut session = Runtime::new(registry)
         .open_write_session(project)
         .expect("open write session");
 
@@ -1580,10 +1573,7 @@ sources:
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
 
-fn assert_nested_spread_write_redirects(
-    session: &mut WriteProjectSession,
-    root: &std::path::Path,
-) {
+fn assert_nested_spread_write_redirects(session: &mut WriteProjectSession, root: &std::path::Path) {
     session
         .write_field(
             "Holder",

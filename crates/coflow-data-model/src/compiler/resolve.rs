@@ -3,6 +3,7 @@ use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
 use crate::model::{CfdDictKey, CfdDomainId, CfdObject, CfdRecordId, CfdValue};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ValueNode {
@@ -491,7 +492,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                     out.push_str(name);
                 }
                 CfdPathSegment::Index(index) => {
-                    out.push_str(&format!("[{index}]"));
+                    let _ = write!(out, "[{index}]");
                 }
                 CfdPathSegment::DictKey(key) => {
                     out.push('[');

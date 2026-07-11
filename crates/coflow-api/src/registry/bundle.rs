@@ -1,6 +1,5 @@
 use crate::{
-    CodeGenerator, DataExporter, DimensionSourceManager, SourceProvider, SourceWriter,
-    TableManager,
+    CodeGenerator, DataExporter, DimensionSourceManager, SourceProvider, SourceWriter, TableManager,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -81,10 +80,7 @@ impl ProviderBundle {
     /// # Errors
     ///
     /// Returns an error when this bundle already contains the same role id.
-    pub fn add_source_provider<L>(
-        &mut self,
-        provider: L,
-    ) -> Result<(), ProviderRegistrationError>
+    pub fn add_source_provider<L>(&mut self, provider: L) -> Result<(), ProviderRegistrationError>
     where
         L: SourceProvider + 'static,
     {

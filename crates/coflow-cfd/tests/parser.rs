@@ -1,4 +1,4 @@
-#![allow(clippy::panic, clippy::unwrap_used)]
+#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use coflow_cfd::{parse_cfd, CfdAst, CfdBlockEntry, CfdValue};
 

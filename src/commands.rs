@@ -11,9 +11,7 @@ use coflow_api::{
 use coflow_cft::CompiledSchema;
 use coflow_project::{OutputConfig, Project};
 use coflow_runtime::{ProjectQueries, Runtime};
-use id_as_enum::{
-    id_as_enum_variants_for_schema_only, prepare_id_as_enum_artifacts_for_build,
-};
+use id_as_enum::{id_as_enum_variants_for_schema_only, prepare_id_as_enum_artifacts_for_build};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -116,23 +114,17 @@ pub fn build_project(
     let queries = session.queries();
     let compiled_schema = queries.compiled_schema();
 
-    let artifact_diagnostics = artifact_safety_diagnostics(
-        queries.project(),
-        &plan.artifact_outputs,
-    );
+    let artifact_diagnostics =
+        artifact_safety_diagnostics(queries.project(), &plan.artifact_outputs);
     if !artifact_diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(artifact_diagnostics));
     }
 
-    let generated_code = match generate_build_code_artifacts(
-        registry,
-        queries,
-        compiled_schema,
-        &plan,
-    ) {
-        Ok(generated) => generated,
-        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-    };
+    let generated_code =
+        match generate_build_code_artifacts(registry, queries, compiled_schema, &plan) {
+            Ok(generated) => generated,
+            Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
+        };
     let data_artifacts = match generate_data_tables(
         registry,
         compiled_schema,
@@ -303,7 +295,7 @@ pub fn generate_project_code(
     let code_artifacts = match generate_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
-            schema: &compiled_schema,
+            schema: compiled_schema,
             model: None,
             codegen_id,
             data_format: &data_format,
@@ -503,10 +495,7 @@ fn commit_build_artifacts(
                 &[CODE_OUTPUT_SLOT],
                 EnumLockUpdate::Preserve,
             )?;
-            Ok((
-                published.output_dir(DATA_OUTPUT_SLOT)?.to_path_buf(),
-                None,
-            ))
+            Ok((published.output_dir(DATA_OUTPUT_SLOT)?.to_path_buf(), None))
         }
         (Some(code), Some((staged_code, lock_state))) => {
             let published = publish_artifacts(

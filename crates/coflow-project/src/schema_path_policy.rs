@@ -1,6 +1,6 @@
 use crate::diagnostics::file_error;
-use crate::paths::resolve_project_relative;
 use crate::path_to_slash;
+use crate::paths::resolve_project_relative;
 use coflow_api::DiagnosticSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -59,7 +59,7 @@ impl<'a> SchemaPathPolicy<'a> {
         )
     }
 
-    pub(super) fn missing_path_error(&self, path: &Path) -> DiagnosticSet {
+    pub(super) fn missing_path_error(path: &Path) -> DiagnosticSet {
         file_error(
             path,
             "PROJECT-SCHEMA-PATH",
@@ -68,7 +68,7 @@ impl<'a> SchemaPathPolicy<'a> {
         )
     }
 
-    pub(super) fn read_dir_error(&self, dir: &Path, err: impl std::fmt::Display) -> DiagnosticSet {
+    pub(super) fn read_dir_error(dir: &Path, err: impl std::fmt::Display) -> DiagnosticSet {
         file_error(
             dir,
             "PROJECT-SCHEMA-READ",
@@ -77,7 +77,7 @@ impl<'a> SchemaPathPolicy<'a> {
         )
     }
 
-    pub(super) fn read_file_error(&self, path: &Path, err: impl std::fmt::Display) -> DiagnosticSet {
+    pub(super) fn read_file_error(path: &Path, err: impl std::fmt::Display) -> DiagnosticSet {
         file_error(
             path,
             "PROJECT-SCHEMA-READ",
@@ -86,7 +86,7 @@ impl<'a> SchemaPathPolicy<'a> {
         )
     }
 
-    pub(super) fn canonicalize(&self, path: &Path) -> Result<PathBuf, DiagnosticSet> {
+    pub(super) fn canonicalize(path: &Path) -> Result<PathBuf, DiagnosticSet> {
         fs::canonicalize(path).map_err(|err| {
             file_error(
                 path,

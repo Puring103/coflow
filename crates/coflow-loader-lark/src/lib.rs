@@ -141,7 +141,7 @@ pub struct LarkSheetWriter<C = UreqLarkHttpClient> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::panic)]
+    #![allow(clippy::expect_used, clippy::panic, clippy::panic_in_result_fn)]
 
     use super::*;
     use crate::source::lark_source_from_spec;
@@ -158,7 +158,7 @@ mod tests {
         let source = ResolvedSource {
             provider_id: LARK_SHEET_LOADER_DESCRIPTOR.id.to_string(),
             location: SourceLocationSpec::Uri("lark:sht_direct".to_string()),
-            options: test_lark_options(json!({
+            options: test_lark_options(&json!({
                 "app_id": "cli_test",
                 "app_secret": "secret_test"
             })),
@@ -181,7 +181,7 @@ mod tests {
         let source = ResolvedSource {
             provider_id: LARK_SHEET_LOADER_DESCRIPTOR.id.to_string(),
             location: SourceLocationSpec::Path(Path::new("data.xlsx").to_path_buf()),
-            options: test_lark_options(json!({
+            options: test_lark_options(&json!({
                 "app_id": "cli_test",
                 "app_secret": "secret_test"
             })),
@@ -253,7 +253,7 @@ mod tests {
             location: SourceLocationSpec::Uri(
                 "https://example.feishu.cn/wiki/wiki_token".to_string(),
             ),
-            options: test_lark_options(json!({
+            options: test_lark_options(&json!({
                 "app_id": "cli_test",
                 "app_secret": "secret_test",
                 "sheets": [{ "sheet": "Items", "type": "Item" }]
@@ -263,7 +263,7 @@ mod tests {
         let compiled_schema = schema.compiled_schema();
         let ctx = SourceLoadContext {
             project_root: Path::new("."),
-            schema: &compiled_schema,
+            schema: compiled_schema,
         };
 
         loader
@@ -341,7 +341,7 @@ mod tests {
         let source = ResolvedSource {
             provider_id: LARK_SHEET_LOADER_DESCRIPTOR.id.to_string(),
             location: SourceLocationSpec::Uri("lark:sht_test".to_string()),
-            options: test_lark_options(json!({
+            options: test_lark_options(&json!({
                 "app_id": "cli_test",
                 "app_secret": "secret_test",
                 "sheets": [{ "sheet": "Items", "type": "Item" }]
@@ -353,7 +353,7 @@ mod tests {
             .load(
                 SourceLoadContext {
                     project_root: Path::new("."),
-                    schema: &compiled_schema,
+                    schema: compiled_schema,
                 },
                 &source,
             )
@@ -471,9 +471,9 @@ mod tests {
 
     struct NoopClient;
 
-    fn test_lark_options(raw: Value) -> coflow_api::DecodedSourceOptions {
+    fn test_lark_options(raw: &Value) -> coflow_api::DecodedSourceOptions {
         let loader = LarkSheetLoader::new(NoopClient);
-        let Ok(options) = loader.decode_options(&raw) else {
+        let Ok(options) = loader.decode_options(raw) else {
             panic!("test lark options should decode");
         };
         options
@@ -495,9 +495,7 @@ mod tests {
     }
 
     #[derive(Debug, Clone)]
-    struct SequenceClient(
-        Arc<std::sync::Mutex<std::collections::VecDeque<SequenceResponse>>>,
-    );
+    struct SequenceClient(Arc<std::sync::Mutex<std::collections::VecDeque<SequenceResponse>>>);
 
     #[derive(Debug, Clone)]
     struct SequenceResponse {

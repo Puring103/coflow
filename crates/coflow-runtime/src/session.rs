@@ -163,7 +163,7 @@ impl ProjectSession {
     #[must_use]
     pub fn dimensions(&self) -> Vec<DimensionInfo> {
         let view = self.compiled_schema();
-        let fields = dimensions::dimension_fields(&view);
+        let fields = dimensions::dimension_fields(view);
         dimensions_for_project(&self.project, &fields)
     }
 
@@ -174,7 +174,7 @@ impl ProjectSession {
     #[must_use]
     pub fn dimension_synthesized_types(&self) -> BTreeSet<String> {
         let view = self.compiled_schema();
-        dimensions::dimension_fields(&view)
+        dimensions::dimension_fields(view)
             .into_iter()
             .map(|field| field.synthesized_type)
             .collect()

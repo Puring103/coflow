@@ -36,15 +36,7 @@ pub(crate) fn decode_lark_source_options(
         return Err(option_error([], "lark source options must be an object"));
     };
     for key in options.keys() {
-        if ![
-            "app_id",
-            "app_secret",
-            "url",
-            "spreadsheet_token",
-            "sheets",
-        ]
-        .contains(&key.as_str())
-        {
+        if !["app_id", "app_secret", "url", "spreadsheet_token", "sheets"].contains(&key.as_str()) {
             return Err(option_error(
                 [key.as_str()],
                 format!("unknown lark source option `{key}`"),
@@ -55,8 +47,7 @@ pub(crate) fn decode_lark_source_options(
     let app_secret = required_string(options, "app_secret")?;
     let url = optional_string(options, "url")?;
     let spreadsheet_token = optional_string(options, "spreadsheet_token")?;
-    let table =
-        TableSourceOptions::decode(raw, "lark source").map_err(lark_options_diagnostics)?;
+    let table = TableSourceOptions::decode(raw, "lark source").map_err(lark_options_diagnostics)?;
     Ok(DecodedSourceOptions::new(
         LARK_SHEET_LOADER_DESCRIPTOR.id,
         LarkSourceOptions {
@@ -134,11 +125,7 @@ pub(crate) fn lark_source_from_spec(
                 "lark source must set exactly one of `url` or `spreadsheet_token`",
             ))
         }
-        (None, None) => {
-            return Err(error(
-                "lark source requires `url` or `spreadsheet_token`",
-            ))
-        }
+        (None, None) => return Err(error("lark source requires `url` or `spreadsheet_token`")),
     };
     Ok(LarkSheetSource::new(
         options.app_id.clone(),

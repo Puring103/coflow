@@ -1,13 +1,13 @@
+use super::identifiers::{context_index_field_name, plural_records_var};
+use super::types::csharp_type;
 use crate::ir::CsharpDataFormat;
+use crate::lowering::CsharpLoweringPlan;
 use crate::model::{
     CsharpContextAssignment, CsharpContextField, CsharpContextLookup, CsharpContextLookupField,
     CsharpDatabase, CsharpParameter, CsharpTable,
 };
 use crate::names::camel_case;
-use crate::lowering::CsharpLoweringPlan;
 use crate::CsharpCodegenError;
-use super::identifiers::{context_index_field_name, plural_records_var};
-use super::types::csharp_type;
 
 pub fn build_csharp_database(
     view: &CsharpLoweringPlan<'_>,
@@ -95,22 +95,22 @@ fn build_context_lookups(
     let mut context_lookups = Vec::new();
     for target in view.ref_target_names() {
         let assignable = view
-            .concrete_assignable_types(&target)?
-            .into_iter()
+            .concrete_assignable_types(target)?
+            .iter()
             .filter(|type_name| tables.contains(type_name))
             .collect::<Vec<_>>();
         if assignable.is_empty() {
             continue;
         }
-        let csharp_target = view.csharp_type_name(&target);
+        let csharp_target = view.csharp_type_name(target);
         context_lookups.push(CsharpContextLookup {
             method_name: format!("Get{csharp_target}"),
-            id_type: csharp_type(&view.key_field_type(&target), view),
+            id_type: csharp_type(&view.key_field_type(target), view),
             return_type: csharp_target,
             fields: assignable
                 .into_iter()
                 .map(|type_name| {
-                    let csharp_name = view.csharp_type_name(&type_name);
+                    let csharp_name = view.csharp_type_name(type_name);
                     CsharpContextLookupField {
                         field_name: context_index_field_name(&csharp_name),
                         value_name: format!("{}Value", camel_case(&csharp_name)),

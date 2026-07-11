@@ -1,9 +1,9 @@
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, DiagnosticSet, InsertRecordRequest,
-    RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter,
-    SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions, TableManager,
-    TableManagerDescriptor, TableOperationResult, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor, SourceTransaction,
+    RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec, SourceTransaction,
+    SourceWriter, SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions,
+    TableManager, TableManagerDescriptor, TableOperationResult, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{
@@ -170,7 +170,7 @@ where
                 lark_source_options(request.source)?,
                 request.actual_type,
             )?
-                .unwrap_or_else(|| request.actual_type.to_string()),
+            .unwrap_or_else(|| request.actual_type.to_string()),
         };
         let sheet_id = self.cached_sheet_id(&spreadsheet_token, &sheet, &auth)?;
         let layout = lark_insert_layout(&LarkInsertLayoutRequest {

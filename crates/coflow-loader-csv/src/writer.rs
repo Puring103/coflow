@@ -25,8 +25,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::parse;
 use crate::options::{csv_sheet_config_from_options, csv_source_options, CsvSourceOptions};
+use crate::parse;
 use plan::apply_plan;
 
 pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {

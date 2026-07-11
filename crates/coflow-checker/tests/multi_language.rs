@@ -110,12 +110,8 @@ fn missing_dimension_variant_record_is_an_eval_error_not_a_skip() {
     let schema = dimension_schema();
     let model = build_simple_model(&schema);
 
-    let err = run_checks_for_dimensions(
-        schema.compiled_schema(),
-        &model,
-        &language_dimensions(),
-    )
-    .expect_err("missing synthesized variant record should be reported");
+    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+        .expect_err("missing synthesized variant record should be reported");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
     assert!(err
@@ -157,12 +153,8 @@ fn missing_dimension_variant_field_is_an_eval_error_not_a_skip() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(
-        schema.compiled_schema(),
-        &model,
-        &language_dimensions(),
-    )
-    .expect_err("missing synthesized variant field should be reported");
+    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+        .expect_err("missing synthesized variant field should be reported");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
     assert!(err
@@ -213,12 +205,8 @@ fn variant_rounds_only_run_checks_that_read_top_level_dimension_fields() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(
-        schema.compiled_schema(),
-        &model,
-        &language_dimensions(),
-    )
-    .expect_err("default count and zh name checks should fail");
+    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+        .expect_err("default count and zh name checks should fail");
 
     assert_eq!(err.diagnostics.len(), 2, "diagnostics: {err:?}");
     assert_eq!(
@@ -287,12 +275,8 @@ fn null_dimension_variant_skips_methods_and_operators_by_control_flow() {
     ));
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(
-        schema.compiled_schema(),
-        &model,
-        &language_dimensions(),
-    )
-    .expect("null zh variant should skip related checks without type errors");
+    run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+        .expect("null zh variant should skip related checks without type errors");
 }
 
 #[test]
@@ -337,12 +321,8 @@ fn nested_dimension_fields_do_not_trigger_variant_round_checks() {
     ));
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(
-        schema.compiled_schema(),
-        &model,
-        &language_dimensions(),
-    )
-    .expect("nested localized fields are not variant-expanded");
+    run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+        .expect("nested localized fields are not variant-expanded");
 }
 
 #[test]
@@ -388,12 +368,8 @@ fn nested_inline_record_checks_do_not_run_in_variant_rounds() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(
-        schema.compiled_schema(),
-        &model,
-        &language_dimensions(),
-    )
-    .expect_err("default nested check should still fail");
+    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+        .expect_err("default nested check should still fail");
 
     assert_eq!(err.diagnostics.len(), 1, "diagnostics: {err:?}");
     assert!(
@@ -444,12 +420,8 @@ fn inherited_dimension_checks_run_for_child_records() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(
-        schema.compiled_schema(),
-        &model,
-        &language_dimensions(),
-    )
-    .expect_err("inherited dimension checks must run for child records");
+    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+        .expect_err("inherited dimension checks must run for child records");
 
     assert_eq!(
         err.diagnostics
@@ -611,12 +583,8 @@ fn localized_object_variants_run_nested_type_checks_at_logical_paths() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(
-        schema.compiled_schema(),
-        &model,
-        &language_dimensions(),
-    )
-    .expect_err("the zh materialized object should run Text checks");
+    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+        .expect_err("the zh materialized object should run Text checks");
     let failures = err
         .diagnostics
         .iter()
@@ -971,12 +939,8 @@ fn non_dimensional_fields_are_unaffected_by_dimension_rounds() {
     ));
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(
-        schema.compiled_schema(),
-        &model,
-        &language_dimensions(),
-    )
-    .expect("non-dimensional is unchanged");
+    run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+        .expect("non-dimensional is unchanged");
 }
 
 #[test]

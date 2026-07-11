@@ -1,9 +1,9 @@
 use coflow_api::{DiagnosticSet, WriteCellRequest, WriteFieldPathSegment};
-use coflow_cft::CompiledSchema;
-use coflow_data_model::CfdValue;
 use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
 use coflow_cfd::CfdAst;
+use coflow_cft::CompiledSchema;
 use coflow_cft::Span;
+use coflow_data_model::CfdValue;
 use std::collections::BTreeMap;
 
 use super::diag;

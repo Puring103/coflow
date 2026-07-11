@@ -505,9 +505,7 @@ fn ref_target_in_value(
                         CfdBlockEntry::Field(field) => &field.value,
                         CfdBlockEntry::Spread(value, _) => value,
                     };
-                    if let Some(target) =
-                        ref_target_in_value(value, schema, value_type, offset)
-                    {
+                    if let Some(target) = ref_target_in_value(value, schema, value_type, offset) {
                         return Some(target);
                     }
                 }

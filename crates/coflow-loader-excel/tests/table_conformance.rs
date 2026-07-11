@@ -1,8 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::cast_possible_truncation
-)]
+#![allow(clippy::expect_used, clippy::panic, clippy::cast_possible_truncation)]
 
 #[path = "../../../tests/support/table_conformance.rs"]
 mod table_conformance;

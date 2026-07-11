@@ -5,7 +5,7 @@ use common::*;
 
 use coflow_checker::{run_checks_with_options, CheckOptions, StructuralLimits};
 
-fn options(max_depth: u64, max_nodes: u64, max_work: u64) -> CheckOptions {
+const fn options(max_depth: u64, max_nodes: u64, max_work: u64) -> CheckOptions {
     CheckOptions {
         structural_limits: StructuralLimits::new(max_depth, max_nodes, max_work),
     }
@@ -14,12 +14,12 @@ fn options(max_depth: u64, max_nodes: u64, max_work: u64) -> CheckOptions {
 #[test]
 fn expression_depth_limit_stops_the_current_record_with_a_stable_diagnostic() {
     let schema = compile_schema(
-        r#"
+        r"
             type Item {
                 enabled: bool;
                 check { !!!!!!enabled; }
             }
-        "#,
+        ",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item", "Item", [("enabled", CfdInputValue::from(true))]);
@@ -79,12 +79,12 @@ fn nested_data_traversal_uses_the_same_depth_contract() {
 #[test]
 fn quantifier_work_limit_points_at_the_first_rejected_item() {
     let schema = compile_schema(
-        r#"
+        r"
             type Item {
                 nums: [int];
                 check { all number in nums { number > 0; } }
             }
-        "#,
+        ",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -123,12 +123,12 @@ fn quantifier_work_limit_points_at_the_first_rejected_item() {
 #[test]
 fn aggregate_builtins_charge_work_before_scanning() {
     let schema = compile_schema(
-        r#"
+        r"
             type Item {
                 nums: [int];
                 check { nums.isUnique(); }
             }
-        "#,
+        ",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -167,12 +167,12 @@ fn aggregate_builtins_charge_work_before_scanning() {
 #[test]
 fn aggregate_conversion_charges_nodes_before_copying_items() {
     let schema = compile_schema(
-        r#"
+        r"
             type Item {
                 nums: [int];
                 check { nums.isUnique(); }
             }
-        "#,
+        ",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -209,14 +209,14 @@ fn aggregate_conversion_charges_nodes_before_copying_items() {
 
 #[test]
 fn aggregate_len_keeps_a_borrowed_cursor_without_materializing_items() {
-    const ITEM_COUNT: usize = 100_000;
+    const ITEM_COUNT_I64: i64 = 100_000;
     let schema = compile_schema(
-        r#"
+        r"
             type Item {
                 nums: [int];
                 check { nums.len() == 100000; }
             }
-        "#,
+        ",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -224,11 +224,7 @@ fn aggregate_len_keeps_a_borrowed_cursor_without_materializing_items() {
         "Item",
         [(
             "nums",
-            CfdInputValue::Array(
-                (0..ITEM_COUNT)
-                    .map(|value| CfdInputValue::from(value as i64))
-                    .collect(),
-            ),
+            CfdInputValue::Array((0..ITEM_COUNT_I64).map(CfdInputValue::from).collect()),
         )],
     );
     let model = builder.build().expect("model builds");

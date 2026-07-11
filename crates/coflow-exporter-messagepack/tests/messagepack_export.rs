@@ -7,8 +7,8 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{CftContainer, ModuleId};
 use coflow_api::ArtifactContent;
+use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_messagepack::export_messagepack_artifacts;
 use rmpv::Value;
@@ -50,7 +50,9 @@ fn export_tables(
                 .and_then(|name| name.to_str())
                 .ok_or_else(|| "artifact table name should be UTF-8".to_string())?;
             let ArtifactContent::Bytes(bytes) = &file.content else {
-                return Err(format!("MessagePack artifact `{table}` should contain bytes"));
+                return Err(format!(
+                    "MessagePack artifact `{table}` should contain bytes"
+                ));
             };
             let mut cursor = Cursor::new(bytes);
             let value = rmpv::decode::read_value(&mut cursor)

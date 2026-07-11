@@ -133,26 +133,41 @@ fn eval_quantifier_stmt(
     };
     eval_quantifier(
         evaluator,
-        kind,
-        binding,
-        &collection_value,
-        item_count,
-        body,
-        collection,
-        stmt,
+        QuantifierExecution {
+            kind,
+            binding,
+            collection_value: &collection_value,
+            item_count,
+            body,
+            collection,
+            stmt,
+        },
     )
+}
+
+struct QuantifierExecution<'a> {
+    kind: CftSchemaQuantifierKind,
+    binding: &'a str,
+    collection_value: &'a LocatedCheckValue,
+    item_count: usize,
+    body: &'a [CftSchemaCheckStmt],
+    collection: &'a CftSchemaCheckExpr,
+    stmt: &'a CftSchemaCheckStmt,
 }
 
 fn eval_quantifier(
     evaluator: &mut CheckEvaluator<'_>,
-    kind: CftSchemaQuantifierKind,
-    binding: &str,
-    collection_value: &LocatedCheckValue,
-    item_count: usize,
-    body: &[CftSchemaCheckStmt],
-    collection: &CftSchemaCheckExpr,
-    stmt: &CftSchemaCheckStmt,
+    execution: QuantifierExecution<'_>,
 ) -> EvalFlow {
+    let QuantifierExecution {
+        kind,
+        binding,
+        collection_value,
+        item_count,
+        body,
+        collection,
+        stmt,
+    } = execution;
     let quantifier_diagnostic_start = evaluator.diagnostics.len();
     let mut matched = 0_usize;
     let mut any_failures = Vec::new();

@@ -3,8 +3,8 @@ use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
 use coflow_project::Project;
 use coflow_runtime::{
     data_get, data_list, data_sources, BuildProjectSession, DataGetQuery, DataGetReport,
-    DataListQuery, DataPatchReport, DataPatchRequest, ProjectSchemaSession, RecordCoordinate,
-    Runtime, WriteProjectSession,
+    DataListQuery, DataPatchRequest, ProjectSchemaSession, RecordCoordinate, Runtime,
+    WriteProjectSession,
 };
 use output::{
     file_error_report, write_data_write_file_human, write_file_report_human, write_get_human,
@@ -225,17 +225,7 @@ pub fn patch(
         ))
     })?;
     let mut session = open_write_session(config_or_dir)?;
-    let report = match session.apply_data_patch(request) {
-        Ok(report) => report,
-        Err(diagnostics) => DataPatchReport {
-            write_ok: false,
-            check_ok: false,
-            applied: Vec::new(),
-            failed: Vec::new(),
-            remaining_ops: Vec::new(),
-            diagnostics: diagnostics.flat_diagnostics(),
-        },
-    };
+    let report = session.apply_data_patch(request);
     let ok = report.write_ok && !has_error_diagnostics(&report.diagnostics);
     if human {
         write_patch_human(&report)?;

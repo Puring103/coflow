@@ -62,13 +62,17 @@ impl DecodedSourceOptions {
                 self.provider_id
             )));
         }
-        self.value.as_ref().as_any().downcast_ref::<T>().ok_or_else(|| {
-            contract_error(format!(
+        self.value
+            .as_ref()
+            .as_any()
+            .downcast_ref::<T>()
+            .ok_or_else(|| {
+                contract_error(format!(
                 "provider `{expected_provider_id}` expected source options `{}`, but received `{}`",
                 std::any::type_name::<T>(),
                 self.value.as_ref().type_name()
             ))
-        })
+            })
     }
 }
 

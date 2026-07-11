@@ -3,17 +3,17 @@
 use std::fmt::Write as _;
 
 use coflow_api::{
-    CreateTableRequest, DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource,
-    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLoadContext, SourceLocationSpec,
-    SourceProvider, SourceProviderDescriptor, SyncHeaderRequest, TableAddressing, TableContext,
-    TableManager, TableManagerDescriptor, TableOperationResult,
+    CreateTableRequest, DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult,
+    ProjectSourceRef, ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    SourceProviderDescriptor, SyncHeaderRequest, TableAddressing, TableContext, TableManager,
+    TableManagerDescriptor, TableOperationResult,
 };
 use coflow_data_model::CfdErrorCode;
 use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
-    create_data_file, data_get, data_list, data_sources, sync_data_header, DataCreateFileOptions,
-    BuildProjectSession, DataGetQuery, DataListQuery, DataSyncHeaderOptions, ProjectSchemaSession,
-    RecordCoordinate, Runtime,
+    create_data_file, data_get, data_list, data_sources, sync_data_header, BuildProjectSession,
+    DataCreateFileOptions, DataGetQuery, DataListQuery, DataSyncHeaderOptions,
+    ProjectSchemaSession, RecordCoordinate, Runtime,
 };
 
 fn write_project(root: &std::path::Path) {
@@ -79,13 +79,10 @@ fn build_session(
     project: Project,
     registry: &coflow_api::ProviderRegistry,
 ) -> Result<BuildProjectSession, DiagnosticSet> {
-    Runtime::new(registry.clone())
-        .build_project_session(project)
+    Runtime::new(registry.clone()).build_project_session(project)
 }
 
-fn schema_session(
-    project: Project,
-) -> Result<ProjectSchemaSession, DiagnosticSet> {
+fn schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
     Runtime::build_schema_session(project)
 }
 
@@ -123,8 +120,7 @@ fn data_file_provider_inference_uses_table_manager_descriptor_capabilities() {
     write_project(&root);
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
-    let schema_session =
-        schema_session(project).expect("schema session");
+    let schema_session = schema_session(project).expect("schema session");
 
     let inferred = create_data_file(
         &schema_session,
@@ -206,7 +202,11 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
     assert_eq!(logical.record_key.as_deref(), Some("sword"));
     let indexed_file = path_to_slash(path.as_path());
     assert!(
-        !session.queries().diagnostics().by_file(&indexed_file).is_empty(),
+        !session
+            .queries()
+            .diagnostics()
+            .by_file(&indexed_file)
+            .is_empty(),
         "duplicate diagnostic should be indexed by source file `{indexed_file}`"
     );
     assert!(
@@ -466,11 +466,7 @@ fn provider_option_diagnostics_keep_the_project_key_path() {
         .find(|diagnostic| diagnostic.message == "unknown excel source option `rogue`")
         .expect("provider option diagnostic");
     let Some(coflow_api::Label {
-        location:
-            coflow_api::SourceLocation::ProjectConfig {
-                path,
-                key_path,
-            },
+        location: coflow_api::SourceLocation::ProjectConfig { path, key_path },
         ..
     }) = &diagnostic.primary
     else {
@@ -610,8 +606,7 @@ fn table_operations_use_one_location_neutral_runtime_path() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("create project dir");
-    std::fs::write(root.join("schema.cft"), "type Item { name: string; }\n")
-        .expect("write schema");
+    std::fs::write(root.join("schema.cft"), "type Item { name: string; }\n").expect("write schema");
     std::fs::write(
         root.join("coflow.yaml"),
         "schema: schema.cft\nsources:\n  - type: remote-table\n    url: remote://document\n    token: secret\n",

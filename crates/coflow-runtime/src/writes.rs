@@ -26,6 +26,11 @@ use writer::{lookup_source_writer, source_for_file};
 
 use crate::mutation::PreparedMutationOp;
 
+type MutationSource = (
+    coflow_api::ResolvedSource,
+    Arc<dyn coflow_api::SourceWriter>,
+);
+
 pub(crate) fn record_value_at_path<'a>(
     record: &'a CfdRecord,
     path: &CfdPath,
@@ -53,13 +58,7 @@ pub(crate) fn mutation_sources(
     session: &ProjectSession,
     registry: &ProviderRegistry,
     op: &PreparedMutationOp,
-) -> Result<
-    Vec<(
-        coflow_api::ResolvedSource,
-        Arc<dyn coflow_api::SourceWriter>,
-    )>,
-    DiagnosticSet,
-> {
+) -> Result<Vec<MutationSource>, DiagnosticSet> {
     match op {
         PreparedMutationOp::InsertRecord { file, .. }
         | PreparedMutationOp::SetField {

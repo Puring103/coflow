@@ -142,9 +142,9 @@ fn table_header_options(config: TableSheetConfig) -> TableHeaderOptions {
 fn create_excel_file(path: &Path, sheet: &str, headers: &[String]) -> Result<(), DiagnosticSet> {
     let mut book = umya_spreadsheet::new_file();
     if sheet != "Sheet1" {
-        let existing = book.get_sheet_by_name_mut("Sheet1").ok_or_else(|| {
-            DiagnosticSet::one(diag(EXCEL_TABLE, "default worksheet is missing"))
-        })?;
+        let existing = book
+            .get_sheet_by_name_mut("Sheet1")
+            .ok_or_else(|| DiagnosticSet::one(diag(EXCEL_TABLE, "default worksheet is missing")))?;
         existing.set_name(sheet);
     }
     write_excel_headers(&mut book, sheet, headers)?;
@@ -227,9 +227,10 @@ fn excel_header(path: &Path, sheet: &str) -> Result<Vec<String>, DiagnosticSet> 
 }
 
 fn excel_sheet_missing(diagnostics: &DiagnosticSet) -> bool {
-    diagnostics.diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == EXCEL_TABLE_SHEET_MISSING
-    })
+    diagnostics
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == EXCEL_TABLE_SHEET_MISSING)
 }
 
 fn sync_excel_header(
@@ -284,9 +285,8 @@ fn sync_excel_header(
         let excel_row = u32::try_from(row_index + 2)
             .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many rows for Excel")))?;
         for (column_index, value) in row.iter().enumerate() {
-            let excel_column = u32::try_from(column_index + 1).map_err(|_| {
-                DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel"))
-            })?;
+            let excel_column = u32::try_from(column_index + 1)
+                .map_err(|_| DiagnosticSet::one(diag(EXCEL_TABLE, "too many columns for Excel")))?;
             sheet
                 .get_cell_mut((excel_column, excel_row))
                 .set_value(value);

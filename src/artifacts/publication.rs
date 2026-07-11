@@ -109,7 +109,7 @@ impl PendingGenerations {
         self.directories.push(generation.generation_dir.clone());
     }
 
-    fn activate(&mut self) {
+    const fn activate(&mut self) {
         self.activated = true;
     }
 }
@@ -182,7 +182,7 @@ fn read_versioned_enum_lock(project: &Project) -> Result<Option<Value>, Diagnost
     })
 }
 
-fn empty_manifest() -> ArtifactManifest {
+const fn empty_manifest() -> ArtifactManifest {
     ArtifactManifest {
         version: MANIFEST_VERSION,
         revision: String::new(),
@@ -349,6 +349,8 @@ fn unique_revision() -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::{
         publish_artifacts, read_active_enum_lock, EnumLockUpdate, DATA_OUTPUT_SLOT,
         ENUM_LOCKFILE_NAME,

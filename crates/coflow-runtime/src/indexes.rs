@@ -6,6 +6,13 @@ use coflow_data_model::{CfdDataModel, CfdRecordId};
 
 use crate::RecordCoordinate;
 
+#[derive(Default)]
+pub(crate) struct SessionIndexes {
+    pub(crate) sources: SourceIndex,
+    pub(crate) records: RecordIndex,
+    pub(crate) files: FileIndex,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct DiagnosticsStore {
     diagnostics: DiagnosticSet,

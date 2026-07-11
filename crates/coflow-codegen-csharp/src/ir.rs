@@ -1,10 +1,10 @@
 use crate::emit::{build_csharp_database, build_csharp_enum, build_csharp_type};
+use crate::lowering::CsharpLoweringPlan;
 use crate::model::{CsharpEnum, CsharpEnumVariant, CsharpProject};
 use crate::names::{
     camel_case, csharp_ident_error, csharp_member_ident_error, csharp_namespace_error,
     csharp_type_name, has_annotation, index_param_name, pluralize,
 };
-use crate::lowering::CsharpLoweringPlan;
 use crate::CsharpCodegenError;
 use coflow_cft::CompiledSchema;
 use serde::{Deserialize, Serialize};
@@ -75,18 +75,12 @@ pub fn build_project(
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
-    let view = CsharpLoweringPlan::lower(
-        schema,
-        options.int_32,
-        options.float_32,
-        non_empty_tables,
-    )?;
+    let view =
+        CsharpLoweringPlan::lower(schema, options.int_32, options.float_32, non_empty_tables)?;
     let diagnostics = validate_csharp_codegen(&view, options, &id_as_enum_variants);
     if !diagnostics.is_empty() {
         return Err(CsharpCodegenError::from_messages(
-            diagnostics
-                .into_iter()
-                .map(|diagnostic| diagnostic.message),
+            diagnostics.into_iter().map(|diagnostic| diagnostic.message),
         ));
     }
     let tables = view.table_names().to_vec();

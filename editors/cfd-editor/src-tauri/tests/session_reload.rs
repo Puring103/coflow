@@ -5,7 +5,9 @@
     clippy::unwrap_used
 )]
 
-use cfd_editor_lib::editor::{CollectionEdit, CreateFieldSource, CreateRequiredInput, SessionStore};
+use cfd_editor_lib::editor::{
+    CollectionEdit, CreateFieldSource, CreateRequiredInput, SessionStore,
+};
 use coflow_data_model::{CfdObject, CfdPathSegment, CfdValue};
 use coflow_runtime::RecordCoordinate;
 use std::collections::BTreeMap;

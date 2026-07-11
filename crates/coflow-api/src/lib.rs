@@ -31,8 +31,8 @@ pub use codegen::{CodeGenerator, CodegenContext, CodegenDescriptor};
 pub use data_output::{DataExporter, ExportContext, ExporterDescriptor};
 pub use diagnostics::{
     byte_position, byte_range, map_diagnostics_with_origins, origins_of, path_to_slash,
-    source_location_display_path, spreadsheet_cell_name, Diagnostic, DiagnosticSet,
-    FlatDiagnostic, Label, Severity, SourceLocation, TextPosition, TextRange,
+    source_location_display_path, spreadsheet_cell_name, Diagnostic, DiagnosticSet, FlatDiagnostic,
+    Label, Severity, SourceLocation, TextPosition, TextRange,
 };
 pub use operations::{
     CreateTableRequest, DimensionSourceEntry, DimensionSourceManager,
@@ -41,8 +41,8 @@ pub use operations::{
     TableManager, TableManagerDescriptor, TableOperationResult,
 };
 pub use provider::{
-    DecodedSourceOptions, LoadedSource, OutputSpec, ProbeConfidence, ProbeResult,
-    ProjectSourceRef, ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    DecodedSourceOptions, LoadedSource, OutputSpec, ProbeConfidence, ProbeResult, ProjectSourceRef,
+    ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
     SourceProviderDescriptor, SourceResolveContext,
 };
 pub use registry::{
@@ -54,4 +54,3 @@ pub use writer::{
     WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriterCapabilities,
     WriterDescriptor,
 };
-

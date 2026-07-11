@@ -95,7 +95,7 @@ fn generate_json(
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     let compiled_schema = schema.compiled_schema();
     generate_csharp(
-        &compiled_schema,
+        compiled_schema,
         options,
         CsharpDataFormat::Json,
         &json_database_templates(),
@@ -108,7 +108,7 @@ fn generate_messagepack(
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     let compiled_schema = schema.compiled_schema();
     generate_csharp(
-        &compiled_schema,
+        compiled_schema,
         options,
         CsharpDataFormat::MessagePack,
         &messagepack_database_templates(),
@@ -122,7 +122,7 @@ fn generate_json_with_id_as_enum_variants(
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     let compiled_schema = schema.compiled_schema();
     generate_csharp_with_id_as_enum_variants(
-        &compiled_schema,
+        compiled_schema,
         options,
         CsharpDataFormat::Json,
         &json_database_templates(),
@@ -822,7 +822,10 @@ fn codegen_json_allows_mutually_cyclic_table_references() -> Result<(), String> 
     let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
     let database = generated_file(&files, "CoflowTables.cs")?;
-    require_contains(database, "var context = new LoadContext(leftIndex, rightIndex);")?;
+    require_contains(
+        database,
+        "var context = new LoadContext(leftIndex, rightIndex);",
+    )?;
     require_contains(database, "Left.HydrateAll(lefts, leftRawRows, context);")?;
     require_contains(database, "Right.HydrateAll(rights, rightRawRows, context);")?;
     Ok(())
@@ -862,8 +865,14 @@ fn codegen_handles_mutually_recursive_inline_types_iteratively() -> Result<(), S
 
     let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
-    require_contains(generated_file(&files, "Left.cs")?, "public Right? Right { get; }")?;
-    require_contains(generated_file(&files, "Right.cs")?, "public Left? Left { get; }")?;
+    require_contains(
+        generated_file(&files, "Left.cs")?,
+        "public Right? Right { get; }",
+    )?;
+    require_contains(
+        generated_file(&files, "Right.cs")?,
+        "public Left? Left { get; }",
+    )?;
     Ok(())
 }
 
@@ -962,7 +971,7 @@ fn provider_generation_preserves_multiple_validation_diagnostics() -> Result<(),
     let diagnostics = CsharpCodeGenerator
         .generate(
             CodegenContext {
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
                 data_format: "json",
             },
@@ -988,7 +997,7 @@ fn provider_generation_honors_database_class_option() -> Result<(), String> {
     let artifacts = CsharpCodeGenerator
         .generate(
             CodegenContext {
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
                 data_format: "json",
             },

@@ -381,11 +381,7 @@ fn topological_order(
     while !remaining.is_empty() {
         let ready = tables
             .iter()
-            .find(|table| {
-                remaining
-                    .get(*table)
-                    .is_some_and(BTreeSet::is_empty)
-            })
+            .find(|table| remaining.get(*table).is_some_and(BTreeSet::is_empty))
             .cloned();
         let Some(ready) = ready else {
             let component = first_cyclic_component(&remaining);

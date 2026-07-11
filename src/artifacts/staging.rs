@@ -195,12 +195,14 @@ fn sync_directory_tree(path: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(windows)]
-fn sync_directory(_path: &Path) -> std::io::Result<()> {
+#[allow(clippy::unnecessary_wraps)] // Windows has no directory fsync equivalent.
+const fn sync_directory(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
 #[cfg(windows)]
-fn sync_directory_tree(_path: &Path) -> std::io::Result<()> {
+#[allow(clippy::unnecessary_wraps)] // Keeps the platform implementations interchangeable.
+const fn sync_directory_tree(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 

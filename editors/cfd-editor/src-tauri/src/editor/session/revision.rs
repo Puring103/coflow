@@ -56,11 +56,7 @@ impl RevisionCoordinator {
         self.expected_files.extend(revisions);
     }
 
-    pub(super) fn has_external_change(
-        &self,
-        project_root: &Path,
-        paths: &[PathBuf],
-    ) -> bool {
+    pub(super) fn has_external_change(&self, project_root: &Path, paths: &[PathBuf]) -> bool {
         paths.iter().any(|path| {
             let path = resolve_path(project_root, path);
             let Some(expected) = self.expected_files.get(&path) else {
@@ -83,7 +79,7 @@ fn resolve_path(project_root: &Path, path: &Path) -> PathBuf {
 fn content_revision(path: &Path) -> std::io::Result<ContentRevision> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
+    let mut buffer = vec![0_u8; 64 * 1024];
     loop {
         let read = file.read(&mut buffer)?;
         if read == 0 {
@@ -96,6 +92,8 @@ fn content_revision(path: &Path) -> std::io::Result<ContentRevision> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
 
     #[test]
@@ -114,8 +112,7 @@ mod tests {
         fs::write(&path, "internal").expect("write internal content");
 
         let mut coordinator = RevisionCoordinator::initial();
-        coordinator
-            .commit_internal_write(&root, [Path::new("data.cfd")]);
+        coordinator.commit_internal_write(&root, [Path::new("data.cfd")]);
         assert!(!coordinator.has_external_change(&root, std::slice::from_ref(&path)));
 
         fs::write(&path, "external").expect("write external content");
@@ -131,8 +128,7 @@ mod tests {
         let root = std::env::temp_dir();
         let path = root.join(format!("coflow-editor-ticket-{}", std::process::id()));
         fs::write(&path, "newer").expect("write revision fixture");
-        coordinator
-            .commit_internal_write(&root, [path.as_path()]);
+        coordinator.commit_internal_write(&root, [path.as_path()]);
 
         assert!(coordinator.commit_reload(ticket).is_none());
         fs::remove_file(path).expect("remove revision fixture");

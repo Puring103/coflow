@@ -1,14 +1,15 @@
 use super::CompiledSchema;
-use crate::{
-    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
-};
+use crate::{CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn dimension_checks_for_type(
     schema: &CompiledSchema,
     type_name: &str,
 ) -> BTreeMap<String, CftSchemaCheckBlock> {
-    let Some(check) = schema.type_meta(type_name).and_then(|meta| meta.check.as_ref()) else {
+    let Some(check) = schema
+        .type_meta(type_name)
+        .and_then(|meta| meta.check.as_ref())
+    else {
         return BTreeMap::new();
     };
     let mut by_dimension: BTreeMap<String, Vec<CftSchemaCheckStmt>> = BTreeMap::new();
@@ -117,12 +118,7 @@ impl<'a> DimensionCheckAnalyzer<'a> {
     }
 
     fn name_dimensions(&self, name: &str) -> BTreeSet<String> {
-        if self
-            .scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.contains(name))
-        {
+        if self.scopes.iter().rev().any(|scope| scope.contains(name)) {
             return BTreeSet::new();
         }
         self.schema

@@ -62,9 +62,8 @@ pub(super) fn schema_sources(
     let files = schema_files(schema, root_dir)?;
     let mut modules = Vec::with_capacity(files.len());
     for file in files {
-        let source = fs::read_to_string(&file.path).map_err(|err| {
-            SchemaPathPolicy::new(root_dir).read_file_error(&file.path, err)
-        })?;
+        let source = fs::read_to_string(&file.path)
+            .map_err(|err| SchemaPathPolicy::read_file_error(&file.path, err))?;
         modules.push(SchemaSource {
             module_id: file.module_id,
             path: file.path,
@@ -82,7 +81,7 @@ fn push_schema_path(
 ) -> Result<(), DiagnosticSet> {
     let path = policy.resolve(path);
     if path.is_dir() {
-        let canonical_root = policy.canonicalize(&path)?;
+        let canonical_root = SchemaPathPolicy::canonicalize(&path)?;
         collect_cft_files(policy, &path, &canonical_root, discovery)
     } else if path.is_file() {
         if !SchemaPathPolicy::is_cft_path(&path) {
@@ -90,7 +89,7 @@ fn push_schema_path(
         }
         push_schema_file(policy, path, None, discovery)
     } else {
-        Err(policy.missing_path_error(&path))
+        Err(SchemaPathPolicy::missing_path_error(&path))
     }
 }
 
@@ -100,7 +99,7 @@ fn collect_cft_files(
     canonical_root: &Path,
     discovery: &mut SchemaDiscovery,
 ) -> Result<(), DiagnosticSet> {
-    let canonical_dir = policy.canonicalize(dir)?;
+    let canonical_dir = SchemaPathPolicy::canonicalize(dir)?;
     if !canonical_dir.starts_with(canonical_root) {
         return Err(policy.outside_declared_root_error(dir, canonical_root, &canonical_dir));
     }
@@ -109,9 +108,9 @@ fn collect_cft_files(
     }
 
     let mut entries = fs::read_dir(dir)
-        .map_err(|err| policy.read_dir_error(dir, err))?
+        .map_err(|err| SchemaPathPolicy::read_dir_error(dir, err))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| policy.read_dir_error(dir, err))?;
+        .map_err(|err| SchemaPathPolicy::read_dir_error(dir, err))?;
     entries.sort_by_key(fs::DirEntry::path);
     for entry in entries {
         let path = entry.path();
@@ -130,14 +129,10 @@ fn push_schema_file(
     canonical_root: Option<&Path>,
     discovery: &mut SchemaDiscovery,
 ) -> Result<(), DiagnosticSet> {
-    let canonical_path = policy.canonicalize(&path)?;
+    let canonical_path = SchemaPathPolicy::canonicalize(&path)?;
     if let Some(canonical_root) = canonical_root {
         if !canonical_path.starts_with(canonical_root) {
-            return Err(policy.outside_declared_root_error(
-                &path,
-                canonical_root,
-                &canonical_path,
-            ));
+            return Err(policy.outside_declared_root_error(&path, canonical_root, &canonical_path));
         }
     }
     if discovery.visited_files.insert(canonical_path.clone()) {

@@ -15,8 +15,7 @@ use crate::remote::{
     envelope_data, parse_response, LarkAuth, LarkHttpMethod, LarkRemote, LarkRequest,
 };
 use crate::source::{
-    decode_lark_source_options, is_lark_uri, lark_document, lark_source_from_spec,
-    LarkSheetSource,
+    decode_lark_source_options, is_lark_uri, lark_document, lark_source_from_spec, LarkSheetSource,
 };
 use crate::{
     column_name, json_cell_text, url_component, LarkDiagnostic, LarkDiagnostics, API_BASE,
@@ -56,13 +55,7 @@ where
     let auth = remote.authenticate(&source.app_id, &source.app_secret)?;
     let spreadsheet_token = remote.spreadsheet_token(source, &auth)?;
     let metadata = remote.metadata(&spreadsheet_token, &auth)?;
-    build_table_source(
-        remote,
-        source,
-        &spreadsheet_token,
-        &auth,
-        &metadata,
-    )
+    build_table_source(remote, source, &spreadsheet_token, &auth, &metadata)
 }
 
 fn build_table_source<C>(

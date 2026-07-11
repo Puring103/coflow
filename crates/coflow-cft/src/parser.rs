@@ -170,7 +170,6 @@ impl<'a> Parser<'a> {
             message,
         )))
     }
-
 }
 
 /// Folds `-magnitude` where `magnitude > i64::MAX` into the equivalent `i64`.

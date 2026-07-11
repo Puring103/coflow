@@ -207,10 +207,10 @@ shield: Item { name: "Shield" }
     .expect("write items");
     std::fs::write(
         root.join("data").join("stages.cfd"),
-        r#"stage_start: Stage {
+        r"stage_start: Stage {
     first_clear_reward: ItemReward { item: &sword, count: 1 },
 }
-"#,
+",
     )
     .expect("write stages");
     std::fs::write(
@@ -224,18 +224,18 @@ fn write_dimension_project(root: &std::path::Path) {
     std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create data dir");
     std::fs::write(
         root.join("schema.cft"),
-        r#"
+        r"
             type Item {
                 @localized
                 name: string;
             }
-        "#,
+        ",
     )
     .expect("write schema");
     std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write items");
     std::fs::write(
         root.join("coflow.yaml"),
-        r#"schema: schema.cft
+        r"schema: schema.cft
 sources:
   - path: data/items.csv
     type: csv
@@ -250,7 +250,7 @@ outputs:
   data:
     type: json
     dir: generated/data
-"#,
+",
     )
     .expect("write config");
 }
@@ -274,36 +274,32 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     write_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![
-                    DataPatchOp::InsertRecord {
-                        file: "data/items.cfd".to_string(),
-                        sheet: None,
-                        actual_type: "Item".to_string(),
-                        key: "bad_sword".to_string(),
-                        materialization: DefaultMaterialization::Minimal,
-                        fields: serde_json::from_value(json!({
-                            "name": "Bad Sword",
-                            "price": -1
-                        }))
-                        .expect("fields map"),
-                    },
-                    DataPatchOp::SetField {
-                        record: PatchRecordSelector {
-                            actual_type: "Item".to_string(),
-                            key: "bad_sword".to_string(),
-                        },
-                        file: None,
-                        path: vec![PatchPathSegment::Field("rarity".to_string())],
-                        value: json!("Rare"),
-                    },
-                ],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![
+            DataPatchOp::InsertRecord {
+                file: "data/items.cfd".to_string(),
+                sheet: None,
+                actual_type: "Item".to_string(),
+                key: "bad_sword".to_string(),
+                materialization: DefaultMaterialization::Minimal,
+                fields: serde_json::from_value(json!({
+                    "name": "Bad Sword",
+                    "price": -1
+                }))
+                .expect("fields map"),
             },
-        )
-        .expect("patch should write");
+            DataPatchOp::SetField {
+                record: PatchRecordSelector {
+                    actual_type: "Item".to_string(),
+                    key: "bad_sword".to_string(),
+                },
+                file: None,
+                path: vec![PatchPathSegment::Field("rarity".to_string())],
+                value: json!("Rare"),
+            },
+        ],
+    });
 
     assert!(report.write_ok);
     assert!(!report.check_ok);
@@ -351,30 +347,26 @@ fn patch_rejects_insert_and_delete_on_dimension_variant_tables() {
         .expect("generate dimension sources");
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: false,
-                ops: vec![
-                    DataPatchOp::InsertRecord {
-                        file: "data/dimensions/language/Item_name.csv".to_string(),
-                        sheet: Some("Item_name".to_string()),
-                        actual_type: "Item_nameVariants".to_string(),
-                        key: "extra".to_string(),
-                        fields: Default::default(),
-                        materialization: DefaultMaterialization::Minimal,
-                    },
-                    DataPatchOp::DeleteRecord {
-                        record: PatchRecordSelector {
-                            actual_type: "Item_nameVariants".to_string(),
-                            key: "potion".to_string(),
-                        },
-                        file: None,
-                    },
-                ],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: false,
+        ops: vec![
+            DataPatchOp::InsertRecord {
+                file: "data/dimensions/language/Item_name.csv".to_string(),
+                sheet: Some("Item_name".to_string()),
+                actual_type: "Item_nameVariants".to_string(),
+                key: "extra".to_string(),
+                fields: std::collections::BTreeMap::default(),
+                materialization: DefaultMaterialization::Minimal,
             },
-        )
-        .expect("patch report");
+            DataPatchOp::DeleteRecord {
+                record: PatchRecordSelector {
+                    actual_type: "Item_nameVariants".to_string(),
+                    key: "potion".to_string(),
+                },
+                file: None,
+            },
+        ],
+    });
 
     assert!(!report.write_ok);
     assert_eq!(report.failed.len(), 2);
@@ -402,21 +394,17 @@ fn rename_record_updates_refs_inside_polymorphic_cfd_values() {
     write_polymorphic_ref_rename_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::RenameRecord {
-                    record: PatchRecordSelector {
-                        actual_type: "Item".to_string(),
-                        key: "sword".to_string(),
-                    },
-                    file: Some("data/items.cfd".to_string()),
-                    new_key: "blade".to_string(),
-                }],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::RenameRecord {
+            record: PatchRecordSelector {
+                actual_type: "Item".to_string(),
+                key: "sword".to_string(),
             },
-        )
-        .expect("rename item");
+            file: Some("data/items.cfd".to_string()),
+            new_key: "blade".to_string(),
+        }],
+    });
 
     assert!(report.write_ok, "rename failed: {:?}", report.failed);
     assert!(
@@ -455,25 +443,21 @@ fn patch_writes_group_record_without_required_commas() {
     write_group_cfd_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::SetField {
-                    record: PatchRecordSelector {
-                        actual_type: "DamageEffect".to_string(),
-                        key: "eff_fireball_damage".to_string(),
-                    },
-                    file: None,
-                    path: vec![
-                        PatchPathSegment::Field("damage".to_string()),
-                        PatchPathSegment::Field("lo".to_string()),
-                    ],
-                    value: json!(7),
-                }],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetField {
+            record: PatchRecordSelector {
+                actual_type: "DamageEffect".to_string(),
+                key: "eff_fireball_damage".to_string(),
             },
-        )
-        .expect("patch should write group record");
+            file: None,
+            path: vec![
+                PatchPathSegment::Field("damage".to_string()),
+                PatchPathSegment::Field("lo".to_string()),
+            ],
+            value: json!(7),
+        }],
+    });
 
     assert!(report.write_ok, "patch failed: {report:?}");
     assert!(report.failed.is_empty());
@@ -509,25 +493,21 @@ fn patch_insert_minimal_does_not_materialize_explicit_schema_defaults() {
     write_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/items.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Item".to_string(),
-                    key: "defaulted".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({
-                        "name": "Defaulted",
-                        "price": 1
-                    }))
-                    .expect("fields map"),
-                }],
-            },
-        )
-        .expect("patch should write");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/items.cfd".to_string(),
+            sheet: None,
+            actual_type: "Item".to_string(),
+            key: "defaulted".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({
+                "name": "Defaulted",
+                "price": 1
+            }))
+            .expect("fields map"),
+        }],
+    });
 
     assert!(report.write_ok);
     assert!(report.check_ok);
@@ -580,21 +560,17 @@ fn patch_insert_minimal_requires_explicit_values_for_required_ref_fields() {
     .expect("write config");
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/items.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Loot".to_string(),
-                    key: "starter_loot".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({})).expect("fields map"),
-                }],
-            },
-        )
-        .expect("missing required field should be reported");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/items.cfd".to_string(),
+            sheet: None,
+            actual_type: "Loot".to_string(),
+            key: "starter_loot".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({})).expect("fields map"),
+        }],
+    });
 
     assert!(!report.write_ok);
     assert!(!report.check_ok);
@@ -763,24 +739,23 @@ fn patch_insert_minimal_seeds_nullable_refs_and_required_enums_without_defaults(
     .expect("write config");
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/items.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Holder".to_string(),
-                    key: "holder".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({})).expect("fields map"),
-                }],
-            },
-        )
-        .expect("nullable ref and enum seeds should write");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/items.cfd".to_string(),
+            sheet: None,
+            actual_type: "Holder".to_string(),
+            key: "holder".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({})).expect("fields map"),
+        }],
+    });
 
     assert!(report.write_ok);
-    let view = session.queries().record_view("Holder", "holder").expect("holder");
+    let view = session
+        .queries()
+        .record_view("Holder", "holder")
+        .expect("holder");
     assert_eq!(
         view.record.fields().get("backup"),
         Some(&coflow_data_model::CfdValue::Null)
@@ -823,24 +798,20 @@ fn patch_insert_minimal_accepts_explicit_required_ref_fields() {
     .expect("write config");
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/items.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Loot".to_string(),
-                    key: "starter_loot".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({
-                        "owner": "sword"
-                    }))
-                    .expect("fields map"),
-                }],
-            },
-        )
-        .expect("explicit required ref should write");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/items.cfd".to_string(),
+            sheet: None,
+            actual_type: "Loot".to_string(),
+            key: "starter_loot".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({
+                "owner": "sword"
+            }))
+            .expect("fields map"),
+        }],
+    });
 
     assert!(report.write_ok);
     assert!(report.check_ok);
@@ -861,41 +832,37 @@ fn patch_rejects_explicit_values_that_violate_ref_shapes() {
     write_shape_annotation_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: false,
-                ops: vec![
-                    DataPatchOp::InsertRecord {
-                        file: "data/records.cfd".to_string(),
-                        sheet: None,
-                        actual_type: "Holder".to_string(),
-                        key: "bad_ref".to_string(),
-                        materialization: DefaultMaterialization::Minimal,
-                        fields: serde_json::from_value(json!({
-                            "owner": { "name": "Inline Owner" },
-                            "inline_item": { "name": "Inline" },
-                            "configs": ["main"]
-                        }))
-                        .expect("fields map"),
-                    },
-                    DataPatchOp::InsertRecord {
-                        file: "data/records.cfd".to_string(),
-                        sheet: None,
-                        actual_type: "Holder".to_string(),
-                        key: "bad_config_ref".to_string(),
-                        materialization: DefaultMaterialization::Minimal,
-                        fields: serde_json::from_value(json!({
-                            "owner": "sword",
-                            "inline_item": { "name": "Inline" },
-                            "configs": [{ "value": 2 }]
-                        }))
-                        .expect("fields map"),
-                    },
-                ],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: false,
+        ops: vec![
+            DataPatchOp::InsertRecord {
+                file: "data/records.cfd".to_string(),
+                sheet: None,
+                actual_type: "Holder".to_string(),
+                key: "bad_ref".to_string(),
+                materialization: DefaultMaterialization::Minimal,
+                fields: serde_json::from_value(json!({
+                    "owner": { "name": "Inline Owner" },
+                    "inline_item": { "name": "Inline" },
+                    "configs": ["main"]
+                }))
+                .expect("fields map"),
             },
-        )
-        .expect("shape errors should be reported");
+            DataPatchOp::InsertRecord {
+                file: "data/records.cfd".to_string(),
+                sheet: None,
+                actual_type: "Holder".to_string(),
+                key: "bad_config_ref".to_string(),
+                materialization: DefaultMaterialization::Minimal,
+                fields: serde_json::from_value(json!({
+                    "owner": "sword",
+                    "inline_item": { "name": "Inline" },
+                    "configs": [{ "value": 2 }]
+                }))
+                .expect("fields map"),
+            },
+        ],
+    });
 
     assert!(!report.write_ok);
     assert_eq!(report.applied.len(), 0);
@@ -926,58 +893,50 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
     write_shape_annotation_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/records.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Holder".to_string(),
-                    key: "holder".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({
-                        "owner": "sword",
-                        "inline_item": { "name": "Inline" },
-                        "configs": ["main"]
-                    }))
-                    .expect("fields map"),
-                }],
-            },
-        )
-        .expect("valid holder should insert");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/records.cfd".to_string(),
+            sheet: None,
+            actual_type: "Holder".to_string(),
+            key: "holder".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({
+                "owner": "sword",
+                "inline_item": { "name": "Inline" },
+                "configs": ["main"]
+            }))
+            .expect("fields map"),
+        }],
+    });
     assert!(report.write_ok);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: false,
-                ops: vec![
-                    DataPatchOp::SetField {
-                        record: PatchRecordSelector {
-                            actual_type: "Holder".to_string(),
-                            key: "holder".to_string(),
-                        },
-                        file: None,
-                        path: vec![PatchPathSegment::Field("owner".to_string())],
-                        value: json!({ "name": "Inline Owner" }),
-                    },
-                    DataPatchOp::SetField {
-                        record: PatchRecordSelector {
-                            actual_type: "Holder".to_string(),
-                            key: "holder".to_string(),
-                        },
-                        file: None,
-                        path: vec![
-                            PatchPathSegment::Field("configs".to_string()),
-                            PatchPathSegment::Index(0),
-                        ],
-                        value: json!({ "value": 2 }),
-                    },
-                ],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: false,
+        ops: vec![
+            DataPatchOp::SetField {
+                record: PatchRecordSelector {
+                    actual_type: "Holder".to_string(),
+                    key: "holder".to_string(),
+                },
+                file: None,
+                path: vec![PatchPathSegment::Field("owner".to_string())],
+                value: json!({ "name": "Inline Owner" }),
             },
-        )
-        .expect("shape errors should be reported");
+            DataPatchOp::SetField {
+                record: PatchRecordSelector {
+                    actual_type: "Holder".to_string(),
+                    key: "holder".to_string(),
+                },
+                file: None,
+                path: vec![
+                    PatchPathSegment::Field("configs".to_string()),
+                    PatchPathSegment::Index(0),
+                ],
+                value: json!({ "value": 2 }),
+            },
+        ],
+    });
 
     assert!(!report.write_ok);
     assert_eq!(report.applied.len(), 0);
@@ -991,7 +950,10 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
         .iter()
         .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
 
-    let view = session.queries().record_view("Holder", "holder").expect("holder");
+    let view = session
+        .queries()
+        .record_view("Holder", "holder")
+        .expect("holder");
     assert!(matches!(
         view.record.fields().get("owner"),
         Some(coflow_data_model::CfdValue::Ref(target_key)) if target_key == "sword"
@@ -1010,26 +972,22 @@ fn direct_write_field_rejects_values_that_violate_ref_shapes_before_file_write()
     write_shape_annotation_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/records.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Holder".to_string(),
-                    key: "holder".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({
-                        "owner": "sword",
-                        "inline_item": { "name": "Inline" },
-                        "configs": ["main"]
-                    }))
-                    .expect("fields map"),
-                }],
-            },
-        )
-        .expect("valid holder should insert");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/records.cfd".to_string(),
+            sheet: None,
+            actual_type: "Holder".to_string(),
+            key: "holder".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({
+                "owner": "sword",
+                "inline_item": { "name": "Inline" },
+                "configs": ["main"]
+            }))
+            .expect("fields map"),
+        }],
+    });
     assert!(report.write_ok);
 
     let before =
@@ -1063,26 +1021,22 @@ fn direct_write_field_rejects_missing_ref_target_before_file_write() {
     write_shape_annotation_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/records.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Holder".to_string(),
-                    key: "holder".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({
-                        "owner": "sword",
-                        "inline_item": { "name": "Inline" },
-                        "configs": ["main"]
-                    }))
-                    .expect("fields map"),
-                }],
-            },
-        )
-        .expect("valid holder should insert");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/records.cfd".to_string(),
+            sheet: None,
+            actual_type: "Holder".to_string(),
+            key: "holder".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({
+                "owner": "sword",
+                "inline_item": { "name": "Inline" },
+                "configs": ["main"]
+            }))
+            .expect("fields map"),
+        }],
+    });
     assert!(report.write_ok);
 
     let before =
@@ -1205,25 +1159,21 @@ fn insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_write() {
     let before =
         std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/records.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "CurrencyReward".to_string(),
-                    key: "base".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({
-                        "label": "Currency",
-                        "amount": 10
-                    }))
-                    .expect("fields map"),
-                }],
-            },
-        )
-        .expect("insert conflict should report");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/records.cfd".to_string(),
+            sheet: None,
+            actual_type: "CurrencyReward".to_string(),
+            key: "base".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({
+                "label": "Currency",
+                "amount": 10
+            }))
+            .expect("fields map"),
+        }],
+    });
     assert!(!report.write_ok);
     assert!(report.failed[0]
         .diagnostics
@@ -1255,13 +1205,7 @@ fn direct_insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_wr
     ]);
 
     let err = session
-        .insert_record(
-            "data/records.cfd",
-            None,
-            "base",
-            "CurrencyReward",
-            &fields,
-        )
+        .insert_record("data/records.cfd", None, "base", "CurrencyReward", &fields)
         .expect_err("direct insert should reject domain duplicate");
     assert!(err
         .iter()
@@ -1307,13 +1251,7 @@ fn direct_insert_rejects_missing_ref_target_before_file_write() {
     ]);
 
     let err = session
-        .insert_record(
-            "data/records.cfd",
-            None,
-            "holder",
-            "Holder",
-            &fields,
-        )
+        .insert_record("data/records.cfd", None, "holder", "Holder", &fields)
         .expect_err("direct insert should reject missing ref target");
     assert!(err.iter().any(|diagnostic| {
         diagnostic.code == "MUTATION-SHAPE" && diagnostic.message.contains("was not found")
@@ -1348,24 +1286,20 @@ fn json_patch_insert_accepts_ref_object_form() {
     )
     .expect("write config");
     let mut session = session(&root);
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/records.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Holder".to_string(),
-                    key: "main".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({
-                        "item": { "$ref": "sword" }
-                    }))
-                    .expect("fields map"),
-                }],
-            },
-        )
-        .expect("patch applies");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/records.cfd".to_string(),
+            sheet: None,
+            actual_type: "Holder".to_string(),
+            key: "main".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({
+                "item": { "$ref": "sword" }
+            }))
+            .expect("fields map"),
+        }],
+    });
     assert!(report.write_ok, "{report:?}");
 
     let _ = std::fs::remove_dir_all(root);
@@ -1380,33 +1314,27 @@ fn data_patch_report_includes_remaining_ops_after_failure() {
     let _ = std::fs::remove_dir_all(&root);
     write_shape_annotation_project(&root);
     let mut session = session(&root);
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![
-                    DataPatchOp::InsertRecord {
-                        file: "data/records.cfd".to_string(),
-                        sheet: None,
-                        actual_type: "Holder".to_string(),
-                        key: "bad".to_string(),
-                        materialization: DefaultMaterialization::Minimal,
-                        fields: serde_json::from_value(json!({ "owner": "ghost" }))
-                            .expect("fields map"),
-                    },
-                    DataPatchOp::InsertRecord {
-                        file: "data/records.cfd".to_string(),
-                        sheet: None,
-                        actual_type: "Item".to_string(),
-                        key: "later".to_string(),
-                        materialization: DefaultMaterialization::Minimal,
-                        fields: serde_json::from_value(json!({ "name": "Later" }))
-                            .expect("fields map"),
-                    },
-                ],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![
+            DataPatchOp::InsertRecord {
+                file: "data/records.cfd".to_string(),
+                sheet: None,
+                actual_type: "Holder".to_string(),
+                key: "bad".to_string(),
+                materialization: DefaultMaterialization::Minimal,
+                fields: serde_json::from_value(json!({ "owner": "ghost" })).expect("fields map"),
             },
-        )
-        .expect("patch reports failure");
+            DataPatchOp::InsertRecord {
+                file: "data/records.cfd".to_string(),
+                sheet: None,
+                actual_type: "Item".to_string(),
+                key: "later".to_string(),
+                materialization: DefaultMaterialization::Minimal,
+                fields: serde_json::from_value(json!({ "name": "Later" })).expect("fields map"),
+            },
+        ],
+    });
 
     assert!(!report.write_ok);
     assert_eq!(report.remaining_ops.len(), 2);
@@ -1447,7 +1375,10 @@ fn direct_insert_allows_self_references() {
         .insert_record("data/nodes.cfd", None, "root", "Node", &fields)
         .expect("self reference should be valid for inserted record");
 
-    let view = session.queries().record_view("Node", "root").expect("inserted node");
+    let view = session
+        .queries()
+        .record_view("Node", "root")
+        .expect("inserted node");
     assert_eq!(
         view.record.fields().get("parent"),
         Some(&coflow_data_model::CfdValue::Ref("root".to_string()))
@@ -1477,30 +1408,27 @@ fn batch_insert_can_reference_an_earlier_pending_insert() {
     .expect("write config");
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(DataPatchRequest {
-            stop_on_write_error: true,
-            ops: vec![
-                DataPatchOp::InsertRecord {
-                    file: "data/nodes.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Node".to_string(),
-                    key: "root".to_string(),
-                    fields: Default::default(),
-                    materialization: DefaultMaterialization::Minimal,
-                },
-                DataPatchOp::InsertRecord {
-                    file: "data/nodes.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Node".to_string(),
-                    key: "child".to_string(),
-                    fields: serde_json::from_value(json!({ "parent": "root" }))
-                        .expect("fields map"),
-                    materialization: DefaultMaterialization::Minimal,
-                },
-            ],
-        })
-        .expect("apply dependent inserts");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![
+            DataPatchOp::InsertRecord {
+                file: "data/nodes.cfd".to_string(),
+                sheet: None,
+                actual_type: "Node".to_string(),
+                key: "root".to_string(),
+                fields: std::collections::BTreeMap::default(),
+                materialization: DefaultMaterialization::Minimal,
+            },
+            DataPatchOp::InsertRecord {
+                file: "data/nodes.cfd".to_string(),
+                sheet: None,
+                actual_type: "Node".to_string(),
+                key: "child".to_string(),
+                fields: serde_json::from_value(json!({ "parent": "root" })).expect("fields map"),
+                materialization: DefaultMaterialization::Minimal,
+            },
+        ],
+    });
 
     assert!(report.write_ok, "failures: {:?}", report.failed);
     assert_eq!(report.applied.len(), 2);
@@ -1538,39 +1466,35 @@ fn batch_rename_of_pending_insert_rewrites_self_references() {
     .expect("write config");
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(DataPatchRequest {
-            stop_on_write_error: true,
-            ops: vec![
-                DataPatchOp::InsertRecord {
-                    file: "data/nodes.cfd".to_string(),
-                    sheet: None,
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![
+            DataPatchOp::InsertRecord {
+                file: "data/nodes.cfd".to_string(),
+                sheet: None,
+                actual_type: "Node".to_string(),
+                key: "root".to_string(),
+                fields: serde_json::from_value(json!({ "parent": "root" })).expect("fields map"),
+                materialization: DefaultMaterialization::Minimal,
+            },
+            DataPatchOp::InsertRecord {
+                file: "data/nodes.cfd".to_string(),
+                sheet: None,
+                actual_type: "Node".to_string(),
+                key: "child".to_string(),
+                fields: serde_json::from_value(json!({ "parent": "root" })).expect("fields map"),
+                materialization: DefaultMaterialization::Minimal,
+            },
+            DataPatchOp::RenameRecord {
+                record: PatchRecordSelector {
                     actual_type: "Node".to_string(),
                     key: "root".to_string(),
-                    fields: serde_json::from_value(json!({ "parent": "root" }))
-                        .expect("fields map"),
-                    materialization: DefaultMaterialization::Minimal,
                 },
-                DataPatchOp::InsertRecord {
-                    file: "data/nodes.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Node".to_string(),
-                    key: "child".to_string(),
-                    fields: serde_json::from_value(json!({ "parent": "root" }))
-                        .expect("fields map"),
-                    materialization: DefaultMaterialization::Minimal,
-                },
-                DataPatchOp::RenameRecord {
-                    record: PatchRecordSelector {
-                        actual_type: "Node".to_string(),
-                        key: "root".to_string(),
-                    },
-                    file: None,
-                    new_key: "tree".to_string(),
-                },
-            ],
-        })
-        .expect("apply pending insert rename");
+                file: None,
+                new_key: "tree".to_string(),
+            },
+        ],
+    });
 
     assert!(report.write_ok, "failures: {:?}", report.failed);
     assert_eq!(report.applied.len(), 3);
@@ -1603,26 +1527,25 @@ fn insert_allows_same_key_for_unrelated_type() {
     write_domain_key_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/records.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Skill".to_string(),
-                    key: "base".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({
-                        "label": "Skill"
-                    }))
-                    .expect("fields map"),
-                }],
-            },
-        )
-        .expect("unrelated duplicate key should insert");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/records.cfd".to_string(),
+            sheet: None,
+            actual_type: "Skill".to_string(),
+            key: "base".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({
+                "label": "Skill"
+            }))
+            .expect("fields map"),
+        }],
+    });
     assert!(report.write_ok);
-    assert!(session.queries().record_view("ItemReward", "base").is_some());
+    assert!(session
+        .queries()
+        .record_view("ItemReward", "base")
+        .is_some());
     assert!(session.queries().record_view("Skill", "base").is_some());
 
     let _ = std::fs::remove_dir_all(root);
@@ -1719,21 +1642,17 @@ fn patch_insert_minimal_rejects_recursive_required_inline_defaults() {
     .expect("write config");
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/nodes.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Node".to_string(),
-                    key: "root".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({ "label": "Root" })).expect("fields map"),
-                }],
-            },
-        )
-        .expect("recursive inline default should be reported");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/nodes.cfd".to_string(),
+            sheet: None,
+            actual_type: "Node".to_string(),
+            key: "root".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({ "label": "Root" })).expect("fields map"),
+        }],
+    });
 
     assert!(!report.write_ok);
     assert!(report.failed[0]
@@ -1781,21 +1700,17 @@ fn default_materialization_rejects_abstract_objects() {
         .iter()
         .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/records.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Holder".to_string(),
-                    key: "bad_holder".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({})).expect("fields map"),
-                }],
-            },
-        )
-        .expect("unsafe default should be reported");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/records.cfd".to_string(),
+            sheet: None,
+            actual_type: "Holder".to_string(),
+            key: "bad_holder".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({})).expect("fields map"),
+        }],
+    });
     assert!(!report.write_ok);
     assert!(report.failed[0]
         .diagnostics
@@ -1854,33 +1769,29 @@ fn patch_file_guard_stops_batch_with_failed_report() {
     write_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![
-                    DataPatchOp::SetField {
-                        record: PatchRecordSelector {
-                            actual_type: "Item".to_string(),
-                            key: "sword".to_string(),
-                        },
-                        file: Some("data/other.cfd".to_string()),
-                        path: vec![PatchPathSegment::Field("price".to_string())],
-                        value: json!(200),
-                    },
-                    DataPatchOp::SetField {
-                        record: PatchRecordSelector {
-                            actual_type: "Item".to_string(),
-                            key: "sword".to_string(),
-                        },
-                        file: None,
-                        path: vec![PatchPathSegment::Field("name".to_string())],
-                        value: json!("Stopped"),
-                    },
-                ],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![
+            DataPatchOp::SetField {
+                record: PatchRecordSelector {
+                    actual_type: "Item".to_string(),
+                    key: "sword".to_string(),
+                },
+                file: Some("data/other.cfd".to_string()),
+                path: vec![PatchPathSegment::Field("price".to_string())],
+                value: json!(200),
             },
-        )
-        .expect("write error should be reported, not returned as Err");
+            DataPatchOp::SetField {
+                record: PatchRecordSelector {
+                    actual_type: "Item".to_string(),
+                    key: "sword".to_string(),
+                },
+                file: None,
+                path: vec![PatchPathSegment::Field("name".to_string())],
+                value: json!("Stopped"),
+            },
+        ],
+    });
 
     assert!(!report.write_ok);
     assert!(!report.check_ok);
@@ -1907,36 +1818,32 @@ fn patch_coerces_ref_inline_object_and_enum_key_dict_values() {
     write_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/items.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Loot".to_string(),
-                    key: "starter_loot".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({
-                        "owner": "sword",
-                        "rewards": [
-                            {
-                                "$type": "ItemReward",
-                                "item": "sword",
-                                "count": 1
-                            }
-                        ],
-                        "resistances": {
-                            "$dict": [
-                                { "key": "Fire", "value": 10 }
-                            ]
-                        }
-                    }))
-                    .expect("fields map"),
-                }],
-            },
-        )
-        .expect("patch should write");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/items.cfd".to_string(),
+            sheet: None,
+            actual_type: "Loot".to_string(),
+            key: "starter_loot".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({
+                "owner": "sword",
+                "rewards": [
+                    {
+                        "$type": "ItemReward",
+                        "item": "sword",
+                        "count": 1
+                    }
+                ],
+                "resistances": {
+                    "$dict": [
+                        { "key": "Fire", "value": 10 }
+                    ]
+                }
+            }))
+            .expect("fields map"),
+        }],
+    });
 
     assert!(report.write_ok);
     assert!(report.check_ok);
@@ -1969,46 +1876,38 @@ fn patch_supports_dict_key_path_writes() {
     write_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/items.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Loot".to_string(),
-                    key: "starter_loot".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({
-                        "rewards": [],
-                        "resistances": { "$dict": [{ "key": "Fire", "value": 10 }] }
-                    }))
-                    .expect("fields map"),
-                }],
-            },
-        )
-        .expect("insert loot");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/items.cfd".to_string(),
+            sheet: None,
+            actual_type: "Loot".to_string(),
+            key: "starter_loot".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({
+                "rewards": [],
+                "resistances": { "$dict": [{ "key": "Fire", "value": 10 }] }
+            }))
+            .expect("fields map"),
+        }],
+    });
     assert!(report.write_ok);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::SetField {
-                    record: PatchRecordSelector {
-                        actual_type: "Loot".to_string(),
-                        key: "starter_loot".to_string(),
-                    },
-                    file: None,
-                    path: vec![
-                        PatchPathSegment::Field("resistances".to_string()),
-                        PatchPathSegment::DictKey("Fire".to_string()),
-                    ],
-                    value: json!(20),
-                }],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetField {
+            record: PatchRecordSelector {
+                actual_type: "Loot".to_string(),
+                key: "starter_loot".to_string(),
             },
-        )
-        .expect("dict-key path write");
+            file: None,
+            path: vec![
+                PatchPathSegment::Field("resistances".to_string()),
+                PatchPathSegment::DictKey("Fire".to_string()),
+            ],
+            value: json!(20),
+        }],
+    });
 
     assert!(report.write_ok);
     assert!(report.failed.is_empty());
@@ -2034,19 +1933,15 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
     write_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_mutation(
-            MutationRequest {
-                stop_on_write_error: true,
-                ops: vec![MutationOp::SetField {
-                    record: RecordCoordinate::new("Loot", "starter_loot"),
-                    file: None,
-                    path: vec![PatchPathSegment::Field("owner".to_string())],
-                    value: MutationValue::Cfd(coflow_data_model::CfdValue::Null),
-                }],
-            },
-        )
-        .expect("mutation should produce report");
+    let report = session.apply_mutation(MutationRequest {
+        stop_on_write_error: true,
+        ops: vec![MutationOp::SetField {
+            record: RecordCoordinate::new("Loot", "starter_loot"),
+            file: None,
+            path: vec![PatchPathSegment::Field("owner".to_string())],
+            value: MutationValue::Cfd(coflow_data_model::CfdValue::Null),
+        }],
+    });
 
     assert!(!report.write_ok);
     assert!(report.failed[0]
@@ -2054,36 +1949,28 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
         .iter()
         .any(|diagnostic| diagnostic.code == "MUTATION-PATH"));
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/items.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Loot".to_string(),
-                    key: "starter_loot".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({ "rewards": [] })).expect("fields map"),
-                }],
-            },
-        )
-        .expect("insert loot");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/items.cfd".to_string(),
+            sheet: None,
+            actual_type: "Loot".to_string(),
+            key: "starter_loot".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({ "rewards": [] })).expect("fields map"),
+        }],
+    });
     assert!(report.write_ok);
 
-    let report = session
-        .apply_mutation(
-            MutationRequest {
-                stop_on_write_error: true,
-                ops: vec![MutationOp::SetField {
-                    record: RecordCoordinate::new("Loot", "starter_loot"),
-                    file: None,
-                    path: vec![PatchPathSegment::Field("owner".to_string())],
-                    value: MutationValue::Cfd(coflow_data_model::CfdValue::Null),
-                }],
-            },
-        )
-        .expect("nullable null write");
+    let report = session.apply_mutation(MutationRequest {
+        stop_on_write_error: true,
+        ops: vec![MutationOp::SetField {
+            record: RecordCoordinate::new("Loot", "starter_loot"),
+            file: None,
+            path: vec![PatchPathSegment::Field("owner".to_string())],
+            value: MutationValue::Cfd(coflow_data_model::CfdValue::Null),
+        }],
+    });
 
     assert!(report.write_ok);
     assert!(report.failed.is_empty());
@@ -2124,36 +2011,28 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
             ]),
         )));
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/items.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Loot".to_string(),
-                    key: "starter_loot".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({ "rewards": [] })).expect("fields map"),
-                }],
-            },
-        )
-        .expect("insert loot");
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/items.cfd".to_string(),
+            sheet: None,
+            actual_type: "Loot".to_string(),
+            key: "starter_loot".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({ "rewards": [] })).expect("fields map"),
+        }],
+    });
     assert!(report.write_ok);
 
-    let report = session
-        .apply_mutation(
-            MutationRequest {
-                stop_on_write_error: true,
-                ops: vec![MutationOp::SetField {
-                    record: RecordCoordinate::new("Loot", "starter_loot"),
-                    file: None,
-                    path: vec![PatchPathSegment::Field("rewards".to_string())],
-                    value: MutationValue::Cfd(coflow_data_model::CfdValue::Array(vec![bad_reward])),
-                }],
-            },
-        )
-        .expect("nested invalid value should be reported");
+    let report = session.apply_mutation(MutationRequest {
+        stop_on_write_error: true,
+        ops: vec![MutationOp::SetField {
+            record: RecordCoordinate::new("Loot", "starter_loot"),
+            file: None,
+            path: vec![PatchPathSegment::Field("rewards".to_string())],
+            value: MutationValue::Cfd(coflow_data_model::CfdValue::Array(vec![bad_reward])),
+        }],
+    });
 
     assert!(!report.write_ok);
     assert!(report.failed[0]
@@ -2176,21 +2055,17 @@ fn mutation_complete_value_rejects_missing_nested_required_fields_before_write()
     write_project(&root);
     let mut session = session(&root);
 
-    let insert = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::InsertRecord {
-                    file: "data/items.cfd".to_string(),
-                    sheet: None,
-                    actual_type: "Loot".to_string(),
-                    key: "starter_loot".to_string(),
-                    materialization: DefaultMaterialization::Minimal,
-                    fields: serde_json::from_value(json!({ "rewards": [] })).expect("fields map"),
-                }],
-            },
-        )
-        .expect("insert loot");
+    let insert = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/items.cfd".to_string(),
+            sheet: None,
+            actual_type: "Loot".to_string(),
+            key: "starter_loot".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({ "rewards": [] })).expect("fields map"),
+        }],
+    });
     assert!(insert.write_ok);
     let before = std::fs::read_to_string(root.join("data/items.cfd")).expect("read cfd");
 
@@ -2202,21 +2077,15 @@ fn mutation_complete_value_rejects_missing_nested_required_fields_before_write()
                 coflow_data_model::CfdValue::Ref("sword".to_string()),
             )]),
         )));
-    let report = session
-        .apply_mutation(
-            MutationRequest {
-                stop_on_write_error: true,
-                ops: vec![MutationOp::SetField {
-                    record: RecordCoordinate::new("Loot", "starter_loot"),
-                    file: None,
-                    path: vec![PatchPathSegment::Field("rewards".to_string())],
-                    value: MutationValue::Cfd(coflow_data_model::CfdValue::Array(vec![
-                        incomplete_reward,
-                    ])),
-                }],
-            },
-        )
-        .expect("incomplete nested value should be reported");
+    let report = session.apply_mutation(MutationRequest {
+        stop_on_write_error: true,
+        ops: vec![MutationOp::SetField {
+            record: RecordCoordinate::new("Loot", "starter_loot"),
+            file: None,
+            path: vec![PatchPathSegment::Field("rewards".to_string())],
+            value: MutationValue::Cfd(coflow_data_model::CfdValue::Array(vec![incomplete_reward])),
+        }],
+    });
 
     assert!(!report.write_ok);
     assert!(report.failed[0].diagnostics.iter().any(|diagnostic| {
@@ -2241,42 +2110,38 @@ fn patch_collects_validation_failures_when_stop_disabled() {
     write_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: false,
-                ops: vec![
-                    DataPatchOp::SetField {
-                        record: PatchRecordSelector {
-                            actual_type: "Item".to_string(),
-                            key: "sword".to_string(),
-                        },
-                        file: None,
-                        path: vec![PatchPathSegment::Field("missing".to_string())],
-                        value: json!(1),
-                    },
-                    DataPatchOp::SetField {
-                        record: PatchRecordSelector {
-                            actual_type: "Item".to_string(),
-                            key: "sword".to_string(),
-                        },
-                        file: None,
-                        path: vec![PatchPathSegment::Field("rarity".to_string())],
-                        value: json!("NotARarity"),
-                    },
-                    DataPatchOp::SetField {
-                        record: PatchRecordSelector {
-                            actual_type: "Item".to_string(),
-                            key: "sword".to_string(),
-                        },
-                        file: None,
-                        path: vec![PatchPathSegment::Field("name".to_string())],
-                        value: json!("Continued"),
-                    },
-                ],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: false,
+        ops: vec![
+            DataPatchOp::SetField {
+                record: PatchRecordSelector {
+                    actual_type: "Item".to_string(),
+                    key: "sword".to_string(),
+                },
+                file: None,
+                path: vec![PatchPathSegment::Field("missing".to_string())],
+                value: json!(1),
             },
-        )
-        .expect("validation failures should be reported");
+            DataPatchOp::SetField {
+                record: PatchRecordSelector {
+                    actual_type: "Item".to_string(),
+                    key: "sword".to_string(),
+                },
+                file: None,
+                path: vec![PatchPathSegment::Field("rarity".to_string())],
+                value: json!("NotARarity"),
+            },
+            DataPatchOp::SetField {
+                record: PatchRecordSelector {
+                    actual_type: "Item".to_string(),
+                    key: "sword".to_string(),
+                },
+                file: None,
+                path: vec![PatchPathSegment::Field("name".to_string())],
+                value: json!("Continued"),
+            },
+        ],
+    });
 
     assert!(!report.write_ok);
     assert!(!report.check_ok);
@@ -2315,36 +2180,32 @@ fn patch_stops_on_terminal_writer_error_even_when_stop_disabled() {
     write_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: false,
-                ops: vec![
-                    DataPatchOp::InsertRecord {
-                        file: "data/items.cfd".to_string(),
-                        sheet: None,
-                        actual_type: "Item".to_string(),
-                        key: "sword".to_string(),
-                        materialization: DefaultMaterialization::Minimal,
-                        fields: serde_json::from_value(json!({
-                            "name": "Duplicate Sword",
-                            "price": 1
-                        }))
-                        .expect("fields map"),
-                    },
-                    DataPatchOp::SetField {
-                        record: PatchRecordSelector {
-                            actual_type: "Item".to_string(),
-                            key: "sword".to_string(),
-                        },
-                        file: None,
-                        path: vec![PatchPathSegment::Field("name".to_string())],
-                        value: json!("Should Not Run"),
-                    },
-                ],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: false,
+        ops: vec![
+            DataPatchOp::InsertRecord {
+                file: "data/items.cfd".to_string(),
+                sheet: None,
+                actual_type: "Item".to_string(),
+                key: "sword".to_string(),
+                materialization: DefaultMaterialization::Minimal,
+                fields: serde_json::from_value(json!({
+                    "name": "Duplicate Sword",
+                    "price": 1
+                }))
+                .expect("fields map"),
             },
-        )
-        .expect("terminal write error should be reported");
+            DataPatchOp::SetField {
+                record: PatchRecordSelector {
+                    actual_type: "Item".to_string(),
+                    key: "sword".to_string(),
+                },
+                file: None,
+                path: vec![PatchPathSegment::Field("name".to_string())],
+                value: json!("Should Not Run"),
+            },
+        ],
+    });
 
     assert!(!report.write_ok);
     assert!(!report.check_ok);
@@ -2375,22 +2236,18 @@ fn patch_set_field_file_guard_uses_spread_source_file() {
     write_spread_project(&root);
     let mut session = session(&root);
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::SetField {
-                    record: PatchRecordSelector {
-                        actual_type: "Item".to_string(),
-                        key: "child".to_string(),
-                    },
-                    file: Some("data/source.cfd".to_string()),
-                    path: vec![PatchPathSegment::Field("name".to_string())],
-                    value: json!("Edited Through Spread"),
-                }],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetField {
+            record: PatchRecordSelector {
+                actual_type: "Item".to_string(),
+                key: "child".to_string(),
             },
-        )
-        .expect("spread source guarded write");
+            file: Some("data/source.cfd".to_string()),
+            path: vec![PatchPathSegment::Field("name".to_string())],
+            value: json!("Edited Through Spread"),
+        }],
+    });
 
     assert!(report.write_ok);
     assert!(report.failed.is_empty());
@@ -2402,22 +2259,18 @@ fn patch_set_field_file_guard_uses_spread_source_file() {
     assert!(source.contains("Edited Through Spread"));
     assert!(!host.contains("Edited Through Spread"));
 
-    let report = session
-        .apply_data_patch(
-            DataPatchRequest {
-                stop_on_write_error: true,
-                ops: vec![DataPatchOp::SetField {
-                    record: PatchRecordSelector {
-                        actual_type: "Item".to_string(),
-                        key: "child".to_string(),
-                    },
-                    file: Some("data/host.cfd".to_string()),
-                    path: vec![PatchPathSegment::Field("power".to_string())],
-                    value: json!(2),
-                }],
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetField {
+            record: PatchRecordSelector {
+                actual_type: "Item".to_string(),
+                key: "child".to_string(),
             },
-        )
-        .expect("spread guard failure should be reported");
+            file: Some("data/host.cfd".to_string()),
+            path: vec![PatchPathSegment::Field("power".to_string())],
+            value: json!(2),
+        }],
+    });
 
     assert!(!report.write_ok);
     assert_eq!(report.failed.len(), 1);

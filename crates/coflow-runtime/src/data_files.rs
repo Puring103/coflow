@@ -150,7 +150,7 @@ pub fn sync_data_header(
                 .then_some(layout.sheet.as_str()),
             actual_type: &layout.actual_type,
             headers: &layout.headers,
-            schema: Some(&compiled_schema),
+            schema: Some(compiled_schema),
         },
     )?;
     Ok(report(
@@ -377,6 +377,12 @@ fn resolve_explicit_provider_id(
     }
 }
 
+/// Resolves the effective type, sheet, and field layout for a table source.
+///
+/// # Errors
+///
+/// Returns diagnostics when provider addressing is ambiguous, the type is
+/// unknown or abstract, or the configured field mapping is invalid.
 pub fn table_header_layout(
     session: &ProjectSchemaSession,
     manager: &dyn TableManager,

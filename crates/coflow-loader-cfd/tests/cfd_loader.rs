@@ -601,7 +601,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
         .load(
             SourceLoadContext {
                 project_root: &root,
-                schema: &compiled_schema,
+                schema: compiled_schema,
             },
             &ResolvedSource {
                 provider_id: "cfd".to_string(),
@@ -642,11 +642,8 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
 #[test]
 fn direct_model_errors_keep_record_text_spans() -> TestResult {
     let schema = compile_schema("type Item { value: int; }");
-    let err = load_cfd_model(
-        &schema,
-        "first: Item { value: 1 }\n\nsecond: Item {\n}\n",
-    )
-    .expect_err("second record is missing value");
+    let err = load_cfd_model(&schema, "first: Item { value: 1 }\n\nsecond: Item {\n}\n")
+        .expect_err("second record is missing value");
     let CfdTextLoadError::DataModel {
         diagnostics,
         origins,

@@ -44,13 +44,13 @@ pub(crate) fn preflight_mutation_op(
         actual_type: &plan.target.coordinate.actual_type,
         field_path: &plan.target.field_path,
         new_value: value,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         source: &plan.source,
     };
     let diagnostics = plan.writer.preflight(
         WriteContext {
             project_root: &session.project.root_dir,
-            schema: &compiled_schema,
+            schema: compiled_schema,
             model: Some(&session.model),
         },
         &request,
@@ -175,12 +175,12 @@ fn stage_write_field(
         actual_type: &plan.target.coordinate.actual_type,
         field_path: &plan.target.field_path,
         new_value,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         source: &plan.source,
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: Some(&session.model),
     };
     let provider_outcome = plan.writer.write_field(ctx, &request)?;
@@ -217,7 +217,7 @@ fn stage_rename_record_key(
     let compiled_schema = session.compiled_schema();
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: Some(&session.model),
     };
     let target_request = RenameRecordRequest {
@@ -226,7 +226,7 @@ fn stage_rename_record_key(
         new_key,
         actual_type,
         source: &target_source,
-        schema: &compiled_schema,
+        schema: compiled_schema,
     };
     let reference_actions = reference_update_actions(session, registry, target_ref.id, new_key)?;
     let rewrite_actions =
@@ -236,12 +236,12 @@ fn stage_rename_record_key(
     for action in &reference_actions {
         action
             .writer
-            .write_field(ctx, &action.request.as_request(&compiled_schema))?;
+            .write_field(ctx, &action.request.as_request(compiled_schema))?;
     }
     for action in &rewrite_actions {
         action
             .writer
-            .rewrite_record_references(ctx, &action.request.as_request(&compiled_schema))?;
+            .rewrite_record_references(ctx, &action.request.as_request(compiled_schema))?;
     }
 
     let new_coordinate = RecordCoordinate::new(actual_type, new_key);
@@ -275,11 +275,11 @@ fn stage_insert_record(
         record_key,
         actual_type,
         fields,
-        schema: &compiled_schema,
+        schema: compiled_schema,
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: Some(&session.model),
     };
     let provider_outcome = writer.insert_record(ctx, &request)?;
@@ -317,7 +317,7 @@ fn stage_delete_record(
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: Some(&session.model),
     };
     let provider_outcome = writer.delete_record(ctx, &request)?;

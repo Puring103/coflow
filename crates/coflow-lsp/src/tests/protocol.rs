@@ -230,10 +230,13 @@ fn validation_snapshot_rejects_stale_revision_commit() {
         .expect("change to second revision"));
     let current_input = core.validation_input();
 
-    let stale = build_snapshot(stale_input);
-    let current = build_snapshot(current_input);
+    let stale = build_snapshot(&stale_input);
+    let current = build_snapshot(&current_input);
     assert!(core.commit_snapshot(stale).is_empty());
-    assert!(core.build().is_none(), "stale build must not become visible");
+    assert!(
+        core.build().is_none(),
+        "stale build must not become visible"
+    );
 
     let publications = core.commit_snapshot(current);
     assert!(!publications.is_empty());
@@ -251,16 +254,19 @@ fn failed_snapshot_invalidates_build_and_clears_old_uri() {
     let schema_uri = path_to_file_uri(&schema_dir.join("main.cft"));
     let mut core = LspValidationCore::new(project);
 
-    let initial = build_snapshot(core.validation_input());
+    let initial = build_snapshot(&core.validation_input());
     core.commit_snapshot(initial);
     assert!(core.build().is_some());
 
     std::fs::remove_dir_all(&schema_dir).expect("remove schema directory");
     core.mark_project_changed().expect("advance revision");
-    let failed = build_snapshot(core.validation_input());
+    let failed = build_snapshot(&core.validation_input());
     let publications = core.commit_snapshot(failed);
 
-    assert!(core.build().is_none(), "failed revision must invalidate old build");
+    assert!(
+        core.build().is_none(),
+        "failed revision must invalidate old build"
+    );
     let cleared = publications
         .iter()
         .find(|publication| publication.uri == schema_uri)
@@ -288,13 +294,13 @@ fn unreadable_cfd_source_invalidates_current_snapshot() {
     let source_uri = path_to_file_uri(&source_path);
     let mut core = LspValidationCore::new(project);
 
-    let initial = build_snapshot(core.validation_input());
+    let initial = build_snapshot(&core.validation_input());
     core.commit_snapshot(initial);
     assert!(core.build().is_some());
 
     std::fs::remove_file(&source_path).expect("remove CFD source");
     core.mark_project_changed().expect("advance revision");
-    let failed = build_snapshot(core.validation_input());
+    let failed = build_snapshot(&core.validation_input());
     let publications = core.commit_snapshot(failed);
 
     assert!(core.build().is_none());
@@ -317,7 +323,7 @@ fn stale_document_version_does_not_replace_newer_text() {
         .apply_open_document(uri.clone(), "type Newer {}\n".to_string(), Some(7))
         .expect("open document"));
     assert!(!core
-        .apply_change_document(uri.clone(), "type Older {}\n".to_string(), Some(6))
+        .apply_change_document(uri, "type Older {}\n".to_string(), Some(6))
         .expect("reject stale change"));
     let document = core
         .open_documents()
@@ -381,9 +387,9 @@ fn validation_worker_coalesces_pending_revisions_and_commits_only_latest() {
         }
     }
     assert_eq!(build_count.load(Ordering::SeqCst), 2);
-    assert!(core.commit_snapshot(snapshots.remove(0)).is_empty());
+    assert!(core.commit_snapshot(*snapshots.remove(0)).is_empty());
     assert!(!core.is_current());
-    core.commit_snapshot(snapshots.remove(0));
+    core.commit_snapshot(*snapshots.remove(0));
     assert!(core.is_current());
     assert_eq!(latest.revision(), core.validation_input().revision());
     drop(worker);

@@ -86,14 +86,8 @@ enum LspLabelDocument {
 pub fn lsp_label_location(location: &coflow_api::SourceLocation) -> LspLabelLocation {
     let range = location.text_range();
     match location {
-        coflow_api::SourceLocation::FileSpan { path, .. } => LspLabelLocation {
-            document: LspLabelDocument::Path(path.clone()),
-            start_line: range.start.line,
-            start_character: range.start.character,
-            end_line: range.end.line,
-            end_character: range.end.character,
-        },
-        coflow_api::SourceLocation::ProjectConfig { path, .. }
+        coflow_api::SourceLocation::FileSpan { path, .. }
+        | coflow_api::SourceLocation::ProjectConfig { path, .. }
         | coflow_api::SourceLocation::Artifact { path }
         | coflow_api::SourceLocation::TableCell { path, .. } => LspLabelLocation {
             document: LspLabelDocument::Path(path.clone()),

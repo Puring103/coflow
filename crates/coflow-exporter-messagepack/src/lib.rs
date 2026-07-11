@@ -1,4 +1,4 @@
-//! Streaming MessagePack exporter for validated Coflow data models.
+//! Streaming `MessagePack` exporter for validated Coflow data models.
 
 #![cfg_attr(
     not(test),
@@ -51,7 +51,7 @@ impl From<ExportError> for MessagePackExportError {
     }
 }
 
-/// Encodes the model directly into one MessagePack byte artifact per table.
+/// Encodes the model directly into one `MessagePack` byte artifact per table.
 ///
 /// # Errors
 ///
@@ -75,7 +75,7 @@ pub const MESSAGEPACK_EXPORTER_DESCRIPTOR: ExporterDescriptor = ExporterDescript
     content_kind: ArtifactContentKind::Bytes,
 };
 
-/// Declares the MessagePack exporter role implemented by this package.
+/// Declares the `MessagePack` exporter role implemented by this package.
 ///
 /// # Errors
 ///

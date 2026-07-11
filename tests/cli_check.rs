@@ -177,13 +177,11 @@ outputs:
         .iter()
         .find(|diagnostic| {
             diagnostic["code"] == "TABLE-COLUMN-DUPLICATE-HEADER"
-                && diagnostic["message"]
-                    .as_str()
-                    .is_some_and(|message| {
-                        message.contains("column header `name` appears more than once")
-                    })
-    })
-    .unwrap_or_else(|| panic!("expected duplicate header diagnostic: {diagnostics:?}"));
+                && diagnostic["message"].as_str().is_some_and(|message| {
+                    message.contains("column header `name` appears more than once")
+                })
+        })
+        .unwrap_or_else(|| panic!("expected duplicate header diagnostic: {diagnostics:?}"));
     assert_eq!(diagnostic["stage"], "TABLE");
     assert_eq!(diagnostic["cell"], "C1");
 

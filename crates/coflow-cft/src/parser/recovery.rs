@@ -73,13 +73,14 @@ impl Parser<'_> {
     }
 
     fn recover_declaration(&mut self, declaration_start: usize) {
-        let mut brace_depth = self.tokens[declaration_start..self.pos]
-            .iter()
-            .fold(0_u64, |depth, token| match token.kind {
-                TokenKind::LBrace => depth.saturating_add(1),
-                TokenKind::RBrace => depth.saturating_sub(1),
-                _ => depth,
-            });
+        let mut brace_depth =
+            self.tokens[declaration_start..self.pos]
+                .iter()
+                .fold(0_u64, |depth, token| match token.kind {
+                    TokenKind::LBrace => depth.saturating_add(1),
+                    TokenKind::RBrace => depth.saturating_sub(1),
+                    _ => depth,
+                });
         while !self.at(&TokenKind::Eof) {
             if brace_depth == 0 && self.pos > declaration_start && self.at_declaration_start() {
                 return;

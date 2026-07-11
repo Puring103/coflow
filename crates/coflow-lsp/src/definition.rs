@@ -16,9 +16,7 @@ pub(crate) struct CfdDefinitionIndex {
 }
 
 impl CfdDefinitionIndex {
-    pub(crate) fn from_sources<'a>(
-        sources: impl IntoIterator<Item = (&'a str, &'a str)>,
-    ) -> Self {
+    pub(crate) fn from_sources<'a>(sources: impl IntoIterator<Item = (&'a str, &'a str)>) -> Self {
         let mut records = BTreeMap::<String, BTreeMap<String, Vec<Value>>>::new();
         for (uri, text) in sources {
             let (ast, _) = parse_cfd(text);
@@ -38,12 +36,7 @@ impl CfdDefinitionIndex {
         Self { records }
     }
 
-    fn location(
-        &self,
-        schema: &CftContainer,
-        expected_type: &str,
-        key: &str,
-    ) -> Option<Value> {
+    fn location(&self, schema: &CftContainer, expected_type: &str, key: &str) -> Option<Value> {
         if let Some(location) = self
             .records
             .get(expected_type)

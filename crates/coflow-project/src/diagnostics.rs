@@ -74,4 +74,3 @@ fn project_diagnostic(config_path: &Path, diagnostic: ProjectDiagnostic) -> Diag
         related: Vec::new(),
     }
 }
-

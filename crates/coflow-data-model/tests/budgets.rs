@@ -3,7 +3,7 @@
 mod common;
 use common::*;
 
-fn limits(max_depth: u64, max_nodes: u64, max_work: u64) -> StructuralLimits {
+const fn limits(max_depth: u64, max_nodes: u64, max_work: u64) -> StructuralLimits {
     StructuralLimits::new(max_depth, max_nodes, max_work)
 }
 

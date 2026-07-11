@@ -30,6 +30,15 @@ enum CheckSelection {
     FullVariantSubtree,
 }
 
+struct NestedFieldChecks<'a> {
+    root_record: Option<CfdRecordId>,
+    actual_type: &'a str,
+    fields: &'a BTreeMap<String, CfdValue>,
+    root_location: ValueLocation,
+    selection: CheckSelection,
+    cursor: TraversalCursor,
+}
+
 impl<'a> CheckRunner<'a> {
     pub(crate) fn new(
         schema: &'a CompiledSchema,
@@ -123,13 +132,15 @@ impl<'a> CheckRunner<'a> {
             );
         } else {
             self.run_nested_field_checks(
-                Some(record_id),
-                record.actual_type(),
-                record.fields(),
-                location,
-                CheckSelection::Default,
+                NestedFieldChecks {
+                    root_record: Some(record_id),
+                    actual_type: record.actual_type(),
+                    fields: record.fields(),
+                    root_location: location,
+                    selection: CheckSelection::Default,
+                    cursor: root_cursor,
+                },
                 &mut traversal_budget,
-                root_cursor,
             );
         }
     }
@@ -188,25 +199,23 @@ impl<'a> CheckRunner<'a> {
 
     fn run_nested_field_checks(
         &mut self,
-        root_record: Option<CfdRecordId>,
-        actual_type: &str,
-        fields: &BTreeMap<String, CfdValue>,
-        root_location: ValueLocation,
-        selection: CheckSelection,
+        request: NestedFieldChecks<'_>,
         traversal_budget: &mut Option<StructuralBudget>,
-        cursor: TraversalCursor,
     ) {
-        for (name, value) in fields {
-            if !self.schema.field_has_nested_checks(actual_type, name) {
+        for (name, value) in request.fields {
+            if !self
+                .schema
+                .field_has_nested_checks(request.actual_type, name)
+            {
                 continue;
             }
             self.run_nested_value_checks(
-                root_record,
+                request.root_record,
                 value,
-                root_location.field(name),
-                selection,
+                request.root_location.field(name),
+                request.selection,
                 traversal_budget,
-                cursor,
+                request.cursor,
             );
         }
     }
@@ -328,13 +337,15 @@ impl<'a> CheckRunner<'a> {
                     selection,
                 );
                 self.run_nested_field_checks(
-                    root_record,
-                    record.actual_type(),
-                    record.fields(),
-                    location,
-                    selection,
+                    NestedFieldChecks {
+                        root_record,
+                        actual_type: record.actual_type(),
+                        fields: record.fields(),
+                        root_location: location,
+                        selection,
+                        cursor,
+                    },
                     traversal_budget,
-                    cursor,
                 );
             }
             CfdValue::Array(items) => {

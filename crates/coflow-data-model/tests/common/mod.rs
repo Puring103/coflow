@@ -1,5 +1,10 @@
 #![allow(dead_code, unused_imports)]
-#![allow(clippy::redundant_pub_crate)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::redundant_pub_crate,
+    clippy::unwrap_used
+)]
 
 pub(crate) use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
 pub(crate) use coflow_data_model::*;

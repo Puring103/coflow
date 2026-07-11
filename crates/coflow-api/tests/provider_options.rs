@@ -23,9 +23,7 @@ fn decoded_options_preserve_provider_identity_and_concrete_type() {
         .require::<SecretOptions>("test-provider")
         .expect("matching provider options");
     assert_eq!(decoded.token, "private-token");
-    assert!(options
-        .require::<SecretOptions>("other-provider")
-        .is_err());
+    assert!(options.require::<SecretOptions>("other-provider").is_err());
     assert!(options.require::<OtherOptions>("test-provider").is_err());
 }
 

@@ -5,7 +5,7 @@ use coflow_cft::{
     ValueDependencyMode,
 };
 
-fn options(max_depth: u64, max_nodes: u64, max_work: u64) -> CftCompileOptions {
+const fn options(max_depth: u64, max_nodes: u64, max_work: u64) -> CftCompileOptions {
     CftCompileOptions {
         structural_limits: StructuralLimits::new(max_depth, max_nodes, max_work),
     }

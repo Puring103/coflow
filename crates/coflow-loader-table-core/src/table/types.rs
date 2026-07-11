@@ -186,9 +186,9 @@ impl TableDiagnosticKind {
         match self {
             Self::MissingSheet | Self::EmptySheet => "TABLE-SHEET",
             Self::UnknownType => "TABLE-TYPE",
-            Self::UnknownColumn
-            | Self::MissingColumn
-            | Self::UnexpectedExpandHeader => "TABLE-COLUMN",
+            Self::UnknownColumn | Self::MissingColumn | Self::UnexpectedExpandHeader => {
+                "TABLE-COLUMN"
+            }
             Self::DuplicateFieldColumn => "TABLE-COLUMN-DUPLICATE-FIELD",
             Self::DuplicateHeaderColumn => "TABLE-COLUMN-DUPLICATE-HEADER",
             Self::DuplicateKeyColumn => "TABLE-COLUMN-DUPLICATE-KEY",

@@ -59,9 +59,7 @@ pub(super) fn prepare_id_as_enum_artifacts_for_build(
     })
 }
 
-fn collect_declared_id_as_enum_ids(
-    schema: &CompiledSchema,
-) -> BTreeMap<String, IdAsEnumIds> {
+fn collect_declared_id_as_enum_ids(schema: &CompiledSchema) -> BTreeMap<String, IdAsEnumIds> {
     let mut out = BTreeMap::new();
     for schema_type in schema.type_metas() {
         if let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "idAsEnum") {

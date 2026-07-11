@@ -263,10 +263,12 @@ fn reject_formula_cells(
             continue;
         }
         diagnostics.push(unsupported_cell_diagnostic(
-            ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()).cell(
-                range_start_row as usize + zero_based_row + 1,
-                range_start_col as usize + zero_based_col + 1,
-            ),
+            ExcelLocation::new(source.file.clone())
+                .sheet(sheet.sheet.clone())
+                .cell(
+                    range_start_row as usize + zero_based_row + 1,
+                    range_start_col as usize + zero_based_col + 1,
+                ),
             "Formula",
         ));
     }
@@ -279,7 +281,9 @@ fn reject_merged_cells(
     diagnostics: &mut Vec<ExcelDiagnostic>,
 ) {
     let merge_cells = match workbook {
-        Sheets::Xls(workbook) => workbook.worksheet_merge_cells(&sheet.sheet).unwrap_or_default(),
+        Sheets::Xls(workbook) => workbook
+            .worksheet_merge_cells(&sheet.sheet)
+            .unwrap_or_default(),
         Sheets::Xlsx(workbook) => workbook
             .worksheet_merge_cells(&sheet.sheet)
             .and_then(Result::ok)
@@ -288,10 +292,12 @@ fn reject_merged_cells(
     };
     for dimensions in merge_cells {
         diagnostics.push(unsupported_cell_diagnostic(
-            ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()).cell(
-                dimensions.start.0 as usize + 1,
-                dimensions.start.1 as usize + 1,
-            ),
+            ExcelLocation::new(source.file.clone())
+                .sheet(sheet.sheet.clone())
+                .cell(
+                    dimensions.start.0 as usize + 1,
+                    dimensions.start.1 as usize + 1,
+                ),
             &format!("MergedCell({})", format_dimensions(dimensions)),
         ));
     }

@@ -4,12 +4,12 @@ mod loaders;
 mod readers;
 mod types;
 
+use crate::lowering::CsharpLoweringPlan;
 use crate::model::{
     CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpParameter,
     CsharpProperty, CsharpType,
 };
 use crate::names::{camel_case, has_annotation};
-use crate::lowering::CsharpLoweringPlan;
 use crate::CsharpCodegenError;
 use coflow_cft::{CftEnumMeta, CftSchemaTypeRef};
 use coflow_cft::{CftFieldMeta, CftTypeMeta};

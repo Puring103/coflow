@@ -8,8 +8,8 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use crate::state::{LspBuild, LspDocument};
 use crate::path_from_file_uri;
+use crate::state::{LspBuild, LspDocument};
 
 pub(crate) use snapshot::{
     build_snapshot, ValidationInput, ValidationRevision, ValidationSnapshot,
@@ -54,7 +54,7 @@ pub(crate) struct CfdRequestDocument<'a> {
 }
 
 impl LspValidationCore {
-    pub(crate) fn new(project: Project) -> Self {
+    pub(crate) const fn new(project: Project) -> Self {
         Self {
             project,
             open_documents: BTreeMap::new(),
@@ -89,10 +89,8 @@ impl LspValidationCore {
         let Some(path) = path_from_file_uri(&uri) else {
             return Ok(false);
         };
-        self.open_documents.insert(
-            normalize_path(&path),
-            OpenDocument { uri, text, version },
-        );
+        self.open_documents
+            .insert(normalize_path(&path), OpenDocument { uri, text, version });
         self.advance_revision()?;
         Ok(true)
     }
@@ -183,7 +181,7 @@ impl LspValidationCore {
         if !self.apply_open_document(uri, text, version)? {
             return Ok(Vec::new());
         }
-        self.validate_project()
+        Ok(self.validate_project())
     }
 
     pub(crate) fn change_document(
@@ -195,7 +193,7 @@ impl LspValidationCore {
         if !self.apply_change_document(uri, text, version)? {
             return Ok(Vec::new());
         }
-        self.validate_project()
+        Ok(self.validate_project())
     }
 
     pub(crate) fn close_document(
@@ -205,22 +203,21 @@ impl LspValidationCore {
         if !self.apply_close_document(uri)? {
             return Ok(Vec::new());
         }
-        self.validate_project()
+        Ok(self.validate_project())
     }
 
     pub(crate) fn refresh_project(&mut self) -> Result<Vec<DiagnosticPublication>, String> {
         self.mark_project_changed()?;
-        self.validate_project()
+        Ok(self.validate_project())
     }
 
-    pub(crate) fn validate_project(&mut self) -> Result<Vec<DiagnosticPublication>, String> {
-        let candidate = build_snapshot(self.validation_input());
-        Ok(self.commit_snapshot(candidate))
+    pub(crate) fn validate_project(&mut self) -> Vec<DiagnosticPublication> {
+        let input = self.validation_input();
+        let candidate = build_snapshot(&input);
+        self.commit_snapshot(candidate)
     }
 
-    pub(crate) fn ensure_build_publications(
-        &mut self,
-    ) -> Result<Vec<DiagnosticPublication>, String> {
+    pub(crate) fn ensure_build_publications(&mut self) -> Vec<DiagnosticPublication> {
         if self
             .snapshot
             .as_ref()
@@ -228,13 +225,10 @@ impl LspValidationCore {
         {
             return self.validate_project();
         }
-        Ok(Vec::new())
+        Vec::new()
     }
 
-    pub(crate) fn prepare_request_document(
-        &mut self,
-        _uri: &str,
-    ) -> Result<Vec<DiagnosticPublication>, String> {
+    pub(crate) fn prepare_request_document(&mut self, _uri: &str) -> Vec<DiagnosticPublication> {
         self.ensure_build_publications()
     }
 

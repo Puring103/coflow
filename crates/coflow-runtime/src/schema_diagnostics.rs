@@ -112,6 +112,8 @@ fn cft_label_range(label: &CftLabel, sources: &BTreeMap<String, String>) -> Text
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
     use coflow_api::SourceLocation;
     use coflow_cft::{CftDiagnostic, CftErrorCode, CftSeverity, ModuleId, Span};

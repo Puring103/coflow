@@ -1,16 +1,16 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use coflow_api::{
-    DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult,
-    ProjectSourceRef, ProviderRegistry, ResolvedSource, SourceLoadContext, SourceLocationSpec,
-    SourceProvider, SourceProviderDescriptor, SourceTransaction, SourceTransactionCompensation,
-    SourceWriter, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
-    WriterDescriptor,
+    DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
+    ProviderRegistry, ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    SourceProviderDescriptor, SourceTransaction, SourceTransactionCompensation, SourceWriter,
+    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{
     CfdInputRecord, CfdInputValue, CfdPathSegment, CfdValue, RecordOrigin, SourceDocument,
@@ -44,6 +44,7 @@ static WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
 
 static NEXT_TEST_ID: AtomicUsize = AtomicUsize::new(0);
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Default)]
 struct Faults {
     begin_failure_source: Option<String>,
@@ -121,16 +122,18 @@ impl SourceProvider for TestProvider {
                 )
             }
             SourceLocationSpec::Uri(uri) => {
-                let state = self.state.lock().expect("lock test provider state");
-                if state.faults.fail_load_after_write && state.counts.writes > 0 {
-                    return Err(test_error(
-                        "TEST-LOAD",
-                        "injected post-write rebuild failure",
-                    ));
-                }
-                let value = state.remote_values.get(uri).copied().ok_or_else(|| {
-                    test_error("TEST-LOAD", format!("missing remote value for `{uri}`"))
-                })?;
+                let value = {
+                    let state = self.state.lock().expect("lock test provider state");
+                    if state.faults.fail_load_after_write && state.counts.writes > 0 {
+                        return Err(test_error(
+                            "TEST-LOAD",
+                            "injected post-write rebuild failure",
+                        ));
+                    }
+                    state.remote_values.get(uri).copied().ok_or_else(|| {
+                        test_error("TEST-LOAD", format!("missing remote value for `{uri}`"))
+                    })?
+                };
                 (
                     value,
                     RecordOrigin::Table {
@@ -178,7 +181,7 @@ impl SourceWriter for TestWriter {
                 format!("injected begin failure for `{source_name}`"),
             ));
         }
-        match &source.location {
+        let transaction = match &source.location {
             SourceLocationSpec::Path(_) => Ok(SourceTransaction::RuntimeSnapshot),
             SourceLocationSpec::Uri(uri) if state.faults.unsupported_remote => {
                 Ok(SourceTransaction::Unsupported)
@@ -195,7 +198,9 @@ impl SourceWriter for TestWriter {
                     },
                 )))
             }
-        }
+        };
+        drop(state);
+        transaction
     }
 
     fn preflight(&self, _ctx: WriteContext<'_>, _request: &WriteCellRequest<'_>) -> DiagnosticSet {
@@ -236,8 +241,14 @@ impl SourceWriter for TestWriter {
             }
             call
         };
-        let state = self.state.lock().expect("lock test writer state");
-        if state.faults.stage_failure_call == Some(call) {
+        let stage_failed = self
+            .state
+            .lock()
+            .expect("lock test writer state")
+            .faults
+            .stage_failure_call
+            == Some(call);
+        if stage_failed {
             return Err(test_error(
                 "TEST-STAGE",
                 format!("injected stage failure on call {call}"),
@@ -258,7 +269,9 @@ impl SourceTransactionCompensation for TestCompensation {
     fn abort(&mut self) -> Result<(), DiagnosticSet> {
         let mut state = self.state.lock().expect("lock compensation state");
         state.counts.aborts += 1;
-        if state.faults.abort_failure {
+        let failed = state.faults.abort_failure;
+        drop(state);
+        if failed {
             Err(test_error("TEST-ABORT", "injected abort failure"))
         } else {
             Ok(())
@@ -269,6 +282,7 @@ impl SourceTransactionCompensation for TestCompensation {
         let mut state = self.state.lock().expect("lock compensation state");
         state.counts.compensates += 1;
         if state.faults.compensate_failure {
+            drop(state);
             return Err(test_error(
                 "TEST-COMPENSATE",
                 "injected compensation failure",
@@ -277,13 +291,16 @@ impl SourceTransactionCompensation for TestCompensation {
         state
             .remote_values
             .insert(self.source.clone(), self.snapshot);
+        drop(state);
         Ok(())
     }
 
     fn commit(&mut self) -> Result<(), DiagnosticSet> {
         let mut state = self.state.lock().expect("lock compensation state");
         state.counts.commits += 1;
-        if state.faults.commit_failure {
+        let failed = state.faults.commit_failure;
+        drop(state);
+        if failed {
             Err(test_error("TEST-COMMIT", "injected commit failure"))
         } else {
             Ok(())
@@ -296,9 +313,10 @@ fn remote_batch_publishes_one_generation_and_commits_once() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
     let mut session = fixture.open();
 
-    let report = session
-        .apply_mutation(mutation_request(vec![set_value("one", 2), set_value("one", 3)]))
-        .expect("apply remote batch");
+    let report = session.apply_mutation(mutation_request(vec![
+        set_value("one", 2),
+        set_value("one", 3),
+    ]));
 
     assert!(report.write_ok);
     assert_eq!(report.applied.len(), 2);
@@ -310,17 +328,24 @@ fn remote_batch_publishes_one_generation_and_commits_once() {
     assert_eq!(state.counts.writes, 2);
     assert_eq!(state.counts.commits, 1);
     assert_eq!(state.counts.compensates, 0);
+    drop(state);
 }
 
 #[test]
 fn local_stage_failure_restores_source_and_keeps_old_generation() {
     let fixture = Fixture::local(1);
-    fixture.state.lock().expect("lock fixture state").faults.stage_failure_call = Some(2);
+    fixture
+        .state
+        .lock()
+        .expect("lock fixture state")
+        .faults
+        .stage_failure_call = Some(2);
     let mut session = fixture.open();
 
-    let report = session
-        .apply_mutation(mutation_request(vec![set_value("local", 2), set_value("local", 3)]))
-        .expect("apply local batch");
+    let report = session.apply_mutation(mutation_request(vec![
+        set_value("local", 2),
+        set_value("local", 3),
+    ]));
 
     assert!(!report.write_ok);
     assert!(report.applied.is_empty());
@@ -345,9 +370,10 @@ fn later_preflight_failure_happens_before_transaction_or_write() {
         .preflight_failure_call = Some(2);
     let mut session = fixture.open();
 
-    let report = session
-        .apply_mutation(mutation_request(vec![set_value("one", 2), set_value("one", 3)]))
-        .expect("apply mutation with preflight failure");
+    let report = session.apply_mutation(mutation_request(vec![
+        set_value("one", 2),
+        set_value("one", 3),
+    ]));
 
     assert_failed_without_publish(&report, &session, "TEST-PREFLIGHT");
     let state = fixture.state.lock().expect("lock fixture state");
@@ -355,17 +381,21 @@ fn later_preflight_failure_happens_before_transaction_or_write() {
     assert_eq!(state.counts.begins, 0);
     assert_eq!(state.counts.writes, 0);
     assert_eq!(state.remote_values["txn://one"], 1);
+    drop(state);
 }
 
 #[test]
 fn rebuild_failure_compensates_remote_source_and_keeps_old_generation() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
-    fixture.state.lock().expect("lock fixture state").faults.fail_load_after_write = true;
+    fixture
+        .state
+        .lock()
+        .expect("lock fixture state")
+        .faults
+        .fail_load_after_write = true;
     let mut session = fixture.open();
 
-    let report = session
-        .apply_mutation(mutation_request(vec![set_value("one", 2)]))
-        .expect("apply mutation with rebuild failure");
+    let report = session.apply_mutation(mutation_request(vec![set_value("one", 2)]));
 
     assert_failed_without_publish(&report, &session, "TEST-LOAD");
     assert_eq!(session_value(&session, "one"), 1);
@@ -373,6 +403,7 @@ fn rebuild_failure_compensates_remote_source_and_keeps_old_generation() {
     assert_eq!(state.remote_values["txn://one"], 1);
     assert_eq!(state.counts.compensates, 1);
     assert_eq!(state.counts.commits, 0);
+    drop(state);
 }
 
 #[test]
@@ -385,9 +416,10 @@ fn later_begin_failure_aborts_prior_remote_transaction_and_reports_abort_failure
     }
     let mut session = fixture.open();
 
-    let report = session
-        .apply_mutation(mutation_request(vec![set_value("one", 10), set_value("two", 20)]))
-        .expect("apply mutation with begin failure");
+    let report = session.apply_mutation(mutation_request(vec![
+        set_value("one", 10),
+        set_value("two", 20),
+    ]));
 
     assert_failed_without_publish(&report, &session, "TEST-BEGIN");
     assert!(has_diagnostic(&report, "WRITE-TXN-ABORT"));
@@ -396,6 +428,7 @@ fn later_begin_failure_aborts_prior_remote_transaction_and_reports_abort_failure
     assert_eq!(state.counts.begins, 2);
     assert_eq!(state.counts.aborts, 1);
     assert_eq!(state.counts.writes, 0);
+    drop(state);
 }
 
 #[test]
@@ -408,25 +441,37 @@ fn compensation_failure_is_retained_in_transaction_diagnostics() {
     }
     let mut session = fixture.open();
 
-    let report = session
-        .apply_mutation(mutation_request(vec![set_value("one", 2)]))
-        .expect("apply mutation with compensation failure");
+    let report = session.apply_mutation(mutation_request(vec![set_value("one", 2)]));
 
     assert_failed_without_publish(&report, &session, "TEST-STAGE");
     assert!(has_diagnostic(&report, "WRITE-TXN-COMPENSATE"));
     assert!(has_diagnostic(&report, "TEST-COMPENSATE"));
-    assert_eq!(fixture.state.lock().expect("lock fixture state").counts.compensates, 1);
+    assert_eq!(
+        fixture
+            .state
+            .lock()
+            .expect("lock fixture state")
+            .counts
+            .compensates,
+        1
+    );
 }
 
 #[test]
 fn commit_failure_triggers_compensation_before_publish() {
     let fixture = Fixture::remote(&[("txn://one", 1), ("txn://two", 2)]);
-    fixture.state.lock().expect("lock fixture state").faults.commit_failure = true;
+    fixture
+        .state
+        .lock()
+        .expect("lock fixture state")
+        .faults
+        .commit_failure = true;
     let mut session = fixture.open();
 
-    let report = session
-        .apply_mutation(mutation_request(vec![set_value("one", 10), set_value("two", 20)]))
-        .expect("apply mutation with commit failure");
+    let report = session.apply_mutation(mutation_request(vec![
+        set_value("one", 10),
+        set_value("two", 20),
+    ]));
 
     assert_failed_without_publish(&report, &session, "WRITE-TXN-COMMIT");
     assert!(has_diagnostic(&report, "TEST-COMMIT"));
@@ -436,22 +481,27 @@ fn commit_failure_triggers_compensation_before_publish() {
     assert_eq!(state.remote_values["txn://two"], 2);
     assert_eq!(state.counts.commits, 1);
     assert_eq!(state.counts.compensates, 2);
+    drop(state);
 }
 
 #[test]
 fn unsupported_remote_source_fails_before_any_write() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
-    fixture.state.lock().expect("lock fixture state").faults.unsupported_remote = true;
+    fixture
+        .state
+        .lock()
+        .expect("lock fixture state")
+        .faults
+        .unsupported_remote = true;
     let mut session = fixture.open();
 
-    let report = session
-        .apply_mutation(mutation_request(vec![set_value("one", 2)]))
-        .expect("apply unsupported remote mutation");
+    let report = session.apply_mutation(mutation_request(vec![set_value("one", 2)]));
 
     assert_failed_without_publish(&report, &session, "WRITE-TXN-UNSUPPORTED");
     let state = fixture.state.lock().expect("lock fixture state");
     assert_eq!(state.counts.writes, 0);
     assert_eq!(state.remote_values["txn://one"], 1);
+    drop(state);
 }
 
 struct Fixture {
@@ -476,10 +526,10 @@ impl Fixture {
     fn remote(values: &[(&str, i64)]) -> Self {
         let root = test_root("remote");
         write_schema(&root);
-        let sources = values
-            .iter()
-            .map(|(uri, _)| format!("  - type: transaction-test\n    url: {uri}\n"))
-            .collect::<String>();
+        let mut sources = String::new();
+        for (uri, _) in values {
+            let _ = writeln!(sources, "  - type: transaction-test\n    url: {uri}");
+        }
         std::fs::write(
             root.join("coflow.yaml"),
             format!("schema: schema.cft\nsources:\n{sources}"),
@@ -532,7 +582,7 @@ impl Drop for Fixture {
     }
 }
 
-fn mutation_request(ops: Vec<MutationOp>) -> MutationRequest {
+const fn mutation_request(ops: Vec<MutationOp>) -> MutationRequest {
     MutationRequest {
         stop_on_write_error: true,
         ops,
@@ -567,7 +617,10 @@ fn assert_failed_without_publish(
     assert!(!report.write_ok);
     assert!(report.applied.is_empty());
     assert_eq!(session.revision(), 0);
-    assert!(has_diagnostic(report, code), "missing diagnostic `{code}`: {report:?}");
+    assert!(
+        has_diagnostic(report, code),
+        "missing diagnostic `{code}`: {report:?}"
+    );
 }
 
 fn has_diagnostic(report: &coflow_runtime::MutationReport, code: &str) -> bool {

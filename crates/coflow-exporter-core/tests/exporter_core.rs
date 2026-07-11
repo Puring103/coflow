@@ -477,7 +477,7 @@ impl CountingSink {
         self.max_depth = self.max_depth.max(self.depth);
     }
 
-    fn exit(&mut self) {
+    const fn exit(&mut self) {
         self.depth -= 1;
     }
 }
@@ -544,6 +544,7 @@ impl ExportEventSink for CountingSink {
 #[test]
 fn streams_large_arrays_through_a_constant_state_sink() -> TestResult {
     const ITEM_COUNT: usize = 50_000;
+    const ITEM_COUNT_I64: i64 = 50_000;
     let schema = compile_schema("type Item { numbers: [int]; }")?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -551,11 +552,7 @@ fn streams_large_arrays_through_a_constant_state_sink() -> TestResult {
         "Item",
         [(
             "numbers",
-            CfdInputValue::Array(
-                (0..ITEM_COUNT)
-                    .map(|value| CfdInputValue::from(value as i64))
-                    .collect(),
-            ),
+            CfdInputValue::Array((0..ITEM_COUNT_I64).map(CfdInputValue::from).collect()),
         )],
     );
     let model = build_model(builder)?;

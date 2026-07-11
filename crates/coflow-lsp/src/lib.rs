@@ -28,9 +28,9 @@ mod text;
 mod uri;
 mod validation;
 
-use coflow_project::Project;
 #[cfg(test)]
 use coflow_project::normalize_path;
+use coflow_project::Project;
 #[cfg(test)]
 use coflow_runtime::compile_schema_project_with_overrides;
 use completion::completion_items;
@@ -45,12 +45,12 @@ use definition::{
     cfd_record_definition_location, cft_schema_field_definition_location,
     cft_type_definition_location, definitions_at,
 };
+#[cfg(test)]
+use diagnostics::{label_uri, lsp_diagnostic, lsp_label_location};
 use document_symbols::document_symbols;
 pub(crate) use documentation::is_builtin_name;
 use formatting::format_cft;
 use hover::hover_at;
-#[cfg(test)]
-use diagnostics::{label_uri, lsp_diagnostic, lsp_label_location};
 use position::{
     byte_offset_from_position, byte_range, full_document_range, range_from_span, LspPosition,
 };
@@ -60,19 +60,19 @@ use protocol::{
 };
 use semantic_tokens::{semantic_token_data, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES};
 use serde_json::{json, Value};
-#[cfg(test)]
-use std::collections::BTreeMap;
 pub(crate) use state::{
     current_field_at, current_type_at, enum_name_exists, enum_variant_by_chain,
     enum_variant_exists, field_by_chain, field_by_type, quantifier_bindings_at,
     type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
+#[cfg(test)]
+use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::io::{self, BufReader, Write};
-use std::sync::mpsc::{self, Sender};
-use std::thread;
 #[cfg(test)]
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Sender};
+use std::thread;
 pub(crate) use text::{
     dotted_chain_at, is_ident_continue, is_trivia_position, last_ident, line_prefix_at,
     parse_dotted_ident_chain, previous_char, word_at,
@@ -89,7 +89,7 @@ enum RunEvent {
     Incoming(Vec<u8>),
     ReadError(String),
     EndOfInput,
-    Validation(ValidationSnapshot),
+    Validation(Box<ValidationSnapshot>),
 }
 
 /// Runs the CFT language server over stdio.
@@ -101,7 +101,7 @@ enum RunEvent {
 pub fn run(project: Project) -> Result<bool, String> {
     let (events_tx, events_rx) = mpsc::channel();
     spawn_input_reader(events_tx.clone());
-    let _validation_worker = ValidationWorker::spawn(events_tx);
+    let validation_worker = ValidationWorker::spawn(events_tx);
     let stdout = io::stdout();
     let mut server = LspServer::new(project, stdout.lock());
     let mut pending_requests = VecDeque::new();
@@ -119,25 +119,24 @@ pub fn run(project: Project) -> Result<bool, String> {
                     }
                 };
                 if !server.shutdown_requested {
-                    if let Some(changed) = apply_runtime_document_notification(
-                        &mut server.core,
-                        &message,
-                    )? {
+                    if let Some(changed) =
+                        apply_runtime_document_notification(&mut server.core, &message)?
+                    {
                         if changed {
-                            _validation_worker.schedule(server.core.validation_input());
+                            validation_worker.schedule(server.core.validation_input());
                         }
                         continue;
                     }
                 }
                 if request_requires_snapshot(&message) && !server.core.is_current() {
                     pending_requests.push_back(message);
-                    _validation_worker.schedule(server.core.validation_input());
+                    validation_worker.schedule(server.core.validation_input());
                     continue;
                 }
                 server.handle_message(&message)?;
             }
             RunEvent::Validation(candidate) => {
-                let publications = server.core.commit_snapshot(candidate);
+                let publications = server.core.commit_snapshot(*candidate);
                 server.publish_diagnostic_publications(publications)?;
                 if server.core.is_current() {
                     while let Some(request) = pending_requests.pop_front() {
@@ -196,12 +195,10 @@ fn apply_runtime_document_notification(
             let (uri, text, version) = update;
             core.apply_open_document(uri, text, version).map(Some)
         }),
-        "textDocument/didChange" => {
-            did_change_document(params).map_or(Ok(Some(false)), |update| {
-                let (uri, text, version) = update;
-                core.apply_change_document(uri, text, version).map(Some)
-            })
-        }
+        "textDocument/didChange" => did_change_document(params).map_or(Ok(Some(false)), |update| {
+            let (uri, text, version) = update;
+            core.apply_change_document(uri, text, version).map(Some)
+        }),
         "textDocument/didSave" => did_save_document(params).map_or(Ok(Some(false)), |update| {
             let (uri, text) = update;
             if let Some(text) = text {
@@ -242,7 +239,7 @@ struct LspServer<W> {
 }
 
 impl<W: Write> LspServer<W> {
-    fn new(project: Project, writer: W) -> Self {
+    const fn new(project: Project, writer: W) -> Self {
         Self {
             core: LspValidationCore::new(project),
             writer,
@@ -395,7 +392,7 @@ impl<W: Write> LspServer<W> {
 
     #[cfg(test)]
     fn validate_project(&mut self) -> Result<(), String> {
-        let publications = self.core.validate_project()?;
+        let publications = self.core.validate_project();
         self.publish_diagnostic_publications(publications)
     }
 
@@ -445,21 +442,19 @@ impl<W: Write> LspServer<W> {
         let result = match self.request_document(&request.uri)? {
             LspRequestDocument::Cfd(document) => {
                 let offset = byte_offset_from_position(&document.source, request.position);
-                if let Some(location) = cfd::definition_type_name(&document.ast, offset).and_then(
-                    |type_name| {
+                if let Some(location) =
+                    cfd::definition_type_name(&document.ast, offset).and_then(|type_name| {
                         document
                             .build
                             .and_then(|build| cft_type_definition_location(build, type_name))
-                    },
-                ) {
+                    })
+                {
                     json!(location)
                 } else if let Some(location) =
                     cfd::definition_field_name(&document.ast, document.schema, offset).and_then(
                         |(type_name, field_name)| {
                             document.build.and_then(|build| {
-                                cft_schema_field_definition_location(
-                                    build, &type_name, field_name,
-                                )
+                                cft_schema_field_definition_location(build, &type_name, field_name)
                             })
                         },
                     )
@@ -543,13 +538,13 @@ impl<W: Write> LspServer<W> {
     }
 
     fn request_document(&mut self, uri: &str) -> Result<LspRequestDocument<'_>, String> {
-        let publications = self.core.prepare_request_document(uri)?;
+        let publications = self.core.prepare_request_document(uri);
         self.publish_diagnostic_publications(publications)?;
         Ok(self.core.request_document(uri))
     }
 
     fn ensure_build(&mut self) -> Result<Option<&LspBuild>, String> {
-        let publications = self.core.ensure_build_publications()?;
+        let publications = self.core.ensure_build_publications();
         self.publish_diagnostic_publications(publications)?;
         Ok(self.core.build())
     }
@@ -564,10 +559,7 @@ impl<W: Write> LspServer<W> {
             || json!({ "uri": uri, "diagnostics": diagnostics }),
             |version| json!({ "uri": uri, "version": version, "diagnostics": diagnostics }),
         );
-        self.write_notification(
-            "textDocument/publishDiagnostics",
-            &params,
-        )
+        self.write_notification("textDocument/publishDiagnostics", &params)
     }
 
     fn publish_diagnostic_publications(

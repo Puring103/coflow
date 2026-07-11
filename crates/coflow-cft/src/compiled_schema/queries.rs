@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::{CftAnnotation, CftAnnotationValue, CftSchemaTypeRef, CompiledSchema, CftTypeMeta};
+use crate::{CftAnnotation, CftAnnotationValue, CftSchemaTypeRef, CftTypeMeta, CompiledSchema};
 
 impl CompiledSchema {
     #[must_use]

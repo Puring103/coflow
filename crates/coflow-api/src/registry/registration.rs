@@ -1,6 +1,5 @@
 use crate::{
-    CodeGenerator, DataExporter, DimensionSourceManager, SourceProvider, SourceWriter,
-    TableManager,
+    CodeGenerator, DataExporter, DimensionSourceManager, SourceProvider, SourceWriter, TableManager,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -23,7 +22,12 @@ impl ProviderRegistry {
     {
         let id = source_provider.descriptor().id;
         let source_provider: Arc<dyn SourceProvider> = source_provider;
-        insert_provider(&mut self.source_providers, "source provider", id, source_provider)
+        insert_provider(
+            &mut self.source_providers,
+            "source provider",
+            id,
+            source_provider,
+        )
     }
 
     /// Registers a shared source writer instance.

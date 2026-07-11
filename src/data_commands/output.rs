@@ -1,5 +1,5 @@
-use crate::diagnostics::cli_error;
 use super::DataWriteFileReport;
+use crate::diagnostics::cli_error;
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_runtime::{
     DataFileReport, DataGetReport, DataListReport, DataPatchReport, DataSourcesReport,
@@ -24,7 +24,7 @@ pub(super) fn write_sources_human(report: &DataSourcesReport) -> Result<(), Diag
             source.provider,
             source.types.join(",")
         )
-        .map_err(output_error)?;
+        .map_err(|err| output_error(&err))?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
@@ -37,7 +37,7 @@ pub(super) fn write_list_human(report: &DataListReport) -> Result<(), Diagnostic
             "{}.{}\t{}\t{}",
             record.record.actual_type, record.record.key, record.file, record.provider
         )
-        .map_err(output_error)?;
+        .map_err(|err| output_error(&err))?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
@@ -50,10 +50,9 @@ pub(super) fn write_get_human(report: &DataGetReport) -> Result<(), DiagnosticSe
             "{}.{}\t{}\t{}",
             record.record.actual_type, record.record.key, record.file, record.provider
         )
-        .map_err(output_error)?;
+        .map_err(|err| output_error(&err))?;
         for (name, value) in &record.fields {
-            writeln!(stdout, "  {name}\t{value:?}")
-                .map_err(output_error)?;
+            writeln!(stdout, "  {name}\t{value:?}").map_err(|err| output_error(&err))?;
         }
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
@@ -69,7 +68,7 @@ pub(super) fn write_patch_human(report: &DataPatchReport) -> Result<(), Diagnost
         report.applied.len(),
         report.failed.len()
     )
-    .map_err(output_error)?;
+    .map_err(|err| output_error(&err))?;
     for applied in &report.applied {
         let record = applied.record.as_ref().map_or_else(String::new, |record| {
             format!("{}.{}", record.actual_type, record.key)
@@ -82,11 +81,11 @@ pub(super) fn write_patch_human(report: &DataPatchReport) -> Result<(), Diagnost
             record,
             applied.file.as_deref().unwrap_or("")
         )
-        .map_err(output_error)?;
+        .map_err(|err| output_error(&err))?;
     }
     for failed in &report.failed {
         writeln!(stdout, "failed\t{}\t{}", failed.index, failed.op)
-            .map_err(output_error)?;
+            .map_err(|err| output_error(&err))?;
         write_flat_diagnostics(&mut stdout, &failed.diagnostics)?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
@@ -101,19 +100,20 @@ pub(super) fn write_file_report_human(report: &DataFileReport) -> Result<(), Dia
         report.file,
         report.headers.join(",")
     )
-    .map_err(output_error)?;
+    .map_err(|err| output_error(&err))?;
     if !report.added.is_empty() {
-        writeln!(stdout, "added\t{}", report.added.join(","))
-            .map_err(output_error)?;
+        writeln!(stdout, "added\t{}", report.added.join(",")).map_err(|err| output_error(&err))?;
     }
     if !report.removed.is_empty() {
         writeln!(stdout, "removed\t{}", report.removed.join(","))
-            .map_err(output_error)?;
+            .map_err(|err| output_error(&err))?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 
-pub(super) fn write_data_write_file_human(report: &DataWriteFileReport) -> Result<(), DiagnosticSet> {
+pub(super) fn write_data_write_file_human(
+    report: &DataWriteFileReport,
+) -> Result<(), DiagnosticSet> {
     let mut stdout = io::stdout().lock();
     writeln!(
         stdout,
@@ -126,7 +126,7 @@ pub(super) fn write_data_write_file_human(report: &DataWriteFileReport) -> Resul
             .check_ok
             .map_or_else(|| "skipped".to_string(), |ok| ok.to_string())
     )
-    .map_err(output_error)?;
+    .map_err(|err| output_error(&err))?;
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 
@@ -140,12 +140,12 @@ fn write_flat_diagnostics(
             "[{}] [{}] {}",
             diagnostic.code, diagnostic.stage, diagnostic.message
         )
-        .map_err(output_error)?;
+        .map_err(|err| output_error(&err))?;
     }
     Ok(())
 }
 
-fn output_error(err: io::Error) -> DiagnosticSet {
+fn output_error(err: &io::Error) -> DiagnosticSet {
     cli_error("CLI-OUTPUT", format!("failed to write output: {err}"))
 }
 

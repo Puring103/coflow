@@ -3,7 +3,7 @@
 mod common;
 use common::*;
 
-use coflow_cft::{CftSchemaTypeRef};
+use coflow_cft::CftSchemaTypeRef;
 use std::collections::BTreeMap;
 
 struct EmptyContext;
@@ -25,10 +25,10 @@ impl CfdValueSemanticContext for EmptyContext {
 #[test]
 fn complete_validation_rejects_missing_nested_required_fields() {
     let schema = compile_schema(
-        r#"
+        r"
             type Child { required: int; defaulted: int = 1; }
             type Parent { child: Child; }
-        "#,
+        ",
     );
     let compiled = schema.compiled_schema();
     let value = CfdValue::Object(Box::new(CfdObject::new(
@@ -40,7 +40,7 @@ fn complete_validation_rejects_missing_nested_required_fields() {
     )));
 
     let err = validate_complete_value_for_schema(
-        &compiled,
+        compiled,
         &EmptyContext,
         &CftSchemaTypeRef::Named("Parent".to_string()),
         &value,
@@ -61,7 +61,7 @@ fn fragment_validation_allows_missing_fields_but_checks_provided_values() {
     let expected = CftSchemaTypeRef::Named("Child".to_string());
     let empty = CfdValue::Object(Box::new(CfdObject::new("Child", BTreeMap::new())));
 
-    validate_fragment_value_for_schema(&compiled, &EmptyContext, &expected, &empty, None)
+    validate_fragment_value_for_schema(compiled, &EmptyContext, &expected, &empty, None)
         .expect("object fragment may omit required fields");
 
     let invalid = CfdValue::Object(Box::new(CfdObject::new(
@@ -69,7 +69,7 @@ fn fragment_validation_allows_missing_fields_but_checks_provided_values() {
         BTreeMap::from([("required".to_string(), CfdValue::String("bad".to_string()))]),
     )));
     let err =
-        validate_fragment_value_for_schema(&compiled, &EmptyContext, &expected, &invalid, None)
+        validate_fragment_value_for_schema(compiled, &EmptyContext, &expected, &invalid, None)
             .expect_err("provided fragment fields still require the right type");
     assert_eq!(err.message(), "expected int, got string");
 }
@@ -81,7 +81,7 @@ fn complete_validation_allows_omitted_schema_defaults() {
     let value = CfdValue::Object(Box::new(CfdObject::new("Child", BTreeMap::new())));
 
     validate_complete_value_for_schema(
-        &compiled,
+        compiled,
         &EmptyContext,
         &CftSchemaTypeRef::Named("Child".to_string()),
         &value,

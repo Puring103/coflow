@@ -13,27 +13,21 @@ use super::{MutationAppliedOp, MutationFailedOp, MutationReport, MutationRequest
 
 impl ProjectSession {
     /// Prepare, stage, and atomically publish a mutation request.
-    ///
-    /// # Errors
-    ///
-    /// Returns diagnostics only when execution cannot produce a report.
-    /// Validation, provider, transaction, and rebuild failures are represented
-    /// in the returned report.
     pub fn apply_mutation(
         &mut self,
         registry: &ProviderRegistry,
         request: MutationRequest,
-    ) -> Result<MutationReport, DiagnosticSet> {
+    ) -> MutationReport {
         let prepared = prepare_mutation_request(request);
         let (planned, mut failed, mut write_ok, stopped) = plan_mutations(self, prepared);
         if stopped || planned.is_empty() {
-            return Ok(report_without_publish(self, write_ok, failed));
+            return report_without_publish(self, write_ok, failed);
         }
 
         for planned_op in &planned {
             if let Err(diagnostics) = preflight_mutation_op(self, registry, &planned_op.op) {
                 failed.push(failed_op(planned_op, &diagnostics));
-                return Ok(report_without_publish(self, false, failed));
+                return report_without_publish(self, false, failed);
             }
         }
 
@@ -44,7 +38,7 @@ impl ProjectSession {
                 Err(diagnostics) => {
                     write_ok = false;
                     failed.push(failed_op(planned_op, &diagnostics));
-                    return Ok(report_without_publish(self, write_ok, failed));
+                    return report_without_publish(self, write_ok, failed);
                 }
             }
         }
@@ -52,7 +46,7 @@ impl ProjectSession {
         let compiled_schema = self.compiled_schema();
         let ctx = WriteContext {
             project_root: &self.project.root_dir,
-            schema: &compiled_schema,
+            schema: compiled_schema,
             model: Some(&self.model),
         };
         let transaction = match MutationTransaction::begin(ctx, enlisted) {
@@ -61,7 +55,7 @@ impl ProjectSession {
                 if let Some(first_planned) = planned.first() {
                     failed.push(failed_op(first_planned, &diagnostics));
                 }
-                return Ok(report_without_publish(self, false, failed));
+                return report_without_publish(self, false, failed);
             }
         };
 
@@ -73,13 +67,13 @@ impl ProjectSession {
                     Err(mut diagnostics) => {
                         transaction.compensate_into(&mut diagnostics);
                         failed.push(failed_op(planned_op, &diagnostics));
-                        return Ok(report_without_publish(self, false, failed));
+                        return report_without_publish(self, false, failed);
                     }
                 },
                 Err(mut diagnostics) => {
                     transaction.compensate_into(&mut diagnostics);
                     failed.push(failed_op(planned_op, &diagnostics));
-                    return Ok(report_without_publish(self, false, failed));
+                    return report_without_publish(self, false, failed);
                 }
             }
         }
@@ -91,7 +85,7 @@ impl ProjectSession {
                 if let Some(last_planned) = planned.last() {
                     failed.push(failed_op(last_planned, &diagnostics));
                 }
-                return Ok(report_without_publish(self, false, failed));
+                return report_without_publish(self, false, failed);
             }
         };
         let mut rebuild_diagnostics = blocking_rebuild_diagnostics(&new_session);
@@ -100,14 +94,14 @@ impl ProjectSession {
             if let Some(last_planned) = planned.last() {
                 failed.push(failed_op(last_planned, &rebuild_diagnostics));
             }
-            return Ok(report_without_publish(self, false, failed));
+            return report_without_publish(self, false, failed);
         }
 
         if let Err(diagnostics) = transaction.commit() {
             if let Some(last_planned) = planned.last() {
                 failed.push(failed_op(last_planned, &diagnostics));
             }
-            return Ok(report_without_publish(self, false, failed));
+            return report_without_publish(self, false, failed);
         }
 
         let diagnostics_set = new_session.diagnostics.as_set().clone();
@@ -122,13 +116,13 @@ impl ProjectSession {
             && diagnostics
                 .iter()
                 .all(|diagnostic| diagnostic.severity != "error");
-        Ok(MutationReport {
+        MutationReport {
             write_ok,
             check_ok,
             applied: staged,
             failed,
             diagnostics,
-        })
+        }
     }
 }
 
@@ -236,7 +230,7 @@ fn report_without_publish(
     }
 }
 
-fn prepared_op_name(op: &PreparedMutationOp) -> &'static str {
+const fn prepared_op_name(op: &PreparedMutationOp) -> &'static str {
     match op {
         PreparedMutationOp::Pending { op } => mutation_op_name(op),
         PreparedMutationOp::InsertRecord { .. } | PreparedMutationOp::CancelledInsert { .. } => {

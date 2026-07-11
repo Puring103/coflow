@@ -85,9 +85,17 @@ impl<'a> SchemaCompiler<'a> {
 
     pub(super) fn validate_inheritance(&mut self) -> bool {
         let names = self.types.keys().cloned().collect::<Vec<_>>();
+        let Some(has_cycle) = self.build_inheritance_chains(&names) else {
+            return false;
+        };
+        self.validate_inherited_fields(&names);
+        !has_cycle
+    }
+
+    fn build_inheritance_chains(&mut self, names: &[String]) -> Option<bool> {
         let mut finished = BTreeSet::new();
         let mut has_cycle = false;
-        for name in &names {
+        for name in names {
             if finished.contains(name) {
                 continue;
             }
@@ -106,7 +114,7 @@ impl<'a> SchemaCompiler<'a> {
                 ) {
                     let (module, span) = self.inheritance_edge_location(&current);
                     self.push_budget_error(error, &module, span);
-                    return false;
+                    return None;
                 }
 
                 let Some(parent) = self
@@ -132,7 +140,7 @@ impl<'a> SchemaCompiler<'a> {
                 let (module, span) = self.inheritance_edge_location(&current);
                 if let Err(error) = self.budget.charge_work(StructureKind::SchemaDependency, 1) {
                     self.push_budget_error(error, &module, span);
-                    return false;
+                    return None;
                 }
                 if finished.contains(&parent) {
                     break Some(parent);
@@ -161,15 +169,18 @@ impl<'a> SchemaCompiler<'a> {
                 ) {
                     let (module, span) = self.inheritance_edge_location(current);
                     self.push_budget_error(error, &module, span);
-                    return false;
+                    return None;
                 }
                 self.inheritance_chains
                     .insert(current.clone(), chain.clone());
                 finished.insert(current.clone());
             }
         }
+        Some(has_cycle)
+    }
 
-        for name in &names {
+    fn validate_inherited_fields(&mut self, names: &[String]) {
+        for name in names {
             let Some(info) = self.types.get(name).cloned() else {
                 continue;
             };
@@ -211,7 +222,6 @@ impl<'a> SchemaCompiler<'a> {
                 }
             }
         }
-        !has_cycle
     }
 
     fn inheritance_edge_location(&self, name: &str) -> (ModuleId, Span) {

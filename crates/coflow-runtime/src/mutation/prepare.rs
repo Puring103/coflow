@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use coflow_api::DiagnosticSet;
 use coflow_api::WriteFieldPathSegment;
 use coflow_cft::CftSchemaTypeRef;
-use coflow_data_model::{CfdPathSegment, CfdValue};
+use coflow_data_model::{CfdPathSegment, CfdValue, PendingInsertRef};
 
 use crate::write_rules;
 use crate::writes;
@@ -221,17 +221,31 @@ pub(super) fn prepare_one(
     }
 }
 
+pub(super) struct PendingInsertSetRequest<'a> {
+    pub(super) insert_file: &'a str,
+    pub(super) actual_type: &'a str,
+    pub(super) key: &'a str,
+    pub(super) fields: &'a mut BTreeMap<String, CfdValue>,
+    pub(super) file_guard: Option<&'a str>,
+    pub(super) path: &'a [CfdPathSegment],
+    pub(super) value: super::MutationValue,
+    pub(super) pending_records: &'a [RecordCoordinate],
+}
+
 pub(super) fn prepare_set_on_pending_insert(
     session: &ProjectSession,
-    insert_file: &str,
-    actual_type: &str,
-    key: &str,
-    fields: &mut BTreeMap<String, CfdValue>,
-    file_guard: Option<&str>,
-    path: &[CfdPathSegment],
-    value: super::MutationValue,
-    pending_records: &[RecordCoordinate],
+    request: PendingInsertSetRequest<'_>,
 ) -> Result<PreparedMutationOp, DiagnosticSet> {
+    let PendingInsertSetRequest {
+        insert_file,
+        actual_type,
+        key,
+        fields,
+        file_guard,
+        path,
+        value,
+        pending_records,
+    } = request;
     ensure_file_guard_for_file(
         &RecordCoordinate::new(actual_type, key),
         insert_file,
@@ -469,16 +483,17 @@ fn prepare_insert_fields(
     let schema = session.compiled_schema();
     for (name, value) in &out {
         let field = schema_field(schema, actual_type, name)?;
-        write_rules::validate_value_for_insert(
+        write_rules::validate_value_semantics(
             session,
             schema,
-            actual_type,
-            key,
-            &field.ty_ref,
-            value,
-            pending_records,
-            "MUTATION-SHAPE",
-            "MUTATION",
+            &write_rules::ValueValidationRequest {
+                expected: &field.ty_ref,
+                value,
+                pending_records,
+                pending_insert: Some(PendingInsertRef { actual_type, key }),
+                code: "MUTATION-SHAPE",
+                stage: "MUTATION",
+            },
         )?;
     }
     Ok(out)

@@ -21,7 +21,8 @@ pub(super) enum Point {
 
 #[cfg(not(test))]
 #[inline]
-pub(super) fn check(_point: Point) -> io::Result<()> {
+#[allow(clippy::unnecessary_wraps)] // Matches the fault-injecting test implementation.
+pub(super) const fn check(_point: Point) -> io::Result<()> {
     Ok(())
 }
 

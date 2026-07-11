@@ -7,6 +7,10 @@
 mod format;
 mod table_manager;
 
+use crate::options::{
+    excel_sheet_config_from_options, excel_sheet_for_type_from_options, excel_source_options,
+    ExcelSourceOptions,
+};
 use calamine::Reader;
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
@@ -19,13 +23,9 @@ use coflow_loader_table_core::writer::{
     TableFieldWrite, TableInsertRecord, TableSetCell, TableWriteDiagnostics, TableWritePlan,
 };
 use coflow_loader_table_core::{resolve_table_write_layout, TableDiagnostics};
+use format::{ensure_writable_excel_path, excel_writer_capabilities};
 use std::collections::BTreeMap;
 use std::path::Path;
-use crate::options::{
-    excel_sheet_config_from_options, excel_sheet_for_type_from_options, excel_source_options,
-    ExcelSourceOptions,
-};
-use format::{ensure_writable_excel_path, excel_writer_capabilities};
 
 pub static EXCEL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "excel",

@@ -9,17 +9,9 @@ use crate::span::Span;
 use coflow_structure::{StructuralBudget, StructuralLimits};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CftCompileOptions {
     pub structural_limits: StructuralLimits,
-}
-
-impl Default for CftCompileOptions {
-    fn default() -> Self {
-        Self {
-            structural_limits: StructuralLimits::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

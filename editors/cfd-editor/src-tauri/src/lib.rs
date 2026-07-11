@@ -9,8 +9,8 @@ use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_runtime::RecordCoordinate;
 use editor::{
     CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, EditorError, FileRecords, GraphData,
-    GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome,
-    SessionStore, WriteFieldOutcome,
+    GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome, SessionStore,
+    WriteFieldOutcome,
 };
 use tauri::{AppHandle, Manager, State};
 use watcher::ProjectWatchRegistry;

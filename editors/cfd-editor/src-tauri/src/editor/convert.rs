@@ -12,8 +12,8 @@ use coflow_runtime::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow, SpreadInfo};
 use crate::editor::session::Diagnostics;
+use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow, SpreadInfo};
 
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
@@ -193,9 +193,9 @@ fn annotation_for_value(
     if let Some(ty) = declared_type {
         annotation.declared_type = Some(ty.display_label());
         annotation.ref_target_type = ref_target_type(ty).map(str::to_string);
-        annotation.enum_type = enum_type_name(ty, &ctx.schema).map(str::to_string);
+        annotation.enum_type = enum_type_name(ty, ctx.schema).map(str::to_string);
         annotation.nullable = matches!(ty, CftSchemaTypeRef::Nullable(_));
-        annotation.polymorphic_types = polymorphic_types_for(ty, &ctx.schema);
+        annotation.polymorphic_types = polymorphic_types_for(ty, ctx.schema);
         // Preload the element template when the declared type is a
         // collection. Filled here (not only in the Array/Dict arms below) so
         // a nullable / empty collection still carries the template the
@@ -277,9 +277,9 @@ fn element_template(
     let mut ann = FieldAnnotation {
         declared_type: Some(item_type.display_label()),
         ref_target_type: ref_target_type(item_type).map(str::to_string),
-        enum_type: enum_type_name(item_type, &ctx.schema).map(str::to_string),
+        enum_type: enum_type_name(item_type, ctx.schema).map(str::to_string),
         nullable: matches!(item_type, CftSchemaTypeRef::Nullable(_)),
-        polymorphic_types: polymorphic_types_for(item_type, &ctx.schema),
+        polymorphic_types: polymorphic_types_for(item_type, ctx.schema),
         ..FieldAnnotation::default()
     };
     if let Some(inner) =
@@ -306,10 +306,7 @@ fn ref_target_type(ty: &CftSchemaTypeRef) -> Option<&str> {
     }
 }
 
-fn enum_type_name<'a>(
-    ty: &'a CftSchemaTypeRef,
-    schema: &CompiledSchema,
-) -> Option<&'a str> {
+fn enum_type_name<'a>(ty: &'a CftSchemaTypeRef, schema: &CompiledSchema) -> Option<&'a str> {
     match ty {
         CftSchemaTypeRef::Named(name) if schema.is_schema_enum(name) => Some(name),
         CftSchemaTypeRef::Nullable(inner) => enum_type_name(inner, schema),
@@ -367,9 +364,7 @@ fn polymorphic_types_for(ty: &CftSchemaTypeRef, schema: &CompiledSchema) -> Vec<
     if !meta.is_abstract {
         return Vec::new();
     }
-    let concrete = schema
-        .concrete_assignable_types(name)
-        .unwrap_or_default();
+    let concrete = schema.concrete_assignable_types(name).unwrap_or_default();
     if concrete.len() < 2 {
         return Vec::new();
     }

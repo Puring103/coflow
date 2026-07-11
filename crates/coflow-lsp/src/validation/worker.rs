@@ -3,8 +3,7 @@ use crate::RunEvent;
 use std::sync::{mpsc::Sender, Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 
-type SnapshotBuilder =
-    Arc<dyn Fn(ValidationInput) -> ValidationSnapshot + Send + Sync + 'static>;
+type SnapshotBuilder = Arc<dyn Fn(ValidationInput) -> ValidationSnapshot + Send + Sync + 'static>;
 
 pub(crate) struct ValidationWorker {
     mailbox: Arc<ValidationMailbox>,
@@ -13,14 +12,11 @@ pub(crate) struct ValidationWorker {
 
 impl ValidationWorker {
     pub(crate) fn spawn(events: Sender<RunEvent>) -> Self {
-        Self::spawn_with_builder(events, Arc::new(build_snapshot))
+        Self::spawn_with_builder(events, Arc::new(|input| build_snapshot(&input)))
     }
 
     #[cfg(test)]
-    pub(crate) fn spawn_test(
-        events: Sender<RunEvent>,
-        builder: SnapshotBuilder,
-    ) -> Self {
+    pub(crate) fn spawn_test(events: Sender<RunEvent>, builder: SnapshotBuilder) -> Self {
         Self::spawn_with_builder(events, builder)
     }
 
@@ -30,7 +26,10 @@ impl ValidationWorker {
         let handle = thread::spawn(move || {
             while let Some(input) = worker_mailbox.take() {
                 let snapshot = builder(input);
-                if events.send(RunEvent::Validation(snapshot)).is_err() {
+                if events
+                    .send(RunEvent::Validation(Box::new(snapshot)))
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -70,40 +69,54 @@ struct MailboxState {
 
 impl ValidationMailbox {
     fn replace_with_newer(&self, input: ValidationInput) -> bool {
-        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let revision = input.revision();
         if state
             .latest_scheduled
             .is_some_and(|latest| revision <= latest)
         {
+            drop(state);
             return false;
         }
         state.latest_scheduled = Some(revision);
         state.pending = Some(input);
+        drop(state);
         self.ready.notify_one();
         true
     }
 
     fn take(&self) -> Option<ValidationInput> {
-        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         loop {
             if let Some(input) = state.pending.take() {
+                drop(state);
                 return Some(input);
             }
             if state.stopped {
+                drop(state);
                 return None;
             }
             state = self
                 .ready
                 .wait(state)
-                .unwrap_or_else(|error| error.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
     }
 
     fn stop(&self) {
-        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.stopped = true;
         state.pending = None;
+        drop(state);
         self.ready.notify_all();
     }
 }

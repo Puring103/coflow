@@ -25,7 +25,8 @@ fn compile_schema(source: &str) -> Result<CftContainer, String> {
 
 fn build_model(schema: &CftContainer, sources: &[CsvSource]) -> Result<CfdDataModel, String> {
     let compiled_schema = schema.compiled_schema();
-    let loaded = collect_input_records(&compiled_schema, sources).map_err(|err| format!("{err:?}"))?;
+    let loaded =
+        collect_input_records(compiled_schema, sources).map_err(|err| format!("{err:?}"))?;
     let origins = origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {

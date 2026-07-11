@@ -155,7 +155,18 @@ pub(crate) fn validate_value_for_write(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    validate_value_semantics(session, schema, expected, value, &[], None, code, stage)
+    validate_value_semantics(
+        session,
+        schema,
+        &ValueValidationRequest {
+            expected,
+            value,
+            pending_records: &[],
+            pending_insert: None,
+            code,
+            stage,
+        },
+    )
 }
 
 pub(crate) fn validate_value_for_write_with_pending(
@@ -170,63 +181,43 @@ pub(crate) fn validate_value_for_write_with_pending(
     validate_value_semantics(
         session,
         schema,
-        expected,
-        value,
-        pending_records,
-        None,
-        code,
-        stage,
+        &ValueValidationRequest {
+            expected,
+            value,
+            pending_records,
+            pending_insert: None,
+            code,
+            stage,
+        },
     )
 }
 
-pub(crate) fn validate_value_for_insert(
-    session: &ProjectSession,
-    schema: &CompiledSchema,
-    inserted_actual_type: &str,
-    inserted_key: &str,
-    expected: &CftSchemaTypeRef,
-    value: &CfdValue,
-    pending_records: &[crate::RecordCoordinate],
-    code: &'static str,
-    stage: &'static str,
-) -> Result<(), DiagnosticSet> {
-    validate_value_semantics(
-        session,
-        schema,
-        expected,
-        value,
-        pending_records,
-        Some(PendingInsertRef {
-            actual_type: inserted_actual_type,
-            key: inserted_key,
-        }),
-        code,
-        stage,
-    )
+pub(crate) struct ValueValidationRequest<'a> {
+    pub(crate) expected: &'a CftSchemaTypeRef,
+    pub(crate) value: &'a CfdValue,
+    pub(crate) pending_records: &'a [crate::RecordCoordinate],
+    pub(crate) pending_insert: Option<PendingInsertRef<'a>>,
+    pub(crate) code: &'static str,
+    pub(crate) stage: &'static str,
 }
 
-fn validate_value_semantics(
+pub(crate) fn validate_value_semantics(
     session: &ProjectSession,
     schema: &CompiledSchema,
-    expected: &CftSchemaTypeRef,
-    value: &CfdValue,
-    pending_records: &[crate::RecordCoordinate],
-    pending_insert: Option<PendingInsertRef<'_>>,
-    code: &'static str,
-    stage: &'static str,
+    request: &ValueValidationRequest<'_>,
 ) -> Result<(), DiagnosticSet> {
     let context = ProjectValueSemanticContext {
         session,
-        pending_records,
+        pending_records: request.pending_records,
     };
     coflow_data_model::validate_complete_value_for_schema(
         schema,
         &context,
-        expected,
-        value,
-        pending_insert,
+        request.expected,
+        request.value,
+        request.pending_insert,
     )
-    .map_err(|err| one_error(code, stage, err.message()))
+    .map_err(|err| one_error(request.code, request.stage, err.message()))
 }
 
 pub(crate) fn ensure_object_type_assignable(

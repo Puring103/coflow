@@ -42,7 +42,7 @@ fn build_model_from_excel_records(
     sources: &[ExcelSource],
 ) -> Result<CfdDataModel, ExcelDiagnostics> {
     let compiled_schema = schema.compiled_schema();
-    let loaded = collect_input_records(&compiled_schema, sources)?;
+    let loaded = collect_input_records(compiled_schema, sources)?;
     let origins = origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {
@@ -1419,7 +1419,12 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
                     .message
                     .contains("column header `level` appears more than once")
         })
-        .ok_or_else(|| format!("expected duplicate header diagnostic: {:?}", err.diagnostics))?;
+        .ok_or_else(|| {
+            format!(
+                "expected duplicate header diagnostic: {:?}",
+                err.diagnostics
+            )
+        })?;
     let location = &diagnostic
         .primary
         .as_ref()

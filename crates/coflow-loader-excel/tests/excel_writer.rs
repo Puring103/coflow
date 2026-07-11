@@ -10,10 +10,10 @@
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, InsertRecordRequest, ResolvedSource,
-    SourceLocationSpec, SourceProvider, SourceWriter, SyncHeaderRequest, TableContext, TableManager,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    SourceLocationSpec, SourceProvider, SourceWriter, SyncHeaderRequest, TableContext,
+    TableManager, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
-use coflow_cft::{CftContainer};
+use coflow_cft::CftContainer;
 use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdObject, CfdValue, RecordOrigin, SourceDocument,
 };
@@ -127,17 +127,20 @@ fn schema_for_items() -> CftContainer {
 #[test]
 fn writer_capabilities_are_derived_from_workbook_format() {
     let writer = ExcelWriter::new();
-    let xlsx = empty_source(Path::new("items.xlsx"));
-    let xlsm = empty_source(Path::new("items.xlsm"));
-    let xls = empty_source(Path::new("items.xls"));
+    let writable_source = empty_source(Path::new("items.xlsx"));
+    let macro_source = empty_source(Path::new("items.xlsm"));
+    let legacy_source = empty_source(Path::new("items.xls"));
 
-    let writable = writer.capabilities(&xlsx);
+    let writable = writer.capabilities(&writable_source);
     assert!(writable.can_edit_field);
     assert!(writable.can_edit_key);
     assert!(writable.can_insert_record);
     assert!(writable.can_delete_record);
 
-    for read_only in [writer.capabilities(&xlsm), writer.capabilities(&xls)] {
+    for read_only in [
+        writer.capabilities(&macro_source),
+        writer.capabilities(&legacy_source),
+    ] {
         assert!(!read_only.can_edit_field);
         assert!(!read_only.can_edit_key);
         assert!(!read_only.can_insert_record);
@@ -167,12 +170,12 @@ fn writer_rejects_xlsm_and_xls_before_mutating_workbook_bytes() {
             actual_type: "Item",
             field_path: &segments,
             new_value: &new_value,
-            schema: &compiled_schema,
+            schema: compiled_schema,
             source: &source,
         };
         let context = WriteContext {
             project_root: &std::env::temp_dir(),
-            schema: &compiled_schema,
+            schema: compiled_schema,
             model: None,
         };
 
@@ -332,7 +335,7 @@ fn writes_string_cell_and_preserves_neighbors() {
         .write_field(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &WriteCellRequest {
@@ -341,7 +344,7 @@ fn writes_string_cell_and_preserves_neighbors() {
                 actual_type: "Item",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -373,7 +376,7 @@ fn writes_numeric_cell_as_text() {
         .write_field(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &WriteCellRequest {
@@ -382,7 +385,7 @@ fn writes_numeric_cell_as_text() {
                 actual_type: "Item",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -411,7 +414,7 @@ fn writes_record_key_cell() {
         .write_field(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &WriteCellRequest {
@@ -420,7 +423,7 @@ fn writes_record_key_cell() {
                 actual_type: "Item",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -472,7 +475,7 @@ fn writes_collection_element_by_rewriting_owning_cell() {
         .write_field(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -481,7 +484,7 @@ fn writes_collection_element_by_rewriting_owning_cell() {
                 actual_type: "Item",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -503,7 +506,7 @@ fn writes_expanded_object_fields_to_child_columns() {
         &path,
         vec![coflow_loader_excel::ExcelSheet::new("Terrain")],
     );
-    let loaded = coflow_loader_excel::collect_input_records(&compiled_schema, &[source_def])
+    let loaded = coflow_loader_excel::collect_input_records(compiled_schema, &[source_def])
         .expect("load records");
     let origin = loaded.records[0].origin.clone();
     let new_value = expanded_env_value(6.0, 21.5, 0.75);
@@ -513,7 +516,7 @@ fn writes_expanded_object_fields_to_child_columns() {
         .write_field(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &WriteCellRequest {
@@ -522,7 +525,7 @@ fn writes_expanded_object_fields_to_child_columns() {
                 actual_type: "Terrain",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -552,7 +555,7 @@ fn rejects_missing_file_with_friendly_error() {
     let Err(diag) = writer.write_field(
         WriteContext {
             project_root: &std::env::temp_dir(),
-            schema: &compiled_schema,
+            schema: compiled_schema,
             model: None,
         },
         &WriteCellRequest {
@@ -561,7 +564,7 @@ fn rejects_missing_file_with_friendly_error() {
             actual_type: "Item",
             field_path: &segments,
             new_value: &new_value,
-            schema: &compiled_schema,
+            schema: compiled_schema,
             source: &source,
         },
     ) else {
@@ -593,7 +596,7 @@ fn refuses_field_write_when_row_key_changed() {
     let Err(diag) = writer.write_field(
         WriteContext {
             project_root: &std::env::temp_dir(),
-            schema: &compiled_schema,
+            schema: compiled_schema,
             model: None,
         },
         &WriteCellRequest {
@@ -602,7 +605,7 @@ fn refuses_field_write_when_row_key_changed() {
             actual_type: "Item",
             field_path: &segments,
             new_value: &new_value,
-            schema: &compiled_schema,
+            schema: compiled_schema,
             source: &source,
         },
     ) else {
@@ -632,7 +635,7 @@ fn inserts_record_row_and_loader_can_read_it() {
         .insert_record(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &InsertRecordRequest {
@@ -641,7 +644,7 @@ fn inserts_record_row_and_loader_can_read_it() {
                 record_key: "potion",
                 actual_type: "Item",
                 fields: &fields,
-                schema: &compiled_schema,
+                schema: compiled_schema,
             },
         )
         .expect("insert succeeds");
@@ -659,7 +662,7 @@ fn inserts_record_row_and_loader_can_read_it() {
         vec![coflow_loader_excel::ExcelSheet::new("Items").with_type("Item")],
     );
     let compiled_schema = schema.compiled_schema();
-    let loaded = coflow_loader_excel::collect_input_records(&compiled_schema, &[source_def])
+    let loaded = coflow_loader_excel::collect_input_records(compiled_schema, &[source_def])
         .expect("reload records");
     assert!(loaded.records.iter().any(|record| record.key == "potion"));
 }
@@ -682,7 +685,7 @@ fn inserts_record_with_expanded_object_into_child_columns() {
         .insert_record(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &InsertRecordRequest {
@@ -691,7 +694,7 @@ fn inserts_record_with_expanded_object_into_child_columns() {
                 record_key: "Sand",
                 actual_type: "Terrain",
                 fields: &fields,
-                schema: &compiled_schema,
+                schema: compiled_schema,
             },
         )
         .expect("insert expanded record succeeds");
@@ -725,7 +728,7 @@ fn deletes_record_row() {
         .delete_record(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &DeleteRecordRequest {
@@ -755,7 +758,7 @@ fn refuses_delete_when_row_key_changed() {
     let Err(diag) = writer.delete_record(
         WriteContext {
             project_root: &std::env::temp_dir(),
-            schema: &compiled_schema,
+            schema: compiled_schema,
             model: None,
         },
         &DeleteRecordRequest {

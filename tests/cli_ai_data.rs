@@ -701,7 +701,12 @@ fn data_patch_accepts_large_patch_from_stdin() {
     let patch = serde_json::to_string(&json!({ "ops": ops })).expect("patch json");
 
     let output = run_stdin_command(
-        &["data", "patch", root.to_str().expect("utf8 path"), "--stdin"],
+        &[
+            "data",
+            "patch",
+            root.to_str().expect("utf8 path"),
+            "--stdin",
+        ],
         &patch,
     );
 
@@ -756,7 +761,8 @@ fn data_patch_does_not_treat_patch_argument_as_file_path() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("failed to parse patch request from --patch"),
+        String::from_utf8_lossy(&output.stderr)
+            .contains("failed to parse patch request from --patch"),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );

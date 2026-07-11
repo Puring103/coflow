@@ -19,8 +19,7 @@ fn build_session(
     project: Project,
     registry: &ProviderRegistry,
 ) -> Result<WriteProjectSession, DiagnosticSet> {
-    Runtime::new(registry.clone())
-        .open_write_session(project)
+    Runtime::new(registry.clone()).open_write_session(project)
 }
 
 #[test]
@@ -356,8 +355,7 @@ fn write_local_rollback_project(root: &std::path::Path) {
 "#,
     )
     .expect("write items");
-    std::fs::write(root.join("data/failing.fake"), "starter,&sword\n")
-        .expect("write fake source");
+    std::fs::write(root.join("data/failing.fake"), "starter,&sword\n").expect("write fake source");
     std::fs::write(
         root.join("coflow.yaml"),
         r"schema: schema/

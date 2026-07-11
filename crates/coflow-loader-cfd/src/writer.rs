@@ -58,10 +58,10 @@ pub struct CfdWriter;
 impl CfdWriter {
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
-    fn read_or_parse(&self, path: &Path) -> Result<(String, CfdAst), DiagnosticSet> {
+    fn read_or_parse(path: &Path) -> Result<(String, CfdAst), DiagnosticSet> {
         let text = std::fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CFD-READ",
@@ -73,23 +73,17 @@ impl CfdWriter {
         Ok((text, ast))
     }
 
-    fn write_source(&self, path: &Path, new_source: String) -> Result<(), DiagnosticSet> {
-        std::fs::write(path, &new_source).map_err(|err| {
+    fn write_source(path: &Path, new_source: &str) -> Result<(), DiagnosticSet> {
+        std::fs::write(path, new_source).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CFD-WRITE",
                 format!("failed to write `{}`: {err}", path.display()),
             ))
         })?;
 
-        let (_, diagnostics) = parse_cfd(&new_source);
+        let (_, diagnostics) = parse_cfd(new_source);
         ensure_parse_ok(path, &diagnostics)?;
         Ok(())
-    }
-}
-
-impl CfdWriter {
-    fn write_source_public(&self, path: &Path, new_source: String) -> Result<(), DiagnosticSet> {
-        self.write_source(path, new_source)
     }
 }
 
@@ -130,11 +124,11 @@ impl SourceWriter for CfdWriter {
             )));
         }
 
-        let (source, ast) = self.read_or_parse(path)?;
+        let (source, ast) = Self::read_or_parse(path)?;
 
         let new_source = apply_patch(&source, &ast, request)?;
 
-        self.write_source(path, new_source)?;
+        Self::write_source(path, &new_source)?;
 
         Ok(WriteOutcome {
             touched_record_origins: vec![request.origin.clone()],
@@ -158,7 +152,7 @@ impl SourceWriter for CfdWriter {
         validate_record_key(request.record_key)?;
         validate_values(request.fields.values())?;
 
-        let (source, ast) = self.read_or_parse(path)?;
+        let (source, ast) = Self::read_or_parse(path)?;
         if ast.records.iter().any(|record| {
             record.key == request.record_key && record.type_name == request.actual_type
         }) {
@@ -177,7 +171,7 @@ impl SourceWriter for CfdWriter {
             request.fields,
         );
         let new_source = append_record_source(&source, &fragment);
-        self.write_source(path, new_source)?;
+        Self::write_source(path, &new_source)?;
         Ok(WriteOutcome {
             touched_record_origins: Vec::new(),
             inserted_record_origin: Some(RecordOrigin::File {
@@ -205,7 +199,7 @@ impl SourceWriter for CfdWriter {
                 "cfd writer requires a File origin",
             )));
         };
-        let (source, ast) = self.read_or_parse(path)?;
+        let (source, ast) = Self::read_or_parse(path)?;
         let record =
             find_record(&ast, request.actual_type, request.record_key).ok_or_else(|| {
                 DiagnosticSet::one(diag(
@@ -218,7 +212,7 @@ impl SourceWriter for CfdWriter {
             })?;
         let span = delete_record_span(&source, record.span);
         let new_source = format!("{}{}", &source[..span.start], &source[span.end..]);
-        self.write_source(path, new_source)?;
+        Self::write_source(path, &new_source)?;
         Ok(WriteOutcome {
             touched_record_origins: Vec::new(),
             inserted_record_origin: None,
@@ -239,7 +233,7 @@ impl SourceWriter for CfdWriter {
             )));
         };
         validate_record_key(request.new_key)?;
-        let (source, ast) = self.read_or_parse(path)?;
+        let (source, ast) = Self::read_or_parse(path)?;
         let record = find_record(&ast, request.actual_type, request.old_key).ok_or_else(|| {
             DiagnosticSet::one(diag(
                 "CFD-WRITE",
@@ -250,7 +244,7 @@ impl SourceWriter for CfdWriter {
             ))
         })?;
         let new_source = replace_spans(&source, &[(record.key_span, request.new_key.to_string())])?;
-        self.write_source(path, new_source)?;
+        Self::write_source(path, &new_source)?;
         Ok(WriteOutcome {
             touched_record_origins: vec![request.origin.clone()],
             inserted_record_origin: None,
@@ -267,7 +261,7 @@ impl SourceWriter for CfdWriter {
         let SourceLocationSpec::Path(path) = &request.source.location else {
             return Ok(WriteOutcome::default());
         };
-        let (source, ast) = self.read_or_parse(path)?;
+        let (source, ast) = Self::read_or_parse(path)?;
         let mut spans = Vec::new();
         for target in request.targets {
             let RecordOrigin::File {
@@ -310,7 +304,7 @@ impl SourceWriter for CfdWriter {
             .map(|span| (span, request.new_key.to_string()))
             .collect::<Vec<_>>();
         let new_source = replace_spans(&source, &replacements)?;
-        self.write_source(path, new_source)?;
+        Self::write_source(path, &new_source)?;
         Ok(WriteOutcome {
             touched_record_origins: Vec::new(),
             inserted_record_origin: None,
@@ -350,7 +344,7 @@ impl TableManager for CfdWriter {
                 ))
             })?;
         }
-        self.write_source(path, String::new())?;
+        Self::write_source(path, "")?;
         Ok(TableOperationResult {
             headers: Vec::new(),
             added: Vec::new(),
@@ -370,7 +364,7 @@ impl TableManager for CfdWriter {
                 "cfd table manager requires a path source",
             )));
         };
-        let (source, ast) = self.read_or_parse(path)?;
+        let (source, ast) = Self::read_or_parse(path)?;
         let old_fields = cfd_top_level_fields(&ast.records, request.actual_type);
         let added = added_columns(request.headers, &old_fields);
         let removed = removed_columns(request.headers, &old_fields);
@@ -380,9 +374,8 @@ impl TableManager for CfdWriter {
                 "cfd header sync requires schema metadata",
             ))
         })?;
-        let new_source =
-            rewrite_cfd_records(&source, &ast.records, request.actual_type, schema)?;
-        self.write_source(path, new_source)?;
+        let new_source = rewrite_cfd_records(&source, &ast.records, request.actual_type, schema)?;
+        Self::write_source(path, &new_source)?;
         Ok(TableOperationResult {
             headers: request.headers.to_vec(),
             added,

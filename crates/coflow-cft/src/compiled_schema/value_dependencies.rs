@@ -63,10 +63,8 @@ impl fmt::Display for ValueDependencyCycle {
 
 #[derive(Debug, Clone, Default)]
 pub struct ValueDependencyPlan {
-    roots: BTreeMap<
-        ValueDependencyMode,
-        BTreeMap<String, Result<Vec<String>, ValueDependencyCycle>>,
-    >,
+    roots:
+        BTreeMap<ValueDependencyMode, BTreeMap<String, Result<Vec<String>, ValueDependencyCycle>>>,
 }
 
 impl ValueDependencyPlan {
@@ -85,9 +83,8 @@ impl ValueDependencyPlan {
                 .keys()
                 .map(|root| {
                     compile_root(root, &graph, budget).map(|result| {
-                        let result = result.map(|order| {
-                            order.into_iter().map(str::to_string).collect::<Vec<_>>()
-                        });
+                        let result = result
+                            .map(|order| order.into_iter().map(str::to_string).collect::<Vec<_>>());
                         (root.clone(), result)
                     })
                 })
@@ -280,6 +277,8 @@ struct VisitFrame<'a> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
 
     #[test]
@@ -288,17 +287,17 @@ mod tests {
         let mut graph = BTreeMap::new();
         for index in 0..NODE_COUNT {
             let owner = format!("T{index}");
-            let edges = (index + 1 < NODE_COUNT)
-                .then(|| {
-                    vec![ValueDependencyStep {
-                        owner_type: owner.clone(),
-                        field: "next".to_string(),
-                        target_type: format!("T{}", index + 1),
-                        module: ModuleId::from("test"),
-                        span: Span::new(index, index + 1),
-                    }]
-                })
-                .unwrap_or_default();
+            let edges = if index + 1 < NODE_COUNT {
+                vec![ValueDependencyStep {
+                    owner_type: owner.clone(),
+                    field: "next".to_string(),
+                    target_type: format!("T{}", index + 1),
+                    module: ModuleId::from("test"),
+                    span: Span::new(index, index + 1),
+                }]
+            } else {
+                Vec::new()
+            };
             graph.insert(owner, edges);
         }
 

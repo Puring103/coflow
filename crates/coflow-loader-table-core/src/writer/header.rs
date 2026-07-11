@@ -60,10 +60,7 @@ impl HeaderReconciliationPlan {
 
     #[must_use]
     pub fn source_column(&self, target_column: usize) -> Option<usize> {
-        self.source_columns
-            .get(target_column)
-            .copied()
-            .flatten()
+        self.source_columns.get(target_column).copied().flatten()
     }
 
     #[must_use]
@@ -108,12 +105,7 @@ impl HeaderReconciliationPlan {
     pub fn project_rows(&self, source_rows: &[Vec<String>]) -> Vec<Vec<String>> {
         let mut rows = Vec::with_capacity(source_rows.len().max(1));
         rows.push(self.target_header.clone());
-        rows.extend(
-            source_rows
-                .iter()
-                .skip(1)
-                .map(|row| self.project_row(row)),
-        );
+        rows.extend(source_rows.iter().skip(1).map(|row| self.project_row(row)));
         rows
     }
 }

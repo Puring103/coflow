@@ -162,7 +162,7 @@ pub fn inspect_schema(
                 .flatten()
                 .map(|field| SchemaFieldInfo {
                     name: field.name.clone(),
-                    ty: type_ref_info(&view, &field.ty_ref),
+                    ty: type_ref_info(view, &field.ty_ref),
                     raw_type: field.raw_type.clone(),
                     has_default: field.has_default,
                     default: field.default.as_ref().map(default_value_info),

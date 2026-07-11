@@ -173,7 +173,10 @@ fn parser_recovers_at_the_next_top_level_declaration() {
 
     assert_eq!(
         codes,
-        vec![CftErrorCode::ExpectedToken, CftErrorCode::ExpectedIdentifier]
+        vec![
+            CftErrorCode::ExpectedToken,
+            CftErrorCode::ExpectedIdentifier
+        ]
     );
     assert!(offsets[0] < offsets[1], "diagnostics stay in source order");
     assert!(

@@ -56,7 +56,10 @@ impl InitTransaction {
             }
             return Err(init_error(
                 path,
-                format!("cannot create directory `{}` because it is a file", path.display()),
+                format!(
+                    "cannot create directory `{}` because it is a file",
+                    path.display()
+                ),
             ));
         }
         self.created_paths.push(path.to_path_buf());
@@ -102,7 +105,10 @@ impl InitTransaction {
         fs::remove_file(&temporary).map_err(|err| {
             init_error(
                 &temporary,
-                format!("failed to remove temporary config `{}`: {err}", temporary.display()),
+                format!(
+                    "failed to remove temporary config `{}`: {err}",
+                    temporary.display()
+                ),
             )
         })?;
         self.temporary_config = None;

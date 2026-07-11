@@ -42,11 +42,7 @@ fn field_path(name: &str) -> Vec<WriteFieldPathSegment> {
 
 #[test]
 fn header_reconciliation_preserves_values_across_add_remove_and_reorder() {
-    let source = vec![
-        "id".to_string(),
-        "name".to_string(),
-        "obsolete".to_string(),
-    ];
+    let source = vec!["id".to_string(), "name".to_string(), "obsolete".to_string()];
     let target = vec!["name".to_string(), "id".to_string(), "power".to_string()];
     let plan = HeaderReconciliationPlan::new(&source, &target);
 
@@ -59,7 +55,11 @@ fn header_reconciliation_preserves_values_across_add_remove_and_reorder() {
     assert_eq!(
         plan.project_rows(&[
             source,
-            vec!["sword".to_string(), "Sword".to_string(), "legacy".to_string()],
+            vec![
+                "sword".to_string(),
+                "Sword".to_string(),
+                "legacy".to_string()
+            ],
         ]),
         vec![
             target,
@@ -460,7 +460,7 @@ fn write_layout_resolves_expand_child_columns_from_header() {
     ];
 
     let layout = resolve_table_write_layout(
-        &compiled_schema,
+        compiled_schema,
         &PathBuf::from("terrain.xlsx"),
         &TableSheetConfig::new("Terrain"),
         &header,

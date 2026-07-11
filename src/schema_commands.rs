@@ -252,22 +252,24 @@ fn check_schema_source(
 fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), DiagnosticSet> {
     let mut stdout = io::stdout().lock();
     for ty in &report.types {
-        writeln!(stdout, "type {}", ty.name).map_err(output_error)?;
+        writeln!(stdout, "type {}", ty.name).map_err(|err| output_error(&err))?;
         for annotation in &ty.annotations {
-            writeln!(stdout, "  @{}", annotation.name).map_err(output_error)?;
+            writeln!(stdout, "  @{}", annotation.name).map_err(|err| output_error(&err))?;
         }
         for field in &ty.fields {
-            writeln!(stdout, "  {}: {}", field.name, field.raw_type).map_err(output_error)?;
+            writeln!(stdout, "  {}: {}", field.name, field.raw_type)
+                .map_err(|err| output_error(&err))?;
         }
     }
     for schema_enum in &report.enums {
-        writeln!(stdout, "enum {}", schema_enum.name).map_err(output_error)?;
+        writeln!(stdout, "enum {}", schema_enum.name).map_err(|err| output_error(&err))?;
         for variant in &schema_enum.variants {
-            writeln!(stdout, "  {} = {}", variant.name, variant.value).map_err(output_error)?;
+            writeln!(stdout, "  {} = {}", variant.name, variant.value)
+                .map_err(|err| output_error(&err))?;
         }
     }
     for schema_const in &report.consts {
-        writeln!(stdout, "const {}", schema_const.name).map_err(output_error)?;
+        writeln!(stdout, "const {}", schema_const.name).map_err(|err| output_error(&err))?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
@@ -275,8 +277,8 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
 fn write_schema_files_human(report: &SchemaFilesReport) -> Result<(), DiagnosticSet> {
     let mut stdout = io::stdout().lock();
     for file in &report.files {
-        writeln!(stdout, "{}", file.module).map_err(output_error)?;
-        writeln!(stdout, "{}", file.source).map_err(output_error)?;
+        writeln!(stdout, "{}", file.module).map_err(|err| output_error(&err))?;
+        writeln!(stdout, "{}", file.source).map_err(|err| output_error(&err))?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
@@ -294,7 +296,7 @@ fn write_schema_write_file_human(report: &SchemaWriteFileReport) -> Result<(), D
             .check_ok
             .map_or_else(|| "skipped".to_string(), |ok| ok.to_string())
     )
-    .map_err(output_error)?;
+    .map_err(|err| output_error(&err))?;
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 
@@ -308,11 +310,11 @@ fn write_flat_diagnostics(
             "[{}] [{}] {}",
             diagnostic.code, diagnostic.stage, diagnostic.message
         )
-        .map_err(output_error)?;
+        .map_err(|err| output_error(&err))?;
     }
     Ok(())
 }
 
-fn output_error(err: io::Error) -> DiagnosticSet {
+fn output_error(err: &io::Error) -> DiagnosticSet {
     cli_error("CLI-OUTPUT", format!("failed to write output: {err}"))
 }

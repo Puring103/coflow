@@ -163,7 +163,7 @@ fn walk_type_ref(
         let cursor = enter(budget, module, ty.span, parent, StructureKind::TypeRef)?;
         match &ty.kind {
             TypeRefKind::Ref(inner) | TypeRefKind::Array(inner) | TypeRefKind::Nullable(inner) => {
-                pending.push((inner, cursor))
+                pending.push((inner, cursor));
             }
             TypeRefKind::Dict(key, value) => {
                 pending.push((value, cursor));

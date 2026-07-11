@@ -238,12 +238,12 @@ fn writes_cell_with_full_handshake_then_caches() {
         actual_type: "Item",
         field_path: &segments,
         new_value: &new_value,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         source: &source,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: None,
     };
     writer.write_field(ctx, &request).expect("first write");
@@ -298,7 +298,7 @@ fn same_app_id_with_different_secrets_does_not_share_remote_cache() {
     let second_source = lark_source_with_secret("secret_two");
     let context = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: None,
     };
 
@@ -312,7 +312,7 @@ fn same_app_id_with_different_secrets_does_not_share_remote_cache() {
                     actual_type: "Item",
                     field_path: &segments,
                     new_value: &new_value,
-                    schema: &compiled_schema,
+                    schema: compiled_schema,
                     source,
                 },
             )
@@ -364,12 +364,12 @@ fn writes_cell_from_wiki_url_origin() {
         actual_type: "Item",
         field_path: &segments,
         new_value: &new_value,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         source: &source,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: None,
     };
 
@@ -427,12 +427,12 @@ fn writes_expanded_object_with_table_core_field_plan() {
         actual_type: "Item",
         field_path: &segments,
         new_value: &new_value,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         source: &source,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: None,
     };
 
@@ -452,7 +452,10 @@ fn writes_expanded_object_with_table_core_field_plan() {
         .map(|range| {
             (
                 range["range"].as_str().expect("range").to_string(),
-                range["values"][0][0].as_str().expect("cell value").to_string(),
+                range["values"][0][0]
+                    .as_str()
+                    .expect("cell value")
+                    .to_string(),
             )
         })
         .collect::<BTreeSet<_>>();
@@ -490,12 +493,12 @@ fn surfaces_business_error_on_failure() {
         actual_type: "Item",
         field_path: &segments,
         new_value: &new_value,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         source: &source,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: None,
     };
     let Err(diag) = writer.write_field(ctx, &request) else {
@@ -543,12 +546,12 @@ fn retries_once_after_token_expired() {
         actual_type: "Item",
         field_path: &segments,
         new_value: &new_value,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         source: &source,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: None,
     };
     writer.write_field(ctx, &request).expect("retry succeeds");
@@ -601,11 +604,11 @@ fn inserts_record_by_appending_lark_row() {
         record_key: "blade",
         actual_type: "Item",
         fields: &fields,
-        schema: &compiled_schema,
+        schema: compiled_schema,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: None,
     };
 
@@ -669,11 +672,11 @@ fn inserts_record_from_wiki_url_source() {
         record_key: "blade",
         actual_type: "Item",
         fields: &fields,
-        schema: &compiled_schema,
+        schema: compiled_schema,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: None,
     };
 
@@ -786,9 +789,7 @@ fn syncs_lark_sheet_header_and_reconciles_existing_rows() {
     let calls = client.calls();
     let Some((_, _, Some(body))) = calls
         .iter()
-        .find(|(method, url, body)| {
-            *method == "PUT" && url.contains("/values") && body.is_some()
-        })
+        .find(|(method, url, body)| *method == "PUT" && url.contains("/values") && body.is_some())
     else {
         panic!("values body should be recorded");
     };
@@ -841,7 +842,7 @@ fn deletes_record_after_remote_key_guard() {
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: None,
     };
 
@@ -882,11 +883,11 @@ fn rewrite_record_references_does_not_scan_lark_cells() {
         old_key: "sword",
         new_key: "blade",
         targets: &targets,
-        schema: &compiled_schema,
+        schema: compiled_schema,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
-        schema: &compiled_schema,
+        schema: compiled_schema,
         model: None,
     };
 

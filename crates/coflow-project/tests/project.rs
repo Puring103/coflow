@@ -734,8 +734,11 @@ fn project_config_rejects_sources_inside_dimension_out_dir() -> TestResult {
         .map_err(|err| err.to_string())?;
     std::fs::write(root.join("schema/main.cft"), "type Item { name: string; }")
         .map_err(|err| err.to_string())?;
-    std::fs::write(root.join("data/dimensions/language/Item_name.csv"), "id,default,zh\n")
-        .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("data/dimensions/language/Item_name.csv"),
+        "id,default,zh\n",
+    )
+    .map_err(|err| err.to_string())?;
     std::fs::write(
         root.join("coflow.yaml"),
         r#"schema: schema/main.cft
@@ -839,11 +842,8 @@ fn schema_files_recurses_only_cft_files_and_sorts_module_ids() -> TestResult {
 fn schema_files_deduplicate_canonical_file_identities() -> TestResult {
     let root = temp_project_dir("coflow-project-schema-file-identities");
     std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
-    std::fs::write(
-        root.join("schema/main.cft"),
-        "type Main { value: string; }",
-    )
-    .map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Main { value: string; }")
+        .map_err(|err| err.to_string())?;
     std::fs::write(
         root.join("coflow.yaml"),
         "schema:\n  - schema\n  - schema/../schema/main.cft\n",
@@ -867,12 +867,14 @@ fn schema_files_terminate_directory_alias_cycles_and_deduplicate() -> TestResult
     std::fs::create_dir_all(&nested_dir).map_err(|err| err.to_string())?;
     std::fs::write(schema_dir.join("main.cft"), "type Main { value: string; }")
         .map_err(|err| err.to_string())?;
-    std::fs::write(nested_dir.join("extra.cft"), "type Extra { value: string; }")
-        .map_err(|err| err.to_string())?;
+    std::fs::write(
+        nested_dir.join("extra.cft"),
+        "type Extra { value: string; }",
+    )
+    .map_err(|err| err.to_string())?;
     let alias = nested_dir.join("back_to_schema");
     create_directory_alias(&alias, &schema_dir);
-    std::fs::write(root.join("coflow.yaml"), "schema: schema\n")
-        .map_err(|err| err.to_string())?;
+    std::fs::write(root.join("coflow.yaml"), "schema: schema\n").map_err(|err| err.to_string())?;
 
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
     let files = project.schema_files().map_err(|err| err.to_string())?;
@@ -892,12 +894,14 @@ fn schema_files_reject_directory_aliases_outside_declared_root() -> TestResult {
     let external = temp_project_dir("coflow-project-schema-directory-external");
     let schema_dir = root.join("schema");
     std::fs::create_dir_all(&schema_dir).map_err(|err| err.to_string())?;
-    std::fs::write(external.join("outside.cft"), "type Outside { value: string; }")
-        .map_err(|err| err.to_string())?;
+    std::fs::write(
+        external.join("outside.cft"),
+        "type Outside { value: string; }",
+    )
+    .map_err(|err| err.to_string())?;
     let alias = schema_dir.join("outside");
     create_directory_alias(&alias, &external);
-    std::fs::write(root.join("coflow.yaml"), "schema: schema\n")
-        .map_err(|err| err.to_string())?;
+    std::fs::write(root.join("coflow.yaml"), "schema: schema\n").map_err(|err| err.to_string())?;
 
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
     let diagnostics = project
@@ -1111,7 +1115,10 @@ fn concurrent_project_initialization_has_one_winner() {
         .collect::<Vec<_>>();
 
     assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 1);
-    assert_eq!(outcomes.iter().filter(|outcome| outcome.is_err()).count(), 1);
+    assert_eq!(
+        outcomes.iter().filter(|outcome| outcome.is_err()).count(),
+        1
+    );
     assert_eq!(
         std::fs::read_to_string(dir.join("coflow.yaml")).expect("published config"),
         DEFAULT_PROJECT_YAML

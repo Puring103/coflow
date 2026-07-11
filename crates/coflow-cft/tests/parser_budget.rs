@@ -3,7 +3,7 @@
 use coflow_cft::parser::{parse_module, parse_module_with_options};
 use coflow_cft::{CftContainer, CftErrorCode, CftParseOptions, ModuleId, Span, StructuralLimits};
 
-fn options(max_depth: u64, max_nodes: u64) -> CftParseOptions {
+const fn options(max_depth: u64, max_nodes: u64) -> CftParseOptions {
     CftParseOptions {
         structural_limits: StructuralLimits::new(max_depth, max_nodes, 10_000),
     }

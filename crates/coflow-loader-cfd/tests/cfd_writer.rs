@@ -105,14 +105,14 @@ shield: Item {
         actual_type: "Item",
         field_path: &segments,
         new_value: &request_value,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         source: &source,
     };
     writer
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: Some(&model),
             },
             &request,
@@ -140,10 +140,10 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
     let file = dir.join("stages.cfd");
     fs::write(
         &file,
-        r#"stage_start: Stage {
+        r"stage_start: Stage {
   first_clear_reward: ItemReward { item: &sword, count: 1 },
 }
-"#,
+",
     )
     .expect("write seed");
 
@@ -182,14 +182,14 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
         actual_type: "Stage",
         field_path: &segments,
         new_value: &request_value,
-        schema: &compiled_schema,
+        schema: compiled_schema,
         source: &source,
     };
     writer
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: Some(&model),
             },
             &request,
@@ -240,7 +240,7 @@ shared: Skill {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -249,7 +249,7 @@ shared: Skill {
                 actual_type: "Skill",
                 field_path: &segments,
                 new_value: &request_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -315,7 +315,7 @@ picker: Holder {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -324,7 +324,7 @@ picker: Holder {
                 actual_type: "Holder",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -387,7 +387,7 @@ picker: Holder {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &WriteCellRequest {
@@ -396,7 +396,7 @@ picker: Holder {
                 actual_type: "Holder",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -445,7 +445,7 @@ fn rejects_empty_ref_key() {
     let result = writer.write_field(
         WriteContext {
             project_root: &dir,
-            schema: &compiled_schema,
+            schema: compiled_schema,
             model: Some(&model),
         },
         &WriteCellRequest {
@@ -454,7 +454,7 @@ fn rejects_empty_ref_key() {
             actual_type: "Holder",
             field_path: &segments,
             new_value: &new_value,
-            schema: &compiled_schema,
+            schema: compiled_schema,
             source: &source,
         },
     );
@@ -501,7 +501,7 @@ fn inserts_record_at_end_of_cfd_file() {
         .insert_record(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &InsertRecordRequest {
@@ -510,7 +510,7 @@ fn inserts_record_at_end_of_cfd_file() {
                 record_key: "potion",
                 actual_type: "Item",
                 fields: &fields,
-                schema: &compiled_schema,
+                schema: compiled_schema,
             },
         )
         .expect("insert succeeds");
@@ -554,7 +554,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
         .insert_record(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &InsertRecordRequest {
@@ -563,7 +563,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
                 record_key: "shared",
                 actual_type: "Skill",
                 fields: &fields,
-                schema: &compiled_schema,
+                schema: compiled_schema,
             },
         )
         .expect("insert unrelated same-key skill");
@@ -623,7 +623,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
         .insert_record(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &InsertRecordRequest {
@@ -632,7 +632,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
                 record_key: "starter",
                 actual_type: "Loot",
                 fields: &fields,
-                schema: &compiled_schema,
+                schema: compiled_schema,
             },
         )
         .expect("insert succeeds");
@@ -678,7 +678,7 @@ shield: Item {
         .delete_record(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &DeleteRecordRequest {
@@ -729,7 +729,7 @@ shared: Skill {
         .delete_record(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &DeleteRecordRequest {
@@ -800,7 +800,7 @@ elite_monster: Monster {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -809,7 +809,7 @@ elite_monster: Monster {
                 actual_type: "Monster",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -906,14 +906,14 @@ other_copy: OtherHolder {
         old_key: "base",
         new_key: "renamed",
         targets: &targets,
-        schema: &compiled_schema,
+        schema: compiled_schema,
     };
 
     writer
         .rewrite_record_references(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &request,
@@ -999,14 +999,14 @@ host: Loadout {
         old_key: "base",
         new_key: "renamed",
         targets: &targets,
-        schema: &compiled_schema,
+        schema: compiled_schema,
     };
 
     writer
         .rewrite_record_references(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: None,
             },
             &request,
@@ -1072,7 +1072,7 @@ elite: Monster {
     let result = writer.write_field(
         WriteContext {
             project_root: &dir,
-            schema: &compiled_schema,
+            schema: compiled_schema,
             model: Some(&model),
         },
         &WriteCellRequest {
@@ -1081,7 +1081,7 @@ elite: Monster {
             actual_type: "Monster",
             field_path: &segments,
             new_value: &new_value,
-            schema: &compiled_schema,
+            schema: compiled_schema,
             source: &source,
         },
     );
@@ -1134,7 +1134,7 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -1143,7 +1143,7 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
                 actual_type: "Loot",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -1207,7 +1207,7 @@ fn writes_group_record_without_required_commas() {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -1216,7 +1216,7 @@ fn writes_group_record_without_required_commas() {
                 actual_type: "DamageEffect",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )
@@ -1266,7 +1266,7 @@ sword: Item {
         .write_field(
             WriteContext {
                 project_root: &dir,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: Some(&model),
             },
             &WriteCellRequest {
@@ -1275,7 +1275,7 @@ sword: Item {
                 actual_type: "Item",
                 field_path: &segments,
                 new_value: &new_value,
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 source: &source,
             },
         )

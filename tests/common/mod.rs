@@ -53,7 +53,7 @@ pub fn active_enum_lock(project_root: &std::path::Path) -> Value {
     active_artifact_manifest(project_root)["enum_lock"].clone()
 }
 
-pub fn write_active_enum_lock(project_root: &std::path::Path, lock: Value) {
+pub fn write_active_enum_lock(project_root: &std::path::Path, lock: &Value) {
     let state_dir = project_root.join(".coflow/artifacts");
     std::fs::create_dir_all(&state_dir).expect("create artifact state directory");
     std::fs::write(

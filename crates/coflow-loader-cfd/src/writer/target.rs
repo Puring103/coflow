@@ -1,7 +1,7 @@
 use coflow_api::{DiagnosticSet, WriteFieldPathSegment};
-use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
 use coflow_cfd::ast::{CfdBlock, CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
 use coflow_cft::Span;
+use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
 
 use super::diag;
 use super::schema_nav::{

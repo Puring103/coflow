@@ -129,7 +129,7 @@ outputs:
 ",
     )
     .expect("write config");
-    write_active_enum_lock(&root, Value::String("malformed lock state".to_string()));
+    write_active_enum_lock(&root, &Value::String("malformed lock state".to_string()));
 
     let output = coflow()
         .args(["codegen", "csharp", root.to_str().expect("utf8 path")])

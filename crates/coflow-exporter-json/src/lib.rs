@@ -118,13 +118,8 @@ struct JsonEventSink {
 
 #[derive(Debug)]
 enum JsonContainer {
-    Array {
-        items: usize,
-    },
-    Map {
-        items: usize,
-        awaiting_value: bool,
-    },
+    Array { items: usize },
+    Map { items: usize, awaiting_value: bool },
 }
 
 impl JsonEventSink {
@@ -176,7 +171,9 @@ impl JsonEventSink {
 
     fn end_array_value(&mut self) -> Result<(), JsonExportError> {
         let Some(JsonContainer::Array { items }) = self.stack.pop() else {
-            return Err(JsonExportError::new("JSON array end does not match open container"));
+            return Err(JsonExportError::new(
+                "JSON array end does not match open container",
+            ));
         };
         if items > 0 {
             self.bytes.push(b'\n');
@@ -192,7 +189,9 @@ impl JsonEventSink {
             awaiting_value,
         }) = self.stack.pop()
         else {
-            return Err(JsonExportError::new("JSON map end does not match open container"));
+            return Err(JsonExportError::new(
+                "JSON map end does not match open container",
+            ));
         };
         if awaiting_value {
             return Err(JsonExportError::new("JSON map ended before its value"));
@@ -228,7 +227,9 @@ impl ExportEventSink for JsonEventSink {
     fn end_table(&mut self) -> Result<(), Self::Error> {
         self.end_array()?;
         if !self.stack.is_empty() {
-            return Err(JsonExportError::new("JSON table ended with open containers"));
+            return Err(JsonExportError::new(
+                "JSON table ended with open containers",
+            ));
         }
         let name = self
             .table_name

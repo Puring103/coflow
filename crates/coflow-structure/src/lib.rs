@@ -157,6 +157,11 @@ impl StructuralBudget {
         self.work_used
     }
 
+    /// Enters one structural level and charges the supplied node count.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetExceeded`] when the resulting depth or node usage exceeds its limit.
     pub fn enter(
         &mut self,
         cursor: TraversalCursor,
@@ -178,7 +183,12 @@ impl StructuralBudget {
         })
     }
 
-    pub fn check_additional_depth(
+    /// Checks whether a cached subtree can fit below the current cursor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetExceeded`] when the additional depth exceeds the configured limit.
+    pub const fn check_additional_depth(
         &self,
         cursor: TraversalCursor,
         kind: StructureKind,
@@ -196,7 +206,16 @@ impl StructuralBudget {
         Ok(())
     }
 
-    pub fn charge_nodes(&mut self, kind: StructureKind, nodes: u64) -> Result<(), BudgetExceeded> {
+    /// Charges nodes against the shared structural budget.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetExceeded`] when the resulting node usage exceeds the configured limit.
+    pub const fn charge_nodes(
+        &mut self,
+        kind: StructureKind,
+        nodes: u64,
+    ) -> Result<(), BudgetExceeded> {
         let observed = self.nodes_used.saturating_add(nodes);
         if observed > self.limits.max_nodes {
             return Err(BudgetExceeded {
@@ -210,7 +229,16 @@ impl StructuralBudget {
         Ok(())
     }
 
-    pub fn charge_work(&mut self, kind: StructureKind, work: u64) -> Result<(), BudgetExceeded> {
+    /// Charges evaluator work against the shared structural budget.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetExceeded`] when the resulting work usage exceeds the configured limit.
+    pub const fn charge_work(
+        &mut self,
+        kind: StructureKind,
+        work: u64,
+    ) -> Result<(), BudgetExceeded> {
         let observed = self.work_used.saturating_add(work);
         if observed > self.limits.max_work {
             return Err(BudgetExceeded {
@@ -233,6 +261,8 @@ impl Default for StructuralBudget {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
 
     #[test]

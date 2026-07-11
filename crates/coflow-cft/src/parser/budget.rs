@@ -1,21 +1,11 @@
 use super::Parser;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::span::Span;
-use coflow_structure::{
-    BudgetExceeded, StructuralLimits, StructureKind, TraversalCursor,
-};
+use coflow_structure::{BudgetExceeded, StructuralLimits, StructureKind, TraversalCursor};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CftParseOptions {
     pub structural_limits: StructuralLimits,
-}
-
-impl Default for CftParseOptions {
-    fn default() -> Self {
-        Self {
-            structural_limits: StructuralLimits::default(),
-        }
-    }
 }
 
 #[derive(Debug)]

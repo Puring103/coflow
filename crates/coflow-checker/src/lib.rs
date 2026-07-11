@@ -38,17 +38,9 @@ use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdRecordId};
 pub use coflow_structure::StructuralLimits;
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CheckOptions {
     pub structural_limits: StructuralLimits,
-}
-
-impl Default for CheckOptions {
-    fn default() -> Self {
-        Self {
-            structural_limits: StructuralLimits::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

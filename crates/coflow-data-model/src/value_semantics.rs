@@ -31,11 +31,7 @@ pub trait CfdValueSemanticContext {
     fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId>;
     fn record_actual_type(&self, id: CfdRecordId) -> Option<&str>;
 
-    fn pending_record_actual_type(
-        &self,
-        _domain_id: CfdDomainId,
-        _key: &str,
-    ) -> Option<&str> {
+    fn pending_record_actual_type(&self, _domain_id: CfdDomainId, _key: &str) -> Option<&str> {
         None
     }
 }

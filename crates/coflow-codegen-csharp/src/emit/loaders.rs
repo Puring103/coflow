@@ -11,9 +11,9 @@ use crate::emit::readers::{
 use crate::emit::types::{
     collection_default_expr, csharp_property_type, csharp_type, default_value_expr,
 };
+use crate::lowering::CsharpLoweringPlan;
 use crate::model::{CsharpLoadField, CsharpLoader, CsharpPolymorphicCase};
 use crate::names::escape_csharp_string;
-use crate::lowering::CsharpLoweringPlan;
 use crate::CsharpCodegenError;
 use coflow_cft::CftFieldMeta;
 use coflow_cft::CftSchemaTypeRef;
@@ -213,7 +213,7 @@ fn field_type_requires_context_inner(
                 return Ok(false);
             }
             for concrete in view.concrete_assignable_types(name)? {
-                for field in view.fields(&concrete)? {
+                for field in view.fields(concrete)? {
                     if field_type_requires_context_inner(&field.ty_ref, view, visited)? {
                         return Ok(true);
                     }

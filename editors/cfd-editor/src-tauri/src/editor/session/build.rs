@@ -30,14 +30,15 @@ pub(super) fn build_session(
     yaml_path_in: &std::path::Path,
     registry: &ProviderRegistry,
 ) -> Result<(EditorSession, SessionSnapshotParts), EditorError> {
-    let project = Project::open_schema_only(Some(yaml_path_in))
-        .map_err(|err| EditorError::project(prefixed_diagnostics("failed to open project", &err)))?;
+    let project = Project::open_schema_only(Some(yaml_path_in)).map_err(|err| {
+        EditorError::project(prefixed_diagnostics("failed to open project", &err))
+    })?;
     let yaml_path = project.config_path.clone();
     let project_root = project.root_dir.clone();
     let runtime = Runtime::new(registry.clone());
-    let engine = runtime
-        .open_write_session(project)
-        .map_err(|err| EditorError::project(prefixed_diagnostics("failed to build project", &err)))?;
+    let engine = runtime.open_write_session(project).map_err(|err| {
+        EditorError::project(prefixed_diagnostics("failed to build project", &err))
+    })?;
     let file_tree = engine.queries().file_tree();
     let diagnostics = diagnostics_from_store(engine.queries().diagnostics(), &project_root);
 

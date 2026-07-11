@@ -27,17 +27,77 @@ use std::fmt::Write as _;
 pub trait ExportEventSink {
     type Error: fmt::Display;
 
+    /// Starts one table event stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the table header cannot be written.
     fn begin_table(&mut self, name: &str, records: usize) -> Result<(), Self::Error>;
+    /// Finishes the current table event stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the table cannot be finalized.
     fn end_table(&mut self) -> Result<(), Self::Error>;
+    /// Starts an array with its known element count.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the array header cannot be written.
     fn begin_array(&mut self, len: usize) -> Result<(), Self::Error>;
+    /// Finishes the current array.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the array cannot be finalized.
     fn end_array(&mut self) -> Result<(), Self::Error>;
+    /// Starts a map with its known entry count.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the map header cannot be written.
     fn begin_map(&mut self, len: usize) -> Result<(), Self::Error>;
+    /// Writes the next map key.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the key cannot be written.
     fn map_key(&mut self, key: &str) -> Result<(), Self::Error>;
+    /// Finishes the current map.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the map cannot be finalized.
     fn end_map(&mut self) -> Result<(), Self::Error>;
+    /// Writes a null scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the scalar cannot be written.
     fn null(&mut self) -> Result<(), Self::Error>;
+    /// Writes a Boolean scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the scalar cannot be written.
     fn bool(&mut self, value: bool) -> Result<(), Self::Error>;
+    /// Writes an integer scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the scalar cannot be written.
     fn int(&mut self, value: i64) -> Result<(), Self::Error>;
+    /// Writes a floating-point scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the scalar cannot be written.
     fn float(&mut self, value: f64) -> Result<(), Self::Error>;
+    /// Writes a string scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink-specific error when the scalar cannot be written.
     fn string(&mut self, value: &str) -> Result<(), Self::Error>;
 }
 
@@ -353,7 +413,7 @@ struct ExportLocation<'a> {
 }
 
 impl<'a> ExportLocation<'a> {
-    fn new(table: &'a str) -> Self {
+    const fn new(table: &'a str) -> Self {
         Self {
             table,
             record: None,

@@ -43,7 +43,7 @@ fn diagnostics_for(case: &Case) -> CfdDiagnostics {
             let schema = compile_schema(case.schema);
             let model = build(&schema).expect("check coverage model should build");
             let compiled = schema.compiled_schema();
-            check(&compiled, &model).expect_err(case.name)
+            check(compiled, &model).expect_err(case.name)
         }
     }
 }
@@ -785,7 +785,7 @@ fn assert_checks(schema_source: &str, records: impl IntoIterator<Item = CfdInput
     let model = model_from_records(&schema, records).expect("adjacent-valid model should build");
     let compiled = schema.compiled_schema();
     model
-        .run_checks(&compiled)
+        .run_checks(compiled)
         .expect("adjacent-valid checks should pass");
 }
 

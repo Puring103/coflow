@@ -1,7 +1,7 @@
 use coflow_cft::{CftSchemaDefaultValue, CftSchemaTypeRef};
 
-use crate::names::{escape_csharp_string, format_float};
 use crate::lowering::CsharpLoweringPlan;
+use crate::names::{escape_csharp_string, format_float};
 use crate::CsharpCodegenError;
 use coflow_cft::CftFieldMeta;
 
@@ -108,7 +108,11 @@ pub(super) fn default_value_expr(
     }))
 }
 
-fn string_default_expr(value: &str, ty: &CftSchemaTypeRef, view: &CsharpLoweringPlan<'_>) -> String {
+fn string_default_expr(
+    value: &str,
+    ty: &CftSchemaTypeRef,
+    view: &CsharpLoweringPlan<'_>,
+) -> String {
     match ty.non_nullable() {
         CftSchemaTypeRef::Named(name) if view.is_id_as_enum(name) => {
             let enum_name = view.csharp_enum_name(name);

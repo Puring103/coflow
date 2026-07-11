@@ -61,7 +61,7 @@ pub(crate) struct ValidationSnapshot {
 }
 
 impl ValidationSnapshot {
-    pub(crate) fn empty(revision: ValidationRevision) -> Self {
+    pub(crate) const fn empty(revision: ValidationRevision) -> Self {
         Self {
             revision,
             build: None,
@@ -72,16 +72,9 @@ impl ValidationSnapshot {
     }
 }
 
-pub(crate) fn build_snapshot(input: ValidationInput) -> ValidationSnapshot {
+pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
     let mut snapshot = ValidationSnapshot::empty(input.revision);
-    for document in input.open_documents.values() {
-        snapshot.active_uris.insert(document.uri.clone());
-        if let Some(version) = document.version {
-            snapshot
-                .document_versions
-                .insert(document.uri.clone(), version);
-        }
-    }
+    add_open_documents(&mut snapshot, &input.open_documents);
 
     let schema_files = match input.project.schema_files() {
         Ok(files) => files,
@@ -179,6 +172,20 @@ pub(crate) fn build_snapshot(input: ValidationInput) -> ValidationSnapshot {
         snapshot.build = Some(LspBuild::new(raw_build).with_cfd_definitions(definitions));
     }
     snapshot
+}
+
+fn add_open_documents(
+    snapshot: &mut ValidationSnapshot,
+    open_documents: &BTreeMap<PathBuf, OpenDocument>,
+) {
+    for document in open_documents.values() {
+        snapshot.active_uris.insert(document.uri.clone());
+        if let Some(version) = document.version {
+            snapshot
+                .document_versions
+                .insert(document.uri.clone(), version);
+        }
+    }
 }
 
 fn preferred_diagnostic_uris(

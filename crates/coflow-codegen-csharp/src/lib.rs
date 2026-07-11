@@ -33,9 +33,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-pub use ir::{
-    CsharpCodegenOptions, CsharpDataFormat, CsharpIdAsEnumVariant,
-};
+pub use ir::{CsharpCodegenOptions, CsharpDataFormat, CsharpIdAsEnumVariant};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedFile {

@@ -96,7 +96,10 @@ fn lower_object_entries(
                         field.name_span,
                     ));
                 };
-                values.insert(field.name.clone(), lower_value(schema, &field.value, &meta.ty_ref)?);
+                values.insert(
+                    field.name.clone(),
+                    lower_value(schema, &field.value, &meta.ty_ref)?,
+                );
             }
         }
     }
@@ -140,10 +143,7 @@ fn lower_value(
     }
 }
 
-fn scalar<'a>(
-    value: &'a CfdValue,
-    expected: &str,
-) -> Result<(&'a str, Span), CfdTextDiagnostics> {
+fn scalar<'a>(value: &'a CfdValue, expected: &str) -> Result<(&'a str, Span), CfdTextDiagnostics> {
     let CfdValue::Scalar(text, span) = value else {
         return Err(error(
             CfdTextErrorCode::TypeMismatch,
@@ -328,10 +328,8 @@ fn lower_dict(
             block.span,
         ));
     }
-    let dict_type = CftSchemaTypeRef::Dict(
-        Box::new(key_type.clone()),
-        Box::new(value_type.clone()),
-    );
+    let dict_type =
+        CftSchemaTypeRef::Dict(Box::new(key_type.clone()), Box::new(value_type.clone()));
     let mut spreads = Vec::new();
     let mut entries = Vec::new();
     for entry in &block.entries {
@@ -360,16 +358,13 @@ fn lower_dict_key(
 ) -> Result<CfdInputDictKey, CfdTextDiagnostics> {
     match ty.non_nullable() {
         CftSchemaTypeRef::String => Ok(CfdInputDictKey::String(raw.to_string())),
-        CftSchemaTypeRef::Int => raw
-            .parse::<i64>()
-            .map(CfdInputDictKey::Int)
-            .map_err(|_| {
-                error(
-                    CfdTextErrorCode::TypeMismatch,
-                    "expected int dict key",
-                    span,
-                )
-            }),
+        CftSchemaTypeRef::Int => raw.parse::<i64>().map(CfdInputDictKey::Int).map_err(|_| {
+            error(
+                CfdTextErrorCode::TypeMismatch,
+                "expected int dict key",
+                span,
+            )
+        }),
         CftSchemaTypeRef::Named(enum_name) if schema.is_schema_enum(enum_name) => {
             let variant = raw
                 .strip_prefix(enum_name)
@@ -493,11 +488,7 @@ pub(super) fn syntax_diagnostics(
     }
 }
 
-fn error(
-    code: CfdTextErrorCode,
-    message: impl Into<String>,
-    span: Span,
-) -> CfdTextDiagnostics {
+fn error(code: CfdTextErrorCode, message: impl Into<String>, span: Span) -> CfdTextDiagnostics {
     CfdTextDiagnostics::one(CfdTextDiagnostic::error(code, message, text_span(span)))
 }
 

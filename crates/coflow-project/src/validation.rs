@@ -56,10 +56,12 @@ fn validate_dimension_source_overlap_collecting(
     let dimension_dirs = dimensions
         .iter()
         .filter_map(|(dimension, config)| {
-            config
-                .out_dir
-                .as_ref()
-                .map(|out_dir| (dimension.as_str(), normalize_path(&resolve_project_relative(root_dir, out_dir))))
+            config.out_dir.as_ref().map(|out_dir| {
+                (
+                    dimension.as_str(),
+                    normalize_path(&resolve_project_relative(root_dir, out_dir)),
+                )
+            })
         })
         .collect::<Vec<_>>();
     if dimension_dirs.is_empty() {
@@ -180,8 +182,7 @@ fn validate_schema_config_collecting(
                 diagnostics.push(ProjectDiagnostic::new("schema list is empty", ["schema"]));
             }
             for (index, path) in paths.iter().enumerate() {
-                if let Err(err) = policy.validate_config_path(path, &format!("schema[{index}]"))
-                {
+                if let Err(err) = policy.validate_config_path(path, &format!("schema[{index}]")) {
                     diagnostics.push(ProjectDiagnostic::new(
                         err,
                         ["schema".to_string(), index.to_string()],

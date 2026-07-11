@@ -16,7 +16,7 @@ pub(super) struct ReferenceUpdateAction {
 }
 
 impl ReferenceUpdateAction {
-    pub(super) fn source(&self) -> &ResolvedSource {
+    pub(super) const fn source(&self) -> &ResolvedSource {
         &self.request.source
     }
 }
@@ -50,7 +50,7 @@ pub(super) struct SourceRewriteAction {
 }
 
 impl SourceRewriteAction {
-    pub(super) fn source(&self) -> &ResolvedSource {
+    pub(super) const fn source(&self) -> &ResolvedSource {
         &self.request.source
     }
 }

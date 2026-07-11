@@ -68,10 +68,7 @@ pub fn table_conformance_cases() -> Vec<TableConformanceCase> {
                 &["sword", "Sword", "stale", "stale2"],
             ]),
             target_header: row(&["name", "id"]),
-            expected_rows: rows(&[
-                &["name", "id"],
-                &["Sword", "sword"],
-            ]),
+            expected_rows: rows(&[&["name", "id"], &["Sword", "sword"]]),
             added: Vec::new(),
             removed: row(&["tail", "tail2"]),
         },

@@ -59,7 +59,7 @@ impl CheckValue {
             CfdValue::Float(value) => Self::Float(*value),
             CfdValue::String(value) => Self::String(value.clone()),
             CfdValue::Enum(value) => Self::Enum(value.clone()),
-            CfdValue::Object(_) => Self::Record(CheckRecordRef::Resolved(location.clone())),
+            CfdValue::Object(_) => Self::Record(CheckRecordRef::Resolved(location)),
             CfdValue::Ref(_) => {
                 let resolved = model.resolve_effective_ref(&location.storage.ref_site());
                 resolved.map_or_else(
@@ -74,7 +74,7 @@ impl CheckValue {
                 let element_type = array_element_type(ty).cloned();
                 Self::Array {
                     items: CheckItems::ModelArray {
-                        storage: location.storage.clone(),
+                        storage: location.storage,
                         traversal: cursor,
                         len: items.len(),
                     },
@@ -83,7 +83,7 @@ impl CheckValue {
             }
             CfdValue::Dict(entries) => Self::Dict {
                 entries: CheckEntries {
-                    storage: location.storage.clone(),
+                    storage: location.storage,
                     traversal: cursor,
                     len: entries.len(),
                 },

@@ -77,7 +77,7 @@ struct DefaultValueMaterializer<'a> {
 }
 
 impl<'a> DefaultValueMaterializer<'a> {
-    fn new(schema: &'a CompiledSchema) -> Self {
+    const fn new(schema: &'a CompiledSchema) -> Self {
         Self {
             schema,
             memo: BTreeMap::new(),
@@ -195,7 +195,7 @@ impl<'a> DefaultValueMaterializer<'a> {
 
     fn create_field_draft(&mut self, field: &CftFieldMeta) -> CreateRecordFieldDraft {
         if let Some(default) = field.default.as_ref() {
-            return match self.from_schema_default(
+            return match self.materialize_schema_default(
                 &field.ty_ref,
                 default,
                 DefaultMaterialization::EditableShape,
@@ -207,7 +207,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                     required: None,
                 },
                 Err(err) => {
-                    required_field_draft(self.schema, field, Some(err), Some(CfdValue::Null))
+                    required_field_draft(self.schema, field, Some(&err), Some(CfdValue::Null))
                 }
             };
         }
@@ -225,7 +225,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                 source: CreateFieldSource::TypeSeed,
                 required: None,
             },
-            Err(err) => required_field_draft(self.schema, field, Some(err), Some(CfdValue::Null)),
+            Err(err) => required_field_draft(self.schema, field, Some(&err), Some(CfdValue::Null)),
         }
     }
 
@@ -236,12 +236,12 @@ impl<'a> DefaultValueMaterializer<'a> {
         materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
         if let Some(default) = declared_default {
-            return self.from_schema_default(ty, default, materialization);
+            return self.materialize_schema_default(ty, default, materialization);
         }
         self.zero_for_ty(ty, materialization)
     }
 
-    fn from_schema_default(
+    fn materialize_schema_default(
         &mut self,
         ty: &CftSchemaTypeRef,
         default: &CftSchemaDefaultValue,
@@ -334,7 +334,7 @@ impl<'a> DefaultValueMaterializer<'a> {
     }
 }
 
-fn dependency_mode(materialization: DefaultMaterialization) -> ValueDependencyMode {
+const fn dependency_mode(materialization: DefaultMaterialization) -> ValueDependencyMode {
     match materialization {
         DefaultMaterialization::Minimal => ValueDependencyMode::Minimal,
         DefaultMaterialization::EditableShape => ValueDependencyMode::EditableShape,
@@ -344,14 +344,14 @@ fn dependency_mode(materialization: DefaultMaterialization) -> ValueDependencyMo
 fn required_field_draft(
     schema: &CompiledSchema,
     field: &CftFieldMeta,
-    err: Option<DiagnosticSet>,
+    err: Option<&DiagnosticSet>,
     value: Option<CfdValue>,
 ) -> CreateRecordFieldDraft {
     CreateRecordFieldDraft {
         name: field.name.clone(),
         value,
         source: CreateFieldSource::RequiredInput,
-        required: Some(required_input_for_field(schema, field, err.as_ref())),
+        required: Some(required_input_for_field(schema, field, err)),
     }
 }
 

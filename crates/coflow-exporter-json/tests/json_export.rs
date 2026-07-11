@@ -127,10 +127,7 @@ fn streaming_json_preserves_pretty_output_bytes() -> TestResult {
             ("name", CfdInputValue::from("Sword")),
             (
                 "numbers",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from(1_i64),
-                    CfdInputValue::from(2_i64),
-                ]),
+                CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(2_i64)]),
             ),
         ],
     );
@@ -186,7 +183,7 @@ fn json_exporter_skips_empty_table_files() -> TestResult {
     let artifacts = coflow_exporter_json::JsonExporter
         .export(
             ExportContext {
-                schema: &compiled_schema,
+                schema: compiled_schema,
                 model: &model,
             },
             &OutputSpec {

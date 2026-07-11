@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use coflow_api::{Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec, WriterCapabilities};
+use coflow_api::{
+    Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec, WriterCapabilities,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExcelWorkbookFormat {
@@ -48,17 +50,12 @@ pub(super) fn ensure_writable_excel_path(
         ExcelWorkbookFormat::Xls => {
             "legacy `.xls` is read-only because the Excel writer emits OOXML workbooks"
         }
-        ExcelWorkbookFormat::Unsupported => {
-            "only `.xlsx` workbooks have a mutation implementation"
-        }
+        ExcelWorkbookFormat::Unsupported => "only `.xlsx` workbooks have a mutation implementation",
         ExcelWorkbookFormat::Xlsx => return Ok(()),
     };
     Err(DiagnosticSet::one(Diagnostic::error(
         "EXCEL-FORMAT-READ-ONLY",
         "EXCEL",
-        format!(
-            "cannot {operation} `{}`: {reason}",
-            path.display()
-        ),
+        format!("cannot {operation} `{}`: {reason}", path.display()),
     )))
 }

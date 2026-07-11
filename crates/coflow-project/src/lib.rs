@@ -75,7 +75,10 @@ impl Project {
                 &config_path,
                 "PROJECT-CONFIG-PATH",
                 "PROJECT",
-                format!("failed to resolve config `{}`: {err}", config_path.display()),
+                format!(
+                    "failed to resolve config `{}`: {err}",
+                    config_path.display()
+                ),
             )
         })?;
         let root_dir = config_path.parent().ok_or_else(|| {

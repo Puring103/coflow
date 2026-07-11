@@ -1,7 +1,7 @@
 use coflow_api::{
-    DecodedSourceOptions, DiagnosticSet, DimensionSourceManager,
-    DimensionSourceManagerDescriptor, DimensionSourceOptionsRequest, DimensionSourceRequest,
-    DimensionSourceResult, SourceLocationSpec, TableContext,
+    DecodedSourceOptions, DiagnosticSet, DimensionSourceManager, DimensionSourceManagerDescriptor,
+    DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
+    SourceLocationSpec, TableContext,
 };
 use coflow_cfd::ast::CfdBlockEntry;
 use coflow_cfd::parse_cfd;
@@ -64,7 +64,7 @@ impl DimensionSourceManager for CfdWriter {
             }
             out.push_str("}\n\n");
         }
-        write_if_changed(path, &out, "CFD-DIMENSION", self)
+        write_if_changed(path, &out, "CFD-DIMENSION")
     }
 }
 
@@ -155,7 +155,6 @@ fn write_if_changed(
     path: &Path,
     body: &str,
     code: &'static str,
-    writer: &CfdWriter,
 ) -> Result<DimensionSourceResult, DiagnosticSet> {
     match std::fs::read_to_string(path) {
         Ok(existing) if existing == body => {
@@ -181,6 +180,6 @@ fn write_if_changed(
             ))
         })?;
     }
-    writer.write_source_public(path, body.to_string())?;
+    CfdWriter::write_source(path, body)?;
     Ok(DimensionSourceResult { changed: true })
 }

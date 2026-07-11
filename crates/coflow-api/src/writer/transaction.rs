@@ -56,8 +56,7 @@ impl SourceTransaction {
             "WRITE",
             format!(
                 "provider `{}` does not declare compensation for source `{}`",
-                source.provider_id,
-                source.display_name
+                source.provider_id, source.display_name
             ),
         ))
     }

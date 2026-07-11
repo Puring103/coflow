@@ -249,12 +249,7 @@ impl SourceLocation {
                 end_line,
                 end_character,
                 ..
-            } => TextRange::from_parts(
-                *start_line,
-                *start_character,
-                *end_line,
-                *end_character,
-            ),
+            } => TextRange::from_parts(*start_line, *start_character, *end_line, *end_character),
             Self::TableCell { row, column, .. } | Self::RemoteCell { row, column, .. } => {
                 TextRange::from_parts(
                     row.saturating_sub(1),
@@ -263,9 +258,7 @@ impl SourceLocation {
                     (*column).max(1),
                 )
             }
-            Self::ProjectConfig { .. } | Self::Artifact { .. } => {
-                TextRange::from_parts(0, 0, 0, 1)
-            }
+            Self::ProjectConfig { .. } | Self::Artifact { .. } => TextRange::from_parts(0, 0, 0, 1),
         }
     }
 
