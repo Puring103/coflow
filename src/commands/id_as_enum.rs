@@ -1,5 +1,5 @@
+use crate::artifacts::artifact_diagnostic_set;
 use crate::artifacts::{enum_lockfile_path, read_active_enum_lock};
-use crate::commands::artifact_safety::artifact_diagnostic_set;
 use coflow_api::DiagnosticSet;
 use coflow_project::Project;
 use coflow_runtime::IdAsEnumInfo;

@@ -1,20 +1,14 @@
 use crate::artifacts::{
-    configured_data_format, configured_data_output, output_dir, output_options,
-    required_code_output, required_data_output, ArtifactGenerator, ArtifactOutputTarget,
-    ArtifactReleaseOutput, ArtifactReleasePlan, CODE_OUTPUT_SLOT, DATA_OUTPUT_SLOT,
+    configured_data_format, configured_data_output, required_code_output, required_data_output,
+    ArtifactReleasePlan, CODE_OUTPUT_SLOT, DATA_OUTPUT_SLOT,
 };
-use coflow_api::{
-    CodeGenerator, DataExporter, DecodedOutputOptions, Diagnostic, DiagnosticSet, Label,
-    ProviderRegistry, Severity, SourceLocation,
-};
+use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
 use coflow_project::Project;
 use coflow_runtime::Runtime;
 use id_as_enum::{id_as_enum_variants_for_schema_only, prepare_id_as_enum_artifacts_for_build};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-pub(crate) mod artifact_safety;
 mod id_as_enum;
 
 pub const JSON_EXPORTER_ID: &str = "json";
@@ -101,16 +95,32 @@ pub fn build_project(
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    let plan = match build_provider_plan(project, registry, options) {
-        Ok(plan) => plan,
-        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-    };
     let runtime = Runtime::new(registry.clone());
     let session = runtime.build_project_session(project.clone())?;
     if session.queries().has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let (id_as_enum_variants, enum_lock_state) = if plan.code.is_some() {
+    let (data_output, data_format) = configured_data_output(project, "coflow build")?;
+    let Some(exporter) = registry.exporter(data_format) else {
+        return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
+            &project.config_path,
+            format!("no data exporter registered for `{data_format}`"),
+            ["outputs", "data", "type"],
+        )));
+    };
+    let code = if let Some(output) = project.config.outputs.code.as_ref() {
+        let Some(codegen) = registry.codegen(&output.output_type) else {
+            return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
+                &project.config_path,
+                format!("no code generator registered for `{}`", output.output_type),
+                ["outputs", "code", "type"],
+            )));
+        };
+        Some((output, codegen))
+    } else {
+        None
+    };
+    let (id_as_enum_variants, enum_lock_state) = if code.is_some() {
         match prepare_id_as_enum_artifacts_for_build(project, session.queries().id_as_enum_info()) {
             Ok(artifacts) => (artifacts.variants, Some(artifacts.lock_state)),
             Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
@@ -119,36 +129,17 @@ pub fn build_project(
         (Value::Null, None)
     };
     let mut release = ArtifactReleasePlan::new(project);
-    release.add_output(ArtifactReleaseOutput::new(
-        ArtifactOutputTarget::new(
-            DATA_OUTPUT_SLOT,
-            plan.data.exporter_id.clone(),
-            plan.data.display_name,
-            plan.data.dir.clone(),
-        ),
-        ArtifactGenerator::Data {
-            session: &session,
-            exporter: Arc::clone(&plan.data.exporter),
-            options: plan.data.options.clone(),
-        },
-    ));
-    if let Some(code) = &plan.code {
-        release.add_output(ArtifactReleaseOutput::new(
-            ArtifactOutputTarget::new(
-                CODE_OUTPUT_SLOT,
-                code.codegen_id.clone(),
-                code.display_name,
-                code.dir.clone(),
-            ),
-            ArtifactGenerator::BuildCode {
-                session: &session,
-                codegen: Arc::clone(&code.codegen),
-                options: code.options.clone(),
-                data_format: &plan.data.exporter_id,
-                id_as_enum_variants: &id_as_enum_variants,
-                include_model: code.needs_model_for_build,
-            },
-        ));
+    release.add_data(&session, exporter, data_output, options.data_out_dir);
+    let has_code = code.is_some();
+    if let Some((output, codegen)) = code {
+        release.add_build_code(
+            &session,
+            codegen,
+            output,
+            options.code_out_dir,
+            data_format,
+            &id_as_enum_variants,
+        );
         if let Some(lock_state) = enum_lock_state {
             release.replace_enum_lock(lock_state);
         }
@@ -160,10 +151,8 @@ pub fn build_project(
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
     let data = export_report(published.output(DATA_OUTPUT_SLOT)?);
-    let code = plan
-        .code
-        .as_ref()
-        .map(|_| published.output(CODE_OUTPUT_SLOT).map(codegen_report))
+    let code = has_code
+        .then(|| published.output(CODE_OUTPUT_SLOT).map(codegen_report))
         .transpose()?;
     Ok(CommandOutcome::Success(BuildReport { data, code }))
 }
@@ -189,6 +178,12 @@ pub fn export_project_data(
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
+    let output = required_data_output(project, exporter_id, &command)?;
+    let runtime = Runtime::new(registry.clone());
+    let session = runtime.build_project_session(project.clone())?;
+    if session.queries().has_diagnostics() {
+        return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
+    }
     let Some(exporter) = registry.exporter(exporter_id) else {
         return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
             &project.config_path,
@@ -196,32 +191,8 @@ pub fn export_project_data(
             ["outputs", "data", "type"],
         )));
     };
-    let exporter_descriptor = exporter.descriptor();
-    let output = required_data_output(project, exporter_id, &command)?.clone();
-    let dir = output_dir(project, &output, options.out_dir);
-    let runtime = Runtime::new(registry.clone());
-    let session = runtime.build_project_session(project.clone())?;
-    if session.queries().has_diagnostics() {
-        return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
-    }
-    let decoded_options = match exporter.decode_options(&output_options(&output)) {
-        Ok(options) => options,
-        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-    };
     let mut release = ArtifactReleasePlan::new(project);
-    release.add_output(ArtifactReleaseOutput::new(
-        ArtifactOutputTarget::new(
-            DATA_OUTPUT_SLOT,
-            exporter_id,
-            exporter_descriptor.display_name,
-            dir,
-        ),
-        ArtifactGenerator::Data {
-            session: &session,
-            exporter,
-            options: decoded_options,
-        },
-    ));
+    release.add_data(&session, exporter, output, options.out_dir);
     let published = match release.execute() {
         Ok(published) => published,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
@@ -250,8 +221,12 @@ pub fn generate_project_code(
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
     let command = format!("coflow codegen {codegen_id}");
-    let output = required_code_output(project, codegen_id, &command)?.clone();
-    let data_format = configured_data_format(project, &command)?.to_string();
+    let output = required_code_output(project, codegen_id, &command)?;
+    let data_format = configured_data_format(project, &command)?;
+    let session = Runtime::build_schema_session(project.clone())?;
+    if session.has_diagnostics() {
+        return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
+    }
     let Some(codegen) = registry.codegen(codegen_id) else {
         return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
             &project.config_path,
@@ -259,81 +234,26 @@ pub fn generate_project_code(
             ["outputs", "code", "type"],
         )));
     };
-    let codegen_descriptor = codegen.descriptor();
-    if !codegen_descriptor
-        .supported_data_formats
-        .contains(&data_format.as_str())
-    {
-        return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
-            &project.config_path,
-            format!("code generator `{codegen_id}` does not support data format `{data_format}`"),
-            ["outputs", "code", "type"],
-        )));
-    }
-    let dir = output_dir(project, &output, options.out_dir);
-    let session = Runtime::build_schema_session(project.clone())?;
-    if session.has_diagnostics() {
-        return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
-    }
-    let id_as_enum_variants = id_as_enum_variants_for_schema_only(project);
-    let no_variants = Value::Null;
-    let variants = id_as_enum_variants.as_ref().unwrap_or(&no_variants);
-    let decoded_options = match codegen.decode_options(&output_options(&output)) {
-        Ok(options) => options,
+    let variants = match id_as_enum_variants_for_schema_only(project) {
+        Ok(variants) => variants,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
     let mut release = ArtifactReleasePlan::new(project);
-    release.add_output(ArtifactReleaseOutput::new(
-        ArtifactOutputTarget::new(
-            CODE_OUTPUT_SLOT,
-            codegen_id,
-            codegen_descriptor.display_name,
-            dir,
-        ),
-        ArtifactGenerator::SchemaCode {
-            session: &session,
-            codegen,
-            options: decoded_options,
-            data_format: &data_format,
-            id_as_enum_variants: variants,
-        },
-    ));
-    let prepared = match release.prepare() {
-        Ok(prepared) => prepared,
-        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-    };
-    if let Err(diagnostics) = id_as_enum_variants {
-        return Ok(CommandOutcome::Diagnostics(diagnostics));
-    }
-    let published = match prepared.publish() {
+    release.add_schema_code(
+        &session,
+        codegen,
+        output,
+        options.out_dir,
+        data_format,
+        &variants,
+    );
+    let published = match release.execute() {
         Ok(published) => published,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
     Ok(CommandOutcome::Success(codegen_report(
         published.output(CODE_OUTPUT_SLOT)?,
     )))
-}
-
-struct BuildProviderPlan {
-    data: BuildDataPlan,
-    code: Option<BuildCodegenPlan>,
-}
-
-struct BuildDataPlan {
-    exporter_id: String,
-    display_name: &'static str,
-    dir: PathBuf,
-    exporter: Arc<dyn DataExporter>,
-    options: DecodedOutputOptions,
-}
-
-struct BuildCodegenPlan {
-    codegen_id: String,
-    display_name: &'static str,
-    dir: PathBuf,
-    needs_model_for_build: bool,
-    codegen: Arc<dyn CodeGenerator>,
-    options: DecodedOutputOptions,
 }
 
 fn build_config_diagnostics(project: &Project) -> DiagnosticSet {
@@ -343,73 +263,6 @@ fn build_config_diagnostics(project: &Project) -> DiagnosticSet {
         diagnostics.extend(output_diagnostics);
     }
     diagnostics
-}
-
-fn build_provider_plan<'a>(
-    project: &'a Project,
-    registry: &ProviderRegistry,
-    options: BuildOptions<'a>,
-) -> Result<BuildProviderPlan, DiagnosticSet> {
-    let (data_output, data_format) = configured_data_output(project, "coflow build")?;
-    let data_exporter = registry.exporter(data_format).ok_or_else(|| {
-        project_diagnostic_set(
-            &project.config_path,
-            format!("no data exporter registered for `{data_format}`"),
-            ["outputs", "data", "type"],
-        )
-    })?;
-    let data_dir = output_dir(project, data_output, options.data_out_dir);
-    let data_options = data_exporter.decode_options(&output_options(data_output))?;
-    let code = build_codegen_plan(project, registry, options, data_format)?;
-
-    Ok(BuildProviderPlan {
-        data: BuildDataPlan {
-            exporter_id: data_format.to_string(),
-            display_name: data_exporter.descriptor().display_name,
-            dir: data_dir,
-            exporter: data_exporter,
-            options: data_options,
-        },
-        code,
-    })
-}
-
-fn build_codegen_plan<'a>(
-    project: &'a Project,
-    registry: &ProviderRegistry,
-    options: BuildOptions<'a>,
-    data_format: &str,
-) -> Result<Option<BuildCodegenPlan>, DiagnosticSet> {
-    let Some(output) = project.config.outputs.code.as_ref() else {
-        return Ok(None);
-    };
-    let codegen_id = output.output_type.clone();
-    let codegen = registry.codegen(&codegen_id).ok_or_else(|| {
-        project_diagnostic_set(
-            &project.config_path,
-            format!("no code generator registered for `{codegen_id}`"),
-            ["outputs", "code", "type"],
-        )
-    })?;
-    let descriptor = codegen.descriptor();
-    if !descriptor.supported_data_formats.contains(&data_format) {
-        return Err(project_diagnostic_set(
-            &project.config_path,
-            format!("code generator `{codegen_id}` does not support data format `{data_format}`"),
-            ["outputs", "code", "type"],
-        ));
-    }
-
-    let dir = output_dir(project, output, options.code_out_dir);
-    let decoded_options = codegen.decode_options(&output_options(output))?;
-    Ok(Some(BuildCodegenPlan {
-        codegen_id,
-        display_name: descriptor.display_name,
-        dir,
-        needs_model_for_build: descriptor.needs_model_for_build,
-        codegen,
-        options: decoded_options,
-    }))
 }
 
 fn export_report(output: &crate::artifacts::ReleasedOutput) -> ExportReport {

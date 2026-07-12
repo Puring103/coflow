@@ -295,15 +295,13 @@ impl CodeGenerator for CsharpCodeGenerator {
         &self,
         options: &serde_json::Value,
     ) -> Result<DecodedOutputOptions, DiagnosticSet> {
-        let raw = serde_json::from_value::<CsharpOutputOptionsConfig>(options.clone()).map_err(
-            |err| {
-                DiagnosticSet::one(Diagnostic::error(
-                    "CSHARP-OPTIONS",
-                    "CODEGEN",
-                    format!("invalid C# output options: {err}"),
-                ))
-            },
-        )?;
+        let raw = CsharpOutputOptionsConfig::deserialize(options).map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "CSHARP-OPTIONS",
+                "CODEGEN",
+                format!("invalid C# output options: {err}"),
+            ))
+        })?;
         let codegen = CsharpCodegenOptions::new(raw.namespace.as_deref().unwrap_or("Game.Config"))
             .with_database_class(raw.database_class.as_deref().unwrap_or("CoflowTables"))
             .with_int_32(raw.int_32)

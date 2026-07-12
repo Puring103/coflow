@@ -294,6 +294,6 @@ pub(super) fn artifact_diagnostic(path: &Path, message: impl Into<String>) -> Di
     }
 }
 
-pub(super) fn artifact_diagnostic_set(path: &Path, message: impl Into<String>) -> DiagnosticSet {
+pub(crate) fn artifact_diagnostic_set(path: &Path, message: impl Into<String>) -> DiagnosticSet {
     DiagnosticSet::one(artifact_diagnostic(path, message))
 }
