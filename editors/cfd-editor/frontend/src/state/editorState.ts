@@ -1,5 +1,6 @@
 import type { ProjectSnapshot } from '../bindings/ProjectSnapshot'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
+import type { FileRecords } from '../bindings/FileRecords'
 import { sameCoordinate, type FieldPathSegment, type FieldValue } from '../wire'
 
 export type MutationResult<T = void> =
@@ -15,6 +16,7 @@ export class ProjectGenerationController {
   private sessionId: number | null = null
   private revision = 0
   private requestGeneration = 0
+  private projectRequestGeneration = 0
 
   currentSession(): number | null {
     return this.sessionId
@@ -46,9 +48,13 @@ export class ProjectGenerationController {
     return this.sessionId === sessionId && this.revision === revision
   }
 
-  beginRequest(): number {
-    this.requestGeneration += 1
-    return this.requestGeneration
+  beginProjectRequest(): number {
+    this.projectRequestGeneration += 1
+    return this.projectRequestGeneration
+  }
+
+  isProjectRequestCurrent(request: number): boolean {
+    return request === this.projectRequestGeneration
   }
 
   captureRequest(): number {
@@ -58,6 +64,64 @@ export class ProjectGenerationController {
   isRequestCurrent(request: number): boolean {
     return request === this.requestGeneration
   }
+}
+
+export interface MutationPublicationRequest {
+  sessionId: number
+  revision: number
+  diagnostics: ProjectSnapshot['diagnostics']
+  affectedFiles: readonly string[]
+  fallbackFile: string
+  knownRecords?: FileRecords
+}
+
+export interface MutationPublicationPort {
+  acceptRevision: (
+    sessionId: number,
+    revision: number,
+    diagnostics: ProjectSnapshot['diagnostics'],
+  ) => boolean
+  isCurrent: (sessionId: number, revision: number) => boolean
+  getFileRecords: (sessionId: number, filePath: string) => Promise<FileRecords>
+  publishFileRecords: (records: readonly (readonly [string, FileRecords])[]) => void
+  invalidateGraphs: () => void
+}
+
+/**
+ * Publishes one backend mutation generation. The backend revision is the only
+ * ordering authority: a later caller must never suppress a newer revision.
+ */
+export async function publishMutationGeneration(
+  port: MutationPublicationPort,
+  request: MutationPublicationRequest,
+): Promise<MutationResult<void>> {
+  const {
+    sessionId,
+    revision,
+    diagnostics,
+    affectedFiles,
+    fallbackFile,
+    knownRecords,
+  } = request
+  if (!port.acceptRevision(sessionId, revision, diagnostics)) return superseded()
+
+  const files = Array.from(new Set(affectedFiles.length > 0 ? affectedFiles : [fallbackFile]))
+  const refreshedFiles = await Promise.all(files.map(async file => {
+    const records = knownRecords?.file_path === file && knownRecords.revision === revision
+      ? knownRecords
+      : await port.getFileRecords(sessionId, file)
+    return [file, records] as const
+  }))
+  if (
+    !port.isCurrent(sessionId, revision) ||
+    refreshedFiles.some(([, records]) => records.revision !== revision)
+  ) {
+    return superseded()
+  }
+
+  port.publishFileRecords(refreshedFiles)
+  port.invalidateGraphs()
+  return committed(undefined)
 }
 
 export type EditEntry = FieldEditEntry | InsertEditEntry | DeleteEditEntry

@@ -40,9 +40,11 @@ import {
   committed,
   failed,
   MutationHistoryController,
+  publishMutationGeneration,
   ProjectGenerationController,
   superseded,
   type MutationResult,
+  type MutationPublicationRequest,
 } from './state/editorState'
 import './style.css'
 
@@ -82,10 +84,6 @@ export default function App() {
   const helpReturnRef = useRef<HTMLElement | null>(null)
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-
-  // Monotonic sequence guard so stale write completions can't overwrite a
-  // newer edit's refresh (e.g. when two edits race on the same file).
-  const writeSeqRef = useRef(0)
 
   const router = useRouter()
   const { theme, toggle: toggleTheme } = useTheme()
@@ -186,8 +184,12 @@ export default function App() {
     prefix: string,
     err: unknown,
     includeDiagnostics = false,
+    expectedRevision?: number,
   ) => {
-    if (generation.currentSession() !== sessionId) return
+    if (
+      generation.currentSession() !== sessionId
+      || (expectedRevision !== undefined && !generation.isCurrent(sessionId, expectedRevision))
+    ) return
     setErrorMsg(`${prefix}: ${errorMessage(err)}`)
     if (!includeDiagnostics) return
     const diagnostics = errorDiagnostics(err)
@@ -207,16 +209,16 @@ export default function App() {
       setFileDataCache(MOCK_FILE_RECORDS)
       return
     }
-    const request = generation.beginRequest()
+    const request = generation.beginProjectRequest()
     const yamlPath = await api.pickProjectYaml()
-    if (!generation.isRequestCurrent(request) || !yamlPath) return
+    if (!generation.isProjectRequestCurrent(request) || !yamlPath) return
     setErrorMsg(null)
     try {
       const snapshot = await api.loadProject(yamlPath)
-      if (!generation.isRequestCurrent(request)) return
+      if (!generation.isProjectRequestCurrent(request)) return
       adoptSnapshot(snapshot)
     } catch (err) {
-      if (!generation.isRequestCurrent(request)) return
+      if (!generation.isProjectRequestCurrent(request)) return
       setErrorMsg(`打开项目失败: ${errorMessage(err)}`)
       const diags = errorDiagnostics(err)
       if (diags.length > 0) {
@@ -237,7 +239,6 @@ export default function App() {
       setGraphCache({})
       history.clear()
       setHighlightField(null)
-      writeSeqRef.current += 1
       if (!nextFile) {
         return
       }
@@ -286,46 +287,21 @@ export default function App() {
     return true
   }, [generation])
 
-  const loadAffectedFiles = useCallback(async ({
-    sessionId,
-    revision,
-    affectedFiles,
-    fallbackFile,
-    writeSeq,
-    knownRecords,
-  }: {
-    sessionId: number
-    revision: number
-    affectedFiles: readonly string[]
-    fallbackFile: string
-    writeSeq?: number
-    knownRecords?: FileRecords
-  }): Promise<boolean> => {
-    const isCurrent = () => (
-      generation.isCurrent(sessionId, revision) &&
-      (writeSeq === undefined || writeSeqRef.current === writeSeq)
-    )
-    if (!isCurrent()) return false
-
-    const files = Array.from(new Set(affectedFiles.length > 0 ? affectedFiles : [fallbackFile]))
-    const refreshedFiles = await Promise.all(files.map(async file => {
-      const records = knownRecords?.file_path === file && knownRecords.revision === revision
-        ? knownRecords
-        : await api.getFileRecords(sessionId, file)
-      return [file, records] as const
-    }))
-    if (!isCurrent() || refreshedFiles.some(([, records]) => records.revision !== revision)) {
-      return false
-    }
-
-    setFileDataCache(current => {
-      const next = { ...current }
-      for (const [file, records] of refreshedFiles) next[file] = records
-      return next
-    })
-    setGraphCache({})
-    return true
-  }, [generation])
+  const publishMutation = useCallback((request: MutationPublicationRequest) => (
+    publishMutationGeneration({
+      acceptRevision: commitProjectRevision,
+      isCurrent: (sessionId, revision) => generation.isCurrent(sessionId, revision),
+      getFileRecords: api.getFileRecords,
+      publishFileRecords: records => {
+        setFileDataCache(current => {
+          const next = { ...current }
+          for (const [file, fileRecords] of records) next[file] = fileRecords
+          return next
+        })
+      },
+      invalidateGraphs: () => setGraphCache({}),
+    }, request)
+  ), [commitProjectRevision, generation])
 
   useEffect(() => {
     if (!api.isTauri || !project) return
@@ -370,16 +346,16 @@ export default function App() {
       setErrorMsg('新建工程仅在桌面环境可用')
       return
     }
-    const request = generation.beginRequest()
+    const request = generation.beginProjectRequest()
     const dir = await api.pickProjectDirectory()
-    if (!generation.isRequestCurrent(request) || !dir) return
+    if (!generation.isProjectRequestCurrent(request) || !dir) return
     setErrorMsg(null)
     try {
       const snapshot = await api.initProject(dir)
-      if (!generation.isRequestCurrent(request)) return
+      if (!generation.isProjectRequestCurrent(request)) return
       adoptSnapshot(snapshot)
     } catch (err) {
-      if (!generation.isRequestCurrent(request)) return
+      if (!generation.isProjectRequestCurrent(request)) return
       setErrorMsg(`新建工程失败: ${errorMessage(err)}`)
       const diags = errorDiagnostics(err)
       if (diags.length > 0) {
@@ -620,7 +596,7 @@ export default function App() {
     ): Promise<MutationResult<RecordRow>> => {
       if (!project || !api.isTauri) return failed()
       const sessionId = project.session_id
-      const mySeq = ++writeSeqRef.current
+      const revision = project.revision
       try {
         const outcome = await api.writeField(
           sessionId,
@@ -628,14 +604,13 @@ export default function App() {
           fieldPath,
           newValue,
         )
-        if (!commitProjectRevision(sessionId, outcome.revision, outcome.diagnostics)) return superseded()
-        if (!await loadAffectedFiles({
+        if ((await publishMutation({
           sessionId,
           revision: outcome.revision,
+          diagnostics: outcome.diagnostics,
           affectedFiles: outcome.affected_files,
           fallbackFile: filePath,
-          writeSeq: mySeq,
-        })) return superseded()
+        })).status !== 'committed') return superseded()
         const finalCoordinate = outcome.renamed ?? coordinate
         if (outcome.renamed) {
           rebindCoordinate(coordinate, outcome.renamed)
@@ -654,11 +629,11 @@ export default function App() {
         }
         return committed(outcome.row)
       } catch (err) {
-        reportSessionError(sessionId, '写入失败', err, true)
+        reportSessionError(sessionId, '写入失败', err, true, revision)
         return failed()
       }
     },
-    [commitProjectRevision, history, loadAffectedFiles, project, rebindCoordinate, reportSessionError],
+    [history, project, publishMutation, rebindCoordinate, reportSessionError],
   )
 
   const writeField = useCallback(
@@ -678,17 +653,16 @@ export default function App() {
     ) => {
       if (!project || !api.isTauri) return failed()
       const sessionId = project.session_id
-      const mySeq = ++writeSeqRef.current
+      const revision = project.revision
       try {
         const outcome = await api.editCollection(sessionId, coordinate, fieldPath, edit)
-        if (!commitProjectRevision(sessionId, outcome.revision, outcome.diagnostics)) return superseded()
-        if (!await loadAffectedFiles({
+        if ((await publishMutation({
           sessionId,
           revision: outcome.revision,
+          diagnostics: outcome.diagnostics,
           affectedFiles: outcome.affected_files,
           fallbackFile: filePath,
-          writeSeq: mySeq,
-        })) return superseded()
+        })).status !== 'committed') return superseded()
         const finalCoordinate = outcome.renamed ?? coordinate
         if (outcome.renamed) {
           rebindCoordinate(coordinate, outcome.renamed)
@@ -705,11 +679,11 @@ export default function App() {
         }
         return committed(outcome.row)
       } catch (err) {
-        reportSessionError(sessionId, '集合编辑失败', err, true)
+        reportSessionError(sessionId, '集合编辑失败', err, true, revision)
         return failed()
       }
     },
-    [commitProjectRevision, history, loadAffectedFiles, project, rebindCoordinate, reportSessionError],
+    [history, project, publishMutation, rebindCoordinate, reportSessionError],
   )
 
   const editCollection = useCallback(
@@ -734,17 +708,16 @@ export default function App() {
     ): Promise<MutationResult<RecordRow>> => {
       if (!project || !api.isTauri) return failed()
       const sessionId = project.session_id
-      const mySeq = ++writeSeqRef.current
+      const revision = project.revision
       try {
         const outcome = await api.renameRecordKey(sessionId, coordinate, newKey)
-        if (!commitProjectRevision(sessionId, outcome.revision, outcome.diagnostics)) return superseded()
-        if (!await loadAffectedFiles({
+        if ((await publishMutation({
           sessionId,
           revision: outcome.revision,
+          diagnostics: outcome.diagnostics,
           affectedFiles: outcome.affected_files,
           fallbackFile: filePath,
-          writeSeq: mySeq,
-        })) return superseded()
+        })).status !== 'committed') return superseded()
         rebindCoordinate(coordinate, outcome.renamed)
         if (opts.recordHistory) {
           history.record({
@@ -758,11 +731,11 @@ export default function App() {
         }
         return committed(outcome.row)
       } catch (err) {
-        reportSessionError(sessionId, '重命名失败', err, true)
+        reportSessionError(sessionId, '重命名失败', err, true, revision)
         return failed()
       }
     },
-    [commitProjectRevision, history, loadAffectedFiles, project, rebindCoordinate, reportSessionError],
+    [history, project, publishMutation, rebindCoordinate, reportSessionError],
   )
 
   const renameRecord = useCallback(
@@ -792,16 +765,17 @@ export default function App() {
     ) => {
       if (!project || !api.isTauri) return failed()
       const sessionId = project.session_id
+      const revision = project.revision
       try {
         const outcome = await api.insertRecord(sessionId, filePath, recordKey, actualType, fields)
-        if (!commitProjectRevision(sessionId, outcome.revision, outcome.diagnostics)) return superseded()
-        if (!await loadAffectedFiles({
+        if ((await publishMutation({
           sessionId,
           revision: outcome.revision,
+          diagnostics: outcome.diagnostics,
           affectedFiles: outcome.affected_files,
           fallbackFile: filePath,
           knownRecords: outcome.file_records,
-        })) return superseded()
+        })).status !== 'committed') return superseded()
         if (opts.recordHistory) {
           history.record({
             kind: 'insert',
@@ -812,11 +786,11 @@ export default function App() {
         }
         return committed(undefined)
       } catch (err) {
-        reportSessionError(sessionId, '新建记录失败', err, true)
+        reportSessionError(sessionId, '新建记录失败', err, true, revision)
         return failed()
       }
     },
-    [commitProjectRevision, history, loadAffectedFiles, project, reportSessionError],
+    [history, project, publishMutation, reportSessionError],
   )
 
   const deleteRecordInternal = useCallback(
@@ -827,16 +801,17 @@ export default function App() {
     ) => {
       if (!project || !api.isTauri) return failed()
       const sessionId = project.session_id
+      const revision = project.revision
       try {
         const outcome = await api.deleteRecord(sessionId, coordinate)
-        if (!commitProjectRevision(sessionId, outcome.revision, outcome.diagnostics)) return superseded()
-        if (!await loadAffectedFiles({
+        if ((await publishMutation({
           sessionId,
           revision: outcome.revision,
+          diagnostics: outcome.diagnostics,
           affectedFiles: outcome.affected_files,
           fallbackFile: filePath,
           knownRecords: outcome.file_records,
-        })) return superseded()
+        })).status !== 'committed') return superseded()
         // Undo payload comes from the back-end's authoritative snapshot —
         // captured under the same lock as the delete, so it always reflects
         // the engine's view at the moment of deletion (spread/ref metadata
@@ -851,11 +826,11 @@ export default function App() {
         }
         return committed(undefined)
       } catch (err) {
-        reportSessionError(sessionId, '删除记录失败', err, true)
+        reportSessionError(sessionId, '删除记录失败', err, true, revision)
         return failed()
       }
     },
-    [commitProjectRevision, history, loadAffectedFiles, project, reportSessionError],
+    [history, project, publishMutation, reportSessionError],
   )
 
   const insertRecord = useCallback(

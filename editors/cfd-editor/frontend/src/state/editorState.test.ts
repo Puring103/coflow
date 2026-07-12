@@ -3,10 +3,13 @@ import {
   committed,
   failed,
   MutationHistoryController,
+  publishMutationGeneration,
   ProjectGenerationController,
   superseded,
   type EditEntry,
+  type MutationPublicationPort,
 } from './editorState'
+import type { FileRecords } from '../bindings/FileRecords'
 
 const fieldEntry = (key: string): EditEntry => ({
   kind: 'field',
@@ -49,11 +52,71 @@ describe('ProjectGenerationController', () => {
 
   it('lets the latest project request own success, error, and finalizer handlers', () => {
     const generation = new ProjectGenerationController()
-    const first = generation.beginRequest()
-    const second = generation.beginRequest()
+    const first = generation.beginProjectRequest()
+    const second = generation.beginProjectRequest()
 
-    expect(generation.isRequestCurrent(first)).toBe(false)
-    expect(generation.isRequestCurrent(second)).toBe(true)
+    expect(generation.isProjectRequestCurrent(first)).toBe(false)
+    expect(generation.isProjectRequestCurrent(second)).toBe(true)
+  })
+
+  it('does not invalidate current-generation requests while a project picker is open', () => {
+    const generation = new ProjectGenerationController()
+    generation.adopt({ session_id: 1, revision: 2 })
+    const currentGenerationRequest = generation.captureRequest()
+
+    generation.beginProjectRequest()
+
+    expect(generation.isRequestCurrent(currentGenerationRequest)).toBe(true)
+  })
+})
+
+const fileRecords = (revision: number, filePath = 'data/items.cfd') => ({
+  revision,
+  file_path: filePath,
+}) as FileRecords
+
+describe('publishMutationGeneration', () => {
+  it('publishes the backend-newer revision when caller completion order is reversed', async () => {
+    let currentRevision = 0
+    let resolveOldRead: ((records: FileRecords) => void) | undefined
+    const published: (readonly (readonly [string, FileRecords])[])[] = []
+    let graphInvalidations = 0
+    const port: MutationPublicationPort = {
+      acceptRevision: (_sessionId, revision) => {
+        if (revision < currentRevision) return false
+        currentRevision = revision
+        return true
+      },
+      isCurrent: (_sessionId, revision) => currentRevision === revision,
+      getFileRecords: async (_sessionId, filePath) => new Promise(resolve => {
+        resolveOldRead = records => resolve(records.file_path === filePath ? records : fileRecords(1, filePath))
+      }),
+      publishFileRecords: records => published.push(records),
+      invalidateGraphs: () => { graphInvalidations += 1 },
+    }
+
+    const older = publishMutationGeneration(port, {
+      sessionId: 1,
+      revision: 1,
+      diagnostics: [],
+      affectedFiles: ['data/items.cfd'],
+      fallbackFile: 'data/items.cfd',
+    })
+    const newerRecords = fileRecords(2)
+    const newer = await publishMutationGeneration(port, {
+      sessionId: 1,
+      revision: 2,
+      diagnostics: [],
+      affectedFiles: ['data/items.cfd'],
+      fallbackFile: 'data/items.cfd',
+      knownRecords: newerRecords,
+    })
+    resolveOldRead?.(fileRecords(1))
+
+    expect(newer.status).toBe('committed')
+    expect((await older).status).toBe('superseded')
+    expect(published).toEqual([[['data/items.cfd', newerRecords]]])
+    expect(graphInvalidations).toBe(1)
   })
 })
 
