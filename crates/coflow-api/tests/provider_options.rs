@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used)]
 
-use coflow_api::DecodedSourceOptions;
+use coflow_api::{DecodedOutputOptions, DecodedSourceOptions};
 
 #[derive(Debug, PartialEq, Eq)]
 struct SecretOptions {
@@ -39,4 +39,30 @@ fn decoded_options_debug_output_does_not_render_values() {
     let debug = format!("{options:?}");
     assert!(debug.contains("test-provider"));
     assert!(!debug.contains("private-token"));
+}
+
+#[test]
+fn output_options_share_the_contract_without_losing_output_context() {
+    let options = DecodedOutputOptions::new(
+        "test-output",
+        SecretOptions {
+            token: "private-token".to_string(),
+        },
+    );
+
+    assert_eq!(options.provider_id(), "test-output");
+    assert_eq!(
+        options
+            .require::<SecretOptions>("test-output")
+            .expect("matching output options")
+            .token,
+        "private-token"
+    );
+    let diagnostics = options
+        .require::<SecretOptions>("other-output")
+        .expect_err("mismatched output provider");
+    assert!(diagnostics.diagnostics[0]
+        .message
+        .contains("output options decoded"));
+    assert!(!format!("{options:?}").contains("private-token"));
 }
