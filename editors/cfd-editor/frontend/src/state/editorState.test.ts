@@ -36,6 +36,25 @@ describe('ProjectGenerationController', () => {
     expect(generation.acceptMutation(7, 9)).toBe(false)
     expect(generation.acceptMutation(7, 11)).toBe(true)
   })
+
+  it('invalidates stale request handlers when a newer project is adopted', () => {
+    const generation = new ProjectGenerationController()
+    generation.adopt({ session_id: 1, revision: 0 })
+    const staleRequest = generation.captureRequest()
+
+    generation.adopt({ session_id: 2, revision: 0 })
+
+    expect(generation.isRequestCurrent(staleRequest)).toBe(false)
+  })
+
+  it('lets the latest project request own success, error, and finalizer handlers', () => {
+    const generation = new ProjectGenerationController()
+    const first = generation.beginRequest()
+    const second = generation.beginRequest()
+
+    expect(generation.isRequestCurrent(first)).toBe(false)
+    expect(generation.isRequestCurrent(second)).toBe(true)
+  })
 })
 
 describe('MutationHistoryController', () => {

@@ -181,6 +181,24 @@ export default function App() {
     [generation, history, router]
   )
 
+  const reportSessionError = useCallback((
+    sessionId: number,
+    prefix: string,
+    err: unknown,
+    includeDiagnostics = false,
+  ) => {
+    if (generation.currentSession() !== sessionId) return
+    setErrorMsg(`${prefix}: ${errorMessage(err)}`)
+    if (!includeDiagnostics) return
+    const diagnostics = errorDiagnostics(err)
+    if (diagnostics.length === 0) return
+    setProject(current => (
+      current?.session_id === sessionId
+        ? { ...current, diagnostics: [...current.diagnostics, ...diagnostics] }
+        : current
+    ))
+  }, [generation])
+
   const openProject = useCallback(async () => {
     if (!api.isTauri) {
       generation.adopt(MOCK_PROJECT)
@@ -189,13 +207,16 @@ export default function App() {
       setFileDataCache(MOCK_FILE_RECORDS)
       return
     }
+    const request = generation.beginRequest()
     const yamlPath = await api.pickProjectYaml()
-    if (!yamlPath) return
+    if (!generation.isRequestCurrent(request) || !yamlPath) return
     setErrorMsg(null)
     try {
       const snapshot = await api.loadProject(yamlPath)
+      if (!generation.isRequestCurrent(request)) return
       adoptSnapshot(snapshot)
     } catch (err) {
+      if (!generation.isRequestCurrent(request)) return
       setErrorMsg(`打开项目失败: ${errorMessage(err)}`)
       const diags = errorDiagnostics(err)
       if (diags.length > 0) {
@@ -242,11 +263,13 @@ export default function App() {
           router.push({ view: 'table', file: nextFile })
         }
       } catch (err) {
-        setErrorMsg(`刷新项目失败: ${errorMessage(err)}`)
-        router.push({ view: 'table', file: nextFile })
+        if (generation.isCurrent(snapshot.session_id, snapshot.revision)) {
+          reportSessionError(snapshot.session_id, '刷新项目失败', err)
+          router.push({ view: 'table', file: nextFile })
+        }
       }
     },
-    [generation, history, router],
+    [generation, history, reportSessionError, router],
   )
 
   const commitProjectRevision = useCallback((
@@ -306,31 +329,37 @@ export default function App() {
 
   useEffect(() => {
     if (!api.isTauri || !project) return
+    const sessionId = project.session_id
     let disposed = false
     let unlistenChanged: (() => void) | null = null
     let unlistenError: (() => void) | null = null
+    const isCurrent = () => !disposed && generation.currentSession() === sessionId
     api.onProjectChanged(event => {
-      if (event.session_id !== project.session_id) return
+      if (!isCurrent() || event.session_id !== sessionId) return
       refreshFromSnapshot(event.snapshot).catch(err => {
-        setErrorMsg(`刷新项目失败: ${errorMessage(err)}`)
+        if (isCurrent()) reportSessionError(sessionId, '刷新项目失败', err)
       })
     }).then(unlisten => {
-      if (disposed) unlisten()
+      if (!isCurrent()) unlisten()
       else unlistenChanged = unlisten
-    }).catch(err => setErrorMsg(`监听项目变更失败: ${errorMessage(err)}`))
+    }).catch(err => {
+      if (isCurrent()) reportSessionError(sessionId, '监听项目变更失败', err)
+    })
     api.onProjectWatchError(event => {
-      if (event.session_id !== project.session_id) return
+      if (!isCurrent() || event.session_id !== sessionId) return
       setErrorMsg(`监听项目变更失败: ${event.message}`)
     }).then(unlisten => {
-      if (disposed) unlisten()
+      if (!isCurrent()) unlisten()
       else unlistenError = unlisten
-    }).catch(err => setErrorMsg(`监听项目变更失败: ${errorMessage(err)}`))
+    }).catch(err => {
+      if (isCurrent()) reportSessionError(sessionId, '监听项目变更失败', err)
+    })
     return () => {
       disposed = true
       unlistenChanged?.()
       unlistenError?.()
     }
-  }, [project?.session_id, refreshFromSnapshot])
+  }, [generation, project?.session_id, refreshFromSnapshot, reportSessionError])
 
   // "新建工程": pick an empty directory, scaffold a minimal Coflow
   // project (mirrors `coflow init`), and open it. The same back-end call
@@ -341,20 +370,23 @@ export default function App() {
       setErrorMsg('新建工程仅在桌面环境可用')
       return
     }
+    const request = generation.beginRequest()
     const dir = await api.pickProjectDirectory()
-    if (!dir) return
+    if (!generation.isRequestCurrent(request) || !dir) return
     setErrorMsg(null)
     try {
       const snapshot = await api.initProject(dir)
+      if (!generation.isRequestCurrent(request)) return
       adoptSnapshot(snapshot)
     } catch (err) {
+      if (!generation.isRequestCurrent(request)) return
       setErrorMsg(`新建工程失败: ${errorMessage(err)}`)
       const diags = errorDiagnostics(err)
       if (diags.length > 0) {
         setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
       }
     }
-  }, [adoptSnapshot])
+  }, [adoptSnapshot, generation])
 
   // Lazy-load file records when navigated to
   useEffect(() => {
@@ -364,6 +396,7 @@ export default function App() {
     if (!api.isTauri) return // mock branch already populated
     const sessionId = project.session_id
     const revision = project.revision
+    const request = generation.captureRequest()
     setLoadingFile(file)
     api
       .getFileRecords(sessionId, file)
@@ -374,9 +407,15 @@ export default function App() {
         ) return
         setFileDataCache(c => ({ ...c, [file]: records }))
       })
-      .catch(err => setErrorMsg(`读取文件失败: ${errorMessage(err)}`))
-      .finally(() => setLoadingFile(null))
-  }, [generation, project, router.current, fileDataCache])
+      .catch(err => {
+        if (generation.isRequestCurrent(request)) {
+          reportSessionError(sessionId, '读取文件失败', err)
+        }
+      })
+      .finally(() => {
+        if (generation.isRequestCurrent(request)) setLoadingFile(null)
+      })
+  }, [generation, project, router.current, fileDataCache, reportSessionError])
 
   useEffect(() => {
     setGraphEnabledFields(null)
@@ -395,6 +434,7 @@ export default function App() {
     let cancelled = false
     const sessionId = project.session_id
     const revision = project.revision
+    const request = generation.captureRequest()
     api
       .getGraph(sessionId, file, {
         activeType,
@@ -409,9 +449,13 @@ export default function App() {
           g.revision === revision
         ) setGraphCache(c => ({ ...c, [key]: g }))
       })
-      .catch(err => setErrorMsg(`读取图谱失败: ${errorMessage(err)}`))
+      .catch(err => {
+        if (!cancelled && generation.isRequestCurrent(request)) {
+          reportSessionError(sessionId, '读取图谱失败', err)
+        }
+      })
     return () => { cancelled = true }
-  }, [generation, project, router.current, graphCache, activeType, graphEnabledFields])
+  }, [generation, project, router.current, graphCache, activeType, graphEnabledFields, reportSessionError])
 
   // Auto-collapse inspector when switching to record view; restore for table/graph.
   useEffect(() => {
@@ -498,6 +542,7 @@ export default function App() {
       }
       const sessionId = project.session_id
       const revision = project.revision
+      const request = generation.captureRequest()
       api.getFileRecords(sessionId, filePath)
         .then(records => {
           if (!generation.isCurrent(sessionId, revision) || records.revision !== revision) return
@@ -508,9 +553,13 @@ export default function App() {
           if (row) openRecord(filePath, row.coordinate)
           else setErrorMsg(`记录 ${recordKey} 未找到`)
         })
-        .catch(err => setErrorMsg(`读取文件失败: ${errorMessage(err)}`))
+        .catch(err => {
+          if (generation.isRequestCurrent(request)) {
+            reportSessionError(sessionId, '读取文件失败', err)
+          }
+        })
     },
-    [fileDataCache, generation, openRecord, project],
+    [fileDataCache, generation, openRecord, project, reportSessionError],
   )
 
   const rebindCoordinate = useCallback(
@@ -605,18 +654,11 @@ export default function App() {
         }
         return committed(outcome.row)
       } catch (err) {
-        setErrorMsg(`写入失败: ${errorMessage(err)}`)
-        // Surface structured diagnostics embedded in a failed write (e.g.
-        // type-mismatch detail from the backend) so they land in the
-        // diagnostics panel instead of being silently dropped.
-        const diags = errorDiagnostics(err)
-        if (diags.length > 0) {
-          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
-        }
+        reportSessionError(sessionId, '写入失败', err, true)
         return failed()
       }
     },
-    [commitProjectRevision, history, loadAffectedFiles, project, rebindCoordinate],
+    [commitProjectRevision, history, loadAffectedFiles, project, rebindCoordinate, reportSessionError],
   )
 
   const writeField = useCallback(
@@ -663,15 +705,11 @@ export default function App() {
         }
         return committed(outcome.row)
       } catch (err) {
-        setErrorMsg(`集合编辑失败: ${errorMessage(err)}`)
-        const diags = errorDiagnostics(err)
-        if (diags.length > 0) {
-          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
-        }
+        reportSessionError(sessionId, '集合编辑失败', err, true)
         return failed()
       }
     },
-    [commitProjectRevision, history, loadAffectedFiles, project, rebindCoordinate],
+    [commitProjectRevision, history, loadAffectedFiles, project, rebindCoordinate, reportSessionError],
   )
 
   const editCollection = useCallback(
@@ -720,15 +758,11 @@ export default function App() {
         }
         return committed(outcome.row)
       } catch (err) {
-        setErrorMsg(`重命名失败: ${errorMessage(err)}`)
-        const diags = errorDiagnostics(err)
-        if (diags.length > 0) {
-          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
-        }
+        reportSessionError(sessionId, '重命名失败', err, true)
         return failed()
       }
     },
-    [commitProjectRevision, history, loadAffectedFiles, project, rebindCoordinate],
+    [commitProjectRevision, history, loadAffectedFiles, project, rebindCoordinate, reportSessionError],
   )
 
   const renameRecord = useCallback(
@@ -778,15 +812,11 @@ export default function App() {
         }
         return committed(undefined)
       } catch (err) {
-        setErrorMsg(`新建记录失败: ${errorMessage(err)}`)
-        const diags = errorDiagnostics(err)
-        if (diags.length > 0) {
-          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
-        }
+        reportSessionError(sessionId, '新建记录失败', err, true)
         return failed()
       }
     },
-    [commitProjectRevision, history, loadAffectedFiles, project],
+    [commitProjectRevision, history, loadAffectedFiles, project, reportSessionError],
   )
 
   const deleteRecordInternal = useCallback(
@@ -821,15 +851,11 @@ export default function App() {
         }
         return committed(undefined)
       } catch (err) {
-        setErrorMsg(`删除记录失败: ${errorMessage(err)}`)
-        const diags = errorDiagnostics(err)
-        if (diags.length > 0) {
-          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
-        }
+        reportSessionError(sessionId, '删除记录失败', err, true)
         return failed()
       }
     },
-    [commitProjectRevision, history, loadAffectedFiles, project],
+    [commitProjectRevision, history, loadAffectedFiles, project, reportSessionError],
   )
 
   const insertRecord = useCallback(

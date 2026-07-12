@@ -53,8 +53,8 @@ jobs:
           cargo test --features ts-export -p cfd-editor export_bindings
           git diff --exit-code editors/cfd-editor/frontend/src/bindings
 
-      - name: Build CFD editor frontend
-        run: npm ci && npm run build
+      - name: Test and build CFD editor frontend
+        run: npm ci && npm test && npm run build
         working-directory: editors/cfd-editor/frontend
 
       - name: Test VS Code extension

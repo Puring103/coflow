@@ -14,6 +14,7 @@ export const failed = (): MutationResult<never> => ({ status: 'failed' })
 export class ProjectGenerationController {
   private sessionId: number | null = null
   private revision = 0
+  private requestGeneration = 0
 
   currentSession(): number | null {
     return this.sessionId
@@ -23,23 +24,39 @@ export class ProjectGenerationController {
     const previous = this.sessionId
     this.sessionId = snapshot.session_id
     this.revision = snapshot.revision
+    this.requestGeneration += 1
     return previous
   }
 
   acceptSnapshot(snapshot: Pick<ProjectSnapshot, 'session_id' | 'revision'>): boolean {
     if (snapshot.session_id !== this.sessionId || snapshot.revision <= this.revision) return false
     this.revision = snapshot.revision
+    this.requestGeneration += 1
     return true
   }
 
   acceptMutation(sessionId: number, revision: number): boolean {
     if (sessionId !== this.sessionId || revision < this.revision) return false
+    if (revision > this.revision) this.requestGeneration += 1
     this.revision = revision
     return true
   }
 
   isCurrent(sessionId: number, revision: number): boolean {
     return this.sessionId === sessionId && this.revision === revision
+  }
+
+  beginRequest(): number {
+    this.requestGeneration += 1
+    return this.requestGeneration
+  }
+
+  captureRequest(): number {
+    return this.requestGeneration
+  }
+
+  isRequestCurrent(request: number): boolean {
+    return request === this.requestGeneration
   }
 }
 
