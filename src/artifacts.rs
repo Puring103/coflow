@@ -11,8 +11,8 @@ pub use publication::{
 };
 
 use coflow_api::{
-    ArtifactSet, CodeGenerator, DataExporter, Diagnostic, DiagnosticSet, Label, Severity,
-    SourceLocation,
+    ArtifactSet, CodeGenerator, DataExporter, DecodedOutputOptions, Diagnostic, DiagnosticSet,
+    Label, Severity, SourceLocation,
 };
 use coflow_project::{OutputConfig, Project};
 use coflow_runtime::{BuildProjectSession, ProjectSchemaSession};
@@ -90,6 +90,35 @@ struct GeneratedArtifactOutput {
     display_name: &'static str,
     dir: PathBuf,
     artifacts: ArtifactSet,
+}
+
+struct ValidatedArtifactReleaseOutput<'a> {
+    slot: &'static str,
+    dir: PathBuf,
+    generator: ValidatedArtifactGenerator<'a>,
+}
+
+enum ValidatedArtifactGenerator<'a> {
+    Data {
+        session: &'a BuildProjectSession,
+        exporter: Arc<dyn DataExporter>,
+        options: DecodedOutputOptions,
+    },
+    BuildCode {
+        session: &'a BuildProjectSession,
+        codegen: Arc<dyn CodeGenerator>,
+        options: DecodedOutputOptions,
+        data_format: &'a str,
+        id_as_enum_variants: &'a Value,
+        needs_model_for_build: bool,
+    },
+    SchemaCode {
+        session: &'a ProjectSchemaSession,
+        codegen: Arc<dyn CodeGenerator>,
+        options: DecodedOutputOptions,
+        data_format: &'a str,
+        id_as_enum_variants: &'a Value,
+    },
 }
 
 pub struct ArtifactReleasePlan<'a> {
@@ -187,11 +216,18 @@ impl<'a> ArtifactReleasePlan<'a> {
         self.enum_lock_update = EnumLockUpdate::Replace(lock);
     }
 
-    /// Validate output paths and generate every artifact set in memory.
+    /// Validate every output configuration, validate artifact safety, and
+    /// generate every artifact set in memory.
     pub fn prepare(self) -> Result<PreparedArtifactRelease<'a>, DiagnosticSet> {
-        validate_release_slots(&self.outputs, &self.removed_outputs)?;
-        let output_plans = self
-            .outputs
+        let Self {
+            project,
+            outputs,
+            removed_outputs,
+            enum_lock_update,
+        } = self;
+        validate_release_slots(&outputs, &removed_outputs)?;
+        let validated_outputs = validate_outputs(project, outputs)?;
+        let output_plans = validated_outputs
             .iter()
             .map(|output| {
                 safety::ArtifactOutputPlan::new(
@@ -204,92 +240,172 @@ impl<'a> ArtifactReleasePlan<'a> {
                 )
             })
             .collect::<Vec<_>>();
-        let diagnostics = safety::artifact_safety_diagnostics(self.project, &output_plans);
+        let diagnostics = safety::artifact_safety_diagnostics(project, &output_plans);
         if !diagnostics.is_empty() {
             return Err(diagnostics);
         }
 
-        let mut outputs = Vec::with_capacity(self.outputs.len());
-        for output in self.outputs {
-            let (provider_id, display_name, artifacts) = match output.generator {
-                ArtifactGenerator::Data {
-                    session,
-                    exporter,
-                    options,
-                } => {
-                    let descriptor = exporter.descriptor();
-                    let options = exporter.decode_options(options)?;
-                    let artifacts = session.export_artifacts(exporter.as_ref(), &options)?;
-                    (
-                        descriptor.id.to_string(),
-                        descriptor.display_name,
-                        artifacts,
-                    )
-                }
-                ArtifactGenerator::BuildCode {
-                    session,
-                    codegen,
-                    options,
-                    data_format,
-                    id_as_enum_variants,
-                } => {
-                    let descriptor = validate_codegen(self.project, codegen.as_ref(), data_format)?;
-                    let options = codegen.decode_options(options)?;
-                    let artifacts = session.codegen_artifacts(
-                        codegen.as_ref(),
-                        &options,
-                        data_format,
-                        id_as_enum_variants,
-                        descriptor.needs_model_for_build,
-                    )?;
-                    (
-                        descriptor.id.to_string(),
-                        descriptor.display_name,
-                        artifacts,
-                    )
-                }
-                ArtifactGenerator::SchemaCode {
-                    session,
-                    codegen,
-                    options,
-                    data_format,
-                    id_as_enum_variants,
-                } => {
-                    let descriptor = validate_codegen(self.project, codegen.as_ref(), data_format)?;
-                    let options = codegen.decode_options(options)?;
-                    let artifacts = session.codegen_artifacts(
-                        codegen.as_ref(),
-                        &options,
-                        data_format,
-                        id_as_enum_variants,
-                    )?;
-                    (
-                        descriptor.id.to_string(),
-                        descriptor.display_name,
-                        artifacts,
-                    )
-                }
-            };
-            outputs.push(GeneratedArtifactOutput {
-                slot: output.slot,
-                provider_id,
-                display_name,
-                dir: output.dir,
-                artifacts,
-            });
+        let mut outputs = Vec::with_capacity(validated_outputs.len());
+        for output in validated_outputs {
+            outputs.push(output.generate()?);
         }
 
         Ok(PreparedArtifactRelease {
-            project: self.project,
+            project,
             outputs,
-            removed_outputs: self.removed_outputs,
-            enum_lock_update: self.enum_lock_update,
+            removed_outputs,
+            enum_lock_update,
         })
     }
 
     /// Validate, generate, stage, and atomically publish every planned output.
     pub fn execute(self) -> Result<ArtifactReleaseReport, DiagnosticSet> {
         self.prepare()?.publish()
+    }
+}
+
+fn validate_outputs<'a>(
+    project: &'a Project,
+    outputs: Vec<ArtifactReleaseOutput<'a>>,
+) -> Result<Vec<ValidatedArtifactReleaseOutput<'a>>, DiagnosticSet> {
+    let mut diagnostics = DiagnosticSet::empty();
+    let mut validated = Vec::with_capacity(outputs.len());
+    for output in outputs {
+        match output.validate(project) {
+            Ok(output) => validated.push(output),
+            Err(output_diagnostics) => diagnostics.extend(output_diagnostics),
+        }
+    }
+    if diagnostics.is_empty() {
+        Ok(validated)
+    } else {
+        Err(diagnostics)
+    }
+}
+
+impl<'a> ArtifactReleaseOutput<'a> {
+    fn validate(
+        self,
+        project: &Project,
+    ) -> Result<ValidatedArtifactReleaseOutput<'a>, DiagnosticSet> {
+        let generator = match self.generator {
+            ArtifactGenerator::Data {
+                session,
+                exporter,
+                options,
+            } => ValidatedArtifactGenerator::Data {
+                session,
+                options: exporter.decode_options(options)?,
+                exporter,
+            },
+            ArtifactGenerator::BuildCode {
+                session,
+                codegen,
+                options,
+                data_format,
+                id_as_enum_variants,
+            } => {
+                let descriptor = validate_codegen(project, codegen.as_ref(), data_format)?;
+                ValidatedArtifactGenerator::BuildCode {
+                    session,
+                    options: codegen.decode_options(options)?,
+                    codegen,
+                    data_format,
+                    id_as_enum_variants,
+                    needs_model_for_build: descriptor.needs_model_for_build,
+                }
+            }
+            ArtifactGenerator::SchemaCode {
+                session,
+                codegen,
+                options,
+                data_format,
+                id_as_enum_variants,
+            } => {
+                validate_codegen(project, codegen.as_ref(), data_format)?;
+                ValidatedArtifactGenerator::SchemaCode {
+                    session,
+                    options: codegen.decode_options(options)?,
+                    codegen,
+                    data_format,
+                    id_as_enum_variants,
+                }
+            }
+        };
+        Ok(ValidatedArtifactReleaseOutput {
+            slot: self.slot,
+            dir: self.dir,
+            generator,
+        })
+    }
+}
+
+impl ValidatedArtifactReleaseOutput<'_> {
+    fn generate(self) -> Result<GeneratedArtifactOutput, DiagnosticSet> {
+        let (provider_id, display_name, artifacts) = match self.generator {
+            ValidatedArtifactGenerator::Data {
+                session,
+                exporter,
+                options,
+            } => {
+                let descriptor = exporter.descriptor();
+                let artifacts = session.export_artifacts(exporter.as_ref(), &options)?;
+                (
+                    descriptor.id.to_string(),
+                    descriptor.display_name,
+                    artifacts,
+                )
+            }
+            ValidatedArtifactGenerator::BuildCode {
+                session,
+                codegen,
+                options,
+                data_format,
+                id_as_enum_variants,
+                needs_model_for_build,
+            } => {
+                let descriptor = codegen.descriptor();
+                let artifacts = session.codegen_artifacts(
+                    codegen.as_ref(),
+                    &options,
+                    data_format,
+                    id_as_enum_variants,
+                    needs_model_for_build,
+                )?;
+                (
+                    descriptor.id.to_string(),
+                    descriptor.display_name,
+                    artifacts,
+                )
+            }
+            ValidatedArtifactGenerator::SchemaCode {
+                session,
+                codegen,
+                options,
+                data_format,
+                id_as_enum_variants,
+            } => {
+                let descriptor = codegen.descriptor();
+                let artifacts = session.codegen_artifacts(
+                    codegen.as_ref(),
+                    &options,
+                    data_format,
+                    id_as_enum_variants,
+                )?;
+                (
+                    descriptor.id.to_string(),
+                    descriptor.display_name,
+                    artifacts,
+                )
+            }
+        };
+        Ok(GeneratedArtifactOutput {
+            slot: self.slot,
+            provider_id,
+            display_name,
+            dir: self.dir,
+            artifacts,
+        })
     }
 }
 
@@ -527,6 +643,7 @@ mod tests {
     #[derive(Debug)]
     struct TestExporter {
         decode_calls: Arc<AtomicUsize>,
+        export_calls: Arc<AtomicUsize>,
     }
 
     impl DataExporter for TestExporter {
@@ -544,6 +661,7 @@ mod tests {
             _ctx: ExportContext<'_>,
             _options: &DecodedOutputOptions,
         ) -> Result<ArtifactSet, DiagnosticSet> {
+            self.export_calls.fetch_add(1, Ordering::SeqCst);
             ArtifactSet::new(vec![ArtifactFile::text("data.txt", "data")]).map_err(|error| {
                 DiagnosticSet::one(Diagnostic::error(
                     "TEST-ARTIFACT",
@@ -579,12 +697,42 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct FailingOptionCodegen;
+
+    impl CodeGenerator for FailingOptionCodegen {
+        fn descriptor(&self) -> &'static CodegenDescriptor {
+            &TEST_CODEGEN_DESCRIPTOR
+        }
+
+        fn decode_options(&self, _options: &Value) -> Result<DecodedOutputOptions, DiagnosticSet> {
+            Err(DiagnosticSet::one(Diagnostic::error(
+                "TEST-CODEGEN-OPTIONS",
+                "TEST",
+                "injected code generation option failure",
+            )))
+        }
+
+        fn generate(
+            &self,
+            _ctx: CodegenContext<'_>,
+            _options: &DecodedOutputOptions,
+        ) -> Result<ArtifactSet, DiagnosticSet> {
+            Err(DiagnosticSet::one(Diagnostic::error(
+                "TEST-CODEGEN",
+                "TEST",
+                "injected code generation failure",
+            )))
+        }
+    }
+
     #[test]
     fn slot_conflicts_fail_before_provider_option_decoding() {
         let fixture = ArtifactFixture::new("slot-conflict");
         let decode_calls = Arc::new(AtomicUsize::new(0));
         let exporter = Arc::new(TestExporter {
             decode_calls: Arc::clone(&decode_calls),
+            export_calls: Arc::new(AtomicUsize::new(0)),
         });
         let mut release = ArtifactReleasePlan::new(&fixture.project);
         release.add_data(&fixture.session, exporter, fixture.data_output(), None);
@@ -604,6 +752,7 @@ mod tests {
         let fixture = ArtifactFixture::new("generation-failure");
         let exporter = Arc::new(TestExporter {
             decode_calls: Arc::new(AtomicUsize::new(0)),
+            export_calls: Arc::new(AtomicUsize::new(0)),
         });
         let mut release = ArtifactReleasePlan::new(&fixture.project);
         release.add_data(&fixture.session, exporter, fixture.data_output(), None);
@@ -622,6 +771,38 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "TEST-CODEGEN"));
+        assert!(!fixture.root.join("generated/data").exists());
+        assert!(!fixture.root.join(".coflow/artifacts").exists());
+    }
+
+    #[test]
+    fn later_option_failure_skips_every_output_generation() {
+        let fixture = ArtifactFixture::new("option-failure");
+        let decode_calls = Arc::new(AtomicUsize::new(0));
+        let export_calls = Arc::new(AtomicUsize::new(0));
+        let exporter = Arc::new(TestExporter {
+            decode_calls: Arc::clone(&decode_calls),
+            export_calls: Arc::clone(&export_calls),
+        });
+        let mut release = ArtifactReleasePlan::new(&fixture.project);
+        release.add_data(&fixture.session, exporter, fixture.data_output(), None);
+        release.add_build_code(
+            &fixture.session,
+            Arc::new(FailingOptionCodegen),
+            fixture.code_output(),
+            None,
+            "test-data",
+            &Value::Null,
+        );
+
+        let diagnostics = release.prepare().err().expect("code option failure");
+
+        assert!(diagnostics
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TEST-CODEGEN-OPTIONS"));
+        assert_eq!(decode_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(export_calls.load(Ordering::SeqCst), 0);
         assert!(!fixture.root.join("generated/data").exists());
         assert!(!fixture.root.join(".coflow/artifacts").exists());
     }
