@@ -11,8 +11,8 @@
 
 use coflow_api::{path_to_slash as canonical_path_to_slash, SourceLocation};
 use coflow_project::{
-    init_project, normalize_path, path_to_slash, resolve_config_path, OutputConfig, OutputsConfig,
-    Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
+    discover_directory_files, init_project, normalize_path, path_to_slash, resolve_config_path,
+    OutputConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -1124,6 +1124,41 @@ fn concurrent_project_initialization_has_one_winner() {
         DEFAULT_PROJECT_YAML
     );
     std::fs::remove_dir_all(dir).expect("clean concurrent project");
+}
+
+#[test]
+fn directory_discovery_visits_canonical_directories_once() {
+    let root = temp_project_dir("coflow-directory-discovery-cycle");
+    let nested = root.join("nested");
+    std::fs::create_dir_all(&nested).expect("create nested directory");
+    let source = root.join("items.cfd");
+    std::fs::write(&source, "item: Item {}\n").expect("write source");
+    let alias = nested.join("root-alias");
+    create_directory_alias(&alias, &root);
+
+    let files = discover_directory_files(&root).expect("discover cyclic source tree");
+
+    assert_eq!(files, vec![source]);
+    remove_directory_alias(&alias).expect("remove directory alias");
+    std::fs::remove_dir_all(root).expect("clean source tree");
+}
+
+#[test]
+fn directory_discovery_rejects_targets_outside_declared_root() {
+    let root = temp_project_dir("coflow-directory-discovery-root");
+    let external = temp_project_dir("coflow-directory-discovery-external");
+    std::fs::write(external.join("outside.cfd"), "item: Item {}\n")
+        .expect("write external source");
+    let alias = root.join("outside-alias");
+    create_directory_alias(&alias, &external);
+
+    let error = discover_directory_files(&root).expect_err("reject outside directory alias");
+
+    assert_eq!(error.path(), alias);
+    assert!(error.to_string().contains("resolves outside declared root"));
+    remove_directory_alias(&alias).expect("remove directory alias");
+    std::fs::remove_dir_all(root).expect("clean source root");
+    std::fs::remove_dir_all(external).expect("clean external root");
 }
 
 #[cfg(unix)]

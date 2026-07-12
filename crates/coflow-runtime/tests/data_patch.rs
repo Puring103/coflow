@@ -2,8 +2,9 @@
 
 use coflow_project::Project;
 use coflow_runtime::{
-    DataPatchOp, DataPatchRequest, DefaultMaterialization, MutationOp, MutationRequest,
-    MutationValue, PatchPathSegment, PatchRecordSelector, RecordCoordinate, Runtime,
+    CreateFieldSource, CreateRequiredInput, DataPatchOp, DataPatchRequest, DefaultMaterialization,
+    MutationOp, MutationRequest, MutationValue, PatchPathSegment, PatchRecordSelector,
+    RecordCoordinate, Runtime,
 };
 use serde_json::json;
 

@@ -7,7 +7,7 @@ use crate::state::LspBuild;
 use crate::uri::path_to_file_uri;
 use coflow_api::{DiagnosticSet, SourceLocationSpec};
 use coflow_cfd::parse_cfd;
-use coflow_project::{normalize_path, Project};
+use coflow_project::{discover_directory_files, normalize_path, Project};
 use coflow_runtime::{compile_schema_project_with_overrides, SchemaSourceOverride};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -246,7 +246,24 @@ fn collect_cfd_sources(
         };
         let resolved = project.resolve_path(path);
         if resolved.is_dir() {
-            collect_cfd_sources_in_dir(&resolved, open_documents, &mut sources, &mut failures);
+            match discover_directory_files(&resolved) {
+                Ok(paths) => {
+                    for path in paths {
+                        if is_cfd_path(&path) {
+                            collect_cfd_source(
+                                &path,
+                                open_documents,
+                                &mut sources,
+                                &mut failures,
+                            );
+                        }
+                    }
+                }
+                Err(err) => failures.push(CfdSourceFailure {
+                    uri: path_to_file_uri(err.path()),
+                    message: err.to_string(),
+                }),
+            }
         } else if is_cfd_path(&resolved) {
             collect_cfd_source(&resolved, open_documents, &mut sources, &mut failures);
         }
@@ -267,48 +284,6 @@ fn collect_cfd_sources(
     }
     sources.sort_by(|left, right| left.path.cmp(&right.path));
     (sources, failures)
-}
-
-fn collect_cfd_sources_in_dir(
-    dir: &Path,
-    open_documents: &BTreeMap<PathBuf, OpenDocument>,
-    sources: &mut Vec<CfdProjectSource>,
-    failures: &mut Vec<CfdSourceFailure>,
-) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(err) => {
-            failures.push(CfdSourceFailure {
-                uri: path_to_file_uri(dir),
-                message: format!(
-                    "failed to read CFD source directory `{}`: {err}",
-                    dir.display()
-                ),
-            });
-            return;
-        }
-    };
-    let mut paths = Vec::new();
-    for entry in entries {
-        match entry {
-            Ok(entry) => paths.push(entry.path()),
-            Err(err) => failures.push(CfdSourceFailure {
-                uri: path_to_file_uri(dir),
-                message: format!(
-                    "failed to enumerate CFD source directory `{}`: {err}",
-                    dir.display()
-                ),
-            }),
-        }
-    }
-    paths.sort();
-    for path in paths {
-        if path.is_dir() {
-            collect_cfd_sources_in_dir(&path, open_documents, sources, failures);
-        } else if is_cfd_path(&path) {
-            collect_cfd_source(&path, open_documents, sources, failures);
-        }
-    }
 }
 
 fn collect_cfd_source(

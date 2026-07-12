@@ -14,6 +14,7 @@
 
 mod config;
 mod diagnostics;
+mod file_discovery;
 mod init;
 mod paths;
 mod schema_path_policy;
@@ -24,6 +25,7 @@ pub use coflow_api::path_to_slash;
 pub use config::{
     DimensionConfig, OutputConfig, OutputsConfig, ProjectConfig, SchemaConfig, SourceConfig,
 };
+pub use file_discovery::{discover_directory_files, DirectoryDiscoveryError};
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
 pub use paths::{normalize_path, resolve_config_path};
 pub use schema_path_policy::SchemaFile;

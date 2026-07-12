@@ -9,7 +9,9 @@ use coflow_data_model::{
     CfdDataModel, CfdDiagnostics, CfdInputRecord, CfdPath, CfdPathSegment, CfdRecordId,
     RecordOrigin,
 };
-use coflow_project::{path_to_slash, DimensionConfig, Project, SourceConfig};
+use coflow_project::{
+    discover_directory_files, path_to_slash, DimensionConfig, Project, SourceConfig,
+};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -303,7 +305,13 @@ fn resolve_sources(
         let SourceLocationSpec::Path(directory) = &configured.location else {
             return Ok(resolved);
         };
-        for path in discover_source_files(directory, &project.config_path)? {
+        let files = discover_directory_files(directory).map_err(|err| {
+            DiagnosticSet::one(project_diagnostic(
+                &project.config_path,
+                err.to_string(),
+            ))
+        })?;
+        for path in files {
             let mut file_source = ConfiguredSource {
                 provider_id: String::new(),
                 display_name: path.display().to_string(),
@@ -368,45 +376,6 @@ fn options_for_provider(options: &Value, keys: &[&str]) -> Value {
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
     )
-}
-
-fn discover_source_files(
-    directory: &Path,
-    config_path: &Path,
-) -> Result<Vec<std::path::PathBuf>, DiagnosticSet> {
-    let entries = std::fs::read_dir(directory).map_err(|err| {
-        DiagnosticSet::one(project_diagnostic(
-            config_path,
-            format!(
-                "failed to read data source directory `{}`: {err}",
-                directory.display()
-            ),
-        ))
-    })?;
-    let mut paths = entries
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            DiagnosticSet::one(project_diagnostic(
-                config_path,
-                format!(
-                    "failed to read data source directory `{}`: {err}",
-                    directory.display()
-                ),
-            ))
-        })?
-        .into_iter()
-        .map(|entry| entry.path())
-        .collect::<Vec<_>>();
-    paths.sort();
-    let mut files = Vec::new();
-    for path in paths {
-        if path.is_dir() {
-            files.extend(discover_source_files(&path, config_path)?);
-        } else {
-            files.push(path);
-        }
-    }
-    Ok(files)
 }
 
 const fn source_ref<'a>(
