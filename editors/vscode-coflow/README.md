@@ -13,7 +13,7 @@ VS Code language support for Coflow Type File (`.cft`) schemas and Coflow Data F
 - LSP-backed outline symbols for constants, enums, enum variants, types, and fields.
 - LSP-backed go to definition for workspace `const`, `enum`, `type`, enum variants, and simple field access.
 - Document formatting through the CFT language server.
-- Project-aware diagnostics from `coflow lsp`, including schema, data, and editor-oriented diagnostics.
+- Project-aware schema diagnostics plus syntax and semantic diagnostics for open CFT/CFD text documents. Runtime data loading and record validation remain CLI/editor responsibilities.
 
 ## Run Locally
 

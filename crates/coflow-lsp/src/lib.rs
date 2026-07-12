@@ -252,21 +252,45 @@ fn cancel_stale_pending_requests<W: Write>(
     Ok(())
 }
 
-fn request_requires_snapshot(message: &Value) -> bool {
-    if message.get("id").is_none() {
-        return false;
+#[derive(Clone, Copy)]
+enum RequestMethod {
+    Initialize,
+    Completion,
+    Hover,
+    Definition,
+    DocumentSymbol,
+    Formatting,
+    SemanticTokens,
+    Shutdown,
+}
+
+impl RequestMethod {
+    fn classify(method: &str) -> Option<Self> {
+        match method {
+            "initialize" => Some(Self::Initialize),
+            "textDocument/completion" => Some(Self::Completion),
+            "textDocument/hover" => Some(Self::Hover),
+            "textDocument/definition" => Some(Self::Definition),
+            "textDocument/documentSymbol" => Some(Self::DocumentSymbol),
+            "textDocument/formatting" => Some(Self::Formatting),
+            "textDocument/semanticTokens/full" => Some(Self::SemanticTokens),
+            "shutdown" => Some(Self::Shutdown),
+            _ => None,
+        }
     }
-    matches!(
-        message.get("method").and_then(Value::as_str),
-        Some(
-            "textDocument/completion"
-                | "textDocument/hover"
-                | "textDocument/definition"
-                | "textDocument/documentSymbol"
-                | "textDocument/formatting"
-                | "textDocument/semanticTokens/full"
-        )
-    )
+
+    const fn requires_snapshot(self) -> bool {
+        !matches!(self, Self::Initialize | Self::Shutdown)
+    }
+}
+
+fn request_requires_snapshot(message: &Value) -> bool {
+    message.get("id").is_some()
+        && message
+            .get("method")
+            .and_then(Value::as_str)
+            .and_then(RequestMethod::classify)
+            .is_some_and(RequestMethod::requires_snapshot)
 }
 
 struct LspServer<W> {
@@ -337,6 +361,7 @@ impl<W: Write> LspServer<W> {
             return Ok(());
         };
         let params = message.get("params").unwrap_or(&Value::Null);
+        let request_method = RequestMethod::classify(method);
 
         if self.shutdown_requested && method != "exit" {
             return id.map_or(Ok(()), |id| {
@@ -348,35 +373,35 @@ impl<W: Write> LspServer<W> {
             });
         }
 
-        match (id, method) {
-            (Some(id), "initialize") => self.initialize(&id),
-            (Some(id), "textDocument/completion") => self.completion(&id, params),
-            (Some(id), "textDocument/hover") => self.hover(&id, params),
-            (Some(id), "textDocument/definition") => self.definition(&id, params),
-            (Some(id), "textDocument/documentSymbol") => self.document_symbol(&id, params),
-            (Some(id), "textDocument/formatting") => self.formatting(&id, params),
-            (Some(id), "textDocument/semanticTokens/full") => self.semantic_tokens(&id, params),
-            (Some(id), "shutdown") => {
+        match (id, request_method, method) {
+            (Some(id), Some(RequestMethod::Initialize), _) => self.initialize(&id),
+            (Some(id), Some(RequestMethod::Completion), _) => self.completion(&id, params),
+            (Some(id), Some(RequestMethod::Hover), _) => self.hover(&id, params),
+            (Some(id), Some(RequestMethod::Definition), _) => self.definition(&id, params),
+            (Some(id), Some(RequestMethod::DocumentSymbol), _) => self.document_symbol(&id, params),
+            (Some(id), Some(RequestMethod::Formatting), _) => self.formatting(&id, params),
+            (Some(id), Some(RequestMethod::SemanticTokens), _) => self.semantic_tokens(&id, params),
+            (Some(id), Some(RequestMethod::Shutdown), _) => {
                 self.shutdown_requested = true;
                 self.write_response(&id, &Value::Null)
             }
-            (None, "exit") => {
+            (None, _, "exit") => {
                 self.should_exit = true;
                 Ok(())
             }
-            (None, "textDocument/didOpen") => {
+            (None, _, "textDocument/didOpen") => {
                 if let Some((uri, text, version)) = did_open_document(params) {
                     self.open_document(uri, text, version)?;
                 }
                 Ok(())
             }
-            (None, "textDocument/didChange") => {
+            (None, _, "textDocument/didChange") => {
                 if let Some((uri, text, version)) = did_change_document(params) {
                     self.change_document(uri, text, version)?;
                 }
                 Ok(())
             }
-            (None, "textDocument/didSave") => {
+            (None, _, "textDocument/didSave") => {
                 if let Some((uri, text)) = did_save_document(params) {
                     if let Some(text) = text {
                         self.change_document(uri, text, None)?;
@@ -386,15 +411,17 @@ impl<W: Write> LspServer<W> {
                 }
                 Ok(())
             }
-            (None, "textDocument/didClose") => {
+            (None, _, "textDocument/didClose") => {
                 if let Some(uri) = text_document_uri(params) {
                     self.close_document(&uri)?;
                 }
                 Ok(())
             }
-            (None, "workspace/didChangeWatchedFiles") => self.watched_files_changed(params),
-            (Some(id), _) => self.write_error(&id, -32601, &format!("method `{method}` not found")),
-            (None, _) => Ok(()),
+            (None, _, "workspace/didChangeWatchedFiles") => self.watched_files_changed(params),
+            (Some(id), None, _) => {
+                self.write_error(&id, -32601, &format!("method `{method}` not found"))
+            }
+            (None, _, _) => Ok(()),
         }
     }
 

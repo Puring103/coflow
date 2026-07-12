@@ -745,134 +745,6 @@ class CftLspSession {
   }
 }
 
-async function collectConfiguredSchemaPaths(projectDir) {
-  const configPath = coflowConfigPath(projectDir);
-  if (!configPath) {
-    return [];
-  }
-
-  let entries;
-  try {
-    const text = await fs.promises.readFile(configPath, "utf8");
-    entries = schemaEntriesFromCoflowConfigText(text);
-  } catch {
-    return [];
-  }
-
-  const paths = [];
-  for (const entry of entries) {
-    const resolved = normalizePath(path.resolve(projectDir, entry));
-    try {
-      const stat = await fs.promises.stat(resolved);
-      if (stat.isDirectory()) {
-        paths.push(...await collectCftFilesInDir(resolved));
-      } else if (stat.isFile() && resolved.endsWith(".cft")) {
-        paths.push(resolved);
-      }
-    } catch {
-      // Diagnostics cover missing schema files; local language features skip them.
-    }
-  }
-  return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
-}
-
-function coflowConfigPath(projectDir) {
-  const yaml = path.join(projectDir, "coflow.yaml");
-  if (fs.existsSync(yaml)) {
-    return yaml;
-  }
-  const yml = path.join(projectDir, "coflow.yml");
-  return fs.existsSync(yml) ? yml : undefined;
-}
-
-function schemaEntriesFromCoflowConfigText(text) {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  const entries = [];
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = stripYamlComment(lines[index]);
-    const match = line.match(/^(\s*)schema\s*:\s*(.*?)\s*$/);
-    if (!match) {
-      continue;
-    }
-
-    const indent = match[1].length;
-    const inline = unquoteYamlScalar(match[2].trim());
-    if (inline) {
-      return [inline];
-    }
-
-    for (index += 1; index < lines.length; index += 1) {
-      const child = stripYamlComment(lines[index]);
-      if (!child.trim()) {
-        continue;
-      }
-      const childIndent = child.match(/^\s*/)[0].length;
-      if (childIndent <= indent) {
-        index -= 1;
-        break;
-      }
-      const item = child.trim().match(/^-\s*(.*?)\s*$/);
-      if (item) {
-        const value = unquoteYamlScalar(item[1].trim());
-        if (value) {
-          entries.push(value);
-        }
-      }
-    }
-    return entries;
-  }
-
-  return entries;
-}
-
-function stripYamlComment(line) {
-  let inSingle = false;
-  let inDouble = false;
-  for (let index = 0; index < line.length; index += 1) {
-    const ch = line[index];
-    if (ch === "'" && !inDouble) {
-      inSingle = !inSingle;
-    } else if (ch === "\"" && !inSingle) {
-      inDouble = !inDouble;
-    } else if (ch === "#" && !inSingle && !inDouble) {
-      return line.slice(0, index);
-    }
-  }
-  return line;
-}
-
-function unquoteYamlScalar(value) {
-  if (
-    (value.startsWith("\"") && value.endsWith("\"")) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
-}
-
-async function collectCftFilesInDir(dir) {
-  const output = [];
-  let entries;
-  try {
-    entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  } catch {
-    return output;
-  }
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (![".git", "node_modules", "target"].includes(entry.name)) {
-        output.push(...await collectCftFilesInDir(fullPath));
-      }
-    } else if (entry.isFile() && entry.name.endsWith(".cft")) {
-      output.push(normalizePath(fullPath));
-    }
-  }
-  return output;
-}
-
 function findDiagnosticsCwd(documentPath, extensionPath, command, args, projectDir) {
   const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const candidates = [
@@ -1180,9 +1052,7 @@ module.exports = {
     CftDocumentSymbolProvider,
     CftHoverProvider,
     CftLspSession,
-    collectConfiguredSchemaPaths,
     semanticTokensLegend: CFT_SEMANTIC_TOKENS_LEGEND,
-    schemaEntriesFromCoflowConfigText,
     lspDefinitionLocations,
     isPathWithin,
     vscodePosition: vscode.Position,

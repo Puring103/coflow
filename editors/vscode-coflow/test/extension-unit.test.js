@@ -119,30 +119,6 @@ async function main() {
     );
   }
 
-  assert.deepStrictEqual(
-    extension.__test.schemaEntriesFromCoflowConfigText("schema:\n  - 02_enums_and_flags.cft\n  - 03_types_fields_defaults.cft\n"),
-    ["02_enums_and_flags.cft", "03_types_fields_defaults.cft"]
-  );
-  assert.deepStrictEqual(
-    extension.__test.schemaEntriesFromCoflowConfigText("schema: schema/\n"),
-    ["schema/"]
-  );
-
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "coflow-vscode-cft-"));
-  fs.mkdirSync(path.join(root, "schema"));
-  fs.writeFileSync(path.join(root, "coflow.yaml"), "schema: schema/\n", "utf8");
-  fs.writeFileSync(path.join(root, "schema", "a.cft"), "enum A { X, }\n", "utf8");
-  fs.writeFileSync(path.join(root, "schema", "b.cft"), "type B {}\n", "utf8");
-  fs.writeFileSync(path.join(root, "schema", "ignored.CFT"), "type Ignored {}\n", "utf8");
-
-  const paths = await extension.__test.collectConfiguredSchemaPaths(root);
-  assert.deepStrictEqual(
-    paths.map((item) => path.basename(item)).sort(),
-    ["a.cft", "b.cft"]
-  );
-
-  fs.rmSync(root, { recursive: true, force: true });
-
   const singleLocation = extension.__test.lspDefinitionLocations({
     uri: "file:///tmp/source.cft",
     range: { start: { line: 2, character: 2 }, end: { line: 2, character: 8 } }
@@ -162,8 +138,8 @@ async function main() {
     extensionPackage.contributes.semanticTokenModifiers.map((modifier) => modifier.id),
     ["reference", "path", "record", "schema"]
   );
-  assert(extension.__test.isPathWithin(root, path.join(root, "schema", "a.cft")));
-  assert(!extension.__test.isPathWithin(root, path.join(path.dirname(root), "outside.cft")));
+  assert(extension.__test.isPathWithin(extensionRoot, path.join(extensionRoot, "syntaxes", "cft.tmLanguage.json")));
+  assert(!extension.__test.isPathWithin(extensionRoot, path.join(path.dirname(extensionRoot), "outside.cft")));
   assert(
     extensionPackage.contributes.configurationDefaults["editor.semanticTokenColorCustomizations"].rules[
       "namespace.declaration.record:cfd"
