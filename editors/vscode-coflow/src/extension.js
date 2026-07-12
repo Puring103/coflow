@@ -562,7 +562,14 @@ class CftLspSession {
   }
 
   dispose() {
+    if (this.disposed) {
+      return;
+    }
     this.disposed = true;
+    this.buffer = Buffer.alloc(0);
+    this.openedUris.clear();
+    this.openedFileUris.clear();
+    this.rejectPendingRequests("language server session was disposed");
     try {
       this.sendRequest("shutdown", null);
       this.sendNotification("exit", {});
@@ -575,6 +582,9 @@ class CftLspSession {
   }
 
   handleStdout(chunk) {
+    if (this.disposed) {
+      return;
+    }
     this.buffer = Buffer.concat([this.buffer, Buffer.from(chunk)]);
 
     while (true) {
@@ -610,6 +620,9 @@ class CftLspSession {
   }
 
   handleMessage(message) {
+    if (this.disposed) {
+      return;
+    }
     if (message.method === "textDocument/publishDiagnostics") {
       const params = message.params || {};
       const uri = this.uriFromLsp(params.uri);
@@ -699,19 +712,26 @@ class CftLspSession {
   }
 
   markFailed(message) {
+    if (this.disposed || this.failed) {
+      return;
+    }
     this.failed = true;
     this.failureMessage = message || "language server failed";
-    for (const pending of this.pending.values()) {
-      pending.reject(new Error(this.failureMessage));
-    }
-    this.pending.clear();
+    this.rejectPendingRequests(this.failureMessage);
     for (const uriString of this.openedUris) {
       this.publishFailure(vscode.Uri.parse(uriString));
     }
   }
 
+  rejectPendingRequests(message) {
+    for (const pending of this.pending.values()) {
+      pending.reject(new Error(message));
+    }
+    this.pending.clear();
+  }
+
   publishFailure(uri) {
-    if (!this.diagnosticsEnabledForUri(uri)) {
+    if (this.disposed || !this.diagnosticsEnabledForUri(uri)) {
       return;
     }
     const diagnostic = new vscode.Diagnostic(

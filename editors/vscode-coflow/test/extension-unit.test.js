@@ -241,6 +241,36 @@ async function main() {
     "diagnostics setting must suppress publishDiagnostics without disabling LSP-backed features"
   );
 
+  const disposedDiagnosticsWrites = [];
+  const disposedDiagnosticsSession = Object.create(extension.__test.CftLspSession.prototype);
+  Object.assign(disposedDiagnosticsSession, {
+    disposed: true,
+    collection: {
+      set(uri, diagnostics) {
+        disposedDiagnosticsWrites.push({ uri, diagnostics });
+      }
+    },
+    uriFromLsp: (rawUri) => extension.__test.vscodeUriFile(rawUri.replace(/^file:\/\//, "")),
+    diagnosticsEnabledForUri: () => true
+  });
+  disposedDiagnosticsSession.handleMessage({
+    method: "textDocument/publishDiagnostics",
+    params: {
+      uri: "file:///tmp/disposed.cft",
+      diagnostics: [
+        {
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+          message: "late diagnostics from a disposed session"
+        }
+      ]
+    }
+  });
+  assert.deepStrictEqual(
+    disposedDiagnosticsWrites,
+    [],
+    "a disposed session must not publish late diagnostics over its replacement"
+  );
+
   const scopedDiagnosticsWrites = [];
   const scopedDiagnosticsSession = Object.create(extension.__test.CftLspSession.prototype);
   Object.assign(scopedDiagnosticsSession, {
