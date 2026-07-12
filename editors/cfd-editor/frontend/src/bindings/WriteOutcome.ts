@@ -12,7 +12,7 @@ import type { RecordCoordinate } from "./RecordCoordinate";
  * update routes, undo stacks, and any other long-lived references that
  * previously pointed at `old`.
  */
-export type WriteOutcome = { touched: Array<RecordCoordinate>, inserted: RecordCoordinate | null, deleted: RecordCoordinate | null, renamed: [RecordCoordinate, RecordCoordinate] | null,
+export type WriteOutcome = { touched: Array<RecordCoordinate>, inserted: RecordCoordinate | null, deleted: RecordCoordinate | null, renamed: [RecordCoordinate, RecordCoordinate] | null, 
 /**
  * Project-facing source paths actually changed by this operation.
  */
