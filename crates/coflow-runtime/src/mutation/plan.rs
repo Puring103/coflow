@@ -1,4 +1,4 @@
-use std::collections::{btree_map::Entry, BTreeMap};
+use std::collections::BTreeMap;
 
 use coflow_api::{Diagnostic, DiagnosticSet};
 
@@ -9,8 +9,8 @@ use super::prepare::{
     prepare_set_on_pending_insert, rename_pending_insert_references,
     rename_prepared_field_references, PendingInsertSetRequest,
 };
-use super::types::{PreparedMutation, PreparedMutationOp};
-use super::{MutationFailedOp, MutationOp};
+use super::types::PreparedMutationOp;
+use super::{MutationFailedOp, MutationOp, MutationRequest};
 
 #[derive(Debug)]
 pub(super) struct PlannedMutationOp {
@@ -20,40 +20,33 @@ pub(super) struct PlannedMutationOp {
 
 pub(super) fn plan_mutations(
     session: &ProjectSession,
-    prepared: PreparedMutation,
+    request: MutationRequest,
 ) -> (Vec<PlannedMutationOp>, Vec<MutationFailedOp>, bool, bool) {
-    let PreparedMutation {
+    let MutationRequest {
         stop_on_write_error,
         ops,
-    } = prepared;
+    } = request;
     let mut planned = Vec::<PlannedMutationOp>::new();
     let mut pending_inserts = BTreeMap::<RecordCoordinate, usize>::new();
     let mut failed = Vec::new();
     let mut write_ok = true;
 
-    for (index, pending) in ops.into_iter().enumerate() {
-        let PreparedMutationOp::Pending { op } = pending else {
-            continue;
-        };
-        let pending_records = pending_inserts.keys().cloned().collect::<Vec<_>>();
-        let result = prepare_planned_op(
-            session,
-            &mut planned,
-            &mut pending_inserts,
-            &op,
-            &pending_records,
-        );
+    for (index, op) in ops.into_iter().enumerate() {
+        let op_name = mutation_op_name(&op);
+        let insert_op = matches!(op, MutationOp::InsertRecord { .. });
+        let result = prepare_planned_op(session, &mut planned, &mut pending_inserts, op);
 
         match result {
             Ok(op) => planned.push(PlannedMutationOp { index, op }),
             Err(diagnostics) => {
                 write_ok = false;
-                failed.push(MutationFailedOp {
+                let terminal = is_terminal_prepare_error(insert_op, &diagnostics);
+                failed.push(MutationFailedOp::from_diagnostics(
                     index,
-                    op: mutation_op_name(&op).to_string(),
-                    diagnostics: diagnostics.flat_diagnostics(),
-                });
-                if stop_on_write_error || is_terminal_prepare_error(&op, &diagnostics) {
+                    op_name,
+                    diagnostics,
+                ));
+                if stop_on_write_error || terminal {
                     return (Vec::new(), failed, false, true);
                 }
             }
@@ -66,8 +59,7 @@ fn prepare_planned_op(
     session: &ProjectSession,
     planned: &mut [PlannedMutationOp],
     pending_inserts: &mut BTreeMap<RecordCoordinate, usize>,
-    op: &MutationOp,
-    pending_records: &[RecordCoordinate],
+    op: MutationOp,
 ) -> Result<PreparedMutationOp, DiagnosticSet> {
     match op {
         MutationOp::SetField {
@@ -75,95 +67,173 @@ fn prepare_planned_op(
             file,
             path,
             value,
-        } => {
-            let Some(insert_index) = pending_inserts.get(record).copied() else {
-                return prepare_one(session, op.clone(), pending_records);
-            };
-            let pending_insert = planned.get_mut(insert_index).ok_or_else(|| {
-                mutation_invariant_error(
-                    "pending insert index is outside the planned operation list",
-                )
-            })?;
-            let PreparedMutationOp::InsertRecord {
-                file: insert_file,
+        } => prepare_set_field(
+            session,
+            planned,
+            pending_inserts,
+            MutationOp::SetField {
+                record,
+                file,
+                path,
+                value,
+            },
+        ),
+        MutationOp::InsertRecord {
+            file,
+            sheet,
+            actual_type,
+            key,
+            fields,
+            materialization,
+        } => prepare_insert(
+            session,
+            planned.len(),
+            pending_inserts,
+            MutationOp::InsertRecord {
+                file,
+                sheet,
                 actual_type,
                 key,
                 fields,
-                ..
-            } = &mut pending_insert.op
-            else {
-                return Err(mutation_invariant_error(
-                    "pending insert index does not identify an insert operation",
-                ));
-            };
-            prepare_set_on_pending_insert(
-                session,
-                PendingInsertSetRequest {
-                    insert_file,
-                    actual_type,
-                    key,
-                    fields,
-                    file_guard: file.as_deref(),
-                    path,
-                    value: value.clone(),
-                    pending_records,
-                },
-            )
-        }
-        MutationOp::InsertRecord {
-            actual_type, key, ..
-        } => {
-            let coordinate = RecordCoordinate::new(actual_type, key);
-            match pending_inserts.entry(coordinate) {
-                Entry::Occupied(entry) => Err(DiagnosticSet::one(Diagnostic::error(
-                    "MUTATION-INSERT-CONFLICT",
-                    "MUTATION",
-                    format!(
-                        "record `{}.{}` is inserted more than once in the same mutation",
-                        entry.key().actual_type,
-                        entry.key().key
-                    ),
-                ))),
-                Entry::Vacant(entry) => {
-                    prepare_one(session, op.clone(), pending_records).inspect(|prepared_op| {
-                        if matches!(prepared_op, PreparedMutationOp::InsertRecord { .. }) {
-                            entry.insert(planned.len());
-                        }
-                    })
-                }
-            }
-        }
+                materialization,
+            },
+        ),
         MutationOp::RenameRecord {
             record,
             file,
             new_key,
         } => {
-            let Some(insert_index) = pending_inserts.get(record).copied() else {
-                return prepare_one(session, op.clone(), pending_records);
+            let Some(insert_index) = pending_inserts.get(&record).copied() else {
+                return prepare_one(
+                    session,
+                    MutationOp::RenameRecord {
+                        record,
+                        file,
+                        new_key,
+                    },
+                    pending_inserts,
+                );
             };
             fold_pending_insert_rename(
                 session,
                 planned,
                 pending_inserts,
                 insert_index,
-                record,
+                &record,
                 file.as_deref(),
-                new_key,
+                &new_key,
             )
         }
         MutationOp::DeleteRecord { record, file } => {
-            let Some(insert_index) = pending_inserts.get(record).copied() else {
-                return prepare_one(session, op.clone(), pending_records);
+            let Some(insert_index) = pending_inserts.get(&record).copied() else {
+                return prepare_one(
+                    session,
+                    MutationOp::DeleteRecord { record, file },
+                    pending_inserts,
+                );
             };
             fold_pending_insert_delete(
                 planned,
                 pending_inserts,
                 insert_index,
-                record,
+                &record,
                 file.as_deref(),
             )
         }
     }
+}
+
+fn prepare_set_field(
+    session: &ProjectSession,
+    planned: &mut [PlannedMutationOp],
+    pending_inserts: &BTreeMap<RecordCoordinate, usize>,
+    op: MutationOp,
+) -> Result<PreparedMutationOp, DiagnosticSet> {
+    let MutationOp::SetField {
+        record,
+        file,
+        path,
+        value,
+    } = op
+    else {
+        return Err(mutation_invariant_error(
+            "set-field preparation received a different operation",
+        ));
+    };
+    let Some(insert_index) = pending_inserts.get(&record).copied() else {
+        return prepare_one(
+            session,
+            MutationOp::SetField {
+                record,
+                file,
+                path,
+                value,
+            },
+            pending_inserts,
+        );
+    };
+    let pending_insert = planned.get_mut(insert_index).ok_or_else(|| {
+        mutation_invariant_error("pending insert index is outside the planned operation list")
+    })?;
+    let PreparedMutationOp::InsertRecord {
+        file: insert_file,
+        actual_type,
+        key,
+        fields,
+        ..
+    } = &mut pending_insert.op
+    else {
+        return Err(mutation_invariant_error(
+            "pending insert index does not identify an insert operation",
+        ));
+    };
+    prepare_set_on_pending_insert(
+        session,
+        PendingInsertSetRequest {
+            insert_file,
+            actual_type,
+            key,
+            fields,
+            file_guard: file.as_deref(),
+            path: &path,
+            value,
+            pending_records: pending_inserts,
+        },
+    )
+}
+
+fn prepare_insert(
+    session: &ProjectSession,
+    planned_len: usize,
+    pending_inserts: &mut BTreeMap<RecordCoordinate, usize>,
+    op: MutationOp,
+) -> Result<PreparedMutationOp, DiagnosticSet> {
+    let MutationOp::InsertRecord {
+        ref actual_type,
+        ref key,
+        ..
+    } = op
+    else {
+        return Err(mutation_invariant_error(
+            "insert preparation received a non-insert operation",
+        ));
+    };
+    let coordinate = RecordCoordinate::new(actual_type, key);
+    if pending_inserts.contains_key(&coordinate) {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "MUTATION-INSERT-CONFLICT",
+            "MUTATION",
+            format!(
+                "record `{}.{}` is inserted more than once in the same mutation",
+                coordinate.actual_type, coordinate.key
+            ),
+        )));
+    }
+    let prepared = prepare_one(session, op, pending_inserts)?;
+    if matches!(prepared, PreparedMutationOp::InsertRecord { .. }) {
+        pending_inserts.insert(coordinate, planned_len);
+    }
+    Ok(prepared)
 }
 
 fn fold_pending_insert_rename(
@@ -295,10 +365,9 @@ pub(super) const fn mutation_op_name(op: &MutationOp) -> &'static str {
     }
 }
 
-fn is_terminal_prepare_error(op: &MutationOp, diagnostics: &DiagnosticSet) -> bool {
+fn is_terminal_prepare_error(insert_op: bool, diagnostics: &DiagnosticSet) -> bool {
     diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "MUTATION-TXN-INVARIANT"
-            || (matches!(op, MutationOp::InsertRecord { .. })
-                && diagnostic.code == "MUTATION-INSERT-CONFLICT")
+            || (insert_op && diagnostic.code == "MUTATION-INSERT-CONFLICT")
     })
 }

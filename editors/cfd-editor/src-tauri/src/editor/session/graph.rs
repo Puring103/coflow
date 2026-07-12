@@ -7,8 +7,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecordId, RefEdge};
-use coflow_runtime::{format_field_path, RecordCoordinate};
+use coflow_data_model::{CfdPath, CfdPathSegment};
+use coflow_runtime::{format_field_path, RecordCoordinate, RecordReferenceInfo};
 
 use crate::editor::convert::{record_to_row, WireContext};
 use crate::editor::types::{GraphData, GraphEdge, GraphNode, GraphQuery};
@@ -38,35 +38,29 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
     let available_starts = start_records(session, file_path, query.active_type.as_deref(), None);
     let available_fields =
         collect_available_fields(session, &available_starts, max_depth, node_limit);
-    let mut queue: VecDeque<(CfdRecordId, usize)> = VecDeque::new();
-    let mut depths: HashMap<CfdRecordId, usize> = HashMap::new();
-    for id in &starts {
+    let mut queue: VecDeque<(RecordCoordinate, usize)> = VecDeque::new();
+    let mut depths: HashMap<RecordCoordinate, usize> = HashMap::new();
+    for coordinate in &starts {
         if depths.len() >= node_limit {
             break;
         }
-        queue.push_back((*id, 0));
-        depths.insert(*id, 0);
+        queue.push_back((coordinate.clone(), 0));
+        depths.insert(coordinate.clone(), 0);
     }
 
     let queries = session.queries();
     let ctx = WireContext::new(queries, &session.diagnostics);
 
-    while let Some((id, depth)) = queue.pop_front() {
-        let Some(record) = queries.model().record(id) else {
+    while let Some((coordinate, depth)) = queue.pop_front() {
+        let Some(view) = queries.record_view(&coordinate.actual_type, &coordinate.key) else {
             continue;
         };
-        let coordinate = RecordCoordinate::new(record.actual_type(), record.key.clone());
-        let host_file = session
-            .queries()
-            .records()
-            .file_for_id(id)
-            .unwrap_or_default()
-            .to_string();
+        let host_file = view.display_path.to_string();
         let node_key = NodeKey::from_coordinate(&coordinate);
         let in_focus = host_file == file_path;
         let is_collapsed = depth >= max_depth;
 
-        let row = record_to_row(record, &host_file, &ctx);
+        let row = record_to_row(view.record, &host_file, &ctx);
         let fields = if is_collapsed { Vec::new() } else { row.fields };
 
         nodes.entry(node_key.clone()).or_insert_with(|| GraphNode {
@@ -83,31 +77,27 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
             continue;
         }
 
-        for edge in queries.model().direct_ref_edges_from_host(id) {
-            if !edge_enabled(edge, enabled_fields.as_ref()) {
+        for edge in queries.record_references(&coordinate) {
+            if !edge_enabled(&edge, enabled_fields.as_ref()) {
                 continue;
             }
-            let Some(target_record) = queries.model().record(edge.target) else {
-                continue;
-            };
             if !depths.contains_key(&edge.target) && depths.len() >= node_limit {
                 continue;
             }
-            let target_coord =
-                RecordCoordinate::new(target_record.actual_type(), target_record.key.clone());
             edges.push(GraphEdge {
                 source: coordinate.clone(),
-                target: target_coord,
+                target: edge.target.clone(),
                 field_path: format_field_path(&edge.path),
             });
             if depth < max_depth && !depths.contains_key(&edge.target) {
-                depths.insert(edge.target, depth + 1);
+                depths.insert(edge.target.clone(), depth + 1);
                 queue.push_back((edge.target, depth + 1));
             }
         }
     }
 
     GraphData {
+        revision: session.revisions.current(),
         nodes: nodes.into_values().collect(),
         edges,
         available_fields,
@@ -119,54 +109,50 @@ fn start_records(
     file_path: &str,
     active_type: Option<&str>,
     enabled_fields: Option<&BTreeSet<&str>>,
-) -> Vec<CfdRecordId> {
+) -> Vec<RecordCoordinate> {
     session
         .queries()
-        .records()
-        .ids_in_file(file_path)
-        .iter()
-        .copied()
-        .filter(|id| {
-            let Some(record) = session.queries().model().record(*id) else {
-                return false;
-            };
-            active_type.is_none_or(|expected| record.actual_type() == expected)
+        .record_views_in_file(file_path)
+        .filter_map(|view| {
+            let coordinate = view.coordinate;
+            (active_type.is_none_or(|expected| coordinate.actual_type == expected)
                 && session
                     .queries()
-                    .model()
-                    .direct_ref_edges_from_host(*id)
-                    .any(|edge| edge_enabled(edge, enabled_fields))
+                    .record_references(&coordinate)
+                    .iter()
+                    .any(|edge| edge_enabled(edge, enabled_fields)))
+            .then_some(coordinate)
         })
         .collect()
 }
 
 fn collect_available_fields(
     session: &EditorSession,
-    starts: &[CfdRecordId],
+    starts: &[RecordCoordinate],
     max_depth: usize,
     node_limit: usize,
 ) -> Vec<String> {
     let mut fields = BTreeSet::new();
-    let mut queue: VecDeque<(CfdRecordId, usize)> = VecDeque::new();
-    let mut depths: HashMap<CfdRecordId, usize> = HashMap::new();
-    for id in starts {
+    let mut queue: VecDeque<(RecordCoordinate, usize)> = VecDeque::new();
+    let mut depths: HashMap<RecordCoordinate, usize> = HashMap::new();
+    for coordinate in starts {
         if depths.len() >= node_limit {
             break;
         }
-        queue.push_back((*id, 0));
-        depths.insert(*id, 0);
+        queue.push_back((coordinate.clone(), 0));
+        depths.insert(coordinate.clone(), 0);
     }
-    while let Some((id, depth)) = queue.pop_front() {
+    while let Some((coordinate, depth)) = queue.pop_front() {
         if depth >= max_depth {
             continue;
         }
-        for edge in session.queries().model().direct_ref_edges_from_host(id) {
+        for edge in session.queries().record_references(&coordinate) {
             if let Some(field) = top_level_field(&edge.path) {
                 fields.insert(field.to_string());
             }
             if depth < max_depth && !depths.contains_key(&edge.target) && depths.len() < node_limit
             {
-                depths.insert(edge.target, depth + 1);
+                depths.insert(edge.target.clone(), depth + 1);
                 queue.push_back((edge.target, depth + 1));
             }
         }
@@ -174,7 +160,7 @@ fn collect_available_fields(
     fields.into_iter().collect()
 }
 
-fn edge_enabled(edge: &RefEdge, enabled_fields: Option<&BTreeSet<&str>>) -> bool {
+fn edge_enabled(edge: &RecordReferenceInfo, enabled_fields: Option<&BTreeSet<&str>>) -> bool {
     let Some(enabled_fields) = enabled_fields else {
         return true;
     };

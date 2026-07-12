@@ -50,16 +50,9 @@ fn runtime() -> Runtime {
 
 fn assert_same_generation_corpus(left: ProjectQueries<'_>, right: ProjectQueries<'_>) {
     assert_eq!(left.revision(), right.revision());
-    assert!(std::ptr::eq(left.project(), right.project()));
-    assert!(std::ptr::eq(
-        left.compiled_schema(),
-        right.compiled_schema()
-    ));
-    assert!(std::ptr::eq(left.model(), right.model()));
     assert!(std::ptr::eq(left.diagnostics(), right.diagnostics()));
-    assert!(std::ptr::eq(left.sources(), right.sources()));
-    assert!(std::ptr::eq(left.records(), right.records()));
-    assert!(std::ptr::eq(left.files(), right.files()));
+    assert_eq!(left.record_count(), right.record_count());
+    assert_eq!(left.file_tree(), right.file_tree());
     assert!(std::ptr::eq(
         left.loader_extensions(),
         right.loader_extensions()

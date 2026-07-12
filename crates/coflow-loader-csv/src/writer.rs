@@ -75,12 +75,7 @@ impl SourceWriter for CsvWriter {
         })
         .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
-        Ok(WriteOutcome {
-            touched_record_origins: vec![request.origin.clone()],
-            inserted_record_origin: None,
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn insert_record(
@@ -115,13 +110,8 @@ impl SourceWriter for CsvWriter {
             id_column: layout.id_column,
         })
         .map_err(table_write_diagnostics_to_api)?;
-        let inserted_origin = apply_plan(&plan)?;
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: inserted_origin,
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        apply_plan(&plan)?;
+        Ok(WriteOutcome::default())
     }
 
     fn rename_record(
@@ -153,12 +143,7 @@ impl SourceWriter for CsvWriter {
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: None,
-            deleted_record_origin: Some(request.origin.clone()),
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn rewrite_record_references(

@@ -15,8 +15,8 @@
 )]
 
 use coflow_api::{
-    ArtifactContentKind, ArtifactFile, ArtifactSet, DataExporter, Diagnostic, DiagnosticSet,
-    ExportContext, ExporterDescriptor, OutputSpec, ProviderBundle, ProviderRegistrationError,
+    ArtifactContentKind, ArtifactFile, ArtifactSet, DataExporter, DecodedOutputOptions, Diagnostic,
+    DiagnosticSet, ExportContext, ExporterDescriptor, ProviderBundle, ProviderRegistrationError,
 };
 use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdDataModel;
@@ -69,6 +69,9 @@ pub fn export_json_artifacts(
 #[derive(Debug, Default, Clone, Copy)]
 pub struct JsonExporter;
 
+#[derive(Debug)]
+struct JsonOutputOptions;
+
 pub const JSON_EXPORTER_DESCRIPTOR: ExporterDescriptor = ExporterDescriptor {
     id: "json",
     display_name: "JSON",
@@ -92,11 +95,27 @@ impl DataExporter for JsonExporter {
         &JSON_EXPORTER_DESCRIPTOR
     }
 
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedOutputOptions, DiagnosticSet> {
+        if options.as_object().is_some_and(serde_json::Map::is_empty) {
+            Ok(DecodedOutputOptions::new("json", JsonOutputOptions))
+        } else {
+            Err(DiagnosticSet::one(Diagnostic::error(
+                "JSON-OPTIONS",
+                "EXPORT",
+                "JSON exporter does not accept output options",
+            )))
+        }
+    }
+
     fn export(
         &self,
         ctx: ExportContext<'_>,
-        _output: &OutputSpec,
+        options: &DecodedOutputOptions,
     ) -> Result<ArtifactSet, DiagnosticSet> {
+        options.require::<JsonOutputOptions>("json")?;
         export_json_artifacts(ctx.schema, ctx.model).map_err(|err| {
             DiagnosticSet::one(Diagnostic::error(
                 "JSON-EXPORT",

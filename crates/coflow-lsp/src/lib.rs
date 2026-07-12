@@ -55,8 +55,8 @@ use position::{
     byte_offset_from_position, byte_range, full_document_range, range_from_span, LspPosition,
 };
 use protocol::{
-    did_change_document, did_open_document, did_save_document, read_message, text_document_uri,
-    TextRequest,
+    did_change_document, did_change_watched_files, did_open_document, did_save_document,
+    read_message, text_document_uri, TextRequest,
 };
 use semantic_tokens::{semantic_token_data, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES};
 use serde_json::{json, Value};
@@ -92,6 +92,17 @@ enum RunEvent {
     Validation(Box<ValidationSnapshot>),
 }
 
+struct PendingRequest {
+    revision: validation::ValidationRevision,
+    message: Value,
+}
+
+impl PendingRequest {
+    const fn new(revision: validation::ValidationRevision, message: Value) -> Self {
+        Self { revision, message }
+    }
+}
+
 /// Runs the CFT language server over stdio.
 ///
 /// # Errors
@@ -123,13 +134,15 @@ pub fn run(project: Project) -> Result<bool, String> {
                         apply_runtime_document_notification(&mut server.core, &message)?
                     {
                         if changed {
+                            cancel_stale_pending_requests(&mut server, &mut pending_requests)?;
                             validation_worker.schedule(server.core.validation_input());
                         }
                         continue;
                     }
                 }
                 if request_requires_snapshot(&message) && !server.core.is_current() {
-                    pending_requests.push_back(message);
+                    pending_requests
+                        .push_back(PendingRequest::new(server.core.revision(), message));
                     validation_worker.schedule(server.core.validation_input());
                     continue;
                 }
@@ -139,8 +152,9 @@ pub fn run(project: Project) -> Result<bool, String> {
                 let publications = server.core.commit_snapshot(*candidate);
                 server.publish_diagnostic_publications(publications)?;
                 if server.core.is_current() {
+                    cancel_stale_pending_requests(&mut server, &mut pending_requests)?;
                     while let Some(request) = pending_requests.pop_front() {
-                        server.handle_message(&request)?;
+                        server.handle_message(&request.message)?;
                     }
                 }
             }
@@ -210,8 +224,32 @@ fn apply_runtime_document_notification(
         "textDocument/didClose" => text_document_uri(params).map_or(Ok(Some(false)), |uri| {
             core.apply_close_document(&uri).map(Some)
         }),
+        "workspace/didChangeWatchedFiles" => core
+            .apply_watched_files(&did_change_watched_files(params))
+            .map(Some),
         _ => Ok(None),
     }
+}
+
+fn cancel_stale_pending_requests<W: Write>(
+    server: &mut LspServer<W>,
+    pending_requests: &mut VecDeque<PendingRequest>,
+) -> Result<(), String> {
+    let revision = server.core.revision();
+    let mut current = VecDeque::with_capacity(pending_requests.len());
+    while let Some(request) = pending_requests.pop_front() {
+        if request.revision == revision {
+            current.push_back(request);
+        } else if let Some(id) = request.message.get("id") {
+            server.write_error(
+                id,
+                -32800,
+                "request cancelled because the validation revision changed",
+            )?;
+        }
+    }
+    *pending_requests = current;
+    Ok(())
 }
 
 fn request_requires_snapshot(message: &Value) -> bool {
@@ -236,6 +274,36 @@ struct LspServer<W> {
     writer: W,
     shutdown_requested: bool,
     should_exit: bool,
+}
+
+fn cfd_definition(document: &validation::CfdRequestDocument<'_>, offset: usize) -> Value {
+    let schema_location = cfd::definition_type_name(document.ast, offset)
+        .and_then(|type_name| {
+            document
+                .build
+                .and_then(|build| cft_type_definition_location(build, type_name))
+        })
+        .or_else(|| {
+            cfd::definition_field_name(document.ast, document.schema, offset).and_then(
+                |(type_name, field_name)| {
+                    document.build.and_then(|build| {
+                        cft_schema_field_definition_location(build, &type_name, field_name)
+                    })
+                },
+            )
+        });
+    schema_location.map_or_else(
+        || {
+            cfd::definition_ref_target(document.ast, document.schema, offset)
+                .and_then(|(target_type, ref_key)| {
+                    document.build.and_then(|build| {
+                        cfd_record_definition_location(build, &target_type, &ref_key)
+                    })
+                })
+                .map_or(Value::Null, |location| json!(location))
+        },
+        |location| json!(location),
+    )
 }
 
 impl<W: Write> LspServer<W> {
@@ -324,6 +392,7 @@ impl<W: Write> LspServer<W> {
                 }
                 Ok(())
             }
+            (None, "workspace/didChangeWatchedFiles") => self.watched_files_changed(params),
             (Some(id), _) => self.write_error(&id, -32601, &format!("method `{method}` not found")),
             (None, _) => Ok(()),
         }
@@ -401,14 +470,25 @@ impl<W: Write> LspServer<W> {
         self.publish_diagnostic_publications(publications)
     }
 
+    fn watched_files_changed(&mut self, params: &Value) -> Result<(), String> {
+        if !self
+            .core
+            .apply_watched_files(&did_change_watched_files(params))?
+        {
+            return Ok(());
+        }
+        let publications = self.core.validate_project();
+        self.publish_diagnostic_publications(publications)
+    }
+
     fn completion(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
         let result = match self.request_document(&request.uri)? {
             LspRequestDocument::Cfd(document) => {
-                let offset = byte_offset_from_position(&document.source, request.position);
-                cfd::completion(&document.source, &document.ast, document.schema, offset)
+                let offset = byte_offset_from_position(document.source, request.position);
+                cfd::completion(document.source, document.ast, document.schema, offset)
             }
             LspRequestDocument::Cft { build, document } => {
                 json!(completion_items(build, document, &request.position))
@@ -424,8 +504,8 @@ impl<W: Write> LspServer<W> {
         };
         let result = match self.request_document(&request.uri)? {
             LspRequestDocument::Cfd(document) => {
-                let offset = byte_offset_from_position(&document.source, request.position);
-                cfd::hover(&document.source, &document.ast, document.schema, offset)
+                let offset = byte_offset_from_position(document.source, request.position);
+                cfd::hover(document.source, document.ast, document.schema, offset)
             }
             LspRequestDocument::Cft { build, document } => {
                 hover_at(build, document, &request.position).unwrap_or(Value::Null)
@@ -441,37 +521,8 @@ impl<W: Write> LspServer<W> {
         };
         let result = match self.request_document(&request.uri)? {
             LspRequestDocument::Cfd(document) => {
-                let offset = byte_offset_from_position(&document.source, request.position);
-                if let Some(location) =
-                    cfd::definition_type_name(&document.ast, offset).and_then(|type_name| {
-                        document
-                            .build
-                            .and_then(|build| cft_type_definition_location(build, type_name))
-                    })
-                {
-                    json!(location)
-                } else if let Some(location) =
-                    cfd::definition_field_name(&document.ast, document.schema, offset).and_then(
-                        |(type_name, field_name)| {
-                            document.build.and_then(|build| {
-                                cft_schema_field_definition_location(build, &type_name, field_name)
-                            })
-                        },
-                    )
-                {
-                    json!(location)
-                } else if let Some((target_type, ref_key)) =
-                    cfd::definition_ref_target(&document.ast, document.schema, offset)
-                {
-                    document
-                        .build
-                        .and_then(|build| {
-                            cfd_record_definition_location(build, &target_type, &ref_key)
-                        })
-                        .map_or(Value::Null, |location| json!(location))
-                } else {
-                    Value::Null
-                }
+                let offset = byte_offset_from_position(document.source, request.position);
+                cfd_definition(&document, offset)
             }
             LspRequestDocument::Cft { build, document } => {
                 json!(definitions_at(build, document, &request.position))
@@ -487,7 +538,7 @@ impl<W: Write> LspServer<W> {
         };
         let result = match self.request_document(&uri)? {
             LspRequestDocument::Cfd(document) => {
-                cfd::document_symbols(&document.source, &document.ast)
+                cfd::document_symbols(document.source, document.ast)
             }
             LspRequestDocument::Cft { document, .. } => json!(document_symbols(document)),
             LspRequestDocument::Missing => json!([]),
@@ -525,7 +576,7 @@ impl<W: Write> LspServer<W> {
         };
         let result = match self.request_document(&uri)? {
             LspRequestDocument::Cfd(document) => {
-                cfd::semantic_tokens(&document.source, &document.ast)
+                cfd::semantic_tokens(document.source, document.ast)
             }
             LspRequestDocument::Cft { build, document } => {
                 json!({

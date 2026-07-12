@@ -3,11 +3,11 @@
 use coflow_api::DiagnosticSet;
 use coflow_data_model::RecordOrigin;
 use coflow_data_model::{
-    format_cfd_dict_key, CfdDictKey, CfdPathSegment, CfdRecord, CfdRecordId, CfdValue,
+    format_cfd_dict_key, CfdDictKey, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdValue,
 };
 use serde::{Deserialize, Serialize};
 
-use super::{RecordCoordinate, SourceId};
+use super::RecordCoordinate;
 
 /// Read-only view of a top-level record. Bundles the model's `CfdRecord` with
 /// the engine's metadata so hosts don't have to do a second lookup.
@@ -17,7 +17,6 @@ pub struct RecordView<'a> {
     pub display_path: &'a str,
     pub record: &'a CfdRecord,
     pub origin: &'a RecordOrigin,
-    pub source_id: SourceId,
     pub provider_id: &'a str,
 }
 
@@ -74,6 +73,29 @@ pub struct RecordTarget {
 pub struct RefTargetInfo {
     pub coordinate: RecordCoordinate,
     pub file_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordReferenceInfo {
+    pub target: RecordCoordinate,
+    pub path: CfdPath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldShapeInfo {
+    pub display_label: String,
+    pub ref_target_type: Option<String>,
+    pub enum_type: Option<String>,
+    pub nullable: bool,
+    pub polymorphic_types: Vec<String>,
+    pub collection_item: Option<Box<Self>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdAsEnumInfo {
+    pub enum_name: String,
+    pub ids: Vec<String>,
+    pub is_flags: bool,
 }
 
 #[derive(Debug, Clone)]

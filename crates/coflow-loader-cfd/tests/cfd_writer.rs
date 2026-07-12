@@ -515,7 +515,7 @@ fn inserts_record_at_end_of_cfd_file() {
         )
         .expect("insert succeeds");
 
-    assert!(outcome.inserted_record_origin.is_some());
+    assert!(outcome.diagnostics.is_empty());
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(after.contains("potion: Item"));
     assert!(after.contains("name: \"Potion\""));

@@ -128,12 +128,7 @@ where
         });
         self.send_values_batch_update(&endpoint, &body, &auth)?;
 
-        Ok(WriteOutcome {
-            touched_record_origins: vec![request.origin.clone()],
-            inserted_record_origin: None,
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn rename_record(
@@ -219,18 +214,7 @@ where
             values[column - 1] = value;
         }
         self.append_lark_row(&spreadsheet_token, &sheet_id, &values, &auth)?;
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: Some(RecordOrigin::Table {
-                document: SourceDocument::Remote(format!("lark:{spreadsheet_token}")),
-                sheet,
-                row: 0,
-                id_column: layout.id_column,
-                field_columns: layout.field_columns,
-            }),
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn delete_record(
@@ -289,12 +273,7 @@ where
             )));
         }
         self.delete_lark_row(&spreadsheet_token, &sheet_id, *row, &auth)?;
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: None,
-            deleted_record_origin: Some(request.origin.clone()),
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn rewrite_record_references(

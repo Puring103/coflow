@@ -10,8 +10,6 @@
 use super::*;
 use coflow_cft::{CftContainer, ModuleId};
 use std::collections::BTreeMap;
-use std::fmt;
-use std::path::PathBuf;
 
 fn compile_schema(source: &str) -> Result<CftContainer, String> {
     let mut container = CftContainer::new();
@@ -23,7 +21,6 @@ fn compile_schema(source: &str) -> Result<CftContainer, String> {
         .map_err(|err| format!("compile schema: {err:?}"))?;
     Ok(container)
 }
-
 fn generated_file<'a>(files: &'a [GeneratedFile], name: &str) -> Result<&'a str, String> {
     files
         .iter()
@@ -289,9 +286,9 @@ fn codegen_emits_multiple_singletons_with_correct_separators() -> Result<(), Str
 
 #[test]
 fn data_format_serializes_messagepack_without_separator() -> Result<(), String> {
-    let value = serde::Serialize::serialize(&CsharpDataFormat::MessagePack, StringSerializer)
-        .map_err(|err| err.to_string())?;
-    assert_eq!(value, "messagepack");
+    let value =
+        serde_json::to_value(CsharpDataFormat::MessagePack).map_err(|err| err.to_string())?;
+    assert_eq!(value, serde_json::json!("messagepack"));
     Ok(())
 }
 
@@ -963,19 +960,18 @@ fn provider_generation_preserves_multiple_validation_diagnostics() -> Result<(),
         "#,
     )?;
     let compiled_schema = schema.compiled_schema();
-    let output = OutputSpec {
-        output_type: "csharp".to_string(),
-        dir: PathBuf::new(),
-        options: serde_json::json!({"namespace": "invalid namespace"}),
-    };
+    let options = CsharpCodeGenerator
+        .decode_options(&serde_json::json!({"namespace": "invalid namespace"}))
+        .map_err(|diagnostics| format!("decode C# options: {diagnostics:?}"))?;
     let diagnostics = CsharpCodeGenerator
         .generate(
             CodegenContext {
                 schema: compiled_schema,
                 model: None,
                 data_format: "json",
+                id_as_enum_variants: &serde_json::Value::Null,
             },
-            &output,
+            &options,
         )
         .expect_err("invalid generated names should fail");
     assert!(
@@ -984,24 +980,22 @@ fn provider_generation_preserves_multiple_validation_diagnostics() -> Result<(),
     );
     Ok(())
 }
-
 #[test]
 fn provider_generation_honors_database_class_option() -> Result<(), String> {
     let schema = compile_schema("type Item {}")?;
     let compiled_schema = schema.compiled_schema();
-    let output = OutputSpec {
-        output_type: "csharp".to_string(),
-        dir: PathBuf::new(),
-        options: serde_json::json!({"database_class": "RuntimeConfig"}),
-    };
+    let options = CsharpCodeGenerator
+        .decode_options(&serde_json::json!({"database_class": "RuntimeConfig"}))
+        .map_err(|diagnostics| format!("decode C# options: {diagnostics:?}"))?;
     let artifacts = CsharpCodeGenerator
         .generate(
             CodegenContext {
                 schema: compiled_schema,
                 model: None,
                 data_format: "json",
+                id_as_enum_variants: &serde_json::Value::Null,
             },
-            &output,
+            &options,
         )
         .map_err(|diagnostics| {
             diagnostics
@@ -1021,183 +1015,12 @@ fn provider_generation_honors_database_class_option() -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Debug)]
-struct StringSerializerError(String);
+#[test]
+fn provider_rejects_unknown_output_options() {
+    let diagnostics = CsharpCodeGenerator
+        .decode_options(&serde_json::json!({"id_as_enum_variants": {}}))
+        .expect_err("host-generated codegen inputs must not be project-facing options");
 
-impl fmt::Display for StringSerializerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl std::error::Error for StringSerializerError {}
-
-impl serde::ser::Error for StringSerializerError {
-    fn custom<T: fmt::Display>(msg: T) -> Self {
-        Self(msg.to_string())
-    }
-}
-
-struct StringSerializer;
-
-impl serde::Serializer for StringSerializer {
-    type Ok = String;
-    type Error = StringSerializerError;
-    type SerializeSeq = serde::ser::Impossible<String, StringSerializerError>;
-    type SerializeTuple = serde::ser::Impossible<String, StringSerializerError>;
-    type SerializeTupleStruct = serde::ser::Impossible<String, StringSerializerError>;
-    type SerializeTupleVariant = serde::ser::Impossible<String, StringSerializerError>;
-    type SerializeMap = serde::ser::Impossible<String, StringSerializerError>;
-    type SerializeStruct = serde::ser::Impossible<String, StringSerializerError>;
-    type SerializeStructVariant = serde::ser::Impossible<String, StringSerializerError>;
-
-    fn serialize_str(self, value: &str) -> Result<Self::Ok, Self::Error> {
-        Ok(value.to_string())
-    }
-
-    fn serialize_bool(self, _value: bool) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_i8(self, _value: i8) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_i16(self, _value: i16) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_i32(self, _value: i32) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_i64(self, _value: i64) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_u8(self, _value: u8) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_u16(self, _value: u16) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_u32(self, _value: u32) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_u64(self, _value: u64) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_f32(self, _value: f32) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_f64(self, _value: f64) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_char(self, _value: char) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_bytes(self, _value: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_some<T: ?Sized + serde::Serialize>(
-        self,
-        _value: &T,
-    ) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_unit_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        variant: &'static str,
-    ) -> Result<Self::Ok, Self::Error> {
-        Ok(variant.to_string())
-    }
-
-    fn serialize_newtype_struct<T: ?Sized + serde::Serialize>(
-        self,
-        _name: &'static str,
-        _value: &T,
-    ) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _value: &T,
-    ) -> Result<Self::Ok, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_tuple_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleStruct, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_tuple_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStruct, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
-
-    fn serialize_struct_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        Err(serde::ser::Error::custom("expected string"))
-    }
+    assert_eq!(diagnostics.diagnostics.len(), 1);
+    assert_eq!(diagnostics.diagnostics[0].code, "CSHARP-OPTIONS");
 }

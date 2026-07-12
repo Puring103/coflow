@@ -396,6 +396,101 @@ fn validation_worker_coalesces_pending_revisions_and_commits_only_latest() {
 }
 
 #[test]
+fn queued_feature_request_is_cancelled_when_its_validation_revision_expires() {
+    let (_cleanup, project) = test_project("lsp-stale-queued-request", "type First {}\n");
+    let uri = path_to_file_uri(&project.root_dir.join("schema").join("main.cft"));
+    let mut server = LspServer::new(project, Vec::new());
+    server
+        .core
+        .apply_open_document(uri.clone(), "type First {}\n".to_string(), Some(1))
+        .expect("open first revision");
+    let mut pending = VecDeque::from([PendingRequest::new(
+        server.core.revision(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "textDocument/hover",
+            "params": {
+                "textDocument": { "uri": uri },
+                "position": { "line": 0, "character": 5 }
+            }
+        }),
+    )]);
+
+    server
+        .core
+        .apply_change_document(uri, "type Second {}\n".to_string(), Some(2))
+        .expect("advance past queued request");
+    let current = build_snapshot(&server.core.validation_input());
+    server.core.commit_snapshot(current);
+    cancel_stale_pending_requests(&mut server, &mut pending).expect("cancel stale request");
+
+    assert!(pending.is_empty());
+    let messages = written_messages(&server.writer);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["id"], 41);
+    assert_eq!(messages[0]["error"]["code"], -32800);
+}
+
+#[test]
+fn watched_closed_schema_cfd_and_config_files_refresh_the_snapshot() {
+    let (_cleanup, project) =
+        test_project_with_config("lsp-watched-files", "type Item {}\n", "data/items.cfd");
+    let root = project.root_dir.clone();
+    let schema_path = root.join("schema").join("main.cft");
+    let cfd_path = root.join("data").join("items.cfd");
+    std::fs::create_dir_all(cfd_path.parent().expect("data parent")).expect("create data dir");
+    std::fs::write(&cfd_path, "old: Item {}\n").expect("write initial CFD");
+    let mut server = LspServer::new(project, Vec::new());
+    server.validate_project().expect("initial validation");
+
+    std::fs::write(&schema_path, "type Item { value: int = 1; }\n").expect("change schema");
+    std::fs::write(&cfd_path, "new: Item {}\n").expect("change CFD");
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "workspace/didChangeWatchedFiles",
+            "params": {
+                "changes": [
+                    { "uri": path_to_file_uri(&schema_path), "type": 2 },
+                    { "uri": path_to_file_uri(&cfd_path), "type": 2 }
+                ]
+            }
+        }))
+        .expect("refresh closed files");
+
+    let schema_document = server
+        .core
+        .build()
+        .and_then(|build| build.document_by_uri(&path_to_file_uri(&schema_path)))
+        .expect("refreshed schema document");
+    assert!(schema_document.source.contains("value: int"));
+    let LspRequestDocument::Cfd(cfd_document) =
+        server.core.request_document(&path_to_file_uri(&cfd_path))
+    else {
+        panic!("closed CFD should be available from the validation snapshot");
+    };
+    assert!(cfd_document.source.contains("new: Item"));
+
+    let alternate_path = root.join("alternate.cft");
+    std::fs::write(&alternate_path, "type Alternate {}\n").expect("write alternate schema");
+    let config_path = root.join("coflow.yaml");
+    std::fs::write(&config_path, "schema: alternate.cft\n").expect("change config");
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "workspace/didChangeWatchedFiles",
+            "params": {
+                "changes": [{ "uri": path_to_file_uri(&config_path), "type": 2 }]
+            }
+        }))
+        .expect("reload project config");
+    assert!(server.core.build().is_some_and(|build| build
+        .document_by_uri(&path_to_file_uri(&alternate_path))
+        .is_some()));
+}
+
+#[test]
 fn feature_requests_return_empty_results_for_missing_params_and_unknown_documents() {
     let source = "type Item { key: string; }\n";
     let (_cleanup, project) = test_project("lsp-request-param-edges", source);

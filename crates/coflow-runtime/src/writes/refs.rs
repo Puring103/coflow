@@ -7,7 +7,7 @@ use coflow_api::{
 use coflow_cft::CompiledSchema;
 use coflow_data_model::{CfdRecordId, CfdValue, RecordOrigin};
 
-use super::{lookup_source_writer, source_for_file};
+use super::writer::{lookup_source_writer, source_for_id};
 use crate::ProjectSession;
 
 pub(super) struct ReferenceUpdateAction {
@@ -107,7 +107,7 @@ pub(super) fn reference_update_actions(
         ) {
             continue;
         }
-        let source = source_for_file(session, &host_ref.display_path)?;
+        let source = source_for_id(session, host_ref.source_id)?;
         let writer = lookup_source_writer(registry, &source)?;
         actions.push(ReferenceUpdateAction {
             writer,
@@ -138,7 +138,7 @@ pub(super) fn source_rewrite_actions(
         let Some(host_ref) = session.records.get(edge.host) else {
             continue;
         };
-        let source = source_for_file(session, &host_ref.display_path)?;
+        let source = source_for_id(session, host_ref.source_id)?;
         let target = SpreadRewriteTarget {
             origin: host_ref.origin.clone(),
             record_key: host_ref.coordinate.key.clone(),

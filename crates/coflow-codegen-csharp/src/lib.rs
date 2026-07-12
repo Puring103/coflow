@@ -25,10 +25,11 @@ mod names;
 mod render;
 
 use coflow_api::{
-    ArtifactFile, ArtifactSet, CodeGenerator, CodegenContext, CodegenDescriptor, Diagnostic,
-    DiagnosticSet, OutputSpec, ProviderBundle, ProviderRegistrationError,
+    ArtifactFile, ArtifactSet, CodeGenerator, CodegenContext, CodegenDescriptor,
+    DecodedOutputOptions, Diagnostic, DiagnosticSet, ProviderBundle, ProviderRegistrationError,
 };
 use coflow_cft::CompiledSchema;
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
@@ -271,18 +272,55 @@ pub const CSHARP_CODEGEN_DESCRIPTOR: CodegenDescriptor = CodegenDescriptor {
     needs_model_for_build: true,
 };
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct CsharpOutputOptionsConfig {
+    namespace: Option<String>,
+    database_class: Option<String>,
+    int_32: bool,
+    float_32: bool,
+}
+
+#[derive(Debug)]
+struct CsharpOutputOptions {
+    codegen: CsharpCodegenOptions,
+}
+
 impl CodeGenerator for CsharpCodeGenerator {
     fn descriptor(&self) -> &'static CodegenDescriptor {
         &CSHARP_CODEGEN_DESCRIPTOR
     }
 
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedOutputOptions, DiagnosticSet> {
+        let raw = serde_json::from_value::<CsharpOutputOptionsConfig>(options.clone()).map_err(
+            |err| {
+                DiagnosticSet::one(Diagnostic::error(
+                    "CSHARP-OPTIONS",
+                    "CODEGEN",
+                    format!("invalid C# output options: {err}"),
+                ))
+            },
+        )?;
+        let codegen = CsharpCodegenOptions::new(raw.namespace.as_deref().unwrap_or("Game.Config"))
+            .with_database_class(raw.database_class.as_deref().unwrap_or("CoflowTables"))
+            .with_int_32(raw.int_32)
+            .with_float_32(raw.float_32);
+        Ok(DecodedOutputOptions::new(
+            "csharp",
+            CsharpOutputOptions { codegen },
+        ))
+    }
+
     fn generate(
         &self,
         ctx: CodegenContext<'_>,
-        output: &OutputSpec,
+        options: &DecodedOutputOptions,
     ) -> Result<ArtifactSet, DiagnosticSet> {
-        let options = csharp_options_from_output(output);
-        let id_as_enum_variants = id_as_enum_variants_from_options(&output.options)?;
+        let options = options.require::<CsharpOutputOptions>("csharp")?;
+        let id_as_enum_variants = id_as_enum_variants_from_context(ctx.id_as_enum_variants)?;
         let non_empty_tables = ctx.model.map(|model| {
             model
                 .tables()
@@ -293,13 +331,13 @@ impl CodeGenerator for CsharpCodeGenerator {
         let generated = match ctx.data_format {
             "json" => generate_csharp_json_with_id_as_enum_variants(
                 ctx.schema,
-                &options,
+                &options.codegen,
                 id_as_enum_variants,
                 non_empty_tables.as_ref(),
             ),
             "messagepack" => generate_csharp_messagepack_with_id_as_enum_variants(
                 ctx.schema,
-                &options,
+                &options.codegen,
                 id_as_enum_variants,
                 non_empty_tables.as_ref(),
             ),
@@ -333,44 +371,17 @@ impl CodeGenerator for CsharpCodeGenerator {
     }
 }
 
-fn csharp_options_from_output(output: &OutputSpec) -> CsharpCodegenOptions {
-    let namespace = output
-        .options
-        .get("namespace")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("Game.Config");
-    let database_class = output
-        .options
-        .get("database_class")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("CoflowTables");
-    let int_32 = output
-        .options
-        .get("int_32")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let float_32 = output
-        .options
-        .get("float_32")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    CsharpCodegenOptions::new(namespace)
-        .with_database_class(database_class)
-        .with_int_32(int_32)
-        .with_float_32(float_32)
-}
-
-fn id_as_enum_variants_from_options(
-    options: &serde_json::Value,
+fn id_as_enum_variants_from_context(
+    value: &serde_json::Value,
 ) -> Result<BTreeMap<String, Vec<CsharpIdAsEnumVariant>>, DiagnosticSet> {
-    let Some(value) = options.get("id_as_enum_variants") else {
+    if value.is_null() {
         return Ok(BTreeMap::new());
-    };
+    }
     serde_json::from_value(value.clone()).map_err(|err| {
         DiagnosticSet::one(Diagnostic::error(
             "CSHARP-OPTIONS",
             "CODEGEN",
-            format!("invalid id_as_enum_variants option: {err}"),
+            format!("invalid generated id_as_enum_variants: {err}"),
         ))
     })
 }

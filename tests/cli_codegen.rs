@@ -100,6 +100,71 @@ fn codegen_csharp_uses_messagepack_loader_when_data_output_is_messagepack() {
 fn codegen_csharp_validation_outputs_multiple_diagnostics_without_writing_files() {
     let root = temp_project_dir("codegen-preflight");
     let _cleanup = TempDirCleanup(root.clone());
+    write_invalid_codegen_project(&root);
+    write_active_enum_lock(&root, &serde_json::json!({}));
+
+    let output = coflow()
+        .args(["codegen", "csharp", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run codegen");
+
+    assert!(
+        !output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("[CODEGEN-CSHARP-001] [CODEGEN]"));
+    assert!(stderr.contains("invalid C# namespace `Game.1Bad`"));
+    assert!(stderr.contains("invalid C# type name `class`"));
+    assert!(stderr.contains("invalid C# enum name `namespace`"));
+    assert!(!stderr.contains("failed to parse"));
+    assert_eq!(active_enum_lock(&root), serde_json::json!({}));
+    assert!(!root
+        .join("generated")
+        .join("csharp")
+        .join("CoflowTables.cs")
+        .exists());
+}
+
+#[test]
+fn codegen_csharp_rejects_malformed_lock_before_publication() {
+    let root = temp_project_dir("codegen-malformed-lock");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_acyclic_csharp_project(&root, "json");
+    write_active_enum_lock(&root, &Value::String("malformed lock state".to_string()));
+
+    let output = coflow()
+        .args(["codegen", "csharp", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run codegen");
+
+    assert!(
+        !output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("[ARTIFACT-001] [ARTIFACT]"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("failed to parse @idAsEnum lock state"));
+    assert!(!stderr.contains("[CODEGEN-CSHARP-001] [CODEGEN]"));
+    assert_eq!(
+        active_enum_lock(&root),
+        Value::String("malformed lock state".to_string())
+    );
+    assert!(!root
+        .join("generated")
+        .join("csharp")
+        .join("CoflowTables.cs")
+        .exists());
+}
+
+fn write_invalid_codegen_project(root: &std::path::Path) {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::create_dir_all(root.join("generated").join("csharp")).expect("create code dir");
     std::fs::write(
@@ -129,34 +194,6 @@ outputs:
 ",
     )
     .expect("write config");
-    write_active_enum_lock(&root, &Value::String("malformed lock state".to_string()));
-
-    let output = coflow()
-        .args(["codegen", "csharp", root.to_str().expect("utf8 path")])
-        .output()
-        .expect("run codegen");
-
-    assert!(
-        !output.status.success(),
-        "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("[CODEGEN-CSHARP-001] [CODEGEN]"));
-    assert!(stderr.contains("invalid C# namespace `Game.1Bad`"));
-    assert!(stderr.contains("invalid C# type name `class`"));
-    assert!(stderr.contains("invalid C# enum name `namespace`"));
-    assert!(!stderr.contains("failed to parse"));
-    assert_eq!(
-        active_enum_lock(&root),
-        Value::String("malformed lock state".to_string())
-    );
-    assert!(!root
-        .join("generated")
-        .join("csharp")
-        .join("CoflowTables.cs")
-        .exists());
 }
 
 #[test]

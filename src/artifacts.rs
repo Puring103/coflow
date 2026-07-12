@@ -6,18 +6,18 @@ pub use publication::{
     enum_lockfile_path, publish_artifacts, read_active_enum_lock, EnumLockUpdate, CODE_OUTPUT_SLOT,
     DATA_OUTPUT_SLOT,
 };
-pub use staging::StagedArtifactDir;
 
 use coflow_api::{
-    ArtifactSet, CodegenContext, Diagnostic, DiagnosticSet, ExportContext, Label, OutputSpec,
-    ProviderRegistry, Severity, SourceLocation,
+    ArtifactSet, CodeGenerator, DataExporter, DecodedOutputOptions, Diagnostic, DiagnosticSet,
+    Label, Severity, SourceLocation,
 };
-use coflow_cft::CompiledSchema;
-use coflow_data_model::CfdDataModel;
 use coflow_project::{OutputConfig, Project};
+use coflow_runtime::{BuildProjectSession, ProjectSchemaSession};
 use serde_json::Value;
 use staging::stage_artifact_set;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 pub fn output_dir(
     project: &Project,
@@ -30,69 +30,246 @@ pub fn output_dir(
     )
 }
 
-pub fn generate_data_tables(
-    registry: &ProviderRegistry,
-    schema: &CompiledSchema,
-    model: &CfdDataModel,
-    exporter_id: &str,
-    output_config: &OutputConfig,
-    dir: &Path,
-) -> Result<ArtifactSet, DiagnosticSet> {
-    let exporter = registry.exporter(exporter_id).ok_or_else(|| {
-        diagnostic_set(
+#[derive(Debug)]
+pub struct ReleasedOutput {
+    pub provider_id: String,
+    pub display_name: &'static str,
+    pub dir: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct ArtifactReleaseReport {
+    outputs: BTreeMap<&'static str, ReleasedOutput>,
+}
+
+impl ArtifactReleaseReport {
+    pub fn output(&self, slot: &'static str) -> Result<&ReleasedOutput, DiagnosticSet> {
+        self.outputs.get(slot).ok_or_else(|| {
+            diagnostic_set(
+                PathBuf::from(slot),
+                format!("artifact release did not publish required `{slot}` output"),
+            )
+        })
+    }
+}
+
+pub(crate) enum ArtifactGenerator<'a> {
+    Data {
+        session: &'a BuildProjectSession,
+        exporter: Arc<dyn DataExporter>,
+        options: DecodedOutputOptions,
+    },
+    BuildCode {
+        session: &'a BuildProjectSession,
+        codegen: Arc<dyn CodeGenerator>,
+        options: DecodedOutputOptions,
+        data_format: &'a str,
+        id_as_enum_variants: &'a Value,
+        include_model: bool,
+    },
+    SchemaCode {
+        session: &'a ProjectSchemaSession,
+        codegen: Arc<dyn CodeGenerator>,
+        options: DecodedOutputOptions,
+        data_format: &'a str,
+        id_as_enum_variants: &'a Value,
+    },
+}
+
+pub(crate) struct ArtifactOutputTarget {
+    slot: &'static str,
+    provider_id: String,
+    display_name: &'static str,
+    dir: PathBuf,
+}
+
+impl ArtifactOutputTarget {
+    pub(crate) fn new(
+        slot: &'static str,
+        provider_id: impl Into<String>,
+        display_name: &'static str,
+        dir: PathBuf,
+    ) -> Self {
+        Self {
+            slot,
+            provider_id: provider_id.into(),
+            display_name,
             dir,
-            format!("no data exporter registered for `{exporter_id}`"),
-        )
-    })?;
-    let output = OutputSpec {
-        output_type: exporter_id.to_string(),
-        dir: dir.to_path_buf(),
-        options: output_options(output_config),
-    };
-    exporter.export(ExportContext { schema, model }, &output)
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct CodegenArtifactRequest<'a> {
-    pub schema: &'a CompiledSchema,
-    pub model: Option<&'a CfdDataModel>,
-    pub codegen_id: &'a str,
-    pub data_format: &'a str,
-    pub output_config: &'a OutputConfig,
-    pub dir: &'a Path,
-    pub id_as_enum_variants: &'a Value,
+pub(crate) struct ArtifactReleaseOutput<'a> {
+    target: ArtifactOutputTarget,
+    generator: ArtifactGenerator<'a>,
 }
 
-pub fn generate_codegen_artifacts(
-    registry: &ProviderRegistry,
-    request: CodegenArtifactRequest<'_>,
-) -> Result<ArtifactSet, DiagnosticSet> {
-    let codegen = registry.codegen(request.codegen_id).ok_or_else(|| {
-        diagnostic_set(
-            request.dir,
-            format!("no code generator registered for `{}`", request.codegen_id),
-        )
-    })?;
-    let output = OutputSpec {
-        output_type: request.codegen_id.to_string(),
-        dir: request.dir.to_path_buf(),
-        options: codegen_output_options(request.output_config, request.id_as_enum_variants),
-    };
-    codegen.generate(
-        CodegenContext {
-            schema: request.schema,
-            model: request.model,
-            data_format: request.data_format,
-        },
-        &output,
-    )
+impl<'a> ArtifactReleaseOutput<'a> {
+    pub(crate) const fn new(
+        target: ArtifactOutputTarget,
+        generator: ArtifactGenerator<'a>,
+    ) -> Self {
+        Self { target, generator }
+    }
 }
 
-pub fn stage_artifacts(
-    dir: &Path,
+struct GeneratedArtifactOutput {
+    slot: &'static str,
+    provider_id: String,
+    display_name: &'static str,
+    dir: PathBuf,
     artifacts: ArtifactSet,
-) -> Result<StagedArtifactDir, DiagnosticSet> {
-    stage_artifact_set(dir, artifacts)
+}
+
+pub struct ArtifactReleasePlan<'a> {
+    project: &'a Project,
+    outputs: Vec<ArtifactReleaseOutput<'a>>,
+    removed_outputs: Vec<&'static str>,
+    enum_lock_update: EnumLockUpdate,
+}
+
+pub struct PreparedArtifactRelease<'a> {
+    project: &'a Project,
+    outputs: Vec<GeneratedArtifactOutput>,
+    removed_outputs: Vec<&'static str>,
+    enum_lock_update: EnumLockUpdate,
+}
+
+impl<'a> ArtifactReleasePlan<'a> {
+    #[must_use]
+    pub const fn new(project: &'a Project) -> Self {
+        Self {
+            project,
+            outputs: Vec::new(),
+            removed_outputs: Vec::new(),
+            enum_lock_update: EnumLockUpdate::Preserve,
+        }
+    }
+
+    pub(crate) fn add_output(&mut self, output: ArtifactReleaseOutput<'a>) {
+        self.outputs.push(output);
+    }
+
+    pub fn remove_output(&mut self, slot: &'static str) {
+        self.removed_outputs.push(slot);
+    }
+
+    pub fn replace_enum_lock(&mut self, lock: Value) {
+        self.enum_lock_update = EnumLockUpdate::Replace(lock);
+    }
+
+    /// Validate output paths and generate every artifact set in memory.
+    pub fn prepare(self) -> Result<PreparedArtifactRelease<'a>, DiagnosticSet> {
+        let output_plans = self
+            .outputs
+            .iter()
+            .map(|output| {
+                crate::commands::artifact_safety::ArtifactOutputPlan::new(
+                    match output.target.slot {
+                        DATA_OUTPUT_SLOT => "outputs.data.dir",
+                        CODE_OUTPUT_SLOT => "outputs.code.dir",
+                        other => other,
+                    },
+                    output.target.dir.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let diagnostics = crate::commands::artifact_safety::artifact_safety_diagnostics(
+            self.project,
+            &output_plans,
+        );
+        if !diagnostics.is_empty() {
+            return Err(diagnostics);
+        }
+
+        let mut outputs = Vec::with_capacity(self.outputs.len());
+        for output in self.outputs {
+            let artifacts = match &output.generator {
+                ArtifactGenerator::Data {
+                    session,
+                    exporter,
+                    options,
+                } => session.export_artifacts(exporter.as_ref(), options),
+                ArtifactGenerator::BuildCode {
+                    session,
+                    codegen,
+                    options,
+                    data_format,
+                    id_as_enum_variants,
+                    include_model,
+                } => session.codegen_artifacts(
+                    codegen.as_ref(),
+                    options,
+                    data_format,
+                    id_as_enum_variants,
+                    *include_model,
+                ),
+                ArtifactGenerator::SchemaCode {
+                    session,
+                    codegen,
+                    options,
+                    data_format,
+                    id_as_enum_variants,
+                } => session.codegen_artifacts(
+                    codegen.as_ref(),
+                    options,
+                    data_format,
+                    id_as_enum_variants,
+                ),
+            }?;
+            outputs.push(GeneratedArtifactOutput {
+                slot: output.target.slot,
+                provider_id: output.target.provider_id,
+                display_name: output.target.display_name,
+                dir: output.target.dir,
+                artifacts,
+            });
+        }
+
+        Ok(PreparedArtifactRelease {
+            project: self.project,
+            outputs,
+            removed_outputs: self.removed_outputs,
+            enum_lock_update: self.enum_lock_update,
+        })
+    }
+
+    /// Validate, generate, stage, and atomically publish every planned output.
+    pub fn execute(self) -> Result<ArtifactReleaseReport, DiagnosticSet> {
+        self.prepare()?.publish()
+    }
+}
+
+impl PreparedArtifactRelease<'_> {
+    /// Stage and atomically publish the already generated artifact sets.
+    pub fn publish(self) -> Result<ArtifactReleaseReport, DiagnosticSet> {
+        let mut staged = Vec::with_capacity(self.outputs.len());
+        let mut metadata = Vec::with_capacity(self.outputs.len());
+        for output in self.outputs {
+            let staged_output = stage_artifact_set(&output.dir, output.artifacts)?;
+            staged.push((output.slot, staged_output));
+            metadata.push((output.slot, output.provider_id, output.display_name));
+        }
+
+        let published = publish_artifacts(
+            self.project,
+            staged,
+            &self.removed_outputs,
+            self.enum_lock_update,
+        )?;
+        let mut outputs = BTreeMap::new();
+        for (slot, provider_id, display_name) in metadata {
+            outputs.insert(
+                slot,
+                ReleasedOutput {
+                    provider_id,
+                    display_name,
+                    dir: published.output_dir(slot)?.to_path_buf(),
+                },
+            );
+        }
+        Ok(ArtifactReleaseReport { outputs })
+    }
 }
 
 pub fn required_data_output<'a>(
@@ -180,19 +357,8 @@ fn require_output_type(
     }
 }
 
-fn output_options(output: &OutputConfig) -> Value {
+pub fn output_options(output: &OutputConfig) -> Value {
     output.options().clone()
-}
-
-fn codegen_output_options(output: &OutputConfig, id_as_enum_variants: &Value) -> Value {
-    let mut options = output.options().as_object().cloned().unwrap_or_default();
-    if !id_as_enum_variants.is_null() {
-        options.insert(
-            "id_as_enum_variants".to_string(),
-            id_as_enum_variants.clone(),
-        );
-    }
-    Value::Object(options)
 }
 
 fn diagnostic_set(path: impl Into<PathBuf>, message: impl Into<String>) -> DiagnosticSet {

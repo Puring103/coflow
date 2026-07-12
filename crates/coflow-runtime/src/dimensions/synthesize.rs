@@ -1,4 +1,4 @@
-use crate::load::ConfiguredSource;
+use crate::source_resolution::ConfiguredSource;
 use coflow_api::SourceLocationSpec;
 use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaType,

@@ -1,13 +1,14 @@
 use std::collections::BTreeSet;
 
 use coflow_api::{ProviderRegistry, WriterCapabilities};
-use coflow_cft::CompiledSchema;
-use coflow_data_model::{CfdDataModel, CfdPathSegment, CfdRecordId, CfdValue};
-use coflow_project::Project;
+use coflow_cft::{CftAnnotation, CftAnnotationValue, CftSchemaTypeRef, CompiledSchema};
+use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RefSite};
 
+use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
 use crate::{
-    DiagnosticsStore, DimensionInfo, EffectiveFieldWrite, FileIndex, FileTreeNode, FileTreeOptions,
-    ProjectSession, RecordCoordinate, RecordIndex, RecordView, RefTargetInfo, SourceIndex,
+    DiagnosticsStore, DimensionInfo, EffectiveFieldWrite, FieldShapeInfo, FileTreeNode,
+    FileTreeOptions, IdAsEnumInfo, ProjectSession, RecordCoordinate, RecordReferenceInfo,
+    RecordView, RefTargetInfo,
 };
 
 /// Read-only capability over one immutable project generation.
@@ -31,38 +32,92 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
-    pub const fn project(self) -> &'a Project {
-        self.session.project()
-    }
-
-    #[must_use]
-    pub const fn compiled_schema(self) -> &'a CompiledSchema {
-        self.session.compiled_schema()
-    }
-
-    #[must_use]
-    pub const fn model(self) -> &'a CfdDataModel {
-        self.session.model()
-    }
-
-    #[must_use]
     pub const fn diagnostics(self) -> &'a DiagnosticsStore {
         self.session.diagnostics()
     }
 
     #[must_use]
-    pub const fn sources(self) -> &'a SourceIndex {
+    pub(crate) const fn sources(self) -> &'a SourceIndex {
         self.session.sources()
     }
 
     #[must_use]
-    pub const fn records(self) -> &'a RecordIndex {
+    pub(crate) const fn records(self) -> &'a RecordIndex {
         self.session.records()
     }
 
     #[must_use]
-    pub const fn files(self) -> &'a FileIndex {
+    pub(crate) const fn files(self) -> &'a FileIndex {
         self.session.files()
+    }
+
+    #[must_use]
+    pub fn source_file_count(self) -> usize {
+        self.session.files().source_files().len()
+    }
+
+    #[must_use]
+    pub fn record_count(self) -> usize {
+        self.session.records().by_id().len()
+    }
+
+    #[must_use]
+    pub fn record_count_for_type(self, actual_type: &str) -> usize {
+        self.session
+            .model()
+            .table(actual_type)
+            .map_or(0, |table| table.records.len())
+    }
+
+    #[must_use]
+    pub fn schema_has_type(self, type_name: &str) -> bool {
+        self.session.compiled_schema().has_type(type_name)
+    }
+
+    #[must_use]
+    pub fn schema_type_fields(self, type_name: &str) -> Vec<(String, String)> {
+        self.session
+            .compiled_schema()
+            .type_meta(type_name)
+            .map(|meta| {
+                meta.all_fields
+                    .iter()
+                    .map(|field| (field.name.clone(), field.raw_type.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn rejected_records(self) -> &'a [crate::RejectedRecordRef] {
+        self.session.records().rejected()
+    }
+
+    #[must_use]
+    pub fn has_source_file(self, file: &str) -> bool {
+        self.session.files().source_files().contains(file)
+    }
+
+    #[must_use]
+    pub fn has_unique_source_for_file(self, file: &str) -> bool {
+        self.session.files().source_for_display(file).is_some()
+    }
+
+    pub fn rejected_records_in_file(
+        self,
+        file: &str,
+    ) -> impl Iterator<Item = &'a crate::RejectedRecordRef> + 'a {
+        self.session.records().rejected_in_file(file)
+    }
+
+    pub fn rejected_records_by_coordinate(
+        self,
+        actual_type: &str,
+        key: &str,
+    ) -> impl Iterator<Item = &'a crate::RejectedRecordRef> + 'a {
+        self.session
+            .records()
+            .rejected_by_coordinate(actual_type, key)
     }
 
     #[must_use]
@@ -71,12 +126,12 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
-    pub fn id_for_coordinate(self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
+    fn id_for_coordinate(self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
         self.session.id_for_coordinate(actual_type, key)
     }
 
     #[must_use]
-    pub fn coordinate_of(self, id: CfdRecordId) -> Option<RecordCoordinate> {
+    fn coordinate_of(self, id: CfdRecordId) -> Option<RecordCoordinate> {
         self.session.coordinate_of(id)
     }
 
@@ -146,6 +201,86 @@ impl<'a> ProjectQueries<'a> {
         self.session.ref_targets(expected_type)
     }
 
+    #[must_use]
+    pub fn field_shape(self, actual_type: &str, field_name: &str) -> Option<FieldShapeInfo> {
+        let ty = self
+            .session
+            .compiled_schema()
+            .field_type(actual_type, field_name)?;
+        Some(field_shape(self.session.compiled_schema(), ty))
+    }
+
+    #[must_use]
+    pub fn spread_source(
+        self,
+        coordinate: &RecordCoordinate,
+        path: &CfdPath,
+    ) -> Option<RecordCoordinate> {
+        let host = self.id_for_coordinate(&coordinate.actual_type, &coordinate.key)?;
+        let source = self.session.model().spread_source_at_path(host, path)?;
+        self.coordinate_of(source)
+    }
+
+    #[must_use]
+    pub fn resolved_ref_target(
+        self,
+        coordinate: &RecordCoordinate,
+        path: &CfdPath,
+    ) -> Option<RecordCoordinate> {
+        let host = self.id_for_coordinate(&coordinate.actual_type, &coordinate.key)?;
+        let target = self
+            .session
+            .model()
+            .resolve_effective_ref(&RefSite::new(host, path.clone()))?;
+        self.coordinate_of(target)
+    }
+
+    #[must_use]
+    pub fn record_references(self, coordinate: &RecordCoordinate) -> Vec<RecordReferenceInfo> {
+        let Some(host) = self.id_for_coordinate(&coordinate.actual_type, &coordinate.key) else {
+            return Vec::new();
+        };
+        self.session
+            .model()
+            .direct_ref_edges_from_host(host)
+            .filter_map(|edge| {
+                Some(RecordReferenceInfo {
+                    target: self.coordinate_of(edge.target)?,
+                    path: edge.path.clone(),
+                })
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn id_as_enum_info(self) -> Vec<IdAsEnumInfo> {
+        let schema = self.session.compiled_schema();
+        let model = self.session.model();
+        schema
+            .type_metas()
+            .filter_map(|schema_type| {
+                let enum_name = annotation_name_arg(&schema_type.annotations, "idAsEnum")?;
+                let is_flags = schema
+                    .enum_meta(&enum_name)
+                    .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
+                let ids = model.polymorphic_index(&schema_type.name).map_or_else(
+                    || {
+                        model
+                            .records_of_type(&schema_type.name)
+                            .map(|(_, record)| record.key().to_string())
+                            .collect()
+                    },
+                    |index| index.records.keys().cloned().collect(),
+                );
+                Some(IdAsEnumInfo {
+                    enum_name,
+                    ids,
+                    is_flags,
+                })
+            })
+            .collect()
+    }
+
     pub fn record_views_in_file(self, file: &str) -> impl Iterator<Item = RecordView<'a>> + 'a {
         self.session.record_views_in_file(file)
     }
@@ -186,4 +321,61 @@ impl<'a> ProjectQueries<'a> {
             },
         )
     }
+}
+
+fn field_shape(schema: &CompiledSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
+    let non_nullable = non_nullable(ty);
+    let named = match non_nullable {
+        CftSchemaTypeRef::Named(name) => Some(name.as_str()),
+        _ => None,
+    };
+    let ref_target_type = match non_nullable {
+        CftSchemaTypeRef::Ref(name) => Some(name.clone()),
+        _ => None,
+    };
+    let enum_type = named
+        .filter(|name| schema.is_schema_enum(name))
+        .map(str::to_string);
+    let polymorphic_types = named
+        .and_then(|name| schema.type_meta(name).map(|meta| (name, meta)))
+        .filter(|(_, meta)| meta.is_abstract)
+        .and_then(|(name, _)| schema.concrete_assignable_types(name))
+        .filter(|types| types.len() >= 2)
+        .unwrap_or_default();
+    let collection_item = match non_nullable {
+        CftSchemaTypeRef::Array(item) | CftSchemaTypeRef::Dict(_, item) => {
+            Some(Box::new(field_shape(schema, item)))
+        }
+        _ => None,
+    };
+    FieldShapeInfo {
+        display_label: ty.display_label(),
+        ref_target_type,
+        enum_type,
+        nullable: matches!(ty, CftSchemaTypeRef::Nullable(_)),
+        polymorphic_types,
+        collection_item,
+    }
+}
+
+fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+    match ty {
+        CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
+        _ => ty,
+    }
+}
+
+fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
+    annotations
+        .iter()
+        .find(|annotation| annotation.name == name)
+        .and_then(|annotation| annotation.args.first())
+        .and_then(|argument| match argument {
+            CftAnnotationValue::Name(value) => Some(value.clone()),
+            _ => None,
+        })
+}
+
+fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
+    annotations.iter().any(|annotation| annotation.name == name)
 }

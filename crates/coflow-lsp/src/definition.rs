@@ -1,4 +1,4 @@
-use coflow_cfd::parse_cfd;
+use coflow_cfd::CfdAst;
 use coflow_cft::ast::Item;
 use coflow_cft::{CftContainer, Span};
 use serde_json::{json, Value};
@@ -16,16 +16,17 @@ pub(crate) struct CfdDefinitionIndex {
 }
 
 impl CfdDefinitionIndex {
-    pub(crate) fn from_sources<'a>(sources: impl IntoIterator<Item = (&'a str, &'a str)>) -> Self {
+    pub(crate) fn from_documents<'a>(
+        documents: impl IntoIterator<Item = (&'a str, &'a str, &'a CfdAst)>,
+    ) -> Self {
         let mut records = BTreeMap::<String, BTreeMap<String, Vec<Value>>>::new();
-        for (uri, text) in sources {
-            let (ast, _) = parse_cfd(text);
-            for record in ast.records {
+        for (uri, text, ast) in documents {
+            for record in &ast.records {
                 let range = cfd::byte_range(text, record.key_span.start, record.key_span.end);
                 records
-                    .entry(record.type_name)
+                    .entry(record.type_name.clone())
                     .or_default()
-                    .entry(record.key)
+                    .entry(record.key.clone())
                     .or_default()
                     .push(json!({
                         "uri": uri,

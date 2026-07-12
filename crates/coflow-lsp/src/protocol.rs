@@ -103,6 +103,17 @@ pub(crate) fn did_save_document(params: &Value) -> Option<(String, Option<String
     ))
 }
 
+pub(crate) fn did_change_watched_files(params: &Value) -> Vec<String> {
+    params
+        .get("changes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|change| change.get("uri").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect()
+}
+
 pub(crate) fn text_document_uri(params: &Value) -> Option<String> {
     params
         .get("textDocument")?

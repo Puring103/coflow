@@ -4,6 +4,7 @@ use coflow_data_model::{
     CfdDomainId, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext,
     PendingInsertRef,
 };
+use std::collections::BTreeMap;
 
 use crate::ProjectSession;
 
@@ -161,7 +162,7 @@ pub(crate) fn validate_value_for_write(
         &ValueValidationRequest {
             expected,
             value,
-            pending_records: &[],
+            pending_records: None,
             pending_insert: None,
             code,
             stage,
@@ -174,7 +175,7 @@ pub(crate) fn validate_value_for_write_with_pending(
     schema: &CompiledSchema,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
-    pending_records: &[crate::RecordCoordinate],
+    pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
@@ -184,7 +185,7 @@ pub(crate) fn validate_value_for_write_with_pending(
         &ValueValidationRequest {
             expected,
             value,
-            pending_records,
+            pending_records: Some(pending_records),
             pending_insert: None,
             code,
             stage,
@@ -195,7 +196,7 @@ pub(crate) fn validate_value_for_write_with_pending(
 pub(crate) struct ValueValidationRequest<'a> {
     pub(crate) expected: &'a CftSchemaTypeRef,
     pub(crate) value: &'a CfdValue,
-    pub(crate) pending_records: &'a [crate::RecordCoordinate],
+    pub(crate) pending_records: Option<&'a BTreeMap<crate::RecordCoordinate, usize>>,
     pub(crate) pending_insert: Option<PendingInsertRef<'a>>,
     pub(crate) code: &'static str,
     pub(crate) stage: &'static str,
@@ -233,7 +234,7 @@ pub(crate) fn ensure_object_type_assignable(
 
 struct ProjectValueSemanticContext<'a> {
     session: &'a ProjectSession,
-    pending_records: &'a [crate::RecordCoordinate],
+    pending_records: Option<&'a BTreeMap<crate::RecordCoordinate, usize>>,
 }
 
 impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
@@ -253,8 +254,8 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
     }
 
     fn pending_record_actual_type(&self, domain_id: CfdDomainId, key: &str) -> Option<&str> {
-        self.pending_records
-            .iter()
+        self.pending_records?
+            .keys()
             .find(|record| {
                 record.key == key
                     && self.session.model.type_domain_id(&record.actual_type) == Some(domain_id)

@@ -137,6 +137,7 @@ pub struct ProjectSnapshot {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct FileRecords {
+    pub revision: u32,
     pub file_path: String,
     pub type_names: Vec<String>,
     pub columns: Vec<RecordColumn>,
@@ -477,6 +478,7 @@ pub struct DeletedRecordSnapshot {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct GraphData {
+    pub revision: u32,
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
     pub available_fields: Vec<String>,

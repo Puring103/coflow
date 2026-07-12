@@ -13,9 +13,9 @@ use crate::{Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec};
 
 /// Trait for source-specific writers that persist field edits.
 ///
-/// Implementations dispatch on [`RecordOrigin`] to locate the cell/span, write
-/// the new value to the source (file, remote API, ...), and report which
-/// records were touched so the session can run incremental checks.
+/// Implementations dispatch on [`RecordOrigin`] to locate the cell/span and
+/// write the new value to the source (file, remote API, ...). The runtime owns
+/// transaction-level mutation reporting and generation rebuilds.
 pub trait SourceWriter: Send + Sync {
     fn descriptor(&self) -> &'static WriterDescriptor;
 

@@ -7,6 +7,7 @@ use coflow_project::{path_to_slash, Project, SourceConfig};
 use serde::Serialize;
 use std::path::Path;
 
+use crate::source_resolution::SourceResolver;
 use crate::ProjectSchemaSession;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,18 +203,18 @@ fn table_operation_source(
         } else {
             String::new()
         };
-        let mut source = if provider_id.is_empty() {
-            crate::configured_project_source(project, registry, configured)?
-        } else {
-            crate::load::configured_project_source_as(project, registry, configured, &provider_id)?
-        };
-        source.location = match configured.location() {
+        let location = match configured.location() {
             SourceLocationSpec::Uri(_) => SourceLocationSpec::Uri(target.to_string()),
             SourceLocationSpec::Path(_) => {
                 SourceLocationSpec::Path(project.resolve_path(Path::new(target)))
             }
         };
-        source.display_name = target.to_string();
+        let source = SourceResolver::new(project, registry).resolve_exact_at(
+            configured,
+            (!provider_id.is_empty()).then_some(provider_id.as_str()),
+            location,
+            target.to_string(),
+        )?;
         return Ok((source.provider_id.clone(), source));
     }
 
@@ -224,18 +225,11 @@ fn table_operation_source(
         ));
     }
     let provider_id = resolve_provider_id(registry, requested_provider, target)?;
-    let provider = registry.source_provider(&provider_id).ok_or_else(|| {
-        one_data_file_error(
-            "DATA-FILE-PROVIDER",
-            format!("source provider `{provider_id}` is not registered"),
-        )
-    })?;
-    let source = ResolvedSource {
-        provider_id: provider_id.clone(),
-        location: SourceLocationSpec::Path(project.resolve_path(Path::new(target))),
-        options: provider.decode_options(&serde_json::Value::Null)?,
-        display_name: target.to_string(),
-    };
+    let source = SourceResolver::new(project, registry).resolve_unconfigured(
+        &provider_id,
+        SourceLocationSpec::Path(project.resolve_path(Path::new(target))),
+        target.to_string(),
+    )?;
     Ok((provider_id, source))
 }
 

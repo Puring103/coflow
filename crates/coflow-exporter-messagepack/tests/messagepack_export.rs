@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_api::ArtifactContent;
+use coflow_api::{ArtifactContent, DataExporter};
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_messagepack::export_messagepack_artifacts;
@@ -16,6 +16,16 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 type TestResult = Result<(), String>;
+
+#[test]
+fn messagepack_exporter_rejects_output_options() {
+    let diagnostics = coflow_exporter_messagepack::MessagePackExporter
+        .decode_options(&serde_json::json!({"compact": true}))
+        .expect_err("MessagePack output options should be rejected");
+
+    assert_eq!(diagnostics.diagnostics.len(), 1);
+    assert_eq!(diagnostics.diagnostics[0].code, "MESSAGEPACK-OPTIONS");
+}
 
 fn compile_schema(source: &str) -> Result<CftContainer, String> {
     let mut container = CftContainer::new();

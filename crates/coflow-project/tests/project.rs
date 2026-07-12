@@ -1147,8 +1147,7 @@ fn directory_discovery_visits_canonical_directories_once() {
 fn directory_discovery_rejects_targets_outside_declared_root() {
     let root = temp_project_dir("coflow-directory-discovery-root");
     let external = temp_project_dir("coflow-directory-discovery-external");
-    std::fs::write(external.join("outside.cfd"), "item: Item {}\n")
-        .expect("write external source");
+    std::fs::write(external.join("outside.cfd"), "item: Item {}\n").expect("write external source");
     let alias = root.join("outside-alias");
     create_directory_alias(&alias, &external);
 

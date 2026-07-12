@@ -280,7 +280,7 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, DiagnosticSet> {
     let root_dir = project.root_dir.clone();
     let config_path = project.config_path.clone();
     let registry = default_provider_registry()?;
-    match check_project(project, &registry)? {
+    match check_project(&project, &registry)? {
         CommandOutcome::Success(_) => {
             if args.json {
                 write_json_diagnostics(Vec::new()).map_err(output_error)?;
@@ -306,7 +306,7 @@ fn project_build(args: &BuildArgs) -> Result<bool, DiagnosticSet> {
     let config_path = project.config_path.clone();
     let registry = default_provider_registry()?;
     match build_project(
-        project,
+        &project,
         &registry,
         BuildOptions {
             data_out_dir: args.data_out_dir.as_deref(),
@@ -344,7 +344,7 @@ fn export_json(args: &ExportJsonArgs) -> Result<bool, DiagnosticSet> {
     let root_dir = project.root_dir.clone();
     let registry = default_provider_registry()?;
     match export_project_data(
-        project,
+        &project,
         &registry,
         JSON_EXPORTER_ID,
         ExportOptions {
@@ -370,7 +370,7 @@ fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, DiagnosticSe
     let root_dir = project.root_dir.clone();
     let registry = default_provider_registry()?;
     match export_project_data(
-        project,
+        &project,
         &registry,
         MESSAGEPACK_EXPORTER_ID,
         ExportOptions {
@@ -397,7 +397,7 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, DiagnosticSet> {
     let root_dir = project.root_dir.clone();
     let registry = default_provider_registry()?;
     match generate_project_code(
-        project,
+        &project,
         &registry,
         CSHARP_CODEGEN_ID,
         CodegenOptions {

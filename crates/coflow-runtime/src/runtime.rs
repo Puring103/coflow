@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use coflow_api::{DiagnosticSet, ProviderRegistry, WriterCapabilities};
+use coflow_api::{
+    ArtifactSet, CodeGenerator, CodegenContext, DataExporter, DecodedOutputOptions, DiagnosticSet,
+    ExportContext, ProviderRegistry, WriterCapabilities,
+};
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
 
@@ -134,6 +137,49 @@ impl BuildProjectSession {
     #[must_use]
     pub fn into_diagnostics(self) -> DiagnosticSet {
         self.session.into_diagnostics()
+    }
+
+    /// Generates export artifacts from this session's immutable project generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns provider diagnostics when the exporter rejects its options or input.
+    pub fn export_artifacts(
+        &self,
+        exporter: &dyn DataExporter,
+        options: &DecodedOutputOptions,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        exporter.export(
+            ExportContext {
+                schema: self.session.compiled_schema(),
+                model: self.session.model(),
+            },
+            options,
+        )
+    }
+
+    /// Generates code artifacts from this session's immutable project generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns provider diagnostics when the generator rejects its options or input.
+    pub fn codegen_artifacts(
+        &self,
+        codegen: &dyn CodeGenerator,
+        options: &DecodedOutputOptions,
+        data_format: &str,
+        id_as_enum_variants: &serde_json::Value,
+        include_model: bool,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        codegen.generate(
+            CodegenContext {
+                schema: self.session.compiled_schema(),
+                model: include_model.then_some(self.session.model()),
+                data_format,
+                id_as_enum_variants,
+            },
+            options,
+        )
     }
 }
 
@@ -308,13 +354,7 @@ impl WriteProjectSession {
         }
         let mut diagnostics = DiagnosticSet::empty();
         for failed in report.failed {
-            for diagnostic in failed.diagnostics {
-                diagnostics.push(coflow_api::Diagnostic::error(
-                    diagnostic.code,
-                    diagnostic.stage,
-                    diagnostic.message,
-                ));
-            }
+            diagnostics.extend(failed.into_source_diagnostics());
         }
         if diagnostics.is_empty() {
             diagnostics.push(coflow_api::Diagnostic::error(

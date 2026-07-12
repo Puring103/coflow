@@ -31,6 +31,7 @@ impl ValidationRevision {
 pub(crate) struct ValidationInput {
     pub(super) revision: ValidationRevision,
     project: Project,
+    project_diagnostics: Option<DiagnosticSet>,
     open_documents: BTreeMap<PathBuf, OpenDocument>,
 }
 
@@ -38,11 +39,13 @@ impl ValidationInput {
     pub(super) fn new(
         revision: ValidationRevision,
         project: &Project,
+        project_diagnostics: Option<&DiagnosticSet>,
         open_documents: &BTreeMap<PathBuf, OpenDocument>,
     ) -> Self {
         Self {
             revision,
             project: project.clone(),
+            project_diagnostics: project_diagnostics.cloned(),
             open_documents: open_documents.clone(),
         }
     }
@@ -58,6 +61,12 @@ pub(crate) struct ValidationSnapshot {
     pub(super) diagnostics: BTreeMap<String, Vec<Value>>,
     pub(super) active_uris: BTreeSet<String>,
     pub(super) document_versions: BTreeMap<String, i64>,
+    pub(super) cfd_documents: BTreeMap<PathBuf, CfdDocumentSnapshot>,
+}
+
+pub(super) struct CfdDocumentSnapshot {
+    pub(super) source: String,
+    pub(super) ast: coflow_cfd::CfdAst,
 }
 
 impl ValidationSnapshot {
@@ -68,6 +77,7 @@ impl ValidationSnapshot {
             diagnostics: BTreeMap::new(),
             active_uris: BTreeSet::new(),
             document_versions: BTreeMap::new(),
+            cfd_documents: BTreeMap::new(),
         }
     }
 }
@@ -75,6 +85,16 @@ impl ValidationSnapshot {
 pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
     let mut snapshot = ValidationSnapshot::empty(input.revision);
     add_open_documents(&mut snapshot, &input.open_documents);
+
+    if let Some(diagnostics) = &input.project_diagnostics {
+        add_diagnostic_set(
+            &mut snapshot,
+            diagnostics,
+            &BTreeMap::new(),
+            &input.project.config_path,
+        );
+        return snapshot;
+    }
 
     let schema_files = match input.project.schema_files() {
         Ok(files) => files,
@@ -112,13 +132,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
                 normalized_path: normalized_path.clone(),
                 source: document.text.clone(),
             });
-        } else if is_cfd_path(normalized_path) {
-            let (_, errors) = parse_cfd(&document.text);
-            snapshot.diagnostics.insert(
-                document.uri.clone(),
-                crate::cfd::syntax_diagnostics(&document.text, &errors),
-            );
-        } else {
+        } else if !is_cfd_path(normalized_path) {
             snapshot.diagnostics.insert(
                 document.uri.clone(),
                 vec![lsp_error_diagnostic(
@@ -129,15 +143,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
         }
     }
 
-    let (cfd_sources, cfd_failures) = collect_cfd_sources(&input.project, &input.open_documents);
-    for failure in &cfd_failures {
-        snapshot.active_uris.insert(failure.uri.clone());
-        snapshot
-            .diagnostics
-            .entry(failure.uri.clone())
-            .or_default()
-            .push(lsp_error_diagnostic("CFD-LSP", &failure.message));
-    }
+    let (cfd_sources, cfd_failures) = add_cfd_documents(&mut snapshot, input);
 
     let raw_build = match compile_schema_project_with_overrides(&input.project, &overrides) {
         Ok(build) => build,
@@ -164,14 +170,48 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
             .insert(preferred_diagnostic_uri(&preferred_uris, Path::new(path)));
     }
     if cfd_failures.is_empty() {
-        let definitions = CfdDefinitionIndex::from_sources(
-            cfd_sources
-                .iter()
-                .map(|source| (source.uri.as_str(), source.text.as_str())),
-        );
+        let definitions =
+            CfdDefinitionIndex::from_documents(cfd_sources.iter().filter_map(|source| {
+                snapshot
+                    .cfd_documents
+                    .get(&source.path)
+                    .map(|document| (source.uri.as_str(), document.source.as_str(), &document.ast))
+            }));
         snapshot.build = Some(LspBuild::new(raw_build).with_cfd_definitions(definitions));
     }
     snapshot
+}
+
+fn add_cfd_documents(
+    snapshot: &mut ValidationSnapshot,
+    input: &ValidationInput,
+) -> (Vec<CfdProjectSource>, Vec<CfdSourceFailure>) {
+    let (sources, failures) = collect_cfd_sources(&input.project, &input.open_documents);
+    for source in &sources {
+        let (ast, errors) = parse_cfd(&source.text);
+        if let Some(document) = input.open_documents.get(&source.path) {
+            snapshot.diagnostics.insert(
+                document.uri.clone(),
+                crate::cfd::syntax_diagnostics(&source.text, &errors),
+            );
+        }
+        snapshot.cfd_documents.insert(
+            source.path.clone(),
+            CfdDocumentSnapshot {
+                source: source.text.clone(),
+                ast,
+            },
+        );
+    }
+    for failure in &failures {
+        snapshot.active_uris.insert(failure.uri.clone());
+        snapshot
+            .diagnostics
+            .entry(failure.uri.clone())
+            .or_default()
+            .push(lsp_error_diagnostic("CFD-LSP", &failure.message));
+    }
+    (sources, failures)
 }
 
 fn add_open_documents(
@@ -250,12 +290,7 @@ fn collect_cfd_sources(
                 Ok(paths) => {
                     for path in paths {
                         if is_cfd_path(&path) {
-                            collect_cfd_source(
-                                &path,
-                                open_documents,
-                                &mut sources,
-                                &mut failures,
-                            );
+                            collect_cfd_source(&path, open_documents, &mut sources, &mut failures);
                         }
                     }
                 }

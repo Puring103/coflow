@@ -649,7 +649,7 @@ fn inserts_record_row_and_loader_can_read_it() {
         )
         .expect("insert succeeds");
 
-    assert!(outcome.inserted_record_origin.is_some());
+    assert!(outcome.diagnostics.is_empty());
     assert_eq!(read_cell(&path, "Items", 4, 1), "potion");
     assert_eq!(read_cell(&path, "Items", 4, 2), "Potion");
     assert!(matches!(
@@ -699,7 +699,7 @@ fn inserts_record_with_expanded_object_into_child_columns() {
         )
         .expect("insert expanded record succeeds");
 
-    assert!(outcome.inserted_record_origin.is_some());
+    assert!(outcome.diagnostics.is_empty());
     assert_eq!(read_cell(&path, "Terrain", 3, 1), "Sand");
     assert_eq!(read_cell(&path, "Terrain", 3, 2), "desert");
     assert!(matches!(

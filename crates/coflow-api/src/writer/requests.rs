@@ -83,16 +83,13 @@ pub struct SpreadRewriteTarget {
     pub object_path: Vec<WriteFieldPathSegment>,
 }
 
-/// Outcome of a writer call: which records were actually touched (so the
-/// session can recompute checks) and any informational diagnostics.
+/// Provider diagnostics produced by a successful writer call.
+///
+/// The runtime owns mutation lifecycle reporting and rebuilds the published
+/// generation after the complete transaction. Providers therefore report only
+/// source-specific diagnostics here, not a second copy of mutation metadata.
 #[derive(Debug, Clone, Default)]
 pub struct WriteOutcome {
-    /// Origins of records whose backing source changed. The session uses these
-    /// to re-load specific records and run incremental checks; an empty vec
-    /// means the writer made no observable change.
-    pub touched_record_origins: Vec<RecordOrigin>,
-    pub inserted_record_origin: Option<RecordOrigin>,
-    pub deleted_record_origin: Option<RecordOrigin>,
     /// Optional non-fatal diagnostics surfaced to the user.
     pub diagnostics: DiagnosticSet,
 }

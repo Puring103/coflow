@@ -217,7 +217,7 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
             .is_empty(),
         "duplicate diagnostic should be indexed by logical record"
     );
-    let rejected = session.queries().records().rejected();
+    let rejected = session.queries().rejected_records();
     assert_eq!(
         rejected.len(),
         2,
@@ -231,8 +231,7 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
     assert_eq!(
         session
             .queries()
-            .records()
-            .rejected_in_file("data/items.cfd")
+            .rejected_records_in_file("data/items.cfd")
             .count(),
         2,
         "rejected source rows should be queryable by file"
@@ -240,8 +239,7 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
     assert_eq!(
         session
             .queries()
-            .records()
-            .rejected_by_coordinate("Item", "sword")
+            .rejected_records_by_coordinate("Item", "sword")
             .count(),
         2,
         "rejected source rows should be queryable by logical coordinate"

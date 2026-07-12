@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use coflow_api::DiagnosticSet;
+use coflow_api::{ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet};
 use coflow_cft::{CftContainer, CompiledSchema};
 use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::{path_to_slash, Project};
@@ -52,11 +52,6 @@ pub(crate) struct ProjectSession {
 }
 
 impl ProjectSession {
-    #[must_use]
-    pub const fn project(&self) -> &Project {
-        &self.project
-    }
-
     #[must_use]
     pub const fn compiled_schema(&self) -> &CompiledSchema {
         self.schema.compiled_schema()
@@ -197,7 +192,6 @@ impl ProjectSession {
             display_path: record_ref.display_path.as_str(),
             record,
             origin: &record_ref.origin,
-            source_id: record_ref.source_id,
             provider_id: record_ref.provider_id.as_str(),
         })
     }
@@ -307,7 +301,6 @@ impl ProjectSession {
                 display_path: record_ref.display_path.as_str(),
                 record,
                 origin: &record_ref.origin,
-                source_id: record_ref.source_id,
                 provider_id: record_ref.provider_id.as_str(),
             })
         })
@@ -410,6 +403,29 @@ impl ProjectSchemaSession {
     #[must_use]
     pub fn has_diagnostics(&self) -> bool {
         !self.diagnostics.is_empty()
+    }
+
+    /// Generates schema-only code artifacts from this session.
+    ///
+    /// # Errors
+    ///
+    /// Returns provider diagnostics when the generator rejects its options or schema.
+    pub fn codegen_artifacts(
+        &self,
+        codegen: &dyn CodeGenerator,
+        options: &DecodedOutputOptions,
+        data_format: &str,
+        id_as_enum_variants: &serde_json::Value,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        codegen.generate(
+            CodegenContext {
+                schema: self.compiled_schema(),
+                model: None,
+                data_format,
+                id_as_enum_variants,
+            },
+            options,
+        )
     }
 }
 

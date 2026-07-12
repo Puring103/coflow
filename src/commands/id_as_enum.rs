@@ -1,9 +1,8 @@
 use crate::artifacts::{enum_lockfile_path, read_active_enum_lock};
 use crate::commands::artifact_safety::artifact_diagnostic_set;
 use coflow_api::DiagnosticSet;
-use coflow_cft::{CftAnnotation, CftAnnotationValue, CompiledSchema};
-use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
+use coflow_runtime::IdAsEnumInfo;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -40,11 +39,10 @@ pub(super) fn id_as_enum_variants_for_schema_only(
 
 pub(super) fn prepare_id_as_enum_artifacts_for_build(
     project: &Project,
-    schema: &CompiledSchema,
-    model: &CfdDataModel,
+    info: Vec<IdAsEnumInfo>,
 ) -> Result<IdAsEnumArtifacts, DiagnosticSet> {
     let lockfile = enum_lockfile_path(project);
-    let id_as_enum_ids = collect_id_as_enum_ids(schema, model);
+    let id_as_enum_ids = collect_id_as_enum_ids(info);
     let (locked, variants) = merge_id_as_enum_lockfile(project, &lockfile, id_as_enum_ids)?;
     let variants = variants_json(&lockfile, variants)?;
     let lock_state = serde_json::to_value(locked).map_err(|err| {
@@ -59,50 +57,18 @@ pub(super) fn prepare_id_as_enum_artifacts_for_build(
     })
 }
 
-fn collect_declared_id_as_enum_ids(schema: &CompiledSchema) -> BTreeMap<String, IdAsEnumIds> {
+fn collect_id_as_enum_ids(info: Vec<IdAsEnumInfo>) -> BTreeMap<String, IdAsEnumIds> {
     let mut out = BTreeMap::new();
-    for schema_type in schema.type_metas() {
-        if let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "idAsEnum") {
-            let is_flags = schema
-                .enum_meta(&enum_name)
-                .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
-            out.entry(enum_name).or_insert_with(|| IdAsEnumIds {
-                ids: Vec::new(),
-                is_flags,
-            });
-        }
-    }
-    out
-}
-
-fn collect_id_as_enum_ids(
-    schema: &CompiledSchema,
-    model: &CfdDataModel,
-) -> BTreeMap<String, IdAsEnumIds> {
-    let mut out = collect_declared_id_as_enum_ids(schema);
-    for schema_type in schema.type_metas() {
-        let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "idAsEnum") else {
-            continue;
-        };
-
-        let mut seen = BTreeSet::new();
-        let mut variants = Vec::new();
-        if let Some(index) = model.polymorphic_index(&schema_type.name) {
-            for key in index.records.keys() {
-                if seen.insert(key.clone()) {
-                    variants.push(key.clone());
-                }
+    for item in info {
+        let entry = out.entry(item.enum_name).or_insert_with(|| IdAsEnumIds {
+            ids: Vec::new(),
+            is_flags: item.is_flags,
+        });
+        let mut seen = entry.ids.iter().cloned().collect::<BTreeSet<_>>();
+        for id in item.ids {
+            if seen.insert(id.clone()) {
+                entry.ids.push(id);
             }
-        } else {
-            for (_record_id, record) in model.records_of_type(&schema_type.name) {
-                let key = record.key();
-                if seen.insert(key.to_string()) {
-                    variants.push(key.to_string());
-                }
-            }
-        }
-        if let Some(entry) = out.get_mut(&enum_name) {
-            entry.ids = variants;
         }
     }
     out
@@ -265,19 +231,4 @@ fn variants_json(
             format!("failed to serialize @idAsEnum variants: {err}"),
         )
     })
-}
-
-fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
-    annotations
-        .iter()
-        .find(|annotation| annotation.name == name)
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|arg| match arg {
-            CftAnnotationValue::Name(value) => Some(value.clone()),
-            _ => None,
-        })
-}
-
-fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
-    annotations.iter().any(|annotation| annotation.name == name)
 }

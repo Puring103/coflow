@@ -31,6 +31,7 @@ mod schema_diagnostics;
 mod schema_inspect;
 mod session;
 mod session_build;
+mod source_resolution;
 mod write_rules;
 mod writes;
 
@@ -51,13 +52,10 @@ pub use dimensions::{
     resolved_display_name as dimension_resolved_display_name, DimensionFieldInfo, DimensionInfo,
 };
 pub use files::{DimensionGroup, FileTreeNode, FileTreeOptions};
-pub use indexes::{
-    DiagnosticLogicalLocation, DiagnosticsStore, FileIndex, RecordIndex, RecordRef,
-    RejectedRecordRef, ResolvedSourceEntry, SourceId, SourceIndex,
-};
+pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef};
 // Re-export helpers that hosts (tauri editor, CLI) call when translating
 // engine data to a wire format so they don't diverge in path formatting.
-pub use load::{configured_project_source, format_cfd_path as format_field_path};
+pub use load::format_cfd_path as format_field_path;
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
@@ -65,8 +63,8 @@ pub use mutation::{
 };
 pub use query::ProjectQueries;
 pub use records::{
-    dict_key_path_text, value_summary, EffectiveFieldWrite, RecordTarget, RecordView,
-    RefTargetInfo, WriteOutcome,
+    dict_key_path_text, value_summary, EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo,
+    RecordReferenceInfo, RecordTarget, RecordView, RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime, WriteProjectSession};
 pub use schema_build::{compile_schema_project_with_overrides, SchemaBuild, SchemaSourceOverride};

@@ -14,7 +14,7 @@ pub(super) fn coerce_mutation_value(
     session: &ProjectSession,
     expected: &CftSchemaTypeRef,
     value: MutationValue,
-    pending_records: &[crate::RecordCoordinate],
+    pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
 ) -> Result<CfdValue, DiagnosticSet> {
     let value = match value {
         MutationValue::Json(value) => coerce_json_value(session, expected, &value),
@@ -179,7 +179,7 @@ fn validate_value_for_write(
     session: &ProjectSession,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
-    pending_records: &[crate::RecordCoordinate],
+    pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
 ) -> Result<(), DiagnosticSet> {
     let schema = session.compiled_schema();
     write_rules::validate_value_for_write_with_pending(

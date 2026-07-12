@@ -15,8 +15,8 @@
 )]
 
 use coflow_api::{
-    ArtifactContentKind, ArtifactFile, ArtifactSet, DataExporter, Diagnostic, DiagnosticSet,
-    ExportContext, ExporterDescriptor, OutputSpec, ProviderBundle, ProviderRegistrationError,
+    ArtifactContentKind, ArtifactFile, ArtifactSet, DataExporter, DecodedOutputOptions, Diagnostic,
+    DiagnosticSet, ExportContext, ExporterDescriptor, ProviderBundle, ProviderRegistrationError,
 };
 use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdDataModel;
@@ -68,6 +68,9 @@ pub fn export_messagepack_artifacts(
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MessagePackExporter;
 
+#[derive(Debug)]
+struct MessagePackOutputOptions;
+
 pub const MESSAGEPACK_EXPORTER_DESCRIPTOR: ExporterDescriptor = ExporterDescriptor {
     id: "messagepack",
     display_name: "MessagePack",
@@ -91,11 +94,30 @@ impl DataExporter for MessagePackExporter {
         &MESSAGEPACK_EXPORTER_DESCRIPTOR
     }
 
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedOutputOptions, DiagnosticSet> {
+        if options.as_object().is_some_and(serde_json::Map::is_empty) {
+            Ok(DecodedOutputOptions::new(
+                "messagepack",
+                MessagePackOutputOptions,
+            ))
+        } else {
+            Err(DiagnosticSet::one(Diagnostic::error(
+                "MESSAGEPACK-OPTIONS",
+                "EXPORT",
+                "MessagePack exporter does not accept output options",
+            )))
+        }
+    }
+
     fn export(
         &self,
         ctx: ExportContext<'_>,
-        _output: &OutputSpec,
+        options: &DecodedOutputOptions,
     ) -> Result<ArtifactSet, DiagnosticSet> {
+        options.require::<MessagePackOutputOptions>("messagepack")?;
         export_messagepack_artifacts(ctx.schema, ctx.model).map_err(|err| {
             DiagnosticSet::one(Diagnostic::error(
                 "MESSAGEPACK-EXPORT",

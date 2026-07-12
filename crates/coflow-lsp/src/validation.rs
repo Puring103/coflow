@@ -1,7 +1,8 @@
 mod snapshot;
 mod worker;
 
-use coflow_cfd::{parse_cfd, CfdAst};
+use coflow_api::DiagnosticSet;
+use coflow_cfd::CfdAst;
 use coflow_cft::CftContainer;
 use coflow_project::{normalize_path, Project};
 use serde_json::Value;
@@ -18,6 +19,7 @@ pub(crate) use worker::ValidationWorker;
 
 pub(crate) struct LspValidationCore {
     project: Project,
+    project_diagnostics: Option<DiagnosticSet>,
     open_documents: BTreeMap<PathBuf, OpenDocument>,
     published_uris: BTreeSet<String>,
     revision: ValidationRevision,
@@ -47,8 +49,8 @@ pub(crate) enum LspRequestDocument<'a> {
 }
 
 pub(crate) struct CfdRequestDocument<'a> {
-    pub(crate) source: String,
-    pub(crate) ast: CfdAst,
+    pub(crate) source: &'a str,
+    pub(crate) ast: &'a CfdAst,
     pub(crate) schema: Option<&'a CftContainer>,
     pub(crate) build: Option<&'a LspBuild>,
 }
@@ -57,6 +59,7 @@ impl LspValidationCore {
     pub(crate) const fn new(project: Project) -> Self {
         Self {
             project,
+            project_diagnostics: None,
             open_documents: BTreeMap::new(),
             published_uris: BTreeSet::new(),
             revision: ValidationRevision::INITIAL,
@@ -140,7 +143,16 @@ impl LspValidationCore {
     }
 
     pub(crate) fn validation_input(&self) -> ValidationInput {
-        ValidationInput::new(self.revision, &self.project, &self.open_documents)
+        ValidationInput::new(
+            self.revision,
+            &self.project,
+            self.project_diagnostics.as_ref(),
+            &self.open_documents,
+        )
+    }
+
+    pub(crate) const fn revision(&self) -> ValidationRevision {
+        self.revision
     }
 
     pub(crate) fn is_current(&self) -> bool {
@@ -233,11 +245,10 @@ impl LspValidationCore {
     }
 
     pub(crate) fn request_document(&self, uri: &str) -> LspRequestDocument<'_> {
-        if let Some(source) = self.cfd_source_by_uri(uri) {
-            let (ast, _) = parse_cfd(&source);
+        if let Some(document) = self.cfd_document_by_uri(uri) {
             return LspRequestDocument::Cfd(CfdRequestDocument {
-                source,
-                ast,
+                source: &document.source,
+                ast: &document.ast,
                 schema: self.schema(),
                 build: self.build(),
             });
@@ -251,14 +262,49 @@ impl LspValidationCore {
         LspRequestDocument::Cft { build, document }
     }
 
-    fn cfd_source_by_uri(&self, uri: &str) -> Option<String> {
+    fn cfd_document_by_uri(&self, uri: &str) -> Option<&snapshot::CfdDocumentSnapshot> {
         let path = path_from_file_uri(uri)?;
         if !is_cfd_path(&path) {
             return None;
         }
-        self.open_documents
+        self.snapshot
+            .as_ref()?
+            .cfd_documents
             .get(&normalize_path(&path))
-            .map(|document| document.text.clone())
+    }
+
+    pub(crate) fn apply_watched_files(&mut self, uris: &[String]) -> Result<bool, String> {
+        let root = normalize_path(&self.project.root_dir);
+        let mut relevant = false;
+        let mut config_changed = false;
+        for uri in uris {
+            let Some(path) = path_from_file_uri(uri).map(|path| normalize_path(&path)) else {
+                continue;
+            };
+            if !path.starts_with(&root) {
+                continue;
+            }
+            if is_project_config_path(&path) {
+                relevant = true;
+                config_changed = true;
+            } else if is_cfd_path(&path) || is_cft_path(&path) {
+                relevant = true;
+            }
+        }
+        if !relevant {
+            return Ok(false);
+        }
+        if config_changed {
+            match Project::open_schema_only(Some(&self.project.root_dir)) {
+                Ok(project) => {
+                    self.project = project;
+                    self.project_diagnostics = None;
+                }
+                Err(diagnostics) => self.project_diagnostics = Some(diagnostics),
+            }
+        }
+        self.advance_revision()?;
+        Ok(true)
     }
 
     fn advance_revision(&mut self) -> Result<(), String> {
@@ -271,4 +317,16 @@ pub(crate) fn is_cfd_path(path: &std::path::Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension == "cfd")
+}
+
+fn is_cft_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension == "cft")
+}
+
+fn is_project_config_path(path: &std::path::Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| matches!(name, "coflow.yaml" | "coflow.yml"))
 }

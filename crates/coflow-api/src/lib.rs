@@ -41,8 +41,8 @@ pub use operations::{
     TableManager, TableManagerDescriptor, TableOperationResult,
 };
 pub use provider::{
-    DecodedSourceOptions, LoadedSource, OutputSpec, ProbeConfidence, ProbeResult, ProjectSourceRef,
-    ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    DecodedOutputOptions, DecodedSourceOptions, LoadedSource, ProbeConfidence, ProbeResult,
+    ProjectSourceRef, ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
     SourceProviderDescriptor, SourceResolveContext,
 };
 pub use registry::{

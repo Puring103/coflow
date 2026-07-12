@@ -243,43 +243,17 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let variants = session
-        .queries()
-        .compiled_schema()
-        .type_meta("Item_nameVariants")
-        .expect("synthesized type");
+    let variants = session.queries().schema_type_fields("Item_nameVariants");
     assert_eq!(
         variants
-            .all_fields
             .iter()
-            .map(|field| (field.name.as_str(), &field.ty_ref))
+            .map(|(name, raw_type)| (name.as_str(), raw_type.as_str()))
             .collect::<Vec<_>>(),
-        vec![
-            (
-                "default",
-                &coflow_cft::CftSchemaTypeRef::Nullable(Box::new(
-                    coflow_cft::CftSchemaTypeRef::String
-                ))
-            ),
-            (
-                "zh",
-                &coflow_cft::CftSchemaTypeRef::Nullable(Box::new(
-                    coflow_cft::CftSchemaTypeRef::String
-                ))
-            ),
-            (
-                "en",
-                &coflow_cft::CftSchemaTypeRef::Nullable(Box::new(
-                    coflow_cft::CftSchemaTypeRef::String
-                ))
-            ),
-        ]
+        vec![("default", "string?"), ("zh", "string?"), ("en", "string?"),]
     );
     assert!(session
         .queries()
-        .files()
-        .source_files()
-        .contains("data/dimensions/language/Item_name.csv"));
+        .has_source_file("data/dimensions/language/Item_name.csv"));
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
@@ -334,28 +308,20 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let variants = session
-        .queries()
-        .compiled_schema()
-        .type_meta("Item_nameVariants")
-        .expect("synthesized type");
+    let variants = session.queries().schema_type_fields("Item_nameVariants");
     assert_eq!(
         variants
-            .all_fields
             .iter()
-            .map(|field| field.name.as_str())
+            .map(|(name, _)| name.as_str())
             .collect::<Vec<_>>(),
         vec!["default", "pc", "mobile"]
     );
     assert!(session
         .queries()
-        .files()
-        .source_files()
-        .contains("data/dimensions/platform/Item_name.csv"));
+        .has_source_file("data/dimensions/platform/Item_name.csv"));
     assert!(session
         .queries()
-        .records()
-        .get_by_coordinate("Item_nameVariants", "potion")
+        .record_view("Item_nameVariants", "potion")
         .is_some());
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -397,13 +363,9 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let variants = session
-        .queries()
-        .compiled_schema()
-        .type_meta("Item_nameVariants")
-        .expect("synthesized type");
-    assert_eq!(variants.all_fields[0].raw_type, "string?");
-    assert_eq!(variants.all_fields[1].raw_type, "string?");
+    let variants = session.queries().schema_type_fields("Item_nameVariants");
+    assert_eq!(variants[0].1, "string?");
+    assert_eq!(variants[1].1, "string?");
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
@@ -520,14 +482,8 @@ dimensions:
         session.queries().diagnostics().as_set()
     );
 
-    assert!(session
-        .queries()
-        .compiled_schema()
-        .has_type("Base_nameVariants"));
-    assert!(!session
-        .queries()
-        .compiled_schema()
-        .has_type("Child_nameVariants"));
+    assert!(session.queries().schema_has_type("Base_nameVariants"));
+    assert!(!session.queries().schema_has_type("Child_nameVariants"));
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/Base_name.csv"))
         .expect("read inherited dimension csv");
     assert_eq!(generated, "id,default,zh\nchild,Potion,null\n");
@@ -1198,9 +1154,7 @@ dimensions:
 
     assert!(session
         .queries()
-        .files()
-        .source_files()
-        .contains("data/dimensions/language/ui_icon.csv"));
+        .has_source_file("data/dimensions/language/ui_icon.csv"));
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/ui_icon.csv"))
         .expect("read generated dimension csv");
     assert_eq!(generated, "id,default,zh\npotion,Icon,null\n");
@@ -1355,9 +1309,7 @@ dimensions:
     );
     assert!(session
         .queries()
-        .files()
-        .source_files()
-        .contains("data/dimensions/language/UiText.cfd"));
+        .has_source_file("data/dimensions/language/UiText.cfd"));
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
@@ -1422,15 +1374,12 @@ dimensions:
     // Both records exist in the model, each addressable by (type, key).
     let source = session
         .queries()
-        .records()
-        .get_by_coordinate("Item", "potion")
+        .record_view("Item", "potion")
         .expect("source `Item.potion` should be indexed");
     let synthetic = session
         .queries()
-        .records()
-        .get_by_coordinate("Item_nameVariants", "potion")
+        .record_view("Item_nameVariants", "potion")
         .expect("synthetic `Item_nameVariants.potion` should be indexed");
-    assert_ne!(source.id, synthetic.id, "both records have distinct ids");
     assert_eq!(source.display_path, "data/items.csv");
     assert_eq!(
         synthetic.display_path,
@@ -1439,23 +1388,16 @@ dimensions:
 
     // The synthetic file lists only the synthetic record — the source row's
     // fields must not bleed through.
-    let ids_in_variants_file = session
+    let records_in_variants_file = session
         .queries()
-        .records()
-        .ids_in_file("data/dimensions/language/Item_name.csv")
-        .to_vec();
+        .record_views_in_file("data/dimensions/language/Item_name.csv")
+        .collect::<Vec<_>>();
     assert_eq!(
-        ids_in_variants_file,
-        vec![synthetic.id],
+        records_in_variants_file.len(),
+        1,
         "synthetic file index should hold only the variant record"
     );
-    let coordinate = session
-        .queries()
-        .records()
-        .get(synthetic.id)
-        .expect("synthetic record ref")
-        .coordinate
-        .clone();
+    let coordinate = &records_in_variants_file[0].coordinate;
     assert_eq!(coordinate.actual_type, "Item_nameVariants");
     assert_eq!(coordinate.key, "potion");
 

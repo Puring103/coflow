@@ -1,4 +1,4 @@
-use crate::{ArtifactSet, DiagnosticSet, OutputSpec};
+use crate::{ArtifactSet, DecodedOutputOptions, DiagnosticSet};
 use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdDataModel;
 
@@ -7,6 +7,7 @@ pub struct CodegenContext<'a> {
     pub schema: &'a CompiledSchema,
     pub model: Option<&'a CfdDataModel>,
     pub data_format: &'a str,
+    pub id_as_enum_variants: &'a serde_json::Value,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +23,16 @@ pub struct CodegenDescriptor {
 pub trait CodeGenerator: Send + Sync {
     fn descriptor(&self) -> &'static CodegenDescriptor;
 
+    /// Decode and validate project-facing output options.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when an option is unknown or malformed.
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedOutputOptions, DiagnosticSet>;
+
     /// Validates the request and generates code artifact files in memory.
     ///
     /// # Errors
@@ -31,6 +42,6 @@ pub trait CodeGenerator: Send + Sync {
     fn generate(
         &self,
         ctx: CodegenContext<'_>,
-        output: &OutputSpec,
+        options: &DecodedOutputOptions,
     ) -> Result<ArtifactSet, DiagnosticSet>;
 }

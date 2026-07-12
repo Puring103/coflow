@@ -17,7 +17,7 @@ use coflow_api::{
     RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, WriteCellRequest,
     WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
-use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
+use coflow_data_model::{CfdValue, SourceDocument};
 use coflow_loader_table_core::writer::{
     plan_delete_record, plan_field_write, plan_insert_record, TableAppendRow, TableDeleteRow,
     TableFieldWrite, TableInsertRecord, TableSetCell, TableWriteDiagnostics, TableWritePlan,
@@ -99,12 +99,7 @@ impl SourceWriter for ExcelWriter {
         })
         .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
-        Ok(WriteOutcome {
-            touched_record_origins: vec![request.origin.clone()],
-            inserted_record_origin: None,
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn insert_record(
@@ -144,13 +139,8 @@ impl SourceWriter for ExcelWriter {
             id_column: layout.id_column,
         })
         .map_err(table_write_diagnostics_to_api)?;
-        let inserted_origin = apply_plan(&plan)?;
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: inserted_origin,
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        apply_plan(&plan)?;
+        Ok(WriteOutcome::default())
     }
 
     fn rename_record(
@@ -189,12 +179,7 @@ impl SourceWriter for ExcelWriter {
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: None,
-            deleted_record_origin: Some(request.origin.clone()),
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn rewrite_record_references(
@@ -206,7 +191,7 @@ impl SourceWriter for ExcelWriter {
     }
 }
 
-fn apply_plan(plan: &TableWritePlan) -> Result<Option<RecordOrigin>, DiagnosticSet> {
+fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
     match plan {
         TableWritePlan::SetCells {
             document,
@@ -224,13 +209,13 @@ fn apply_plan(plan: &TableWritePlan) -> Result<Option<RecordOrigin>, DiagnosticS
             mutate_workbook(path, |book| {
                 let sheet_ref = mutable_sheet(book, path, sheet)?;
                 let Some(first) = cells.first() else {
-                    return Ok(None);
+                    return Ok(());
                 };
                 ensure_expected_key(sheet_ref, path, sheet, first.row, *id_column, expected_key)?;
                 for cell in cells {
                     write_sheet_cell(sheet_ref, cell)?;
                 }
-                Ok(None)
+                Ok(())
             })
         }
         TableWritePlan::AppendRow(TableAppendRow {
@@ -247,22 +232,11 @@ fn apply_plan(plan: &TableWritePlan) -> Result<Option<RecordOrigin>, DiagnosticS
             mutate_workbook(path, |book| {
                 let sheet_ref = mutable_sheet(book, path, sheet)?;
                 let row = excel_usize(sheet_ref.get_highest_row(), "row")? + 1;
-                let id_column = values.iter().map(|(column, _)| *column).min().unwrap_or(1);
-                let mut field_columns = BTreeMap::new();
                 for (column, value) in values {
                     let coord = excel_coord(*column, row)?;
                     sheet_ref.get_cell_mut(coord).set_value(value);
-                    if *column != id_column {
-                        field_columns.insert(vec![format!("column_{column}")], *column);
-                    }
                 }
-                Ok(Some(RecordOrigin::Table {
-                    document: SourceDocument::Local(path.clone()),
-                    sheet: sheet.clone(),
-                    row,
-                    id_column,
-                    field_columns,
-                }))
+                Ok(())
             })
         }
         TableWritePlan::DeleteRow(TableDeleteRow {
@@ -283,7 +257,7 @@ fn apply_plan(plan: &TableWritePlan) -> Result<Option<RecordOrigin>, DiagnosticS
                 ensure_expected_key(sheet_ref, path, sheet, *row, *id_column, expected_key)?;
                 let row = excel_index(*row, "row")?;
                 sheet_ref.remove_row(&row, &1);
-                Ok(None)
+                Ok(())
             })
         }
     }
@@ -291,10 +265,8 @@ fn apply_plan(plan: &TableWritePlan) -> Result<Option<RecordOrigin>, DiagnosticS
 
 fn mutate_workbook(
     path: &Path,
-    mutate: impl FnOnce(
-        &mut umya_spreadsheet::Spreadsheet,
-    ) -> Result<Option<RecordOrigin>, DiagnosticSet>,
-) -> Result<Option<RecordOrigin>, DiagnosticSet> {
+    mutate: impl FnOnce(&mut umya_spreadsheet::Spreadsheet) -> Result<(), DiagnosticSet>,
+) -> Result<(), DiagnosticSet> {
     ensure_writable_excel_path(path, "mutate workbook")?;
     if !path.exists() {
         return Err(DiagnosticSet::one(diag(
@@ -317,7 +289,7 @@ fn mutate_workbook(
             format!("failed to read `{}`: {err:?}", path.display()),
         ))
     })?;
-    let origin = mutate(&mut book)?;
+    mutate(&mut book)?;
     umya_spreadsheet::writer::xlsx::write(&book, path).map_err(|err| {
         DiagnosticSet::one(diag(
             "EXCEL-WRITE",
@@ -328,7 +300,7 @@ fn mutate_workbook(
             ),
         ))
     })?;
-    Ok(origin)
+    Ok(())
 }
 
 fn mutable_sheet<'a>(

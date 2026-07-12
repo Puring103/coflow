@@ -80,16 +80,16 @@ impl DirectoryDiscovery {
         }
 
         let mut entries = fs::read_dir(dir)
-            .map_err(|err| read_error(dir, "read", err))?
+            .map_err(|err| read_error(dir, "read", &err))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| read_error(dir, "enumerate", err))?;
+            .map_err(|err| read_error(dir, "enumerate", &err))?;
         entries.sort_by_key(fs::DirEntry::path);
         for entry in entries {
             let path = entry.path();
             let canonical_path = canonicalize(&path)?;
             self.ensure_within_root(&path, &canonical_path)?;
-            let metadata = fs::metadata(&canonical_path)
-                .map_err(|err| read_error(&path, "inspect", err))?;
+            let metadata =
+                fs::metadata(&canonical_path).map_err(|err| read_error(&path, "inspect", &err))?;
             if metadata.is_dir() {
                 self.collect_directory(&path, canonical_path)?;
             } else if metadata.is_file() && self.visited_files.insert(canonical_path) {
@@ -128,7 +128,7 @@ fn canonicalize(path: &Path) -> Result<PathBuf, DirectoryDiscoveryError> {
     })
 }
 
-fn read_error(path: &Path, operation: &str, err: std::io::Error) -> DirectoryDiscoveryError {
+fn read_error(path: &Path, operation: &str, err: &std::io::Error) -> DirectoryDiscoveryError {
     DirectoryDiscoveryError::new(
         path,
         format!(

@@ -2,7 +2,8 @@ use coflow_api::{Diagnostic, DiagnosticSet, WriteFieldPathSegment};
 use coflow_data_model::CfdPath;
 use coflow_data_model::RecordOrigin;
 
-use crate::{ProjectSession, RecordCoordinate, RecordRef};
+use crate::indexes::{RecordRef, SourceId};
+use crate::{ProjectSession, RecordCoordinate};
 
 pub(super) fn not_found(actual_type: &str, key: &str) -> Diagnostic {
     Diagnostic::error(
@@ -20,6 +21,7 @@ pub(super) fn is_id_path(path: &[WriteFieldPathSegment]) -> bool {
 pub(super) struct WriteTarget {
     pub(super) coordinate: RecordCoordinate,
     pub(super) origin: RecordOrigin,
+    pub(super) source_id: SourceId,
     pub(super) display_path: String,
     pub(super) field_path: Vec<WriteFieldPathSegment>,
 }
@@ -33,6 +35,7 @@ pub(super) fn write_target_for_path(
         return Ok(WriteTarget {
             coordinate: host_ref.coordinate.clone(),
             origin: host_ref.origin.clone(),
+            source_id: host_ref.source_id,
             display_path: host_ref.display_path.clone(),
             field_path: path.to_vec(),
         });
@@ -45,6 +48,7 @@ pub(super) fn write_target_for_path(
         return Ok(WriteTarget {
             coordinate: host_ref.coordinate.clone(),
             origin: host_ref.origin.clone(),
+            source_id: host_ref.source_id,
             display_path: host_ref.display_path.clone(),
             field_path: path.segments,
         });
@@ -59,6 +63,7 @@ pub(super) fn write_target_for_path(
     Ok(WriteTarget {
         coordinate: source_ref.coordinate.clone(),
         origin: source_ref.origin.clone(),
+        source_id: source_ref.source_id,
         display_path: source_ref.display_path.clone(),
         field_path: source_path.segments,
     })

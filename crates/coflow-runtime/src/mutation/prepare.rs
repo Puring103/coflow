@@ -14,26 +14,9 @@ use super::defaults::{
     create_record_draft_for_type, default_missing_fields_for_type, default_record_for_type,
     default_value_for_type_ref,
 };
-use super::types::{PreparedMutation, PreparedMutationOp};
+use super::types::PreparedMutationOp;
 use super::{one_mutation_error, one_path_error, schema_field};
-use super::{
-    CreateRecordDraft, DefaultMaterialization, MutationFields, MutationOp, MutationRequest,
-};
-
-pub(super) fn prepare_mutation_request(request: MutationRequest) -> PreparedMutation {
-    let MutationRequest {
-        stop_on_write_error,
-        ops,
-    } = request;
-    let prepared_ops = ops
-        .into_iter()
-        .map(|op| PreparedMutationOp::Pending { op })
-        .collect();
-    PreparedMutation {
-        stop_on_write_error,
-        ops: prepared_ops,
-    }
-}
+use super::{CreateRecordDraft, DefaultMaterialization, MutationFields, MutationOp};
 
 impl ProjectSession {
     /// Build a schema-shaped default record value.
@@ -118,7 +101,7 @@ impl ProjectSession {
 pub(super) fn prepare_one(
     session: &ProjectSession,
     op: MutationOp,
-    pending_records: &[RecordCoordinate],
+    pending_records: &BTreeMap<RecordCoordinate, usize>,
 ) -> Result<PreparedMutationOp, DiagnosticSet> {
     match op {
         MutationOp::InsertRecord {
@@ -229,7 +212,7 @@ pub(super) struct PendingInsertSetRequest<'a> {
     pub(super) file_guard: Option<&'a str>,
     pub(super) path: &'a [CfdPathSegment],
     pub(super) value: super::MutationValue,
-    pub(super) pending_records: &'a [RecordCoordinate],
+    pub(super) pending_records: &'a BTreeMap<RecordCoordinate, usize>,
 }
 
 pub(super) fn prepare_set_on_pending_insert(
@@ -469,7 +452,7 @@ fn prepare_insert_fields(
     key: &str,
     fields: MutationFields,
     materialization: DefaultMaterialization,
-    pending_records: &[RecordCoordinate],
+    pending_records: &BTreeMap<RecordCoordinate, usize>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
     let provided = prepare_provided_insert_fields(session, actual_type, fields)?;
     let provided_names = provided.keys().cloned().collect::<BTreeSet<_>>();
@@ -489,7 +472,7 @@ fn prepare_insert_fields(
             &write_rules::ValueValidationRequest {
                 expected: &field.ty_ref,
                 value,
-                pending_records,
+                pending_records: Some(pending_records),
                 pending_insert: Some(PendingInsertRef { actual_type, key }),
                 code: "MUTATION-SHAPE",
                 stage: "MUTATION",

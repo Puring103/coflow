@@ -1,16 +1,15 @@
 use coflow_api::DiagnosticSet;
-use coflow_data_model::{RecordOrigin, SourceDocument};
+use coflow_data_model::SourceDocument;
 use coflow_loader_table_core::writer::{
     TableAppendRow, TableDeleteRow, TableSetCell, TableWritePlan,
 };
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use super::diag;
 use crate::{parse, write};
 
-pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<Option<RecordOrigin>, DiagnosticSet> {
+pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
     match plan {
         TableWritePlan::SetCells {
             document,
@@ -22,27 +21,24 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<Option<RecordOrigin>, 
             let path = local_path(document)?;
             mutate_csv(path, |rows| {
                 let Some(first) = cells.first() else {
-                    return Ok(None);
+                    return Ok(());
                 };
                 ensure_expected_key(rows, path, first.row, *id_column, expected_key)?;
                 for cell in cells {
                     set_csv_cell(rows, cell)?;
                 }
-                Ok(None)
+                Ok(())
             })
         }
         TableWritePlan::AppendRow(TableAppendRow {
             document,
-            sheet,
+            sheet: _,
             values,
         }) => {
             let path = local_path(document)?;
-            let sheet = sheet.clone();
             mutate_csv(path, |rows| {
                 // 1-based row index of the new row.
                 let row = rows.len() + 1;
-                let id_column = values.iter().map(|(column, _)| *column).min().unwrap_or(1);
-                let mut field_columns = BTreeMap::new();
                 for (column, value) in values {
                     set_csv_cell(
                         rows,
@@ -52,17 +48,8 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<Option<RecordOrigin>, 
                             value: value.clone(),
                         },
                     )?;
-                    if *column != id_column {
-                        field_columns.insert(vec![format!("column_{column}")], *column);
-                    }
                 }
-                Ok(Some(RecordOrigin::Table {
-                    document: SourceDocument::Local(path.to_path_buf()),
-                    sheet,
-                    row,
-                    id_column,
-                    field_columns,
-                }))
+                Ok(())
             })
         }
         TableWritePlan::DeleteRow(TableDeleteRow {
@@ -84,7 +71,7 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<Option<RecordOrigin>, 
                 if idx < rows.len() {
                     rows.remove(idx);
                 }
-                Ok(None)
+                Ok(())
             })
         }
     }
@@ -106,8 +93,8 @@ fn local_path(document: &SourceDocument) -> Result<&Path, DiagnosticSet> {
 /// resolution may locate the id column past the existing width.
 fn mutate_csv(
     path: &Path,
-    mutate: impl FnOnce(&mut Vec<Vec<String>>) -> Result<Option<RecordOrigin>, DiagnosticSet>,
-) -> Result<Option<RecordOrigin>, DiagnosticSet> {
+    mutate: impl FnOnce(&mut Vec<Vec<String>>) -> Result<(), DiagnosticSet>,
+) -> Result<(), DiagnosticSet> {
     if !path.exists() {
         return Err(DiagnosticSet::one(diag(
             "CSV-WRITE",
@@ -126,7 +113,7 @@ fn mutate_csv(
             format!("failed to parse `{}`: {err}", path.display()),
         ))
     })?;
-    let origin = mutate(&mut rows)?;
+    mutate(&mut rows)?;
     let body = write(&rows);
     fs::write(path, body).map_err(|err| {
         DiagnosticSet::one(diag(
@@ -134,7 +121,7 @@ fn mutate_csv(
             format!("failed to write `{}`: {err}", path.display()),
         ))
     })?;
-    Ok(origin)
+    Ok(())
 }
 
 fn set_csv_cell(rows: &mut Vec<Vec<String>>, cell: &TableSetCell) -> Result<(), DiagnosticSet> {

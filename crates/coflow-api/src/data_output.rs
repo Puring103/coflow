@@ -1,4 +1,4 @@
-use crate::{ArtifactContentKind, ArtifactSet, DiagnosticSet, OutputSpec};
+use crate::{ArtifactContentKind, ArtifactSet, DecodedOutputOptions, DiagnosticSet};
 use coflow_cft::CompiledSchema;
 use coflow_data_model::CfdDataModel;
 
@@ -19,9 +19,15 @@ pub struct ExporterDescriptor {
 pub trait DataExporter: Send + Sync {
     fn descriptor(&self) -> &'static ExporterDescriptor;
 
-    fn preflight(&self, _ctx: ExportContext<'_>, _output: &OutputSpec) -> DiagnosticSet {
-        DiagnosticSet::empty()
-    }
+    /// Decode and validate project-facing output options.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when an option is unknown or malformed.
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedOutputOptions, DiagnosticSet>;
 
     /// Exports a validated data model into artifact files.
     ///
@@ -31,6 +37,6 @@ pub trait DataExporter: Send + Sync {
     fn export(
         &self,
         ctx: ExportContext<'_>,
-        output: &OutputSpec,
+        options: &DecodedOutputOptions,
     ) -> Result<ArtifactSet, DiagnosticSet>;
 }

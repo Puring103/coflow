@@ -19,6 +19,7 @@ coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
 coflow-exporter-core = { path = "../coflow-exporter-core" }
 rmp = "0.8"
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
 rmpv = "1"

@@ -5,18 +5,18 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
-pub(super) struct ArtifactOutputPlan {
+pub(crate) struct ArtifactOutputPlan {
     label: &'static str,
     dir: PathBuf,
 }
 
 impl ArtifactOutputPlan {
-    pub(super) const fn new(label: &'static str, dir: PathBuf) -> Self {
+    pub(crate) const fn new(label: &'static str, dir: PathBuf) -> Self {
         Self { label, dir }
     }
 }
 
-pub(super) fn artifact_safety_diagnostics(
+pub(crate) fn artifact_safety_diagnostics(
     project: &Project,
     outputs: &[ArtifactOutputPlan],
 ) -> DiagnosticSet {

@@ -169,25 +169,29 @@ pub struct SourceIndex {
 
 impl SourceIndex {
     #[must_use]
-    pub fn entries(&self) -> &[ResolvedSourceEntry] {
+    pub(crate) fn entries(&self) -> &[ResolvedSourceEntry] {
         &self.entries
     }
 
     pub(crate) fn push(&mut self, entry: ResolvedSourceEntry) {
         self.entries.push(entry);
     }
+
+    #[must_use]
+    pub(crate) fn get(&self, id: SourceId) -> Option<&ResolvedSourceEntry> {
+        self.entries.get(id.index())
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct ResolvedSourceEntry {
-    pub id: SourceId,
+pub(crate) struct ResolvedSourceEntry {
     pub provider_id: String,
     pub source: ResolvedSource,
     pub display_path: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SourceId(pub(crate) usize);
+pub(crate) struct SourceId(pub(crate) usize);
 
 impl SourceId {
     #[must_use]
@@ -261,11 +265,6 @@ impl RecordIndex {
     }
 
     #[must_use]
-    pub fn file_for_id(&self, id: CfdRecordId) -> Option<&str> {
-        self.by_id.get(&id).map(|r| r.display_path.as_str())
-    }
-
-    #[must_use]
     pub fn file_for_coordinate(&self, actual_type: &str, key: &str) -> Option<&str> {
         self.get_by_coordinate(actual_type, key)
             .map(|r| r.display_path.as_str())
@@ -274,11 +273,6 @@ impl RecordIndex {
     #[must_use]
     pub const fn by_id(&self) -> &BTreeMap<CfdRecordId, RecordRef> {
         &self.by_id
-    }
-
-    #[must_use]
-    pub const fn by_file(&self) -> &BTreeMap<String, Vec<CfdRecordId>> {
-        &self.files
     }
 
     #[must_use]
@@ -400,7 +394,7 @@ pub struct RecordRef {
     pub id: CfdRecordId,
     pub coordinate: RecordCoordinate,
     pub origin: RecordOrigin,
-    pub source_id: SourceId,
+    pub(crate) source_id: SourceId,
     pub provider_id: String,
     pub display_path: String,
 }
@@ -409,7 +403,7 @@ pub struct RecordRef {
 pub struct RejectedRecordRef {
     pub coordinate: RecordCoordinate,
     pub origin: RecordOrigin,
-    pub source_id: SourceId,
+    pub(crate) source_id: SourceId,
     pub provider_id: String,
     pub display_path: String,
 }
@@ -417,7 +411,7 @@ pub struct RejectedRecordRef {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FileIndex {
     source_files: BTreeSet<String>,
-    display_to_source: BTreeMap<String, SourceId>,
+    display_to_sources: BTreeMap<String, Vec<SourceId>>,
 }
 
 impl FileIndex {
@@ -428,11 +422,42 @@ impl FileIndex {
 
     #[must_use]
     pub fn source_for_display(&self, display_path: &str) -> Option<SourceId> {
-        self.display_to_source.get(display_path).copied()
+        match self.display_to_sources.get(display_path)?.as_slice() {
+            [source_id] => Some(*source_id),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn sources_for_display(&self, display_path: &str) -> &[SourceId] {
+        self.display_to_sources
+            .get(display_path)
+            .map_or(&[], Vec::as_slice)
     }
 
     pub(crate) fn add_source_file(&mut self, display_path: String, source_id: SourceId) {
         self.source_files.insert(display_path.clone());
-        self.display_to_source.insert(display_path, source_id);
+        self.display_to_sources
+            .entry(display_path)
+            .or_default()
+            .push(source_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FileIndex, SourceId};
+
+    #[test]
+    fn duplicate_display_paths_remain_ambiguous() {
+        let mut files = FileIndex::default();
+        files.add_source_file("data/items.cfd".to_string(), SourceId(0));
+        files.add_source_file("data/items.cfd".to_string(), SourceId(1));
+
+        assert_eq!(
+            files.sources_for_display("data/items.cfd"),
+            &[SourceId(0), SourceId(1)]
+        );
+        assert_eq!(files.source_for_display("data/items.cfd"), None);
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use coflow_api::FlatDiagnostic;
+use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -117,16 +117,7 @@ pub enum CreateRequiredInput {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct PreparedMutation {
-    pub(super) stop_on_write_error: bool,
-    pub(super) ops: Vec<PreparedMutationOp>,
-}
-
-#[derive(Debug, Clone)]
 pub(crate) enum PreparedMutationOp {
-    Pending {
-        op: MutationOp,
-    },
     InsertRecord {
         file: String,
         sheet: Option<String>,
@@ -195,8 +186,77 @@ pub struct MutationFailedOp {
     pub index: usize,
     pub op: String,
     pub diagnostics: Vec<FlatDiagnostic>,
+    #[serde(skip)]
+    source_diagnostics: DiagnosticSet,
+}
+
+impl MutationFailedOp {
+    pub(super) fn from_diagnostics(
+        index: usize,
+        op: impl Into<String>,
+        source_diagnostics: DiagnosticSet,
+    ) -> Self {
+        let diagnostics = source_diagnostics.flat_diagnostics();
+        Self {
+            index,
+            op: op.into(),
+            diagnostics,
+            source_diagnostics,
+        }
+    }
+
+    pub(crate) fn into_source_diagnostics(self) -> DiagnosticSet {
+        self.source_diagnostics
+    }
 }
 
 const fn default_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use coflow_api::{Diagnostic, Label, Severity, SourceLocation};
+
+    use super::MutationFailedOp;
+
+    #[test]
+    fn mutation_failure_keeps_structured_diagnostics_after_flattening() {
+        let primary = Label {
+            location: SourceLocation::RemoteCell {
+                document: "txn://items".to_string(),
+                sheet: Some("items".to_string()),
+                row: 2,
+                column: 3,
+            },
+            message: Some("primary".to_string()),
+        };
+        let related = Label {
+            location: SourceLocation::RemoteCell {
+                document: "txn://items".to_string(),
+                sheet: Some("items".to_string()),
+                row: 4,
+                column: 3,
+            },
+            message: Some("related".to_string()),
+        };
+        let failure = MutationFailedOp::from_diagnostics(
+            0,
+            "set_field",
+            coflow_api::DiagnosticSet::one(Diagnostic {
+                code: "TEST-STRUCTURED".to_string(),
+                stage: "WRITE".to_string(),
+                severity: Severity::Warning,
+                message: "structured diagnostic".to_string(),
+                primary: Some(primary.clone()),
+                related: vec![related.clone()],
+            }),
+        );
+
+        assert_eq!(failure.diagnostics[0].severity, "warning");
+        let structured = failure.into_source_diagnostics();
+        assert_eq!(structured.diagnostics[0].severity, Severity::Warning);
+        assert_eq!(structured.diagnostics[0].primary, Some(primary));
+        assert_eq!(structured.diagnostics[0].related, vec![related]);
+    }
 }

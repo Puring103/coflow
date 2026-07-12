@@ -20,7 +20,7 @@ use coflow_api::{
 };
 use coflow_cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
 use coflow_cft::Span;
-use coflow_data_model::{RecordOrigin, TextSpan};
+use coflow_data_model::RecordOrigin;
 use patch::{
     append_record_source, apply_patch, collect_spread_ref_key_spans, delete_record_span,
     find_record, replace_spans, serialize_record, validate_record_key, validate_values,
@@ -130,12 +130,7 @@ impl SourceWriter for CfdWriter {
 
         Self::write_source(path, &new_source)?;
 
-        Ok(WriteOutcome {
-            touched_record_origins: vec![request.origin.clone()],
-            inserted_record_origin: None,
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn insert_record(
@@ -172,20 +167,7 @@ impl SourceWriter for CfdWriter {
         );
         let new_source = append_record_source(&source, &fragment);
         Self::write_source(path, &new_source)?;
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: Some(RecordOrigin::File {
-                path: path.clone(),
-                span: Some(TextSpan {
-                    start_line: 0,
-                    start_character: 0,
-                    end_line: 0,
-                    end_character: 0,
-                }),
-            }),
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn delete_record(
@@ -213,12 +195,7 @@ impl SourceWriter for CfdWriter {
         let span = delete_record_span(&source, record.span);
         let new_source = format!("{}{}", &source[..span.start], &source[span.end..]);
         Self::write_source(path, &new_source)?;
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: None,
-            deleted_record_origin: Some(request.origin.clone()),
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn rename_record(
@@ -245,12 +222,7 @@ impl SourceWriter for CfdWriter {
         })?;
         let new_source = replace_spans(&source, &[(record.key_span, request.new_key.to_string())])?;
         Self::write_source(path, &new_source)?;
-        Ok(WriteOutcome {
-            touched_record_origins: vec![request.origin.clone()],
-            inserted_record_origin: None,
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 
     fn rewrite_record_references(
@@ -305,12 +277,7 @@ impl SourceWriter for CfdWriter {
             .collect::<Vec<_>>();
         let new_source = replace_spans(&source, &replacements)?;
         Self::write_source(path, &new_source)?;
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: None,
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 }
 

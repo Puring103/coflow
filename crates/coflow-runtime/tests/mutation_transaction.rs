@@ -53,7 +53,7 @@ struct Faults {
     fail_load_after_write: bool,
     abort_failure: bool,
     compensate_failure: bool,
-    commit_failure: bool,
+    prepare_commit_failure_source: Option<String>,
     unsupported_remote: bool,
     emit_provider_diagnostic: bool,
 }
@@ -65,6 +65,7 @@ struct Counts {
     writes: usize,
     aborts: usize,
     compensates: usize,
+    prepare_commits: usize,
     commits: usize,
 }
 
@@ -267,10 +268,7 @@ impl SourceWriter for TestWriter {
         } else {
             DiagnosticSet::empty()
         };
-        Ok(WriteOutcome {
-            diagnostics,
-            ..WriteOutcome::default()
-        })
+        Ok(WriteOutcome { diagnostics })
     }
 }
 
@@ -311,16 +309,25 @@ impl SourceTransactionCompensation for TestCompensation {
         Ok(())
     }
 
-    fn commit(&mut self) -> Result<(), DiagnosticSet> {
+    fn prepare_commit(&mut self) -> Result<(), DiagnosticSet> {
         let mut state = self.state.lock().expect("lock compensation state");
-        state.counts.commits += 1;
-        let failed = state.faults.commit_failure;
+        state.counts.prepare_commits += 1;
+        let failed =
+            state.faults.prepare_commit_failure_source.as_deref() == Some(self.source.as_str());
         drop(state);
         if failed {
-            Err(test_error("TEST-COMMIT", "injected commit failure"))
+            Err(test_error("TEST-COMMIT", "injected prepare commit failure"))
         } else {
             Ok(())
         }
+    }
+
+    fn commit(&mut self) {
+        self.state
+            .lock()
+            .expect("lock compensation state")
+            .counts
+            .commits += 1;
     }
 }
 
@@ -343,7 +350,30 @@ fn remote_batch_publishes_one_generation_and_commits_once() {
     assert_eq!(state.counts.begins, 1);
     assert_eq!(state.counts.writes, 2);
     assert_eq!(state.counts.commits, 1);
+    assert_eq!(state.counts.prepare_commits, 1);
     assert_eq!(state.counts.compensates, 0);
+    drop(state);
+}
+
+#[test]
+fn same_key_rename_does_not_open_a_provider_transaction() {
+    let fixture = Fixture::remote(&[("txn://one", 1)]);
+    let mut session = fixture.open();
+    let coordinate = RecordCoordinate::new("Item", "one");
+
+    let report = session.apply_mutation(mutation_request(vec![MutationOp::RenameRecord {
+        record: coordinate.clone(),
+        file: None,
+        new_key: "one".to_string(),
+    }]));
+
+    assert!(report.write_ok);
+    assert_eq!(report.applied.len(), 1);
+    assert_eq!(report.applied[0].outcome.touched, vec![coordinate]);
+    let state = fixture.state.lock().expect("lock fixture state");
+    assert_eq!(state.counts.begins, 0);
+    assert_eq!(state.counts.writes, 0);
+    assert_eq!(state.remote_values["txn://one"], 1);
     drop(state);
 }
 
@@ -510,14 +540,14 @@ fn compensation_failure_is_retained_in_transaction_diagnostics() {
 }
 
 #[test]
-fn commit_failure_triggers_compensation_before_publish() {
+fn later_prepare_commit_failure_compensates_before_any_source_is_published() {
     let fixture = Fixture::remote(&[("txn://one", 1), ("txn://two", 2)]);
     fixture
         .state
         .lock()
         .expect("lock fixture state")
         .faults
-        .commit_failure = true;
+        .prepare_commit_failure_source = Some("txn://two".to_string());
     let mut session = fixture.open();
 
     let report = session.apply_mutation(mutation_request(vec![
@@ -531,7 +561,8 @@ fn commit_failure_triggers_compensation_before_publish() {
     let state = fixture.state.lock().expect("lock fixture state");
     assert_eq!(state.remote_values["txn://one"], 1);
     assert_eq!(state.remote_values["txn://two"], 2);
-    assert_eq!(state.counts.commits, 1);
+    assert_eq!(state.counts.prepare_commits, 2);
+    assert_eq!(state.counts.commits, 0);
     assert_eq!(state.counts.compensates, 2);
     drop(state);
 }

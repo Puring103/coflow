@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_api::{ArtifactContent, DataExporter, ExportContext, OutputSpec};
+use coflow_api::{ArtifactContent, DataExporter, ExportContext};
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_json::export_json_artifacts;
@@ -180,17 +180,16 @@ fn json_exporter_skips_empty_table_files() -> TestResult {
     builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
     let model = build_model(builder)?;
     let compiled_schema = schema.compiled_schema();
+    let options = coflow_exporter_json::JsonExporter
+        .decode_options(&json!({}))
+        .map_err(|err| format!("decode JSON output options: {err:?}"))?;
     let artifacts = coflow_exporter_json::JsonExporter
         .export(
             ExportContext {
                 schema: compiled_schema,
                 model: &model,
             },
-            &OutputSpec {
-                output_type: "json".to_string(),
-                dir: "generated/data".into(),
-                options: Value::Null,
-            },
+            &options,
         )
         .map_err(|err| format!("export json artifacts: {err:?}"))?;
 
@@ -203,6 +202,16 @@ fn json_exporter_skips_empty_table_files() -> TestResult {
         .iter()
         .any(|file| file.relative_path.as_os_str() == "Monster.json"));
     Ok(())
+}
+
+#[test]
+fn json_exporter_rejects_output_options() {
+    let diagnostics = coflow_exporter_json::JsonExporter
+        .decode_options(&json!({"pretty": false}))
+        .expect_err("JSON output options should be rejected");
+
+    assert_eq!(diagnostics.diagnostics.len(), 1);
+    assert_eq!(diagnostics.diagnostics[0].code, "JSON-OPTIONS");
 }
 
 #[test]

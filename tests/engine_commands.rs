@@ -38,36 +38,24 @@ fn engine_builds_record_and_source_indexes() {
         "check diagnostic should be captured"
     );
     assert!(
-        session
-            .queries()
-            .files()
-            .source_files()
-            .contains("data/configs.xlsx"),
+        session.queries().has_source_file("data/configs.xlsx"),
         "file index should contain loaded xlsx source"
     );
     let record = session
         .queries()
-        .records()
-        .get_by_coordinate("Item", "item_1")
+        .record_view("Item", "item_1")
         .expect("record index should contain item_1");
     assert_eq!(record.display_path, "data/configs.xlsx");
     assert_eq!(record.provider_id, "excel");
-    let table = session
-        .queries()
-        .model()
-        .table("Item")
-        .expect("check diagnostics should not discard the loaded model");
     assert_eq!(
-        table.records.len(),
+        session.queries().record_count_for_type("Item"),
         1,
         "engine should retain records when CFT checks fail"
     );
     assert!(
         session
             .queries()
-            .files()
-            .source_for_display("data/configs.xlsx")
-            .is_some(),
+            .has_unique_source_for_file("data/configs.xlsx"),
         "file index should map display path to source id"
     );
 }
@@ -80,7 +68,7 @@ fn command_check_uses_engine_diagnostics() {
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open project");
     let registry = coflow_builtins::default_provider_registry().expect("default registry");
 
-    let outcome = check_project(project, &registry).expect("check command");
+    let outcome = check_project(&project, &registry).expect("check command");
     let CommandOutcome::Diagnostics(diagnostics) = outcome else {
         panic!("invalid project should return diagnostics");
     };
@@ -126,19 +114,11 @@ fn rename_record_key_updates_cross_source_references() {
         "rename should report every source changed by reference rewrites"
     );
     assert!(
-        session
-            .queries()
-            .records()
-            .get_by_coordinate("Item", "blade")
-            .is_some(),
+        session.queries().record_view("Item", "blade").is_some(),
         "renamed record should be indexed"
     );
     assert!(
-        session
-            .queries()
-            .records()
-            .get_by_coordinate("Item", "sword")
-            .is_none(),
+        session.queries().record_view("Item", "sword").is_none(),
         "old coordinate should be absent"
     );
     assert!(
@@ -258,19 +238,11 @@ fn rename_record_key_rolls_back_local_files_when_reference_write_fails() {
         "rolled back source should not keep new key:\n{items}"
     );
     assert!(
-        session
-            .queries()
-            .records()
-            .get_by_coordinate("Item", "sword")
-            .is_some(),
+        session.queries().record_view("Item", "sword").is_some(),
         "failed rename should leave current session on old coordinate"
     );
     assert!(
-        session
-            .queries()
-            .records()
-            .get_by_coordinate("Item", "blade")
-            .is_none(),
+        session.queries().record_view("Item", "blade").is_none(),
         "failed rename should not update current session"
     );
 }

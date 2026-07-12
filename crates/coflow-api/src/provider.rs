@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 mod options;
 
-pub use options::DecodedSourceOptions;
+pub use options::{DecodedOutputOptions, DecodedSourceOptions};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -49,13 +49,6 @@ impl ResolvedSource {
     {
         self.options.require(provider_id)
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OutputSpec {
-    pub output_type: String,
-    pub dir: PathBuf,
-    pub options: Value,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

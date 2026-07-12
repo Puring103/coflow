@@ -71,19 +71,25 @@ impl MutationTransaction {
     pub(crate) fn commit(mut self) -> Result<(), DiagnosticSet> {
         let mut failure = None;
         for provider in &mut self.providers {
-            if let Err(provider_diagnostics) = provider.compensation.commit() {
+            if let Err(provider_diagnostics) = provider.compensation.prepare_commit() {
                 failure = Some((provider.source.clone(), provider_diagnostics));
                 break;
             }
         }
-        let Some((source, provider_diagnostics)) = failure else {
-            return Ok(());
-        };
-        let mut diagnostics =
-            DiagnosticSet::one(transaction_error("WRITE-TXN-COMMIT", &source, "commit"));
-        diagnostics.extend(provider_diagnostics);
-        self.compensate_into(&mut diagnostics);
-        Err(diagnostics)
+        if let Some((source, provider_diagnostics)) = failure {
+            let mut diagnostics = DiagnosticSet::one(transaction_error(
+                "WRITE-TXN-COMMIT",
+                &source,
+                "prepare publication for",
+            ));
+            diagnostics.extend(provider_diagnostics);
+            self.compensate_into(&mut diagnostics);
+            return Err(diagnostics);
+        }
+        for provider in &mut self.providers {
+            provider.compensation.commit();
+        }
+        Ok(())
     }
 
     pub(crate) fn compensate_into(mut self, diagnostics: &mut DiagnosticSet) {

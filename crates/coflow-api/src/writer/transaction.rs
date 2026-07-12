@@ -4,7 +4,9 @@ use crate::{DiagnosticSet, ResolvedSource};
 ///
 /// `abort` is called when planning fails before source mutation starts.
 /// `compensate` is called after at least one staged writer operation or a
-/// post-write rebuild failure. `commit` publishes the provider transaction.
+/// post-write rebuild failure. Publication is explicitly two phase:
+/// `prepare_commit` may fail while compensation is still valid, then `commit`
+/// performs the infallible final publication after every source is prepared.
 pub trait SourceTransactionCompensation: Send {
     /// Release transaction state when no mutation was applied.
     ///
@@ -20,12 +22,17 @@ pub trait SourceTransactionCompensation: Send {
     /// Returns diagnostics when the provider cannot restore its snapshot.
     fn compensate(&mut self) -> Result<(), DiagnosticSet>;
 
-    /// Publish a successful source transaction.
+    /// Prepare publication without invalidating compensation state.
     ///
     /// # Errors
     ///
-    /// Returns diagnostics when the provider cannot commit its transaction.
-    fn commit(&mut self) -> Result<(), DiagnosticSet>;
+    /// Returns diagnostics when the provider cannot guarantee that final
+    /// publication will succeed.
+    fn prepare_commit(&mut self) -> Result<(), DiagnosticSet>;
+
+    /// Publish a transaction after every participating source prepared
+    /// successfully. This phase must not perform fallible I/O.
+    fn commit(&mut self);
 }
 
 /// Rollback guarantee declared by a writer for one resolved source.
