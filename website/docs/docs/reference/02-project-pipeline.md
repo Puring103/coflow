@@ -113,7 +113,7 @@ schema。它不会加载 source、同步表头、构建 DataModel，也不会执
 `check {}`。
 
 `coflow check` 覆盖项目配置、schema、source、DataModel 和 CFT `check {}`，
-但不执行 exporter / codegen preflight。启用产物输出的项目应在发布或提交产物前
+但不解码 output provider options，也不生成产物。启用产物输出的项目应在发布或提交产物前
 运行 `coflow build`。
 
 ## Source Resolve
@@ -238,8 +238,10 @@ CLI、编辑器和自动化命令复用这些 capability，而不是导入 ownin
 
 1. 项目/schema 诊断。
 2. 需要数据时的数据加载、DataModel 和 check。
-3. exporter / codegen preflight。
-4. artifact safety preflight。
+3. 宿主调用选中 exporter / codegen 的 option decoder，把 project-facing JSON 转换为 provider-owned typed options。
+4. root artifact release module 对全部输出执行 artifact safety 检查。
+5. 全部 provider 使用 decoded options 完成纯内存 generation。
+6. 全部 generation 成功后才依次 staging，最后只 publication 一次 active manifest。
 
 存在诊断时不写产物。
 
@@ -275,7 +277,7 @@ DiagnosticSet
 | --- | --- |
 | `coflow-project` | 项目配置、项目根目录、路径解析、schema 文件发现、项目初始化 |
 | `coflow-runtime` | schema 编译、source resolve/load、DataModel、check、索引、诊断聚合 |
-| 根 `coflow` crate | CLI 参数、命令编排、human/JSON 输出、产物 preflight、generation staging 和 manifest publication |
+| 根 `coflow` crate | CLI 参数、命令编排、human/JSON 输出、output option planning、artifact safety、generation staging 和 manifest publication |
 | `coflow-builtins` | 默认 Provider registry |
 | Provider crates | loader、writer、exporter、codegen 具体实现 |
 

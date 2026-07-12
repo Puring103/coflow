@@ -234,7 +234,7 @@ coflow data patch examples/rpg --patch-file patch.json
 
 data 命令区分：
 
-- **`data patch`**：走 provider writer 逐字段/记录写回，适合表格和 CFD；写完后重建项目并返回诊断，不阻拦写入。
+- **`data patch`**：走 provider writer 逐字段/记录写回，适合表格和 CFD；事务、重建和诊断语义以 [CLI 命令参考](https://puring103.github.io/coflow/docs/reference/08-cli.html) 为准。
 - **`data write-file`**：整文件重写，只允许作用于配置里 CFD source 覆盖的 `.cfd` 文件，适合大范围 CFD 修改。
 - **`data create-file` / `data sync-header`**：本地文件级命令，支持 `.cfd` / `.csv` / `.xlsx`；表格文件同步表头，CFD 同步记录顶层字段。
 

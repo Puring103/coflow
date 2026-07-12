@@ -158,9 +158,9 @@ coflow check examples/rpg --json
 
 建议在提交 schema 或数据变更前运行该命令。
 
-`check` 不执行 exporter 或 codegen preflight。启用了 C# codegen、MessagePack loader
+`check` 不解码 exporter 或 codegen options，也不生成产物。启用了 C# codegen、MessagePack exporter
 或其他产物输出的项目，提交前应运行 `coflow build`，让数据校验和产物
-preflight 在同一流程里完成。
+release validation 在同一流程里完成。
 
 ## `build`
 

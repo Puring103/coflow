@@ -67,11 +67,21 @@ Exporter 实现 `DataExporter`，负责把已经验证的 DataModel 导出为 ar
 
 JSON 和 MessagePack 的共享遍历规则在 `coflow-exporter-core` 中实现。具体 exporter 只负责格式编码。
 
+宿主先调用 exporter 的 `decode_options`，把 `coflow.yaml` 中 project-facing JSON
+解码为带 provider identity 的 opaque `DecodedOutputOptions`。`export` 只接收这份
+typed options，不接收 provider id 或宿主解析出的 output directory。JSON 和
+MessagePack 当前都不接受自定义 options，未知字段会在 generation 前返回诊断。
+
 ## Codegen
 
 Codegen 实现 `CodeGenerator`，负责根据 schema 或 model 生成运行时代码。
 
 当前内置 codegen 是 `csharp`。C# codegen 读取 schema，并根据 `outputs.data.type` 选择 JSON 或 MessagePack loader。
+
+Codegen 使用与 exporter 相同的 output option contract：`decode_options` 只处理
+project-facing 配置，`generate` 只接收 `DecodedOutputOptions`。`@idAsEnum` variants
+由宿主通过 `CodegenContext` 提供，不伪装成用户 options。provider identity 或具体
+option 类型不匹配属于 contract diagnostic。
 
 ## 边界
 
@@ -80,6 +90,7 @@ Provider 不负责：
 - 读取或发现 `coflow.yaml`。
 - 持有项目运行时状态。
 - 直接替换导出目录。
+- 从 raw JSON 反复解析 output options。
 - 各自实现业务合法性校验。
 
 项目生命周期由 `coflow-project` 和 `coflow-runtime` 编排；产物落盘由 CLI 宿主负责；业务合法性由 CFT schema、DataModel 和 checker 统一判断。
