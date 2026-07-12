@@ -3,14 +3,14 @@
 Item {
   sword_fire {
     name: "Fire Sword",
-    element: Fire,
+    element: Ice,
     price: 100,
-    tags: ["weapon", "melee"],
+    tags: ["weapon", "melee", "melee"],
   }
 
   staff_ice {
     name: "Ice Staff",
-    element: Ice,
+    element: Fire,
     price: 150,
     tags: ["weapon", "magic"],
   }

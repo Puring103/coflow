@@ -41,13 +41,13 @@ CardText {
 
   txt_fireball {
     zh_cn: "火球术",
-    en_us: "Fireball",
+    en_us: "Fireballdsds",
     flavor: "This spell is a 'steal' at twice the mana.",
   }
 
   txt_arcane_intellect {
     zh_cn: "奥术智慧",
-    en_us: "Arcane Intellect",
+    en_us: "Arcane sd",
     flavor: "Draw more cards? Don't mind if I do.",
   }
 
@@ -121,25 +121,25 @@ DamageEffect {
   eff_fireball_damage {
     damage: { lo: 6, hi: 6 },
     target: Single,
-    pierce_divine: false,
+    pierce_divine: true,
   }
 
   eff_execute_damage {
     damage: { lo: 999, hi: 999 },
     target: Random,
-    pierce_divine: false,
+    pierce_divine: true,
   }
 
   eff_frost_nova_damage {
     damage: { lo: 1, hi: 1 },
-    target: All,
+    target: Random,
     pierce_divine: true,
   }
 
   eff_ysera_awakens_damage {
     damage: { lo: 5, hi: 5 },
-    target: Friendly,
-    pierce_divine: false,
+    target: Enemy,
+    pierce_divine: true,
   }
 }
 
@@ -378,7 +378,7 @@ Card {
     triggers: [
       { event: OnPlay, effect: &eff_divine_favor_draw, condition: "opponent has more cards" },
     ],
-    evolved_form: null,
+    evolved_form: &card_silver_hand_recruit,
     cost_curve: [],
     banned_with: [],
     designer_tags: { power_level: 8, draw_card: 1 },
@@ -419,13 +419,16 @@ Card {
     faction: Neutral,
     rarity: Common,
     cost: 4,
-    base_stats: null,
+    base_stats: StatLine {
+  attack: 0,
+  health: 0,
+},
     keywords: None,
     durability: 0,
     triggers: [
       { event: OnPlay, effect: &eff_fireball_damage, condition: "" },
     ],
-    evolved_form: null,
+    evolved_form: &card_frost_nova,
     cost_curve: [
       { level: 1,  value: 4 },
       { level: 40, value: 4 },
@@ -464,7 +467,7 @@ Card {
     triggers: [
       { event: OnPlay, effect: &eff_frost_nova_damage, condition: "" },
     ],
-    evolved_form: null,
+    evolved_form: &card_execute,
     cost_curve: [],
     banned_with: [&card_fireball],   # 禁用组合示例：不建议和火球同组
     designer_tags: { power_level: 4, cc_type: 1 },
@@ -528,7 +531,7 @@ Card {
     triggers: [
       { event: OnPlay, effect: &eff_ysera_awakens_damage, condition: "" },
     ],
-    evolved_form: null,
+    evolved_form: &card_chillwind_yeti,
     cost_curve: [],
     banned_with: [],
     designer_tags: { is_token: 1, dream_card: 1 },
