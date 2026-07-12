@@ -162,6 +162,8 @@ async function main() {
     extensionPackage.contributes.semanticTokenModifiers.map((modifier) => modifier.id),
     ["reference", "path", "record", "schema"]
   );
+  assert(extension.__test.isPathWithin(root, path.join(root, "schema", "a.cft")));
+  assert(!extension.__test.isPathWithin(root, path.join(path.dirname(root), "outside.cft")));
   assert(
     extensionPackage.contributes.configurationDefaults["editor.semanticTokenColorCustomizations"].rules[
       "namespace.declaration.record:cfd"
@@ -213,6 +215,26 @@ async function main() {
     new Promise((resolve) => setTimeout(() => resolve("timed-out"), 25))
   ]);
   assert.notStrictEqual(immediate, "timed-out");
+
+  const watchedNotifications = [];
+  const watchedSession = Object.create(extension.__test.CftLspSession.prototype);
+  Object.assign(watchedSession, {
+    failed: false,
+    disposed: false,
+    openedUris: new Set(),
+    sendNotification(method, params) {
+      watchedNotifications.push({ method, params });
+    }
+  });
+  watchedSession.notifyWatchedFile(extension.__test.vscodeUriFile("/tmp/closed.cfd"), 2);
+  assert.deepStrictEqual(watchedNotifications, [
+    {
+      method: "workspace/didChangeWatchedFiles",
+      params: {
+        changes: [{ uri: "file:///tmp/closed.cfd", type: 2 }]
+      }
+    }
+  ]);
 
   const diagnosticsWrites = [];
   const disabledDiagnosticsSession = Object.create(extension.__test.CftLspSession.prototype);

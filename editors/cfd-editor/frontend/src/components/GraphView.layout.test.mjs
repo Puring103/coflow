@@ -1,91 +1,37 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import test from 'node:test'
 import ELK from 'elkjs/lib/elk.bundled.js'
-import ts from 'typescript'
+import { test } from 'vitest'
+import {
+  defaultEnabledFields,
+  estimateNodeHeight,
+  isCompactGraphZoom,
+  layoutGraph,
+} from './GraphView.layout'
 
-const source = readFileSync(new URL('./GraphView.tsx', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('../style.css', import.meta.url), 'utf8')
-const ast = ts.createSourceFile('GraphView.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+const elk = new ELK()
 
-function extractFunction(name) {
-  const node = findTopLevel(node =>
-    ts.isFunctionDeclaration(node) && node.name?.text === name
+async function runElkLayout(graph) {
+  const laidOut = await elk.layout(graph)
+  const children = laidOut.children ?? []
+  const minX = children.length > 0 ? Math.min(...children.map(node => node.x ?? 0)) : 0
+  return new Map(children.map(node => [
+    node.id,
+    { x: (node.x ?? 0) - minX, y: node.y ?? 0 },
+  ]))
+}
+
+function layoutAll(graph, enabledFields, activeType, nodeExpanded, rowExpanded) {
+  return layoutGraph(
+    graph,
+    enabledFields,
+    activeType,
+    nodeExpanded,
+    rowExpanded,
+    runElkLayout,
   )
-  assert.ok(node, `missing function ${name}`)
-  return node.getFullText(ast)
 }
-
-function extractInterface(name) {
-  const node = findTopLevel(node =>
-    ts.isInterfaceDeclaration(node) && node.name.text === name
-  )
-  assert.ok(node, `missing interface ${name}`)
-  return node.getFullText(ast)
-}
-
-function findTopLevel(predicate) {
-  return ast.statements.find(predicate)
-}
-
-function extractConst(name) {
-  const match = source.match(new RegExp(`const ${name}\\s*=\\s*[^\\n]+`))
-  assert.ok(match, `missing const ${name}`)
-  return match[0]
-}
-
-const layoutSource = [
-  extractConst('NODE_W'),
-  extractConst('COL_GAP'),
-  extractConst('ROW_GAP'),
-  extractConst('COMP_GAP'),
-  extractConst('HEADER_H'),
-  extractConst('ROW_H'),
-  extractConst('MORE_BTN_H'),
-  extractConst('PAD_V'),
-  extractConst('COMPACT_ZOOM_THRESHOLD'),
-  'async function getElk() { return globalThis.__elkForTest ??= new globalThis.__ELK() }',
-  `async function runLayoutInWorker(graph) {
-    const laidOut = await (await getElk()).layout(graph)
-    const children = laidOut.children ?? []
-    const minX = children.length > 0 ? Math.min(...children.map(n => n.x ?? 0)) : 0
-    return new Map(children.map(n => [n.id, { x: (n.x ?? 0) - minX, y: n.y ?? 0 }]))
-  }`,
-  'const NODE_PEEK_FIELDS = 5',
-  'function countVisibleRows(fields) { return fields.length }',
-  extractInterface('LayoutResult'),
-  extractFunction('estimateNodeHeight'),
-  extractFunction('isCompactGraphZoom'),
-  extractFunction('topLevelField'),
-  extractFunction('defaultEnabledFields'),
-  extractFunction('graphEdgeId'),
-  extractFunction('connectedComponents'),
-  extractFunction('detectBackEdges'),
-  extractFunction('sortedGraphNodes'),
-  extractFunction('sourcePortId'),
-  extractFunction('targetPortId'),
-  extractFunction('nodeH'),
-  extractFunction('layoutComponent'),
-  extractFunction('layoutAll'),
-  'globalThis.__layoutAll = layoutAll',
-  'globalThis.__defaultEnabledFields = defaultEnabledFields',
-  'globalThis.__estimateNodeHeight = estimateNodeHeight',
-  'globalThis.__isCompactGraphZoom = isCompactGraphZoom',
-].join('\n\n')
-
-const { outputText } = ts.transpileModule(layoutSource, {
-  compilerOptions: {
-    module: ts.ModuleKind.ES2022,
-    target: ts.ScriptTarget.ES2022,
-  },
-})
-
-globalThis.__ELK = ELK
-await import(`data:text/javascript,${encodeURIComponent(outputText)}`)
-const layoutAll = globalThis.__layoutAll
-const defaultEnabledFields = globalThis.__defaultEnabledFields
-const estimateNodeHeight = globalThis.__estimateNodeHeight
-const isCompactGraphZoom = globalThis.__isCompactGraphZoom
 
 function graphNode(key, fields = [], actualType = 'Item') {
   return {
@@ -97,6 +43,8 @@ function graphNode(key, fields = [], actualType = 'Item') {
     in_focus_file: true,
     is_collapsed: false,
     fields,
+    field_diagnostics: [],
+    diagnostic_severity: null,
   }
 }
 

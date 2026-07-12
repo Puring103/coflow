@@ -48,6 +48,7 @@ import { DiagBadge } from './DiagBadge'
 import { typeColor, enumColor } from '../utils/typeColor'
 import { loadEnumVariants, loadRefTargets } from '../utils/editContext'
 import { useObjectDraft } from './ObjectDraftHost'
+import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 
 export function CardHeader({
   recordKey,
@@ -115,7 +116,6 @@ export function CardHeader({
   )
 }
 
-export const NODE_PEEK_FIELDS = 5
 const MAX_DEPTH = 5
 const INDENT_PX = 14
 
@@ -208,27 +208,6 @@ export function summaryOf(v: FieldValue): string {
       return `${dictKindLabel(first[0])}->${valueKindLabel(first[1])}  (${v.value.length})`
     }
   }
-}
-
-export function countVisibleRows(
-  fields: FieldCell[],
-  expandedPaths: Set<string>,
-  prefix = '',
-): number {
-  let count = 0
-  for (const f of fields) {
-    count++
-    const path = prefix ? `${prefix}.${f.name}` : f.name
-    if (!expandedPaths.has(path)) continue
-    if (f.value.kind === 'object') {
-      count += countVisibleRows(objectFields(f.value), expandedPaths, path)
-    } else if (f.value.kind === 'array') {
-      count += f.value.value.length
-    } else if (f.value.kind === 'dict') {
-      count += f.value.value.length
-    }
-  }
-  return count
 }
 
 export function DataCardCompact({ value }: { value: FieldValue }) {

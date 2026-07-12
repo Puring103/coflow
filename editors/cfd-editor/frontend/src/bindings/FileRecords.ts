@@ -3,4 +3,4 @@ import type { RecordColumn } from "./RecordColumn";
 import type { RecordRow } from "./RecordRow";
 import type { WriterCapabilities } from "./WriterCapabilities";
 
-export type FileRecords = { file_path: string, type_names: Array<string>, columns: Array<RecordColumn>, records: Array<RecordRow>, capabilities: WriterCapabilities, };
+export type FileRecords = { revision: number, file_path: string, type_names: Array<string>, columns: Array<RecordColumn>, records: Array<RecordRow>, capabilities: WriterCapabilities, };

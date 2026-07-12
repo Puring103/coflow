@@ -134,13 +134,18 @@ class CftDiagnostics {
     this.documentSessions = new Map();
 
     const configWatcher = vscode.workspace.createFileSystemWatcher("**/coflow.{yaml,yml}");
-    configWatcher.onDidChange((uri) => this.restartSessionsForProject(uri));
+    configWatcher.onDidChange((uri) => this.notifySessionsForFile(uri, 2));
     configWatcher.onDidCreate((uri) => this.restartSessionsForProject(uri));
     configWatcher.onDidDelete((uri) => this.restartSessionsForProject(uri));
+    const sourceWatcher = vscode.workspace.createFileSystemWatcher("**/*.{cft,cfd}");
+    sourceWatcher.onDidChange((uri) => this.notifySessionsForFile(uri, 2));
+    sourceWatcher.onDidCreate((uri) => this.notifySessionsForFile(uri, 1));
+    sourceWatcher.onDidDelete((uri) => this.notifySessionsForFile(uri, 3));
 
     context.subscriptions.push(
       this.collection,
       configWatcher,
+      sourceWatcher,
       vscode.workspace.onDidOpenTextDocument((document) => this.openDocument(document)),
       vscode.workspace.onDidChangeTextDocument((event) => this.schedule(event.document)),
       vscode.workspace.onDidSaveTextDocument((document) => this.saveDocument(document)),
@@ -218,6 +223,14 @@ class CftDiagnostics {
     this.documentSessions.clear();
     this.collection.clear();
     this.validateAllOpenDocuments();
+  }
+
+  notifySessionsForFile(uri, changeType) {
+    for (const session of this.sessions.values()) {
+      if (isPathWithin(session.projectDir, uri.fsPath)) {
+        session.notifyWatchedFile(uri, changeType);
+      }
+    }
   }
 
   openDocument(document) {
@@ -350,7 +363,8 @@ class CftDiagnostics {
         args,
         cwd,
         this.collection,
-        (uri) => this.diagnosticsEnabledForUri(uri)
+        (uri) => this.diagnosticsEnabledForUri(uri),
+        projectDir || cwd
       );
       this.sessions.set(key, session);
     }
@@ -428,12 +442,20 @@ class CftSemanticTokensProvider {
 }
 
 class CftLspSession {
-  constructor(command, args, cwd, collection, diagnosticsEnabledForUri = () => true) {
+  constructor(
+    command,
+    args,
+    cwd,
+    collection,
+    diagnosticsEnabledForUri = () => true,
+    projectDir = cwd
+  ) {
     this.command = command;
     this.args = args;
     this.cwd = cwd;
     this.collection = collection;
     this.diagnosticsEnabledForUri = diagnosticsEnabledForUri;
+    this.projectDir = projectDir;
     this.nextId = 1;
     this.buffer = Buffer.alloc(0);
     this.openedUris = new Set();
@@ -527,6 +549,15 @@ class CftLspSession {
       textDocument: {
         uri
       }
+    });
+  }
+
+  notifyWatchedFile(uri, changeType) {
+    if (this.failed || this.disposed || this.openedUris.has(uri.toString())) {
+      return;
+    }
+    this.sendNotification("workspace/didChangeWatchedFiles", {
+      changes: [{ uri: uri.toString(), type: changeType }]
     });
   }
 
@@ -1124,6 +1155,14 @@ function normalizeFsPathKey(fsPath) {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
+function isPathWithin(root, filePath) {
+  if (!root) {
+    return false;
+  }
+  const relative = path.relative(path.resolve(root), path.resolve(filePath));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function formatFailureMessage(message) {
   return String(message || "language server failed").trim() || "language server failed";
 }
@@ -1145,6 +1184,7 @@ module.exports = {
     semanticTokensLegend: CFT_SEMANTIC_TOKENS_LEGEND,
     schemaEntriesFromCoflowConfigText,
     lspDefinitionLocations,
+    isPathWithin,
     vscodePosition: vscode.Position,
     vscodeRange: vscode.Range,
     vscodeUriFile: vscode.Uri.file,

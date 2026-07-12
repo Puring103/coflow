@@ -17,28 +17,24 @@ import {
   type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
-  type GraphEdgeView,
   type GraphNodeView,
 } from '../wire'
 import { isEditableCapabilities, isEditableFile } from '../utils/editable'
-import { DataCardNode, CardHeader, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
+import { DataCardNode, CardHeader } from './DataCard'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import type { LayoutWorkerRequest, LayoutWorkerResponse } from './GraphView.layout.worker'
+import {
+  defaultEnabledFields,
+  estimateHandleOffsets,
+  graphEdgeId,
+  isCompactGraphZoom,
+  layoutGraph,
+  sameOffsetMap,
+  type GraphLayoutResult,
+} from './GraphView.layout'
 
-// ─── Constants (must match CSS / DataCard) ────────────────────────────────── (must match CSS / DataCard) ──────────────────────────────────
-
-const NODE_W     = 280
-const COL_GAP    = 280
-const ROW_GAP    = 90      // gap between nodes in same column
-const COMP_GAP   = 120     // vertical gap between connected components
-const COMPACT_ZOOM_THRESHOLD = 0.65
-const HEADER_H   = 42
-const ROW_H      = 22
-const MORE_BTN_H = 28
-const PAD_V      = 12
-const COMPACT_BODY_MIN_H = 168
 const MEASURE_HANDLE_NODE_LIMIT = 80
 const LAYOUT_WORKER_TIMEOUT_MS = 20_000
 
@@ -285,70 +281,6 @@ function CfdNode({ id, data }: NodeProps) {
 const CfdNodeMemo = memo(CfdNode)
 const nodeTypes = { cfd: CfdNodeMemo }
 
-// ─── Height estimation ────────────────────────────────────────────────────────
-
-function estimateNodeHeight(
-  gn: GraphNodeView,
-  expanded: boolean,
-  expandedRows: Set<string>,
-): number {
-  if (gn.is_collapsed) return HEADER_H + 28 + PAD_V
-  if (!expanded) {
-    const visible = Math.min(NODE_PEEK_FIELDS, gn.fields.length)
-    const hasMore = gn.fields.length > NODE_PEEK_FIELDS
-    return HEADER_H + visible * ROW_H + (hasMore ? MORE_BTN_H : 0) + PAD_V
-  }
-  const rows = countVisibleRows(gn.fields, expandedRows)
-  const hasMore = gn.fields.length > NODE_PEEK_FIELDS
-  return HEADER_H + rows * ROW_H + (hasMore ? MORE_BTN_H : 0) + PAD_V
-}
-
-function estimateHandleOffsets(
-  gn: GraphNodeView,
-  outgoingPaths: string[],
-  expanded: boolean,
-  compact: boolean,
-): { headerCenterY: number; pathOffsets: Map<string, number> } {
-  const headerCenterY = compact ? COMPACT_BODY_MIN_H / 2 : HEADER_H / 2
-  const pathOffsets = new Map<string, number>()
-  for (const path of outgoingPaths) {
-    if (compact) {
-      pathOffsets.set(path, headerCenterY)
-      continue
-    }
-    pathOffsets.set(path, estimateTopLevelRowCenter(gn, topLevelField(path), expanded) ?? headerCenterY)
-  }
-  return { headerCenterY, pathOffsets }
-}
-
-function estimateTopLevelRowCenter(
-  gn: GraphNodeView,
-  fieldName: string,
-  expanded: boolean,
-): number | null {
-  if (gn.is_collapsed) return null
-  const maxRows = expanded ? gn.fields.length : Math.min(NODE_PEEK_FIELDS, gn.fields.length)
-  const index = gn.fields.slice(0, maxRows).findIndex(f => f.name === fieldName)
-  return index === -1 ? null : HEADER_H + index * ROW_H + ROW_H / 2
-}
-
-function sameOffsetMap(a: Map<string, number>, b: Map<string, number>): boolean {
-  if (a.size !== b.size) return false
-  for (const [key, value] of b) if (a.get(key) !== value) return false
-  return true
-}
-
-function isCompactGraphZoom(zoom: number): boolean {
-  return zoom < COMPACT_ZOOM_THRESHOLD
-}
-
-// ─── Field path → top-level field name ───────────────────────────────────────
-
-function topLevelField(path: string): string {
-  const m = path.match(/^[^.[]+/)
-  return m ? m[0] : path
-}
-
 function severityForGraphNode(
   node: GraphNodeView,
 ): 'error' | 'warning' | null {
@@ -357,287 +289,10 @@ function severityForGraphNode(
     : null
 }
 
-function defaultEnabledFields(
-  graph: { nodes: GraphNodeView[]; edges: GraphEdgeView[] },
-  availableFields: string[],
-  activeType: string | undefined,
-): string[] {
-  if (!activeType) return availableFields
-  const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
-  const fields = new Set<string>()
-  for (const e of graph.edges) {
-    const source = nodeById.get(e.source)
-    const target = nodeById.get(e.target)
-    if (source?.actual_type === activeType && target?.actual_type === activeType) {
-      fields.add(topLevelField(e.field_path))
-    }
-  }
-  return availableFields.filter(field => fields.has(field))
-}
-
 function sameStringSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) return false
   for (const item of a) if (!b.has(item)) return false
   return true
-}
-
-function graphEdgeId(kind: 'fwd' | 'back', edge: { source: string; target: string; field_path: string }): string {
-  return `${kind}:${edge.source}->${edge.target}:${encodeURIComponent(edge.field_path)}`
-}
-
-// ─── Connected components ─────────────────────────────────────────────────────
-
-function connectedComponents(
-  nodeIds: string[],
-  edges: { source: string; target: string }[],
-): string[][] {
-  const adj = new Map<string, Set<string>>()
-  for (const id of nodeIds) adj.set(id, new Set())
-  for (const e of edges) {
-    adj.get(e.source)?.add(e.target)
-    adj.get(e.target)?.add(e.source)
-  }
-  const visited = new Set<string>()
-  const comps: string[][] = []
-  for (const id of nodeIds) {
-    if (visited.has(id)) continue
-    const comp: string[] = []
-    const q = [id]
-    while (q.length) {
-      const cur = q.shift()!
-      if (visited.has(cur)) continue
-      visited.add(cur)
-      comp.push(cur)
-      for (const nb of adj.get(cur) ?? []) if (!visited.has(nb)) q.push(nb)
-    }
-    comps.push(comp)
-  }
-  return comps
-}
-
-// ─── Back-edge detection (DFS, breaks cycles) ────────────────────────────────
-
-function detectBackEdges(
-  nodes: { id: string }[],
-  edges: { source: string; target: string }[],
-): Set<string> {
-  const adj = new Map<string, string[]>()
-  for (const n of nodes) adj.set(n.id, [])
-  for (const e of edges) adj.get(e.source)?.push(e.target)
-
-  const state = new Map<string, 'white' | 'gray' | 'black'>()
-  for (const n of nodes) state.set(n.id, 'white')
-  const backEdgeKeys = new Set<string>()
-
-  function dfs(id: string) {
-    state.set(id, 'gray')
-    for (const nb of adj.get(id) ?? []) {
-      if (state.get(nb) === 'gray') {
-        backEdgeKeys.add(`${id}→${nb}`)
-      } else if (state.get(nb) === 'white') {
-        dfs(nb)
-      }
-    }
-    state.set(id, 'black')
-  }
-  for (const n of nodes) if (state.get(n.id) === 'white') dfs(n.id)
-  return backEdgeKeys
-}
-
-// ─── Layout one connected component ──────────────────────────────────────────
-
-function sortedGraphNodes(nodes: GraphNodeView[]): GraphNodeView[] {
-  return [...nodes].sort((a, b) => {
-    if (a.in_focus_file !== b.in_focus_file) return a.in_focus_file ? -1 : 1
-    if (a.file_path !== b.file_path) return a.file_path.localeCompare(b.file_path)
-    if (a.key !== b.key) return a.key.localeCompare(b.key)
-    return a.id.localeCompare(b.id)
-  })
-}
-
-function sourcePortId(nodeId: string, fieldPath: string): string {
-  return `${nodeId}:out:${encodeURIComponent(fieldPath)}`
-}
-
-function targetPortId(nodeId: string): string {
-  return `${nodeId}:in`
-}
-
-function nodeH(
-  gn: GraphNodeView,
-  nodeExpandedMap: Map<string, boolean>,
-  nodeRowExpandedMap: Map<string, Set<string>>,
-) {
-  const exp = nodeExpandedMap.get(gn.id) ?? false
-  const rows = nodeRowExpandedMap.get(gn.id) ?? new Set<string>()
-  return estimateNodeHeight(gn, exp, rows)
-}
-
-async function layoutComponent(
-  compNodes: GraphNodeView[],
-  forwardEdges: GraphEdgeView[],
-  forcedRoots: Set<string>,
-  nodeExpandedMap: Map<string, boolean>,
-  nodeRowExpandedMap: Map<string, Set<string>>,
-): Promise<Map<string, { x: number; y: number }>> {
-  const outgoingPaths = new Map<string, string[]>()
-  for (const edge of forwardEdges) {
-    const list = outgoingPaths.get(edge.source) ?? []
-    if (!list.includes(edge.field_path)) list.push(edge.field_path)
-    outgoingPaths.set(edge.source, list)
-  }
-
-  const elkGraph: ElkNode = {
-    id: 'root',
-    layoutOptions: {
-      'elk.algorithm': 'layered',
-      'elk.direction': 'RIGHT',
-      'elk.spacing.nodeNode': `${ROW_GAP}`,
-      'elk.layered.spacing.nodeNodeBetweenLayers': `${COL_GAP}`,
-      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
-      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-      'elk.portConstraints': 'FIXED_ORDER',
-      'elk.edgeRouting': 'SPLINES',
-    },
-    children: sortedGraphNodes(compNodes).map(n => {
-      const paths = (outgoingPaths.get(n.id) ?? []).sort((a, b) => {
-        const aTop = topLevelField(a)
-        const bTop = topLevelField(b)
-        const aIdx = n.fields.findIndex(f => f.name === aTop)
-        const bIdx = n.fields.findIndex(f => f.name === bTop)
-        if (aIdx !== bIdx) return (aIdx === -1 ? Number.MAX_SAFE_INTEGER : aIdx) - (bIdx === -1 ? Number.MAX_SAFE_INTEGER : bIdx)
-        return a.localeCompare(b)
-      })
-      return {
-        id: n.id,
-        width: NODE_W,
-        height: nodeH(n, nodeExpandedMap, nodeRowExpandedMap),
-        layoutOptions: {
-          ...(forcedRoots.has(n.id) ? { 'elk.layered.layering.layerConstraint': 'FIRST' } : {}),
-          'elk.portConstraints': 'FIXED_ORDER',
-        },
-        ports: [
-          {
-            id: targetPortId(n.id),
-            width: 1,
-            height: 1,
-            layoutOptions: {
-              'elk.port.side': 'WEST',
-              'elk.port.index': '0',
-            },
-          },
-          ...paths.map((path, i) => ({
-            id: sourcePortId(n.id, path),
-            width: 1,
-            height: 1,
-            layoutOptions: {
-              'elk.port.side': 'EAST',
-              'elk.port.index': `${i + 1}`,
-            },
-          })),
-        ],
-      }
-    }),
-    edges: forwardEdges.map(e => ({
-      id: graphEdgeId('fwd', e),
-      sources: [sourcePortId(e.source, e.field_path)],
-      targets: [targetPortId(e.target)],
-    })),
-  }
-
-  return runLayoutInWorker(elkGraph)
-}
-
-// ─── Full layout (all components, stacked vertically) ────────────────────────
-
-interface LayoutResult {
-  positions: Map<string, { x: number; y: number }>
-  visibleNodes: GraphNodeView[]
-  forwardEdges: GraphEdgeView[]
-  backEdges: GraphEdgeView[]
-}
-
-async function layoutAll(
-  graph: { nodes: GraphNodeView[]; edges: GraphEdgeView[] },
-  activeType: string | undefined,
-  nodeExpandedMap: Map<string, boolean>,
-  nodeRowExpandedMap: Map<string, Set<string>>,
-): Promise<LayoutResult> {
-  const activeEdges = graph.edges
-  const visibleNodes = graph.nodes
-  const visibleSet = new Set(visibleNodes.map(n => n.id))
-
-  // Detect back-edges (cycles)
-  const backEdgeKeys = detectBackEdges(visibleNodes, activeEdges)
-  const forwardEdges = activeEdges.filter(e => !backEdgeKeys.has(`${e.source}→${e.target}`))
-  const backEdges    = activeEdges.filter(e =>  backEdgeKeys.has(`${e.source}→${e.target}`))
-  const nodeById = new Map(visibleNodes.map(n => [n.id, n]))
-
-  const forcedRoots = new Set<string>()
-  if (activeType) {
-    const sameTableTargets = new Set<string>()
-    for (const e of forwardEdges) {
-      const source = nodeById.get(e.source)
-      const target = nodeById.get(e.target)
-      if (
-        source?.in_focus_file &&
-        target?.in_focus_file &&
-        source.actual_type === activeType &&
-        target.actual_type === activeType
-      ) {
-        sameTableTargets.add(target.id)
-      }
-    }
-    for (const n of visibleNodes) {
-      if (n.in_focus_file && n.actual_type === activeType && !sameTableTargets.has(n.id)) {
-        forcedRoots.add(n.id)
-      }
-    }
-  }
-
-  // Split into connected components using ALL edges (forward + back)
-  const comps = connectedComponents(visibleNodes.map(n => n.id), activeEdges)
-  const nodeToComp = new Map<string, number>()
-  comps.forEach((comp, ci) => comp.forEach(id => nodeToComp.set(id, ci)))
-
-  // Sort components: largest first, then by first node key
-  comps.sort((a, b) => {
-    if (b.length !== a.length) return b.length - a.length
-    return a[0].localeCompare(b[0])
-  })
-
-  const allPositions = new Map<string, { x: number; y: number }>()
-  let yOffset = 0
-
-  for (const comp of comps) {
-    const compNodes = comp.map(id => nodeById.get(id)!).filter(Boolean)
-    const compForward = forwardEdges.filter(e =>
-      visibleSet.has(e.source) && visibleSet.has(e.target) &&
-      nodeToComp.get(e.source) === nodeToComp.get(compNodes[0]?.id)
-    )
-    const compForcedRoots = new Set(comp.filter(id => forcedRoots.has(id)))
-    const localPos = await layoutComponent(compNodes, compForward, compForcedRoots, nodeExpandedMap, nodeRowExpandedMap)
-
-    // Find y-extent of this component's layout
-    let minY = Infinity, maxY = -Infinity
-    for (const [id, { y }] of localPos) {
-      const node = nodeById.get(id)
-      const h = node ? nodeH(node, nodeExpandedMap, nodeRowExpandedMap) : 0
-      if (y < minY) minY = y
-      if (y + h > maxY) maxY = y + h
-    }
-    // Shift so component starts at yOffset (minY maps to yOffset)
-    const shift = yOffset - minY
-    for (const [id, pos] of localPos) {
-      allPositions.set(id, { x: pos.x, y: pos.y + shift })
-    }
-    const compHeight = maxY - minY
-    yOffset += compHeight + COMP_GAP
-  }
-
-  return { positions: allPositions, visibleNodes, forwardEdges, backEdges }
 }
 
 // ─── Edge handle id (outside component, stable reference) ────────────────────
@@ -751,7 +406,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
     })
   }, [])
 
-  const [layout, setLayout] = useState<LayoutResult>({
+  const [layout, setLayout] = useState<GraphLayoutResult>({
     positions: new Map(),
     visibleNodes: [],
     forwardEdges: [],
@@ -762,9 +417,16 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
 
   useEffect(() => {
     let cancelled = false
-    setLayoutBusy(graph.nodes.length > 0)
+    setLayoutBusy(graph.nodes.length > 0 && enabledFields.size > 0)
     setLayoutError(null)
-    layoutAll(graph, activeType, nodeExpandedMap, nodeRowExpandedMap)
+    layoutGraph(
+      graph,
+      enabledFields,
+      activeType,
+      nodeExpandedMap,
+      nodeRowExpandedMap,
+      runLayoutInWorker,
+    )
       .then(next => {
         if (!cancelled) {
           setLayout(next)
@@ -782,7 +444,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
     return () => {
       cancelled = true
     }
-  }, [graph, activeType, nodeExpandedMap, nodeRowExpandedMap])
+  }, [graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap])
 
   const { positions, visibleNodes, forwardEdges, backEdges } = layout
   const compactNodes = zoomCompactNodes

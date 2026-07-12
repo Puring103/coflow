@@ -75,6 +75,7 @@ const boolVal = boolValue
 
 export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
   'data/item.cfd': withColumns({
+    revision: 1,
     file_path: 'data/item.cfd',
     type_names: ['Item', 'Weapon'],
     capabilities: MOCK_CFD_CAPS,
@@ -104,6 +105,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
     ],
   }),
   'data/npc.cfd': withColumns({
+    revision: 1,
     file_path: 'data/npc.cfd',
     type_names: ['Npc'],
     capabilities: MOCK_CFD_CAPS,
@@ -137,6 +139,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
 }
 
 export const MOCK_GRAPH: GraphData = {
+  revision: 1,
   available_fields: ['drops', 'reward_item'],
   nodes: [
     mockGraphNode(MOCK_FILE_RECORDS['data/npc.cfd'].records[0], 'data/npc.cfd', true),
