@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use coflow_api::{
@@ -132,17 +133,35 @@ impl<'a> SourceResolver<'a> {
                 error.to_string(),
             ))
         })?;
-        let mut resolved = Vec::new();
+        let mut selected = Vec::new();
         for path in files {
+            let file_source = ConfiguredSource {
+                provider_id: String::new(),
+                display_name: path.display().to_string(),
+                location: SourceLocationSpec::Path(path.clone()),
+                options: configured.options.clone(),
+                source_index: configured.source_index,
+            };
+            let Some(provider) = self.select_optional(&file_source)? else {
+                continue;
+            };
+            selected.push((path, provider));
+        }
+        validate_directory_options(
+            &configured.options,
+            selected.iter().map(|(_, provider)| provider.as_ref()),
+            &self.project.config_path,
+            configured.source_index,
+        )?;
+
+        let mut resolved = Vec::new();
+        for (path, provider) in selected {
             let mut file_source = ConfiguredSource {
                 provider_id: String::new(),
                 display_name: path.display().to_string(),
                 location: SourceLocationSpec::Path(path),
                 options: configured.options.clone(),
                 source_index: configured.source_index,
-            };
-            let Some(provider) = self.select_optional(&file_source)? else {
-                continue;
             };
             file_source.options =
                 options_for_provider(&file_source.options, provider.descriptor().option_keys);
@@ -321,6 +340,56 @@ fn options_for_provider(options: &Value, keys: &[&str]) -> Value {
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
     )
+}
+
+fn validate_directory_options<'a>(
+    options: &Value,
+    providers: impl IntoIterator<Item = &'a dyn SourceProvider>,
+    config_path: &Path,
+    source_index: Option<usize>,
+) -> Result<(), DiagnosticSet> {
+    let Some(object) = options.as_object() else {
+        return Ok(());
+    };
+    let allowed = providers
+        .into_iter()
+        .flat_map(|provider| provider.descriptor().option_keys.iter().copied())
+        .collect::<BTreeSet<_>>();
+    let mut diagnostics = DiagnosticSet::empty();
+    for key in object.keys().filter(|key| !allowed.contains(key.as_str())) {
+        diagnostics.push(directory_option_diagnostic(config_path, source_index, key));
+    }
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(diagnostics)
+    }
+}
+
+fn directory_option_diagnostic(
+    config_path: &Path,
+    source_index: Option<usize>,
+    key: &str,
+) -> Diagnostic {
+    let mut key_path = Vec::new();
+    if let Some(index) = source_index {
+        key_path.extend(["sources".to_string(), index.to_string()]);
+    }
+    key_path.push(key.to_string());
+    Diagnostic {
+        code: "PROJECT-001".to_string(),
+        stage: "PROJECT".to_string(),
+        severity: Severity::Error,
+        message: format!("unknown directory source option `{key}`"),
+        primary: Some(Label {
+            location: SourceLocation::ProjectConfig {
+                path: PathBuf::from(config_path),
+                key_path,
+            },
+            message: None,
+        }),
+        related: Vec::new(),
+    }
 }
 
 const fn source_ref<'a>(

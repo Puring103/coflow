@@ -359,6 +359,7 @@ fn remote_batch_publishes_one_generation_and_commits_once() {
 fn same_key_rename_does_not_open_a_provider_transaction() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
     let mut session = fixture.open();
+    let initial_revision = session.revision();
     let coordinate = RecordCoordinate::new("Item", "one");
 
     let report = session.apply_mutation(mutation_request(vec![MutationOp::RenameRecord {
@@ -368,6 +369,8 @@ fn same_key_rename_does_not_open_a_provider_transaction() {
     }]));
 
     assert!(report.write_ok);
+    assert!(!report.generation_changed);
+    assert_eq!(session.revision(), initial_revision);
     assert_eq!(report.applied.len(), 1);
     assert_eq!(report.applied[0].outcome.touched, vec![coordinate]);
     let state = fixture.state.lock().expect("lock fixture state");

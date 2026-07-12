@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use coflow_api::{
     Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec, SourceTransaction,
-    SourceTransactionCompensation, SourceWriter, WriteContext,
+    SourceTransactionCompensation, WriteContext,
 };
+
+use super::plan::MutationExecutionPlan;
 
 #[derive(Debug, Default)]
 pub(crate) struct MutationTransaction {
@@ -15,57 +16,59 @@ pub(crate) struct MutationTransaction {
 }
 
 impl MutationTransaction {
-    pub(crate) fn begin(
+    pub(crate) fn begin<'a>(
         ctx: WriteContext<'_>,
-        sources: impl IntoIterator<Item = (ResolvedSource, Arc<dyn SourceWriter>)>,
+        plans: impl IntoIterator<Item = &'a MutationExecutionPlan>,
     ) -> Result<Self, DiagnosticSet> {
         let mut transaction = Self::default();
         let mut seen = std::collections::BTreeSet::new();
-        for (source, writer) in sources {
-            let key = source_key(&source);
-            if !seen.insert(key) {
-                continue;
-            }
-            let declared = match writer.begin_transaction(ctx, &source) {
-                Ok(declared) => declared,
-                Err(mut diagnostics) => {
-                    transaction.abort_into(&mut diagnostics);
-                    return Err(diagnostics);
+        for plan in plans {
+            let enlisted = plan.visit_sources(|source, writer| {
+                let key = source_key(source);
+                if !seen.insert(key) {
+                    return Ok(());
                 }
-            };
-            match declared {
-                SourceTransaction::RuntimeSnapshot => {
-                    let SourceLocationSpec::Path(path) = &source.location else {
-                        let mut diagnostics = DiagnosticSet::one(Diagnostic::error(
-                            "WRITE-TXN-CONTRACT",
-                            "WRITE",
-                            format!(
-                                "provider `{}` requested a runtime snapshot for non-local source `{}`",
-                                source.provider_id, source.display_name
-                            ),
-                        ));
-                        transaction.abort_into(&mut diagnostics);
-                        return Err(diagnostics);
-                    };
-                    if let Err(mut diagnostics) = transaction.local.snapshot_file(path) {
-                        transaction.abort_into(&mut diagnostics);
-                        return Err(diagnostics);
-                    }
-                }
-                SourceTransaction::Compensation(compensation) => {
-                    transaction.providers.push(ProviderTransaction {
-                        source: source.display_name.clone(),
-                        compensation,
-                    });
-                }
-                SourceTransaction::Unsupported => {
-                    let mut diagnostics = SourceTransaction::unsupported_diagnostic(&source);
-                    transaction.abort_into(&mut diagnostics);
-                    return Err(diagnostics);
-                }
+                let declared = writer.begin_transaction(ctx, source)?;
+                transaction.enlist(source, declared)
+            });
+            if let Err(mut diagnostics) = enlisted {
+                transaction.abort_into(&mut diagnostics);
+                return Err(diagnostics);
             }
         }
         Ok(transaction)
+    }
+
+    fn enlist(
+        &mut self,
+        source: &ResolvedSource,
+        declared: SourceTransaction,
+    ) -> Result<(), DiagnosticSet> {
+        match declared {
+            SourceTransaction::RuntimeSnapshot => {
+                let SourceLocationSpec::Path(path) = &source.location else {
+                    return Err(DiagnosticSet::one(Diagnostic::error(
+                        "WRITE-TXN-CONTRACT",
+                        "WRITE",
+                        format!(
+                            "provider `{}` requested a runtime snapshot for non-local source `{}`",
+                            source.provider_id, source.display_name
+                        ),
+                    )));
+                };
+                self.local.snapshot_file(path)?;
+            }
+            SourceTransaction::Compensation(compensation) => {
+                self.providers.push(ProviderTransaction {
+                    source: source.display_name.clone(),
+                    compensation,
+                });
+            }
+            SourceTransaction::Unsupported => {
+                return Err(SourceTransaction::unsupported_diagnostic(source));
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn commit(mut self) -> Result<(), DiagnosticSet> {

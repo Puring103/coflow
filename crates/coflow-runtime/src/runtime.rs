@@ -257,7 +257,7 @@ impl WriteProjectSession {
     /// capability.
     pub fn apply_mutation(&mut self, request: MutationRequest) -> MutationReport {
         let report = self.session.apply_mutation(&self.registry, request);
-        if !report.applied.is_empty() {
+        if report.generation_changed {
             self.revision = self.revision.saturating_add(1);
         }
         report

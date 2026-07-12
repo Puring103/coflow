@@ -44,91 +44,141 @@ impl ProjectSession {
             }
         }
 
-        let enlisted: Vec<_> = executable
+        if executable
             .iter()
-            .flat_map(|item| item.execution.sources())
-            .collect();
+            .all(|item| !item.execution.changes_generation())
+        {
+            return stage_without_generation(self, write_ok, failed, &executable);
+        }
 
-        let compiled_schema = self.compiled_schema();
-        let ctx = WriteContext {
-            project_root: &self.project.root_dir,
-            schema: compiled_schema,
-            model: Some(&self.model),
-        };
-        let transaction = match MutationTransaction::begin(ctx, enlisted) {
+        execute_generation_mutation(self, registry, write_ok, failed, &executable)
+    }
+}
+
+fn execute_generation_mutation(
+    session: &mut ProjectSession,
+    registry: &ProviderRegistry,
+    write_ok: bool,
+    mut failed: Vec<MutationFailedOp>,
+    executable: &[ExecutableMutation],
+) -> MutationReport {
+    let compiled_schema = session.compiled_schema();
+    let ctx = WriteContext {
+        project_root: &session.project.root_dir,
+        schema: compiled_schema,
+        model: Some(&session.model),
+    };
+    let transaction =
+        match MutationTransaction::begin(ctx, executable.iter().map(|item| &item.execution)) {
             Ok(transaction) => transaction,
             Err(diagnostics) => {
                 if let Some(first) = executable.first() {
                     failed.push(failed_op(&first.planned, diagnostics));
                 }
-                return report_without_publish(self, false, failed);
+                return report_without_publish(session, false, failed);
             }
         };
 
-        let mut staged = Vec::with_capacity(executable.len());
-        for item in &executable {
-            match stage_mutation_op(self, &item.planned.op, &item.execution) {
-                Ok(outcome) => staged.push(applied_op(&item.planned, outcome)),
-                Err(mut diagnostics) => {
-                    transaction.compensate_into(&mut diagnostics);
-                    failed.push(failed_op(&item.planned, diagnostics));
-                    return report_without_publish(self, false, failed);
-                }
-            }
-        }
-
-        let new_session = match rebuild_after_mutation(self, registry) {
-            Ok(session) => session,
+    let mut staged = Vec::with_capacity(executable.len());
+    for item in executable {
+        match stage_mutation_op(session, &item.planned.op, &item.execution) {
+            Ok(outcome) => staged.push(applied_op(&item.planned, outcome)),
             Err(mut diagnostics) => {
                 transaction.compensate_into(&mut diagnostics);
-                if let Some(last) = executable.last() {
-                    failed.push(failed_op(&last.planned, diagnostics));
-                }
-                return report_without_publish(self, false, failed);
+                failed.push(failed_op(&item.planned, diagnostics));
+                return report_without_publish(session, false, failed);
             }
-        };
-        let mut rebuild_diagnostics = blocking_rebuild_diagnostics(&new_session);
-        if !rebuild_diagnostics.is_empty() {
-            transaction.compensate_into(&mut rebuild_diagnostics);
-            if let Some(last) = executable.last() {
-                failed.push(failed_op(&last.planned, rebuild_diagnostics));
-            }
-            return report_without_publish(self, false, failed);
         }
+    }
 
-        if let Err(diagnostics) = transaction.commit() {
+    let new_session = match rebuild_after_mutation(session, registry) {
+        Ok(session) => session,
+        Err(mut diagnostics) => {
+            transaction.compensate_into(&mut diagnostics);
             if let Some(last) = executable.last() {
                 failed.push(failed_op(&last.planned, diagnostics));
             }
-            return report_without_publish(self, false, failed);
+            return report_without_publish(session, false, failed);
         }
+    };
+    let mut rebuild_diagnostics = blocking_rebuild_diagnostics(&new_session);
+    if !rebuild_diagnostics.is_empty() {
+        transaction.compensate_into(&mut rebuild_diagnostics);
+        if let Some(last) = executable.last() {
+            failed.push(failed_op(&last.planned, rebuild_diagnostics));
+        }
+        return report_without_publish(session, false, failed);
+    }
 
-        let affected_files = staged
-            .iter()
-            .flat_map(|applied| applied.outcome.affected_files.iter().cloned())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        let mut diagnostics = staged
-            .iter()
-            .flat_map(|applied| applied.outcome.diagnostics.flat_diagnostics())
-            .collect::<Vec<_>>();
-        diagnostics.extend(new_session.diagnostics.flat_diagnostics());
-        *self = new_session;
-        staged.sort_by_key(|applied| applied.index);
-        failed.sort_by_key(|failure| failure.index);
-        let check_ok = write_ok
-            && diagnostics
-                .iter()
-                .all(|diagnostic| diagnostic.severity != "error");
-        MutationReport {
-            write_ok,
-            check_ok,
-            applied: staged,
-            failed,
-            affected_files,
-            diagnostics,
+    if let Err(diagnostics) = transaction.commit() {
+        if let Some(last) = executable.last() {
+            failed.push(failed_op(&last.planned, diagnostics));
         }
+        return report_without_publish(session, false, failed);
+    }
+
+    let affected_files = staged
+        .iter()
+        .flat_map(|applied| applied.outcome.affected_files.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut diagnostics = staged
+        .iter()
+        .flat_map(|applied| applied.outcome.diagnostics.flat_diagnostics())
+        .collect::<Vec<_>>();
+    diagnostics.extend(new_session.diagnostics.flat_diagnostics());
+    *session = new_session;
+    staged.sort_by_key(|applied| applied.index);
+    failed.sort_by_key(|failure| failure.index);
+    let check_ok = write_ok
+        && diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.severity != "error");
+    MutationReport {
+        write_ok,
+        check_ok,
+        generation_changed: true,
+        applied: staged,
+        failed,
+        affected_files,
+        diagnostics,
+    }
+}
+
+fn stage_without_generation(
+    session: &ProjectSession,
+    write_ok: bool,
+    mut failed: Vec<MutationFailedOp>,
+    executable: &[ExecutableMutation],
+) -> MutationReport {
+    let mut applied = Vec::with_capacity(executable.len());
+    for item in executable {
+        match stage_mutation_op(session, &item.planned.op, &item.execution) {
+            Ok(outcome) => applied.push(applied_op(&item.planned, outcome)),
+            Err(diagnostics) => failed.push(failed_op(&item.planned, diagnostics)),
+        }
+    }
+    applied.sort_by_key(|item| item.index);
+    failed.sort_by_key(|item| item.index);
+    let mut diagnostics = applied
+        .iter()
+        .flat_map(|item| item.outcome.diagnostics.flat_diagnostics())
+        .collect::<Vec<_>>();
+    diagnostics.extend(session.diagnostics.flat_diagnostics());
+    let check_ok = write_ok
+        && failed.is_empty()
+        && diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.severity != "error");
+    MutationReport {
+        write_ok: write_ok && failed.is_empty(),
+        check_ok,
+        generation_changed: false,
+        applied,
+        failed,
+        affected_files: Vec::new(),
+        diagnostics,
     }
 }
 
@@ -232,6 +282,7 @@ fn report_without_publish(
     MutationReport {
         write_ok,
         check_ok: false,
+        generation_changed: false,
         applied: Vec::new(),
         failed,
         affected_files: Vec::new(),

@@ -13,6 +13,31 @@ pub(crate) struct SessionIndexes {
     pub(crate) files: FileIndex,
 }
 
+#[derive(Default)]
+pub(crate) struct SessionIndexBuilder {
+    pub(crate) sources: SourceIndex,
+    pub(crate) records: RecordIndexBuilder,
+    pub(crate) files: FileIndex,
+}
+
+impl SessionIndexBuilder {
+    pub(crate) fn finalize_with_model(self, model: &CfdDataModel) -> SessionIndexes {
+        SessionIndexes {
+            sources: self.sources,
+            records: self.records.finalize_with_model(model),
+            files: self.files,
+        }
+    }
+
+    pub(crate) fn finalize_rejected(self) -> SessionIndexes {
+        SessionIndexes {
+            sources: self.sources,
+            records: self.records.finalize_rejected(),
+            files: self.files,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct DiagnosticsStore {
     diagnostics: DiagnosticSet,
@@ -205,10 +230,6 @@ impl SourceId {
 /// The authoritative key is `(actual_type, key)` so synthetic records that
 /// share a key with their source record do not collide.
 ///
-/// Loaders push `PendingRecordRef` entries during the load pass; after
-/// `model.build()` returns, [`RecordIndex::finalize_with_model`] walks
-/// `model.records()` and matches each `CfdRecord` back to its pending entry
-/// by `(actual_type, key)`, producing a fully-populated [`RecordRef`] per id.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RecordIndex {
     by_id: BTreeMap<CfdRecordId, RecordRef>,
@@ -217,6 +238,10 @@ pub struct RecordIndex {
     rejected: Vec<RejectedRecordRef>,
     rejected_files: BTreeMap<String, Vec<usize>>,
     rejected_by_coordinate: BTreeMap<RecordCoordinate, Vec<usize>>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct RecordIndexBuilder {
     pending: Vec<PendingRecordRef>,
 }
 
@@ -299,28 +324,21 @@ impl RecordIndex {
             .flatten()
             .filter_map(|index| self.rejected.get(*index))
     }
+}
 
-    pub(crate) fn push_pending(&mut self, pending: PendingRecordRef) {
+impl RecordIndexBuilder {
+    pub(crate) fn push(&mut self, pending: PendingRecordRef) {
         self.pending.push(pending);
     }
 
-    /// After `model.build()` succeeds, match each model record back to a
-    /// pending entry by `(actual_type, key)`. Pending entries that do not
-    /// match a model record are kept as rejected source rows so hosts can
-    /// still show invalid input alongside diagnostics.
-    pub(crate) fn finalize_with_model(&mut self, model: &CfdDataModel) {
-        self.by_id.clear();
-        self.by_coordinate.clear();
-        self.files.clear();
-        self.rejected.clear();
-        self.rejected_files.clear();
-        self.rejected_by_coordinate.clear();
+    fn finalize_with_model(self, model: &CfdDataModel) -> RecordIndex {
+        let mut index = RecordIndex::default();
         // Index pending by coordinate, popping each entry as it's matched so
         // duplicate loader output (theoretically impossible since model
         // build rejects duplicates) doesn't reuse the same metadata twice.
         let mut pending_by_coordinate: BTreeMap<RecordCoordinate, Vec<PendingRecordRef>> =
             BTreeMap::new();
-        for pending in std::mem::take(&mut self.pending) {
+        for pending in self.pending {
             pending_by_coordinate
                 .entry(pending.coordinate.clone())
                 .or_default()
@@ -333,14 +351,15 @@ impl RecordIndex {
             };
             let pending = candidates.remove(0);
             for duplicate in candidates {
-                self.push_rejected(duplicate);
+                index.push_rejected(duplicate);
             }
-            self.files
+            index
+                .files
                 .entry(pending.display_path.clone())
                 .or_default()
                 .push(id);
-            self.by_coordinate.insert(coordinate.clone(), id);
-            self.by_id.insert(
+            index.by_coordinate.insert(coordinate.clone(), id);
+            index.by_id.insert(
                 id,
                 RecordRef {
                     id,
@@ -353,22 +372,21 @@ impl RecordIndex {
             );
         }
         for pending in pending_by_coordinate.into_values().flatten() {
-            self.push_rejected(pending);
+            index.push_rejected(pending);
         }
+        index
     }
 
-    pub(crate) fn finalize_rejected_pending(&mut self) {
-        self.by_id.clear();
-        self.by_coordinate.clear();
-        self.files.clear();
-        self.rejected.clear();
-        self.rejected_files.clear();
-        self.rejected_by_coordinate.clear();
-        for pending in std::mem::take(&mut self.pending) {
-            self.push_rejected(pending);
+    fn finalize_rejected(self) -> RecordIndex {
+        let mut index = RecordIndex::default();
+        for pending in self.pending {
+            index.push_rejected(pending);
         }
+        index
     }
+}
 
+impl RecordIndex {
     fn push_rejected(&mut self, pending: PendingRecordRef) {
         let index = self.rejected.len();
         self.rejected_files

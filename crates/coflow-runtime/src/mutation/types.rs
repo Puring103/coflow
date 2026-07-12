@@ -164,6 +164,8 @@ pub(crate) enum PreparedMutationOp {
 pub struct MutationReport {
     pub write_ok: bool,
     pub check_ok: bool,
+    /// Whether this request published a new project generation.
+    pub generation_changed: bool,
     pub applied: Vec<MutationAppliedOp>,
     pub failed: Vec<MutationFailedOp>,
     /// Deduplicated project-facing source paths changed by the transaction.

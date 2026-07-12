@@ -7,7 +7,7 @@ use coflow_project::Project;
 
 use crate::dimensions;
 use crate::dimensions::{DimensionField, DimensionGenerationTransaction};
-use crate::indexes::{DiagnosticsStore, SessionIndexes};
+use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
 use crate::load::{
     empty_load_output, empty_model, load_project_data, LoadDiagnostics, LoadProjectDataOptions,
     ProjectLoadOutput,
@@ -154,7 +154,7 @@ fn build_data_pipeline(
             );
             return Ok(LoadedSessionData {
                 model: empty_model()?,
-                indexes: load_failure.indexes,
+                indexes: load_failure.indexes.finalize_rejected(),
             });
         }
     };
@@ -164,7 +164,7 @@ fn build_data_pipeline(
         (output, indexes) = reload_with_dimensions(ctx, diagnostics)?;
     }
 
-    indexes.records.finalize_with_model(&output.model);
+    let indexes = indexes.finalize_with_model(&output.model);
     diagnostics.extend_with_logical_locations(output.diagnostics, output.logical_locations);
     rollback_dimensions_after_failed_pipeline(ctx, &mut dimension_transaction, diagnostics);
 
@@ -176,14 +176,14 @@ fn build_data_pipeline(
 
 fn load_base_data(
     ctx: &SessionBuildContext<'_>,
-) -> Result<(ProjectLoadOutput, SessionIndexes), Box<DataLoadFailure>> {
+) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
     load_data(ctx, false, !ctx.has_dimension_fields())
 }
 
 fn reload_with_dimensions(
     ctx: &SessionBuildContext<'_>,
     diagnostics: &mut DiagnosticsStore,
-) -> Result<(ProjectLoadOutput, SessionIndexes), DiagnosticSet> {
+) -> Result<(ProjectLoadOutput, SessionIndexBuilder), DiagnosticSet> {
     match load_data(ctx, true, true) {
         Ok(loaded) => Ok(loaded),
         Err(load_failure) => {
@@ -200,8 +200,8 @@ fn load_data(
     ctx: &SessionBuildContext<'_>,
     include_implicit_dimension_sources: bool,
     run_checks: bool,
-) -> Result<(ProjectLoadOutput, SessionIndexes), Box<DataLoadFailure>> {
-    let mut indexes = SessionIndexes::default();
+) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
+    let mut indexes = SessionIndexBuilder::default();
     let output = match load_project_data(
         &ctx.project,
         &ctx.schema,
@@ -226,7 +226,7 @@ fn load_data(
 
 struct DataLoadFailure {
     diagnostics: LoadDiagnostics,
-    indexes: SessionIndexes,
+    indexes: SessionIndexBuilder,
 }
 
 fn commit_dimensions_if_needed(

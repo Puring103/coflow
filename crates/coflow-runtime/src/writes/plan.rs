@@ -16,8 +16,6 @@ use super::target::{is_id_path, not_found, write_target_for_path, WriteTarget};
 use super::writer::{lookup_source_writer, source_for_file, source_for_id};
 use crate::write_rules;
 
-pub(crate) type MutationSource = (ResolvedSource, Arc<dyn SourceWriter>);
-
 pub(crate) enum MutationExecutionPlan {
     Insert(InsertPlan),
     WriteField(WriteFieldPlan),
@@ -63,27 +61,30 @@ pub(crate) struct DeletePlan {
 }
 
 impl MutationExecutionPlan {
-    pub(crate) fn sources(&self) -> Vec<MutationSource> {
+    pub(crate) const fn changes_generation(&self) -> bool {
+        !matches!(self, Self::Rename(RenamePlan::Noop { .. }) | Self::Folded)
+    }
+
+    pub(crate) fn visit_sources<E>(
+        &self,
+        mut visit: impl FnMut(&ResolvedSource, &Arc<dyn SourceWriter>) -> Result<(), E>,
+    ) -> Result<(), E> {
         match self {
-            Self::Insert(plan) => vec![(plan.source.clone(), Arc::clone(&plan.writer))],
-            Self::WriteField(plan) => vec![(plan.source.clone(), Arc::clone(&plan.writer))],
-            Self::Rename(RenamePlan::Noop { .. }) | Self::Folded => Vec::new(),
+            Self::Insert(plan) => visit(&plan.source, &plan.writer)?,
+            Self::WriteField(plan) => visit(&plan.source, &plan.writer)?,
+            Self::Rename(RenamePlan::Noop { .. }) | Self::Folded => {}
             Self::Rename(RenamePlan::Write(plan)) => {
-                let mut sources = vec![(plan.source.clone(), Arc::clone(&plan.writer))];
-                sources.extend(
-                    plan.reference_actions
-                        .iter()
-                        .map(|action| (action.source().clone(), Arc::clone(&action.writer))),
-                );
-                sources.extend(
-                    plan.rewrite_actions
-                        .iter()
-                        .map(|action| (action.source().clone(), Arc::clone(&action.writer))),
-                );
-                sources
+                visit(&plan.source, &plan.writer)?;
+                for action in &plan.reference_actions {
+                    visit(action.source(), &action.writer)?;
+                }
+                for action in &plan.rewrite_actions {
+                    visit(action.source(), &action.writer)?;
+                }
             }
-            Self::Delete(plan) => vec![(plan.source.clone(), Arc::clone(&plan.writer))],
+            Self::Delete(plan) => visit(&plan.source, &plan.writer)?,
         }
+        Ok(())
     }
 }
 

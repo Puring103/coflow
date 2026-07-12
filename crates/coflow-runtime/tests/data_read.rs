@@ -476,6 +476,42 @@ fn provider_option_diagnostics_keep_the_project_key_path() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[test]
+fn directory_source_rejects_options_unknown_to_every_selected_provider() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-directory-provider-option-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\n    rogue: true\n",
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let session = build_session(project, &registry()).expect("session");
+    let diagnostic = session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.message == "unknown directory source option `rogue`")
+        .expect("directory option diagnostic");
+    let Some(coflow_api::Label {
+        location: coflow_api::SourceLocation::ProjectConfig { key_path, .. },
+        ..
+    }) = &diagnostic.primary
+    else {
+        panic!("expected project config primary: {diagnostic:?}");
+    };
+    assert_eq!(key_path, &["sources", "0", "rogue"]);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[derive(Debug)]
 struct RemoteTableOptions {
     token: String,

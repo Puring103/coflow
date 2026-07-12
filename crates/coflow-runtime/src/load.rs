@@ -14,8 +14,8 @@ use std::fmt::Write as _;
 
 use crate::dimensions;
 use crate::indexes::{
-    DiagnosticLogicalLocation, FileIndex, PendingRecordRef, RecordIndex, SessionIndexes, SourceId,
-    SourceIndex,
+    DiagnosticLogicalLocation, FileIndex, PendingRecordRef, RecordIndexBuilder,
+    SessionIndexBuilder, SourceId, SourceIndex,
 };
 use crate::session::RecordCoordinate;
 use crate::source_resolution::{ResolvedLoaderSource, SourceResolver};
@@ -58,7 +58,7 @@ pub(crate) fn load_project_data(
     schema: &CftContainer,
     compiled_schema: &CompiledSchema,
     registry: &ProviderRegistry,
-    indexes: &mut SessionIndexes,
+    indexes: &mut SessionIndexBuilder,
     options: LoadProjectDataOptions,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
@@ -126,7 +126,6 @@ pub(crate) fn load_project_data(
     let model = match builder.build() {
         Ok(model) => model,
         Err(err) => {
-            indexes.records.finalize_rejected_pending();
             let logical_locations =
                 logical_locations_from_cfd(&err, |id| record_coordinates.get(id.index()).cloned());
             let diagnostics = map_diagnostics_with_origins(err, &origins);
@@ -155,7 +154,7 @@ fn load_resolved_sources(
     project: &Project,
     schema: &CompiledSchema,
     sources: &mut SourceIndex,
-    records_index: &mut RecordIndex,
+    records_index: &mut RecordIndexBuilder,
     files: &mut FileIndex,
     records: &mut Vec<CfdInputRecord>,
     resolved_sources: Vec<ResolvedLoaderSource>,
@@ -240,14 +239,14 @@ fn dimension_check_plan(dimensions: &BTreeMap<String, DimensionConfig>) -> Dimen
 
 fn push_loaded_records(
     records: &mut Vec<CfdInputRecord>,
-    records_index: &mut RecordIndex,
+    records_index: &mut RecordIndexBuilder,
     source_id: SourceId,
     source: &ResolvedSource,
     display_path: &str,
     loaded: LoadedSource,
 ) {
     for record in loaded.records {
-        records_index.push_pending(PendingRecordRef {
+        records_index.push(PendingRecordRef {
             coordinate: RecordCoordinate::new(record.actual_type.clone(), record.key.clone()),
             origin: record.origin.clone(),
             source_id,
