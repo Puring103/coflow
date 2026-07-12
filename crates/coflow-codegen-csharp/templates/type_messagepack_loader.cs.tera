@@ -1,23 +1,88 @@
 {% if type.loader.is_table %}
-    internal static List<{{ type.loader.type_name }}> LoadTable(string path, {{ project.database_class }}.LoadContext context)
+    internal static (List<{{ type.loader.type_name }}> Rows, Dictionary<{{ type.loader.type_name }}, ReadOnlySequence<byte>> RawRows) LoadRawTable(string path)
     {
         var bytes = File.ReadAllBytes(path);
-        var reader = new MessagePackReader(new ReadOnlySequence<byte>(bytes));
+        var source = new ReadOnlySequence<byte>(bytes);
+        var reader = new MessagePackReader(source);
         var count = reader.ReadArrayHeader();
         var result = new List<{{ type.loader.type_name }}>(count);
+        var rawRows = new Dictionary<{{ type.loader.type_name }}, ReadOnlySequence<byte>>(count);
 
         for (var index = 0; index < count; index++)
         {
-            result.Add(LoadRow(ref reader, context));
+            var start = reader.Position;
+            var value = LoadRawRow(ref reader);
+            result.Add(value);
+            rawRows.Add(value, source.Slice(start, reader.Position));
         }
 
-        return result;
+        return (result, rawRows);
     }
 
-    private static {{ type.loader.type_name }} LoadRow(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context)
+    private static {{ type.loader.type_name }} LoadRawRow(ref MessagePackReader reader)
     {
-        return LoadBody(ref reader, context, true);
+        var count = reader.ReadMapHeader();
+        {{ type.loader.key_type_name }} {{ type.loader.key_local_name }} = default!;
+        var isTable = false;
+{% for field in type.loader.fields %}{% if not field.requires_context %}        {{ field.type_name }} {{ field.local_name }} = {% if field.missing_expr %}{{ field.missing_expr }}{% else %}default!{% endif %};
+{% endif %}{% endfor %}        for (var i = 0; i < count; i++)
+        {
+            var key = CoflowMessagePack.ReadString(ref reader);
+            switch (key)
+            {
+                case "id":
+                    isTable = true;
+                    {{ type.loader.key_local_name }} = {{ type.loader.key_messagepack_read_expr }};
+                    break;
+{% for field in type.loader.fields %}                case "{{ field.source_name }}":
+{% if field.requires_context %}                    reader.Skip();
+{% else %}                    {{ field.local_name }} = {{ field.messagepack_read_expr }};
+{% endif %}                    break;
+{% endfor %}                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+
+        if (!isTable)
+        {
+            throw new KeyNotFoundException("missing required field `id`");
+        }
+
+        return new {{ type.loader.type_name }}(
+            {{ type.loader.key_local_name }}{% if type.loader.fields | length > 0 %},{% endif %}
+{% for field in type.loader.fields %}            {% if field.requires_context %}default!{% else %}{{ field.local_name }}{% endif %}{% if not loop.last %},{% endif %}
+{% endfor %}        );
     }
+
+    internal static void HydrateAll(List<{{ type.loader.type_name }}> rows, Dictionary<{{ type.loader.type_name }}, ReadOnlySequence<byte>> rawRows, {{ project.database_class }}.LoadContext context)
+    {
+{% if type.loader.requires_hydration %}        foreach (var row in rows)
+        {
+            var reader = new MessagePackReader(rawRows[row]);
+            row.Hydrate(ref reader, context);
+        }
+{% endif %}    }
+{% if type.loader.requires_hydration %}
+    private void Hydrate(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context)
+    {
+        var count = reader.ReadMapHeader();
+        var {{ type.loader.key_local_name }} = Id;
+        for (var i = 0; i < count; i++)
+        {
+            var key = CoflowMessagePack.ReadString(ref reader);
+            switch (key)
+            {
+{% for field in type.loader.fields %}{% if field.requires_context %}                case "{{ field.source_name }}":
+                    {{ field.assignment_target }} = {{ field.messagepack_read_expr }};
+                    break;
+{% endif %}{% endfor %}                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+    }
+{% endif %}
 {% endif %}{% if type.loader.is_disk_loadable and not type.loader.is_table %}
     internal static List<{{ type.loader.type_name }}> LoadTable(string path, {{ project.database_class }}.LoadContext context)
     {

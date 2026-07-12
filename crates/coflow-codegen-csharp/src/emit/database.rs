@@ -15,10 +15,7 @@ pub fn build_csharp_database(
     _database_class: &str,
     data_format: CsharpDataFormat,
 ) -> Result<CsharpDatabase, CsharpCodegenError> {
-    let ordered_tables = match data_format {
-        CsharpDataFormat::Json => tables.to_vec(),
-        CsharpDataFormat::MessagePack => view.messagepack_table_order()?.to_vec(),
-    };
+    let ordered_tables = tables.to_vec();
     let table_models = ordered_tables
         .iter()
         .map(|table_name| build_table_model(view, table_name))
@@ -157,24 +154,30 @@ fn build_json_load_steps(table_models: &[CsharpTable], load_extension: &str) -> 
 
 fn build_messagepack_load_steps(table_models: &[CsharpTable], load_extension: &str) -> Vec<String> {
     let mut load_steps = Vec::new();
-    for (idx, table) in table_models.iter().enumerate() {
-        let context_args = table_models
-            .iter()
-            .take(idx)
-            .map(|candidate| candidate.index_var.clone())
-            .collect::<Vec<_>>();
-        let context_expr = if context_args.is_empty() {
-            "LoadContext.Empty".to_string()
-        } else {
-            format!("new LoadContext({})", context_args.join(", "))
-        };
+    for table in table_models {
         load_steps.push(format!(
-            "var {} = {}.LoadTable(Path.Combine(dataDir, \"{}.{}\"), {});",
-            table.records_var, table.name, table.source_name, load_extension, context_expr
+            "var ({}, {}) = {}.LoadRawTable(Path.Combine(dataDir, \"{}.{}\"));",
+            table.records_var, table.raw_rows_var, table.name, table.source_name, load_extension
         ));
         load_steps.push(format!(
             "var {} = {}.BuildIndex({});",
             table.index_var, table.name, table.records_var
+        ));
+    }
+    let context_args = table_models
+        .iter()
+        .map(|table| table.index_var.clone())
+        .collect::<Vec<_>>();
+    let context_expr = if context_args.is_empty() {
+        "LoadContext.Empty".to_string()
+    } else {
+        format!("new LoadContext({})", context_args.join(", "))
+    };
+    load_steps.push(format!("var context = {context_expr};"));
+    for table in table_models {
+        load_steps.push(format!(
+            "{}.HydrateAll({}, {}, context);",
+            table.name, table.records_var, table.raw_rows_var
         ));
     }
     load_steps

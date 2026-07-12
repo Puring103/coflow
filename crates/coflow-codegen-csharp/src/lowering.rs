@@ -26,7 +26,6 @@ pub struct CsharpLoweringPlan<'a> {
     assignable_types: BTreeMap<String, Vec<String>>,
     struct_types: BTreeSet<String>,
     types_with_descendants: BTreeSet<String>,
-    messagepack_table_order: Result<Vec<String>, String>,
     uses_localization: bool,
 }
 
@@ -110,7 +109,7 @@ impl<'a> CsharpLoweringPlan<'a> {
             .collect::<Vec<_>>();
         let loadable_table_set = loadable_tables.iter().cloned().collect();
         let ref_targets = ref_targets.into_iter().collect::<Vec<_>>();
-        let mut plan = Self {
+        Ok(Self {
             int_32,
             float_32,
             schema,
@@ -132,11 +131,8 @@ impl<'a> CsharpLoweringPlan<'a> {
             assignable_types,
             struct_types,
             types_with_descendants,
-            messagepack_table_order: Ok(Vec::new()),
             uses_localization,
-        };
-        plan.messagepack_table_order = plan.compile_messagepack_table_order();
-        Ok(plan)
+        })
     }
 
     pub fn cft_enum_meta(&self, name: &str) -> Option<&CftEnumMeta> {
@@ -273,83 +269,6 @@ impl<'a> CsharpLoweringPlan<'a> {
         self.struct_types.contains(&ty.name)
     }
 
-    pub fn messagepack_table_order(&self) -> Result<&[String], CsharpCodegenError> {
-        self.messagepack_table_order
-            .as_deref()
-            .map_err(|message| CsharpCodegenError::new(message.clone()))
-    }
-
-    fn compile_messagepack_table_order(&self) -> Result<Vec<String>, String> {
-        let dependencies = self.table_dependencies()?;
-        topological_order(&self.loadable_tables, &dependencies)
-    }
-
-    fn table_dependencies(&self) -> Result<BTreeMap<String, BTreeSet<String>>, String> {
-        let mut dependencies = BTreeMap::new();
-        for table in &self.loadable_tables {
-            let mut table_dependencies = BTreeSet::new();
-            let mut pending_types = vec![table.clone()];
-            let mut visited_types = BTreeSet::new();
-            while let Some(type_name) = pending_types.pop() {
-                if !visited_types.insert(type_name.clone()) {
-                    continue;
-                }
-                let fields = self
-                    .fields
-                    .get(type_name.as_str())
-                    .copied()
-                    .ok_or_else(|| format!("unknown CFT type `{type_name}`"))?;
-                for field in fields {
-                    self.collect_type_dependencies(
-                        &field.ty_ref,
-                        &mut table_dependencies,
-                        &mut pending_types,
-                    )?;
-                }
-            }
-            dependencies.insert(table.clone(), table_dependencies);
-        }
-        Ok(dependencies)
-    }
-
-    fn collect_type_dependencies(
-        &self,
-        ty: &CftSchemaTypeRef,
-        table_dependencies: &mut BTreeSet<String>,
-        pending_types: &mut Vec<String>,
-    ) -> Result<(), String> {
-        match ty {
-            CftSchemaTypeRef::Ref(name) => {
-                let assignable = self
-                    .assignable_types
-                    .get(name)
-                    .ok_or_else(|| format!("unknown CFT type `{name}`"))?;
-                let mut hit_table = false;
-                for concrete in assignable {
-                    if self.loadable_table_set.contains(concrete) {
-                        table_dependencies.insert(concrete.clone());
-                        hit_table = true;
-                    }
-                }
-                if !hit_table {
-                    pending_types.extend(assignable.iter().cloned());
-                }
-            }
-            CftSchemaTypeRef::Named(name) if self.schema_enums.contains(name) => {}
-            CftSchemaTypeRef::Named(name) => pending_types.push(name.clone()),
-            CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
-                self.collect_type_dependencies(inner, table_dependencies, pending_types)?;
-            }
-            CftSchemaTypeRef::Dict(_, value) => {
-                self.collect_type_dependencies(value, table_dependencies, pending_types)?;
-            }
-            CftSchemaTypeRef::Int
-            | CftSchemaTypeRef::Float
-            | CftSchemaTypeRef::Bool
-            | CftSchemaTypeRef::String => {}
-        }
-        Ok(())
-    }
 }
 
 fn collect_ref_targets(ty: &CftSchemaTypeRef, out: &mut BTreeSet<String>) {
@@ -369,110 +288,5 @@ fn collect_ref_targets(ty: &CftSchemaTypeRef, out: &mut BTreeSet<String>) {
         | CftSchemaTypeRef::Bool
         | CftSchemaTypeRef::String
         | CftSchemaTypeRef::Named(_) => {}
-    }
-}
-
-fn topological_order(
-    tables: &[String],
-    dependencies: &BTreeMap<String, BTreeSet<String>>,
-) -> Result<Vec<String>, String> {
-    let mut remaining = dependencies.clone();
-    let mut ordered = Vec::with_capacity(tables.len());
-    while !remaining.is_empty() {
-        let ready = tables
-            .iter()
-            .find(|table| remaining.get(*table).is_some_and(BTreeSet::is_empty))
-            .cloned();
-        let Some(ready) = ready else {
-            let component = first_cyclic_component(&remaining);
-            return Err(format!(
-                "C# read-only immediate reference loading does not support cyclic table reference component: {}",
-                component.join(" -> ")
-            ));
-        };
-        remaining.remove(&ready);
-        for deps in remaining.values_mut() {
-            deps.remove(&ready);
-        }
-        ordered.push(ready);
-    }
-    Ok(ordered)
-}
-
-fn first_cyclic_component(graph: &BTreeMap<String, BTreeSet<String>>) -> Vec<String> {
-    let mut reversed = BTreeMap::<String, BTreeSet<String>>::new();
-    for node in graph.keys() {
-        reversed.entry(node.clone()).or_default();
-    }
-    for (node, dependencies) in graph {
-        for dependency in dependencies {
-            if graph.contains_key(dependency) {
-                reversed
-                    .entry(dependency.clone())
-                    .or_default()
-                    .insert(node.clone());
-            }
-        }
-    }
-
-    let mut visited = BTreeSet::new();
-    let mut finish_order = Vec::new();
-    for node in graph.keys() {
-        finish_dfs(node, graph, &mut visited, &mut finish_order);
-    }
-
-    visited.clear();
-    for node in finish_order.into_iter().rev() {
-        if visited.contains(&node) {
-            continue;
-        }
-        let mut component = Vec::new();
-        let mut stack = vec![node];
-        while let Some(current) = stack.pop() {
-            if !visited.insert(current.clone()) {
-                continue;
-            }
-            component.push(current.clone());
-            stack.extend(reversed.get(&current).into_iter().flatten().cloned());
-        }
-        component.sort();
-        let self_cycle = component.len() == 1
-            && graph
-                .get(&component[0])
-                .is_some_and(|deps| deps.contains(&component[0]));
-        if component.len() > 1 || self_cycle {
-            component.push(component[0].clone());
-            return component;
-        }
-    }
-    graph.keys().next().cloned().into_iter().collect()
-}
-
-fn finish_dfs(
-    start: &str,
-    graph: &BTreeMap<String, BTreeSet<String>>,
-    visited: &mut BTreeSet<String>,
-    finish_order: &mut Vec<String>,
-) {
-    if visited.contains(start) {
-        return;
-    }
-    let mut stack = vec![(start.to_string(), false)];
-    while let Some((node, expanded)) = stack.pop() {
-        if expanded {
-            finish_order.push(node);
-            continue;
-        }
-        if !visited.insert(node.clone()) {
-            continue;
-        }
-        stack.push((node.clone(), true));
-        if let Some(dependencies) = graph.get(&node) {
-            for dependency in dependencies.iter().rev() {
-                if graph.contains_key(dependency) && !visited.contains(dependency) {
-                    stack.push((dependency.clone(), false));
-                }
-            }
-        }
     }
 }
