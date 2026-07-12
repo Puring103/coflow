@@ -175,6 +175,9 @@ pub struct MutationReport {
     pub check_ok: bool,
     pub applied: Vec<MutationAppliedOp>,
     pub failed: Vec<MutationFailedOp>,
+    /// Deduplicated project-facing source paths changed by the transaction.
+    pub affected_files: Vec<String>,
+    /// Provider diagnostics followed by diagnostics from the published generation.
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 

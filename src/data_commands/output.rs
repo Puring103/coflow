@@ -88,6 +88,10 @@ pub(super) fn write_patch_human(report: &DataPatchReport) -> Result<(), Diagnost
             .map_err(|err| output_error(&err))?;
         write_flat_diagnostics(&mut stdout, &failed.diagnostics)?;
     }
+    if !report.affected_files.is_empty() {
+        writeln!(stdout, "affected\t{}", report.affected_files.join(","))
+            .map_err(|err| output_error(&err))?;
+    }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 

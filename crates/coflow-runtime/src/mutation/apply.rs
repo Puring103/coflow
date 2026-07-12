@@ -1,4 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, ProviderRegistry, Severity, WriteContext};
+use std::collections::BTreeSet;
 
 use crate::writes::{
     mutation_sources, preflight_mutation_op, rebuild_after_mutation, stage_mutation_op,
@@ -104,11 +105,17 @@ impl ProjectSession {
             return report_without_publish(self, false, failed);
         }
 
-        let diagnostics_set = new_session.diagnostics.as_set().clone();
-        let diagnostics = new_session.diagnostics.flat_diagnostics();
-        for applied in &mut staged {
-            applied.outcome.diagnostics = diagnostics_set.clone();
-        }
+        let affected_files = staged
+            .iter()
+            .flat_map(|applied| applied.outcome.affected_files.iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut diagnostics = staged
+            .iter()
+            .flat_map(|applied| applied.outcome.diagnostics.flat_diagnostics())
+            .collect::<Vec<_>>();
+        diagnostics.extend(new_session.diagnostics.flat_diagnostics());
         *self = new_session;
         staged.sort_by_key(|applied| applied.index);
         failed.sort_by_key(|failure| failure.index);
@@ -121,6 +128,7 @@ impl ProjectSession {
             check_ok,
             applied: staged,
             failed,
+            affected_files,
             diagnostics,
         }
     }
@@ -226,6 +234,7 @@ fn report_without_publish(
         check_ok: false,
         applied: Vec::new(),
         failed,
+        affected_files: Vec::new(),
         diagnostics: session.diagnostics.flat_diagnostics(),
     }
 }

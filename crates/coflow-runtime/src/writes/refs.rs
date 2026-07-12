@@ -13,11 +13,16 @@ use crate::ProjectSession;
 pub(super) struct ReferenceUpdateAction {
     pub(super) writer: Arc<dyn SourceWriter>,
     pub(super) request: OwnedWriteCellRequest,
+    display_path: String,
 }
 
 impl ReferenceUpdateAction {
     pub(super) const fn source(&self) -> &ResolvedSource {
         &self.request.source
+    }
+
+    pub(super) fn display_path(&self) -> &str {
+        &self.display_path
     }
 }
 
@@ -47,11 +52,16 @@ impl OwnedWriteCellRequest {
 pub(super) struct SourceRewriteAction {
     pub(super) writer: Arc<dyn SourceWriter>,
     pub(super) request: OwnedRewriteRecordReferencesRequest,
+    display_path: String,
 }
 
 impl SourceRewriteAction {
     pub(super) const fn source(&self) -> &ResolvedSource {
         &self.request.source
+    }
+
+    pub(super) fn display_path(&self) -> &str {
+        &self.display_path
     }
 }
 
@@ -101,6 +111,7 @@ pub(super) fn reference_update_actions(
         let writer = lookup_source_writer(registry, &source)?;
         actions.push(ReferenceUpdateAction {
             writer,
+            display_path: host_ref.display_path.clone(),
             request: OwnedWriteCellRequest {
                 origin: host_ref.origin.clone(),
                 record_key: host_ref.coordinate.key.clone(),
@@ -140,11 +151,12 @@ pub(super) fn source_rewrite_actions(
             .or_insert_with(|| (source, vec![target]));
     }
     by_file
-        .into_values()
-        .map(|(source, targets)| {
+        .into_iter()
+        .map(|(display_path, (source, targets))| {
             let writer = lookup_source_writer(registry, &source)?;
             Ok(SourceRewriteAction {
                 writer,
+                display_path,
                 request: OwnedRewriteRecordReferencesRequest {
                     source,
                     old_key: old_key.to_string(),

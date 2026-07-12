@@ -361,6 +361,7 @@ pub struct RenameRecordOutcome {
     pub row: RecordRow,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub renamed: RecordCoordinate,
+    pub affected_files: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -373,6 +374,7 @@ pub struct InsertRecordOutcome {
     pub revision: u32,
     pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
+    pub affected_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -449,6 +451,7 @@ pub struct DeleteRecordOutcome {
     pub revision: u32,
     pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
+    pub affected_files: Vec<String>,
     /// Authoritative snapshot of the deleted record so the front-end's undo
     /// can re-insert it. `None` only when the record was missing before
     /// deletion (defensive — should not happen in normal flows).

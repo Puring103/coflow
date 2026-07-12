@@ -104,7 +104,9 @@ DataModel 和 CFT `check {}` 诊断。
 provider preflight，再为本地来源保存字节快照、为远程来源取得补偿句柄；全部 writer I/O 完成后只重建一次
 候选 generation。writer、加载、DataModel 或 transaction commit 失败会恢复来源并保留旧 generation，
 此时 `applied` 为空且 revision 不变。候选 generation 只有业务 `CHECK` 诊断时仍可发布，调用方根据
-`check_ok` 和 `diagnostics` 继续修正；一次成功批次只推进一次 revision。
+`check_ok` 和 `diagnostics` 继续修正；一次成功批次只推进一次 revision。成功报告会保留每个
+operation 的 provider diagnostics，并在顶层 `diagnostics` 中与新 generation 诊断合并一次；
+`affected_files` 是 runtime 记录的实际写入来源集合。
 
 `schema write-file --check` 的 Check 列为“否”，因为它只在写入后重新编译
 schema。它不会加载 source、同步表头、构建 DataModel，也不会执行 CFT

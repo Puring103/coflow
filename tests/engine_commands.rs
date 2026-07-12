@@ -120,6 +120,11 @@ fn rename_record_key_updates_cross_source_references() {
             RecordCoordinate::new("Item", "blade")
         ))
     );
+    assert_eq!(
+        outcome.affected_files,
+        vec!["data/bundles.csv".to_string(), "data/items.cfd".to_string()],
+        "rename should report every source changed by reference rewrites"
+    );
     assert!(
         session
             .queries()

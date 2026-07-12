@@ -145,4 +145,6 @@ coflow check <project>
 coflow build <project>
 ```
 
-出现写入失败或诊断时，先读取 JSON 报告，不要只看退出码。重点字段是 `write_ok`、`check_ok`、`applied`、`failed`、`remaining_ops` 和 `diagnostics`。
+出现写入失败或诊断时，先读取 JSON 报告，不要只看退出码。重点字段是 `write_ok`、
+`check_ok`、`applied`、`failed`、`affected_files`、`remaining_ops` 和
+`diagnostics`。

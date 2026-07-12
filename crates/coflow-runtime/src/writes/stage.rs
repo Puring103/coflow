@@ -3,6 +3,7 @@ use coflow_api::{
     RenameRecordRequest, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_data_model::CfdValue;
+use std::collections::BTreeSet;
 
 use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate, WriteOutcome};
@@ -108,6 +109,7 @@ pub(crate) fn stage_mutation_op(
             inserted: None,
             deleted: None,
             renamed: Some((old_record.clone(), new_record.clone())),
+            affected_files: Vec::new(),
             diagnostics: DiagnosticSet::empty(),
         }),
         PreparedMutationOp::FoldedDeleteRecord { record, .. } => Ok(WriteOutcome {
@@ -115,6 +117,7 @@ pub(crate) fn stage_mutation_op(
             inserted: None,
             deleted: Some(record.clone()),
             renamed: None,
+            affected_files: Vec::new(),
             diagnostics: DiagnosticSet::empty(),
         }),
         PreparedMutationOp::CancelledInsert { record, .. } => Ok(WriteOutcome {
@@ -122,6 +125,7 @@ pub(crate) fn stage_mutation_op(
             inserted: Some(record.clone()),
             deleted: None,
             renamed: None,
+            affected_files: Vec::new(),
             diagnostics: DiagnosticSet::empty(),
         }),
         PreparedMutationOp::Pending { .. } => Err(DiagnosticSet::one(Diagnostic::error(
@@ -193,6 +197,7 @@ fn stage_write_field(
         inserted: None,
         deleted: None,
         renamed: None,
+        affected_files: vec![plan.target.display_path],
         diagnostics: provider_outcome.diagnostics,
     })
 }
@@ -232,16 +237,23 @@ fn stage_rename_record_key(
     let rewrite_actions =
         source_rewrite_actions(session, registry, target_ref.id, old_key, new_key)?;
 
-    target_writer.rename_record(ctx, &target_request)?;
+    let mut diagnostics = target_writer
+        .rename_record(ctx, &target_request)?
+        .diagnostics;
+    let mut affected_files = BTreeSet::from([target_ref.display_path.clone()]);
     for action in &reference_actions {
-        action
+        let outcome = action
             .writer
             .write_field(ctx, &action.request.as_request(compiled_schema))?;
+        diagnostics.extend(outcome.diagnostics);
+        affected_files.insert(action.display_path().to_string());
     }
     for action in &rewrite_actions {
-        action
+        let outcome = action
             .writer
             .rewrite_record_references(ctx, &action.request.as_request(compiled_schema))?;
+        diagnostics.extend(outcome.diagnostics);
+        affected_files.insert(action.display_path().to_string());
     }
 
     let new_coordinate = RecordCoordinate::new(actual_type, new_key);
@@ -250,7 +262,8 @@ fn stage_rename_record_key(
         inserted: None,
         deleted: None,
         renamed: Some((old_coordinate, new_coordinate)),
-        diagnostics: DiagnosticSet::empty(),
+        affected_files: affected_files.into_iter().collect(),
+        diagnostics,
     })
 }
 
@@ -289,6 +302,7 @@ fn stage_insert_record(
         inserted: Some(inserted),
         deleted: None,
         renamed: None,
+        affected_files: vec![file.to_string()],
         diagnostics: provider_outcome.diagnostics,
     })
 }
@@ -326,6 +340,7 @@ fn stage_delete_record(
         inserted: None,
         deleted: Some(coordinate),
         renamed: None,
+        affected_files: vec![record_ref.display_path.clone()],
         diagnostics: provider_outcome.diagnostics,
     })
 }

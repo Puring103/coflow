@@ -55,6 +55,7 @@ struct Faults {
     compensate_failure: bool,
     commit_failure: bool,
     unsupported_remote: bool,
+    emit_provider_diagnostic: bool,
 }
 
 #[derive(Debug, Default)]
@@ -228,7 +229,7 @@ impl SourceWriter for TestWriter {
         let CfdValue::Int(value) = request.new_value else {
             return Err(test_error("TEST-WRITE", "expected an integer value"));
         };
-        let call = {
+        let (call, emit_provider_diagnostic) = {
             let mut state = self.state.lock().expect("lock test writer state");
             state.counts.writes += 1;
             let call = state.counts.writes;
@@ -239,7 +240,7 @@ impl SourceWriter for TestWriter {
                     state.remote_values.insert(uri.clone(), *value);
                 }
             }
-            call
+            (call, state.faults.emit_provider_diagnostic)
         };
         let stage_failed = self
             .state
@@ -254,7 +255,22 @@ impl SourceWriter for TestWriter {
                 format!("injected stage failure on call {call}"),
             ));
         }
-        Ok(WriteOutcome::default())
+        let diagnostics = if emit_provider_diagnostic {
+            DiagnosticSet::one(Diagnostic {
+                code: "TEST-PROVIDER-INFO".to_string(),
+                stage: "WRITE".to_string(),
+                severity: coflow_api::Severity::Warning,
+                message: format!("provider write {call} completed"),
+                primary: None,
+                related: Vec::new(),
+            })
+        } else {
+            DiagnosticSet::empty()
+        };
+        Ok(WriteOutcome {
+            diagnostics,
+            ..WriteOutcome::default()
+        })
     }
 }
 
@@ -329,6 +345,42 @@ fn remote_batch_publishes_one_generation_and_commits_once() {
     assert_eq!(state.counts.commits, 1);
     assert_eq!(state.counts.compensates, 0);
     drop(state);
+}
+
+#[test]
+fn provider_diagnostics_and_affected_files_survive_successful_rebuild() {
+    let fixture = Fixture::remote(&[("txn://one", 1)]);
+    fixture
+        .state
+        .lock()
+        .expect("lock fixture state")
+        .faults
+        .emit_provider_diagnostic = true;
+    let mut session = fixture.open();
+
+    let report = session.apply_mutation(mutation_request(vec![
+        set_value("one", 2),
+        set_value("one", 3),
+    ]));
+
+    assert!(report.write_ok);
+    assert_eq!(report.affected_files, vec!["txn://one".to_string()]);
+    assert_eq!(
+        report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TEST-PROVIDER-INFO")
+            .count(),
+        2,
+        "each provider diagnostic should be reported once"
+    );
+    for applied in &report.applied {
+        assert_eq!(applied.outcome.diagnostics.diagnostics.len(), 1);
+        assert_eq!(
+            applied.outcome.diagnostics.diagnostics[0].code,
+            "TEST-PROVIDER-INFO"
+        );
+    }
 }
 
 #[test]

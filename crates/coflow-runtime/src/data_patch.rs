@@ -69,6 +69,7 @@ pub struct DataPatchReport {
     pub check_ok: bool,
     pub applied: Vec<DataPatchAppliedOp>,
     pub failed: Vec<DataPatchFailedOp>,
+    pub affected_files: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub remaining_ops: Vec<DataPatchOp>,
     pub diagnostics: Vec<FlatDiagnostic>,
@@ -201,6 +202,7 @@ impl MutationReport {
                 .into_iter()
                 .map(MutationFailedOp::into_data_patch_failed)
                 .collect(),
+            affected_files: self.affected_files,
             remaining_ops,
             diagnostics: self.diagnostics,
         }

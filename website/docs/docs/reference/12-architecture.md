@@ -136,6 +136,10 @@ Debug 输出暴露给 host。
 
 stage、rebuild 或 commit 失败时，runtime 按逆序补偿远程来源并恢复本地字节，旧 generation 继续为查询提供一致视图，报告中的 `applied` 为空。远程 writer 若没有可靠补偿能力，必须显式声明 `Unsupported`；不能用“尽力回滚”伪装成原子写入。
 
+成功报告中的 operation outcome 只保存该 operation 的 provider diagnostics，不复制整个
+generation diagnostic set。顶层 `diagnostics` 按 operation 顺序汇总 provider diagnostics，
+再追加候选 generation diagnostics；`affected_files` 对所有 operation 实际写入的来源路径去重。
+
 ## Provider Registry
 
 Provider registry 持有 loader、writer、exporter 和 codegen。默认 registry 由 `coflow-builtins` 组装。
@@ -229,11 +233,13 @@ reload 会先取得当前 revision ticket，在 session 锁外构建完整候选
 再在短写锁内比较 ticket。只有基准 revision 仍然匹配的候选才能替换 session；过期
 候选被丢弃并重新构建，因此较慢的文件 reload 不能覆盖较新的内部写入。
 
-内部写入推进 revision，并记录每个实际写入路径的 SHA-256 内容指纹。文件 watcher
+内部写入推进 revision，并直接使用 runtime mutation report 的 `affected_files` 记录每个实际
+写入路径的 SHA-256 内容指纹。文件 watcher
 只有在路径和当前内容都匹配该指纹时才把事件归因于内部写入；之后发生的外部修改会
 立即触发 reload，不依赖固定时间窗口。所有 snapshot、mutation outcome 和 diagnostics
 都携带 revision；前端只接收最新 revision，并在异步 file/table/graph 查询返回时再次
-核对 revision，防止旧缓存覆盖新状态。
+核对 revision，防止旧缓存覆盖新状态。跨文件 rename 会按同一 `affected_files` 集合批量刷新
+target source 与所有 reference source，不再由 editor 从 record coordinate 反推写入范围。
 
 编辑器 diagnostics 以 `(file, RecordCoordinate)` 建立索引。表格和关系视图按 record
 直接读取相关诊断，不复制或扫描完整诊断列表。编辑器不应绕过 runtime mutation

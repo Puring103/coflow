@@ -613,7 +613,9 @@ patch value 支持普通 JSON 值，也支持以下特殊对象：
 
 写入会走 provider writer 层，不绕过数据源。批量 patch 会先完成整批规划与事务预检，再写入所有来源；任一 writer、重建或提交步骤失败时会补偿已经写入的来源，报告中的 `applied` 为空，旧 runtime generation 保持可用。
 
-整批成功后只刷新一次项目 session 并推进一次 revision。最终报告中的 `check_ok` 和 `diagnostics` 来自这个新 generation 的项目诊断。
+整批成功后只刷新一次项目 session 并推进一次 revision。最终报告中的 `diagnostics` 先保留
+provider writer 返回的诊断，再附加新 generation 的项目诊断；`check_ok` 根据这两部分共同计算。
+`affected_files` 给出 runtime 确认实际写入的项目 source 路径，批内同一来源只出现一次。
 
 ## 命令矩阵
 

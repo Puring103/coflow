@@ -21,9 +21,10 @@ pub struct RecordView<'a> {
     pub provider_id: &'a str,
 }
 
-/// Outcome of an engine write transaction. Surfaces both the rebuilt
-/// diagnostics and the coordinates that changed so callers can refresh local
-/// caches without re-querying the full project.
+/// Outcome of one staged write operation inside a mutation transaction.
+///
+/// Provider diagnostics stay attached to the operation that emitted them.
+/// Generation diagnostics are reported once by [`crate::MutationReport`].
 ///
 /// `renamed` is `Some(old, new)` when the write modified a record's `id`
 /// field: the engine treats this as a coordinate change so the editor can
@@ -40,6 +41,8 @@ pub struct WriteOutcome {
     pub inserted: Option<RecordCoordinate>,
     pub deleted: Option<RecordCoordinate>,
     pub renamed: Option<(RecordCoordinate, RecordCoordinate)>,
+    /// Project-facing source paths actually changed by this operation.
+    pub affected_files: Vec<String>,
     // Skip from TS: `DiagnosticSet` references concrete `Diagnostic` types
     // whose location data isn't part of the editor's surface. Hosts that
     // care convert to `FlatDiagnostic` before wire-shipping.

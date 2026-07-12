@@ -3,7 +3,7 @@ import type { DeletedRecordSnapshot } from "./DeletedRecordSnapshot";
 import type { FileRecords } from "./FileRecords";
 import type { FlatDiagnostic } from "./FlatDiagnostic";
 
-export type DeleteRecordOutcome = { revision: number, file_records: FileRecords, diagnostics: Array<FlatDiagnostic>,
+export type DeleteRecordOutcome = { revision: number, file_records: FileRecords, diagnostics: Array<FlatDiagnostic>, affected_files: Array<string>,
 /**
  * Authoritative snapshot of the deleted record so the front-end's undo
  * can re-insert it. `None` only when the record was missing before

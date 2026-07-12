@@ -379,7 +379,7 @@ impl SessionStore {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
 
-        let (final_coordinate, renamed, old_value, affected_files) = {
+        let (final_coordinate, renamed, old_value, affected_files, diagnostics) = {
             let mut session = session_lock
                 .write()
                 .map_err(|_| EditorError::session("session poisoned"))?;
@@ -398,48 +398,20 @@ impl SessionStore {
                     value: MutationValue::Cfd(new_value.clone()),
                 }],
             });
-            if !report.write_ok {
-                return Err(mutation_report_to_editor_error(
-                    "write field failed",
-                    &report,
-                ));
-            }
+            let report = finalize_mutation(&mut session, report, "write field failed")?;
+            let affected_files = report.affected_files.clone();
+            let diagnostics = report.diagnostics.clone();
             let outcome = report
                 .applied
                 .first()
                 .map(|applied| applied.outcome.clone())
                 .ok_or_else(|| EditorError::write("write field did not apply"))?;
-            session.diagnostics =
-                Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
             let renamed = outcome
                 .renamed
                 .and_then(|(old, new)| (old == *coordinate).then_some(new));
             let final_coord = renamed.clone().unwrap_or_else(|| coordinate.clone());
-            let mut affected_files = BTreeSet::new();
-            affected_files.insert(
-                file_path_for_coordinate(session.queries(), &final_coord).unwrap_or_default(),
-            );
-            if let Some(preview) = preview {
-                affected_files.insert(preview.file_path);
-            }
-            for applied in &report.applied {
-                if let Some(file) = applied.file.as_ref() {
-                    affected_files.insert(file.clone());
-                }
-                for touched in &applied.outcome.touched {
-                    if let Some(file) = file_path_for_coordinate(session.queries(), touched) {
-                        affected_files.insert(file);
-                    }
-                }
-            }
-            let affected_files = affected_files
-                .into_iter()
-                .filter(|file| !file.is_empty())
-                .collect::<Vec<_>>();
-            session.commit_internal_write(&affected_files);
-            session.ref_target_cache.clear();
             drop(session);
-            (final_coord, renamed, old_value, affected_files)
+            (final_coord, renamed, old_value, affected_files, diagnostics)
         };
 
         let session = session_lock
@@ -467,7 +439,7 @@ impl SessionStore {
         Ok(WriteFieldOutcome {
             revision: session.revisions.current(),
             row,
-            diagnostics: session.diagnostics.to_wire(),
+            diagnostics,
             old_value,
             new_value,
             affected_files,
@@ -540,7 +512,7 @@ impl SessionStore {
         };
         let fields_map = boxed.fields;
 
-        {
+        let (diagnostics, affected_files) = {
             let mut session = session_lock
                 .write()
                 .map_err(|_| EditorError::session("session poisoned"))?;
@@ -555,17 +527,9 @@ impl SessionStore {
                     materialization,
                 }],
             });
-            if !report.write_ok {
-                return Err(mutation_report_to_editor_error(
-                    "insert record failed",
-                    &report,
-                ));
-            }
-            session.diagnostics =
-                Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
-            session.commit_internal_write(&[file_path.to_string()]);
-            session.ref_target_cache.clear();
-        }
+            let report = finalize_mutation(&mut session, report, "insert record failed")?;
+            (report.diagnostics, report.affected_files)
+        };
         let file_records = self.get_file_records(id, file_path)?;
         let session = session_lock
             .read()
@@ -573,7 +537,8 @@ impl SessionStore {
         Ok(InsertRecordOutcome {
             revision: session.revisions.current(),
             file_records,
-            diagnostics: session.diagnostics.to_wire(),
+            diagnostics,
+            affected_files,
         })
     }
 
@@ -585,12 +550,10 @@ impl SessionStore {
     ) -> Result<RenameRecordOutcome, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
-        let renamed = {
+        let (renamed, diagnostics, affected_files) = {
             let mut session = session_lock
                 .write()
                 .map_err(|_| EditorError::session("session poisoned"))?;
-            let file_path = file_path_for_coordinate(session.queries(), coordinate)
-                .ok_or_else(|| EditorError::not_found("record file not found before rename"))?;
             let report = session.engine.apply_mutation(MutationRequest {
                 stop_on_write_error: true,
                 ops: vec![MutationOp::RenameRecord {
@@ -599,27 +562,20 @@ impl SessionStore {
                     new_key: new_key.to_string(),
                 }],
             });
-            if !report.write_ok {
-                return Err(mutation_report_to_editor_error(
-                    "rename record failed",
-                    &report,
-                ));
-            }
+            let report = finalize_mutation(&mut session, report, "rename record failed")?;
+            let diagnostics = report.diagnostics.clone();
+            let affected_files = report.affected_files.clone();
             let outcome = report
                 .applied
                 .first()
                 .map(|applied| applied.outcome.clone())
                 .ok_or_else(|| EditorError::write("rename did not apply"))?;
-            session.diagnostics =
-                Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
             let renamed = outcome
                 .renamed
                 .and_then(|(old, new)| (old == *coordinate).then_some(new))
                 .ok_or_else(|| EditorError::write("rename did not produce a new coordinate"))?;
-            session.commit_internal_write(&[file_path]);
-            session.ref_target_cache.clear();
             drop(session);
-            renamed
+            (renamed, diagnostics, affected_files)
         };
 
         let session = session_lock
@@ -639,8 +595,9 @@ impl SessionStore {
         Ok(RenameRecordOutcome {
             revision: session.revisions.current(),
             row,
-            diagnostics: session.diagnostics.to_wire(),
+            diagnostics,
             renamed,
+            affected_files,
         })
     }
 
@@ -668,7 +625,7 @@ impl SessionStore {
                     coordinate.actual_type, coordinate.key
                 ))
             })?;
-        {
+        let (diagnostics, affected_files) = {
             let mut session = session_lock
                 .write()
                 .map_err(|_| EditorError::session("session poisoned"))?;
@@ -679,17 +636,9 @@ impl SessionStore {
                     file: None,
                 }],
             });
-            if !report.write_ok {
-                return Err(mutation_report_to_editor_error(
-                    "delete record failed",
-                    &report,
-                ));
-            }
-            session.diagnostics =
-                Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
-            session.commit_internal_write(std::slice::from_ref(&file_path));
-            session.ref_target_cache.clear();
-        }
+            let report = finalize_mutation(&mut session, report, "delete record failed")?;
+            (report.diagnostics, report.affected_files)
+        };
         let file_records = self.get_file_records(id, &file_path)?;
         let session = session_lock
             .read()
@@ -697,7 +646,8 @@ impl SessionStore {
         Ok(DeleteRecordOutcome {
             revision: session.revisions.current(),
             file_records,
-            diagnostics: session.diagnostics.to_wire(),
+            diagnostics,
+            affected_files,
             deleted_snapshot,
         })
     }
@@ -767,15 +717,6 @@ fn project_snapshot(
         file_tree: snapshot.file_tree,
         diagnostics: session.diagnostics.to_wire(),
     }
-}
-
-fn file_path_for_coordinate(
-    queries: ProjectQueries<'_>,
-    coordinate: &RecordCoordinate,
-) -> Option<String> {
-    queries
-        .file_for_record(&coordinate.actual_type, &coordinate.key)
-        .map(str::to_string)
 }
 
 fn apply_collection_edit(
@@ -921,6 +862,21 @@ fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> Ed
         .map(|d| d.flat_view(None, None, None))
         .collect();
     EditorError::write(message).with_diagnostics(flat)
+}
+
+fn finalize_mutation(
+    session: &mut EditorSession,
+    report: coflow_runtime::MutationReport,
+    fallback: &str,
+) -> Result<coflow_runtime::MutationReport, EditorError> {
+    if !report.write_ok {
+        return Err(mutation_report_to_editor_error(fallback, &report));
+    }
+    session.diagnostics =
+        Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
+    session.commit_internal_write(&report.affected_files);
+    session.ref_target_cache.clear();
+    Ok(report)
 }
 
 fn mutation_report_to_editor_error(

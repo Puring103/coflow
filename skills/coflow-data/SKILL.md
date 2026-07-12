@@ -37,7 +37,8 @@ coflow check <project>
 - `insert_record` 必须指定 `file`；`set_field`、`rename_record`、`delete_record` 可用 `file` 作 guard。
 - `path` 使用结构化段，例如 `{ "kind": "field", "value": "stats" }`、`{ "kind": "index", "value": 0 }`、`{ "kind": "dict_key", "value": "Element.Fire" }`。
 - `$ref` 只写 record key；目标类型来自 CFT 字段类型。
-- `data patch` 顺序应用，失败不会自动回滚已成功的 op。
+- `data patch` 整批规划、预检并原子写入；writer、重建或提交失败会补偿已写来源，
+  此时 `applied` 为空且 `affected_files` 不应作为成功结果使用。
 - CFT `check {}` 不阻止写入；写入后重建项目并返回诊断。
 
 ## Reference

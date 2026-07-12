@@ -3,4 +3,4 @@ import type { FlatDiagnostic } from "./FlatDiagnostic";
 import type { RecordCoordinate } from "./RecordCoordinate";
 import type { RecordRow } from "./RecordRow";
 
-export type RenameRecordOutcome = { revision: number, row: RecordRow, diagnostics: Array<FlatDiagnostic>, renamed: RecordCoordinate, };
+export type RenameRecordOutcome = { revision: number, row: RecordRow, diagnostics: Array<FlatDiagnostic>, renamed: RecordCoordinate, affected_files: Array<string>, };

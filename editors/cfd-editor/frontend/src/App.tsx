@@ -641,12 +641,19 @@ export default function App() {
         commitProjectRevision(outcome.revision, outcome.diagnostics)
         if (projectRevisionRef.current !== outcome.revision) return outcome.row
         if (mySeq !== writeSeqRef.current) return outcome.row
-        const refreshed = await api.getFileRecords(project.session_id, filePath)
+        const refreshFiles = outcome.affected_files.length > 0 ? outcome.affected_files : [filePath]
+        const refreshedFiles = await Promise.all(
+          refreshFiles.map(async file => [file, await api.getFileRecords(project.session_id, file)] as const),
+        )
         if (
           mySeq !== writeSeqRef.current ||
           projectRevisionRef.current !== outcome.revision
         ) return outcome.row
-        setFileDataCache(c => ({ ...c, [filePath]: refreshed }))
+        setFileDataCache(c => {
+          const next = { ...c }
+          for (const [file, records] of refreshedFiles) next[file] = records
+          return next
+        })
         setGraphCache({})
         rebindCoordinate(coordinate, outcome.renamed)
         if (opts.recordHistory) {
