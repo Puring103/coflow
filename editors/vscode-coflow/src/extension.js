@@ -364,6 +364,7 @@ class CftDiagnostics {
         cwd,
         this.collection,
         (uri) => this.diagnosticsEnabledForUri(uri),
+        (uri) => this.sessionOwnsDiagnosticUri(key, uri),
         projectDir || cwd
       );
       this.sessions.set(key, session);
@@ -389,6 +390,11 @@ class CftDiagnostics {
     return vscode.workspace
       .getConfiguration("coflow.diagnostics", uri)
       .get("enabled", true);
+  }
+
+  sessionOwnsDiagnosticUri(sessionKey, uri) {
+    const owner = this.documentSessions.get(uri.toString());
+    return owner === undefined || owner === sessionKey;
   }
 }
 
@@ -448,6 +454,7 @@ class CftLspSession {
     cwd,
     collection,
     diagnosticsEnabledForUri = () => true,
+    ownsDiagnosticUri = () => true,
     projectDir = cwd
   ) {
     this.command = command;
@@ -455,6 +462,7 @@ class CftLspSession {
     this.cwd = cwd;
     this.collection = collection;
     this.diagnosticsEnabledForUri = diagnosticsEnabledForUri;
+    this.ownsDiagnosticUri = ownsDiagnosticUri;
     this.projectDir = projectDir;
     this.nextId = 1;
     this.buffer = Buffer.alloc(0);
@@ -629,7 +637,7 @@ class CftLspSession {
       if (!uri) {
         return;
       }
-      if (!this.diagnosticsEnabledForUri(uri)) {
+      if (!this.canPublishDiagnostics(uri)) {
         return;
       }
       const diagnostics = Array.isArray(params.diagnostics)
@@ -731,7 +739,7 @@ class CftLspSession {
   }
 
   publishFailure(uri) {
-    if (this.disposed || !this.diagnosticsEnabledForUri(uri)) {
+    if (!this.canPublishDiagnostics(uri)) {
       return;
     }
     const diagnostic = new vscode.Diagnostic(
@@ -741,6 +749,12 @@ class CftLspSession {
     );
     diagnostic.source = "cft";
     this.collection.set(uri, [diagnostic]);
+  }
+
+  canPublishDiagnostics(uri) {
+    return !this.disposed
+      && this.diagnosticsEnabledForUri(uri)
+      && (!this.ownsDiagnosticUri || this.ownsDiagnosticUri(uri));
   }
 
   rememberDocumentUri(document) {

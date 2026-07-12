@@ -290,7 +290,8 @@ revision 等于当前 revision 时才发布。需要 schema snapshot 的 feature
 当前 revision 提交后再执行；排队请求保存接收时的 revision，后续文档变化会取消旧请求，
 不会拿新 snapshot 解释旧 position。VS Code adapter 同时监视 config、CFT 和 CFD，closed
 document 的外部修改也会推进 validation revision；已处置的子进程 session 会丢弃任何迟到的
-stdout、diagnostic 或 failure 回调，因此不能覆盖替代 session 的诊断。CFD source、canonical AST、syntax
+stdout、diagnostic 或 failure 回调，活跃 session 也只能发布其当前拥有 document 的诊断，因此不能覆盖
+替代 session 的诊断。CFD source、canonical AST、syntax
 diagnostics 和 definition facts 保存在同一个不可变 document snapshot 中供语言功能复用，
 因此旧 diagnostics、definition index 或 semantic state 不能与新文档混用，feature request
 也不再重复解析同一 CFD。LSP 不维护第二套 CFD parser。

@@ -271,6 +271,37 @@ async function main() {
     "a disposed session must not publish late diagnostics over its replacement"
   );
 
+  const supersededDiagnosticsWrites = [];
+  const supersededDiagnosticsSession = Object.create(extension.__test.CftLspSession.prototype);
+  Object.assign(supersededDiagnosticsSession, {
+    disposed: false,
+    collection: {
+      set(uri, diagnostics) {
+        supersededDiagnosticsWrites.push({ uri, diagnostics });
+      }
+    },
+    uriFromLsp: (rawUri) => extension.__test.vscodeUriFile(rawUri.replace(/^file:\/\//, "")),
+    diagnosticsEnabledForUri: () => true,
+    ownsDiagnosticUri: () => false
+  });
+  supersededDiagnosticsSession.handleMessage({
+    method: "textDocument/publishDiagnostics",
+    params: {
+      uri: "file:///tmp/superseded.cft",
+      diagnostics: [
+        {
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+          message: "late diagnostics from a superseded session"
+        }
+      ]
+    }
+  });
+  assert.deepStrictEqual(
+    supersededDiagnosticsWrites,
+    [],
+    "only the session currently assigned to a document may publish its diagnostics"
+  );
+
   const scopedDiagnosticsWrites = [];
   const scopedDiagnosticsSession = Object.create(extension.__test.CftLspSession.prototype);
   Object.assign(scopedDiagnosticsSession, {
