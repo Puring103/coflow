@@ -907,8 +907,7 @@ fn language_dimension_migrates_renamed_source_field_csv() {
         "type Item { @localized title: string; }",
     )
     .expect("write schema");
-    std::fs::write(root.join("data/items.csv"), "id,title\npotion,Potion\n")
-        .expect("write items");
+    std::fs::write(root.join("data/items.csv"), "id,title\npotion,Potion\n").expect("write items");
     std::fs::write(
         root.join("data/dimensions/language/Item_name.csv"),
         "id,default,zh\npotion,Old,药水\n",
@@ -941,7 +940,10 @@ dimensions:
     assert!(!root.join("data/dimensions/language/Item_name.csv").exists());
     let migrated = std::fs::read_to_string(root.join("data/dimensions/language/Item_title.csv"))
         .expect("read migrated source");
-    assert!(migrated.contains("potion,Potion,药水"), "migrated source: {migrated}");
+    assert!(
+        migrated.contains("potion,Potion,药水"),
+        "migrated source: {migrated}"
+    );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }

@@ -70,9 +70,13 @@ pub(crate) fn plan_dimension_generation(
         operations.extend(reconcile_dimension_sources(
             &out_dir,
             &expected_paths,
-            &mut dimension_operations,
+            &dimension_operations,
         ));
-        operations.extend(dimension_operations.into_iter().map(DimensionGenerationPlanOp::Sync));
+        operations.extend(
+            dimension_operations
+                .into_iter()
+                .map(DimensionGenerationPlanOp::Sync),
+        );
     }
 
     DimensionGenerationPlanResult {
@@ -84,7 +88,7 @@ pub(crate) fn plan_dimension_generation(
 fn reconcile_dimension_sources(
     out_dir: &Path,
     expected_paths: &BTreeSet<PathBuf>,
-    operations: &mut [DimensionGenerationOperation],
+    operations: &[DimensionGenerationOperation],
 ) -> Vec<DimensionGenerationPlanOp> {
     let Ok(entries) = fs::read_dir(out_dir) else {
         return Vec::new();
@@ -106,8 +110,7 @@ fn reconcile_dimension_sources(
         let candidates = operations
             .iter()
             .filter(|operation| {
-                !operation.path.exists()
-                    && operation.matches_renamed_source(stale_path)
+                !operation.path.exists() && operation.matches_renamed_source(stale_path)
             })
             .collect::<Vec<_>>();
         if candidates.len() == 1 {
@@ -151,7 +154,11 @@ pub(crate) fn commit_dimension_generation(
                     diagnostics.push(Diagnostic::error(
                         "DIM-SOURCE-005",
                         "PROJECT",
-                        format!("failed to migrate dimension source `{}` to `{}`: {err}", from.display(), to.display()),
+                        format!(
+                            "failed to migrate dimension source `{}` to `{}`: {err}",
+                            from.display(),
+                            to.display()
+                        ),
                     ));
                 }
                 continue;
@@ -162,7 +169,10 @@ pub(crate) fn commit_dimension_generation(
                     diagnostics.push(Diagnostic::error(
                         "DIM-SOURCE-006",
                         "PROJECT",
-                        format!("failed to remove obsolete dimension source `{}`: {err}", path.display()),
+                        format!(
+                            "failed to remove obsolete dimension source `{}`: {err}",
+                            path.display()
+                        ),
                     ));
                 }
                 continue;

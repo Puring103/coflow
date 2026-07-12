@@ -268,7 +268,6 @@ impl<'a> CsharpLoweringPlan<'a> {
     pub fn type_is_struct(&self, ty: &CftTypeMeta) -> bool {
         self.struct_types.contains(&ty.name)
     }
-
 }
 
 fn collect_ref_targets(ty: &CftSchemaTypeRef, out: &mut BTreeSet<String>) {

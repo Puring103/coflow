@@ -1,6 +1,6 @@
 [package]
 name = "coflow-structure"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "Domain-neutral structural resource accounting for Coflow."
 license = "Apache-2.0"

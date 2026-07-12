@@ -879,7 +879,10 @@ fn codegen_messagepack_supports_self_referencing_tables() -> Result<(), String> 
     let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
     let database = generated_file(&files, "CoflowTables.cs")?;
-    require_contains(database, "Item.LoadRawTable(Path.Combine(dataDir, \"Item.msgpack\"))")?;
+    require_contains(
+        database,
+        "Item.LoadRawTable(Path.Combine(dataDir, \"Item.msgpack\"))",
+    )?;
     require_contains(database, "var context = new LoadContext(itemIndex);")?;
     require_contains(database, "Item.HydrateAll(items, itemRawRows, context);")?;
     Ok(())
@@ -896,7 +899,10 @@ fn codegen_messagepack_supports_mutually_referencing_tables() -> Result<(), Stri
     let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
     let database = generated_file(&files, "CoflowTables.cs")?;
-    require_contains(database, "var context = new LoadContext(leftIndex, rightIndex);")?;
+    require_contains(
+        database,
+        "var context = new LoadContext(leftIndex, rightIndex);",
+    )?;
     require_contains(database, "Left.HydrateAll(lefts, leftRawRows, context);")?;
     require_contains(database, "Right.HydrateAll(rights, rightRawRows, context);")?;
     Ok(())
@@ -922,7 +928,10 @@ fn codegen_messagepack_emits_coflow_tables_and_messagepack_loaders() -> Result<(
     require_contains(database, "using MessagePack;")?;
     require_contains(database, "Path.Combine(dataDir, \"Reward.msgpack\")")?;
     require_contains(database, "Path.Combine(dataDir, \"Item.msgpack\")")?;
-    require_contains(database, "var context = new LoadContext(itemIndex, rewardIndex);")?;
+    require_contains(
+        database,
+        "var context = new LoadContext(itemIndex, rewardIndex);",
+    )?;
     require_contains(database, "Item.HydrateAll(items, itemRawRows, context);")?;
     require_contains(database, "public Table<string, Item> TbItem { get; }")?;
     require_not_contains(database, "Newtonsoft.Json")?;
