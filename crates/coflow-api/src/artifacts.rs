@@ -18,9 +18,9 @@ impl ArtifactSet {
     ///
     /// # Errors
     ///
-    /// Returns an error when a path is not a relative file path, when two
-    /// paths collide under Windows filesystem semantics, or when one file
-    /// path is an ancestor of another.
+    /// Returns an error when a path is not a portable relative file path,
+    /// when two paths collide under Windows filesystem semantics, or when one
+    /// file path is an ancestor of another.
     pub fn new(files: Vec<ArtifactFile>) -> Result<Self, ArtifactSetError> {
         validate_paths(&files)?;
         Ok(Self { files })
@@ -83,40 +83,86 @@ fn validate_paths(files: &[ArtifactFile]) -> Result<(), ArtifactSetError> {
                     path.display()
                 ))
             })?;
-            key.push(component.trim_end_matches([' ', '.']).to_lowercase());
-        }
-        if key.iter().any(String::is_empty) {
-            return Err(ArtifactSetError::new(format!(
-                "artifact path `{}` contains a component that is empty under Windows filesystem semantics",
-                path.display()
-            )));
+            key.push(portable_component_key(path, component)?);
         }
         paths.push((path, key));
     }
 
-    for (index, (left_path, left_key)) in paths.iter().enumerate() {
-        for (right_path, right_key) in paths.iter().skip(index + 1) {
-            if left_key == right_key {
-                let message = if left_path == right_path {
-                    format!("duplicate artifact path `{}`", left_path.display())
-                } else {
-                    format!(
-                        "artifact paths `{}` and `{}` collide under Windows filesystem semantics",
-                        left_path.display(),
-                        right_path.display()
-                    )
-                };
-                return Err(ArtifactSetError::new(message));
-            }
-            if is_component_prefix(left_key, right_key) {
-                return Err(path_prefix_error(left_path, right_path));
-            }
-            if is_component_prefix(right_key, left_key) {
-                return Err(path_prefix_error(right_path, left_path));
-            }
+    paths.sort_by(|(_, left), (_, right)| left.cmp(right));
+    for index in 1..paths.len() {
+        let (left_path, left_key) = &paths[index - 1];
+        let (right_path, right_key) = &paths[index];
+        if left_key == right_key {
+            let message = if left_path == right_path {
+                format!("duplicate artifact path `{}`", left_path.display())
+            } else {
+                format!(
+                    "artifact paths `{}` and `{}` collide under Windows filesystem semantics",
+                    left_path.display(),
+                    right_path.display()
+                )
+            };
+            return Err(ArtifactSetError::new(message));
+        }
+        if is_component_prefix(left_key, right_key) {
+            return Err(path_prefix_error(left_path, right_path));
         }
     }
     Ok(())
+}
+
+fn portable_component_key(path: &Path, component: &str) -> Result<String, ArtifactSetError> {
+    if matches!(component.chars().last(), Some(' ' | '.')) {
+        return Err(ArtifactSetError::new(format!(
+            "artifact path `{}` contains a component ending in a space or period, which is not portable to Windows",
+            path.display()
+        )));
+    }
+    if component.chars().any(is_windows_forbidden_character) {
+        return Err(ArtifactSetError::new(format!(
+            "artifact path `{}` contains a component with a character forbidden by Windows",
+            path.display()
+        )));
+    }
+    if is_windows_reserved_device_name(component) {
+        return Err(ArtifactSetError::new(format!(
+            "artifact path `{}` contains a Windows reserved device name",
+            path.display()
+        )));
+    }
+    Ok(component.to_lowercase())
+}
+
+fn is_windows_forbidden_character(character: char) -> bool {
+    character.is_ascii_control()
+        || matches!(
+            character,
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+        )
+}
+
+fn is_windows_reserved_device_name(component: &str) -> bool {
+    let device = component.split('.').next().unwrap_or_default();
+    if ["CON", "PRN", "AUX", "NUL"]
+        .iter()
+        .any(|name| device.eq_ignore_ascii_case(name))
+    {
+        return true;
+    }
+
+    let mut characters = device.chars();
+    let prefix = [characters.next(), characters.next(), characters.next()];
+    let suffix = characters.next();
+    if characters.next().is_some() {
+        return false;
+    }
+    let is_com = matches!(prefix, [Some('C' | 'c'), Some('O' | 'o'), Some('M' | 'm')]);
+    let is_lpt = matches!(prefix, [Some('L' | 'l'), Some('P' | 'p'), Some('T' | 't')]);
+    (is_com || is_lpt)
+        && matches!(
+            suffix,
+            Some('1'..='9' | '\u{00B9}' | '\u{00B2}' | '\u{00B3}')
+        )
 }
 
 fn is_component_prefix(left: &[String], right: &[String]) -> bool {
@@ -192,12 +238,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_and_windows_equivalent_paths() {
-        for right in [
-            "data/item.json",
-            "Data/Item.json",
-            "data/item.JSON",
-            "data/item.json.",
-        ] {
+        for right in ["data/item.json", "Data/Item.json", "data/item.JSON"] {
             let error = ArtifactSet::new(vec![
                 ArtifactFile::text("data/item.json", ""),
                 ArtifactFile::text(right, ""),
@@ -207,6 +248,27 @@ mod tests {
                 error.to_string().contains("duplicate")
                     || error.to_string().contains("Windows filesystem semantics"),
                 "unexpected error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_windows_incompatible_path_components() {
+        for path in [
+            "CON",
+            "data/Aux.json",
+            "data/COM1.txt",
+            "data/LPT\u{00B2}.txt",
+            "data/name?.json",
+            "data/name\u{0001}.json",
+            "data/name.",
+            "data/name ",
+        ] {
+            let error = ArtifactSet::new(vec![ArtifactFile::text(path, "")])
+                .expect_err("Windows-incompatible artifact path");
+            assert!(
+                error.to_string().contains("Windows"),
+                "unexpected error for `{path}`: {error}"
             );
         }
     }
