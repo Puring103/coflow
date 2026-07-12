@@ -833,7 +833,7 @@ dimensions:
 }
 
 #[test]
-fn language_dimension_rejects_stale_generated_csv() {
+fn language_dimension_removes_stale_generated_csv() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-dim-stale-file-{}",
         std::process::id()
@@ -878,21 +878,70 @@ dimensions:
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
-    assert!(session.queries().has_diagnostics());
     assert!(
-        session
-            .queries()
-            .diagnostics()
-            .as_set()
-            .diagnostics
-            .iter()
-            .any(|diagnostic| {
-                diagnostic.code == "DIM-SOURCE-004"
-                    && diagnostic.message.contains("no longer managed")
-            }),
+        !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
         session.queries().diagnostics().as_set()
     );
+    assert!(
+        !root.join("data/dimensions/language/Item_name.csv").exists(),
+        "stale generated dimension source should be removed"
+    );
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn language_dimension_migrates_renamed_source_field_csv() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-rename-field-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        "type Item { @localized title: string; }",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,title\npotion,Potion\n")
+        .expect("write items");
+    std::fs::write(
+        root.join("data/dimensions/language/Item_name.csv"),
+        "id,default,zh\npotion,Old,药水\n",
+    )
+    .expect("write old dimension source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let session = build_session(project, &csv_dimension_registry()).expect("build session");
+    assert!(
+        !session.queries().has_diagnostics(),
+        "diagnostics: {:?}",
+        session.queries().diagnostics().as_set()
+    );
+    assert!(!root.join("data/dimensions/language/Item_name.csv").exists());
+    let migrated = std::fs::read_to_string(root.join("data/dimensions/language/Item_title.csv"))
+        .expect("read migrated source");
+    assert!(migrated.contains("potion,Potion,药水"), "migrated source: {migrated}");
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }

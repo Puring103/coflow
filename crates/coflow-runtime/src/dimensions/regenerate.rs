@@ -49,12 +49,13 @@ pub(crate) fn plan_dimension_generation(
         };
         let out_dir = project.resolve_path(out_dir);
         let mut expected_paths = BTreeSet::new();
+        let mut dimension_operations = Vec::new();
 
         for field in dimension_fields {
             let provider_id = if field.is_singleton { "cfd" } else { "csv" };
             let path = dimension_source_path(&out_dir, field);
             expected_paths.insert(path.clone());
-            operations.push(DimensionGenerationOperation {
+            dimension_operations.push(DimensionGenerationOperation {
                 dimension: dimension.clone(),
                 provider_id: provider_id.to_string(),
                 path: path.clone(),
@@ -62,14 +63,16 @@ pub(crate) fn plan_dimension_generation(
                 actual_type: field.synthesized_type.clone(),
                 entries: dimension_entries(model, field),
                 variants: config.variants.clone(),
+                bucket: field.bucket.clone(),
+                is_singleton: field.is_singleton,
             });
         }
-        diagnostics.extend(unmanaged_dimension_source_diagnostics(
-            &project.config_path,
-            dimension,
+        operations.extend(reconcile_dimension_sources(
             &out_dir,
             &expected_paths,
+            &mut dimension_operations,
         ));
+        operations.extend(dimension_operations.into_iter().map(DimensionGenerationPlanOp::Sync));
     }
 
     DimensionGenerationPlanResult {
@@ -78,35 +81,57 @@ pub(crate) fn plan_dimension_generation(
     }
 }
 
-fn unmanaged_dimension_source_diagnostics(
-    config_path: &Path,
-    dimension: &str,
+fn reconcile_dimension_sources(
     out_dir: &Path,
     expected_paths: &BTreeSet<PathBuf>,
-) -> DiagnosticSet {
-    let mut diagnostics = DiagnosticSet::empty();
+    operations: &mut [DimensionGenerationOperation],
+) -> Vec<DimensionGenerationPlanOp> {
     let Ok(entries) = fs::read_dir(out_dir) else {
-        return diagnostics;
+        return Vec::new();
     };
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        let is_dimension_file = path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| matches!(extension, "csv" | "cfd"));
-        if is_dimension_file && !expected_paths.contains(&path) {
-            diagnostics.push(dimension_diagnostic(
-                config_path,
-                dimension,
-                "DIM-SOURCE-004",
-                format!(
-                    "dimension source `{}` is no longer managed by the current schema; remove it from dimensions.{dimension}.out_dir",
-                    path.display()
-                ),
-            ));
+    let mut stale_paths = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| matches!(extension, "csv" | "cfd"))
+                && !expected_paths.contains(path)
+        })
+        .collect::<Vec<_>>();
+    stale_paths.sort();
+
+    let mut reconciliations = Vec::new();
+    for stale_path in &stale_paths {
+        let candidates = operations
+            .iter()
+            .filter(|operation| {
+                !operation.path.exists()
+                    && operation.matches_renamed_source(stale_path)
+            })
+            .collect::<Vec<_>>();
+        if candidates.len() == 1 {
+            reconciliations.push(DimensionGenerationPlanOp::Move {
+                from: stale_path.clone(),
+                to: candidates[0].path.clone(),
+            });
         }
     }
-    diagnostics
+
+    let migrated = reconciliations
+        .iter()
+        .filter_map(|operation| match operation {
+            DimensionGenerationPlanOp::Move { from, .. } => Some(from.clone()),
+            DimensionGenerationPlanOp::Sync(_) | DimensionGenerationPlanOp::Remove(_) => None,
+        })
+        .collect::<BTreeSet<_>>();
+    reconciliations.extend(
+        stale_paths
+            .into_iter()
+            .filter(|path| !migrated.contains(path))
+            .map(DimensionGenerationPlanOp::Remove),
+    );
+    reconciliations
 }
 
 #[must_use]
@@ -119,6 +144,31 @@ pub(crate) fn commit_dimension_generation(
     let mut transaction = DimensionGenerationTransaction::default();
 
     for operation in plan.operations {
+        let operation = match operation {
+            DimensionGenerationPlanOp::Move { from, to } => {
+                transaction.move_file(&from, &to);
+                if let Err(err) = fs::rename(&from, &to) {
+                    diagnostics.push(Diagnostic::error(
+                        "DIM-SOURCE-005",
+                        "PROJECT",
+                        format!("failed to migrate dimension source `{}` to `{}`: {err}", from.display(), to.display()),
+                    ));
+                }
+                continue;
+            }
+            DimensionGenerationPlanOp::Remove(path) => {
+                transaction.remove_file(&path);
+                if let Err(err) = fs::remove_file(&path) {
+                    diagnostics.push(Diagnostic::error(
+                        "DIM-SOURCE-006",
+                        "PROJECT",
+                        format!("failed to remove obsolete dimension source `{}`: {err}", path.display()),
+                    ));
+                }
+                continue;
+            }
+            DimensionGenerationPlanOp::Sync(operation) => operation,
+        };
         let Some(manager) = registry.dimension_source_manager(&operation.provider_id) else {
             diagnostics.push(dimension_diagnostic(
                 &project.config_path,
@@ -174,7 +224,14 @@ pub(crate) struct DimensionGenerationPlanResult {
 
 #[derive(Debug, Default)]
 pub(crate) struct DimensionGenerationPlan {
-    operations: Vec<DimensionGenerationOperation>,
+    operations: Vec<DimensionGenerationPlanOp>,
+}
+
+#[derive(Debug)]
+enum DimensionGenerationPlanOp {
+    Move { from: PathBuf, to: PathBuf },
+    Remove(PathBuf),
+    Sync(DimensionGenerationOperation),
 }
 
 #[derive(Debug)]
@@ -186,6 +243,19 @@ struct DimensionGenerationOperation {
     actual_type: String,
     entries: Vec<DimensionSourceEntry>,
     variants: Vec<String>,
+    bucket: String,
+    is_singleton: bool,
+}
+
+impl DimensionGenerationOperation {
+    fn matches_renamed_source(&self, path: &Path) -> bool {
+        !self.is_singleton
+            && path.extension().and_then(|extension| extension.to_str()) == Some("csv")
+            && path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .is_some_and(|stem| stem.starts_with(&format!("{}_", self.bucket)))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -240,6 +310,15 @@ impl DimensionGenerationTransaction {
                 original,
             },
         );
+    }
+
+    fn move_file(&mut self, from: &Path, to: &Path) {
+        self.snapshot_file(from, "generated");
+        self.snapshot_file(to, "generated");
+    }
+
+    fn remove_file(&mut self, path: &Path) {
+        self.snapshot_file(path, "generated");
     }
 }
 
