@@ -541,9 +541,30 @@ export default function App() {
     [router],
   )
 
+  const fileRecordsForRow = useCallback(
+    (
+      filePath: string,
+      previousCoordinate: RecordCoordinate,
+      row: RecordRow,
+      revision: number,
+    ): FileRecords | undefined => {
+      const current = fileDataCache[filePath]
+      if (!current || current.revision !== revision - 1) return undefined
+      let found = false
+      const records = current.records.map(existing => {
+        if (!sameCoordinate(existing.coordinate, previousCoordinate)) return existing
+        found = true
+        return row
+      })
+      return found ? { ...current, revision, records } : undefined
+    },
+    [fileDataCache],
+  )
+
   const mutationPort = useMemo<EditorMutationPort>(() => ({
     currentGeneration: () => api.isTauri ? generation.currentIdentity() : null,
     publish: publishMutation,
+    fileRecordsForRow,
     rebindCoordinate,
     recoverPublication: (request, error) => {
       if (!commitProjectRevision(request.sessionId, request.revision, request.diagnostics)) {
@@ -565,7 +586,7 @@ export default function App() {
     reportError: (sessionId, prefix, error, expectedRevision) => {
       reportSessionError(sessionId, prefix, error, true, expectedRevision)
     },
-  }), [commitProjectRevision, generation, publishMutation, rebindCoordinate, reportSessionError])
+  }), [commitProjectRevision, fileRecordsForRow, generation, publishMutation, rebindCoordinate, reportSessionError])
   const mutations = useMemo(
     () => new EditorMutationController(api, mutationPort, history),
     [history, mutationPort],
