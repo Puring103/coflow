@@ -106,6 +106,7 @@ pub(crate) fn prepare_mutation_execution(
     session: &ProjectSession,
     registry: &ProviderRegistry,
     op: &PreparedMutationOp,
+    allow_noop: bool,
 ) -> Result<MutationExecutionPlan, DiagnosticSet> {
     match op {
         PreparedMutationOp::InsertRecord {
@@ -152,6 +153,7 @@ pub(crate) fn prepare_mutation_execution(
             &write_record.key,
             path,
             value,
+            allow_noop,
         )
         .map(|plan| {
             plan.map_or_else(
@@ -181,6 +183,7 @@ fn prepare_write_field(
     key: &str,
     path: &[WriteFieldPathSegment],
     new_value: &CfdValue,
+    allow_noop: bool,
 ) -> Result<Option<WriteFieldPlan>, DiagnosticSet> {
     let Some(record_ref) = session.records.get_by_coordinate(actual_type, key) else {
         return Err(DiagnosticSet::one(not_found(actual_type, key)));
@@ -197,11 +200,12 @@ fn prepare_write_field(
         "WRITE-SHAPE",
         "WRITE",
     )?;
-    if session.field_value(
-        &target.coordinate.actual_type,
-        &target.coordinate.key,
-        &target.field_path,
-    ) == Some(new_value)
+    if allow_noop
+        && session.field_value(
+            &target.coordinate.actual_type,
+            &target.coordinate.key,
+            &target.field_path,
+        ) == Some(new_value)
     {
         return Ok(None);
     }

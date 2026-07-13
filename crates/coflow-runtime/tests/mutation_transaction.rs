@@ -442,6 +442,25 @@ fn same_field_value_does_not_open_a_provider_transaction() {
 }
 
 #[test]
+fn later_batch_write_is_not_folded_against_the_original_generation() {
+    let fixture = Fixture::remote(&[("txn://one", 1)]);
+    let mut session = fixture.open();
+
+    let report = session.apply_mutation(mutation_request(vec![
+        set_value("one", 2),
+        set_value("one", 1),
+    ]));
+
+    assert!(report.write_ok, "diagnostics: {:?}", report.diagnostics);
+    assert!(report.generation_changed);
+    assert_eq!(session_value(&session, "one"), 1);
+    let state = fixture.state.lock().expect("lock fixture state");
+    assert_eq!(state.remote_values["txn://one"], 1);
+    assert_eq!(state.counts.writes, 2);
+    drop(state);
+}
+
+#[test]
 fn mutation_rebuild_reuses_the_open_generation_schema() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
     let mut session = fixture.open();
