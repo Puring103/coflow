@@ -137,12 +137,13 @@ describe('publishMutationGeneration', () => {
     expect(acceptRevision).not.toHaveBeenCalled()
   })
 
-  it('does not advance graph data without a known row projection', async () => {
+  it('projects graph data from refreshed records when a cached row is unavailable', async () => {
     const publishGraphProjection = vi.fn()
+    const refreshed = fileRecords(2)
     const port: MutationPublicationPort = {
       acceptRevision: vi.fn(() => true),
       isCurrent: vi.fn(() => true),
-      getFileRecords: vi.fn(async (_sessionId, filePath) => fileRecords(2, filePath)),
+      getFileRecords: vi.fn(async () => refreshed),
       publishFileRecords: vi.fn(),
       publishGraphProjection,
     }
@@ -156,7 +157,42 @@ describe('publishMutationGeneration', () => {
       topologyChanged: false,
     })
 
-    expect(publishGraphProjection).not.toHaveBeenCalled()
+    expect(publishGraphProjection).toHaveBeenCalledWith(2, [refreshed], false)
+  })
+
+  it('publishes both the persisted source and a projected spread host', async () => {
+    const host = fileRecords(2, 'data/host.cfd')
+    const source = fileRecords(2, 'data/source.cfd')
+    const publishFileRecords = vi.fn()
+    const publishGraphProjection = vi.fn()
+    const getFileRecords = vi.fn(async (_sessionId, filePath) => (
+      filePath === source.file_path ? source : fileRecords(2, filePath)
+    ))
+    const port: MutationPublicationPort = {
+      acceptRevision: vi.fn(() => true),
+      isCurrent: vi.fn(() => true),
+      getFileRecords,
+      publishFileRecords,
+      publishGraphProjection,
+    }
+
+    await publishMutationGeneration(port, {
+      sessionId: 1,
+      revision: 2,
+      diagnostics: [],
+      affectedFiles: [source.file_path],
+      fallbackFile: host.file_path,
+      knownRecords: host,
+      topologyChanged: false,
+    })
+
+    expect(getFileRecords).toHaveBeenCalledTimes(1)
+    expect(getFileRecords).toHaveBeenCalledWith(1, source.file_path)
+    expect(publishFileRecords).toHaveBeenCalledWith([
+      [source.file_path, source],
+      [host.file_path, host],
+    ])
+    expect(publishGraphProjection).toHaveBeenCalledWith(2, [source, host], false)
   })
 })
 

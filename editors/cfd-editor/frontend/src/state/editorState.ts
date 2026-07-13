@@ -98,7 +98,7 @@ export interface MutationPublicationPort {
   publishFileRecords: (records: readonly (readonly [string, FileRecords])[]) => void
   publishGraphProjection?: (
     revision: number,
-    knownRecords: FileRecords,
+    records: readonly FileRecords[],
     topologyChanged: boolean,
   ) => void
 }
@@ -120,7 +120,7 @@ export async function publishMutationGeneration(
     knownRecords,
     topologyChanged = true,
   } = request
-  const files = Array.from(new Set(affectedFiles.length > 0 ? affectedFiles : [fallbackFile]))
+  const files = Array.from(new Set([...affectedFiles, fallbackFile]))
   const refreshedFiles = await Promise.all(files.map(async file => {
     const records = knownRecords?.file_path === file && knownRecords.revision === revision
       ? knownRecords
@@ -135,9 +135,11 @@ export async function publishMutationGeneration(
 
   if (!port.acceptRevision(sessionId, revision, diagnostics)) return superseded()
   if (!port.isCurrent(sessionId, revision)) return superseded()
-  if (knownRecords) {
-    port.publishGraphProjection?.(revision, knownRecords, topologyChanged)
-  }
+  port.publishGraphProjection?.(
+    revision,
+    refreshedFiles.map(([, records]) => records),
+    topologyChanged,
+  )
   port.publishFileRecords(refreshedFiles)
   return committed(undefined)
 }
