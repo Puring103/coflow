@@ -60,16 +60,32 @@ pub(crate) fn run_full_project_checks(
         &dimension_check_plan(&project.config.dimensions),
         &targets,
     );
-    let raw_diagnostics = diagnostics
-        .iter()
-        .map(|rooted| rooted.diagnostic.clone())
-        .collect::<Vec<_>>();
-    if let Some(output) = stabilize_check_state(model, diagnostics, dependencies)
-        .and_then(|state| render_check_state(model, origins, state))
-    {
-        return output;
+    if check_state_is_stable(model, &diagnostics, &dependencies) {
+        if let Some(output) = stabilize_check_state(model, diagnostics, dependencies)
+            .and_then(|state| render_check_state(model, origins, state))
+        {
+            return output;
+        }
+        let (fallback, _) = run_checks_for_dimensions_subset_with_deps(
+            schema,
+            model,
+            &dimension_check_plan(&project.config.dimensions),
+            &targets,
+        );
+        return render_raw_check_output(
+            model,
+            origins,
+            fallback.into_iter().map(|rooted| rooted.diagnostic).collect(),
+        );
     }
-    render_raw_check_output(model, origins, raw_diagnostics)
+    render_raw_check_output(
+        model,
+        origins,
+        diagnostics
+            .into_iter()
+            .map(|rooted| rooted.diagnostic)
+            .collect(),
+    )
 }
 
 pub(crate) fn run_incremental_project_checks(
@@ -134,6 +150,28 @@ fn stabilize_check_state(
         diagnostics,
         reads_from,
         incremental_ready: true,
+    })
+}
+
+fn check_state_is_stable(
+    model: &CfdDataModel,
+    diagnostics: &[RootedCheckDiagnostic],
+    dependencies: &DependencyGraph,
+) -> bool {
+    let valid_id = |id| model.record(id).is_some();
+    diagnostics.iter().all(|rooted| {
+        valid_id(rooted.root)
+            && rooted
+                .diagnostic
+                .primary
+                .as_ref()
+                .and_then(|label| label.record)
+                .is_none_or(&valid_id)
+            && rooted.diagnostic.related.iter().all(|label| {
+                label.record.is_none_or(&valid_id)
+            })
+    }) && dependencies.reads_from.iter().all(|(reader, reads)| {
+        valid_id(*reader) && reads.iter().copied().all(&valid_id)
     })
 }
 
@@ -272,7 +310,7 @@ mod tests {
     use coflow_checker::{DependencyGraph, RootedCheckDiagnostic};
     use coflow_data_model::{CfdDiagnostic, CfdErrorCode, CfdRecordId};
 
-    use super::{render_raw_check_output, stabilize_check_state};
+    use super::{check_state_is_stable, render_raw_check_output, stabilize_check_state};
     use crate::load::empty_model;
 
     #[test]
@@ -284,6 +322,11 @@ mod tests {
             diagnostic: diagnostic.clone(),
         };
 
+        assert!(!check_state_is_stable(
+            &model,
+            std::slice::from_ref(&rooted),
+            &DependencyGraph::default(),
+        ));
         assert!(stabilize_check_state(&model, vec![rooted], DependencyGraph::default()).is_none());
         let output = render_raw_check_output(&model, &[], vec![diagnostic]);
 
