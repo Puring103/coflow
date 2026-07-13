@@ -344,10 +344,17 @@ pub struct WriteFieldOutcome {
 )]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CollectionEdit {
-    ArrayAppend,
+    ArrayAppend {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<CfdValue>,
+    },
     ArrayRemove { index: usize },
     ArrayMove { from: usize, to: usize },
-    DictInsert { key: CfdDictKey },
+    DictInsert {
+        key: CfdDictKey,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<CfdValue>,
+    },
     DictRemove { key: CfdDictKey },
 }
 

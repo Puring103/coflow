@@ -526,7 +526,7 @@ fn edit_collection_appends_schema_default_item() {
             snapshot.session_id,
             &RecordCoordinate::new("Bag", "bag"),
             &[CfdPathSegment::Field("nums".to_string())],
-            CollectionEdit::ArrayAppend,
+            CollectionEdit::ArrayAppend { value: None },
         )
         .expect("append array item");
     let nums = outcome
@@ -573,7 +573,7 @@ fn edit_collection_appends_by_copying_last_item_before_schema_seed() {
             snapshot.session_id,
             &RecordCoordinate::new("Bag", "bag"),
             &[CfdPathSegment::Field("nums".to_string())],
-            CollectionEdit::ArrayAppend,
+            CollectionEdit::ArrayAppend { value: None },
         )
         .expect("append array item");
     let nums = outcome
