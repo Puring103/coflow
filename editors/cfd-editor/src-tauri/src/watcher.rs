@@ -91,8 +91,9 @@ fn watch_loop(app: &AppHandle, session_id: u32, rx: &mpsc::Receiver<notify::Resu
                         Ok(Ok(_)) => {}
                         Ok(Err(err)) => emit_watch_error(app, session_id, err.to_string()),
                         Err(RecvTimeoutError::Timeout) => {
-                            let changed_paths = normalize_paths(&pending_paths);
-                            let external = has_external_changes(app, session_id, &pending_paths);
+                            let relevant_paths = filter_relevant_paths(&pending_paths);
+                            let changed_paths = normalize_paths(&relevant_paths);
+                            let external = has_external_changes(app, session_id, &relevant_paths);
                             pending_paths.clear();
                             match external {
                                 Ok(false) => break,
@@ -118,6 +119,13 @@ fn is_relevant_event(event: &Event) -> bool {
 }
 
 fn is_ignored_path(path: &Path) -> bool {
+    if path.extension().is_some_and(|extension| {
+        extension
+            .to_string_lossy()
+            .eq_ignore_ascii_case("xlsxtmp")
+    }) {
+        return true;
+    }
     path.components().any(|component| {
         let name = component.as_os_str().to_string_lossy();
         matches!(
@@ -136,6 +144,14 @@ fn is_ignored_path(path: &Path) -> bool {
                 | ".DS_Store"
         )
     })
+}
+
+pub(crate) fn filter_relevant_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
+    paths
+        .iter()
+        .filter(|path| !is_ignored_path(path))
+        .cloned()
+        .collect()
 }
 
 fn normalize_paths(paths: &[PathBuf]) -> Vec<String> {

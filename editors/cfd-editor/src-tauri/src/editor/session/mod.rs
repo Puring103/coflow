@@ -879,12 +879,16 @@ fn mutation_report_to_editor_error(
 mod revision_tests {
     #![allow(clippy::expect_used)]
 
-    use std::sync::{Arc, Barrier};
+    use std::sync::{mpsc, Arc, Barrier};
+    use std::time::Duration;
 
     use coflow_data_model::{CfdPathSegment, CfdValue};
     use coflow_runtime::RecordCoordinate;
+    use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+    use rust_xlsxwriter::Workbook;
 
     use super::SessionStore;
+    use crate::watcher::filter_relevant_paths;
 
     #[test]
     fn stale_reload_candidate_cannot_replace_a_newer_internal_write() {
@@ -963,6 +967,117 @@ mod revision_tests {
             .has_external_file_changes(snapshot.session_id, std::slice::from_ref(&source))
             .expect("classify external event"));
         std::fs::remove_dir_all(root).expect("remove temp project");
+    }
+
+    #[test]
+    fn watcher_event_batch_for_internal_write_is_not_external() {
+        let root = temp_project_dir("watcher-event-attribution");
+        write_project(&root, "Initial");
+        let store = SessionStore::new().expect("create session store");
+        let snapshot = store
+            .load_project(&root.join("coflow.yaml"))
+            .expect("load project");
+        let paths = observed_watcher_paths(&root, || {
+            store
+                .write_field(
+                    snapshot.session_id,
+                    &RecordCoordinate::new("Item", "sword"),
+                    &[CfdPathSegment::Field("name".to_string())],
+                    &CfdValue::String("Internal".to_string()),
+                )
+                .expect("commit internal write");
+        });
+
+        assert!(!paths.is_empty(), "watcher did not observe the internal write");
+        assert!(
+            !store
+                .has_external_file_changes(snapshot.session_id, &paths)
+                .expect("classify watcher batch"),
+            "internal watcher batch was classified as external: {paths:?}",
+        );
+        std::fs::remove_dir_all(root).expect("remove temp project");
+    }
+
+    #[test]
+    fn excel_watcher_event_batch_for_internal_write_is_not_external() {
+        let root = temp_project_dir("excel-watcher-event-attribution");
+        write_excel_project(&root);
+        let store = SessionStore::new().expect("create session store");
+        let snapshot = store
+            .load_project(&root.join("coflow.yaml"))
+            .expect("load project");
+        let paths = observed_watcher_paths(&root, || {
+            store
+                .write_field(
+                    snapshot.session_id,
+                    &RecordCoordinate::new("Item", "sword"),
+                    &[CfdPathSegment::Field("name".to_string())],
+                    &CfdValue::String("Internal".to_string()),
+                )
+                .expect("commit internal Excel write");
+        });
+
+        assert!(!paths.is_empty(), "watcher did not observe the internal Excel write");
+        let relevant_paths = filter_relevant_paths(&paths);
+        assert!(
+            !store
+                .has_external_file_changes(snapshot.session_id, &relevant_paths)
+                .expect("classify Excel watcher batch"),
+            "internal Excel watcher batch was classified as external: {paths:?}",
+        );
+        std::fs::remove_dir_all(root).expect("remove temp project");
+    }
+
+    fn observed_watcher_paths(
+        root: &std::path::Path,
+        operation: impl FnOnce(),
+    ) -> Vec<std::path::PathBuf> {
+        let (sender, receiver) = mpsc::channel();
+        let mut watcher = RecommendedWatcher::new(
+            move |result| sender.send(result).expect("send watcher event"),
+            Config::default(),
+        )
+        .expect("create watcher");
+        watcher
+            .watch(root, RecursiveMode::Recursive)
+            .expect("watch project");
+        operation();
+
+        let mut paths = Vec::new();
+        loop {
+            match receiver.recv_timeout(Duration::from_millis(500)) {
+                Ok(Ok(event)) if !matches!(event.kind, EventKind::Access(_)) => {
+                    paths.extend(event.paths);
+                }
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => panic!("watcher error: {error}"),
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+                Err(mpsc::RecvTimeoutError::Disconnected) => panic!("watcher disconnected"),
+            }
+        }
+        drop(watcher);
+        paths
+    }
+
+    fn write_excel_project(root: &std::path::Path) {
+        std::fs::create_dir_all(root.join("data")).expect("create data directory");
+        std::fs::write(root.join("schema.cft"), "type Item { name: string; }")
+            .expect("write schema");
+        std::fs::write(
+            root.join("coflow.yaml"),
+            "schema: schema.cft\nsources:\n  - path: data/items.xlsx\n    type: excel\n    sheets:\n      - sheet: Item\n        type: Item\n        columns:\n          ID: id\n          Name: name\n",
+        )
+        .expect("write project configuration");
+        let mut workbook = Workbook::new();
+        let sheet = workbook.add_worksheet();
+        sheet.set_name("Item").expect("name worksheet");
+        sheet.write_string(0, 0, "ID").expect("write ID header");
+        sheet.write_string(0, 1, "Name").expect("write name header");
+        sheet.write_string(1, 0, "sword").expect("write record ID");
+        sheet.write_string(1, 1, "Sword").expect("write record name");
+        workbook
+            .save(root.join("data/items.xlsx"))
+            .expect("write workbook");
     }
 
     fn write_project(root: &std::path::Path, name: &str) {
