@@ -59,6 +59,13 @@ impl RevisionCoordinator {
     pub(super) fn has_external_change(&self, project_root: &Path, paths: &[PathBuf]) -> bool {
         paths.iter().any(|path| {
             let path = resolve_path(project_root, path);
+            // Recursive watchers may report the containing directory in the
+            // same batch as a file write. Directory metadata does not affect
+            // the compiled project, while real file create/delete events are
+            // still represented by their file paths and remain external.
+            if path.is_dir() {
+                return false;
+            }
             let Some(expected) = self.expected_files.get(&path) else {
                 return true;
             };
@@ -114,6 +121,8 @@ mod tests {
         let mut coordinator = RevisionCoordinator::initial();
         coordinator.commit_internal_write(&root, [Path::new("data.cfd")]);
         assert!(!coordinator.has_external_change(&root, std::slice::from_ref(&path)));
+        assert!(!coordinator.has_external_change(&root, std::slice::from_ref(&root)));
+        assert!(!coordinator.has_external_change(&root, &[root.clone(), path.clone()]));
 
         fs::write(&path, "external").expect("write external content");
         assert!(coordinator.has_external_change(&root, std::slice::from_ref(&path)));

@@ -20,6 +20,11 @@ import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import { RECORD_HIGHLIGHT_SENTINEL } from '../App'
 import { recordMatchesSearch } from '../value/fieldValue'
+import {
+  expandedPathsFor,
+  updateExpandedPath,
+  type ExpandedPathMap,
+} from '../state/expandedPaths'
 
 interface Props {
   data: FileRecords
@@ -47,10 +52,13 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
+  const [expandedByRecord, setExpandedByRecord] = useState<ExpandedPathMap>(() => new Map())
   const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
 
   const activeId = coordinateId(coordinate)
+  const expansionOwner = `${data.file_path}:${activeId}`
+  const expandedPaths = expandedPathsFor(expandedByRecord, expansionOwner)
 
   // Record-level highlight burns off after the header flashes — the child
   // DataCardExpanded only clears the highlight for field-level jumps.
@@ -192,6 +200,10 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         </div>
         <DataCardExpanded
           fields={fields}
+          expandedPaths={expandedPaths}
+          onRowToggle={(path, expanded) => {
+            setExpandedByRecord(current => updateExpandedPath(current, expansionOwner, path, expanded))
+          }}
           actualType={recordActualType(record)}
           onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(record.coordinate, path, val) }}
           onCollectionEdit={readOnly || !onCollectionEdit ? undefined : (path, edit) => { onCollectionEdit(record.coordinate, path, edit) }}

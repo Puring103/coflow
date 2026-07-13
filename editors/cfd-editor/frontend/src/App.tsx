@@ -222,12 +222,17 @@ export default function App() {
       const sourceFiles = collectSourceFiles(snapshot)
       const keepFile = current && sourceFiles.includes(current.file)
       const nextFile = keepFile ? current.file : sourceFiles[0]
-      setProject(snapshot)
-      setFileDataCache({})
-      setGraphCache({})
       history.clear()
       setHighlightField(null)
       if (!nextFile) {
+        setProject(snapshot)
+        setFileDataCache({})
+        setGraphCache({})
+        return
+      }
+      if (!current || !keepFile) {
+        setProject(snapshot)
+        router.push({ view: 'table', file: nextFile })
         return
       }
       try {
@@ -238,21 +243,19 @@ export default function App() {
           !generation.isCurrent(snapshot.session_id, snapshot.revision) ||
           (fileRecords && fileRecords.revision !== snapshot.revision)
         ) return
+        setProject(snapshot)
         if (fileRecords) {
-          setFileDataCache({ [nextFile]: fileRecords })
+          setFileDataCache(cache => ({ ...cache, [nextFile]: fileRecords }))
         }
-        if (current && keepFile) {
-          if (current.view === 'record') {
-            const stillExists = fileRecords?.records.some(r => sameCoordinate(r.coordinate, current.coordinate)) ?? false
-            router.replace(stillExists ? current : { view: 'table', file: nextFile })
-          } else {
-            router.replace(current)
-          }
+        if (current.view === 'record') {
+          const stillExists = fileRecords?.records.some(r => sameCoordinate(r.coordinate, current.coordinate)) ?? false
+          router.replace(stillExists ? current : { view: 'table', file: nextFile })
         } else {
-          router.push({ view: 'table', file: nextFile })
+          router.replace(current)
         }
       } catch (err) {
         if (generation.isCurrent(snapshot.session_id, snapshot.revision)) {
+          setProject(snapshot)
           reportSessionError(snapshot.session_id, '刷新项目失败', err)
           router.push({ view: 'table', file: nextFile })
         }
