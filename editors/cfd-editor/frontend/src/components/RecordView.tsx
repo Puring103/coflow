@@ -19,6 +19,7 @@ import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import { RECORD_HIGHLIGHT_SENTINEL } from '../App'
+import { recordMatchesSearch } from '../value/fieldValue'
 
 interface Props {
   data: FileRecords
@@ -64,14 +65,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     : data.records
 
   const sidebarRecords = recordSearch
-    ? allSidebarRecords.filter(r => {
-        const q = recordSearch.toLowerCase()
-        if (recordKey(r).toLowerCase().includes(q)) return true
-        for (const f of r.fields) {
-          if (f.name.toLowerCase().includes(q)) return true
-        }
-        return false
-      })
+    ? allSidebarRecords.filter(record => recordMatchesSearch(record, recordSearch))
     : allSidebarRecords
 
   if (!record) {

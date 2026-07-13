@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   committed,
   failed,
@@ -13,6 +13,7 @@ import type { FileRecords } from '../bindings/FileRecords'
 
 const fieldEntry = (key: string): EditEntry => ({
   kind: 'field',
+  revision: 1,
   filePath: 'data/items.cfd',
   coordinate: { actual_type: 'Item', key },
   fieldPath: [{ kind: 'field', value: 'name' }],
@@ -29,6 +30,7 @@ describe('ProjectGenerationController', () => {
     expect(generation.acceptSnapshot({ session_id: 2, revision: 3 })).toBe(false)
     expect(generation.acceptSnapshot({ session_id: 2, revision: 4 })).toBe(true)
     expect(generation.isCurrent(2, 4)).toBe(true)
+    expect(generation.currentIdentity()).toEqual({ sessionId: 2, revision: 4 })
   })
 
   it('rejects mutation outcomes from old sessions and revisions', () => {
@@ -80,7 +82,6 @@ describe('publishMutationGeneration', () => {
     let currentRevision = 0
     let resolveOldRead: ((records: FileRecords) => void) | undefined
     const published: (readonly (readonly [string, FileRecords])[])[] = []
-    let graphInvalidations = 0
     const port: MutationPublicationPort = {
       acceptRevision: (_sessionId, revision) => {
         if (revision < currentRevision) return false
@@ -92,7 +93,6 @@ describe('publishMutationGeneration', () => {
         resolveOldRead = records => resolve(records.file_path === filePath ? records : fileRecords(1, filePath))
       }),
       publishFileRecords: records => published.push(records),
-      invalidateGraphs: () => { graphInvalidations += 1 },
     }
 
     const older = publishMutationGeneration(port, {
@@ -116,7 +116,25 @@ describe('publishMutationGeneration', () => {
     expect(newer.status).toBe('committed')
     expect((await older).status).toBe('superseded')
     expect(published).toEqual([[['data/items.cfd', newerRecords]]])
-    expect(graphInvalidations).toBe(1)
+  })
+
+  it('does not advance the editor generation when projection refresh fails', async () => {
+    const acceptRevision = vi.fn(() => true)
+    const port: MutationPublicationPort = {
+      acceptRevision,
+      isCurrent: vi.fn(() => false),
+      getFileRecords: vi.fn(async () => { throw new Error('refresh failed') }),
+      publishFileRecords: vi.fn(),
+    }
+
+    await expect(publishMutationGeneration(port, {
+      sessionId: 1,
+      revision: 2,
+      diagnostics: [],
+      affectedFiles: ['data/items.cfd'],
+      fallbackFile: 'data/items.cfd',
+    })).rejects.toThrow('refresh failed')
+    expect(acceptRevision).not.toHaveBeenCalled()
   })
 })
 
@@ -142,10 +160,12 @@ describe('MutationHistoryController', () => {
       release = () => resolve(committed(undefined))
     }))
 
+    await Promise.resolve()
     expect(history.getSnapshot().busy).toBe(true)
-    expect((await history.undo(async () => committed(undefined))).status).toBe('superseded')
+    const second = history.undo(async () => committed(undefined))
     release?.()
     await first
+    expect((await second).status).toBe('superseded')
     expect(history.getSnapshot().redo).toHaveLength(1)
   })
 

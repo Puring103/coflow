@@ -36,17 +36,22 @@ import {
   fieldPathDictKey,
   fieldPathField,
   fieldPathIndex,
-  floatValue,
-  intValue,
   nullValue,
   objectFields,
   refValue,
-  stringValue,
 } from '../wire'
 import { Icon } from './Icon'
 import { DiagBadge } from './DiagBadge'
 import { typeColor, enumColor } from '../utils/typeColor'
-import { loadEnumVariants, loadRefTargets } from '../utils/editContext'
+import { useEditorLookups } from '../utils/editContext'
+import type { EditorLookupAccess } from '../utils/editContext'
+import {
+  collectionShapeForDeclaredType,
+  parseFieldValueText,
+  plainFieldValueText,
+  scalarDefaultForDeclaredType,
+  summaryOf,
+} from '../value/fieldValue'
 import { useObjectDraft } from './ObjectDraftHost'
 import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 
@@ -178,35 +183,6 @@ function dictKeyText(k: DictKey): string {
     case 'string': return `"${k.value}"`
     case 'int': return String(k.value)
     case 'enum': return dictEnumVariantText(k)
-  }
-}
-
-export function summaryOf(v: FieldValue): string {
-  switch (v.kind) {
-    case 'null': return '-'
-    case 'bool': return v.value ? 'true' : 'false'
-    case 'int': return String(v.value)
-    case 'float': return String(v.value)
-    case 'string': return v.value
-    case 'enum': return enumVariantText(v)
-    case 'ref': return v.value
-    case 'object': return v.value.actual_type
-    case 'array': {
-      if (v.value.length === 0) return '[]'
-      const allScalar = v.value.every(i =>
-        i.kind === 'bool' || i.kind === 'int' || i.kind === 'float' || i.kind === 'string' || i.kind === 'enum'
-      )
-      if (allScalar && v.value.length <= 6) {
-        const joined = v.value.map(summaryOf).join(', ')
-        if (joined.length <= 60) return `[${joined}]`
-      }
-      return `${valueKindLabel(v.value[0])}[${v.value.length}]`
-    }
-    case 'dict': {
-      if (v.value.length === 0) return '{}'
-      const first = v.value[0]
-      return `${dictKindLabel(first[0])}->${valueKindLabel(first[1])}  (${v.value.length})`
-    }
   }
 }
 
@@ -515,7 +491,7 @@ function FieldRow({
   // should still be treated as expandable, so the user can just click
   // "add element" instead of first coercing null → empty collection by
   // hand. The materialization happens lazily when the user hits add.
-  const nullCollectionShape = value.kind === 'null' ? collectionShapeFromDeclared(declaredType) : null
+  const nullCollectionShape = value.kind === 'null' ? collectionShapeForDeclaredType(declaredType) : null
   const displayValue = nullCollectionShape ?? value
   const canExpand = (isComplex || nullCollectionShape !== null) && depth < MAX_DEPTH
   const polyTypes = annotationPolymorphicTypes(valueAnnotation)
@@ -610,7 +586,7 @@ function NullableControls({
   // scalars/collections we materialize locally, refs/enums pull first option
   // via the async helper, and abstract objects prompt for a concrete type.
   const canCreate = isNull && (
-    scalarDefaultForKind(declaredType) !== null
+    scalarDefaultForDeclaredType(declaredType) !== null
     || isPolymorphic
     || !!enumType
     || !!refTargetType
@@ -618,6 +594,7 @@ function NullableControls({
   )
 
   const { openObjectDraft } = useObjectDraft()
+  const lookups = useEditorLookups()
 
   if (!canClear && !canCreate && !canSwitchType) return null
 
@@ -648,6 +625,7 @@ function NullableControls({
       declaredType,
       enumType,
       refTargetType,
+      lookups,
     })
     if (scalarDefault) {
       const resolved = await scalarDefault()
@@ -715,51 +693,36 @@ function defaultForScalarLike({
   declaredType,
   enumType,
   refTargetType,
+  lookups,
 }: {
   declaredType?: string
   enumType?: string
   refTargetType?: string
+  lookups: EditorLookupAccess
 }): (() => Promise<FieldValue | null>) | null {
   if (enumType) {
     return async () => {
-      const variants = await loadEnumVariants(enumType)
-      if (variants.ok && variants.variants.length > 0) {
-        return enumValue(enumType, variants.variants[0], 0n)
+      const variants = await lookups.loadEnumVariants(enumType)
+      if (variants.ok && variants.value.length > 0) {
+        return enumValue(enumType, variants.value[0], 0n)
       }
       return null
     }
   }
   if (refTargetType) {
     return async () => {
-      const targets = await loadRefTargets(refTargetType)
-      if (targets.ok && targets.targets.length > 0) {
-        return refValue(targets.targets[0].coordinate.key)
+      const targets = await lookups.loadRefTargets(refTargetType)
+      if (targets.ok && targets.value.length > 0) {
+        return refValue(targets.value[0].coordinate.key)
       }
       // No known ref targets — the user needs to create one first.
       alert(`&${refTargetType} 类型没有可用的记录，请先在对应的表中创建一条。`)
       return null
     }
   }
-  const scalar = scalarDefaultForKind(declaredType)
+  const scalar = scalarDefaultForDeclaredType(declaredType)
   if (scalar) return async () => scalar
   return null
-}
-
-/** Cheap same-shape default value for scalar / collection declared types. */
-function scalarDefaultForKind(declaredType?: string): FieldValue | null {
-  if (!declaredType) return null
-  const stripped = declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
-  switch (stripped) {
-    case 'string': return { kind: 'string', value: '' }
-    case 'int': return { kind: 'int', value: 0n }
-    case 'float': return { kind: 'float', value: 0 }
-    case 'bool': return { kind: 'bool', value: false }
-    default: {
-      if (stripped.startsWith('[') && stripped.endsWith(']')) return { kind: 'array', value: [] }
-      if (stripped.startsWith('{') && stripped.endsWith('}')) return { kind: 'dict', value: [] }
-      return null
-    }
-  }
 }
 
 function ScalarFieldRow({
@@ -885,13 +848,13 @@ function TextDirectInput({
   value: FieldValue & { kind: 'int' | 'float' | 'string' }
   onCommit: (next: FieldValue) => void
 }) {
-  const initial = plainText(value)
+  const initial = plainFieldValueText(value)
   const [text, setText] = useState(initial)
   useEffect(() => { setText(initial) }, [initial])
 
   function commit() {
     if (text === initial) return
-    const next = buildFieldValue(value, text)
+    const next = parseFieldValueText(value, text)
     if (next) onCommit(next)
     else setText(initial)
   }
@@ -948,6 +911,7 @@ export function EnumDirectSelect({
   /** When true, offer a "(null)" option so the field can be cleared. */
   nullable?: boolean
 }) {
+  const lookups = useEditorLookups()
   const enumName = value.kind === 'enum' ? value.value.enum_name : enumType
   const [variants, setVariants] = useState<string[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -957,13 +921,13 @@ export function EnumDirectSelect({
     if (!enumName) { setVariants([]); return }
     let alive = true
     setLoadError(null)
-    loadEnumVariants(enumName).then(r => {
+    lookups.loadEnumVariants(enumName).then(r => {
       if (!alive) return
-      if (r.ok) setVariants(r.variants)
-      else { setVariants([]); setLoadError(r.error) }
+      if (r.ok) setVariants(r.value)
+      else { setVariants([]); setLoadError(r.error ?? null) }
     })
     return () => { alive = false }
-  }, [enumName])
+  }, [enumName, lookups])
 
   function commit(next: string) {
     if (next === NULL_SENTINEL) {
@@ -1031,6 +995,7 @@ export function RefDirectSelect({
   /** When true, offer a "(null)" option so the field can be cleared. */
   nullable?: boolean
 }) {
+  const lookups = useEditorLookups()
   const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const currentKey = value.kind === 'ref' ? value.value : ''
@@ -1045,20 +1010,20 @@ export function RefDirectSelect({
     let alive = true
     setTargets(null)
     setLoadError(null)
-    loadRefTargets(targetType).then(r => {
+    lookups.loadRefTargets(targetType).then(r => {
       if (!alive) return
       if (r.ok) {
-        setTargets(r.targets.map(target => ({
+        setTargets(r.value.map(target => ({
           key: target.coordinate.key,
           label: `${target.coordinate.actual_type}.${target.coordinate.key}`,
         })))
       } else {
         setTargets([])
-        setLoadError(r.error)
+        setLoadError(r.error ?? null)
       }
     })
     return () => { alive = false }
-  }, [targetType])
+  }, [targetType, lookups])
 
   function commit(key: string) {
     if (key === NULL_SENTINEL) {
@@ -1128,11 +1093,11 @@ export function InlineEditor({
   onCancel: () => void
   targetType?: string
 }) {
-  const initial = plainText(value)
+  const initial = plainFieldValueText(value)
   const [editVal, setEditVal] = useState(initial)
 
   function commit(raw: string) {
-    const next = buildFieldValue(value, raw)
+    const next = parseFieldValueText(value, raw)
     if (next) onCommit(next)
     else onCancel()
   }
@@ -1217,12 +1182,13 @@ function EnumSelect({
   onCommit: (v: string) => void
   onCancel: () => void
 }) {
+  const lookups = useEditorLookups()
   const [variants, setVariants] = useState<string[] | null>(null)
   useEffect(() => {
     let alive = true
-    loadEnumVariants(value.value.enum_name).then(r => { if (alive) setVariants(r.ok ? r.variants : []) })
+    lookups.loadEnumVariants(value.value.enum_name).then(r => { if (alive) setVariants(r.ok ? r.value : []) })
     return () => { alive = false }
-  }, [value.value.enum_name])
+  }, [value.value.enum_name, lookups])
 
   if (variants === null) {
     return <input className="dc-input" value={current} disabled placeholder="加载中..." />
@@ -1266,6 +1232,7 @@ function RefSelect({
   onCancel: () => void
   targetType?: string
 }) {
+  const lookups = useEditorLookups()
   const [val, setVal] = useState(value.value)
   const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
   useEffect(() => { setVal(value.value) }, [value.value])
@@ -1276,15 +1243,15 @@ function RefSelect({
     }
     let alive = true
     setTargets(null)
-    loadRefTargets(targetType).then(r => {
+    lookups.loadRefTargets(targetType).then(r => {
       if (!alive) return
-      setTargets(r.ok ? r.targets.map(target => ({
+      setTargets(r.ok ? r.value.map(target => ({
         key: target.coordinate.key,
         label: `${target.coordinate.actual_type}.${target.coordinate.key}`,
       })) : [])
     })
     return () => { alive = false }
-  }, [targetType])
+  }, [targetType, lookups])
 
   if (targetType && targets === null) {
     return <input className="dc-input dc-input-ref-select" value={val} disabled placeholder="加载中..." />
@@ -1542,14 +1509,6 @@ function dictKeyPathText(key: DictKey): string {
 /** If `declaredType` describes an array/dict, return an empty collection
  *  value the UI can render as if the null field were already materialized.
  *  Object types are not covered — they would need per-field defaults. */
-function collectionShapeFromDeclared(declaredType?: string): FieldValue | null {
-  if (!declaredType) return null
-  const stripped = stripNullableType(declaredType) ?? declaredType
-  if (stripped.startsWith('[') && stripped.endsWith(']')) return { kind: 'array', value: [] }
-  if (stripped.startsWith('{') && stripped.endsWith('}')) return { kind: 'dict', value: [] }
-  return null
-}
-
 function ArrayItems({
   container,
   depth,
@@ -1748,6 +1707,7 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
   onCommit: (k: DictKey) => void
   onCancel: () => void
 }) {
+  const lookups = useEditorLookups()
   const [text, setText] = useState('')
   const [variants, setVariants] = useState<string[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -1755,13 +1715,13 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
     if (sampleKey.kind !== 'enum') return
     let alive = true
     setLoadError(null)
-    loadEnumVariants(sampleKey.value.enum_name).then(r => {
+    lookups.loadEnumVariants(sampleKey.value.enum_name).then(r => {
       if (!alive) return
-      if (r.ok) setVariants(r.variants)
-      else { setVariants([]); setLoadError(r.error) }
+      if (r.ok) setVariants(r.value)
+      else { setVariants([]); setLoadError(r.error ?? null) }
     })
     return () => { alive = false }
-  }, [sampleKey.kind === 'enum' ? sampleKey.value.enum_name : ''])
+  }, [sampleKey.kind === 'enum' ? sampleKey.value.enum_name : '', lookups])
 
   if (sampleKey.kind === 'enum') {
     if (variants === null) {
@@ -1834,43 +1794,6 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
       <button className="btn-tiny" onClick={onCancel}>x</button>
     </span>
   )
-}
-
-function buildFieldValue(original: FieldValue, raw: string): FieldValue | null {
-  switch (original.kind) {
-    case 'bool':
-      return boolValue(raw === 'true')
-    case 'int':
-      try {
-        return intValue(raw)
-      } catch {
-        return null
-      }
-    case 'float': {
-      const n = parseFloat(raw)
-      return Number.isFinite(n) ? floatValue(n) : null
-    }
-    case 'string':
-      return stringValue(raw)
-    case 'enum':
-      return enumValue(original.value.enum_name, raw, original.value.value)
-    case 'ref':
-      return refValue(raw)
-    default:
-      return null
-  }
-}
-
-function plainText(v: FieldValue): string {
-  switch (v.kind) {
-    case 'bool': return v.value ? 'true' : 'false'
-    case 'int': return String(v.value)
-    case 'float': return String(v.value)
-    case 'string': return v.value
-    case 'enum': return enumVariantText(v)
-    case 'ref': return v.value
-    default: return ''
-  }
 }
 
 export function DataCardNode({

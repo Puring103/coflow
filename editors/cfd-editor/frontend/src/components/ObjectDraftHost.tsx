@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { FieldValue } from '../wire'
-import * as api from '../api'
+import type { EditorLookupController } from '../state/editorLookups'
+import { EditorLookupContext } from '../utils/editContext'
 import { ObjectDraftDialog } from './ObjectDraftDialog'
 
 interface OpenOptions {
@@ -17,7 +18,6 @@ interface OpenOptions {
 }
 
 interface ObjectDraftHostValue {
-  sessionId: number | null
   openObjectDraft: (opts: OpenOptions) => void
 }
 
@@ -27,10 +27,12 @@ const Ctx = createContext<ObjectDraftHostValue | null>(null)
  *  shared object-draft dialog. Rendered once near the top of the app so the
  *  overlay always paints above the record view. */
 export function ObjectDraftHost({
-  sessionId,
+  lookups,
+  generationKey,
   children,
 }: {
-  sessionId: number | null
+  lookups: EditorLookupController
+  generationKey: string
   children: ReactNode
 }) {
   const [request, setRequest] = useState<(OpenOptions & { currentType: string }) | null>(null)
@@ -39,35 +41,46 @@ export function ObjectDraftHost({
     setRequest({ ...opts, currentType: opts.actualType })
   }, [])
 
+  const lookupAccess = useMemo(() => ({
+    loadEnumVariants: (enumName: string) => lookups.loadEnumVariants(enumName),
+    loadRefTargets: (targetType: string) => lookups.loadRefTargets(targetType),
+    makeDefaultObject: (typeName: string) => lookups.makeDefaultObject(typeName),
+    createRecordDraft: (actualType: string) => lookups.createRecordDraft(actualType),
+  }), [generationKey, lookups])
+
   const loadDraft = useCallback(async (typeName: string): Promise<CreateRecordDraft> => {
-    if (sessionId === null) throw new Error('未打开会话')
-    return api.createRecordDraft(sessionId, typeName)
-  }, [sessionId])
+    const result = await lookupAccess.createRecordDraft(typeName)
+    if (result.ok) return result.value
+    if (result.reason === 'failed') throw new Error(result.error ?? '创建记录草稿失败')
+    throw new Error('编辑器 generation 已更新')
+  }, [lookupAccess])
 
   const value = useMemo<ObjectDraftHostValue>(
-    () => ({ sessionId, openObjectDraft }),
-    [sessionId, openObjectDraft],
+    () => ({ openObjectDraft }),
+    [openObjectDraft],
   )
 
   return (
-    <Ctx.Provider value={value}>
-      {children}
-      {request && (
-        <ObjectDraftDialog
-          title={request.title}
-          actualType={request.currentType}
-          polymorphicTypes={request.polymorphicTypes ?? []}
-          onTypeChange={next => setRequest(r => r ? { ...r, currentType: next } : r)}
-          onLoadDraft={loadDraft}
-          confirmLabel={request.confirmLabel ?? '确定'}
-          onConfirm={payload => {
-            request.onConfirm(payload)
-            setRequest(null)
-          }}
-          onClose={() => setRequest(null)}
-        />
-      )}
-    </Ctx.Provider>
+    <EditorLookupContext.Provider value={lookupAccess}>
+      <Ctx.Provider value={value}>
+        {children}
+        {request && (
+          <ObjectDraftDialog
+            title={request.title}
+            actualType={request.currentType}
+            polymorphicTypes={request.polymorphicTypes ?? []}
+            onTypeChange={next => setRequest(r => r ? { ...r, currentType: next } : r)}
+            onLoadDraft={loadDraft}
+            confirmLabel={request.confirmLabel ?? '确定'}
+            onConfirm={payload => {
+              request.onConfirm(payload)
+              setRequest(null)
+            }}
+            onClose={() => setRequest(null)}
+          />
+        )}
+      </Ctx.Provider>
+    </EditorLookupContext.Provider>
   )
 }
 

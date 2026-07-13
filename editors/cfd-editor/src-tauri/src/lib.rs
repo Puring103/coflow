@@ -3,53 +3,46 @@
 use std::path::PathBuf;
 
 pub mod editor;
+mod host;
 mod watcher;
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_runtime::RecordCoordinate;
 use editor::{
     CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, EditorError, FileRecords, GraphData,
-    GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome, SessionStore,
+    GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome,
     WriteFieldOutcome,
 };
+use host::EditorHost;
 use tauri::{AppHandle, Manager, State};
-use watcher::ProjectWatchRegistry;
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn load_project(
     yaml_path: String,
-    store: State<'_, SessionStore>,
-    watchers: State<'_, ProjectWatchRegistry>,
+    host: State<'_, EditorHost>,
     app: AppHandle,
 ) -> Result<ProjectSnapshot, EditorError> {
-    let snapshot = store.load_project(&PathBuf::from(yaml_path))?;
-    watchers.watch_session(app, &snapshot)?;
-    Ok(snapshot)
+    host.load_project(app, &PathBuf::from(yaml_path))
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn init_project(
     dir: String,
-    store: State<'_, SessionStore>,
-    watchers: State<'_, ProjectWatchRegistry>,
+    host: State<'_, EditorHost>,
     app: AppHandle,
 ) -> Result<ProjectSnapshot, EditorError> {
-    let snapshot = store.init_project(&PathBuf::from(dir))?;
-    watchers.watch_session(app, &snapshot)?;
-    Ok(snapshot)
+    host.init_project(app, &PathBuf::from(dir))
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn close_session(
     session_id: u32,
-    store: State<'_, SessionStore>,
-    watchers: State<'_, ProjectWatchRegistry>,
+    host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
-    watchers.unwatch_session(session_id);
-    store.close_session(session_id)
+    host.close_session(session_id)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -57,9 +50,9 @@ fn close_session(
 fn get_file_records(
     session_id: u32,
     file_path: String,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<FileRecords, EditorError> {
-    store.get_file_records(session_id, &file_path)
+    host.sessions().get_file_records(session_id, &file_path)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -67,18 +60,14 @@ fn get_file_records(
 fn get_graph(
     session_id: u32,
     file_path: String,
-    active_type: Option<String>,
-    enabled_fields: Option<Vec<String>>,
     depth: Option<usize>,
     limit: Option<usize>,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<GraphData, EditorError> {
-    store.get_graph(
+    host.sessions().get_graph(
         session_id,
         &GraphQuery {
             file_path,
-            active_type,
-            enabled_fields,
             depth,
             limit,
         },
@@ -90,9 +79,9 @@ fn get_graph(
 fn get_enum_variants(
     session_id: u32,
     enum_name: String,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<Vec<String>, EditorError> {
-    store.get_enum_variants(session_id, &enum_name)
+    host.sessions().get_enum_variants(session_id, &enum_name)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -100,9 +89,9 @@ fn get_enum_variants(
 fn get_ref_targets(
     session_id: u32,
     target_type: String,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<Vec<RefTarget>, EditorError> {
-    store.get_ref_targets(session_id, &target_type)
+    host.sessions().get_ref_targets(session_id, &target_type)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -110,9 +99,9 @@ fn get_ref_targets(
 fn make_default_object(
     session_id: u32,
     type_name: String,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<CfdValue, EditorError> {
-    store.make_default_object(session_id, &type_name)
+    host.sessions().make_default_object(session_id, &type_name)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -120,9 +109,9 @@ fn make_default_object(
 fn create_record_draft(
     session_id: u32,
     actual_type: String,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<CreateRecordDraft, EditorError> {
-    store.create_record_draft(session_id, &actual_type)
+    host.sessions().create_record_draft(session_id, &actual_type)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -132,9 +121,10 @@ fn write_field(
     coordinate: RecordCoordinate,
     field_path: Vec<CfdPathSegment>,
     new_value: CfdValue,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<WriteFieldOutcome, EditorError> {
-    store.write_field(session_id, &coordinate, &field_path, &new_value)
+    host.sessions()
+        .write_field(session_id, &coordinate, &field_path, &new_value)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -144,9 +134,10 @@ fn edit_collection(
     coordinate: RecordCoordinate,
     field_path: Vec<CfdPathSegment>,
     edit: CollectionEdit,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<WriteFieldOutcome, EditorError> {
-    store.edit_collection(session_id, &coordinate, &field_path, edit)
+    host.sessions()
+        .edit_collection(session_id, &coordinate, &field_path, edit)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -157,9 +148,10 @@ fn insert_record(
     record_key: String,
     actual_type: String,
     fields: CfdValue,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<InsertRecordOutcome, EditorError> {
-    store.insert_record(session_id, &file_path, &record_key, &actual_type, fields)
+    host.sessions()
+        .insert_record(session_id, &file_path, &record_key, &actual_type, fields)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -168,9 +160,10 @@ fn rename_record_key(
     session_id: u32,
     coordinate: RecordCoordinate,
     new_key: String,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<RenameRecordOutcome, EditorError> {
-    store.rename_record_key(session_id, &coordinate, &new_key)
+    host.sessions()
+        .rename_record_key(session_id, &coordinate, &new_key)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -178,9 +171,9 @@ fn rename_record_key(
 fn delete_record(
     session_id: u32,
     coordinate: RecordCoordinate,
-    store: State<'_, SessionStore>,
+    host: State<'_, EditorHost>,
 ) -> Result<DeleteRecordOutcome, EditorError> {
-    store.delete_record(session_id, &coordinate)
+    host.sessions().delete_record(session_id, &coordinate)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -193,9 +186,8 @@ pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let store = SessionStore::new().map_err(|err| err.to_string())?;
-            app.manage(store);
-            app.manage(ProjectWatchRegistry::default());
+            let host = EditorHost::new().map_err(|err| err.to_string())?;
+            app.manage(host);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

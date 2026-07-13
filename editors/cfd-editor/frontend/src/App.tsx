@@ -19,33 +19,30 @@ import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
 import {
-  cloneValue,
-  deletedSnapshotValue,
   diagnosticKey,
   diagnosticMatchesAnchor,
   errorDiagnostics,
   errorMessage,
-  fieldPathField,
   recordActualType,
   recordKey,
   sameCoordinate,
   type FieldPathSegment,
   type FieldValue,
 } from './wire'
-import { summaryOf } from './components/DataCard'
+import { recordMatchesSearch } from './value/fieldValue'
 import { typeColor } from './utils/typeColor'
 import { isEditableFile } from './utils/editable'
-import { setActiveSession } from './utils/editContext'
+import { EditorLookupController } from './state/editorLookups'
 import {
-  committed,
-  failed,
   MutationHistoryController,
   publishMutationGeneration,
   ProjectGenerationController,
-  superseded,
-  type MutationResult,
   type MutationPublicationRequest,
 } from './state/editorState'
+import {
+  EditorMutationController,
+  type EditorMutationPort,
+} from './state/editorMutations'
 import './style.css'
 
 const GRAPH_DEPTH = 3
@@ -57,28 +54,21 @@ export const RECORD_HIGHLIGHT_SENTINEL = '__record__'
 
 function graphCacheKey(
   filePath: string,
-  activeType: string | null | undefined,
-  enabledFields: string[] | null | undefined,
   depth: number,
   limit: number,
 ): string {
-  const fields = enabledFields ? enabledFields.join(',') : '*'
-  return `${filePath}::${activeType || '*'}::${fields}::${depth}::${limit}`
-}
-
-function sameStringList(a: readonly string[] | null, b: readonly string[]): boolean {
-  if (!a || a.length !== b.length) return false
-  return a.every((item, index) => item === b[index])
+  return `${filePath}::${depth}::${limit}`
 }
 
 export default function App() {
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
   const [generation] = useState(() => new ProjectGenerationController())
   const [history] = useState(() => new MutationHistoryController())
+  const [lookups] = useState(() => new EditorLookupController(api))
+  const lookupGenerationKey = project ? `${project.session_id}:${project.revision}` : 'none'
   const historySnapshot = useSyncExternalStore(history.subscribe, history.getSnapshot, history.getSnapshot)
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
-  const [graphEnabledFields, setGraphEnabledFields] = useState<string[] | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const helpBoxRef = useRef<HTMLDivElement>(null)
   const helpReturnRef = useRef<HTMLElement | null>(null)
@@ -96,12 +86,6 @@ export default function App() {
   const [globalSearch, setGlobalSearch] = useState('')
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
-  const setGraphEnabledFieldsStable = useCallback((fields: string[]) => {
-    const next = Array.from(new Set(fields)).sort()
-    setGraphEnabledFields(prev => (
-      sameStringList(prev, next) ? prev : next
-    ))
-  }, [])
   // Field path to briefly highlight after a diagnostic jump. Cleared after
   // the RecordView applies the highlight so subsequent navigations don't
   // re-flash it.
@@ -145,14 +129,15 @@ export default function App() {
   useEffect(() => {
     if (!api.isTauri) {
       generation.adopt(MOCK_PROJECT)
+      lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision })
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
-      setGraphCache({ [graphCacheKey('data/npc.cfd', null, null, GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
+      setGraphCache({ [graphCacheKey('data/npc.cfd', GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
       if (MOCK_PROJECT.first_source_file) {
         router.push({ view: 'table', file: MOCK_PROJECT.first_source_file })
       }
     }
-  }, [generation, router.push])
+  }, [generation, lookups, router.push])
 
   // Reset all per-session UI state to a clean slate before swapping in a
   // new project snapshot. Used by both "open" and "new" flows so behavior
@@ -161,6 +146,7 @@ export default function App() {
   const adoptSnapshot = useCallback(
     (snapshot: ProjectSnapshot) => {
       generation.adopt(snapshot)
+      lookups.adopt({ sessionId: snapshot.session_id, revision: snapshot.revision })
       setProject(prev => {
         // Fire-and-forget close of the outgoing session. We read prev here
         // (not `project` from the closure) so we always close exactly the
@@ -176,7 +162,7 @@ export default function App() {
       const firstFile = snapshot.first_source_file ?? collectSourceFiles(snapshot)[0]
       if (firstFile) router.push({ view: 'table', file: firstFile })
     },
-    [generation, history, router]
+    [generation, history, lookups, router]
   )
 
   const reportSessionError = useCallback((
@@ -204,6 +190,7 @@ export default function App() {
   const openProject = useCallback(async () => {
     if (!api.isTauri) {
       generation.adopt(MOCK_PROJECT)
+      lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision })
       history.clear()
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
@@ -225,11 +212,12 @@ export default function App() {
         setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
       }
     }
-  }, [adoptSnapshot, generation, history])
+  }, [adoptSnapshot, generation, history, lookups])
 
   const refreshFromSnapshot = useCallback(
     async (snapshot: ProjectSnapshot) => {
       if (!generation.acceptSnapshot(snapshot)) return
+      lookups.adopt({ sessionId: snapshot.session_id, revision: snapshot.revision })
       const current = router.current
       const sourceFiles = collectSourceFiles(snapshot)
       const keepFile = current && sourceFiles.includes(current.file)
@@ -270,7 +258,7 @@ export default function App() {
         }
       }
     },
-    [generation, history, reportSessionError, router],
+    [generation, history, lookups, reportSessionError, router],
   )
 
   const commitProjectRevision = useCallback((
@@ -279,13 +267,14 @@ export default function App() {
     diagnostics: ProjectSnapshot['diagnostics'],
   ) => {
     if (!generation.acceptMutation(sessionId, revision)) return false
+    lookups.adopt({ sessionId, revision })
     setProject(current => (
       current && current.session_id === sessionId && current.revision <= revision
         ? { ...current, revision, diagnostics }
         : current
     ))
     return true
-  }, [generation])
+  }, [generation, lookups])
 
   const publishMutation = useCallback((request: MutationPublicationRequest) => (
     publishMutationGeneration({
@@ -299,7 +288,6 @@ export default function App() {
           return next
         })
       },
-      invalidateGraphs: () => setGraphCache({}),
     }, request)
   ), [commitProjectRevision, generation])
 
@@ -368,7 +356,7 @@ export default function App() {
   useEffect(() => {
     if (!project || !router.current) return
     const file = router.current.file
-    if (fileDataCache[file]) return
+    if (fileDataCache[file]?.revision === project.revision) return
     if (!api.isTauri) return // mock branch already populated
     const sessionId = project.session_id
     const revision = project.revision
@@ -393,16 +381,12 @@ export default function App() {
       })
   }, [generation, project, router.current, fileDataCache, reportSessionError])
 
-  useEffect(() => {
-    setGraphEnabledFields(null)
-  }, [router.current?.file, activeType])
-
   // Lazy-load graph when switching to graph view
   useEffect(() => {
     if (!project || router.current?.view !== 'graph') return
     const file = router.current.file
-    const key = graphCacheKey(file, activeType, graphEnabledFields, GRAPH_DEPTH, GRAPH_LIMIT)
-    if (graphCache[key]) return
+    const key = graphCacheKey(file, GRAPH_DEPTH, GRAPH_LIMIT)
+    if (graphCache[key]?.revision === project.revision) return
     if (!api.isTauri) {
       setGraphCache(c => ({ ...c, [key]: MOCK_GRAPH }))
       return
@@ -413,8 +397,6 @@ export default function App() {
     const request = generation.captureRequest()
     api
       .getGraph(sessionId, file, {
-        activeType,
-        enabledFields: graphEnabledFields ?? undefined,
         depth: GRAPH_DEPTH,
         limit: GRAPH_LIMIT,
       })
@@ -431,7 +413,7 @@ export default function App() {
         }
       })
     return () => { cancelled = true }
-  }, [generation, project, router.current, graphCache, activeType, graphEnabledFields, reportSessionError])
+  }, [generation, project, router.current, graphCache, reportSessionError])
 
   // Auto-collapse inspector when switching to record view; restore for table/graph.
   useEffect(() => {
@@ -547,9 +529,43 @@ export default function App() {
       ) {
         router.replace({ ...router.current, coordinate: newCoordinate })
       }
-      history.rebind(oldCoordinate, newCoordinate)
+      setInspectorCoord(current => (
+        current && sameCoordinate(current.coordinate, oldCoordinate)
+          ? { ...current, coordinate: newCoordinate }
+          : current
+      ))
     },
-    [history, router],
+    [router],
+  )
+
+  const mutationPort = useMemo<EditorMutationPort>(() => ({
+    currentGeneration: () => api.isTauri ? generation.currentIdentity() : null,
+    publish: publishMutation,
+    rebindCoordinate,
+    recoverPublication: (request, error) => {
+      if (!commitProjectRevision(request.sessionId, request.revision, request.diagnostics)) {
+        return false
+      }
+      window.setTimeout(() => {
+        publishMutation(request).catch(retryError => {
+          reportSessionError(
+            request.sessionId,
+            '后台刷新仍然失败',
+            retryError ?? error,
+            true,
+            request.revision,
+          )
+        })
+      }, 250)
+      return true
+    },
+    reportError: (sessionId, prefix, error, expectedRevision) => {
+      reportSessionError(sessionId, prefix, error, true, expectedRevision)
+    },
+  }), [commitProjectRevision, generation, publishMutation, rebindCoordinate, reportSessionError])
+  const mutations = useMemo(
+    () => new EditorMutationController(api, mutationPort, history),
+    [history, mutationPort],
   )
 
   // Sidebar splitter: on mousedown, attach mousemove/mouseup listeners that
@@ -582,108 +598,11 @@ export default function App() {
     document.documentElement.style.setProperty('--sidebar-w', `${sidebarW}px`)
   }, [sidebarW])
 
-  // Core write pipeline shared by user edits, undo, and redo.
-  // `opts.recordHistory` controls whether the edit is pushed onto the undo
-  // stack (redo intentionally replays without re-recording the inverse, so
-  // it passes the oldValue it is reverting to as the "new" value).
-  const writeFieldInternal = useCallback(
-    async (
-      filePath: string,
-      coordinate: RecordCoordinate,
-      fieldPath: FieldPathSegment[],
-      newValue: FieldValue,
-      opts: { recordHistory: boolean; oldValue?: FieldValue } = { recordHistory: true },
-    ): Promise<MutationResult<RecordRow>> => {
-      if (!project || !api.isTauri) return failed()
-      const sessionId = project.session_id
-      const revision = project.revision
-      try {
-        const outcome = await api.writeField(
-          sessionId,
-          coordinate,
-          fieldPath,
-          newValue,
-        )
-        if ((await publishMutation({
-          sessionId,
-          revision: outcome.revision,
-          diagnostics: outcome.diagnostics,
-          affectedFiles: outcome.affected_files,
-          fallbackFile: filePath,
-        })).status !== 'committed') return superseded()
-        const finalCoordinate = outcome.renamed ?? coordinate
-        if (outcome.renamed) {
-          rebindCoordinate(coordinate, outcome.renamed)
-        }
-        if (opts.recordHistory) {
-          const oldValue = opts.oldValue ?? outcome.old_value
-          const historyNewValue = outcome.new_value ?? newValue
-          if (oldValue) {
-            history.record({
-              kind: 'field',
-              filePath, coordinate: finalCoordinate, fieldPath,
-              oldValue: cloneValue(oldValue),
-              newValue: cloneValue(historyNewValue),
-            })
-          }
-        }
-        return committed(outcome.row)
-      } catch (err) {
-        reportSessionError(sessionId, '写入失败', err, true, revision)
-        return failed()
-      }
-    },
-    [history, project, publishMutation, rebindCoordinate, reportSessionError],
-  )
-
   const writeField = useCallback(
     async (filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => {
-      const result = await writeFieldInternal(filePath, coordinate, fieldPath, newValue)
-      return result.status === 'committed' ? result.value : undefined
+      return mutations.writeField(filePath, coordinate, fieldPath, newValue)
     },
-    [writeFieldInternal],
-  )
-
-  const editCollectionInternal = useCallback(
-    async (
-      filePath: string,
-      coordinate: RecordCoordinate,
-      fieldPath: FieldPathSegment[],
-      edit: import('./bindings/CollectionEdit').CollectionEdit,
-    ) => {
-      if (!project || !api.isTauri) return failed()
-      const sessionId = project.session_id
-      const revision = project.revision
-      try {
-        const outcome = await api.editCollection(sessionId, coordinate, fieldPath, edit)
-        if ((await publishMutation({
-          sessionId,
-          revision: outcome.revision,
-          diagnostics: outcome.diagnostics,
-          affectedFiles: outcome.affected_files,
-          fallbackFile: filePath,
-        })).status !== 'committed') return superseded()
-        const finalCoordinate = outcome.renamed ?? coordinate
-        if (outcome.renamed) {
-          rebindCoordinate(coordinate, outcome.renamed)
-        }
-        if (outcome.old_value && outcome.new_value) {
-          history.record({
-            kind: 'field',
-            filePath,
-            coordinate: finalCoordinate,
-            fieldPath,
-            oldValue: cloneValue(outcome.old_value),
-            newValue: cloneValue(outcome.new_value),
-          })
-        }
-        return committed(outcome.row)
-      } catch (err) {
-        reportSessionError(sessionId, '集合编辑失败', err, true, revision)
-        return failed()
-      }
-    },
-    [history, project, publishMutation, rebindCoordinate, reportSessionError],
+    [mutations],
   )
 
   const editCollection = useCallback(
@@ -693,198 +612,38 @@ export default function App() {
       fieldPath: FieldPathSegment[],
       edit: import('./bindings/CollectionEdit').CollectionEdit,
     ) => {
-      const result = await editCollectionInternal(filePath, coordinate, fieldPath, edit)
-      return result.status === 'committed' ? result.value : undefined
+      return mutations.editCollection(filePath, coordinate, fieldPath, edit)
     },
-    [editCollectionInternal],
-  )
-
-  const renameRecordInternal = useCallback(
-    async (
-      filePath: string,
-      coordinate: RecordCoordinate,
-      newKey: string,
-      opts: { recordHistory: boolean } = { recordHistory: true },
-    ): Promise<MutationResult<RecordRow>> => {
-      if (!project || !api.isTauri) return failed()
-      const sessionId = project.session_id
-      const revision = project.revision
-      try {
-        const outcome = await api.renameRecordKey(sessionId, coordinate, newKey)
-        if ((await publishMutation({
-          sessionId,
-          revision: outcome.revision,
-          diagnostics: outcome.diagnostics,
-          affectedFiles: outcome.affected_files,
-          fallbackFile: filePath,
-        })).status !== 'committed') return superseded()
-        rebindCoordinate(coordinate, outcome.renamed)
-        if (opts.recordHistory) {
-          history.record({
-            kind: 'field',
-            filePath,
-            coordinate: outcome.renamed,
-            fieldPath: [fieldPathField('id')],
-            oldValue: { kind: 'string', value: coordinate.key },
-            newValue: { kind: 'string', value: newKey },
-          })
-        }
-        return committed(outcome.row)
-      } catch (err) {
-        reportSessionError(sessionId, '重命名失败', err, true, revision)
-        return failed()
-      }
-    },
-    [history, project, publishMutation, rebindCoordinate, reportSessionError],
+    [mutations],
   )
 
   const renameRecord = useCallback(
     async (filePath: string, coordinate: RecordCoordinate, newKey: string) => {
-      const result = await renameRecordInternal(filePath, coordinate, newKey)
-      return result.status === 'committed' ? result.value : undefined
+      return mutations.renameRecord(filePath, coordinate, newKey)
     },
-    [renameRecordInternal],
-  )
-
-  // Insert a new record at the top level of `filePath`. The back-end picks
-  // the sheet name (for table sources) by reusing an existing record's sheet
-  // when one is available, and falls back to provider-specific options
-  // otherwise. The returned `FileRecords` is already refreshed — drop it
-  // straight into the cache instead of issuing a follow-up `getFileRecords`.
-  //
-  // `opts.recordHistory` mirrors `writeFieldInternal`: user-initiated inserts
-  // push onto the undo stack; replays from undo/redo pass `false` so the
-  // history isn't re-entered while we're walking it.
-  const insertRecordInternal = useCallback(
-    async (
-      filePath: string,
-      recordKey: string,
-      actualType: string,
-      fields: FieldValue,
-      opts: { recordHistory: boolean } = { recordHistory: true },
-    ) => {
-      if (!project || !api.isTauri) return failed()
-      const sessionId = project.session_id
-      const revision = project.revision
-      try {
-        const outcome = await api.insertRecord(sessionId, filePath, recordKey, actualType, fields)
-        if ((await publishMutation({
-          sessionId,
-          revision: outcome.revision,
-          diagnostics: outcome.diagnostics,
-          affectedFiles: outcome.affected_files,
-          fallbackFile: filePath,
-          knownRecords: outcome.file_records,
-        })).status !== 'committed') return superseded()
-        if (opts.recordHistory) {
-          history.record({
-            kind: 'insert',
-            filePath,
-            coordinate: { actual_type: actualType, key: recordKey },
-            fields: cloneValue(fields),
-          })
-        }
-        return committed(undefined)
-      } catch (err) {
-        reportSessionError(sessionId, '新建记录失败', err, true, revision)
-        return failed()
-      }
-    },
-    [history, project, publishMutation, reportSessionError],
-  )
-
-  const deleteRecordInternal = useCallback(
-    async (
-      filePath: string,
-      coordinate: RecordCoordinate,
-      opts: { recordHistory: boolean } = { recordHistory: true },
-    ) => {
-      if (!project || !api.isTauri) return failed()
-      const sessionId = project.session_id
-      const revision = project.revision
-      try {
-        const outcome = await api.deleteRecord(sessionId, coordinate)
-        if ((await publishMutation({
-          sessionId,
-          revision: outcome.revision,
-          diagnostics: outcome.diagnostics,
-          affectedFiles: outcome.affected_files,
-          fallbackFile: filePath,
-          knownRecords: outcome.file_records,
-        })).status !== 'committed') return superseded()
-        // Undo payload comes from the back-end's authoritative snapshot —
-        // captured under the same lock as the delete, so it always reflects
-        // the engine's view at the moment of deletion (spread/ref metadata
-        // included). No front-end cache dependency.
-        if (opts.recordHistory && outcome.deleted_snapshot) {
-          history.record({
-            kind: 'delete',
-            filePath,
-            coordinate,
-            snapshot: deletedSnapshotValue(outcome.deleted_snapshot!),
-          })
-        }
-        return committed(undefined)
-      } catch (err) {
-        reportSessionError(sessionId, '删除记录失败', err, true, revision)
-        return failed()
-      }
-    },
-    [history, project, publishMutation, reportSessionError],
+    [mutations],
   )
 
   const insertRecord = useCallback(
     async (filePath: string, recordKey: string, actualType: string, fields: FieldValue) => {
-      await insertRecordInternal(filePath, recordKey, actualType, fields)
+      await mutations.insertRecord(filePath, recordKey, actualType, fields)
     },
-    [insertRecordInternal],
+    [mutations],
   )
   const deleteRecord = useCallback(
     async (filePath: string, coordinate: RecordCoordinate) => {
-      await deleteRecordInternal(filePath, coordinate)
+      await mutations.deleteRecord(filePath, coordinate)
     },
-    [deleteRecordInternal],
+    [mutations],
   )
 
   const undo = useCallback(async () => {
-    await history.undo(entry => {
-      if (entry.kind === 'field') {
-        return writeFieldInternal(entry.filePath, entry.coordinate, entry.fieldPath, entry.oldValue, {
-          recordHistory: false,
-        })
-      }
-      if (entry.kind === 'insert') {
-        return deleteRecordInternal(entry.filePath, entry.coordinate, { recordHistory: false })
-      }
-      return insertRecordInternal(
-        entry.filePath,
-        entry.coordinate.key,
-        entry.coordinate.actual_type,
-        entry.snapshot,
-        { recordHistory: false },
-      )
-    })
-  }, [history, writeFieldInternal, insertRecordInternal, deleteRecordInternal])
+    await mutations.undo()
+  }, [mutations])
 
   const redo = useCallback(async () => {
-    await history.redo(entry => {
-      if (entry.kind === 'field') {
-        return writeFieldInternal(entry.filePath, entry.coordinate, entry.fieldPath, entry.newValue, {
-          recordHistory: false,
-        })
-      }
-      if (entry.kind === 'insert') {
-        return insertRecordInternal(
-          entry.filePath,
-          entry.coordinate.key,
-          entry.coordinate.actual_type,
-          entry.fields,
-          { recordHistory: false },
-        )
-      }
-      return deleteRecordInternal(entry.filePath, entry.coordinate, { recordHistory: false })
-    })
-  }, [history, writeFieldInternal, insertRecordInternal, deleteRecordInternal])
+    await mutations.redo()
+  }, [mutations])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -922,7 +681,7 @@ export default function App() {
   const activeFile = currentRoute?.file ?? null
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeGraphKey = activeFile
-    ? graphCacheKey(activeFile, activeType, graphEnabledFields, GRAPH_DEPTH, GRAPH_LIMIT)
+    ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
     : null
   const activeGraph = activeGraphKey ? graphCache[activeGraphKey] : null
   const readOnly = !isEditableFile(activeFileData)
@@ -957,16 +716,8 @@ export default function App() {
     const inType = activeType
       ? activeFileData.records.filter(r => recordActualType(r) === activeType)
       : activeFileData.records
-    const q = globalSearch.trim().toLowerCase()
-    if (!q) return { typeCount: inType.length, matchedCount: inType.length }
-    const matched = inType.filter(r => {
-      if (recordKey(r).toLowerCase().includes(q)) return true
-      for (const f of r.fields) {
-        if (f.name.toLowerCase().includes(q)) return true
-        if (summaryOf(f.value).toLowerCase().includes(q)) return true
-      }
-      return false
-    })
+    if (!globalSearch.trim()) return { typeCount: inType.length, matchedCount: inType.length }
+    const matched = inType.filter(record => recordMatchesSearch(record, globalSearch))
     return { typeCount: inType.length, matchedCount: matched.length }
   }, [activeFileData, activeType, globalSearch])
 
@@ -1006,11 +757,13 @@ export default function App() {
     [currentRoute?.view, currentRoute?.file, insertRecord],
   )
   const tableOnCreateRecordDraft = useCallback(
-    (actualType: string): Promise<CreateRecordDraft> => {
-      if (!project) return Promise.reject(new Error('未打开项目'))
-      return api.createRecordDraft(project.session_id, actualType)
+    async (actualType: string): Promise<CreateRecordDraft> => {
+      const result = await lookups.createRecordDraft(actualType)
+      if (result.ok) return result.value
+      if (result.reason === 'failed') throw new Error(result.error ?? '创建记录草稿失败')
+      throw new Error('编辑器 generation 已更新')
     },
-    [project],
+    [lookups],
   )
   const tableOnDeleteRecord = useCallback(
     (coordinate: RecordCoordinate): Promise<void> => {
@@ -1026,10 +779,6 @@ export default function App() {
     },
     [currentRoute?.view, currentRoute?.file, focusDiagnosticForAnchor],
   )
-
-  useEffect(() => {
-    setActiveSession(project?.session_id ?? null)
-  }, [project?.session_id])
 
   // Help overlay: focus trap + autofocus + restore focus on close.
   useEffect(() => {
@@ -1128,7 +877,7 @@ export default function App() {
   }, [currentRoute, preferredView, activeType, activeFileData, router])
 
   return (
-    <ObjectDraftHost sessionId={project?.session_id ?? null}>
+    <ObjectDraftHost lookups={lookups} generationKey={lookupGenerationKey}>
     <div className="app">
       <div className="topbar">
         <span className="app-title">CFD Editor</span>
@@ -1392,7 +1141,6 @@ export default function App() {
                       activeType={activeType}
                       fileCapabilities={fileCapabilities}
                       diagnostics={project?.diagnostics}
-                      onEnabledFieldsChange={setGraphEnabledFieldsStable}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}
                       onSelectRecord={openInspector}
                       onClearSelection={closeInspector}

@@ -8,7 +8,8 @@ use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watche
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::editor::{EditorError, ProjectSnapshot, SessionStore};
+use crate::editor::{EditorError, ProjectSnapshot};
+use crate::host::EditorHost;
 
 const PROJECT_CHANGED_EVENT: &str = "project_changed";
 const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
@@ -149,8 +150,8 @@ fn normalize_paths(paths: &[PathBuf]) -> Vec<String> {
 }
 
 fn emit_reload(app: &AppHandle, session_id: u32, changed_paths: Vec<String>) {
-    let store = app.state::<SessionStore>();
-    match store.reload_session(session_id) {
+    let host = app.state::<EditorHost>();
+    match host.reload_session(session_id) {
         Ok(snapshot) => {
             let _ = app.emit(
                 PROJECT_CHANGED_EVENT,
@@ -170,7 +171,7 @@ fn has_external_changes(
     session_id: u32,
     changed_paths: &[PathBuf],
 ) -> Result<bool, EditorError> {
-    app.state::<SessionStore>()
+    app.state::<EditorHost>()
         .has_external_file_changes(session_id, changed_paths)
 }
 

@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use coflow_data_model::{CfdPath, CfdPathSegment};
-use coflow_runtime::{format_field_path, RecordCoordinate, RecordReferenceInfo};
+use coflow_runtime::{format_field_path, RecordCoordinate};
 
 use crate::editor::convert::{record_to_row, WireContext};
 use crate::editor::types::{GraphData, GraphEdge, GraphNode, GraphQuery};
@@ -22,22 +22,11 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
     let file_path = query.file_path.as_str();
     let max_depth = query.depth.unwrap_or(GRAPH_DEPTH);
     let node_limit = query.limit.unwrap_or(GRAPH_NODE_LIMIT).max(1);
-    let enabled_fields = query
-        .enabled_fields
-        .as_ref()
-        .map(|fields| fields.iter().map(String::as_str).collect::<BTreeSet<_>>());
     let mut nodes: BTreeMap<NodeKey, GraphNode> = BTreeMap::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
 
-    let starts = start_records(
-        session,
-        file_path,
-        query.active_type.as_deref(),
-        enabled_fields.as_ref(),
-    );
-    let available_starts = start_records(session, file_path, query.active_type.as_deref(), None);
-    let available_fields =
-        collect_available_fields(session, &available_starts, max_depth, node_limit);
+    let starts = start_records(session, file_path);
+    let available_fields = collect_available_fields(session, &starts, max_depth, node_limit);
     let mut queue: VecDeque<(RecordCoordinate, usize)> = VecDeque::new();
     let mut depths: HashMap<RecordCoordinate, usize> = HashMap::new();
     for coordinate in &starts {
@@ -78,9 +67,6 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
         }
 
         for edge in queries.record_references(&coordinate) {
-            if !edge_enabled(&edge, enabled_fields.as_ref()) {
-                continue;
-            }
             if !depths.contains_key(&edge.target) && depths.len() >= node_limit {
                 continue;
             }
@@ -107,20 +93,13 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
 fn start_records(
     session: &EditorSession,
     file_path: &str,
-    active_type: Option<&str>,
-    enabled_fields: Option<&BTreeSet<&str>>,
 ) -> Vec<RecordCoordinate> {
     session
         .queries()
         .record_views_in_file(file_path)
         .filter_map(|view| {
             let coordinate = view.coordinate;
-            (active_type.is_none_or(|expected| coordinate.actual_type == expected)
-                && session
-                    .queries()
-                    .record_references(&coordinate)
-                    .iter()
-                    .any(|edge| edge_enabled(edge, enabled_fields)))
+            (!session.queries().record_references(&coordinate).is_empty())
             .then_some(coordinate)
         })
         .collect()
@@ -158,13 +137,6 @@ fn collect_available_fields(
         }
     }
     fields.into_iter().collect()
-}
-
-fn edge_enabled(edge: &RecordReferenceInfo, enabled_fields: Option<&BTreeSet<&str>>) -> bool {
-    let Some(enabled_fields) = enabled_fields else {
-        return true;
-    };
-    top_level_field(&edge.path).is_some_and(|field| enabled_fields.contains(field))
 }
 
 fn top_level_field(path: &CfdPath) -> Option<&str> {

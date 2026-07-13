@@ -29,7 +29,12 @@ import {
   type FieldPathSegment,
   type FieldValue,
 } from '../wire'
-import { DataCardCompact, EnumDirectSelect, RefDirectSelect, summaryOf as valueSummary } from './DataCard'
+import { DataCardCompact, EnumDirectSelect, RefDirectSelect } from './DataCard'
+import {
+  parseFieldValueText,
+  recordMatchesSearch,
+  summaryOf as valueSummary,
+} from '../value/fieldValue'
 import { CreateRecordDialog } from './CreateRecordDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
@@ -344,14 +349,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // Global filter: match key or any scalar field value (via summaryOf).
   const globalFilterFn = useMemo(
     () => (row: { original: RecordRow }, _columnId: string, filterValue: string) => {
-      const q = filterValue.trim().toLowerCase()
-      if (!q) return true
-      const r = row.original
-      if (recordKey(r).toLowerCase().includes(q)) return true
-      for (const summary of Object.values(r.field_summaries)) {
-        if (summary?.toLowerCase().includes(q)) return true
-      }
-      return false
+      return recordMatchesSearch(row.original, filterValue)
     },
   [],
   )
@@ -759,22 +757,15 @@ function CellTextEditor({
     value.kind === 'int' || value.kind === 'float' ? String(value.value) : value.value
   )
   function commit() {
-    if (value.kind === 'int') {
-      const n = parseInt(text, 10)
-      if (!isNaN(n)) onCommit({ kind: 'int', value: BigInt(n) })
-      else onCancel()
-    } else if (value.kind === 'float') {
-      const n = parseFloat(text)
-      if (!isNaN(n)) onCommit({ kind: 'float', value: n })
-      else onCancel()
-    } else {
-      onCommit({ kind: 'string', value: text })
-    }
+    const next = parseFieldValueText(value, text)
+    if (next) onCommit(next)
+    else onCancel()
   }
   return (
     <input
       className="dc-input dc-input-flat"
-      type={value.kind === 'int' || value.kind === 'float' ? 'number' : 'text'}
+      type={value.kind === 'float' ? 'number' : 'text'}
+      inputMode={value.kind === 'int' ? 'numeric' : undefined}
       value={text}
       autoFocus
       onChange={e => setText(e.target.value)}

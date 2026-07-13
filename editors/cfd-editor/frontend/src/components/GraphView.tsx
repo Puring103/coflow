@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo } from 'react'
-import type { ElkNode } from 'elkjs/lib/elk-api'
 import {
   ReactFlow, Background, Controls, MiniMap,
   Handle, Position, useUpdateNodeInternals, type NodeProps,
@@ -24,7 +23,6 @@ import { DataCardNode, CardHeader } from './DataCard'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
-import type { LayoutWorkerRequest, LayoutWorkerResponse } from './GraphView.layout.worker'
 import {
   defaultEnabledFields,
   estimateHandleOffsets,
@@ -34,74 +32,9 @@ import {
   sameOffsetMap,
   type GraphLayoutResult,
 } from './GraphView.layout'
+import { runGraphLayoutInWorker } from './GraphLayoutWorkerAdapter'
 
 const MEASURE_HANDLE_NODE_LIMIT = 80
-const LAYOUT_WORKER_TIMEOUT_MS = 20_000
-
-let layoutWorker: Worker | null = null
-let nextLayoutRequestId = 1
-const layoutRequests = new Map<number, {
-  resolve: (positions: Map<string, { x: number; y: number }>) => void
-  reject: (error: Error) => void
-  timeout: number
-}>()
-
-function rejectPendingLayoutRequests(error: Error) {
-  for (const [id, pending] of layoutRequests) {
-    clearTimeout(pending.timeout)
-    pending.reject(error)
-    layoutRequests.delete(id)
-  }
-}
-
-function resetLayoutWorker(error: Error) {
-  layoutWorker?.terminate()
-  layoutWorker = null
-  rejectPendingLayoutRequests(error)
-}
-
-function getLayoutWorker(): Worker {
-  if (!layoutWorker) {
-    layoutWorker = new Worker(new URL('./GraphView.layout.worker.ts', import.meta.url), { type: 'module' })
-    layoutWorker.onmessage = (event: MessageEvent<LayoutWorkerResponse>) => {
-      const response = event.data
-      const pending = layoutRequests.get(response.id)
-      if (!pending) return
-      clearTimeout(pending.timeout)
-      layoutRequests.delete(response.id)
-      if (response.ok) {
-        pending.resolve(new Map(response.positions))
-      } else {
-        pending.reject(new Error(response.error))
-      }
-    }
-    layoutWorker.onerror = event => {
-      resetLayoutWorker(new Error(event.message || 'Graph layout worker failed'))
-    }
-    layoutWorker.onmessageerror = () => {
-      resetLayoutWorker(new Error('Graph layout worker returned an unreadable response'))
-    }
-  }
-  return layoutWorker
-}
-
-async function runLayoutInWorker(graph: ElkNode): Promise<Map<string, { x: number; y: number }>> {
-  const id = nextLayoutRequestId++
-  const worker = getLayoutWorker()
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      resetLayoutWorker(new Error('Graph layout worker timed out'))
-    }, LAYOUT_WORKER_TIMEOUT_MS)
-    layoutRequests.set(id, { resolve, reject, timeout })
-    try {
-      worker.postMessage({ id, graph } satisfies LayoutWorkerRequest)
-    } catch (err) {
-      clearTimeout(timeout)
-      layoutRequests.delete(id)
-      reject(err instanceof Error ? err : new Error(String(err)))
-    }
-  })
-}
 
 // ─── Node data ───────────────────────────────────────────────────────────────
 
@@ -313,7 +246,6 @@ interface Props {
   /** Full diagnostics list (not pre-filtered by file) — nodes in the graph
    *  can point at records that live outside the focus file. */
   diagnostics?: DiagnosticItem[]
-  onEnabledFieldsChange?: (fields: string[]) => void
   onOpenRecord: (file: string, coordinate: RecordCoordinate) => void
   /** Plain click on a node: open the side inspector for that record. */
   onSelectRecord?: (file: string, coordinate: RecordCoordinate) => void
@@ -332,7 +264,7 @@ interface Props {
   ) => void
 }
 
-export function GraphView({ graphData, activeType, fileCapabilities, diagnostics, onEnabledFieldsChange, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick }: Props) {
+export function GraphView({ graphData, activeType, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick }: Props) {
   const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
@@ -374,11 +306,6 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
       return sameStringSet(prev, next) ? prev : next
     })
   }, [availableFields])
-
-  useEffect(() => {
-    if (availableFields.length === 0) return
-    onEnabledFieldsChange?.(Array.from(enabledFields).sort())
-  }, [availableFields.length, enabledFields, onEnabledFieldsChange])
 
   const [filterPanelOpen, setFilterPanelOpen] = useState(false)
 
@@ -425,7 +352,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
       activeType,
       nodeExpandedMap,
       nodeRowExpandedMap,
-      runLayoutInWorker,
+      runGraphLayoutInWorker,
     )
       .then(next => {
         if (!cancelled) {

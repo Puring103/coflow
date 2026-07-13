@@ -493,10 +493,6 @@ pub struct GraphData {
 pub struct GraphQuery {
     pub file_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub active_type: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled_fields: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,

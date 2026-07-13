@@ -65,8 +65,6 @@ export async function getFileRecords(sessionId: number, filePath: string): Promi
 }
 
 export interface GraphQueryOptions {
-  activeType?: string
-  enabledFields?: string[]
   depth?: number
   limit?: number
 }
@@ -79,8 +77,6 @@ export async function getGraph(
   return invokeCommand<GraphData>('get_graph', {
     sessionId,
     filePath,
-    activeType: options.activeType || null,
-    enabledFields: options.enabledFields ?? null,
     depth: options.depth ?? null,
     limit: options.limit ?? null,
   })

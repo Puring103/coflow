@@ -12,6 +12,11 @@ export const committed = <T>(value: T): MutationResult<T> => ({ status: 'committ
 export const superseded = (): MutationResult<never> => ({ status: 'superseded' })
 export const failed = (): MutationResult<never> => ({ status: 'failed' })
 
+export interface EditorGenerationIdentity {
+  sessionId: number
+  revision: number
+}
+
 export class ProjectGenerationController {
   private sessionId: number | null = null
   private revision = 0
@@ -20,6 +25,12 @@ export class ProjectGenerationController {
 
   currentSession(): number | null {
     return this.sessionId
+  }
+
+  currentIdentity(): EditorGenerationIdentity | null {
+    return this.sessionId === null
+      ? null
+      : { sessionId: this.sessionId, revision: this.revision }
   }
 
   adopt(snapshot: Pick<ProjectSnapshot, 'session_id' | 'revision'>): number | null {
@@ -84,7 +95,6 @@ export interface MutationPublicationPort {
   isCurrent: (sessionId: number, revision: number) => boolean
   getFileRecords: (sessionId: number, filePath: string) => Promise<FileRecords>
   publishFileRecords: (records: readonly (readonly [string, FileRecords])[]) => void
-  invalidateGraphs: () => void
 }
 
 /**
@@ -103,8 +113,6 @@ export async function publishMutationGeneration(
     fallbackFile,
     knownRecords,
   } = request
-  if (!port.acceptRevision(sessionId, revision, diagnostics)) return superseded()
-
   const files = Array.from(new Set(affectedFiles.length > 0 ? affectedFiles : [fallbackFile]))
   const refreshedFiles = await Promise.all(files.map(async file => {
     const records = knownRecords?.file_path === file && knownRecords.revision === revision
@@ -113,14 +121,14 @@ export async function publishMutationGeneration(
     return [file, records] as const
   }))
   if (
-    !port.isCurrent(sessionId, revision) ||
     refreshedFiles.some(([, records]) => records.revision !== revision)
   ) {
     return superseded()
   }
 
+  if (!port.acceptRevision(sessionId, revision, diagnostics)) return superseded()
+  if (!port.isCurrent(sessionId, revision)) return superseded()
   port.publishFileRecords(refreshedFiles)
-  port.invalidateGraphs()
   return committed(undefined)
 }
 
@@ -128,6 +136,7 @@ export type EditEntry = FieldEditEntry | InsertEditEntry | DeleteEditEntry
 
 export interface FieldEditEntry {
   kind: 'field'
+  revision: number
   filePath: string
   coordinate: RecordCoordinate
   fieldPath: FieldPathSegment[]
@@ -137,6 +146,7 @@ export interface FieldEditEntry {
 
 export interface InsertEditEntry {
   kind: 'insert'
+  revision: number
   filePath: string
   coordinate: RecordCoordinate
   fields: FieldValue
@@ -144,6 +154,7 @@ export interface InsertEditEntry {
 
 export interface DeleteEditEntry {
   kind: 'delete'
+  revision: number
   filePath: string
   coordinate: RecordCoordinate
   snapshot: FieldValue
@@ -163,6 +174,8 @@ const EMPTY_HISTORY: MutationHistorySnapshot = { undo: [], redo: [], busy: false
 export class MutationHistoryController {
   private snapshot: MutationHistorySnapshot = EMPTY_HISTORY
   private readonly listeners = new Set<() => void>()
+  private queue: Promise<void> = Promise.resolve()
+  private epoch = 0
 
   getSnapshot = (): MutationHistorySnapshot => this.snapshot
 
@@ -172,11 +185,18 @@ export class MutationHistoryController {
   }
 
   clear(): void {
+    this.epoch += 1
     this.publish(EMPTY_HISTORY)
   }
 
+  currentEpoch(): number {
+    return this.epoch
+  }
+
   record(entry: EditEntry): void {
-    this.publish({ undo: [...this.snapshot.undo, entry], redo: [], busy: this.snapshot.busy })
+    const undo = [...this.snapshot.undo, entry]
+    undo.sort((left, right) => left.revision - right.revision)
+    this.publish({ undo, redo: [], busy: this.snapshot.busy })
   }
 
   rebind(oldCoordinate: RecordCoordinate, newCoordinate: RecordCoordinate): void {
@@ -188,12 +208,18 @@ export class MutationHistoryController {
     })
   }
 
+  serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(operation, operation)
+    this.queue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
   undo(execute: HistoryExecutor): Promise<MutationResult<unknown>> {
-    return this.run('undo', execute)
+    return this.serialize(() => this.run('undo', execute))
   }
 
   redo(execute: HistoryExecutor): Promise<MutationResult<unknown>> {
-    return this.run('redo', execute)
+    return this.serialize(() => this.run('redo', execute))
   }
 
   private async run(direction: HistoryDirection, execute: HistoryExecutor): Promise<MutationResult<unknown>> {

@@ -340,8 +340,6 @@ missing,,,No
             snapshot.session_id,
             &cfd_editor_lib::editor::GraphQuery {
                 file_path: "data/Events.csv".to_string(),
-                active_type: Some("MyEvent".to_string()),
-                enabled_fields: None,
                 depth: Some(3),
                 limit: Some(100),
             },
