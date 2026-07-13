@@ -19,6 +19,7 @@ use crate::RecordCoordinate;
 pub(crate) struct CheckState {
     diagnostics: Vec<StableCheckDiagnostic>,
     reads_from: BTreeMap<RecordCoordinate, BTreeSet<RecordCoordinate>>,
+    incremental_ready: bool,
 }
 
 #[derive(Debug)]
@@ -59,8 +60,16 @@ pub(crate) fn run_full_project_checks(
         &dimension_check_plan(&project.config.dimensions),
         &targets,
     );
-    let state = stabilize_check_state(model, diagnostics, dependencies).unwrap_or_default();
-    render_check_state(model, origins, state).unwrap_or_else(empty_check_output)
+    let raw_diagnostics = diagnostics
+        .iter()
+        .map(|rooted| rooted.diagnostic.clone())
+        .collect::<Vec<_>>();
+    if let Some(output) = stabilize_check_state(model, diagnostics, dependencies)
+        .and_then(|state| render_check_state(model, origins, state))
+    {
+        return output;
+    }
+    render_raw_check_output(model, origins, raw_diagnostics)
 }
 
 pub(crate) fn run_incremental_project_checks(
@@ -71,6 +80,9 @@ pub(crate) fn run_incremental_project_checks(
     previous: &CheckState,
     changed: &BTreeSet<RecordCoordinate>,
 ) -> Option<ProjectCheckOutput> {
+    if !previous.incremental_ready {
+        return None;
+    }
     let mut affected = changed.clone();
     for (reader, reads) in &previous.reads_from {
         if reads.iter().any(|coordinate| changed.contains(coordinate)) {
@@ -121,6 +133,7 @@ fn stabilize_check_state(
     Some(CheckState {
         diagnostics,
         reads_from,
+        incremental_ready: true,
     })
 }
 
@@ -240,10 +253,42 @@ fn dimension_check_plan(dimensions: &BTreeMap<String, DimensionConfig>) -> Dimen
     }))
 }
 
-fn empty_check_output() -> ProjectCheckOutput {
+fn render_raw_check_output(
+    model: &CfdDataModel,
+    origins: &[RecordOrigin],
+    diagnostics: Vec<CfdDiagnostic>,
+) -> ProjectCheckOutput {
+    let raw = CfdDiagnostics::new(diagnostics);
+    let logical_locations = logical_locations_from_cfd(&raw, |id| coordinate_for_id(model, id));
     ProjectCheckOutput {
-        diagnostics: DiagnosticSet::empty(),
-        logical_locations: BTreeMap::new(),
+        diagnostics: map_diagnostics_with_origins(raw, origins),
+        logical_locations,
         state: CheckState::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use coflow_checker::{DependencyGraph, RootedCheckDiagnostic};
+    use coflow_data_model::{CfdDiagnostic, CfdErrorCode, CfdRecordId};
+
+    use super::{render_raw_check_output, stabilize_check_state};
+    use crate::load::empty_model;
+
+    #[test]
+    fn unstable_check_state_preserves_raw_diagnostics_and_disables_incremental_reuse() {
+        let model = empty_model().expect("build empty model");
+        let diagnostic = CfdDiagnostic::error(CfdErrorCode::CheckFailed, "preserve me");
+        let rooted = RootedCheckDiagnostic {
+            root: CfdRecordId::from_index(99),
+            diagnostic: diagnostic.clone(),
+        };
+
+        assert!(stabilize_check_state(&model, vec![rooted], DependencyGraph::default()).is_none());
+        let output = render_raw_check_output(&model, &[], vec![diagnostic]);
+
+        assert_eq!(output.diagnostics.diagnostics.len(), 1);
+        assert_eq!(output.diagnostics.diagnostics[0].code, "CFD-CHECK-001");
+        assert!(!output.state.incremental_ready);
     }
 }
