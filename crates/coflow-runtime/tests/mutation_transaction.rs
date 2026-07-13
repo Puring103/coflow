@@ -381,6 +381,27 @@ fn same_key_rename_does_not_open_a_provider_transaction() {
 }
 
 #[test]
+fn same_field_value_does_not_open_a_provider_transaction() {
+    let fixture = Fixture::remote(&[("txn://one", 1)]);
+    let mut session = fixture.open();
+    let initial_revision = session.revision();
+
+    let report = session.apply_mutation(mutation_request(vec![set_value("one", 1)]));
+
+    assert!(report.write_ok);
+    assert!(!report.generation_changed);
+    assert_eq!(session.revision(), initial_revision);
+    assert_eq!(report.applied.len(), 1);
+    assert!(report.affected_files.is_empty());
+    let state = fixture.state.lock().expect("lock fixture state");
+    assert_eq!(state.counts.begins, 0);
+    assert_eq!(state.counts.preflights, 0);
+    assert_eq!(state.counts.writes, 0);
+    assert_eq!(state.remote_values["txn://one"], 1);
+    drop(state);
+}
+
+#[test]
 fn provider_diagnostics_and_affected_files_survive_successful_rebuild() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
     fixture

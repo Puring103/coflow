@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 
 use coflow_api::{DiagnosticSet, ProviderRegistry};
 use coflow_cft::CftContainer;
@@ -32,7 +33,12 @@ pub(crate) fn open_project_session(
     registry: &ProviderRegistry,
     options: SessionOpenOptions,
 ) -> Result<ProjectSession, DiagnosticSet> {
-    build_project_session_with_options(project, registry, options)
+    build_project_session_with_effects(project, registry, options).map(|output| output.session)
+}
+
+pub(crate) struct SessionBuildOutput {
+    pub(crate) session: ProjectSession,
+    pub(crate) changed_dimension_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,11 +79,11 @@ enum DimensionBuildMode {
     ReadOnly,
 }
 
-fn build_project_session_with_options(
+pub(crate) fn build_project_session_with_effects(
     project: Project,
     registry: &ProviderRegistry,
     options: SessionOpenOptions,
-) -> Result<ProjectSession, DiagnosticSet> {
+) -> Result<SessionBuildOutput, DiagnosticSet> {
     let ProjectSchemaSession {
         project,
         schema,
@@ -93,13 +99,20 @@ fn build_project_session_with_options(
         dimension_fields,
     };
 
-    let LoadedSessionData { model, indexes } = if diagnostics.is_empty() {
+    let LoadedSessionData {
+        model,
+        indexes,
+        changed_dimension_paths,
+    } = if diagnostics.is_empty() {
         build_data_pipeline(&ctx, &mut diagnostics)?
     } else {
         LoadedSessionData::empty()?
     };
 
-    Ok(assemble_session(ctx, model, diagnostics, indexes))
+    Ok(SessionBuildOutput {
+        session: assemble_session(ctx, model, diagnostics, indexes),
+        changed_dimension_paths,
+    })
 }
 
 fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
@@ -130,6 +143,7 @@ impl SessionBuildContext<'_> {
 struct LoadedSessionData {
     model: CfdDataModel,
     indexes: SessionIndexes,
+    changed_dimension_paths: Vec<PathBuf>,
 }
 
 impl LoadedSessionData {
@@ -137,6 +151,7 @@ impl LoadedSessionData {
         Ok(Self {
             model: empty_model()?,
             indexes: SessionIndexes::default(),
+            changed_dimension_paths: Vec::new(),
         })
     }
 }
@@ -155,22 +170,27 @@ fn build_data_pipeline(
             return Ok(LoadedSessionData {
                 model: empty_model()?,
                 indexes: load_failure.indexes.finalize_rejected(),
+                changed_dimension_paths: Vec::new(),
             });
         }
     };
 
-    let mut dimension_transaction = commit_dimensions_if_needed(ctx, &output, diagnostics);
+    let mut dimensions = commit_dimensions_if_needed(ctx, &output, diagnostics);
     if diagnostics.is_empty() && ctx.has_dimension_fields() {
         (output, indexes) = reload_with_dimensions(ctx, diagnostics)?;
     }
 
     let indexes = indexes.finalize_with_model(&output.model);
     diagnostics.extend_with_logical_locations(output.diagnostics, output.logical_locations);
-    rollback_dimensions_after_failed_pipeline(ctx, &mut dimension_transaction, diagnostics);
+    rollback_dimensions_after_failed_pipeline(ctx, &mut dimensions.transaction, diagnostics);
+    if !diagnostics.is_empty() {
+        dimensions.changed_paths.clear();
+    }
 
     Ok(LoadedSessionData {
         model: output.model,
         indexes,
+        changed_dimension_paths: dimensions.changed_paths,
     })
 }
 
@@ -229,13 +249,19 @@ struct DataLoadFailure {
     indexes: SessionIndexBuilder,
 }
 
+#[derive(Default)]
+struct CommittedDimensions {
+    transaction: Option<DimensionGenerationTransaction>,
+    changed_paths: Vec<PathBuf>,
+}
+
 fn commit_dimensions_if_needed(
     ctx: &SessionBuildContext<'_>,
     output: &ProjectLoadOutput,
     diagnostics: &mut DiagnosticsStore,
-) -> Option<DimensionGenerationTransaction> {
+) -> CommittedDimensions {
     if !ctx.should_generate_dimensions() {
-        return None;
+        return CommittedDimensions::default();
     }
 
     let dimension_result = dimensions::regenerate_dimension_sources(
@@ -245,10 +271,10 @@ fn commit_dimensions_if_needed(
         ctx.registry,
     );
     diagnostics.extend(dimension_result.diagnostics);
-    if dimension_result.transaction.is_empty() {
-        None
-    } else {
-        Some(dimension_result.transaction)
+    CommittedDimensions {
+        transaction: (!dimension_result.transaction.is_empty())
+            .then_some(dimension_result.transaction),
+        changed_paths: dimension_result.changed_paths,
     }
 }
 

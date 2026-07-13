@@ -91,8 +91,8 @@ fn execute_generation_mutation(
         }
     }
 
-    let new_session = match rebuild_after_mutation(session, registry) {
-        Ok(session) => session,
+    let rebuilt = match rebuild_after_mutation(session, registry) {
+        Ok(rebuilt) => rebuilt,
         Err(mut diagnostics) => {
             transaction.compensate_into(&mut diagnostics);
             if let Some(last) = executable.last() {
@@ -101,6 +101,7 @@ fn execute_generation_mutation(
             return report_without_publish(session, false, failed);
         }
     };
+    let new_session = rebuilt.session;
     let mut rebuild_diagnostics = blocking_rebuild_diagnostics(&new_session);
     if !rebuild_diagnostics.is_empty() {
         transaction.compensate_into(&mut rebuild_diagnostics);
@@ -120,6 +121,7 @@ fn execute_generation_mutation(
     let affected_files = staged
         .iter()
         .flat_map(|applied| applied.outcome.affected_files.iter().cloned())
+        .chain(rebuilt.changed_dimension_files)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();

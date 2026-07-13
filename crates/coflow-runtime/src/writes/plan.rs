@@ -21,6 +21,7 @@ pub(crate) enum MutationExecutionPlan {
     WriteField(WriteFieldPlan),
     Rename(RenamePlan),
     Delete(DeletePlan),
+    Noop { coordinate: RecordCoordinate },
     Folded,
 }
 
@@ -62,7 +63,10 @@ pub(crate) struct DeletePlan {
 
 impl MutationExecutionPlan {
     pub(crate) const fn changes_generation(&self) -> bool {
-        !matches!(self, Self::Rename(RenamePlan::Noop { .. }) | Self::Folded)
+        !matches!(
+            self,
+            Self::Rename(RenamePlan::Noop { .. }) | Self::Noop { .. } | Self::Folded
+        )
     }
 
     pub(crate) fn visit_sources<E>(
@@ -83,6 +87,7 @@ impl MutationExecutionPlan {
                 }
             }
             Self::Delete(plan) => visit(&plan.source, &plan.writer)?,
+            Self::Noop { .. } => {}
         }
         Ok(())
     }
@@ -139,7 +144,14 @@ pub(crate) fn prepare_mutation_execution(
             path,
             value,
         )
-        .map(MutationExecutionPlan::WriteField),
+        .map(|plan| {
+            plan.map_or_else(
+                || MutationExecutionPlan::Noop {
+                    coordinate: write_record.clone(),
+                },
+                MutationExecutionPlan::WriteField,
+            )
+        }),
         PreparedMutationOp::RenameRecord {
             record, new_key, ..
         } => prepare_rename(session, registry, record, new_key).map(MutationExecutionPlan::Rename),
@@ -160,7 +172,7 @@ fn prepare_write_field(
     key: &str,
     path: &[WriteFieldPathSegment],
     new_value: &CfdValue,
-) -> Result<WriteFieldPlan, DiagnosticSet> {
+) -> Result<Option<WriteFieldPlan>, DiagnosticSet> {
     let Some(record_ref) = session.records.get_by_coordinate(actual_type, key) else {
         return Err(DiagnosticSet::one(not_found(actual_type, key)));
     };
@@ -176,14 +188,22 @@ fn prepare_write_field(
         "WRITE-SHAPE",
         "WRITE",
     )?;
+    if session.field_value(
+        &target.coordinate.actual_type,
+        &target.coordinate.key,
+        &target.field_path,
+    ) == Some(new_value)
+    {
+        return Ok(None);
+    }
     let source = source_for_id(session, target.source_id)?;
     let writer = lookup_source_writer(registry, &source)?;
-    Ok(WriteFieldPlan {
+    Ok(Some(WriteFieldPlan {
         host_coordinate: record_ref.coordinate.clone(),
         target,
         source,
         writer,
-    })
+    }))
 }
 
 fn prepare_rename(

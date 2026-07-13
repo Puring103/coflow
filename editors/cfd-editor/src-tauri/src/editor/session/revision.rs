@@ -11,10 +11,16 @@ pub(super) struct RevisionTicket(u32);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ContentRevision([u8; 32]);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExpectedFileRevision {
+    Present(ContentRevision),
+    Missing,
+}
+
 #[derive(Debug)]
 pub(super) struct RevisionCoordinator {
     current: u32,
-    expected_files: HashMap<PathBuf, ContentRevision>,
+    expected_files: HashMap<PathBuf, ExpectedFileRevision>,
 }
 
 impl RevisionCoordinator {
@@ -48,9 +54,14 @@ impl RevisionCoordinator {
         let mut revisions = Vec::new();
         for path in paths {
             let path = resolve_path(project_root, path.as_ref());
-            if let Ok(revision) = content_revision(&path) {
-                revisions.push((path, revision));
-            }
+            let revision = match content_revision(&path) {
+                Ok(revision) => ExpectedFileRevision::Present(revision),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    ExpectedFileRevision::Missing
+                }
+                Err(_) => continue,
+            };
+            revisions.push((path, revision));
         }
         self.current = self.current.saturating_add(1);
         self.expected_files.extend(revisions);
@@ -69,7 +80,12 @@ impl RevisionCoordinator {
             let Some(expected) = self.expected_files.get(&path) else {
                 return true;
             };
-            content_revision(&path).ok().as_ref() != Some(expected)
+            match expected {
+                ExpectedFileRevision::Present(expected) => {
+                    content_revision(&path).ok().as_ref() != Some(expected)
+                }
+                ExpectedFileRevision::Missing => path.exists(),
+            }
         })
     }
 }
@@ -141,5 +157,26 @@ mod tests {
 
         assert!(coordinator.commit_reload(ticket).is_none());
         fs::remove_file(path).expect("remove revision fixture");
+    }
+
+    #[test]
+    fn internally_deleted_file_is_ignored_but_recreation_is_external() {
+        let root = std::env::temp_dir().join(format!(
+            "coflow-editor-revision-delete-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create temp directory");
+        let path = root.join("generated.csv");
+        fs::write(&path, "generated").expect("write generated file");
+        fs::remove_file(&path).expect("remove generated file");
+
+        let mut coordinator = RevisionCoordinator::initial();
+        coordinator.commit_internal_write(&root, [path.as_path()]);
+        assert!(!coordinator.has_external_change(&root, std::slice::from_ref(&path)));
+
+        fs::write(&path, "external").expect("recreate generated file");
+        assert!(coordinator.has_external_change(&root, std::slice::from_ref(&path)));
+        fs::remove_dir_all(root).expect("remove temp directory");
     }
 }

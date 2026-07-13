@@ -696,6 +696,72 @@ dimensions:
     );
 }
 
+#[test]
+fn localized_write_reports_generated_dimension_source_as_affected() {
+    let root = temp_project_dir("cfd-editor-dim-affected-files");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language"))
+        .expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r"
+            type Item {
+                @localized
+                name: string;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n")
+        .expect("write items");
+    std::fs::write(
+        root.join("data/dimensions/language/Item_name.csv"),
+        "id,default,zh,en\npotion,Potion,药水,Potion\n",
+    )
+    .expect("write dimensions");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh, en]
+    out_dir: data/dimensions/language
+",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let outcome = store
+        .write_field(
+            snapshot.session_id,
+            &RecordCoordinate::new("Item", "potion"),
+            &[CfdPathSegment::Field("name".to_string())],
+            &CfdValue::String("Elixir".to_string()),
+        )
+        .expect("write localized field");
+
+    assert_eq!(
+        outcome.affected_files,
+        vec![
+            "data/dimensions/language/Item_name.csv".to_string(),
+            "data/items.csv".to_string(),
+        ]
+    );
+    assert!(std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+        .expect("read generated dimension source")
+        .contains("potion,Elixir,药水,Potion"));
+}
+
 fn write_project(root: &std::path::Path, name: &str) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
