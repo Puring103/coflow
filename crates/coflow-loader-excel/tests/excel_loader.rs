@@ -511,7 +511,7 @@ fn rejects_formula_cells_even_when_cached_result_is_valid() -> TestResult {
 }
 
 #[test]
-fn rejects_merged_cells() -> TestResult {
+fn loads_merged_cells_from_their_anchor_value() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
@@ -541,23 +541,16 @@ fn rejects_merged_cells() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
-        return Err("expected merged cell rejection".to_string());
-    };
-
-    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-CELL")?;
-    let location = &diagnostic
-        .primary
-        .as_ref()
-        .ok_or_else(|| "expected primary location".to_string())?
-        .location;
-    assert_eq!(location.sheet.as_deref(), Some("Item"));
-    assert_eq!(location.row, Some(2));
-    assert_eq!(location.column, Some(2));
-    assert!(
-        diagnostic.message.contains("MergedCell"),
-        "expected MergedCell kind, got {}",
-        diagnostic.message
+    let model =
+        build_model_from_excel_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let record = model
+        .table("Item")
+        .and_then(|table| table.primary_index.get("item_1"))
+        .and_then(|record_id| model.record(*record_id))
+        .ok_or_else(|| "expected item_1 record".to_string())?;
+    assert_eq!(
+        record.field("value"),
+        Some(&CfdValue::String("merged".to_string()))
     );
     Ok(())
 }

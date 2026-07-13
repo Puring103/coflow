@@ -153,7 +153,7 @@
 | `EXCEL-TYPE` | `EXCEL` | sheet 映射到未知 CFT type |
 | `EXCEL-COLUMN` | `EXCEL` | 表头映射错误，例如未知字段、缺失字段、`@expand` 相邻列不合法 |
 | `EXCEL-ID` | `EXCEL` | key 列缺失、key 为空或 key 非法 |
-| `EXCEL-CELL` | `EXCEL` | 不支持的 Excel 原生单元格值或结构，例如 formula、merged cell、error、date/time、duration |
+| `EXCEL-CELL` | `EXCEL` | 不支持的 Excel 原生单元格值，例如 formula、error、date/time、duration。合并单元格按左上角锚点值读取。 |
 | `EXCEL-TABLE` | `EXCEL` | Excel table manager 创建表、同步表头或写入 workbook 失败 |
 | `EXCEL-TABLE-SHEET-MISSING` | `EXCEL` | Excel table manager 读取或写入目标 sheet 时发现 sheet 不存在 |
 | `EXCEL-WRITE` | `EXCEL` | Excel writer 写回失败 |
