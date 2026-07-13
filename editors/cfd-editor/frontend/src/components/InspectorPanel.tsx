@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
@@ -19,6 +19,10 @@ import {
   updateExpandedPath,
   type ExpandedPathMap,
 } from '../state/expandedPaths'
+import {
+  buildRecordDiagnosticIndex,
+  diagnosticsForRecord,
+} from '../state/recordDiagnostics'
 
 interface Props {
   open: boolean
@@ -97,10 +101,27 @@ export function InspectorPanel({
     ? data.records.find(r => sameCoordinate(r.coordinate, coordinate))
     : null
 
-  const fieldDiags = record?.field_diagnostics ?? []
-  const recordSeverity = record?.diagnostic_severity === 'error' || record?.diagnostic_severity === 'warning'
-    ? record.diagnostic_severity
-    : null
+  const diagnosticIndex = useMemo(
+    () => buildRecordDiagnosticIndex(
+      data?.records.map(row => ({ filePath: data.file_path, coordinate: row.coordinate })) ?? [],
+      diagnostics,
+    ),
+    [data, diagnostics],
+  )
+  const diagnosticProjection = record && data
+    ? diagnosticsForRecord(
+        diagnosticIndex,
+        { filePath: data.file_path, coordinate: record.coordinate },
+        {
+          fieldDiagnostics: record.field_diagnostics,
+          severity: record.diagnostic_severity === 'error' || record.diagnostic_severity === 'warning'
+            ? record.diagnostic_severity
+            : null,
+        },
+      )
+    : { fieldDiagnostics: [], severity: null }
+  const fieldDiags = diagnosticProjection.fieldDiagnostics
+  const recordSeverity = diagnosticProjection.severity
 
   const canRename = !readOnly && data?.capabilities.can_edit_key && !!onRenameRecord
   const expansionOwner = data && coordinate

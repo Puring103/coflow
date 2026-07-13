@@ -34,7 +34,10 @@ import {
   type GraphLayoutResult,
 } from './GraphView.layout'
 import { runGraphLayoutInWorker } from './GraphLayoutWorkerAdapter'
-import { graphNodeDiagnosticSeverity } from './GraphView.diagnostics'
+import {
+  buildRecordDiagnosticIndex,
+  diagnosticsForRecord,
+} from '../state/recordDiagnostics'
 
 const MEASURE_HANDLE_NODE_LIMIT = 80
 
@@ -379,6 +382,13 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
     () => layout.visibleNodes.map(node => currentNodeById.get(node.id) ?? node),
     [layout.visibleNodes, currentNodeById],
   )
+  const diagnosticIndex = useMemo(
+    () => buildRecordDiagnosticIndex(
+      graph.nodes.map(node => ({ filePath: node.file_path, coordinate: node.coordinate })),
+      diagnostics,
+    ),
+    [graph.nodes, diagnostics],
+  )
   const compactNodes = zoomCompactNodes
   const measureHandles = !compactNodes && visibleNodes.length <= MEASURE_HANDLE_NODE_LIMIT
 
@@ -399,7 +409,16 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
         const capability = fileCapabilities?.[n.file_path]
         const editable = !!onWriteField && (capability ? isEditableCapabilities(capability) : isEditableFile(n.file_path))
         const rowExpanded = nodeRowExpandedMap.get(n.id)
-          const nodeSev = graphNodeDiagnosticSeverity(n, diagnostics)
+        const nodeSev = diagnosticsForRecord(
+          diagnosticIndex,
+          { filePath: n.file_path, coordinate: n.coordinate },
+          {
+            fieldDiagnostics: n.field_diagnostics,
+            severity: n.diagnostic_severity === 'error' || n.diagnostic_severity === 'warning'
+              ? n.diagnostic_severity
+              : null,
+          },
+        ).severity
         return {
           id: n.id,
           type: 'cfd',
@@ -433,7 +452,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
         }
       })
     ),
-    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, measureHandles, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities, selectedCoordinate, diagnostics, onDiagnosticBadgeClick]
+    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, measureHandles, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities, selectedCoordinate, diagnosticIndex, onDiagnosticBadgeClick]
   )
 
   const rfEdges: Edge[] = useMemo(() => {

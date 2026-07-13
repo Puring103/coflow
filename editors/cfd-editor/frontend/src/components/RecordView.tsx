@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
@@ -25,6 +25,10 @@ import {
   updateExpandedPath,
   type ExpandedPathMap,
 } from '../state/expandedPaths'
+import {
+  buildRecordDiagnosticIndex,
+  diagnosticsForRecord,
+} from '../state/recordDiagnostics'
 
 interface Props {
   data: FileRecords
@@ -68,6 +72,14 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     return () => clearTimeout(t)
   }, [highlightField, onHighlightConsumed])
 
+  const diagnosticIndex = useMemo(
+    () => buildRecordDiagnosticIndex(
+      data.records.map(row => ({ filePath: data.file_path, coordinate: row.coordinate })),
+      diagnostics,
+    ),
+    [data.file_path, data.records, diagnostics],
+  )
+
   const allSidebarRecords = typeFilter
     ? data.records.filter(r => recordActualType(r) === typeFilter)
     : data.records
@@ -84,12 +96,20 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     ? record.fields.filter(f => f.name.toLowerCase().includes(fieldSearch.toLowerCase()))
     : record.fields
 
-  const fieldDiags = record.field_diagnostics
+  const diagnosticProjection = (row: RecordRow) => diagnosticsForRecord(
+    diagnosticIndex,
+    { filePath: data.file_path, coordinate: row.coordinate },
+    {
+      fieldDiagnostics: row.field_diagnostics,
+      severity: row.diagnostic_severity === 'error' || row.diagnostic_severity === 'warning'
+        ? row.diagnostic_severity
+        : null,
+    },
+  )
+  const fieldDiags = diagnosticProjection(record).fieldDiagnostics
   const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
   const rowSeverity = (row: RecordRow): 'error' | 'warning' | null =>
-    row.diagnostic_severity === 'error' || row.diagnostic_severity === 'warning'
-      ? row.diagnostic_severity
-      : null
+    diagnosticProjection(row).severity
 
   const onSidebarKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return
