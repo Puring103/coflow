@@ -1450,6 +1450,7 @@ function ExpandableRow({
               container={value}
               depth={depth + 1}
               onCollectionEdit={edit => onCollectionEdit(fieldPath, edit)}
+              itemAnnotation={annotationItem(valueAnnotation)}
             />
           )}
           {value.kind === 'array' && value.value.length === 0 && (
@@ -1645,17 +1646,37 @@ function DeleteButton({ onClick, title }: { onClick: () => void; title: string }
   )
 }
 
-function CollectionAddRow({ container, depth, onCollectionEdit }: {
+function CollectionAddRow({ container, depth, onCollectionEdit, itemAnnotation }: {
   container: FieldValue & { kind: 'array' | 'dict' }
   depth: number
   onCollectionEdit: (edit: CollectionEdit) => void
+  itemAnnotation?: FieldAnnotation
 }) {
   const [adding, setAdding] = useState(false)
   const [dupError, setDupError] = useState<string | null>(null)
   const [addError, setAddError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const { openObjectDraft } = useObjectDraft()
 
   function reset() { setAdding(false); setDupError(null); setAddError(null) }
+
+  const objectDraft = container.value.length === 0
+    ? objectDraftForAnnotation(itemAnnotation)
+    : null
+
+  function addArrayItem() {
+    if (objectDraft) {
+      openObjectDraft({
+        title: `新建 ${objectDraft.actualType}`,
+        actualType: objectDraft.actualType,
+        polymorphicTypes: objectDraft.polymorphicTypes,
+        confirmLabel: '添加',
+        onConfirm: value => onCollectionEdit({ kind: 'array_append', value }),
+      })
+      return
+    }
+    onCollectionEdit({ kind: 'array_append' })
+  }
 
   if (container.kind === 'array') {
     return (
@@ -1667,7 +1688,7 @@ function CollectionAddRow({ container, depth, onCollectionEdit }: {
             setAddError(null)
             setBusy(true)
             try {
-              onCollectionEdit({ kind: 'array_append' })
+              addArrayItem()
             } finally {
               setBusy(false)
             }
@@ -1688,7 +1709,17 @@ function CollectionAddRow({ container, depth, onCollectionEdit }: {
       setDupError(`键 "${dictKeyText(key)}" 已存在`)
       return
     }
-    onCollectionEdit({ kind: 'dict_insert', key })
+    if (objectDraft) {
+      openObjectDraft({
+        title: `新建 ${objectDraft.actualType}`,
+        actualType: objectDraft.actualType,
+        polymorphicTypes: objectDraft.polymorphicTypes,
+        confirmLabel: '添加',
+        onConfirm: value => onCollectionEdit({ kind: 'dict_insert', key, value }),
+      })
+    } else {
+      onCollectionEdit({ kind: 'dict_insert', key })
+    }
     reset()
   }
   return (
@@ -1709,6 +1740,18 @@ function CollectionAddRow({ container, depth, onCollectionEdit }: {
       )}
     </div>
   )
+}
+
+function objectDraftForAnnotation(annotation?: FieldAnnotation): {
+  actualType: string
+  polymorphicTypes: string[]
+} | null {
+  if (!annotation || annotationRefTargetType(annotation) || annotationEnumType(annotation)) return null
+  const polymorphicTypes = annotationPolymorphicTypes(annotation)
+  const declaredType = annotationDeclaredType(annotation)
+  const actualType = polymorphicTypes[0] ?? declaredType?.replace(/\?$/, '')
+  if (!actualType || scalarDefaultForDeclaredType(actualType) !== null) return null
+  return { actualType, polymorphicTypes }
 }
 
 function DictKeyEntry({ sampleKey, onCommit, onCancel }: {

@@ -692,12 +692,13 @@ fn apply_collection_edit(
     default_item: Option<CfdValue>,
 ) -> Result<CfdValue, EditorError> {
     match (value, edit) {
-        (CfdValue::Array(mut items), CollectionEdit::ArrayAppend) => {
-            let seed = items
-                .last()
-                .cloned()
-                .or(default_item)
-                .unwrap_or(CfdValue::Null);
+        (CfdValue::Array(mut items), CollectionEdit::ArrayAppend { value }) => {
+            let seed = value.or_else(|| {
+                items
+                    .last()
+                    .cloned()
+                    .or(default_item)
+            }).unwrap_or(CfdValue::Null);
             items.push(seed);
             Ok(CfdValue::Array(items))
         }
@@ -718,15 +719,16 @@ fn apply_collection_edit(
             }
             Ok(CfdValue::Array(items))
         }
-        (CfdValue::Dict(mut entries), CollectionEdit::DictInsert { key }) => {
+        (CfdValue::Dict(mut entries), CollectionEdit::DictInsert { key, value }) => {
             if entries.iter().any(|(entry_key, _)| entry_key == &key) {
                 return Err(EditorError::write("dict key already exists"));
             }
-            let seed = entries
-                .last()
-                .map(|(_, value)| value.clone())
-                .or(default_item)
-                .unwrap_or(CfdValue::Null);
+            let seed = value.or_else(|| {
+                entries
+                    .last()
+                    .map(|(_, value)| value.clone())
+                    .or(default_item)
+            }).unwrap_or(CfdValue::Null);
             entries.push((key, seed));
             Ok(CfdValue::Dict(entries))
         }
