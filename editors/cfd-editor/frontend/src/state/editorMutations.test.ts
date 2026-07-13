@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { RecordRow } from '../bindings/RecordRow'
+import type { FileRecords } from '../bindings/FileRecords'
 import type { WriteFieldOutcome } from '../bindings/WriteFieldOutcome'
 import { committed, MutationHistoryController, superseded } from './editorState'
 import {
@@ -41,6 +42,34 @@ function backend(writeField: EditorMutationBackend['writeField']): EditorMutatio
 }
 
 describe('EditorMutationController', () => {
+  it('publishes a cached row projection without requiring a full file reload', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const projected = { revision: 2, file_path: 'data/items.cfd' } as FileRecords
+    const fileRecordsForRow = vi.fn(() => projected)
+    const publish = vi.fn(async request => {
+      generation = { sessionId: request.sessionId, revision: request.revision }
+      return committed(undefined)
+    })
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish,
+      fileRecordsForRow,
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const mutations = new EditorMutationController(
+      backend(vi.fn(async () => writeOutcome(2, 'old', 'new'))),
+      port,
+      new MutationHistoryController(),
+    )
+
+    await mutations.writeField('data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'new' })
+
+    expect(fileRecordsForRow).toHaveBeenCalledWith('data/items.cfd', coordinate, row, 2)
+    expect(publish.mock.calls[0][0].knownRecords).toBe(projected)
+  })
+
   it('records and replays history only through committed editor generations', async () => {
     let generation = { sessionId: 1, revision: 1 }
     const writeField = vi.fn()

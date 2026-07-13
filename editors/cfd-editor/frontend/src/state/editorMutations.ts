@@ -57,6 +57,12 @@ export interface EditorMutationBackend {
 export interface EditorMutationPort {
   currentGeneration: () => EditorGenerationIdentity | null
   publish: (request: MutationPublicationRequest) => Promise<MutationResult<void>>
+  fileRecordsForRow?: (
+    filePath: string,
+    previousCoordinate: RecordCoordinate,
+    row: RecordRow,
+    revision: number,
+  ) => FileRecords | undefined
   rebindCoordinate: (oldCoordinate: RecordCoordinate, newCoordinate: RecordCoordinate) => void
   recoverPublication: (request: MutationPublicationRequest, error: unknown) => boolean
   reportError: (
@@ -109,7 +115,7 @@ export class EditorMutationController {
       '集合编辑失败',
       filePath,
       sessionId => this.backend.editCollection(sessionId, coordinate, fieldPath, edit),
-      undefined,
+      outcome => this.fileRecordsForRow(filePath, coordinate, outcome.row, outcome.revision),
       outcome => {
         const finalCoordinate = outcome.renamed ?? coordinate
         this.applyRename(coordinate, outcome.renamed)
@@ -138,7 +144,7 @@ export class EditorMutationController {
       '重命名失败',
       filePath,
       sessionId => this.backend.renameRecordKey(sessionId, coordinate, newKey),
-      undefined,
+      outcome => this.fileRecordsForRow(filePath, coordinate, outcome.row, outcome.revision),
       outcome => {
         this.applyRename(coordinate, outcome.renamed)
         this.history.record({
@@ -253,7 +259,7 @@ export class EditorMutationController {
       '写入失败',
       filePath,
       sessionId => this.backend.writeField(sessionId, coordinate, fieldPath, newValue),
-      undefined,
+      outcome => this.fileRecordsForRow(filePath, coordinate, outcome.row, outcome.revision),
       outcome => {
         const finalCoordinate = outcome.renamed ?? coordinate
         this.applyRename(coordinate, outcome.renamed)
@@ -331,7 +337,7 @@ export class EditorMutationController {
     errorPrefix: string,
     fallbackFile: string,
     invoke: (sessionId: number) => Promise<TOutcome>,
-    knownRecords: ((outcome: TOutcome) => FileRecords) | undefined,
+    knownRecords: ((outcome: TOutcome) => FileRecords | undefined) | undefined,
     afterCommit: (outcome: TOutcome) => TValue,
   ): Promise<MutationResult<TValue>> {
     const generation = this.port.currentGeneration()
@@ -386,6 +392,15 @@ export class EditorMutationController {
     if (!newCoordinate) return
     this.history.rebind(oldCoordinate, newCoordinate)
     this.port.rebindCoordinate(oldCoordinate, newCoordinate)
+  }
+
+  private fileRecordsForRow(
+    filePath: string,
+    previousCoordinate: RecordCoordinate,
+    row: RecordRow,
+    revision: number,
+  ): FileRecords | undefined {
+    return this.port.fileRecordsForRow?.(filePath, previousCoordinate, row, revision)
   }
 }
 
