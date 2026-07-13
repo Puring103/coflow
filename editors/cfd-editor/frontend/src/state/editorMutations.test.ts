@@ -298,6 +298,57 @@ describe('EditorMutationController', () => {
     await second
   })
 
+  it('reapplies a queued optimistic write after an in-flight collection edit', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const collectionOutcome = deferred<WriteFieldOutcome>()
+    const fieldOutcome = deferred<WriteFieldOutcome>()
+    const events: string[] = []
+    const writeField = vi.fn(() => {
+      events.push('write')
+      return fieldOutcome.promise
+    })
+    const editCollection = vi.fn(() => collectionOutcome.promise)
+    const projection = {
+      changed: true,
+      reapply: vi.fn(() => events.push('reapply')),
+      rollback: vi.fn(),
+    }
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+      optimisticWriteField: vi.fn(() => projection),
+    }
+    const mutationBackend = backend(writeField)
+    mutationBackend.editCollection = editCollection
+    const mutations = new EditorMutationController(
+      mutationBackend,
+      port,
+      new MutationHistoryController(),
+    )
+
+    const collection = mutations.editCollection(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'array_append' },
+    )
+    await vi.waitFor(() => expect(editCollection).toHaveBeenCalledTimes(1))
+    const field = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'latest' },
+    )
+
+    collectionOutcome.resolve(writeOutcome(2, 'old', 'collection'))
+    await collection
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
+    expect(events).toEqual(['reapply', 'write'])
+
+    fieldOutcome.resolve(writeOutcome(3, 'collection', 'latest'))
+    await field
+  })
+
   it('keeps committed history when projection refresh falls back to reload', async () => {
     let generation = { sessionId: 1, revision: 1 }
     const port: EditorMutationPort = {
@@ -427,5 +478,59 @@ describe('EditorMutationController', () => {
 
     expect(history.getSnapshot().undo.map(entry => entry.revision)).toEqual([3])
     expect(history.getSnapshot().redo).toHaveLength(0)
+  })
+
+  it('reapplies a queued optimistic write before completing an in-flight undo', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const undoRequest = deferred<WriteFieldOutcome>()
+    const editRequest = deferred<WriteFieldOutcome>()
+    const events: string[] = []
+    const writeField = vi.fn()
+      .mockImplementationOnce(() => undoRequest.promise)
+      .mockImplementationOnce(() => {
+        events.push('write')
+        return editRequest.promise
+      })
+    const projection = {
+      changed: true,
+      reapply: vi.fn(() => events.push('reapply')),
+      rollback: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    history.record({
+      kind: 'field',
+      revision: 1,
+      filePath: 'data/items.cfd',
+      coordinate,
+      fieldPath,
+      oldValue: { kind: 'string', value: 'old' },
+      newValue: { kind: 'string', value: 'new' },
+    })
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+      optimisticWriteField: vi.fn(() => projection),
+    }
+    const mutations = new EditorMutationController(backend(writeField), port, history)
+
+    const undo = mutations.undo()
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
+    const edit = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'latest' },
+    )
+
+    undoRequest.resolve(writeOutcome(2, 'new', 'old'))
+    await undo
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2))
+    expect(events).toEqual(['reapply', 'write'])
+
+    editRequest.resolve(writeOutcome(3, 'old', 'latest'))
+    await edit
   })
 })
