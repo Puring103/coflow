@@ -15,6 +15,7 @@ pub(crate) struct CheckRunner<'a> {
     schema: &'a CompiledSchema,
     model: &'a CfdDataModel,
     diagnostics: Vec<CfdDiagnostic>,
+    diagnostic_roots: Vec<CfdRecordId>,
     /// When `Some`, the runner records read-from edges for each top-level
     /// record. The current root is the most recently pushed entry.
     deps: Option<DependencyGraphBuilder>,
@@ -49,6 +50,7 @@ impl<'a> CheckRunner<'a> {
             schema,
             model,
             diagnostics: Vec::new(),
+            diagnostic_roots: Vec::new(),
             deps: None,
             dimension_context: None,
             dimension_round: None,
@@ -67,6 +69,7 @@ impl<'a> CheckRunner<'a> {
             schema,
             model,
             diagnostics: Vec::new(),
+            diagnostic_roots: Vec::new(),
             deps: None,
             dimension_context: Some(dimension_context),
             dimension_round: Some(dimension_round),
@@ -102,7 +105,41 @@ impl<'a> CheckRunner<'a> {
         (self.into_result(), graph)
     }
 
+    pub(crate) fn run_for_with_deps_rooted(
+        mut self,
+        targets: &[CfdRecordId],
+    ) -> (Vec<(CfdRecordId, CfdDiagnostic)>, DependencyGraph) {
+        self.deps = Some(DependencyGraphBuilder::new());
+        for id in targets {
+            if let Some(record) = self.model.record(*id) {
+                self.run_one_record(*id, record);
+            }
+        }
+        let graph = self
+            .deps
+            .take()
+            .map_or_else(DependencyGraph::default, DependencyGraphBuilder::finish);
+        let rooted = self
+            .diagnostic_roots
+            .into_iter()
+            .zip(self.diagnostics)
+            .collect();
+        (rooted, graph)
+    }
+
     fn run_one_record(&mut self, record_id: CfdRecordId, record: &coflow_data_model::CfdRecord) {
+        let diagnostics_start = self.diagnostics.len();
+        self.run_one_record_inner(record_id, record);
+        self.diagnostic_roots.extend(
+            std::iter::repeat_n(record_id, self.diagnostics.len() - diagnostics_start),
+        );
+    }
+
+    fn run_one_record_inner(
+        &mut self,
+        record_id: CfdRecordId,
+        record: &coflow_data_model::CfdRecord,
+    ) {
         if self.schema.is_dimension_storage_type(record.actual_type()) {
             return;
         }

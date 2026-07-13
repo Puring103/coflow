@@ -23,6 +23,41 @@ use rebuild::{rebuild_session_after_write, MutationRebuild};
 pub(crate) use stage::{preflight_mutation_op, stage_mutation_op};
 pub(crate) use transaction::MutationTransaction;
 
+#[derive(Debug, Default)]
+pub(crate) struct MutationImpact {
+    pub(crate) affected_files: BTreeSet<String>,
+    pub(crate) changed_records: BTreeSet<RecordCoordinate>,
+    pub(crate) structural_change: bool,
+}
+
+impl MutationImpact {
+    pub(crate) fn from_outcomes<'a>(
+        outcomes: impl IntoIterator<Item = &'a crate::WriteOutcome>,
+    ) -> Self {
+        let mut impact = Self::default();
+        for outcome in outcomes {
+            impact
+                .affected_files
+                .extend(outcome.affected_files.iter().cloned());
+            impact.changed_records.extend(outcome.touched.iter().cloned());
+            if let Some(inserted) = &outcome.inserted {
+                impact.structural_change = true;
+                impact.changed_records.insert(inserted.clone());
+            }
+            if let Some(deleted) = &outcome.deleted {
+                impact.structural_change = true;
+                impact.changed_records.insert(deleted.clone());
+            }
+            if let Some((old, new)) = &outcome.renamed {
+                impact.structural_change = true;
+                impact.changed_records.insert(old.clone());
+                impact.changed_records.insert(new.clone());
+            }
+        }
+        impact
+    }
+}
+
 pub(crate) fn record_value_at_path<'a>(
     record: &'a CfdRecord,
     path: &CfdPath,
@@ -42,7 +77,7 @@ pub(crate) fn effective_write_target_for_path(
 pub(crate) fn rebuild_after_mutation(
     session: &ProjectSession,
     registry: &ProviderRegistry,
-    affected_files: &BTreeSet<String>,
+    impact: &MutationImpact,
 ) -> Result<MutationRebuild, DiagnosticSet> {
-    rebuild_session_after_write(session, registry, affected_files)
+    rebuild_session_after_write(session, registry, impact)
 }
