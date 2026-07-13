@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 
 use crate::writes::{
     preflight_mutation_op, prepare_mutation_execution, rebuild_after_mutation, stage_mutation_op,
-    MutationExecutionPlan, MutationTransaction,
+    MutationExecutionPlan, MutationImpact, MutationTransaction,
 };
 use crate::{ProjectSession, RecordCoordinate};
 
@@ -91,11 +91,8 @@ fn execute_generation_mutation(
         }
     }
 
-    let written_files = staged
-        .iter()
-        .flat_map(|applied| applied.outcome.affected_files.iter().cloned())
-        .collect::<BTreeSet<_>>();
-    let rebuilt = match rebuild_after_mutation(session, registry, &written_files) {
+    let impact = MutationImpact::from_outcomes(staged.iter().map(|applied| &applied.outcome));
+    let rebuilt = match rebuild_after_mutation(session, registry, &impact) {
         Ok(rebuilt) => rebuilt,
         Err(mut diagnostics) => {
             transaction.compensate_into(&mut diagnostics);
@@ -122,7 +119,8 @@ fn execute_generation_mutation(
         return report_without_publish(session, false, failed);
     }
 
-    let affected_files = written_files
+    let affected_files = impact
+        .affected_files
         .into_iter()
         .chain(rebuilt.changed_dimension_files)
         .collect::<BTreeSet<_>>()

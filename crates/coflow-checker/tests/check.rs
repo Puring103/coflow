@@ -9,6 +9,9 @@
 
 mod common;
 use common::*;
+use coflow_checker::{
+    run_checks_for_dimensions_subset_with_deps, DimensionCheckPlan,
+};
 
 fn build_model(_schema: &CftContainer, builder: CfdModelBuilder<'_>) -> CfdDataModel {
     builder.build().expect("data model should build")
@@ -26,6 +29,65 @@ fn assert_message_contains(diags: &CfdDiagnostics, text: &str) {
             .any(|diag| diag.message.contains(text)),
         "missing `{text}` in {diags:#?}"
     );
+}
+
+#[test]
+fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                value: int;
+                target: &Item? = null;
+                check {
+                    value > 0;
+                    target == null || target.value > 0;
+                }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "target",
+        "Item",
+        [
+            ("value", CfdInputValue::from(-1_i64)),
+            ("target", CfdInputValue::Null),
+        ],
+    );
+    builder.add_record(
+        "reader",
+        "Item",
+        [
+            ("value", CfdInputValue::from(1_i64)),
+            ("target", CfdInputValue::record_ref("target")),
+        ],
+    );
+    let model = builder.build().expect("model builds");
+    let target = model.lookup_assignable("Item", "target").expect("target");
+    let reader = model.lookup_assignable("Item", "reader").expect("reader");
+
+    let (diagnostics, graph) = run_checks_for_dimensions_subset_with_deps(
+        schema.compiled_schema(),
+        &model,
+        &DimensionCheckPlan::default(),
+        &[reader],
+    );
+
+    assert!(
+        diagnostics.iter().all(|rooted| {
+            rooted.root == reader
+                && rooted
+                    .diagnostic
+                .primary
+                .as_ref()
+                .is_some_and(|primary| primary.record == Some(target))
+        }),
+        "subset diagnostics: {diagnostics:#?}"
+    );
+    assert!(graph
+        .reads_from
+        .get(&reader)
+        .is_some_and(|reads| reads.contains(&target)));
 }
 
 #[test]

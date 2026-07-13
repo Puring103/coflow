@@ -8,6 +8,7 @@ use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 
 use crate::dimensions;
+use crate::checks::CheckState;
 use crate::dimensions::{DimensionField, DimensionGenerationTransaction};
 use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
 use crate::load::{
@@ -16,6 +17,7 @@ use crate::load::{
 };
 use crate::schema_build::build_project_schema_with_diagnostics;
 use crate::session::{ProjectSchemaSession, ProjectSession};
+use crate::writes::MutationImpact;
 
 /// Opens a project into a reusable runtime session using explicit side-effect
 /// intent.
@@ -91,7 +93,7 @@ pub(crate) fn build_project_session_with_effects(
 pub(crate) fn rebuild_project_session_from_generation(
     session: &ProjectSession,
     registry: &ProviderRegistry,
-    affected_files: &BTreeSet<String>,
+    impact: &MutationImpact,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
     let dimension_fields = dimensions::dimension_fields(session.compiled_schema());
     let ctx = SessionBuildContext {
@@ -106,10 +108,11 @@ pub(crate) fn rebuild_project_session_from_generation(
         model,
         indexes,
         source_data,
+        check_state,
         changed_dimension_paths,
-    } = rebuild_data_pipeline(&ctx, session, affected_files, &mut diagnostics)?;
+    } = rebuild_data_pipeline(&ctx, session, impact, &mut diagnostics)?;
     Ok(SessionBuildOutput {
-        session: assemble_session(ctx, model, diagnostics, indexes, source_data),
+        session: assemble_session(ctx, model, diagnostics, indexes, source_data, check_state),
         changed_dimension_paths,
     })
 }
@@ -138,6 +141,7 @@ fn finish_project_session(
         model,
         indexes,
         source_data,
+        check_state,
         changed_dimension_paths,
     } = if diagnostics.is_empty() {
         build_data_pipeline(&ctx, &mut diagnostics)?
@@ -146,7 +150,7 @@ fn finish_project_session(
     };
 
     Ok(SessionBuildOutput {
-        session: assemble_session(ctx, model, diagnostics, indexes, source_data),
+        session: assemble_session(ctx, model, diagnostics, indexes, source_data, check_state),
         changed_dimension_paths,
     })
 }
@@ -180,6 +184,7 @@ struct LoadedSessionData {
     model: CfdDataModel,
     indexes: SessionIndexes,
     source_data: SourceDataCache,
+    check_state: CheckState,
     changed_dimension_paths: Vec<PathBuf>,
 }
 
@@ -189,6 +194,7 @@ impl LoadedSessionData {
             model: empty_model()?,
             indexes: SessionIndexes::default(),
             source_data: SourceDataCache::default(),
+            check_state: CheckState::default(),
             changed_dimension_paths: Vec::new(),
         })
     }
@@ -212,6 +218,7 @@ fn build_data_pipeline(
                 model: empty_model()?,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
+                check_state: CheckState::default(),
                 changed_dimension_paths: Vec::new(),
             });
         }
@@ -233,6 +240,7 @@ fn build_data_pipeline(
         model: output.model,
         indexes,
         source_data: output.source_data,
+        check_state: output.check_state,
         changed_dimension_paths: dimensions.changed_paths,
     })
 }
@@ -240,16 +248,18 @@ fn build_data_pipeline(
 fn rebuild_data_pipeline(
     ctx: &SessionBuildContext<'_>,
     previous: &ProjectSession,
-    affected_files: &BTreeSet<String>,
+    impact: &MutationImpact,
     diagnostics: &mut DiagnosticsStore,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
     let (mut output, mut indexes) = match load_cached_data(
         ctx,
         &previous.source_data,
-        affected_files,
+        &impact.affected_files,
         false,
         !ctx.has_dimension_fields(),
         false,
+        (!impact.structural_change).then_some(&previous.check_state),
+        &impact.changed_records,
     ) {
         Ok(loaded) => loaded,
         Err(load_failure) => {
@@ -261,6 +271,7 @@ fn rebuild_data_pipeline(
                 model: empty_model()?,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
+                check_state: CheckState::default(),
                 changed_dimension_paths: Vec::new(),
             });
         }
@@ -272,7 +283,8 @@ fn rebuild_data_pipeline(
             .source_data
             .base_with_previous_dimensions(&previous.source_data);
         let implicit_paths = previous.source_data.implicit_display_paths();
-        let mut dimension_reload_paths = affected_files
+        let mut dimension_reload_paths = impact
+            .affected_files
             .intersection(&implicit_paths)
             .cloned()
             .collect::<BTreeSet<_>>();
@@ -289,6 +301,8 @@ fn rebuild_data_pipeline(
             true,
             true,
             true,
+            (!impact.structural_change).then_some(&previous.check_state),
+            &impact.changed_records,
         ) {
             Ok(loaded) => (output, indexes) = loaded,
             Err(load_failure) => {
@@ -312,6 +326,7 @@ fn rebuild_data_pipeline(
         model: output.model,
         indexes,
         source_data: output.source_data,
+        check_state: output.check_state,
         changed_dimension_paths: dimensions.changed_paths,
     })
 }
@@ -373,6 +388,8 @@ fn load_cached_data(
     include_implicit_dimension_sources: bool,
     run_checks: bool,
     refresh_implicit_dimension_sources: bool,
+    previous_checks: Option<&CheckState>,
+    changed_records: &BTreeSet<crate::RecordCoordinate>,
 ) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
     let mut indexes = SessionIndexBuilder::default();
     let output = match reload_project_data_from_cache(
@@ -388,6 +405,8 @@ fn load_cached_data(
             run_checks,
         },
         refresh_implicit_dimension_sources,
+        previous_checks,
+        changed_records,
     ) {
         Ok(output) => output,
         Err(diagnostics) => {
@@ -433,6 +452,7 @@ fn build_read_only_data(
                 model: empty_model()?,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
+                check_state: CheckState::default(),
                 changed_dimension_paths: Vec::new(),
             });
         }
@@ -443,6 +463,7 @@ fn build_read_only_data(
         model: output.model,
         indexes,
         source_data: output.source_data,
+        check_state: output.check_state,
         changed_dimension_paths: Vec::new(),
     })
 }
@@ -489,6 +510,7 @@ fn assemble_session(
     diagnostics: DiagnosticsStore,
     indexes: SessionIndexes,
     source_data: SourceDataCache,
+    check_state: CheckState,
 ) -> ProjectSession {
     ProjectSession {
         project: ctx.project,
@@ -500,6 +522,7 @@ fn assemble_session(
         files: indexes.files,
         loader_extensions: loader_extensions(ctx.registry),
         source_data,
+        check_state,
     }
 }
 

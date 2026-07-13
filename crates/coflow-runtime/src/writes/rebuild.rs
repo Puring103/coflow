@@ -1,7 +1,7 @@
 use coflow_api::{DiagnosticSet, ProviderRegistry};
-use std::collections::BTreeSet;
 
 use crate::session_build::rebuild_project_session_from_generation;
+use crate::writes::MutationImpact;
 use crate::ProjectSession;
 
 pub(crate) struct MutationRebuild {
@@ -12,10 +12,9 @@ pub(crate) struct MutationRebuild {
 pub(super) fn rebuild_session_after_write(
     session: &ProjectSession,
     registry: &ProviderRegistry,
-    affected_files: &BTreeSet<String>,
+    impact: &MutationImpact,
 ) -> Result<MutationRebuild, DiagnosticSet> {
-    let output =
-        rebuild_project_session_from_generation(session, registry, affected_files)?;
+    let output = rebuild_project_session_from_generation(session, registry, impact)?;
     let changed_dimension_files = output
         .changed_dimension_paths
         .iter()

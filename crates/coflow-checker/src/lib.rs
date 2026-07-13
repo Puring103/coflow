@@ -208,6 +208,62 @@ pub fn run_checks_for_dimensions_with_deps_and_options(
     (diagnostics_result(all), graph)
 }
 
+/// Run dimension-aware checks for selected records and collect their
+/// read-from dependencies. Empty input performs no work.
+///
+/// # Errors
+///
+/// Returns the union of the selected roots' diagnostics from the default and
+/// configured dimension rounds.
+pub fn run_checks_for_dimensions_subset_with_deps(
+    schema: &CompiledSchema,
+    model: &CfdDataModel,
+    plan: &DimensionCheckPlan,
+    targets: &[CfdRecordId],
+) -> (Vec<RootedCheckDiagnostic>, DependencyGraph) {
+    if targets.is_empty() {
+        return (Vec::new(), DependencyGraph::default());
+    }
+    let (default_diagnostics, mut graph) = CheckRunner::new(
+        schema,
+        model,
+        StructuralLimits::default(),
+    )
+    .run_for_with_deps_rooted(targets);
+    let mut all = default_diagnostics
+        .into_iter()
+        .map(|(root, diagnostic)| RootedCheckDiagnostic { root, diagnostic })
+        .collect::<Vec<_>>();
+    for round in plan.rounds() {
+        let context = DimensionCheckContext {
+            dimension: round.dimension.clone(),
+            variant: Some(round.variant.clone()),
+        };
+        let runner = CheckRunner::with_dimension_context(
+            schema,
+            model,
+            context,
+            StructuralLimits::default(),
+        );
+        let (diagnostics, variant_graph) = runner.run_for_with_deps_rooted(targets);
+        merge_dependency_graph(&mut graph, variant_graph);
+        all.extend(diagnostics.into_iter().map(|(root, mut diagnostic)| {
+            diagnostic.message = format!(
+                "[{}={}] {}",
+                round.dimension, round.variant, diagnostic.message
+            );
+            RootedCheckDiagnostic { root, diagnostic }
+        }));
+    }
+    (all, graph)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RootedCheckDiagnostic {
+    pub root: CfdRecordId,
+    pub diagnostic: coflow_data_model::CfdDiagnostic,
+}
+
 /// Run checks for only a specified subset of records. Empty input is treated
 /// as "no checks to run" and returns Ok.
 ///

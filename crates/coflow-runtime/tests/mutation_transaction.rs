@@ -106,7 +106,7 @@ impl SourceProvider for TestProvider {
 
     fn load(
         &self,
-        _ctx: SourceLoadContext<'_>,
+        ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
         self.state
@@ -154,13 +154,24 @@ impl SourceProvider for TestProvider {
                 )
             }
         };
+        let key = source_record_key(source);
+        let mut fields = BTreeMap::from([("value", CfdInputValue::Int(value))]);
+        if ctx
+            .schema
+            .type_meta("Item")
+            .is_some_and(|item| item.own_fields.iter().any(|field| field.name == "target"))
+        {
+            fields.insert(
+                "target",
+                if key == "two" {
+                    CfdInputValue::record_ref("one")
+                } else {
+                    CfdInputValue::Null
+                },
+            );
+        }
         Ok(LoadedSource {
-            records: vec![CfdInputRecord::new(
-                source_record_key(source),
-                "Item",
-                [("value", CfdInputValue::Int(value))],
-            )
-            .with_origin(origin)],
+            records: vec![CfdInputRecord::new(key, "Item", fields).with_origin(origin)],
         })
     }
 }
@@ -448,6 +459,41 @@ fn mutation_rebuild_reloads_only_affected_sources() {
     let state = fixture.state.lock().expect("lock fixture state");
     assert_eq!(state.counts.loads, 3);
     drop(state);
+}
+
+#[test]
+fn incremental_checks_match_full_checks_for_dependent_records() {
+    let fixture = Fixture::remote(&[("txn://one", -1), ("txn://two", 1)]);
+    std::fs::write(
+        fixture.root.join("schema.cft"),
+        r#"
+            type Item {
+                value: int;
+                target: &Item? = null;
+                check {
+                    value > 0;
+                    target == null || target.value > 0;
+                }
+            }
+        "#,
+    )
+    .expect("write dependent check schema");
+    let mut session = fixture.open();
+    assert_eq!(
+        session.queries().diagnostics().by_stage("CHECK").len(),
+        2
+    );
+
+    let report = session.apply_mutation(mutation_request(vec![set_value("one", 2)]));
+
+    assert!(report.write_ok, "diagnostics: {:?}", report.diagnostics);
+    assert!(report.check_ok, "diagnostics: {:?}", report.diagnostics);
+    assert!(session.queries().diagnostics().by_stage("CHECK").is_empty());
+    let full = fixture.open();
+    assert_eq!(
+        session.queries().diagnostics().flat_diagnostics(),
+        full.queries().diagnostics().flat_diagnostics()
+    );
 }
 
 #[test]

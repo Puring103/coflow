@@ -3,15 +3,17 @@ use coflow_api::{
     ResolvedSource, SourceLoadContext, SourceLocationSpec,
 };
 use coflow_cft::{CftContainer, CompiledSchema};
-use coflow_checker::{run_checks_for_dimensions, DimensionCheckPlan, DimensionCheckRound};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostics, CfdInputRecord, CfdPath, CfdPathSegment, CfdRecordId,
     RecordOrigin,
 };
-use coflow_project::{path_to_slash, DimensionConfig, Project};
+use coflow_project::{path_to_slash, Project};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
+use crate::checks::{
+    run_full_project_checks, run_incremental_project_checks, CheckState, ProjectCheckOutput,
+};
 use crate::dimensions;
 use crate::indexes::{
     DiagnosticLogicalLocation, FileIndex, PendingRecordRef, RecordIndexBuilder,
@@ -26,6 +28,7 @@ pub(crate) struct ProjectLoadOutput {
     pub(crate) diagnostics: DiagnosticSet,
     pub(crate) logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
     pub(crate) source_data: SourceDataCache,
+    pub(crate) check_state: CheckState,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -63,12 +66,6 @@ impl SourceDataCache {
 }
 
 #[derive(Debug)]
-struct CheckOutput {
-    diagnostics: DiagnosticSet,
-    logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
-}
-
-#[derive(Debug)]
 pub(crate) struct LoadDiagnostics {
     pub(crate) diagnostics: DiagnosticSet,
     pub(crate) logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
@@ -86,6 +83,7 @@ pub(crate) fn empty_load_output() -> Result<ProjectLoadOutput, DiagnosticSet> {
         diagnostics: DiagnosticSet::empty(),
         logical_locations: BTreeMap::new(),
         source_data: SourceDataCache::default(),
+        check_state: CheckState::default(),
     })
 }
 
@@ -177,11 +175,12 @@ pub(crate) fn load_project_data(
         }
     };
     let check = if options.run_checks {
-        run_project_checks(project, compiled_schema, &model, &origins)
+        run_full_project_checks(project, compiled_schema, &model, &origins)
     } else {
-        CheckOutput {
+        ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
+            state: CheckState::default(),
         }
     };
     Ok(ProjectLoadOutput {
@@ -189,6 +188,7 @@ pub(crate) fn load_project_data(
         diagnostics: check.diagnostics,
         logical_locations: check.logical_locations,
         source_data,
+        check_state: check.state,
     })
 }
 
@@ -202,6 +202,8 @@ pub(crate) fn reload_project_data_from_cache(
     reload_paths: &BTreeSet<String>,
     options: LoadProjectDataOptions,
     refresh_implicit_dimension_sources: bool,
+    previous_checks: Option<&CheckState>,
+    changed_records: &BTreeSet<RecordCoordinate>,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut source_data = SourceDataCache {
         batches: previous
@@ -281,6 +283,8 @@ pub(crate) fn reload_project_data_from_cache(
         indexes,
         source_data,
         options.run_checks,
+        previous_checks,
+        changed_records,
     )
 }
 
@@ -345,40 +349,6 @@ fn load_resolved_sources(
         }
     }
     diagnostics
-}
-
-fn run_project_checks(
-    project: &Project,
-    schema: &CompiledSchema,
-    model: &CfdDataModel,
-    origins: &[RecordOrigin],
-) -> CheckOutput {
-    let plan = dimension_check_plan(&project.config.dimensions);
-    let check_result = run_checks_for_dimensions(schema, model, &plan);
-    let (diagnostics, logical_locations) = if let Err(checks) = check_result {
-        let logical_locations = logical_locations_from_cfd(&checks, |id| {
-            model
-                .record(id)
-                .map(|record| RecordCoordinate::new(record.actual_type(), record.key.clone()))
-        });
-        let diagnostics = map_diagnostics_with_origins(checks, origins);
-        (diagnostics, logical_locations)
-    } else {
-        (DiagnosticSet::empty(), BTreeMap::new())
-    };
-    CheckOutput {
-        diagnostics,
-        logical_locations,
-    }
-}
-
-fn dimension_check_plan(dimensions: &BTreeMap<String, DimensionConfig>) -> DimensionCheckPlan {
-    DimensionCheckPlan::new(dimensions.iter().flat_map(|(dimension, config)| {
-        config
-            .variants
-            .iter()
-            .map(|variant| DimensionCheckRound::new(dimension.clone(), variant.clone()))
-    }))
 }
 
 fn push_loaded_records(
@@ -472,6 +442,8 @@ fn build_output_from_cache(
     indexes: &mut SessionIndexBuilder,
     source_data: SourceDataCache,
     run_checks: bool,
+    previous_checks: Option<&CheckState>,
+    changed_records: &BTreeSet<RecordCoordinate>,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records = Vec::new();
     for batch in &source_data.batches {
@@ -507,11 +479,25 @@ fn build_output_from_cache(
         }
     })?;
     let check = if run_checks {
-        run_project_checks(project, compiled_schema, &model, &origins)
+        previous_checks
+            .and_then(|previous| {
+                run_incremental_project_checks(
+                    project,
+                    compiled_schema,
+                    &model,
+                    &origins,
+                    previous,
+                    changed_records,
+                )
+            })
+            .unwrap_or_else(|| {
+                run_full_project_checks(project, compiled_schema, &model, &origins)
+            })
     } else {
-        CheckOutput {
+        ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
+            state: CheckState::default(),
         }
     };
     Ok(ProjectLoadOutput {
@@ -519,6 +505,7 @@ fn build_output_from_cache(
         diagnostics: check.diagnostics,
         logical_locations: check.logical_locations,
         source_data,
+        check_state: check.state,
     })
 }
 
@@ -542,7 +529,7 @@ fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
     }
 }
 
-fn logical_locations_from_cfd(
+pub(crate) fn logical_locations_from_cfd(
     diagnostics: &CfdDiagnostics,
     resolve_coordinate: impl Fn(CfdRecordId) -> Option<RecordCoordinate>,
 ) -> BTreeMap<usize, DiagnosticLogicalLocation> {

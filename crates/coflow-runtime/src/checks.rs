@@ -1,0 +1,249 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use coflow_api::{map_diagnostics_with_origins, DiagnosticSet};
+use coflow_cft::CompiledSchema;
+use coflow_checker::{
+    run_checks_for_dimensions_subset_with_deps, DependencyGraph, DimensionCheckPlan,
+    DimensionCheckRound, RootedCheckDiagnostic,
+};
+use coflow_data_model::{
+    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, CfdRecordId, RecordOrigin,
+};
+use coflow_project::{DimensionConfig, Project};
+
+use crate::indexes::DiagnosticLogicalLocation;
+use crate::load::logical_locations_from_cfd;
+use crate::RecordCoordinate;
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct CheckState {
+    diagnostics: Vec<StableCheckDiagnostic>,
+    reads_from: BTreeMap<RecordCoordinate, BTreeSet<RecordCoordinate>>,
+}
+
+#[derive(Debug)]
+pub(crate) struct ProjectCheckOutput {
+    pub(crate) diagnostics: DiagnosticSet,
+    pub(crate) logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
+    pub(crate) state: CheckState,
+}
+
+#[derive(Debug, Clone)]
+struct StableCheckDiagnostic {
+    root: RecordCoordinate,
+    code: coflow_data_model::CfdErrorCode,
+    stage: coflow_data_model::CfdStage,
+    severity: coflow_data_model::CfdSeverity,
+    message: String,
+    primary: Option<StableCheckLabel>,
+    related: Vec<StableCheckLabel>,
+}
+
+#[derive(Debug, Clone)]
+struct StableCheckLabel {
+    record: Option<RecordCoordinate>,
+    path: CfdPath,
+    message: Option<String>,
+}
+
+pub(crate) fn run_full_project_checks(
+    project: &Project,
+    schema: &CompiledSchema,
+    model: &CfdDataModel,
+    origins: &[RecordOrigin],
+) -> ProjectCheckOutput {
+    let targets = model.records().map(|(id, _)| id).collect::<Vec<_>>();
+    let (diagnostics, dependencies) = run_checks_for_dimensions_subset_with_deps(
+        schema,
+        model,
+        &dimension_check_plan(&project.config.dimensions),
+        &targets,
+    );
+    let state = stabilize_check_state(model, diagnostics, dependencies).unwrap_or_default();
+    render_check_state(model, origins, state).unwrap_or_else(empty_check_output)
+}
+
+pub(crate) fn run_incremental_project_checks(
+    project: &Project,
+    schema: &CompiledSchema,
+    model: &CfdDataModel,
+    origins: &[RecordOrigin],
+    previous: &CheckState,
+    changed: &BTreeSet<RecordCoordinate>,
+) -> Option<ProjectCheckOutput> {
+    let mut affected = changed.clone();
+    for (reader, reads) in &previous.reads_from {
+        if reads.iter().any(|coordinate| changed.contains(coordinate)) {
+            affected.insert(reader.clone());
+        }
+    }
+    let targets = affected
+        .iter()
+        .map(|coordinate| model.record_by_type_key(&coordinate.actual_type, &coordinate.key))
+        .collect::<Option<Vec<_>>>()?;
+    let (diagnostics, dependencies) = run_checks_for_dimensions_subset_with_deps(
+        schema,
+        model,
+        &dimension_check_plan(&project.config.dimensions),
+        &targets,
+    );
+    let replacement = stabilize_check_state(model, diagnostics, dependencies)?;
+    let mut state = previous.clone();
+    state
+        .diagnostics
+        .retain(|diagnostic| !affected.contains(&diagnostic.root));
+    state.diagnostics.extend(replacement.diagnostics);
+    state
+        .reads_from
+        .retain(|reader, _| !affected.contains(reader));
+    state.reads_from.extend(replacement.reads_from);
+    render_check_state(model, origins, state)
+}
+
+fn stabilize_check_state(
+    model: &CfdDataModel,
+    diagnostics: Vec<RootedCheckDiagnostic>,
+    dependencies: DependencyGraph,
+) -> Option<CheckState> {
+    let diagnostics = diagnostics
+        .into_iter()
+        .map(|rooted| stabilize_diagnostic(model, rooted))
+        .collect::<Option<Vec<_>>>()?;
+    let mut reads_from = BTreeMap::new();
+    for (reader, reads) in dependencies.reads_from {
+        let reader = coordinate_for_id(model, reader)?;
+        let reads = reads
+            .into_iter()
+            .map(|id| coordinate_for_id(model, id))
+            .collect::<Option<BTreeSet<_>>>()?;
+        reads_from.insert(reader, reads);
+    }
+    Some(CheckState {
+        diagnostics,
+        reads_from,
+    })
+}
+
+fn stabilize_diagnostic(
+    model: &CfdDataModel,
+    rooted: RootedCheckDiagnostic,
+) -> Option<StableCheckDiagnostic> {
+    let CfdDiagnostic {
+        code,
+        stage,
+        severity,
+        message,
+        primary,
+        related,
+    } = rooted.diagnostic;
+    Some(StableCheckDiagnostic {
+        root: coordinate_for_id(model, rooted.root)?,
+        code,
+        stage,
+        severity,
+        message,
+        primary: match primary {
+            Some(label) => Some(stabilize_label(model, label)?),
+            None => None,
+        },
+        related: related
+            .into_iter()
+            .map(|label| stabilize_label(model, label))
+            .collect::<Option<Vec<_>>>()?,
+    })
+}
+
+fn stabilize_label(model: &CfdDataModel, label: CfdLabel) -> Option<StableCheckLabel> {
+    Some(StableCheckLabel {
+        record: match label.record {
+            Some(id) => Some(coordinate_for_id(model, id)?),
+            None => None,
+        },
+        path: label.path,
+        message: label.message,
+    })
+}
+
+fn render_check_state(
+    model: &CfdDataModel,
+    origins: &[RecordOrigin],
+    mut state: CheckState,
+) -> Option<ProjectCheckOutput> {
+    state.diagnostics.sort_by_key(|diagnostic| {
+        model
+            .record_by_type_key(&diagnostic.root.actual_type, &diagnostic.root.key)
+            .map_or(usize::MAX, CfdRecordId::index)
+    });
+    let diagnostics = state
+        .diagnostics
+        .iter()
+        .cloned()
+        .map(|diagnostic| render_diagnostic(model, diagnostic))
+        .collect::<Option<Vec<_>>>()?;
+    let raw = CfdDiagnostics::new(diagnostics);
+    let logical_locations = logical_locations_from_cfd(&raw, |id| coordinate_for_id(model, id));
+    Some(ProjectCheckOutput {
+        diagnostics: map_diagnostics_with_origins(raw, origins),
+        logical_locations,
+        state,
+    })
+}
+
+fn render_diagnostic(
+    model: &CfdDataModel,
+    diagnostic: StableCheckDiagnostic,
+) -> Option<CfdDiagnostic> {
+    Some(CfdDiagnostic {
+        code: diagnostic.code,
+        stage: diagnostic.stage,
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+        primary: match diagnostic.primary {
+            Some(label) => Some(render_label(model, label)?),
+            None => None,
+        },
+        related: diagnostic
+            .related
+            .into_iter()
+            .map(|label| render_label(model, label))
+            .collect::<Option<Vec<_>>>()?,
+    })
+}
+
+fn render_label(model: &CfdDataModel, label: StableCheckLabel) -> Option<CfdLabel> {
+    Some(CfdLabel {
+        record: match label.record {
+            Some(coordinate) => Some(
+                model.record_by_type_key(&coordinate.actual_type, &coordinate.key)?,
+            ),
+            None => None,
+        },
+        path: label.path,
+        message: label.message,
+    })
+}
+
+fn coordinate_for_id(model: &CfdDataModel, id: CfdRecordId) -> Option<RecordCoordinate> {
+    let record = model.record(id)?;
+    Some(RecordCoordinate::new(
+        record.actual_type(),
+        record.key.clone(),
+    ))
+}
+
+fn dimension_check_plan(dimensions: &BTreeMap<String, DimensionConfig>) -> DimensionCheckPlan {
+    DimensionCheckPlan::new(dimensions.iter().flat_map(|(dimension, config)| {
+        config
+            .variants
+            .iter()
+            .map(|variant| DimensionCheckRound::new(dimension.clone(), variant.clone()))
+    }))
+}
+
+fn empty_check_output() -> ProjectCheckOutput {
+    ProjectCheckOutput {
+        diagnostics: DiagnosticSet::empty(),
+        logical_locations: BTreeMap::new(),
+        state: CheckState::default(),
+    }
+}
