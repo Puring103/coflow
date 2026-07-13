@@ -14,6 +14,7 @@ mod writer;
 
 use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
 use coflow_data_model::{CfdPath, CfdRecord, CfdValue};
+use std::collections::BTreeSet;
 
 use super::{ProjectSession, RecordCoordinate};
 use crate::indexes::RecordRef;
@@ -41,6 +42,7 @@ pub(crate) fn effective_write_target_for_path(
 pub(crate) fn rebuild_after_mutation(
     session: &ProjectSession,
     registry: &ProviderRegistry,
+    affected_files: &BTreeSet<String>,
 ) -> Result<MutationRebuild, DiagnosticSet> {
-    rebuild_session_after_write(session, registry)
+    rebuild_session_after_write(session, registry, affected_files)
 }

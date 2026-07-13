@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::dimensions::{self, dimensions_for_project, DimensionInfo};
 use crate::files::{self, DimensionGroup, FileTreeNode, FileTreeOptions};
 use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
+use crate::load::SourceDataCache;
 use crate::records::{EffectiveFieldWrite, RecordView, RefTargetInfo};
 use crate::writes::record_value_at_path;
 
@@ -50,6 +51,7 @@ pub(crate) struct ProjectSession {
     pub(crate) records: RecordIndex,
     pub(crate) files: FileIndex,
     pub(crate) loader_extensions: BTreeSet<String>,
+    pub(crate) source_data: SourceDataCache,
 }
 
 impl ProjectSession {
