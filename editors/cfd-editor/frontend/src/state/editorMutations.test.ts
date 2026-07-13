@@ -53,6 +53,7 @@ describe('EditorMutationController', () => {
       optimisticWriteField: vi.fn(() => ({
         changed: false,
         row,
+        reapply: vi.fn(),
         rollback: vi.fn(),
       })),
     }
@@ -244,6 +245,57 @@ describe('EditorMutationController', () => {
     await Promise.all([skipped, latest])
 
     expect(history.getSnapshot().undo.map(entry => entry.revision)).toEqual([2, 3])
+  })
+
+  it('reapplies queued optimistic writes before advancing the mutation queue', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const firstOutcome = deferred<WriteFieldOutcome>()
+    const secondOutcome = deferred<WriteFieldOutcome>()
+    const writeField = vi.fn()
+      .mockImplementationOnce(() => firstOutcome.promise)
+      .mockImplementationOnce(() => secondOutcome.promise)
+    const firstProjection = { changed: true, reapply: vi.fn(), rollback: vi.fn() }
+    const secondProjection = { changed: true, reapply: vi.fn(), rollback: vi.fn() }
+    const optimisticWriteField = vi.fn()
+      .mockReturnValueOnce(firstProjection)
+      .mockReturnValueOnce(secondProjection)
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+      optimisticWriteField,
+    }
+    const mutations = new EditorMutationController(
+      backend(writeField),
+      port,
+      new MutationHistoryController(),
+    )
+
+    const first = mutations.writeField(
+      'data/items.cfd',
+      coordinate,
+      [{ kind: 'field', value: 'name' }],
+      { kind: 'string', value: 'first' },
+    )
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
+    const second = mutations.writeField(
+      'data/items.cfd',
+      coordinate,
+      [{ kind: 'field', value: 'description' }],
+      { kind: 'string', value: 'second' },
+    )
+
+    firstOutcome.resolve(writeOutcome(2, 'old', 'first'))
+    await first
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2))
+    expect(secondProjection.reapply).toHaveBeenCalledTimes(1)
+    secondOutcome.resolve(writeOutcome(3, 'old', 'second'))
+    await second
   })
 
   it('keeps committed history when projection refresh falls back to reload', async () => {
