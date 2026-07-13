@@ -132,6 +132,89 @@ pub(crate) fn stage_mutation_op(
     }
 }
 
+pub(crate) struct MutationBatchFailure {
+    pub(crate) index: usize,
+    pub(crate) diagnostics: DiagnosticSet,
+}
+
+pub(crate) fn stage_field_mutation_batch(
+    session: &ProjectSession,
+    batch: &[(&PreparedMutationOp, &MutationExecutionPlan)],
+) -> Result<Vec<WriteOutcome>, MutationBatchFailure> {
+    let Some((_, MutationExecutionPlan::WriteField(first_plan))) = batch.first() else {
+        return Err(MutationBatchFailure {
+            index: 0,
+            diagnostics: plan_mismatch("field batch does not start with a field write"),
+        });
+    };
+    let mut requests = Vec::with_capacity(batch.len());
+    for (index, (op, execution)) in batch.iter().enumerate() {
+        let (
+            PreparedMutationOp::SetField { value, .. },
+            MutationExecutionPlan::WriteField(plan),
+        ) = (op, execution)
+        else {
+            return Err(MutationBatchFailure {
+                index,
+                diagnostics: plan_mismatch("field batch contains a non-field mutation"),
+            });
+        };
+        if !batch[0].1.can_batch_field_write_with(execution) {
+            return Err(MutationBatchFailure {
+                index,
+                diagnostics: plan_mismatch("field batch spans more than one resolved source"),
+            });
+        }
+        requests.push(WriteCellRequest {
+            origin: &plan.target.origin,
+            record_key: &plan.target.coordinate.key,
+            actual_type: &plan.target.coordinate.actual_type,
+            field_path: &plan.target.field_path,
+            new_value: value,
+            schema: session.compiled_schema(),
+            source: &plan.source,
+        });
+    }
+    let ctx = WriteContext {
+        project_root: &session.project.root_dir,
+        schema: session.compiled_schema(),
+        model: Some(&session.model),
+    };
+    let provider_outcomes = first_plan
+        .writer
+        .write_field_batch(ctx, &requests)
+        .map_err(|failure| MutationBatchFailure {
+            index: failure.index,
+            diagnostics: failure.diagnostics,
+        })?;
+    if provider_outcomes.len() != batch.len() {
+        return Err(MutationBatchFailure {
+            index: 0,
+            diagnostics: plan_mismatch("writer returned the wrong number of field batch outcomes"),
+        });
+    }
+    batch
+        .iter()
+        .enumerate()
+        .zip(provider_outcomes)
+        .map(|((index, (op, execution)), provider_outcome)| {
+            let (
+                PreparedMutationOp::SetField { record, .. },
+                MutationExecutionPlan::WriteField(plan),
+            ) = (op, execution)
+            else {
+                return Err(MutationBatchFailure {
+                    index,
+                    diagnostics: plan_mismatch(
+                        "validated field batch changed before outcome assembly",
+                    ),
+                });
+            };
+            Ok(field_write_outcome(plan, record, provider_outcome))
+        })
+        .collect()
+}
+
 fn stage_write_field(
     session: &ProjectSession,
     plan: &WriteFieldPlan,
@@ -154,7 +237,15 @@ fn stage_write_field(
         model: Some(&session.model),
     };
     let provider_outcome = plan.writer.write_field(ctx, &request)?;
-    Ok(WriteOutcome {
+    Ok(field_write_outcome(plan, host_record, provider_outcome))
+}
+
+fn field_write_outcome(
+    plan: &WriteFieldPlan,
+    host_record: &RecordCoordinate,
+    provider_outcome: coflow_api::WriteOutcome,
+) -> WriteOutcome {
+    WriteOutcome {
         touched: if host_record == &plan.host_coordinate {
             vec![host_record.clone()]
         } else {
@@ -165,7 +256,7 @@ fn stage_write_field(
         renamed: None,
         affected_files: vec![plan.target.display_path.clone()],
         diagnostics: provider_outcome.diagnostics,
-    })
+    }
 }
 
 fn stage_rename_record_key(

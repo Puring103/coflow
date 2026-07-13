@@ -10,7 +10,8 @@ use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
     ProviderRegistry, ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
     SourceProviderDescriptor, SourceTransaction, SourceTransactionCompensation, SourceWriter,
-    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    WriteBatchFailure, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
+    WriterDescriptor,
 };
 use coflow_data_model::{
     CfdInputRecord, CfdInputValue, CfdPathSegment, CfdValue, RecordOrigin, SourceDocument,
@@ -61,6 +62,7 @@ struct Faults {
 #[derive(Debug, Default)]
 struct Counts {
     loads: usize,
+    batches: usize,
     begins: usize,
     preflights: usize,
     writes: usize,
@@ -287,6 +289,26 @@ impl SourceWriter for TestWriter {
         };
         Ok(WriteOutcome { diagnostics })
     }
+
+    fn write_field_batch(
+        &self,
+        ctx: WriteContext<'_>,
+        requests: &[WriteCellRequest<'_>],
+    ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
+        self.state
+            .lock()
+            .expect("lock writer state")
+            .counts
+            .batches += 1;
+        requests
+            .iter()
+            .enumerate()
+            .map(|(index, request)| {
+                self.write_field(ctx, request)
+                    .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug)]
@@ -365,6 +387,7 @@ fn remote_batch_publishes_one_generation_and_commits_once() {
     let state = fixture.state.lock().expect("lock fixture state");
     assert_eq!(state.remote_values["txn://one"], 3);
     assert_eq!(state.counts.begins, 1);
+    assert_eq!(state.counts.batches, 1);
     assert_eq!(state.counts.writes, 2);
     assert_eq!(state.counts.commits, 1);
     assert_eq!(state.counts.prepare_commits, 1);

@@ -6,6 +6,7 @@ pub use capabilities::{WriterCapabilities, WriterDescriptor};
 pub use requests::{
     DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest,
     SpreadRewriteTarget, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
+    WriteBatchFailure,
 };
 pub use transaction::{SourceTransaction, SourceTransactionCompensation};
 
@@ -67,6 +68,28 @@ pub trait SourceWriter: Send + Sync {
         ctx: WriteContext<'_>,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet>;
+
+    /// Persist multiple field changes for one resolved source. Providers may
+    /// override this to share source open/save work across the batch.
+    ///
+    /// # Errors
+    ///
+    /// Returns the failing request index and its diagnostics. The runtime
+    /// compensates the enclosing source transaction on any failure.
+    fn write_field_batch(
+        &self,
+        ctx: WriteContext<'_>,
+        requests: &[WriteCellRequest<'_>],
+    ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
+        requests
+            .iter()
+            .enumerate()
+            .map(|(index, request)| {
+                self.write_field(ctx, request)
+                    .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })
+            })
+            .collect()
+    }
 
     /// Persist a new top-level record.
     ///

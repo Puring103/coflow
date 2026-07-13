@@ -94,6 +94,12 @@ pub struct WriteOutcome {
     pub diagnostics: DiagnosticSet,
 }
 
+#[derive(Debug, Clone)]
+pub struct WriteBatchFailure {
+    pub index: usize,
+    pub diagnostics: DiagnosticSet,
+}
+
 /// Context passed to writers. Mirrors [`crate::SourceLoadContext`] but for writes.
 #[derive(Debug, Clone, Copy)]
 pub struct WriteContext<'a> {
