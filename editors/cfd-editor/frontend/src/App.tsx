@@ -44,6 +44,7 @@ import {
   EditorMutationController,
   type EditorMutationPort,
 } from './state/editorMutations'
+import { historyShortcutFor } from './state/editorShortcuts'
 import { projectFieldValue, projectFieldValueAtRevision } from './state/fieldProjection'
 import './style.css'
 
@@ -801,16 +802,11 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
       }
-      // Undo / redo. Skip when typing in a text control so native input
-      // undo stays available there.
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !isTextTarget(e.target)) {
+      const historyShortcut = historyShortcutFor(e)
+      if (historyShortcut) {
         e.preventDefault()
-        if (e.shiftKey) redo()
+        if (historyShortcut === 'redo') redo()
         else undo()
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'y' && !isTextTarget(e.target)) {
-        e.preventDefault()
-        redo()
       }
       if (e.altKey && e.key === 'ArrowLeft') router.back()
       if (e.altKey && e.key === 'ArrowRight') router.forward()

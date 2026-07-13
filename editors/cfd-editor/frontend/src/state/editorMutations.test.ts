@@ -105,6 +105,7 @@ describe('EditorMutationController', () => {
     const writeField = vi.fn()
       .mockResolvedValueOnce(writeOutcome(2, 'old', 'new'))
       .mockResolvedValueOnce(writeOutcome(3, 'new', 'old'))
+      .mockResolvedValueOnce(writeOutcome(4, 'old', 'new'))
     const port: EditorMutationPort = {
       currentGeneration: () => generation,
       publish: vi.fn(async request => {
@@ -137,6 +138,18 @@ describe('EditorMutationController', () => {
     )
     expect(history.getSnapshot().undo).toHaveLength(0)
     expect(history.getSnapshot().redo).toHaveLength(1)
+
+    await mutations.redo()
+
+    expect(writeField).toHaveBeenNthCalledWith(
+      3,
+      1,
+      coordinate,
+      fieldPath,
+      { kind: 'string', value: 'new' },
+    )
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    expect(history.getSnapshot().redo).toHaveLength(0)
   })
 
   it('records a committed outcome superseded without a history reset', async () => {
