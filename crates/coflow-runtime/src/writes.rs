@@ -20,7 +20,9 @@ use super::{ProjectSession, RecordCoordinate};
 use crate::indexes::RecordRef;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
 use rebuild::{rebuild_session_after_write, MutationRebuild};
-pub(crate) use stage::{preflight_mutation_op, stage_mutation_op};
+pub(crate) use stage::{
+    preflight_mutation_op, stage_field_mutation_batch, stage_mutation_op, MutationBatchFailure,
+};
 pub(crate) use transaction::MutationTransaction;
 
 #[derive(Debug, Default)]

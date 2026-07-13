@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 
 use crate::writes::{
     preflight_mutation_op, prepare_mutation_execution, rebuild_after_mutation, stage_mutation_op,
-    MutationExecutionPlan, MutationImpact, MutationTransaction,
+    MutationBatchFailure, MutationExecutionPlan, MutationImpact, MutationTransaction,
 };
 use crate::{ProjectSession, RecordCoordinate};
 
@@ -80,15 +80,50 @@ fn execute_generation_mutation(
         };
 
     let mut staged = Vec::with_capacity(executable.len());
-    for item in executable {
-        match stage_mutation_op(session, &item.planned.op, &item.execution) {
-            Ok(outcome) => staged.push(applied_op(&item.planned, outcome)),
-            Err(mut diagnostics) => {
-                transaction.compensate_into(&mut diagnostics);
-                failed.push(failed_op(&item.planned, diagnostics));
-                return report_without_publish(session, false, failed);
+    let mut cursor = 0;
+    while cursor < executable.len() {
+        let mut end = cursor + 1;
+        while end < executable.len()
+            && executable[cursor]
+                .execution
+                .can_batch_field_write_with(&executable[end].execution)
+        {
+            end += 1;
+        }
+        if end - cursor > 1 {
+            let batch = executable[cursor..end]
+                .iter()
+                .map(|item| (&item.planned.op, &item.execution))
+                .collect::<Vec<_>>();
+            match crate::writes::stage_field_mutation_batch(session, &batch) {
+                Ok(outcomes) => staged.extend(
+                    executable[cursor..end]
+                        .iter()
+                        .zip(outcomes)
+                        .map(|(item, outcome)| applied_op(&item.planned, outcome)),
+                ),
+                Err(MutationBatchFailure {
+                    index,
+                    mut diagnostics,
+                }) => {
+                    transaction.compensate_into(&mut diagnostics);
+                    let failed_item = &executable[cursor + index.min(end - cursor - 1)];
+                    failed.push(failed_op(&failed_item.planned, diagnostics));
+                    return report_without_publish(session, false, failed);
+                }
+            }
+        } else {
+            let item = &executable[cursor];
+            match stage_mutation_op(session, &item.planned.op, &item.execution) {
+                Ok(outcome) => staged.push(applied_op(&item.planned, outcome)),
+                Err(mut diagnostics) => {
+                    transaction.compensate_into(&mut diagnostics);
+                    failed.push(failed_op(&item.planned, diagnostics));
+                    return report_without_publish(session, false, failed);
+                }
             }
         }
+        cursor = end;
     }
 
     let impact = MutationImpact::from_outcomes(staged.iter().map(|applied| &applied.outcome));

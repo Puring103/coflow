@@ -125,6 +125,54 @@ fn schema_for_items() -> CftContainer {
 }
 
 #[test]
+fn batches_multiple_field_writes_to_one_workbook() {
+    let path = temp_xlsx("field-batch");
+    write_seed_workbook(&path).expect("seed workbook");
+    let schema = schema_for_items();
+    let source = empty_source(&path);
+    let sword_origin = origin_for_sword(&path);
+    let shield_origin = origin_for_shield(&path);
+    let name_path = [WriteFieldPathSegment::Field("name".to_string())];
+    let sword_name = CfdValue::String("Sharp".to_string());
+    let shield_name = CfdValue::String("Sturdy".to_string());
+    let requests = [
+        WriteCellRequest {
+            origin: &sword_origin,
+            record_key: "sword",
+            actual_type: "Item",
+            field_path: &name_path,
+            new_value: &sword_name,
+            schema: schema.compiled_schema(),
+            source: &source,
+        },
+        WriteCellRequest {
+            origin: &shield_origin,
+            record_key: "shield",
+            actual_type: "Item",
+            field_path: &name_path,
+            new_value: &shield_name,
+            schema: schema.compiled_schema(),
+            source: &source,
+        },
+    ];
+
+    let outcomes = ExcelWriter::new()
+        .write_field_batch(
+            WriteContext {
+                project_root: &std::env::temp_dir(),
+                schema: schema.compiled_schema(),
+                model: None,
+            },
+            &requests,
+        )
+        .expect("batch write succeeds");
+
+    assert_eq!(outcomes.len(), 2);
+    assert_eq!(read_cell(&path, "Items", 2, 2), "Sharp");
+    assert_eq!(read_cell(&path, "Items", 3, 2), "Sturdy");
+}
+
+#[test]
 fn writer_capabilities_are_derived_from_workbook_format() {
     let writer = ExcelWriter::new();
     let writable_source = empty_source(Path::new("items.xlsx"));

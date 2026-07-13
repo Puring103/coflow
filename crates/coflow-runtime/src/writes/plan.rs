@@ -91,6 +91,15 @@ impl MutationExecutionPlan {
         }
         Ok(())
     }
+
+    pub(crate) fn can_batch_field_write_with(&self, other: &Self) -> bool {
+        let (Self::WriteField(left), Self::WriteField(right)) = (self, other) else {
+            return false;
+        };
+        Arc::ptr_eq(&left.writer, &right.writer)
+            && left.source.provider_id == right.source.provider_id
+            && left.source.location == right.source.location
+    }
 }
 
 pub(crate) fn prepare_mutation_execution(

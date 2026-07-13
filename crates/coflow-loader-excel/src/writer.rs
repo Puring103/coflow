@@ -15,7 +15,7 @@ use calamine::Reader;
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
     RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, WriteCellRequest,
-    WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    WriteBatchFailure, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdValue, SourceDocument};
 use coflow_loader_table_core::writer::{
@@ -100,6 +100,44 @@ impl SourceWriter for ExcelWriter {
         .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
         Ok(WriteOutcome::default())
+    }
+
+    fn write_field_batch(
+        &self,
+        ctx: WriteContext<'_>,
+        requests: &[WriteCellRequest<'_>],
+    ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
+        let mut plans = Vec::with_capacity(requests.len());
+        for (index, request) in requests.iter().enumerate() {
+            let SourceLocationSpec::Path(path) = &request.source.location else {
+                return Err(WriteBatchFailure {
+                    index,
+                    diagnostics: DiagnosticSet::one(diag(
+                        "EXCEL-WRITE",
+                        "excel writer requires a local path source",
+                    )),
+                });
+            };
+            ensure_writable_excel_path(path, "edit fields").map_err(|diagnostics| {
+                WriteBatchFailure { index, diagnostics }
+            })?;
+            let plan = plan_field_write(&TableFieldWrite {
+                origin: request.origin,
+                record_key: request.record_key,
+                actual_type: request.actual_type,
+                field_path: request.field_path,
+                new_value: request.new_value,
+                model: ctx.model,
+            })
+            .map_err(table_write_diagnostics_to_api)
+            .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
+            plans.push(plan);
+        }
+        apply_plans(&plans).map_err(|(index, diagnostics)| WriteBatchFailure {
+            index,
+            diagnostics,
+        })?;
+        Ok(vec![WriteOutcome::default(); requests.len()])
     }
 
     fn insert_record(
@@ -192,73 +230,95 @@ impl SourceWriter for ExcelWriter {
 }
 
 fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
+    apply_plans(std::slice::from_ref(plan)).map_err(|(_, diagnostics)| diagnostics)
+}
+
+fn apply_plans(plans: &[TableWritePlan]) -> Result<(), (usize, DiagnosticSet)> {
+    let Some(first) = plans.first() else {
+        return Ok(());
+    };
+    let path = local_plan_path(first).map_err(|diagnostics| (0, diagnostics))?;
+    for (index, plan) in plans.iter().enumerate().skip(1) {
+        let candidate = local_plan_path(plan).map_err(|diagnostics| (index, diagnostics))?;
+        if candidate != path {
+            return Err((
+                index,
+                DiagnosticSet::one(diag(
+                    "EXCEL-WRITE",
+                    "excel field batch spans more than one workbook",
+                )),
+            ));
+        }
+    }
+    let mut failed_index = 0;
+    mutate_workbook(path, |book| {
+        for (index, plan) in plans.iter().enumerate() {
+            failed_index = index;
+            apply_plan_to_workbook(book, path, plan)?;
+        }
+        Ok(())
+    })
+    .map_err(|diagnostics| (failed_index, diagnostics))
+}
+
+fn local_plan_path(plan: &TableWritePlan) -> Result<&Path, DiagnosticSet> {
+    match plan {
+        TableWritePlan::SetCells { document, .. }
+        | TableWritePlan::AppendRow(TableAppendRow { document, .. })
+        | TableWritePlan::DeleteRow(TableDeleteRow { document, .. }) => match document {
+            SourceDocument::Local(path) => Ok(path),
+            SourceDocument::Remote(_) => Err(DiagnosticSet::one(diag(
+                "EXCEL-WRITE",
+                "excel writer requires a local table document",
+            ))),
+        },
+    }
+}
+
+fn apply_plan_to_workbook(
+    book: &mut umya_spreadsheet::Spreadsheet,
+    path: &Path,
+    plan: &TableWritePlan,
+) -> Result<(), DiagnosticSet> {
     match plan {
         TableWritePlan::SetCells {
-            document,
             sheet,
             id_column,
             expected_key,
             cells,
+            ..
         } => {
-            let SourceDocument::Local(path) = document else {
-                return Err(DiagnosticSet::one(diag(
-                    "EXCEL-WRITE",
-                    "excel writer requires a local table document",
-                )));
+            let sheet_ref = mutable_sheet(book, path, sheet)?;
+            let Some(first) = cells.first() else {
+                return Ok(());
             };
-            mutate_workbook(path, |book| {
-                let sheet_ref = mutable_sheet(book, path, sheet)?;
-                let Some(first) = cells.first() else {
-                    return Ok(());
-                };
-                ensure_expected_key(sheet_ref, path, sheet, first.row, *id_column, expected_key)?;
-                for cell in cells {
-                    write_sheet_cell(sheet_ref, cell)?;
-                }
-                Ok(())
-            })
+            ensure_expected_key(sheet_ref, path, sheet, first.row, *id_column, expected_key)?;
+            for cell in cells {
+                write_sheet_cell(sheet_ref, cell)?;
+            }
+            Ok(())
         }
-        TableWritePlan::AppendRow(TableAppendRow {
-            document,
-            sheet,
-            values,
-        }) => {
-            let SourceDocument::Local(path) = document else {
-                return Err(DiagnosticSet::one(diag(
-                    "EXCEL-WRITE",
-                    "excel writer requires a local table document",
-                )));
-            };
-            mutate_workbook(path, |book| {
-                let sheet_ref = mutable_sheet(book, path, sheet)?;
-                let row = excel_usize(sheet_ref.get_highest_row(), "row")? + 1;
-                for (column, value) in values {
-                    let coord = excel_coord(*column, row)?;
-                    sheet_ref.get_cell_mut(coord).set_value(value);
-                }
-                Ok(())
-            })
+        TableWritePlan::AppendRow(TableAppendRow { sheet, values, .. }) => {
+            let sheet_ref = mutable_sheet(book, path, sheet)?;
+            let row = excel_usize(sheet_ref.get_highest_row(), "row")? + 1;
+            for (column, value) in values {
+                let coord = excel_coord(*column, row)?;
+                sheet_ref.get_cell_mut(coord).set_value(value);
+            }
+            Ok(())
         }
         TableWritePlan::DeleteRow(TableDeleteRow {
-            document,
             sheet,
             row,
             id_column,
             expected_key,
+            ..
         }) => {
-            let SourceDocument::Local(path) = document else {
-                return Err(DiagnosticSet::one(diag(
-                    "EXCEL-WRITE",
-                    "excel writer requires a local table document",
-                )));
-            };
-            mutate_workbook(path, |book| {
-                let sheet_ref = mutable_sheet(book, path, sheet)?;
-                ensure_expected_key(sheet_ref, path, sheet, *row, *id_column, expected_key)?;
-                let row = excel_index(*row, "row")?;
-                sheet_ref.remove_row(&row, &1);
-                Ok(())
-            })
+            let sheet_ref = mutable_sheet(book, path, sheet)?;
+            ensure_expected_key(sheet_ref, path, sheet, *row, *id_column, expected_key)?;
+            let row = excel_index(*row, "row")?;
+            sheet_ref.remove_row(&row, &1);
+            Ok(())
         }
     }
 }
