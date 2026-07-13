@@ -82,6 +82,7 @@ export interface EditorMutationPort {
 export interface OptimisticFieldWrite {
   changed: boolean
   row?: RecordRow
+  reapply: () => void
   rollback: () => void
 }
 
@@ -156,13 +157,15 @@ export class EditorMutationController {
       if (this.pendingFieldWrites.get(pending.key) === pending) {
         this.pendingFieldWrites.delete(pending.key)
       }
-      return this.writeFieldInternal(
+      const result = await this.writeFieldInternal(
         pending.filePath,
         pending.coordinate,
         pending.fieldPath,
         pending.newValue,
         { recordHistory: true },
       )
+      if (result.status === 'committed') this.reapplyPendingFieldWrites()
+      return result
       },
     )
     if (result.status !== 'committed') {
@@ -170,6 +173,12 @@ export class EditorMutationController {
     }
     const row = committedValue(result)
     for (const resolve of pending.resolve) resolve(row)
+  }
+
+  private reapplyPendingFieldWrites(): void {
+    for (const pending of this.pendingFieldWrites.values()) {
+      for (const projection of pending.optimistic) projection.reapply()
+    }
   }
 
   async editCollection(

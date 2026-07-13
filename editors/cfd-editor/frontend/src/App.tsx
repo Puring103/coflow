@@ -622,44 +622,50 @@ export default function App() {
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
   ) => {
-    const identity = generation.currentIdentity()
-    const current = fileDataCacheRef.current[filePath]
-    if (!identity || !current) {
-      return { changed: true, rollback: () => {} }
-    }
-    const projection = projectFieldValueAtRevision(
-      current,
-      identity.revision,
-      coordinate,
-      fieldPath,
-      newValue,
-    )
-    if (!projection) {
-      return { changed: true, rollback: () => {} }
-    }
-    if (!projection.changed) {
-      return { changed: false, row: projection.row, rollback: () => {} }
-    }
-    if (!projection.row || !projection.oldValue) {
-      return { changed: true, rollback: () => {} }
-    }
-    const projectedCache = { ...fileDataCacheRef.current, [filePath]: projection.records }
-    fileDataCacheRef.current = projectedCache
-    setFileDataCache(projectedCache)
-    const projectedGraphs = projectGraphRows(
-      graphCacheRef.current,
-      current.revision,
-      [projection.row],
-    )
-    graphCacheRef.current = projectedGraphs
-    setGraphCache(projectedGraphs)
+    let appliedIdentity = generation.currentIdentity()
+    let oldValue: FieldValue | undefined
     const optimisticValue = cloneValue(newValue)
-    const oldValue = projection.oldValue
+    const apply = () => {
+      const identity = generation.currentIdentity()
+      const current = fileDataCacheRef.current[filePath]
+      if (!identity || !current) return { changed: true }
+      const projection = projectFieldValueAtRevision(
+        current,
+        identity.revision,
+        coordinate,
+        fieldPath,
+        optimisticValue,
+      )
+      if (!projection) return { changed: true }
+      if (!projection.changed) {
+        if (appliedIdentity?.sessionId === identity.sessionId) appliedIdentity = identity
+        return { changed: false, row: projection.row }
+      }
+      if (!projection.row || !projection.oldValue) return { changed: true }
+      appliedIdentity = identity
+      oldValue = projection.oldValue
+      const projectedCache = { ...fileDataCacheRef.current, [filePath]: projection.records }
+      fileDataCacheRef.current = projectedCache
+      setFileDataCache(projectedCache)
+      const projectedGraphs = projectGraphRows(
+        graphCacheRef.current,
+        current.revision,
+        [projection.row],
+      )
+      graphCacheRef.current = projectedGraphs
+      setGraphCache(projectedGraphs)
+      return { changed: true, row: projection.row }
+    }
+    const initial = apply()
     return {
-      changed: true,
-      row: projection.row,
+      ...initial,
+      reapply: () => { apply() },
       rollback: () => {
-        if (!generation.isCurrent(identity.sessionId, identity.revision)) return
+        if (
+          !appliedIdentity
+          || !oldValue
+          || !generation.isCurrent(appliedIdentity.sessionId, appliedIdentity.revision)
+        ) return
         const latest = fileDataCacheRef.current[filePath]
         if (!latest) return
         const stillOptimistic = projectFieldValue(latest, coordinate, fieldPath, optimisticValue)
@@ -676,6 +682,7 @@ export default function App() {
         )
         graphCacheRef.current = nextGraphs
         setGraphCache(nextGraphs)
+        appliedIdentity = null
       },
     }
   }, [generation])
