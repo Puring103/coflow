@@ -157,15 +157,14 @@ export class EditorMutationController {
       if (this.pendingFieldWrites.get(pending.key) === pending) {
         this.pendingFieldWrites.delete(pending.key)
       }
-      const result = await this.writeFieldInternal(
-        pending.filePath,
-        pending.coordinate,
-        pending.fieldPath,
-        pending.newValue,
-        { recordHistory: true },
-      )
-      if (result.status === 'committed') this.reapplyPendingFieldWrites()
-      return result
+        const result = await this.writeFieldInternal(
+          pending.filePath,
+          pending.coordinate,
+          pending.fieldPath,
+          pending.newValue,
+          { recordHistory: true },
+        )
+        return result
       },
     )
     if (result.status !== 'committed') {
@@ -259,51 +258,63 @@ export class EditorMutationController {
   }
 
   async undo(): Promise<void> {
-    await this.history.undo(entry => {
-      if (entry.kind === 'field') {
-        return this.writeFieldInternal(
-          entry.filePath,
-          entry.coordinate,
-          entry.fieldPath,
-          entry.oldValue,
-          { recordHistory: false },
-        )
-      }
-      if (entry.kind === 'insert') {
-        return this.deleteRecordInternal(entry.filePath, entry.coordinate, { recordHistory: false })
-      }
-      return this.insertRecordInternal(
-        entry.filePath,
-        entry.coordinate.key,
-        entry.coordinate.actual_type,
-        entry.snapshot,
-        { recordHistory: false },
-      )
-    })
-  }
-
-  async redo(): Promise<void> {
-    await this.history.redo(entry => {
-      if (entry.kind === 'field') {
-        return this.writeFieldInternal(
-          entry.filePath,
-          entry.coordinate,
-          entry.fieldPath,
-          entry.newValue,
-          { recordHistory: false },
-        )
-      }
-      if (entry.kind === 'insert') {
+    await this.history.undo(entry => this.executeWithPendingFieldReplay<MutationResult<unknown>>(
+      () => {
+        if (entry.kind === 'field') {
+          return this.writeFieldInternal(
+            entry.filePath,
+            entry.coordinate,
+            entry.fieldPath,
+            entry.oldValue,
+            { recordHistory: false },
+          )
+        }
+        if (entry.kind === 'insert') {
+          return this.deleteRecordInternal(
+            entry.filePath,
+            entry.coordinate,
+            { recordHistory: false },
+          )
+        }
         return this.insertRecordInternal(
           entry.filePath,
           entry.coordinate.key,
           entry.coordinate.actual_type,
-          entry.fields,
+          entry.snapshot,
           { recordHistory: false },
         )
-      }
-      return this.deleteRecordInternal(entry.filePath, entry.coordinate, { recordHistory: false })
-    })
+      },
+    ))
+  }
+
+  async redo(): Promise<void> {
+    await this.history.redo(entry => this.executeWithPendingFieldReplay<MutationResult<unknown>>(
+      () => {
+        if (entry.kind === 'field') {
+          return this.writeFieldInternal(
+            entry.filePath,
+            entry.coordinate,
+            entry.fieldPath,
+            entry.newValue,
+            { recordHistory: false },
+          )
+        }
+        if (entry.kind === 'insert') {
+          return this.insertRecordInternal(
+            entry.filePath,
+            entry.coordinate.key,
+            entry.coordinate.actual_type,
+            entry.fields,
+            { recordHistory: false },
+          )
+        }
+        return this.deleteRecordInternal(
+          entry.filePath,
+          entry.coordinate,
+          { recordHistory: false },
+        )
+      },
+    ))
   }
 
   private enqueueMutation<T>(supersededValue: T, operation: () => Promise<T>): Promise<T> {
@@ -334,8 +345,14 @@ export class EditorMutationController {
       ) {
         return Promise.resolve(supersededValue)
       }
-      return operation()
+      return this.executeWithPendingFieldReplay(operation)
     })
+  }
+
+  private async executeWithPendingFieldReplay<T>(operation: () => Promise<T>): Promise<T> {
+    const result = await operation()
+    this.reapplyPendingFieldWrites()
+    return result
   }
 
   private writeFieldInternal(
