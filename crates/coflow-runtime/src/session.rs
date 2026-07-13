@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::path::Path;
+use std::sync::Arc;
 
 use coflow_api::{ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet};
 use coflow_cft::{CftContainer, CompiledSchema};
@@ -42,7 +43,7 @@ impl RecordCoordinate {
 #[derive(Debug)]
 pub(crate) struct ProjectSession {
     pub(crate) project: Project,
-    pub(crate) schema: CftContainer,
+    pub(crate) schema: Arc<CftContainer>,
     pub(crate) model: CfdDataModel,
     pub(crate) diagnostics: DiagnosticsStore,
     pub(crate) sources: SourceIndex,
@@ -53,7 +54,7 @@ pub(crate) struct ProjectSession {
 
 impl ProjectSession {
     #[must_use]
-    pub const fn compiled_schema(&self) -> &CompiledSchema {
+    pub fn compiled_schema(&self) -> &CompiledSchema {
         self.schema.compiled_schema()
     }
 
@@ -375,7 +376,7 @@ impl ProjectSession {
 #[derive(Debug)]
 pub struct ProjectSchemaSession {
     pub(crate) project: Project,
-    pub(crate) schema: CftContainer,
+    pub(crate) schema: Arc<CftContainer>,
     pub(crate) diagnostics: DiagnosticsStore,
 }
 
@@ -386,7 +387,7 @@ impl ProjectSchemaSession {
     }
 
     #[must_use]
-    pub const fn compiled_schema(&self) -> &CompiledSchema {
+    pub fn compiled_schema(&self) -> &CompiledSchema {
         self.schema.compiled_schema()
     }
 

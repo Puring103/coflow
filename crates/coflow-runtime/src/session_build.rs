@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use coflow_api::{DiagnosticSet, ProviderRegistry};
 use coflow_cft::CftContainer;
@@ -84,11 +85,34 @@ pub(crate) fn build_project_session_with_effects(
     registry: &ProviderRegistry,
     options: SessionOpenOptions,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
+    finish_project_session(build_schema_session(project)?, registry, options)
+}
+
+pub(crate) fn rebuild_project_session_from_generation(
+    session: &ProjectSession,
+    registry: &ProviderRegistry,
+) -> Result<SessionBuildOutput, DiagnosticSet> {
+    finish_project_session(
+        ProjectSchemaSession {
+            project: session.project.clone(),
+            schema: session.schema.clone(),
+            diagnostics: DiagnosticsStore::empty(),
+        },
+        registry,
+        SessionOpenOptions::build(),
+    )
+}
+
+fn finish_project_session(
+    schema_session: ProjectSchemaSession,
+    registry: &ProviderRegistry,
+    options: SessionOpenOptions,
+) -> Result<SessionBuildOutput, DiagnosticSet> {
     let ProjectSchemaSession {
         project,
         schema,
         mut diagnostics,
-    } = build_schema_session(project)?;
+    } = schema_session;
 
     let dimension_fields = dimensions::dimension_fields(schema.compiled_schema());
     let ctx = SessionBuildContext {
@@ -123,7 +147,7 @@ fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, Diagno
 
 struct SessionBuildContext<'a> {
     project: Project,
-    schema: CftContainer,
+    schema: Arc<CftContainer>,
     registry: &'a ProviderRegistry,
     dimension_mode: DimensionBuildMode,
     dimension_fields: Vec<DimensionField>,
@@ -160,6 +184,9 @@ fn build_data_pipeline(
     ctx: &SessionBuildContext<'_>,
     diagnostics: &mut DiagnosticsStore,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
+    if ctx.dimension_mode == DimensionBuildMode::ReadOnly {
+        return build_read_only_data(ctx, diagnostics);
+    }
     let (mut output, mut indexes) = match load_base_data(ctx) {
         Ok(loaded) => loaded,
         Err(load_failure) => {
@@ -253,6 +280,33 @@ struct DataLoadFailure {
 struct CommittedDimensions {
     transaction: Option<DimensionGenerationTransaction>,
     changed_paths: Vec<PathBuf>,
+}
+
+fn build_read_only_data(
+    ctx: &SessionBuildContext<'_>,
+    diagnostics: &mut DiagnosticsStore,
+) -> Result<LoadedSessionData, DiagnosticSet> {
+    let (output, indexes) = match load_data(ctx, ctx.has_dimension_fields(), true) {
+        Ok(loaded) => loaded,
+        Err(load_failure) => {
+            diagnostics.extend_with_logical_locations(
+                load_failure.diagnostics.diagnostics,
+                load_failure.diagnostics.logical_locations,
+            );
+            return Ok(LoadedSessionData {
+                model: empty_model()?,
+                indexes: load_failure.indexes.finalize_rejected(),
+                changed_dimension_paths: Vec::new(),
+            });
+        }
+    };
+    let indexes = indexes.finalize_with_model(&output.model);
+    diagnostics.extend_with_logical_locations(output.diagnostics, output.logical_locations);
+    Ok(LoadedSessionData {
+        model: output.model,
+        indexes,
+        changed_dimension_paths: Vec::new(),
+    })
 }
 
 fn commit_dimensions_if_needed(

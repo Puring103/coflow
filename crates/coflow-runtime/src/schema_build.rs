@@ -4,6 +4,7 @@ use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_project::{normalize_path, Project};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::dimensions;
 use crate::indexes::DiagnosticsStore;
@@ -152,7 +153,7 @@ pub(crate) fn build_project_schema_with_diagnostics(
     };
     Ok(ProjectSchemaSession {
         project,
-        schema,
+        schema: Arc::new(schema),
         diagnostics,
     })
 }
