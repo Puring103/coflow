@@ -18,7 +18,7 @@ use coflow_data_model::{CfdPath, CfdRecord, CfdValue};
 use super::{ProjectSession, RecordCoordinate};
 use crate::indexes::RecordRef;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
-use rebuild::rebuild_session_after_write;
+use rebuild::{rebuild_session_after_write, MutationRebuild};
 pub(crate) use stage::{preflight_mutation_op, stage_mutation_op};
 pub(crate) use transaction::MutationTransaction;
 
@@ -41,6 +41,6 @@ pub(crate) fn effective_write_target_for_path(
 pub(crate) fn rebuild_after_mutation(
     session: &ProjectSession,
     registry: &ProviderRegistry,
-) -> Result<ProjectSession, DiagnosticSet> {
+) -> Result<MutationRebuild, DiagnosticSet> {
     rebuild_session_after_write(session, registry)
 }

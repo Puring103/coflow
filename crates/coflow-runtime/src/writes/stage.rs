@@ -85,6 +85,9 @@ pub(crate) fn stage_mutation_op(
         (PreparedMutationOp::DeleteRecord { record, .. }, MutationExecutionPlan::Delete(plan)) => {
             stage_delete_record(session, plan, record)
         }
+        (PreparedMutationOp::SetField { .. }, MutationExecutionPlan::Noop { coordinate }) => {
+            Ok(WriteOutcome::touch(coordinate.clone()))
+        }
         (PreparedMutationOp::FoldedSetField { record, .. }, MutationExecutionPlan::Folded) => {
             Ok(WriteOutcome::touch(record.clone()))
         }

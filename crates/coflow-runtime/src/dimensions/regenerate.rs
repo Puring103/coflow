@@ -145,6 +145,7 @@ pub(crate) fn commit_dimension_generation(
 ) -> DimensionGenerationResult {
     let mut diagnostics = DiagnosticSet::empty();
     let mut transaction = DimensionGenerationTransaction::default();
+    let mut changed_paths = BTreeSet::new();
 
     for operation in plan.operations {
         let operation = match operation {
@@ -160,6 +161,9 @@ pub(crate) fn commit_dimension_generation(
                             to.display()
                         ),
                     ));
+                } else {
+                    changed_paths.insert(from);
+                    changed_paths.insert(to);
                 }
                 continue;
             }
@@ -174,6 +178,8 @@ pub(crate) fn commit_dimension_generation(
                             path.display()
                         ),
                     ));
+                } else {
+                    changed_paths.insert(path);
                 }
                 continue;
             }
@@ -215,14 +221,20 @@ pub(crate) fn commit_dimension_generation(
                 variants: &operation.variants,
             },
         );
-        if let Err(err) = result {
-            diagnostics.extend(err);
+        match result {
+            Ok(result) => {
+                if result.changed {
+                    changed_paths.insert(operation.path);
+                }
+            }
+            Err(err) => diagnostics.extend(err),
         }
     }
 
     DimensionGenerationResult {
         transaction,
         diagnostics,
+        changed_paths: changed_paths.into_iter().collect(),
     }
 }
 
@@ -272,6 +284,7 @@ impl DimensionGenerationOperation {
 pub struct DimensionGenerationResult {
     pub transaction: DimensionGenerationTransaction,
     pub diagnostics: DiagnosticSet,
+    pub changed_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Default)]

@@ -843,8 +843,10 @@ fn finalize_mutation(
     }
     session.diagnostics =
         Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
-    session.commit_internal_write(&report.affected_files);
-    session.ref_target_cache.clear();
+    if report.generation_changed {
+        session.commit_internal_write(&report.affected_files);
+        session.ref_target_cache.clear();
+    }
     Ok(report)
 }
 
