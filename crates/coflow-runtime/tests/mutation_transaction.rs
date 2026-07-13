@@ -402,6 +402,25 @@ fn same_field_value_does_not_open_a_provider_transaction() {
 }
 
 #[test]
+fn mutation_rebuild_reuses_the_open_generation_schema() {
+    let fixture = Fixture::remote(&[("txn://one", 1)]);
+    let mut session = fixture.open();
+    std::fs::write(fixture.root.join("schema.cft"), "this is no longer valid CFT")
+        .expect("replace schema after generation opens");
+
+    let report = session.apply_mutation(mutation_request(vec![set_value("one", 2)]));
+
+    assert!(report.write_ok, "diagnostics: {:?}", report.diagnostics);
+    assert!(report.generation_changed);
+    assert_eq!(session_value(&session, "one"), 2);
+    let state = fixture.state.lock().expect("lock fixture state");
+    assert_eq!(state.counts.writes, 1);
+    assert_eq!(state.counts.commits, 1);
+    assert_eq!(state.counts.compensates, 0);
+    drop(state);
+}
+
+#[test]
 fn provider_diagnostics_and_affected_files_survive_successful_rebuild() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
     fixture

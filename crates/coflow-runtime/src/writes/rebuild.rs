@@ -1,6 +1,6 @@
 use coflow_api::{DiagnosticSet, ProviderRegistry};
 
-use crate::session_build::{build_project_session_with_effects, SessionOpenOptions};
+use crate::session_build::rebuild_project_session_from_generation;
 use crate::ProjectSession;
 
 pub(crate) struct MutationRebuild {
@@ -12,11 +12,7 @@ pub(super) fn rebuild_session_after_write(
     session: &ProjectSession,
     registry: &ProviderRegistry,
 ) -> Result<MutationRebuild, DiagnosticSet> {
-    let output = build_project_session_with_effects(
-        session.project.clone(),
-        registry,
-        SessionOpenOptions::build(),
-    )?;
+    let output = rebuild_project_session_from_generation(session, registry)?;
     let changed_dimension_files = output
         .changed_dimension_paths
         .iter()
