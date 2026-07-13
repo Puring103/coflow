@@ -225,10 +225,16 @@ fn prepare_execution_plans(
     registry: &ProviderRegistry,
     planned: Vec<PlannedMutationOp>,
 ) -> Result<Vec<ExecutableMutation>, MutationFailedOp> {
+    let allow_noop = planned.len() == 1;
     planned
         .into_iter()
         .map(
-            |planned| match prepare_mutation_execution(session, registry, &planned.op) {
+            |planned| match prepare_mutation_execution(
+                session,
+                registry,
+                &planned.op,
+                allow_noop,
+            ) {
                 Ok(execution) => Ok(ExecutableMutation { planned, execution }),
                 Err(diagnostics) => Err(failed_op(&planned, diagnostics)),
             },
