@@ -334,10 +334,14 @@ export default function App() {
           return next
         })
       },
-      publishGraphProjection: (revision, knownRecords, topologyChanged) => {
+      publishGraphProjection: (revision, records, topologyChanged) => {
         if (topologyChanged) return
         setGraphCache(current => {
-          const next = projectGraphRows(current, revision, knownRecords.records)
+          const next = projectGraphRows(
+            current,
+            revision,
+            records.flatMap(file => file.records),
+          )
           graphCacheRef.current = next
           return next
         })

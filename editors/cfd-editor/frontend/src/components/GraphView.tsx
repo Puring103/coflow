@@ -34,6 +34,7 @@ import {
   type GraphLayoutResult,
 } from './GraphView.layout'
 import { runGraphLayoutInWorker } from './GraphLayoutWorkerAdapter'
+import { graphNodeDiagnosticSeverity } from './GraphView.diagnostics'
 
 const MEASURE_HANDLE_NODE_LIMIT = 80
 
@@ -217,14 +218,6 @@ function CfdNode({ id, data }: NodeProps) {
 const CfdNodeMemo = memo(CfdNode)
 const nodeTypes = { cfd: CfdNodeMemo }
 
-function severityForGraphNode(
-  node: GraphNodeView,
-): 'error' | 'warning' | null {
-  return node.diagnostic_severity === 'error' || node.diagnostic_severity === 'warning'
-    ? node.diagnostic_severity
-    : null
-}
-
 function sameStringSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) return false
   for (const item of a) if (!b.has(item)) return false
@@ -406,7 +399,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
         const capability = fileCapabilities?.[n.file_path]
         const editable = !!onWriteField && (capability ? isEditableCapabilities(capability) : isEditableFile(n.file_path))
         const rowExpanded = nodeRowExpandedMap.get(n.id)
-          const nodeSev = severityForGraphNode(n)
+          const nodeSev = graphNodeDiagnosticSeverity(n, diagnostics)
         return {
           id: n.id,
           type: 'cfd',
