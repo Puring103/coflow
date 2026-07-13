@@ -10,6 +10,7 @@ use coflow_data_model::{
 use coflow_project::{path_to_slash, Project};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::sync::Arc;
 
 use crate::checks::{
     run_full_project_checks, run_incremental_project_checks, CheckState, ProjectCheckOutput,
@@ -39,7 +40,7 @@ pub(crate) struct SourceDataCache {
 #[derive(Debug, Clone)]
 struct CachedSourceBatch {
     entry: ResolvedSourceEntry,
-    records: Vec<CfdInputRecord>,
+    records: Arc<[CfdInputRecord]>,
     implicit_dimension: bool,
 }
 
@@ -265,7 +266,7 @@ pub(crate) fn reload_project_data_from_cache(
             },
             &batch.entry.source,
         ) {
-            Ok(loaded) => batch.records = loaded.records,
+            Ok(loaded) => batch.records = loaded.records.into(),
             Err(err) => diagnostics.extend(err),
         }
     }
@@ -331,17 +332,18 @@ fn load_resolved_sources(
             &spec,
         ) {
             Ok(batch) => {
+                let cached_records: Arc<[CfdInputRecord]> = batch.records.into();
                 push_loaded_records(
                     records,
                     records_index,
                     source_id,
                     &spec,
                     &display_path,
-                    &batch.records,
+                    &cached_records,
                 );
                 source_data.batches.push(CachedSourceBatch {
                     entry,
-                    records: batch.records,
+                    records: cached_records,
                     implicit_dimension,
                 });
             }
@@ -417,7 +419,7 @@ fn refresh_dimension_source_plans(
                         && batch.entry.provider_id == entry.provider_id
                         && batch.entry.source.location == entry.source.location
                 })
-                .map_or_else(Vec::new, |batch| batch.records.clone());
+                .map_or_else(Arc::default, |batch| Arc::clone(&batch.records));
             source_data.batches.push(CachedSourceBatch {
                 entry,
                 records,
