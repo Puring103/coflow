@@ -1,5 +1,7 @@
 import type { ElkNode } from 'elkjs/lib/elk-api'
 import type { GraphEdgeView, GraphNodeView } from '../wire'
+import type { FieldCell } from '../bindings/FieldCell'
+import type { CfdValue } from '../bindings/CfdValue'
 import { NODE_PEEK_FIELDS, countVisibleRows } from './DataCard.geometry'
 
 const NODE_WIDTH = 280
@@ -105,6 +107,42 @@ export function graphEdgeId(
   edge: { source: string; target: string; field_path: string },
 ): string {
   return `${kind}:${edge.source}->${edge.target}:${encodeURIComponent(edge.field_path)}`
+}
+
+export function graphTopologySignature(graph: {
+  nodes: GraphNodeView[]
+  edges: GraphEdgeView[]
+}): string {
+  const nodes = graph.nodes
+    .map(node => [
+      node.id,
+      node.actual_type,
+      node.file_path,
+      node.in_focus_file ? '1' : '0',
+      node.is_collapsed ? '1' : '0',
+      node.fields.map(fieldLayoutShape).join(','),
+    ].join(':'))
+    .sort()
+  const edges = graph.edges
+    .map(edge => `${edge.source}>${edge.target}:${edge.field_path}`)
+    .sort()
+  return `${nodes.join('|')}\u001e${edges.join('|')}`
+}
+
+function fieldLayoutShape(field: FieldCell): string {
+  return `${field.name}=${valueLayoutShape(field.value)}`
+}
+
+function valueLayoutShape(value: CfdValue): string {
+  if (value.kind === 'object') {
+    return `object(${Object.entries(value.value.fields)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, field]) => `${name}:${field ? valueLayoutShape(field) : 'missing'}`)
+      .join(',')})`
+  }
+  if (value.kind === 'array') return `array(${value.value.map(valueLayoutShape).join(',')})`
+  if (value.kind === 'dict') return `dict(${value.value.map(([, item]) => valueLayoutShape(item)).join(',')})`
+  return 'scalar'
 }
 
 export async function layoutGraph(

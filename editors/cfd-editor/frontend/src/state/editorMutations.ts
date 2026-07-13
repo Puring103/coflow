@@ -71,6 +71,18 @@ export interface EditorMutationPort {
     error: unknown,
     expectedRevision: number,
   ) => void
+  optimisticWriteField?: (
+    filePath: string,
+    coordinate: RecordCoordinate,
+    fieldPath: FieldPathSegment[],
+    newValue: FieldValue,
+  ) => OptimisticFieldWrite
+}
+
+export interface OptimisticFieldWrite {
+  changed: boolean
+  row?: RecordRow
+  rollback: () => void
 }
 
 interface MutationOutcome {
@@ -84,25 +96,80 @@ interface MutationOptions {
 }
 
 export class EditorMutationController {
+  private readonly pendingFieldWrites = new Map<string, PendingFieldWrite>()
+
   constructor(
     private readonly backend: EditorMutationBackend,
     private readonly port: EditorMutationPort,
     private readonly history: MutationHistoryController,
   ) {}
 
-  async writeField(
+  writeField(
     filePath: string,
     coordinate: RecordCoordinate,
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
   ): Promise<RecordRow | undefined> {
-    return this.enqueueMutation(undefined, async () => committedValue(await this.writeFieldInternal(
-        filePath,
-        coordinate,
-        fieldPath,
-        newValue,
+    const optimistic = this.port.optimisticWriteField?.(
+      filePath,
+      coordinate,
+      fieldPath,
+      newValue,
+    )
+    if (optimistic && !optimistic.changed) return Promise.resolve(optimistic.row)
+    const key = fieldWriteKey(filePath, coordinate, fieldPath)
+    const queuedGeneration = this.port.currentGeneration()
+    const queuedHistoryEpoch = this.history.currentEpoch()
+    const existing = this.pendingFieldWrites.get(key)
+    if (
+      existing
+      && sameGeneration(existing.queuedGeneration, queuedGeneration)
+      && existing.queuedHistoryEpoch === queuedHistoryEpoch
+    ) {
+      existing.newValue = cloneValue(newValue)
+      if (optimistic) existing.optimistic.push(optimistic)
+      return new Promise(resolve => existing.resolve.push(resolve))
+    }
+    const pending: PendingFieldWrite = {
+      key,
+      filePath,
+      coordinate,
+      fieldPath,
+      newValue: cloneValue(newValue),
+      optimistic: optimistic ? [optimistic] : [],
+      resolve: [],
+      queuedGeneration,
+      queuedHistoryEpoch,
+    }
+    this.pendingFieldWrites.set(key, pending)
+    const result = new Promise<RecordRow | undefined>(resolve => pending.resolve.push(resolve))
+    queueMicrotask(() => this.flushFieldWrite(pending))
+    return result
+  }
+
+  private async flushFieldWrite(pending: PendingFieldWrite): Promise<void> {
+    const result = await this.enqueueMutationFor(
+      pending.queuedGeneration,
+      pending.queuedHistoryEpoch,
+      superseded(),
+      async () => {
+      if (this.pendingFieldWrites.get(pending.key) === pending) {
+        this.pendingFieldWrites.delete(pending.key)
+      }
+      return this.writeFieldInternal(
+        pending.filePath,
+        pending.coordinate,
+        pending.fieldPath,
+        pending.newValue,
         { recordHistory: true },
-      )))
+      )
+      },
+    )
+    if (result.status !== 'committed') {
+      for (const projection of [...pending.optimistic].reverse()) projection.rollback()
+    }
+    const row = committedValue(result)
+    for (const resolve of pending.resolve) resolve(row)
   }
 
   async editCollection(
@@ -233,6 +300,20 @@ export class EditorMutationController {
   private enqueueMutation<T>(supersededValue: T, operation: () => Promise<T>): Promise<T> {
     const queuedGeneration = this.port.currentGeneration()
     const queuedHistoryEpoch = this.history.currentEpoch()
+    return this.enqueueMutationFor(
+      queuedGeneration,
+      queuedHistoryEpoch,
+      supersededValue,
+      operation,
+    )
+  }
+
+  private enqueueMutationFor<T>(
+    queuedGeneration: EditorGenerationIdentity | null,
+    queuedHistoryEpoch: number,
+    supersededValue: T,
+    operation: () => Promise<T>,
+  ): Promise<T> {
     return this.history.serialize(() => {
       const currentGeneration = this.port.currentGeneration()
       if (
@@ -280,6 +361,7 @@ export class EditorMutationController {
         }
         return outcome.row
       },
+      fieldWriteChangesTopology,
     )
   }
 
@@ -339,6 +421,7 @@ export class EditorMutationController {
     invoke: (sessionId: number) => Promise<TOutcome>,
     knownRecords: ((outcome: TOutcome) => FileRecords | undefined) | undefined,
     afterCommit: (outcome: TOutcome) => TValue,
+    topologyChanged: (outcome: TOutcome) => boolean = () => true,
   ): Promise<MutationResult<TValue>> {
     const generation = this.port.currentGeneration()
     if (!generation) return failed()
@@ -352,6 +435,7 @@ export class EditorMutationController {
         affectedFiles: outcome.affected_files,
         fallbackFile,
         knownRecords: knownRecords?.(outcome),
+        topologyChanged: topologyChanged(outcome),
       }
       let publication: MutationResult<void>
       try {
@@ -404,6 +488,52 @@ export class EditorMutationController {
   }
 }
 
+interface PendingFieldWrite {
+  key: string
+  filePath: string
+  coordinate: RecordCoordinate
+  fieldPath: FieldPathSegment[]
+  newValue: FieldValue
+  optimistic: OptimisticFieldWrite[]
+  resolve: Array<(row: RecordRow | undefined) => void>
+  queuedGeneration: EditorGenerationIdentity | null
+  queuedHistoryEpoch: number
+}
+
+function fieldWriteKey(
+  filePath: string,
+  coordinate: RecordCoordinate,
+  fieldPath: FieldPathSegment[],
+): string {
+  return `${filePath}\u001f${coordinate.actual_type}\u001f${coordinate.key}\u001f${fieldPath
+    .map(segment => `${segment.kind}:${segment.value}`)
+    .join('/')}`
+}
+
+function sameGeneration(
+  left: EditorGenerationIdentity | null,
+  right: EditorGenerationIdentity | null,
+): boolean {
+  return left?.sessionId === right?.sessionId && left?.revision === right?.revision
+}
+
 function committedValue<T>(result: MutationResult<T>): T | undefined {
   return result.status === 'committed' ? result.value : undefined
+}
+
+function fieldWriteChangesTopology(outcome: WriteFieldOutcome): boolean {
+  return outcome.renamed !== null
+    || containsReference(outcome.old_value)
+    || containsReference(outcome.new_value)
+}
+
+function containsReference(value: FieldValue | null): boolean {
+  if (!value) return false
+  if (value.kind === 'ref') return true
+  if (value.kind === 'object') {
+    return Object.values(value.value.fields).some(field => field && containsReference(field))
+  }
+  if (value.kind === 'array') return value.value.some(containsReference)
+  if (value.kind === 'dict') return value.value.some(([, item]) => containsReference(item))
+  return false
 }

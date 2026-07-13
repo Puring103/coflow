@@ -27,6 +27,7 @@ import {
   defaultEnabledFields,
   estimateHandleOffsets,
   graphEdgeId,
+  graphTopologySignature,
   isCompactGraphZoom,
   layoutGraph,
   sameOffsetMap,
@@ -275,6 +276,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
     }),
     [graphData],
   )
+  const topologySignature = useMemo(() => graphTopologySignature(graph), [graph])
 
   const availableFields = useMemo(
     () => graphData.available_fields.slice().sort(),
@@ -283,7 +285,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
 
   const defaultFields = useMemo(
     () => defaultEnabledFields(graph, availableFields, activeType),
-    [graph, availableFields, activeType],
+    [topologySignature, availableFields, activeType],
   )
 
   const focusFileKey = useMemo(
@@ -373,9 +375,17 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
     return () => {
       cancelled = true
     }
-  }, [graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap])
+  }, [topologySignature, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap])
 
-  const { positions, visibleNodes, forwardEdges, backEdges } = layout
+  const { positions, forwardEdges, backEdges } = layout
+  const currentNodeById = useMemo(
+    () => new Map(graph.nodes.map(node => [node.id, node])),
+    [graph.nodes],
+  )
+  const visibleNodes = useMemo(
+    () => layout.visibleNodes.map(node => currentNodeById.get(node.id) ?? node),
+    [layout.visibleNodes, currentNodeById],
+  )
   const compactNodes = zoomCompactNodes
   const measureHandles = !compactNodes && visibleNodes.length <= MEASURE_HANDLE_NODE_LIMIT
 

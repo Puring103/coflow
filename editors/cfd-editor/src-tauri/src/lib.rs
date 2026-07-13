@@ -18,131 +18,151 @@ use tauri::{AppHandle, Manager, State};
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn load_project(
+async fn load_project(
     yaml_path: String,
     host: State<'_, EditorHost>,
     app: AppHandle,
 ) -> Result<ProjectSnapshot, EditorError> {
-    host.load_project(app, &PathBuf::from(yaml_path))
+    let host = host.inner().clone();
+    run_blocking(move || host.load_project(app, &PathBuf::from(yaml_path))).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn init_project(
+async fn init_project(
     dir: String,
     host: State<'_, EditorHost>,
     app: AppHandle,
 ) -> Result<ProjectSnapshot, EditorError> {
-    host.init_project(app, &PathBuf::from(dir))
+    let host = host.inner().clone();
+    run_blocking(move || host.init_project(app, &PathBuf::from(dir))).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn close_session(
+async fn close_session(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
-    host.close_session(session_id)
+    let host = host.inner().clone();
+    run_blocking(move || host.close_session(session_id)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn get_file_records(
+async fn get_file_records(
     session_id: u32,
     file_path: String,
     host: State<'_, EditorHost>,
 ) -> Result<FileRecords, EditorError> {
-    host.sessions().get_file_records(session_id, &file_path)
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().get_file_records(session_id, &file_path)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn get_graph(
+async fn get_graph(
     session_id: u32,
     file_path: String,
     depth: Option<usize>,
     limit: Option<usize>,
     host: State<'_, EditorHost>,
 ) -> Result<GraphData, EditorError> {
-    host.sessions().get_graph(
-        session_id,
-        &GraphQuery {
-            file_path,
-            depth,
-            limit,
-        },
-    )
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions().get_graph(
+            session_id,
+            &GraphQuery {
+                file_path,
+                depth,
+                limit,
+            },
+        )
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn get_enum_variants(
+async fn get_enum_variants(
     session_id: u32,
     enum_name: String,
     host: State<'_, EditorHost>,
 ) -> Result<Vec<String>, EditorError> {
-    host.sessions().get_enum_variants(session_id, &enum_name)
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().get_enum_variants(session_id, &enum_name)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn get_ref_targets(
+async fn get_ref_targets(
     session_id: u32,
     target_type: String,
     host: State<'_, EditorHost>,
 ) -> Result<Vec<RefTarget>, EditorError> {
-    host.sessions().get_ref_targets(session_id, &target_type)
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().get_ref_targets(session_id, &target_type)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn make_default_object(
+async fn make_default_object(
     session_id: u32,
     type_name: String,
     host: State<'_, EditorHost>,
 ) -> Result<CfdValue, EditorError> {
-    host.sessions().make_default_object(session_id, &type_name)
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().make_default_object(session_id, &type_name)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn create_record_draft(
+async fn create_record_draft(
     session_id: u32,
     actual_type: String,
     host: State<'_, EditorHost>,
 ) -> Result<CreateRecordDraft, EditorError> {
-    host.sessions().create_record_draft(session_id, &actual_type)
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().create_record_draft(session_id, &actual_type)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn write_field(
+async fn write_field(
     session_id: u32,
     coordinate: RecordCoordinate,
     field_path: Vec<CfdPathSegment>,
     new_value: CfdValue,
     host: State<'_, EditorHost>,
 ) -> Result<WriteFieldOutcome, EditorError> {
-    host.sessions()
-        .write_field(session_id, &coordinate, &field_path, &new_value)
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .write_field(session_id, &coordinate, &field_path, &new_value)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn edit_collection(
+async fn edit_collection(
     session_id: u32,
     coordinate: RecordCoordinate,
     field_path: Vec<CfdPathSegment>,
     edit: CollectionEdit,
     host: State<'_, EditorHost>,
 ) -> Result<WriteFieldOutcome, EditorError> {
-    host.sessions()
-        .edit_collection(session_id, &coordinate, &field_path, edit)
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .edit_collection(session_id, &coordinate, &field_path, edit)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn insert_record(
+async fn insert_record(
     session_id: u32,
     file_path: String,
     record_key: String,
@@ -150,30 +170,50 @@ fn insert_record(
     fields: CfdValue,
     host: State<'_, EditorHost>,
 ) -> Result<InsertRecordOutcome, EditorError> {
-    host.sessions()
-        .insert_record(session_id, &file_path, &record_key, &actual_type, fields)
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .insert_record(session_id, &file_path, &record_key, &actual_type, fields)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn rename_record_key(
+async fn rename_record_key(
     session_id: u32,
     coordinate: RecordCoordinate,
     new_key: String,
     host: State<'_, EditorHost>,
 ) -> Result<RenameRecordOutcome, EditorError> {
-    host.sessions()
-        .rename_record_key(session_id, &coordinate, &new_key)
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .rename_record_key(session_id, &coordinate, &new_key)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn delete_record(
+async fn delete_record(
     session_id: u32,
     coordinate: RecordCoordinate,
     host: State<'_, EditorHost>,
 ) -> Result<DeleteRecordOutcome, EditorError> {
-    host.sessions().delete_record(session_id, &coordinate)
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().delete_record(session_id, &coordinate)).await
+}
+
+async fn run_blocking<T>(
+    work: impl FnOnce() -> Result<T, EditorError> + Send + 'static,
+) -> Result<T, EditorError>
+where
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| EditorError::other(format!("background command failed: {error}")))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

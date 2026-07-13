@@ -42,6 +42,34 @@ function backend(writeField: EditorMutationBackend['writeField']): EditorMutatio
 }
 
 describe('EditorMutationController', () => {
+  it('skips backend writes for deep value no-ops', async () => {
+    const writeField = vi.fn()
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+      optimisticWriteField: vi.fn(() => ({
+        changed: false,
+        row,
+        rollback: vi.fn(),
+      })),
+    }
+    const mutations = new EditorMutationController(
+      backend(writeField),
+      port,
+      new MutationHistoryController(),
+    )
+
+    await expect(mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'old' },
+    )).resolves.toBe(row)
+
+    expect(writeField).not.toHaveBeenCalled()
+    expect(port.publish).not.toHaveBeenCalled()
+  })
+
   it('publishes a cached row projection without requiring a full file reload', async () => {
     let generation = { sessionId: 1, revision: 1 }
     const projected = { revision: 2, file_path: 'data/items.cfd' } as FileRecords
@@ -68,6 +96,7 @@ describe('EditorMutationController', () => {
 
     expect(fileRecordsForRow).toHaveBeenCalledWith('data/items.cfd', coordinate, row, 2)
     expect(publish.mock.calls[0][0].knownRecords).toBe(projected)
+    expect(publish.mock.calls[0][0].topologyChanged).toBe(false)
   })
 
   it('records and replays history only through committed editor generations', async () => {
@@ -157,17 +186,62 @@ describe('EditorMutationController', () => {
     const older = mutations.writeField(
       'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'two' },
     )
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
     const newer = mutations.writeField(
       'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'three' },
     )
-    await Promise.resolve()
-    expect(writeField).toHaveBeenCalledTimes(1)
     revision2.resolve(writeOutcome(2, 'old', 'two'))
     await older
-    await Promise.resolve()
-    expect(writeField).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2))
     revision3.resolve(writeOutcome(3, 'two', 'three'))
     await newer
+
+    expect(history.getSnapshot().undo.map(entry => entry.revision)).toEqual([2, 3])
+  })
+
+  it('coalesces adjacent queued writes to the same field', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const firstOutcome = deferred<WriteFieldOutcome>()
+    const latestOutcome = deferred<WriteFieldOutcome>()
+    const writeField = vi.fn()
+      .mockImplementationOnce(() => firstOutcome.promise)
+      .mockImplementationOnce(() => latestOutcome.promise)
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(backend(writeField), port, history)
+
+    const first = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'one' },
+    )
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
+    const skipped = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'two' },
+    )
+    const latest = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'three' },
+    )
+    expect(writeField).toHaveBeenCalledTimes(1)
+
+    firstOutcome.resolve(writeOutcome(2, 'old', 'one'))
+    await first
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2))
+    expect(writeField).toHaveBeenLastCalledWith(
+      1,
+      coordinate,
+      fieldPath,
+      { kind: 'string', value: 'three' },
+    )
+    latestOutcome.resolve(writeOutcome(3, 'one', 'three'))
+    await Promise.all([skipped, latest])
 
     expect(history.getSnapshot().undo.map(entry => entry.revision)).toEqual([2, 3])
   })
@@ -242,11 +316,10 @@ describe('EditorMutationController', () => {
     const inFlight = mutations.writeField(
       'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'two' },
     )
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
     const queued = mutations.writeField(
       'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'stale' },
     )
-    await Promise.resolve()
-    expect(writeField).toHaveBeenCalledTimes(1)
 
     generation = { sessionId: 1, revision: 10 }
     history.clear()
