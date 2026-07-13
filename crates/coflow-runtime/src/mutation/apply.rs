@@ -91,7 +91,11 @@ fn execute_generation_mutation(
         }
     }
 
-    let rebuilt = match rebuild_after_mutation(session, registry) {
+    let written_files = staged
+        .iter()
+        .flat_map(|applied| applied.outcome.affected_files.iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let rebuilt = match rebuild_after_mutation(session, registry, &written_files) {
         Ok(rebuilt) => rebuilt,
         Err(mut diagnostics) => {
             transaction.compensate_into(&mut diagnostics);
@@ -118,9 +122,8 @@ fn execute_generation_mutation(
         return report_without_publish(session, false, failed);
     }
 
-    let affected_files = staged
-        .iter()
-        .flat_map(|applied| applied.outcome.affected_files.iter().cloned())
+    let affected_files = written_files
+        .into_iter()
         .chain(rebuilt.changed_dimension_files)
         .collect::<BTreeSet<_>>()
         .into_iter()

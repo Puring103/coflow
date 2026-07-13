@@ -60,6 +60,7 @@ struct Faults {
 
 #[derive(Debug, Default)]
 struct Counts {
+    loads: usize,
     begins: usize,
     preflights: usize,
     writes: usize,
@@ -108,6 +109,11 @@ impl SourceProvider for TestProvider {
         _ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
+        self.state
+            .lock()
+            .expect("lock test provider state")
+            .counts
+            .loads += 1;
         let (value, origin) = match &source.location {
             SourceLocationSpec::Path(path) => {
                 let value = std::fs::read_to_string(path)
@@ -417,6 +423,30 @@ fn mutation_rebuild_reuses_the_open_generation_schema() {
     assert_eq!(state.counts.writes, 1);
     assert_eq!(state.counts.commits, 1);
     assert_eq!(state.counts.compensates, 0);
+    drop(state);
+}
+
+#[test]
+fn mutation_rebuild_reloads_only_affected_sources() {
+    let fixture = Fixture::remote(&[("txn://one", 1), ("txn://two", 2)]);
+    let mut session = fixture.open();
+    assert_eq!(
+        fixture
+            .state
+            .lock()
+            .expect("lock fixture state")
+            .counts
+            .loads,
+        2
+    );
+
+    let report = session.apply_mutation(mutation_request(vec![set_value("one", 3)]));
+
+    assert!(report.write_ok, "diagnostics: {:?}", report.diagnostics);
+    assert_eq!(session_value(&session, "one"), 3);
+    assert_eq!(session_value(&session, "two"), 2);
+    let state = fixture.state.lock().expect("lock fixture state");
+    assert_eq!(state.counts.loads, 3);
     drop(state);
 }
 

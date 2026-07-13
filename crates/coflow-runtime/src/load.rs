@@ -1,6 +1,6 @@
 use coflow_api::{
-    map_diagnostics_with_origins, origins_of, Diagnostic, DiagnosticSet, LoadedSource,
-    ProviderRegistry, ResolvedSource, SourceLoadContext, SourceLocationSpec,
+    map_diagnostics_with_origins, origins_of, Diagnostic, DiagnosticSet, ProviderRegistry,
+    ResolvedSource, SourceLoadContext, SourceLocationSpec,
 };
 use coflow_cft::{CftContainer, CompiledSchema};
 use coflow_checker::{run_checks_for_dimensions, DimensionCheckPlan, DimensionCheckRound};
@@ -9,13 +9,13 @@ use coflow_data_model::{
     RecordOrigin,
 };
 use coflow_project::{path_to_slash, DimensionConfig, Project};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use crate::dimensions;
 use crate::indexes::{
     DiagnosticLogicalLocation, FileIndex, PendingRecordRef, RecordIndexBuilder,
-    SessionIndexBuilder, SourceId, SourceIndex,
+    ResolvedSourceEntry, SessionIndexBuilder, SourceId, SourceIndex,
 };
 use crate::session::RecordCoordinate;
 use crate::source_resolution::{ResolvedLoaderSource, SourceResolver};
@@ -25,6 +25,41 @@ pub(crate) struct ProjectLoadOutput {
     pub(crate) model: CfdDataModel,
     pub(crate) diagnostics: DiagnosticSet,
     pub(crate) logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
+    pub(crate) source_data: SourceDataCache,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SourceDataCache {
+    batches: Vec<CachedSourceBatch>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedSourceBatch {
+    entry: ResolvedSourceEntry,
+    records: Vec<CfdInputRecord>,
+    implicit_dimension: bool,
+}
+
+impl SourceDataCache {
+    pub(crate) fn base_with_previous_dimensions(&self, previous: &Self) -> Self {
+        let mut batches = self.batches.clone();
+        batches.extend(
+            previous
+                .batches
+                .iter()
+                .filter(|batch| batch.implicit_dimension)
+                .cloned(),
+        );
+        Self { batches }
+    }
+
+    pub(crate) fn implicit_display_paths(&self) -> BTreeSet<String> {
+        self.batches
+            .iter()
+            .filter(|batch| batch.implicit_dimension)
+            .map(|batch| batch.entry.display_path.clone())
+            .collect()
+    }
 }
 
 #[derive(Debug)]
@@ -50,6 +85,7 @@ pub(crate) fn empty_load_output() -> Result<ProjectLoadOutput, DiagnosticSet> {
         model: empty_model()?,
         diagnostics: DiagnosticSet::empty(),
         logical_locations: BTreeMap::new(),
+        source_data: SourceDataCache::default(),
     })
 }
 
@@ -62,6 +98,7 @@ pub(crate) fn load_project_data(
     options: LoadProjectDataOptions,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
+    let mut source_data = SourceDataCache::default();
     let mut diagnostics = DiagnosticSet::empty();
     let resolver = SourceResolver::new(project, registry);
     for (source_index, source) in project.config.sources.iter().enumerate() {
@@ -81,7 +118,9 @@ pub(crate) fn load_project_data(
             &mut indexes.records,
             &mut indexes.files,
             &mut records,
+            &mut source_data,
             resolved_sources,
+            false,
         ));
     }
 
@@ -102,7 +141,9 @@ pub(crate) fn load_project_data(
                 &mut indexes.records,
                 &mut indexes.files,
                 &mut records,
+                &mut source_data,
                 resolved_sources,
+                true,
             ));
         }
     }
@@ -147,7 +188,100 @@ pub(crate) fn load_project_data(
         model,
         diagnostics: check.diagnostics,
         logical_locations: check.logical_locations,
+        source_data,
     })
+}
+
+pub(crate) fn reload_project_data_from_cache(
+    project: &Project,
+    schema: &CftContainer,
+    compiled_schema: &CompiledSchema,
+    registry: &ProviderRegistry,
+    indexes: &mut SessionIndexBuilder,
+    previous: &SourceDataCache,
+    reload_paths: &BTreeSet<String>,
+    options: LoadProjectDataOptions,
+    refresh_implicit_dimension_sources: bool,
+) -> Result<ProjectLoadOutput, LoadDiagnostics> {
+    let mut source_data = SourceDataCache {
+        batches: previous
+            .batches
+            .iter()
+            .filter(|batch| {
+                options.include_implicit_dimension_sources || !batch.implicit_dimension
+            })
+            .cloned()
+            .collect(),
+    };
+    if options.include_implicit_dimension_sources && refresh_implicit_dimension_sources {
+        refresh_dimension_source_plans(project, compiled_schema, registry, previous, &mut source_data)?;
+    }
+
+    let mut diagnostics = DiagnosticSet::empty();
+    let reload_indexes = source_data
+        .batches
+        .iter()
+        .enumerate()
+        .filter_map(|(index, batch)| {
+            (reload_paths.contains(&batch.entry.display_path)
+                || !previous.contains_source(&batch.entry, batch.implicit_dimension))
+            .then_some(index)
+        })
+        .collect::<Vec<_>>();
+
+    for index in &reload_indexes {
+        let batch = &source_data.batches[*index];
+        let Some(loader) = registry.source_provider(&batch.entry.provider_id) else {
+            diagnostics.push(missing_cached_provider(&batch.entry.provider_id));
+            continue;
+        };
+        diagnostics.extend(loader.preflight(
+            SourceLoadContext {
+                project_root: &project.root_dir,
+                schema: compiled_schema,
+            },
+            &batch.entry.source,
+        ));
+    }
+    if !diagnostics.is_empty() {
+        return Err(LoadDiagnostics {
+            diagnostics,
+            logical_locations: BTreeMap::new(),
+        });
+    }
+
+    for index in reload_indexes {
+        let batch = &mut source_data.batches[index];
+        let Some(loader) = registry.source_provider(&batch.entry.provider_id) else {
+            diagnostics.push(missing_cached_provider(&batch.entry.provider_id));
+            continue;
+        };
+        match loader.load(
+            SourceLoadContext {
+                project_root: &project.root_dir,
+                schema: compiled_schema,
+            },
+            &batch.entry.source,
+        ) {
+            Ok(loaded) => batch.records = loaded.records,
+            Err(err) => diagnostics.extend(err),
+        }
+    }
+    if !diagnostics.is_empty() {
+        return Err(LoadDiagnostics {
+            diagnostics,
+            logical_locations: BTreeMap::new(),
+        });
+    }
+
+    build_output_from_cache(
+        project,
+        schema,
+        compiled_schema,
+        indexes,
+        source_data,
+        options.run_checks,
+    )
 }
 
 fn load_resolved_sources(
@@ -157,7 +291,9 @@ fn load_resolved_sources(
     records_index: &mut RecordIndexBuilder,
     files: &mut FileIndex,
     records: &mut Vec<CfdInputRecord>,
+    source_data: &mut SourceDataCache,
     resolved_sources: Vec<ResolvedLoaderSource>,
+    implicit_dimension: bool,
 ) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
     for (loader, spec) in &resolved_sources {
@@ -177,11 +313,12 @@ fn load_resolved_sources(
         let display_path = display_path_for(project, &spec);
         let source_id = SourceId(sources.entries.len());
         files.add_source_file(display_path.clone(), source_id);
-        sources.push(crate::indexes::ResolvedSourceEntry {
+        let entry = ResolvedSourceEntry {
             provider_id: spec.provider_id.clone(),
             source: spec.clone(),
             display_path: display_path.clone(),
-        });
+        };
+        sources.push(entry.clone());
         match loader.load(
             SourceLoadContext {
                 project_root: &project.root_dir,
@@ -189,14 +326,21 @@ fn load_resolved_sources(
             },
             &spec,
         ) {
-            Ok(batch) => push_loaded_records(
-                records,
-                records_index,
-                source_id,
-                &spec,
-                &display_path,
-                batch,
-            ),
+            Ok(batch) => {
+                push_loaded_records(
+                    records,
+                    records_index,
+                    source_id,
+                    &spec,
+                    &display_path,
+                    &batch.records,
+                );
+                source_data.batches.push(CachedSourceBatch {
+                    entry,
+                    records: batch.records,
+                    implicit_dimension,
+                });
+            }
             Err(err) => diagnostics.extend(err),
         }
     }
@@ -243,9 +387,9 @@ fn push_loaded_records(
     source_id: SourceId,
     source: &ResolvedSource,
     display_path: &str,
-    loaded: LoadedSource,
+    loaded_records: &[CfdInputRecord],
 ) {
-    for record in loaded.records {
+    for record in loaded_records {
         records_index.push(PendingRecordRef {
             coordinate: RecordCoordinate::new(record.actual_type.clone(), record.key.clone()),
             origin: record.origin.clone(),
@@ -253,8 +397,137 @@ fn push_loaded_records(
             provider_id: source.provider_id.clone(),
             display_path: display_path.to_string(),
         });
-        records.push(record);
+        records.push(record.clone());
     }
+}
+
+impl SourceDataCache {
+    fn contains_source(&self, entry: &ResolvedSourceEntry, implicit_dimension: bool) -> bool {
+        self.batches.iter().any(|batch| {
+            batch.implicit_dimension == implicit_dimension
+                && batch.entry.provider_id == entry.provider_id
+                && batch.entry.source.location == entry.source.location
+        })
+    }
+}
+
+fn refresh_dimension_source_plans(
+    project: &Project,
+    compiled_schema: &CompiledSchema,
+    registry: &ProviderRegistry,
+    previous: &SourceDataCache,
+    source_data: &mut SourceDataCache,
+) -> Result<(), LoadDiagnostics> {
+    source_data
+        .batches
+        .retain(|batch| !batch.implicit_dimension);
+    let resolver = SourceResolver::new(project, registry);
+    let dimension_fields = dimensions::dimension_fields(compiled_schema);
+    let mut diagnostics = DiagnosticSet::empty();
+    for configured in dimensions::dimension_sources(project, &dimension_fields) {
+        let resolved_sources = match resolver.resolve_implicit(&configured) {
+            Ok(resolved_sources) => resolved_sources,
+            Err(err) => {
+                diagnostics.extend(err);
+                continue;
+            }
+        };
+        for (_, source) in resolved_sources {
+            let display_path = display_path_for(project, &source);
+            let entry = ResolvedSourceEntry {
+                provider_id: source.provider_id.clone(),
+                source,
+                display_path,
+            };
+            let records = previous
+                .batches
+                .iter()
+                .find(|batch| {
+                    batch.implicit_dimension
+                        && batch.entry.provider_id == entry.provider_id
+                        && batch.entry.source.location == entry.source.location
+                })
+                .map_or_else(Vec::new, |batch| batch.records.clone());
+            source_data.batches.push(CachedSourceBatch {
+                entry,
+                records,
+                implicit_dimension: true,
+            });
+        }
+    }
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(LoadDiagnostics {
+            diagnostics,
+            logical_locations: BTreeMap::new(),
+        })
+    }
+}
+
+fn build_output_from_cache(
+    project: &Project,
+    schema: &CftContainer,
+    compiled_schema: &CompiledSchema,
+    indexes: &mut SessionIndexBuilder,
+    source_data: SourceDataCache,
+    run_checks: bool,
+) -> Result<ProjectLoadOutput, LoadDiagnostics> {
+    let mut records = Vec::new();
+    for batch in &source_data.batches {
+        let source_id = SourceId(indexes.sources.entries.len());
+        indexes
+            .files
+            .add_source_file(batch.entry.display_path.clone(), source_id);
+        indexes.sources.push(batch.entry.clone());
+        push_loaded_records(
+            &mut records,
+            &mut indexes.records,
+            source_id,
+            &batch.entry.source,
+            &batch.entry.display_path,
+            &batch.records,
+        );
+    }
+    let origins = origins_of(&records);
+    let record_coordinates = records
+        .iter()
+        .map(|record| RecordCoordinate::new(record.actual_type.clone(), record.key.clone()))
+        .collect::<Vec<_>>();
+    let mut builder = CfdDataModel::builder(schema);
+    for record in records {
+        builder.add_input_record(record);
+    }
+    let model = builder.build().map_err(|err| {
+        let logical_locations =
+            logical_locations_from_cfd(&err, |id| record_coordinates.get(id.index()).cloned());
+        LoadDiagnostics {
+            diagnostics: map_diagnostics_with_origins(err, &origins),
+            logical_locations,
+        }
+    })?;
+    let check = if run_checks {
+        run_project_checks(project, compiled_schema, &model, &origins)
+    } else {
+        CheckOutput {
+            diagnostics: DiagnosticSet::empty(),
+            logical_locations: BTreeMap::new(),
+        }
+    };
+    Ok(ProjectLoadOutput {
+        model,
+        diagnostics: check.diagnostics,
+        logical_locations: check.logical_locations,
+        source_data,
+    })
+}
+
+fn missing_cached_provider(provider_id: &str) -> Diagnostic {
+    Diagnostic::error(
+        "RUNTIME-SOURCE-CACHE",
+        "RUNTIME",
+        format!("cached source provider `{provider_id}` is no longer registered"),
+    )
 }
 
 fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
