@@ -176,6 +176,10 @@ export class EditorMutationController {
 
   private reapplyPendingFieldWrites(): void {
     for (const pending of this.pendingFieldWrites.values()) {
+      if (!this.queuedMutationIsCurrent(
+        pending.queuedGeneration,
+        pending.queuedHistoryEpoch,
+      )) continue
       for (const projection of pending.optimistic) projection.reapply()
     }
   }
@@ -335,18 +339,23 @@ export class EditorMutationController {
     operation: () => Promise<T>,
   ): Promise<T> {
     return this.history.serialize(() => {
-      const currentGeneration = this.port.currentGeneration()
-      if (
-        !queuedGeneration
-        || !currentGeneration
-        || currentGeneration.sessionId !== queuedGeneration.sessionId
-        || currentGeneration.revision < queuedGeneration.revision
-        || this.history.currentEpoch() !== queuedHistoryEpoch
-      ) {
+      if (!this.queuedMutationIsCurrent(queuedGeneration, queuedHistoryEpoch)) {
         return Promise.resolve(supersededValue)
       }
       return this.executeWithPendingFieldReplay(operation)
     })
+  }
+
+  private queuedMutationIsCurrent(
+    queuedGeneration: EditorGenerationIdentity | null,
+    queuedHistoryEpoch: number,
+  ): boolean {
+    const currentGeneration = this.port.currentGeneration()
+    return queuedGeneration !== null
+      && currentGeneration !== null
+      && currentGeneration.sessionId === queuedGeneration.sessionId
+      && currentGeneration.revision >= queuedGeneration.revision
+      && this.history.currentEpoch() === queuedHistoryEpoch
   }
 
   private async executeWithPendingFieldReplay<T>(operation: () => Promise<T>): Promise<T> {

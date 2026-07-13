@@ -406,6 +406,11 @@ describe('EditorMutationController', () => {
     let generation = { sessionId: 1, revision: 1 }
     const pending = deferred<WriteFieldOutcome>()
     const writeField = vi.fn(() => pending.promise)
+    const firstProjection = { changed: true, reapply: vi.fn(), rollback: vi.fn() }
+    const queuedProjection = { changed: true, reapply: vi.fn(), rollback: vi.fn() }
+    const optimisticWriteField = vi.fn()
+      .mockReturnValueOnce(firstProjection)
+      .mockReturnValueOnce(queuedProjection)
     const history = new MutationHistoryController()
     const port: EditorMutationPort = {
       currentGeneration: () => generation,
@@ -413,6 +418,7 @@ describe('EditorMutationController', () => {
       rebindCoordinate: vi.fn(),
       recoverPublication: vi.fn(() => false),
       reportError: vi.fn(),
+      optimisticWriteField,
     }
     const mutations = new EditorMutationController(backend(writeField), port, history)
 
@@ -431,6 +437,8 @@ describe('EditorMutationController', () => {
 
     expect(writeField).toHaveBeenCalledTimes(1)
     expect(history.getSnapshot().undo).toHaveLength(0)
+    expect(queuedProjection.reapply).not.toHaveBeenCalled()
+    expect(queuedProjection.rollback).toHaveBeenCalledTimes(1)
   })
 
   it('serializes ordinary edits behind an in-flight undo', async () => {
