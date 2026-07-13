@@ -43,3 +43,6 @@ coflow-project = { path = "../../../crates/coflow-project" }
 coflow-runtime = { path = "../../../crates/coflow-runtime" }
 walkdir = "2"
 ts-rs = { version = "10", optional = true }
+
+[dev-dependencies]
+rust_xlsxwriter = "0.95"

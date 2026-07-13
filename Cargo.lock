@@ -463,6 +463,7 @@ dependencies = [
  "coflow-project",
  "coflow-runtime",
  "notify",
+ "rust_xlsxwriter",
  "serde",
  "serde_json",
  "sha2",
