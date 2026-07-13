@@ -1,21 +1,22 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use tauri::AppHandle;
 
 use crate::editor::{EditorError, ProjectSnapshot, SessionStore};
 use crate::watcher::ProjectWatchRegistry;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct EditorHost {
-    sessions: SessionStore,
-    watchers: ProjectWatchRegistry,
+    sessions: Arc<SessionStore>,
+    watchers: Arc<ProjectWatchRegistry>,
 }
 
 impl EditorHost {
     pub(crate) fn new() -> Result<Self, EditorError> {
         Ok(Self {
-            sessions: SessionStore::new()?,
-            watchers: ProjectWatchRegistry::default(),
+            sessions: Arc::new(SessionStore::new()?),
+            watchers: Arc::new(ProjectWatchRegistry::default()),
         })
     }
 
@@ -58,7 +59,7 @@ impl EditorHost {
             .has_external_file_changes(session_id, changed_paths)
     }
 
-    pub(crate) const fn sessions(&self) -> &SessionStore {
+    pub(crate) fn sessions(&self) -> &SessionStore {
         &self.sessions
     }
 

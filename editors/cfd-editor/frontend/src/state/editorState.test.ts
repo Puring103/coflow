@@ -136,6 +136,28 @@ describe('publishMutationGeneration', () => {
     })).rejects.toThrow('refresh failed')
     expect(acceptRevision).not.toHaveBeenCalled()
   })
+
+  it('does not advance graph data without a known row projection', async () => {
+    const publishGraphProjection = vi.fn()
+    const port: MutationPublicationPort = {
+      acceptRevision: vi.fn(() => true),
+      isCurrent: vi.fn(() => true),
+      getFileRecords: vi.fn(async (_sessionId, filePath) => fileRecords(2, filePath)),
+      publishFileRecords: vi.fn(),
+      publishGraphProjection,
+    }
+
+    await publishMutationGeneration(port, {
+      sessionId: 1,
+      revision: 2,
+      diagnostics: [],
+      affectedFiles: ['data/items.cfd'],
+      fallbackFile: 'data/items.cfd',
+      topologyChanged: false,
+    })
+
+    expect(publishGraphProjection).not.toHaveBeenCalled()
+  })
 })
 
 describe('MutationHistoryController', () => {

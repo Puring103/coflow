@@ -23,6 +23,7 @@ import {
   diagnosticMatchesAnchor,
   errorDiagnostics,
   errorMessage,
+  cloneValue,
   recordActualType,
   recordKey,
   sameCoordinate,
@@ -43,6 +44,7 @@ import {
   EditorMutationController,
   type EditorMutationPort,
 } from './state/editorMutations'
+import { projectFieldValue, projectFieldValueAtRevision } from './state/fieldProjection'
 import './style.css'
 
 const GRAPH_DEPTH = 3
@@ -60,6 +62,42 @@ function graphCacheKey(
   return `${filePath}::${depth}::${limit}`
 }
 
+function projectGraphRows(
+  cache: Record<string, GraphData>,
+  revision: number,
+  rows: RecordRow[],
+): Record<string, GraphData> {
+  const rowByCoordinate = new Map(
+    rows.map(row => [`${row.coordinate.actual_type}\u001f${row.coordinate.key}`, row]),
+  )
+  let changed = false
+  const next: Record<string, GraphData> = {}
+  for (const [key, graph] of Object.entries(cache)) {
+    if (graph.revision !== revision - 1 && graph.revision !== revision) {
+      next[key] = graph
+      continue
+    }
+    const nodes = graph.nodes.map(node => {
+      const row = rowByCoordinate.get(
+        `${node.coordinate.actual_type}\u001f${node.coordinate.key}`,
+      )
+      if (!row) return node
+      return {
+        ...node,
+        fields: row.fields,
+        field_diagnostics: row.field_diagnostics,
+        diagnostic_severity: row.diagnostic_severity,
+      }
+    })
+    const projected = graph.revision === revision && nodes.every((node, index) => node === graph.nodes[index])
+      ? graph
+      : { ...graph, revision, nodes }
+    if (projected !== graph) changed = true
+    next[key] = projected
+  }
+  return changed ? next : cache
+}
+
 export default function App() {
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
   const [generation] = useState(() => new ProjectGenerationController())
@@ -69,6 +107,10 @@ export default function App() {
   const historySnapshot = useSyncExternalStore(history.subscribe, history.getSnapshot, history.getSnapshot)
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
+  const fileDataCacheRef = useRef(fileDataCache)
+  const graphCacheRef = useRef(graphCache)
+  fileDataCacheRef.current = fileDataCache
+  graphCacheRef.current = graphCache
   const [showHelp, setShowHelp] = useState(false)
   const helpBoxRef = useRef<HTMLDivElement>(null)
   const helpReturnRef = useRef<HTMLElement | null>(null)
@@ -288,6 +330,15 @@ export default function App() {
         setFileDataCache(current => {
           const next = { ...current }
           for (const [file, fileRecords] of records) next[file] = fileRecords
+          fileDataCacheRef.current = next
+          return next
+        })
+      },
+      publishGraphProjection: (revision, knownRecords, topologyChanged) => {
+        if (topologyChanged) return
+        setGraphCache(current => {
+          const next = projectGraphRows(current, revision, knownRecords.records)
+          graphCacheRef.current = next
           return next
         })
       },
@@ -548,7 +599,7 @@ export default function App() {
       row: RecordRow,
       revision: number,
     ): FileRecords | undefined => {
-      const current = fileDataCache[filePath]
+      const current = fileDataCacheRef.current[filePath]
       if (!current || current.revision !== revision - 1) return undefined
       let found = false
       const records = current.records.map(existing => {
@@ -558,8 +609,72 @@ export default function App() {
       })
       return found ? { ...current, revision, records } : undefined
     },
-    [fileDataCache],
+    [],
   )
+
+  const optimisticWriteField = useCallback((
+    filePath: string,
+    coordinate: RecordCoordinate,
+    fieldPath: FieldPathSegment[],
+    newValue: FieldValue,
+  ) => {
+    const identity = generation.currentIdentity()
+    const current = fileDataCacheRef.current[filePath]
+    if (!identity || !current) {
+      return { changed: true, rollback: () => {} }
+    }
+    const projection = projectFieldValueAtRevision(
+      current,
+      identity.revision,
+      coordinate,
+      fieldPath,
+      newValue,
+    )
+    if (!projection) {
+      return { changed: true, rollback: () => {} }
+    }
+    if (!projection.changed) {
+      return { changed: false, row: projection.row, rollback: () => {} }
+    }
+    if (!projection.row || !projection.oldValue) {
+      return { changed: true, rollback: () => {} }
+    }
+    const projectedCache = { ...fileDataCacheRef.current, [filePath]: projection.records }
+    fileDataCacheRef.current = projectedCache
+    setFileDataCache(projectedCache)
+    const projectedGraphs = projectGraphRows(
+      graphCacheRef.current,
+      current.revision,
+      [projection.row],
+    )
+    graphCacheRef.current = projectedGraphs
+    setGraphCache(projectedGraphs)
+    const optimisticValue = cloneValue(newValue)
+    const oldValue = projection.oldValue
+    return {
+      changed: true,
+      row: projection.row,
+      rollback: () => {
+        if (!generation.isCurrent(identity.sessionId, identity.revision)) return
+        const latest = fileDataCacheRef.current[filePath]
+        if (!latest) return
+        const stillOptimistic = projectFieldValue(latest, coordinate, fieldPath, optimisticValue)
+        if (stillOptimistic.changed) return
+        const rollback = projectFieldValue(latest, coordinate, fieldPath, oldValue)
+        if (!rollback.changed || !rollback.row) return
+        const nextCache = { ...fileDataCacheRef.current, [filePath]: rollback.records }
+        fileDataCacheRef.current = nextCache
+        setFileDataCache(nextCache)
+        const nextGraphs = projectGraphRows(
+          graphCacheRef.current,
+          latest.revision,
+          [rollback.row],
+        )
+        graphCacheRef.current = nextGraphs
+        setGraphCache(nextGraphs)
+      },
+    }
+  }, [generation])
 
   const mutationPort = useMemo<EditorMutationPort>(() => ({
     currentGeneration: () => api.isTauri ? generation.currentIdentity() : null,
@@ -586,7 +701,8 @@ export default function App() {
     reportError: (sessionId, prefix, error, expectedRevision) => {
       reportSessionError(sessionId, prefix, error, true, expectedRevision)
     },
-  }), [commitProjectRevision, fileRecordsForRow, generation, publishMutation, rebindCoordinate, reportSessionError])
+    optimisticWriteField,
+  }), [commitProjectRevision, fileRecordsForRow, generation, optimisticWriteField, publishMutation, rebindCoordinate, reportSessionError])
   const mutations = useMemo(
     () => new EditorMutationController(api, mutationPort, history),
     [history, mutationPort],
