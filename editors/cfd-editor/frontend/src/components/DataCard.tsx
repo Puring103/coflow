@@ -242,6 +242,7 @@ const DiagCtx = createContext<DiagCtxValue | null>(null)
  *  the row is actually visible after scrollIntoView. Cleared by whoever set
  *  it once the highlight has been consumed. */
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
+const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
 
 function severityRank(s: 'error' | 'warning' | 'info'): number {
   return s === 'error' ? 3 : s === 'warning' ? 2 : 1
@@ -297,6 +298,7 @@ export interface ExpandedProps {
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   pathPrefix?: string
   onRowToggle?: (path: string, expanded: boolean) => void
+  expandedPaths?: ReadonlySet<string>
   diagnostics?: FieldDiagnostic[]
   highlightField?: string | null
   onHighlightConsumed?: () => void
@@ -318,6 +320,7 @@ export function DataCardExpanded({
   onCollectionEdit,
   pathPrefix,
   onRowToggle,
+  expandedPaths,
   diagnostics,
   highlightField,
   onHighlightConsumed,
@@ -428,7 +431,9 @@ export function DataCardExpanded({
     </div>
   )
   const wrapped = (
-    <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
+    <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
+      <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
+    </ControlledExpansionCtx.Provider>
   )
   return ctx ? <DiagCtx.Provider value={ctx}>{wrapped}</DiagCtx.Provider> : wrapped
 }
@@ -1325,11 +1330,15 @@ function ExpandableRow({
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
   const autoExpandPaths = useContext(AutoExpandCtx)
+  const controlledExpansion = useContext(ControlledExpansionCtx)
   const shouldAutoExpand = !!pathKey && autoExpandPaths.has(pathKey)
-  const [expanded, setExpanded] = useState(shouldAutoExpand)
+  const [localExpanded, setLocalExpanded] = useState(shouldAutoExpand)
+  const expanded = pathKey && controlledExpansion
+    ? controlledExpansion.has(pathKey)
+    : localExpanded
   useEffect(() => {
     if (shouldAutoExpand && !expanded) {
-      setExpanded(true)
+      if (!controlledExpansion) setLocalExpanded(true)
       if (pathKey) onRowToggle?.(pathKey, true)
     }
     // Only fire when the auto-expand set changes for this row. If the user
@@ -1344,7 +1353,7 @@ function ExpandableRow({
 
   function toggle() {
     const next = !expanded
-    setExpanded(next)
+    if (!controlledExpansion) setLocalExpanded(next)
     if (pathKey) onRowToggle?.(pathKey, next)
   }
 
@@ -1802,6 +1811,7 @@ export function DataCardNode({
   showAll,
   onToggle,
   onRowToggle,
+  expandedPaths,
   onEdit,
   onCollectionEdit,
 }: {
@@ -1810,6 +1820,7 @@ export function DataCardNode({
   showAll: boolean
   onToggle: () => void
   onRowToggle?: (path: string, expanded: boolean) => void
+  expandedPaths?: ReadonlySet<string>
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
 }) {
@@ -1820,6 +1831,7 @@ export function DataCardNode({
         fields={visible}
         actualType={actualType}
         onRowToggle={onRowToggle}
+        expandedPaths={expandedPaths}
         onEdit={onEdit}
         onCollectionEdit={onCollectionEdit}
       />

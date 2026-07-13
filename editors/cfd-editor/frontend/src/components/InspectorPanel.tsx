@@ -7,12 +7,18 @@ import {
   recordActualType,
   recordKey,
   sameCoordinate,
+  coordinateId,
   type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
 } from '../wire'
 import { CardHeader, DataCardExpanded } from './DataCard'
 import { Icon } from './Icon'
+import {
+  expandedPathsFor,
+  updateExpandedPath,
+  type ExpandedPathMap,
+} from '../state/expandedPaths'
 
 interface Props {
   open: boolean
@@ -65,6 +71,7 @@ export function InspectorPanel({
   onDiagnosticBadgeClick,
 }: Props) {
   const [dragging, setDragging] = useState(false)
+  const [expandedByRecord, setExpandedByRecord] = useState<ExpandedPathMap>(() => new Map())
   const widthRef = useRef(width)
   widthRef.current = width
 
@@ -96,6 +103,12 @@ export function InspectorPanel({
     : null
 
   const canRename = !readOnly && data?.capabilities.can_edit_key && !!onRenameRecord
+  const expansionOwner = data && coordinate
+    ? `${data.file_path}:${coordinateId(coordinate)}`
+    : null
+  const expandedPaths = expansionOwner
+    ? expandedPathsFor(expandedByRecord, expansionOwner)
+    : undefined
 
   if (!open) return null
 
@@ -156,6 +169,12 @@ export function InspectorPanel({
               />
               <DataCardExpanded
                 fields={record.fields}
+                expandedPaths={expandedPaths}
+                onRowToggle={expansionOwner
+                  ? (path, expanded) => {
+                    setExpandedByRecord(current => updateExpandedPath(current, expansionOwner, path, expanded))
+                  }
+                  : undefined}
                 actualType={recordActualType(record)}
                 onEdit={readOnly || !onWriteField
                   ? undefined

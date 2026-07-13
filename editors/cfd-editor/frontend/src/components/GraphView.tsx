@@ -48,6 +48,7 @@ interface NodeData extends Record<string, unknown> {
   /** Stable signature of the per-row expanded set, so CfdNode can re-measure
    *  handle Y positions only when something that affects row geometry changes. */
   rowExpandKey: string
+  expandedPaths: ReadonlySet<string>
   onToggleExpand: () => void
   onRowToggle: (path: string, exp: boolean) => void
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
@@ -67,7 +68,7 @@ interface NodeData extends Record<string, unknown> {
 // threshold changes don't query every rendered node.
 
 function CfdNode({ id, data }: NodeProps) {
-  const { graphNode: gn, expanded, outgoingPaths, compact, measureHandles, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCollectionEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
+  const { graphNode: gn, expanded, outgoingPaths, compact, measureHandles, rowExpandKey, expandedPaths, onToggleExpand, onRowToggle, onEdit, onCollectionEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
@@ -201,6 +202,7 @@ function CfdNode({ id, data }: NodeProps) {
               showAll={expanded}
               onToggle={onToggleExpand}
               onRowToggle={onRowToggle}
+              expandedPaths={expandedPaths}
               onEdit={onEdit}
               onCollectionEdit={onCollectionEdit}
             />
@@ -406,6 +408,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
             compact: compactNodes,
             measureHandles,
             rowExpandKey: rowExpanded ? Array.from(rowExpanded).sort().join('|') : '',
+            expandedPaths: rowExpanded ?? new Set<string>(),
             onToggleExpand: () => toggleNodeExpanded(n.id),
             onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
             onEdit: editable
