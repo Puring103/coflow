@@ -101,7 +101,7 @@ fn override_parse_error_keeps_sources_and_paths() -> TestResult {
 }
 
 #[test]
-fn schema_build_publishes_canonical_utf16_diagnostics() -> TestResult {
+fn project_schema_publishes_canonical_utf16_diagnostics() -> TestResult {
     let source = "type 表 {\n  名: Missing;\n}\n";
     let (root, project) = test_project("utf16", source)?;
     let build = build_schema_attempt(project, &[])?;

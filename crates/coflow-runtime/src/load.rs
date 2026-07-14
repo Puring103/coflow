@@ -91,7 +91,6 @@ pub(crate) fn empty_load_output() -> Result<ProjectLoadOutput, DiagnosticSet> {
 pub(crate) fn load_project_data(
     project: &Project,
     schema: &CftSchema,
-    compiled_schema: &CftSchema,
     registry: &ProviderRegistry,
     indexes: &mut SessionIndexBuilder,
     options: LoadProjectDataOptions,
@@ -112,7 +111,7 @@ pub(crate) fn load_project_data(
 
         diagnostics.extend(load_resolved_sources(
             project,
-            compiled_schema,
+            schema,
             &mut indexes.sources,
             &mut indexes.records,
             &mut indexes.files,
@@ -124,7 +123,7 @@ pub(crate) fn load_project_data(
     }
 
     if options.include_implicit_dimension_sources {
-        let dimension_fields = dimensions::dimension_fields(compiled_schema);
+        let dimension_fields = dimensions::dimension_fields(schema);
         for configured in dimensions::dimension_sources(project, &dimension_fields) {
             let resolved_sources = match resolver.resolve_implicit(&configured) {
                 Ok(resolved_sources) => resolved_sources,
@@ -135,7 +134,7 @@ pub(crate) fn load_project_data(
             };
             diagnostics.extend(load_resolved_sources(
                 project,
-                compiled_schema,
+                schema,
                 &mut indexes.sources,
                 &mut indexes.records,
                 &mut indexes.files,
@@ -176,7 +175,7 @@ pub(crate) fn load_project_data(
         }
     };
     let check = if options.run_checks {
-        run_full_project_checks(project, compiled_schema, &model, &origins)
+        run_full_project_checks(project, schema, &model, &origins)
     } else {
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),
@@ -197,7 +196,6 @@ pub(crate) fn load_project_data(
 pub(crate) fn reload_project_data_from_cache(
     project: &Project,
     schema: &CftSchema,
-    compiled_schema: &CftSchema,
     registry: &ProviderRegistry,
     indexes: &mut SessionIndexBuilder,
     previous: &SourceDataCache,
@@ -218,7 +216,7 @@ pub(crate) fn reload_project_data_from_cache(
     if options.include_implicit_dimension_sources && refresh_implicit_dimension_sources {
         refresh_dimension_source_plans(
             project,
-            compiled_schema,
+            schema,
             registry,
             previous,
             &mut source_data,
@@ -246,7 +244,7 @@ pub(crate) fn reload_project_data_from_cache(
         diagnostics.extend(loader.preflight(
             SourceLoadContext {
                 project_root: &project.root_dir,
-                schema: compiled_schema,
+                schema: schema,
             },
             &batch.entry.source,
         ));
@@ -267,7 +265,7 @@ pub(crate) fn reload_project_data_from_cache(
         match loader.load(
             SourceLoadContext {
                 project_root: &project.root_dir,
-                schema: compiled_schema,
+                schema: schema,
             },
             &batch.entry.source,
         ) {
@@ -285,7 +283,6 @@ pub(crate) fn reload_project_data_from_cache(
     build_output_from_cache(
         project,
         schema,
-        compiled_schema,
         indexes,
         source_data,
         options.run_checks,
@@ -391,7 +388,7 @@ impl SourceDataCache {
 
 fn refresh_dimension_source_plans(
     project: &Project,
-    compiled_schema: &CftSchema,
+    schema: &CftSchema,
     registry: &ProviderRegistry,
     previous: &SourceDataCache,
     source_data: &mut SourceDataCache,
@@ -400,7 +397,7 @@ fn refresh_dimension_source_plans(
         .batches
         .retain(|batch| !batch.implicit_dimension);
     let resolver = SourceResolver::new(project, registry);
-    let dimension_fields = dimensions::dimension_fields(compiled_schema);
+    let dimension_fields = dimensions::dimension_fields(schema);
     let mut diagnostics = DiagnosticSet::empty();
     for configured in dimensions::dimension_sources(project, &dimension_fields) {
         let resolved_sources = match resolver.resolve_implicit(&configured) {
@@ -447,7 +444,6 @@ fn refresh_dimension_source_plans(
 fn build_output_from_cache(
     project: &Project,
     schema: &CftSchema,
-    compiled_schema: &CftSchema,
     indexes: &mut SessionIndexBuilder,
     source_data: SourceDataCache,
     run_checks: bool,
@@ -492,14 +488,14 @@ fn build_output_from_cache(
             .and_then(|previous| {
                 run_incremental_project_checks(
                     project,
-                    compiled_schema,
+                    schema,
                     &model,
                     &origins,
                     previous,
                     changed_records,
                 )
             })
-            .unwrap_or_else(|| run_full_project_checks(project, compiled_schema, &model, &origins))
+            .unwrap_or_else(|| run_full_project_checks(project, schema, &model, &origins))
     } else {
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),

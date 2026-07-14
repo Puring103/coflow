@@ -12,6 +12,7 @@ use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ValidationRevision(u64);
@@ -33,6 +34,7 @@ pub(crate) struct ValidationInput {
     project: Project,
     project_diagnostics: Option<DiagnosticSet>,
     open_documents: BTreeMap<PathBuf, OpenDocument>,
+    schema_runtime: Arc<Mutex<ProjectRuntime>>,
 }
 
 impl ValidationInput {
@@ -41,12 +43,14 @@ impl ValidationInput {
         project: &Project,
         project_diagnostics: Option<&DiagnosticSet>,
         open_documents: &BTreeMap<PathBuf, OpenDocument>,
+        schema_runtime: Arc<Mutex<ProjectRuntime>>,
     ) -> Self {
         Self {
             revision,
             project: project.clone(),
             project_diagnostics: project_diagnostics.cloned(),
             open_documents: open_documents.clone(),
+            schema_runtime,
         }
     }
 
@@ -145,18 +149,22 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
 
     let (cfd_sources, cfd_failures) = add_cfd_documents(&mut snapshot, input);
 
-    let mut runtime = ProjectRuntime::new(input.project.clone());
-    let raw_build = match runtime.refresh_with_overrides(&overrides) {
-        Ok(_) | Err(_) => runtime.into_latest_attempt(),
-    };
+    let raw_build = input
+        .schema_runtime
+        .lock()
+        .ok()
+        .and_then(|mut runtime| {
+            let _ = runtime.refresh_with_overrides(&overrides);
+            runtime.latest_attempt().cloned()
+        });
     let Some(raw_build) = raw_build else {
-        let mut fallback = ProjectRuntime::new(input.project.clone());
-        let Err(diagnostics) = fallback.refresh_with_overrides(&overrides) else {
-            return snapshot;
-        };
         add_diagnostic_set(
             &mut snapshot,
-            &diagnostics,
+            &DiagnosticSet::one(coflow_api::Diagnostic::error(
+                "CFT-LSP",
+                "LSP",
+                "schema runtime did not produce a schema attempt",
+            )),
             &preferred_uris,
             &input.project.config_path,
         );

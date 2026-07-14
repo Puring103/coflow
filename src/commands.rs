@@ -223,7 +223,7 @@ pub fn generate_project_code(
     let command = format!("coflow codegen {codegen_id}");
     let output = required_code_output(project, codegen_id, &command)?;
     let data_format = configured_data_format(project, &command)?;
-    let session = Runtime::build_schema_session(project.clone())?;
+    let session = Runtime::open_schema_session(project.clone())?;
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }

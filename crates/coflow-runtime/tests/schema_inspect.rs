@@ -86,7 +86,7 @@ fn inspect_schema_preserves_id_as_enum_fields_and_enums() {
     write_project(&root);
 
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
-    let session = Runtime::build_schema_session(project).expect("schema session");
+    let session = Runtime::open_schema_session(project).expect("schema session");
     let report = inspect_schema(&session, None, false);
 
     let item = report
@@ -111,7 +111,7 @@ fn inspect_schema_serializes_large_i64_values_as_strings() {
     write_large_i64_project(&root);
 
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
-    let session = Runtime::build_schema_session(project).expect("schema session");
+    let session = Runtime::open_schema_session(project).expect("schema session");
     let json = serde_json::to_value(inspect_schema(&session, None, false)).expect("json value");
 
     assert_eq!(json["consts"][0]["value"]["value"], "9007199254740993");
@@ -147,7 +147,7 @@ fn inspect_schema_serializes_ref_type_shapes() {
     write_ref_project(&root);
 
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
-    let session = Runtime::build_schema_session(project).expect("schema session");
+    let session = Runtime::open_schema_session(project).expect("schema session");
     let json =
         serde_json::to_value(inspect_schema(&session, Some("Holder"), false)).expect("json value");
 
@@ -197,7 +197,7 @@ fn schema_files_returns_compiled_module_sources() {
     write_project(&root);
 
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
-    let session = Runtime::build_schema_session(project).expect("schema session");
+    let session = Runtime::open_schema_session(project).expect("schema session");
     let files = schema_files(&session);
 
     assert_eq!(files.files.len(), 1);

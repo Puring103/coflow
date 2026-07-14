@@ -262,7 +262,7 @@ fn dimension_check_analysis_respects_quantifier_binding_shadowing() {
 }
 
 #[test]
-fn compiled_schema_indexes_dimension_storage_types() {
+fn schema_indexes_dimension_storage_types() {
     let schema = compile_one(
         r#"
             type Item { name: string; }

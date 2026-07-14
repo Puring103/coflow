@@ -8,7 +8,7 @@ use coflow_api::{
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
 
-use crate::schema_build::{build_project_schema_session, build_project_schema_with_diagnostics, SchemaTextOverride};
+use crate::project_schema::{open_project_schema_session, open_project_schema_attempt, SchemaTextOverride};
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::session_build::{open_project_session, SessionOpenOptions};
 use crate::{
@@ -114,7 +114,7 @@ impl ProjectRuntime {
         }
 
         let diagnostics = self.project.schema_diagnostic_set();
-        let session = build_project_schema_with_diagnostics(
+        let session = open_project_schema_attempt(
             self.project.clone(),
             diagnostics,
             overrides,
@@ -203,8 +203,8 @@ impl Runtime {
     /// # Errors
     ///
     /// Returns unrecoverable project/config/schema I/O diagnostics.
-    pub fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
-        build_project_schema_session(project)
+    pub fn open_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
+        open_project_schema_session(project)
     }
 
     /// Opens data for editor, inspection, and background tasks that must not

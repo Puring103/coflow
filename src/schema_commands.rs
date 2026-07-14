@@ -65,7 +65,7 @@ pub fn inspect(
     human: bool,
 ) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
-    let session = Runtime::build_schema_session(project)?;
+    let session = Runtime::open_schema_session(project)?;
     let report = inspect_schema(&session, type_filter, include_derived);
     if human {
         write_schema_inspect_human(&report)?;
@@ -83,7 +83,7 @@ pub fn inspect(
 /// cannot be built, or output cannot be written.
 pub fn files(config_or_dir: Option<&Path>, human: bool) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
-    let session = Runtime::build_schema_session(project)?;
+    let session = Runtime::open_schema_session(project)?;
     let report = schema_files(&session);
     if human {
         write_schema_files_human(&report)?;

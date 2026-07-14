@@ -174,14 +174,14 @@ fn json_exporter_skips_empty_table_files() -> TestResult {
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
     let model = build_model(builder)?;
-    let compiled_schema = &schema;
+    let schema = &schema;
     let options = coflow_exporter_json::JsonExporter
         .decode_options(&json!({}))
         .map_err(|err| format!("decode JSON output options: {err:?}"))?;
     let artifacts = coflow_exporter_json::JsonExporter
         .export(
             ExportContext {
-                schema: compiled_schema,
+                schema: schema,
                 model: &model,
             },
             &options,

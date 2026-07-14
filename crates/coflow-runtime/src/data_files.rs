@@ -141,7 +141,7 @@ pub fn sync_data_header(
         Some(options.actual_type),
         options.sheet,
     )?;
-    let compiled_schema = session.schema();
+    let schema = session.schema();
     let result = manager.sync_header(
         table_context(session),
         &SyncHeaderRequest {
@@ -151,7 +151,7 @@ pub fn sync_data_header(
                 .then_some(layout.sheet.as_str()),
             actual_type: &layout.actual_type,
             headers: &layout.headers,
-            schema: Some(compiled_schema),
+            schema: Some(schema),
         },
     )?;
     Ok(report(
@@ -367,8 +367,8 @@ pub fn table_header_layout(
                 )
             })?,
     };
-    let compiled_schema = session.schema();
-    let schema_type = compiled_schema.type_meta(&actual_type).ok_or_else(|| {
+    let schema = session.schema();
+    let schema_type = schema.type_meta(&actual_type).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-TYPE",
             format!("unknown CFT type `{actual_type}`"),
@@ -390,7 +390,7 @@ pub fn table_header_layout(
     let mut headers = vec![header_options.key_column().to_string()];
     let field_headers = header_options.field_headers();
     headers.extend(
-        compiled_schema
+        schema
             .full_fields(&actual_type)
             .unwrap_or(&[])
             .iter()

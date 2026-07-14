@@ -21,7 +21,7 @@ pub struct SchemaTextOverride {
 }
 
 #[derive(Debug)]
-struct ProjectSchemaBuild {
+struct ProjectSchemaAttempt {
     schema: Option<CftSchema>,
     modules: CftModuleSet,
     diagnostics: DiagnosticSet,
@@ -32,7 +32,7 @@ struct ProjectSchemaBuild {
 fn collect_project_schema(
     project: &Project,
     overrides: &[SchemaTextOverride],
-) -> Result<ProjectSchemaBuild, DiagnosticSet> {
+) -> Result<ProjectSchemaAttempt, DiagnosticSet> {
     let source_set = project.schema_sources()?;
     let mut matched_overrides = vec![false; overrides.len()];
     let mut files = Vec::new();
@@ -101,7 +101,7 @@ fn collect_project_schema(
         &sources,
         &paths,
     );
-    Ok(ProjectSchemaBuild {
+    Ok(ProjectSchemaAttempt {
         schema,
         modules,
         diagnostics,
@@ -115,14 +115,14 @@ fn collect_project_schema(
 ///
 /// Returns unrecoverable project/schema I/O errors. User-fixable project and
 /// schema diagnostics are captured in the returned session diagnostics.
-pub(crate) fn build_project_schema_session(
+pub(crate) fn open_project_schema_session(
     project: Project,
 ) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let diagnostics = project.schema_diagnostic_set();
-    build_project_schema_with_diagnostics(project, diagnostics, &[])
+    open_project_schema_attempt(project, diagnostics, &[])
 }
 
-pub(crate) fn build_project_schema_with_diagnostics(
+pub(crate) fn open_project_schema_attempt(
     project: Project,
     diagnostics: DiagnosticSet,
     overrides: &[SchemaTextOverride],

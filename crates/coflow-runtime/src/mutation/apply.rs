@@ -63,10 +63,10 @@ fn execute_generation_mutation(
     mut failed: Vec<MutationFailedOp>,
     executable: &[ExecutableMutation],
 ) -> MutationReport {
-    let compiled_schema = session.schema();
+    let schema = session.schema();
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: compiled_schema,
+        schema: schema,
         model: Some(&session.model),
     };
     let transaction =

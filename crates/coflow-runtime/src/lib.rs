@@ -27,7 +27,7 @@ mod mutation;
 mod query;
 mod records;
 mod runtime;
-mod schema_build;
+mod project_schema;
 mod schema_diagnostics;
 mod schema_inspect;
 mod session;
@@ -70,7 +70,7 @@ pub use records::{
 pub use runtime::{
     BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
 };
-pub use schema_build::SchemaTextOverride;
+pub use project_schema::SchemaTextOverride;
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,
     SchemaConstValueInfo, SchemaDefaultValueInfo, SchemaEnumInfo, SchemaEnumVariantInfo,

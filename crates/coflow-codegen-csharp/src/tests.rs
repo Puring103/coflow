@@ -952,14 +952,14 @@ fn provider_generation_preserves_multiple_validation_diagnostics() -> Result<(),
             type foo_bar {}
         "#,
     )?;
-    let compiled_schema = &schema;
+    let schema = &schema;
     let options = CsharpCodeGenerator
         .decode_options(&serde_json::json!({"namespace": "invalid namespace"}))
         .map_err(|diagnostics| format!("decode C# options: {diagnostics:?}"))?;
     let diagnostics = CsharpCodeGenerator
         .generate(
             CodegenContext {
-                schema: compiled_schema,
+                schema: schema,
                 model: None,
                 data_format: "json",
                 id_as_enum_variants: &serde_json::Value::Null,
@@ -976,14 +976,14 @@ fn provider_generation_preserves_multiple_validation_diagnostics() -> Result<(),
 #[test]
 fn provider_generation_honors_database_class_option() -> Result<(), String> {
     let schema = compile_schema("type Item {}")?;
-    let compiled_schema = &schema;
+    let schema = &schema;
     let options = CsharpCodeGenerator
         .decode_options(&serde_json::json!({"database_class": "RuntimeConfig"}))
         .map_err(|diagnostics| format!("decode C# options: {diagnostics:?}"))?;
     let artifacts = CsharpCodeGenerator
         .generate(
             CodegenContext {
-                schema: compiled_schema,
+                schema: schema,
                 model: None,
                 data_format: "json",
                 id_as_enum_variants: &serde_json::Value::Null,

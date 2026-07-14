@@ -22,20 +22,20 @@ pub(crate) fn preflight_mutation_op(
     else {
         return Ok(());
     };
-    let compiled_schema = session.schema();
+    let schema = session.schema();
     let request = WriteCellRequest {
         origin: &plan.target.origin,
         record_key: &plan.target.coordinate.key,
         actual_type: &plan.target.coordinate.actual_type,
         field_path: &plan.target.field_path,
         new_value: value,
-        schema: compiled_schema,
+        schema: schema,
         source: &plan.source,
     };
     let diagnostics = plan.writer.preflight(
         WriteContext {
             project_root: &session.project.root_dir,
-            schema: compiled_schema,
+            schema: schema,
             model: Some(&session.model),
         },
         &request,
@@ -219,19 +219,19 @@ fn stage_write_field(
     host_record: &RecordCoordinate,
     new_value: &CfdValue,
 ) -> Result<WriteOutcome, DiagnosticSet> {
-    let compiled_schema = session.schema();
+    let schema = session.schema();
     let request = WriteCellRequest {
         origin: &plan.target.origin,
         record_key: &plan.target.coordinate.key,
         actual_type: &plan.target.coordinate.actual_type,
         field_path: &plan.target.field_path,
         new_value,
-        schema: compiled_schema,
+        schema: schema,
         source: &plan.source,
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: compiled_schema,
+        schema: schema,
         model: Some(&session.model),
     };
     let provider_outcome = plan.writer.write_field(ctx, &request)?;
@@ -274,10 +274,10 @@ fn stage_rename_record_key(
         RenamePlan::Write(plan) => plan,
     };
     let plan: &RenameWritePlan = plan;
-    let compiled_schema = session.schema();
+    let schema = session.schema();
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: compiled_schema,
+        schema: schema,
         model: Some(&session.model),
     };
     let target_request = RenameRecordRequest {
@@ -286,21 +286,21 @@ fn stage_rename_record_key(
         new_key,
         actual_type: &plan.old_coordinate.actual_type,
         source: &plan.source,
-        schema: compiled_schema,
+        schema: schema,
     };
     let mut diagnostics = plan.writer.rename_record(ctx, &target_request)?.diagnostics;
     let mut affected_files = BTreeSet::from([plan.display_path.clone()]);
     for action in &plan.reference_actions {
         let outcome = action
             .writer
-            .write_field(ctx, &action.request.as_request(compiled_schema))?;
+            .write_field(ctx, &action.request.as_request(schema))?;
         diagnostics.extend(outcome.diagnostics);
         affected_files.insert(action.display_path().to_string());
     }
     for action in &plan.rewrite_actions {
         let outcome = action
             .writer
-            .rewrite_record_references(ctx, &action.request.as_request(compiled_schema))?;
+            .rewrite_record_references(ctx, &action.request.as_request(schema))?;
         diagnostics.extend(outcome.diagnostics);
         affected_files.insert(action.display_path().to_string());
     }
@@ -328,18 +328,18 @@ fn stage_insert_record(
     actual_type: &str,
     fields: &std::collections::BTreeMap<String, CfdValue>,
 ) -> Result<WriteOutcome, DiagnosticSet> {
-    let compiled_schema = session.schema();
+    let schema = session.schema();
     let request = InsertRecordRequest {
         source: &plan.source,
         sheet: plan.sheet.as_deref(),
         record_key,
         actual_type,
         fields,
-        schema: compiled_schema,
+        schema: schema,
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: compiled_schema,
+        schema: schema,
         model: Some(&session.model),
     };
     let provider_outcome = plan.writer.insert_record(ctx, &request)?;
@@ -359,7 +359,7 @@ fn stage_delete_record(
     plan: &DeletePlan,
     record: &RecordCoordinate,
 ) -> Result<WriteOutcome, DiagnosticSet> {
-    let compiled_schema = session.schema();
+    let schema = session.schema();
     let request = DeleteRecordRequest {
         origin: &plan.origin,
         record_key: &record.key,
@@ -368,7 +368,7 @@ fn stage_delete_record(
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: compiled_schema,
+        schema: schema,
         model: Some(&session.model),
     };
     let provider_outcome = plan.writer.delete_record(ctx, &request)?;

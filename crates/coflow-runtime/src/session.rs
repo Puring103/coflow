@@ -379,7 +379,7 @@ impl ProjectSession {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProjectSchemaSession {
     pub(crate) project: Project,
     pub(crate) modules: Arc<CftModuleSet>,

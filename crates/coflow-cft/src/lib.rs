@@ -33,7 +33,7 @@
 
 pub mod ast;
 mod build;
-mod compiled_schema;
+mod cft_schema;
 mod dimensions;
 mod error;
 mod identifier;
@@ -45,7 +45,7 @@ mod schema;
 mod span;
 
 pub use coflow_structure::StructuralLimits;
-pub use compiled_schema::{
+pub use cft_schema::{
     CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftEnumVariantMeta, CftFieldMeta,
     CftTypeMeta, CftSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
     ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,

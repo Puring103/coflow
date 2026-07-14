@@ -83,7 +83,7 @@ fn build_session(
 }
 
 fn schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
-    Runtime::build_schema_session(project)
+    Runtime::open_schema_session(project)
 }
 
 #[test]

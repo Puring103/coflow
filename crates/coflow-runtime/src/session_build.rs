@@ -15,7 +15,7 @@ use crate::load::{
     empty_load_output, empty_model, load_project_data, reload_project_data_from_cache,
     LoadDiagnostics, LoadProjectDataOptions, ProjectLoadOutput, SourceDataCache,
 };
-use crate::schema_build::build_project_schema_with_diagnostics;
+use crate::project_schema::open_project_schema_attempt;
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::writes::MutationImpact;
 
@@ -87,7 +87,7 @@ pub(crate) fn build_project_session_with_effects(
     registry: &ProviderRegistry,
     options: SessionOpenOptions,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
-    finish_project_session(build_schema_session(project)?, registry, options)
+    finish_project_session(open_schema_session(project)?, registry, options)
 }
 
 pub(crate) fn rebuild_project_session_from_generation(
@@ -156,10 +156,10 @@ fn finish_project_session(
     })
 }
 
-fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
+fn open_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let mut initial_diagnostics = project.schema_diagnostic_set();
     initial_diagnostics.extend(project.data_diagnostic_set());
-    build_project_schema_with_diagnostics(project, initial_diagnostics, &[])
+    open_project_schema_attempt(project, initial_diagnostics, &[])
 }
 
 struct SessionBuildContext<'a> {
@@ -363,7 +363,6 @@ fn load_data(
     let output = match load_project_data(
         &ctx.project,
         &ctx.schema,
-        &ctx.schema,
         ctx.registry,
         &mut indexes,
         LoadProjectDataOptions {
@@ -396,7 +395,6 @@ fn load_cached_data(
     let mut indexes = SessionIndexBuilder::default();
     let output = match reload_project_data_from_cache(
         &ctx.project,
-        &ctx.schema,
         &ctx.schema,
         ctx.registry,
         &mut indexes,

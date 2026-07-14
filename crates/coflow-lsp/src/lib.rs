@@ -329,7 +329,7 @@ fn cfd_definition(document: &validation::CfdRequestDocument<'_>, offset: usize) 
 }
 
 impl<W: Write> LspServer<W> {
-    const fn new(project: Project, writer: W) -> Self {
+    fn new(project: Project, writer: W) -> Self {
         Self {
             core: LspValidationCore::new(project),
             writer,

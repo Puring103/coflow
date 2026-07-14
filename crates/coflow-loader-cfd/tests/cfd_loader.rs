@@ -549,7 +549,7 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
 #[test]
 fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let schema = compile_schema("type Item { value: int; }");
-    let compiled_schema = &schema;
+    let schema = &schema;
     let root = std::env::temp_dir().join("coflow-cfd-loader-origin-spans");
     if root.exists() {
         fs::remove_dir_all(&root)?;
@@ -566,7 +566,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
         .load(
             SourceLoadContext {
                 project_root: &root,
-                schema: compiled_schema,
+                schema: schema,
             },
             &ResolvedSource {
                 provider_id: "cfd".to_string(),
