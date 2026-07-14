@@ -8,7 +8,6 @@ const fn options(max_depth: u64, max_nodes: u64) -> CftParseOptions {
         structural_limits: StructuralLimits::new(max_depth, max_nodes, 10_000),
     }
 }
-
 fn parse(source: &str, max_depth: u64, max_nodes: u64) -> Result<(), coflow_cft::CftDiagnostics> {
     parse_module_with_options(
         &ModuleId::from("main"),

@@ -182,4 +182,3 @@ fn validate_dimension_schema_config(project: &Project, schema: &CftSchema) -> Di
     }
     diagnostics
 }
-
