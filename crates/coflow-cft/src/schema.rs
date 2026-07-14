@@ -3,7 +3,8 @@ mod support;
 mod type_checker;
 
 use self::compiler::SchemaCompiler;
-use crate::container::{CftContainer, ModuleId};
+use crate::container::ModuleId;
+use crate::module_set::CftModuleSet;
 use crate::error::CftDiagnostics;
 use crate::span::Span;
 use coflow_structure::{StructuralBudget, StructuralLimits};
@@ -320,11 +321,11 @@ pub(crate) struct SchemaReflection {
     pub(crate) enums: BTreeMap<String, CftSchemaEnum>,
 }
 
-pub(crate) fn compile_container(
-    container: &CftContainer,
+pub(crate) fn compile_module_set(
+    modules: &CftModuleSet,
     options: CftCompileOptions,
 ) -> Result<(SchemaReflection, StructuralBudget), CftDiagnostics> {
-    let mut compiler = SchemaCompiler::new(container, options);
+    let mut compiler = SchemaCompiler::new(modules, options);
     let reflection = compiler.compile()?;
     Ok((reflection, compiler.budget))
 }

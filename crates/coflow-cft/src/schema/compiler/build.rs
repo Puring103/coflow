@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 impl SchemaCompiler<'_> {
     pub(super) fn build_schema(&self) -> SchemaReflection {
         let mut modules = self
-            .container
+            .modules
             .modules
             .keys()
             .map(|id| {

@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 impl SchemaCompiler<'_> {
     pub(super) fn report_dangling_annotations(&mut self) {
-        for (module_id, module) in &self.container.modules {
+        for (module_id, module) in &self.modules.modules {
             for annotation in &module.ast.dangling_annotations {
                 self.push_diag(
                     CftErrorCode::AnnotationWithoutTarget,
@@ -58,7 +58,7 @@ impl SchemaCompiler<'_> {
     }
 
     pub(super) fn collect_symbols(&mut self) {
-        for (module_id, module) in &self.container.modules {
+        for (module_id, module) in &self.modules.modules {
             for item in &module.ast.items {
                 match item {
                     Item::Const(def) => {

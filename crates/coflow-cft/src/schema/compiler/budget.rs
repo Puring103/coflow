@@ -16,9 +16,9 @@ struct LocatedBudgetError {
 
 impl SchemaCompiler<'_> {
     pub(super) fn validate_structure(&mut self) -> bool {
-        let container = self.container;
+        let modules = self.modules;
         let budget = &mut self.budget;
-        for (module_id, module) in &container.modules {
+        for (module_id, module) in &modules.modules {
             if let Err(error) = validate_module(
                 budget,
                 module_id,

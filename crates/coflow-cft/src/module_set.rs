@@ -28,9 +28,9 @@ impl CftFile {
 /// A parsed CFT module retained for diagnostics and language tooling.
 #[derive(Debug, Clone)]
 pub struct ParsedCftModule {
-    path: PathBuf,
-    source: String,
-    ast: ModuleAst,
+    pub(crate) path: PathBuf,
+    pub(crate) source: String,
+    pub(crate) ast: ModuleAst,
 }
 
 impl ParsedCftModule {
@@ -54,7 +54,7 @@ impl ParsedCftModule {
 #[derive(Debug, Clone)]
 pub struct CftModuleSet {
     pub(crate) modules: BTreeMap<ModuleId, ParsedCftModule>,
-    diagnostics: CftDiagnostics,
+    pub(crate) diagnostics: CftDiagnostics,
 }
 
 impl CftModuleSet {

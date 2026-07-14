@@ -9,14 +9,15 @@ use super::support::{ConstInfo, EnumInfo, FieldInfo, Symbol, TypeInfo};
 use super::type_checker::TypeChecker;
 use super::{CftCompileOptions, SchemaReflection};
 use crate::ast::{ConstLiteral, TypeRefKind};
-use crate::container::{CftContainer, ModuleId};
+use crate::container::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
+use crate::module_set::CftModuleSet;
 use crate::span::Span;
 use coflow_structure::StructuralBudget;
 use std::collections::BTreeMap;
 
 pub(super) struct SchemaCompiler<'a> {
-    pub(super) container: &'a CftContainer,
+    pub(super) modules: &'a CftModuleSet,
     pub(super) diagnostics: Vec<CftDiagnostic>,
     pub(super) symbols: BTreeMap<String, Symbol>,
     pub(super) consts: BTreeMap<String, ConstInfo<'a>>,
@@ -28,9 +29,9 @@ pub(super) struct SchemaCompiler<'a> {
 }
 
 impl<'a> SchemaCompiler<'a> {
-    pub(super) fn new(container: &'a CftContainer, options: CftCompileOptions) -> Self {
+    pub(super) fn new(modules: &'a CftModuleSet, options: CftCompileOptions) -> Self {
         Self {
-            container,
+            modules,
             diagnostics: Vec::new(),
             symbols: BTreeMap::new(),
             consts: BTreeMap::new(),
