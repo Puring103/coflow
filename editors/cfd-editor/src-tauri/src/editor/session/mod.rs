@@ -570,7 +570,8 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
     let queries = session.queries();
     let ctx = WireContext::new(queries, &session.diagnostics);
     let mut records = Vec::new();
-    let mut columns = BTreeMap::<String, ColumnStats>::new();
+    let mut columns = Vec::<(String, ColumnStats)>::new();
+    let mut column_index = BTreeMap::<String, usize>::new();
     let mut type_seen = Vec::new();
     let mut type_set = HashSet::new();
     for view in queries.record_views_in_file(file_path) {
@@ -579,7 +580,16 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
         }
         let row = record_view_to_row(&view, &ctx);
         for field in &row.fields {
-            let stats = columns.entry(field.name.clone()).or_default();
+            let index = match column_index.get(&field.name) {
+                Some(index) => *index,
+                None => {
+                    let index = columns.len();
+                    columns.push((field.name.clone(), ColumnStats::default()));
+                    column_index.insert(field.name.clone(), index);
+                    index
+                }
+            };
+            let stats = &mut columns[index].1;
             stats.type_names.insert(row.coordinate.actual_type.clone());
             let summary_len = row.field_summaries.get(&field.name).map_or(0, String::len);
             stats.max_summary_len = stats.max_summary_len.max(summary_len);

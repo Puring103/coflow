@@ -108,13 +108,32 @@ fn normalized_severity(severity: &str) -> &'static str {
 }
 
 fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
-    record
+    // `CfdRecord` stores fields in a BTreeMap for deterministic lookup, not
+    // presentation. The schema retains the declared (including inherited)
+    // field order, which is what users expect in the editor.
+    let declared_names = ctx
+        .queries
+        .schema_type_fields(record.actual_type())
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
+    let declared_name_set = declared_names.iter().cloned().collect::<BTreeSet<_>>();
+    let remaining_names = record
         .fields()
-        .iter()
-        .map(|(name, value)| FieldCell {
-            name: name.clone(),
-            value: value.clone(),
-            annotation: build_annotation(record, name, value, ctx, &[]),
+        .keys()
+        .filter(|name| !declared_name_set.contains(*name))
+        .cloned();
+
+    declared_names
+        .into_iter()
+        .chain(remaining_names)
+        .filter_map(|name| {
+            let value = record.fields().get(&name)?;
+            Some(FieldCell {
+                name: name.clone(),
+                value: value.clone(),
+                annotation: build_annotation(record, &name, value, ctx, &[]),
+            })
         })
         .collect()
 }

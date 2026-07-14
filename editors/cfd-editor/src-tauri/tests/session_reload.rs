@@ -686,6 +686,59 @@ fn row_diagnostics_are_precomputed_by_backend() {
 }
 
 #[test]
+fn file_records_follow_schema_field_definition_order() {
+    let root = temp_project_dir("cfd-editor-field-order");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                zulu: string;
+                alpha: int;
+                middle: bool;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        r#"sword: Item { zulu: "Z", alpha: 1, middle: true }"#,
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/items.cfd\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let records = store
+        .get_file_records(snapshot.session_id, "data/items.cfd")
+        .expect("load file records");
+
+    assert_eq!(
+        records.records[0]
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>(),
+        ["zulu", "alpha", "middle"]
+    );
+    assert_eq!(
+        records
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<Vec<_>>(),
+        ["zulu", "alpha", "middle"]
+    );
+}
+
+#[test]
 fn load_project_does_not_generate_missing_dimension_sources() {
     let root = temp_project_dir("cfd-editor-dim-no-generate");
     let _cleanup = TempDirCleanup(root.clone());
