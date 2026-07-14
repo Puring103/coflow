@@ -9,10 +9,35 @@
 
 mod common;
 use coflow_cft::{
-    is_cft_identifier, record_key_ident_error, CftSchemaField, CftSchemaType, CftSchemaTypeRef,
-    Span, ValueDependencyMode,
+    is_cft_identifier, parse_modules, record_key_ident_error, CftFile, CftSchemaField,
+    CftSchemaType, CftSchemaTypeRef, ModuleId, Span, ValueDependencyMode,
 };
 use common::*;
+use std::path::PathBuf;
+
+#[test]
+fn parsed_module_set_preserves_module_source_and_ast() {
+    let modules = parse_modules([
+        CftFile::new(
+            ModuleId::new("schema/items.cft"),
+            PathBuf::from("schema/items.cft"),
+            "type Item { id: int; }",
+        ),
+        CftFile::new(
+            ModuleId::new("schema/rewards.cft"),
+            PathBuf::from("schema/rewards.cft"),
+            "type Reward { value: int; }",
+        ),
+    ]);
+
+    assert!(modules.diagnostics().is_empty());
+    let item = modules
+        .module(&ModuleId::new("schema/items.cft"))
+        .expect("collected item module");
+    assert_eq!(item.source(), "type Item { id: int; }");
+    assert_eq!(item.path(), PathBuf::from("schema/items.cft").as_path());
+    assert_eq!(item.ast().items.len(), 1);
+}
 
 #[test]
 fn record_key_identifier_helper_accepts_only_cft_identifiers() {
