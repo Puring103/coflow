@@ -501,11 +501,13 @@ fn spread_write_reports_source_and_matches_full_check_diagnostics() {
         .filter(|diagnostic| diagnostic.stage == "CHECK")
         .cloned()
         .collect::<Vec<_>>();
+    let canonical_root = std::fs::canonicalize(&root).expect("canonicalize spread project root");
     for diagnostic in &mut incremental_check_diagnostics {
         if let Some(path) = diagnostic.file_path.as_deref() {
             diagnostic.file_path = Some(
-                std::path::Path::new(path)
-                    .strip_prefix(&root)
+                std::fs::canonicalize(path)
+                    .expect("canonicalize incremental diagnostic path")
+                    .strip_prefix(&canonical_root)
                     .expect("incremental diagnostic path under project root")
                     .to_string_lossy()
                     .replace('\\', "/"),
