@@ -31,14 +31,15 @@ impl LspBuild {
         let mut module_by_uri = BTreeMap::new();
         let mut module_by_path = BTreeMap::new();
 
-        for (module_id, source) in &schema.sources {
-            let path = schema
-                .paths
-                .get(module_id)
-                .map_or_else(|| PathBuf::from(module_id), PathBuf::from);
+        for (module_id, module) in schema.modules.files() {
+            let module_id = module_id.as_str().to_string();
+            let source = module.source();
+            let path = module.path().to_path_buf();
             let uri = path_to_file_uri(&path);
-            let ast =
-                coflow_cft::parser::parse_module(&ModuleId::new(module_id.clone()), source).ok();
+            let ast = schema
+                .modules
+                .module(&ModuleId::new(module_id.clone()))
+                .map(|parsed| parsed.ast().clone());
             module_by_uri.insert(uri.clone(), module_id.clone());
             module_by_path.insert(normalize_path(&path), module_id.clone());
             documents.insert(
@@ -46,7 +47,7 @@ impl LspBuild {
                 LspDocument {
                     module_id: module_id.clone(),
                     uri,
-                    source: source.clone(),
+                    source: source.to_string(),
                     ast,
                 },
             );
@@ -69,8 +70,8 @@ impl LspBuild {
         self
     }
 
-    pub(crate) const fn container(&self) -> Option<&coflow_cft::CftContainer> {
-        self.schema.container.as_ref()
+    pub(crate) const fn schema(&self) -> Option<&coflow_cft::CftSchema> {
+        self.schema.schema.as_ref()
     }
 
     pub(crate) fn document_by_uri(&self, uri: &str) -> Option<&LspDocument> {
@@ -92,7 +93,7 @@ pub(crate) fn current_type_at<'a>(
     document: &LspDocument,
     offset: usize,
 ) -> Option<&'a CftSchemaType> {
-    build.container()?.all_types().find(|ty| {
+    build.schema()?.all_types().find(|ty| {
         ty.module.as_str() == document.module_id && ty.span.start <= offset && offset <= ty.span.end
     })
 }
@@ -151,8 +152,8 @@ pub(crate) fn field_by_type<'a>(
     type_name: &str,
     field_name: &str,
 ) -> Option<(&'a CftSchemaType, &'a CftSchemaField)> {
-    let container = build.container()?;
-    let mut current = container.resolve_type(type_name);
+    let schema = build.schema()?;
+    let mut current = schema.resolve_type(type_name);
     while let Some(ty) = current {
         if let Some(field) = ty.fields.iter().find(|field| field.name == field_name) {
             return Some((ty, field));
@@ -160,7 +161,7 @@ pub(crate) fn field_by_type<'a>(
         current = ty
             .parent
             .as_deref()
-            .and_then(|parent| container.resolve_type(parent));
+            .and_then(|parent| schema.resolve_type(parent));
     }
     None
 }
@@ -197,7 +198,7 @@ pub(crate) fn enum_variant_by_chain<'a>(
     if chain.len() != 2 {
         return None;
     }
-    let enum_def = build.container()?.resolve_enum(&chain[0])?;
+    let enum_def = build.schema()?.resolve_enum(&chain[0])?;
     let variant = enum_def
         .variants
         .iter()
@@ -207,8 +208,8 @@ pub(crate) fn enum_variant_by_chain<'a>(
 
 pub(crate) fn enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
     build
-        .container()
-        .is_some_and(|container| container.resolve_enum(enum_name).is_some())
+        .schema()
+        .is_some_and(|schema| schema.resolve_enum(enum_name).is_some())
         || ast_enum_name_exists(build, enum_name)
 }
 

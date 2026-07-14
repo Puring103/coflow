@@ -262,6 +262,19 @@ impl CftContainer {
 
     fn module_set(&self) -> CftModuleSet {
         CftModuleSet {
+            files: self
+                .modules
+                .iter()
+                .map(|(id, module)| {
+                    (
+                        id.clone(),
+                        crate::CftModuleFile::new(
+                            std::path::PathBuf::from(id.as_str()),
+                            module.source.clone(),
+                        ),
+                    )
+                })
+                .collect(),
             modules: self
                 .modules
                 .iter()

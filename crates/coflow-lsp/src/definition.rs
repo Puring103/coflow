@@ -1,6 +1,6 @@
 use coflow_cfd::CfdAst;
 use coflow_cft::ast::Item;
-use coflow_cft::{CftContainer, Span};
+use coflow_cft::{CftSchema, Span};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -37,7 +37,7 @@ impl CfdDefinitionIndex {
         Self { records }
     }
 
-    fn location(&self, schema: &CftContainer, expected_type: &str, key: &str) -> Option<Value> {
+    fn location(&self, schema: &CftSchema, expected_type: &str, key: &str) -> Option<Value> {
         if let Some(location) = self
             .records
             .get(expected_type)
@@ -47,7 +47,6 @@ impl CfdDefinitionIndex {
             return Some(location.clone());
         }
         schema
-            .compiled_schema()
             .concrete_assignable_types(expected_type)?
             .into_iter()
             .filter(|actual_type| actual_type != expected_type)
@@ -235,7 +234,7 @@ fn ast_enum_variant_name_span(
 }
 
 fn global_location(build: &LspBuild, name: &str) -> Option<Value> {
-    let container = build.container()?;
+    let container = build.schema()?;
     if let Some(ty) = container.resolve_type(name) {
         let document = build.document_by_module(&ty.module)?;
         return Some(location(
@@ -307,6 +306,6 @@ pub(crate) fn cfd_record_definition_location(
     key: &str,
 ) -> Option<Value> {
     build
-        .container()
+        .schema()
         .and_then(|schema| build.cfd_definitions.location(schema, expected_type, key))
 }

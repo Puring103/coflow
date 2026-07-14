@@ -4,7 +4,7 @@
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
 use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdSyntaxDiagnostic, CfdValue};
-use coflow_cft::{CftContainer, CftSchemaTypeRef, Span};
+use coflow_cft::{CftSchema, CftSchemaTypeRef, Span};
 use serde_json::{json, Value};
 
 // ── Semantic token type indices (must match SEMANTIC_TOKEN_TYPES in lib.rs) ──
@@ -188,7 +188,7 @@ fn collect_comment_tokens(source: &str, c: &mut TokenCollector<'_>) {
 /// Hover: return type info when cursor is on a type name span.
 ///
 /// Returns `Value::Null` when there is nothing to show.
-pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftContainer>, offset: usize) -> Value {
+pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usize) -> Value {
     for record in &ast.records {
         if span_contains(record.type_span, offset) {
             let detail = schema
@@ -235,7 +235,7 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftContainer>, offset: 
 pub fn completion(
     _source: &str,
     ast: &CfdAst,
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     offset: usize,
 ) -> Value {
     let Some(schema) = schema else {
@@ -332,7 +332,7 @@ fn type_name_in_value(value: &CfdValue, offset: usize) -> Option<&str> {
 /// CFD record field.
 pub fn definition_field_name<'a>(
     ast: &'a CfdAst,
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     offset: usize,
 ) -> Option<(String, &'a str)> {
     for record in &ast.records {
@@ -348,7 +348,7 @@ pub fn definition_field_name<'a>(
 
 fn field_name_in_entry<'a>(
     entry: &'a CfdBlockEntry,
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     owner_type: String,
     offset: usize,
 ) -> Option<(String, &'a str)> {
@@ -362,7 +362,7 @@ fn field_name_in_entry<'a>(
 
 fn field_name_in_fields<'a>(
     fields: &'a [coflow_cfd::CfdField],
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     owner_type: String,
     offset: usize,
 ) -> Option<(String, &'a str)> {
@@ -390,7 +390,7 @@ fn field_name_in_fields<'a>(
 
 fn field_name_in_value<'a>(
     value: &'a CfdValue,
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     owner_type: String,
     offset: usize,
 ) -> Option<(String, &'a str)> {
@@ -443,7 +443,7 @@ fn named_type_name(ty: &CftSchemaTypeRef) -> Option<&str> {
 /// Definition: return the expected schema type and key under a reference.
 pub fn definition_ref_target(
     ast: &CfdAst,
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     offset: usize,
 ) -> Option<(String, String)> {
     let schema = schema?;
@@ -459,7 +459,7 @@ pub fn definition_ref_target(
 
 fn ref_target_in_entry(
     entry: &CfdBlockEntry,
-    schema: &CftContainer,
+    schema: &CftSchema,
     owner_type: &str,
     offset: usize,
 ) -> Option<(String, String)> {
@@ -484,7 +484,7 @@ fn ref_target_in_entry(
 
 fn ref_target_in_value(
     value: &CfdValue,
-    schema: &CftContainer,
+    schema: &CftSchema,
     expected_type: &CftSchemaTypeRef,
     offset: usize,
 ) -> Option<(String, String)> {

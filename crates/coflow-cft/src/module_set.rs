@@ -33,6 +33,29 @@ pub struct ParsedCftModule {
     pub(crate) ast: ModuleAst,
 }
 
+/// The collected text of a CFT module, retained even when parsing fails.
+#[derive(Debug, Clone)]
+pub struct CftModuleFile {
+    path: PathBuf,
+    source: String,
+}
+
+impl CftModuleFile {
+    pub(crate) fn new(path: PathBuf, source: String) -> Self {
+        Self { path, source }
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    #[must_use]
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+}
+
 impl ParsedCftModule {
     #[must_use]
     pub fn path(&self) -> &Path {
@@ -53,6 +76,7 @@ impl ParsedCftModule {
 /// Immutable parse result shared by schema construction and language tooling.
 #[derive(Debug, Clone)]
 pub struct CftModuleSet {
+    pub(crate) files: BTreeMap<ModuleId, CftModuleFile>,
     pub(crate) modules: BTreeMap<ModuleId, ParsedCftModule>,
     pub(crate) diagnostics: CftDiagnostics,
 }
@@ -94,16 +118,26 @@ impl CftModuleSet {
     pub fn modules(&self) -> impl Iterator<Item = (&ModuleId, &ParsedCftModule)> {
         self.modules.iter()
     }
+
+    #[must_use]
+    pub fn file(&self, module: &ModuleId) -> Option<&CftModuleFile> {
+        self.files.get(module)
+    }
+
+    pub fn files(&self) -> impl Iterator<Item = (&ModuleId, &CftModuleFile)> {
+        self.files.iter()
+    }
 }
 
 /// Parses collected CFT files once and retains successful ASTs for later consumers.
 #[must_use]
 pub fn parse_modules(files: impl IntoIterator<Item = CftFile>) -> CftModuleSet {
+    let mut collected = BTreeMap::new();
     let mut modules = BTreeMap::new();
     let mut diagnostics = Vec::new();
 
     for file in files {
-        if modules.contains_key(&file.module) {
+        if collected.contains_key(&file.module) {
             diagnostics.push(CftDiagnostic::error(
                 CftErrorCode::DuplicateModule,
                 file.module,
@@ -113,13 +147,24 @@ pub fn parse_modules(files: impl IntoIterator<Item = CftFile>) -> CftModuleSet {
             continue;
         }
 
-        match parse_module(&file.module, &file.source) {
+        let module = file.module;
+        let path = file.path;
+        let source = file.source;
+        let parsed = parse_module(&module, &source);
+        collected.insert(
+            module.clone(),
+            CftModuleFile {
+                path: path.clone(),
+                source: source.clone(),
+            },
+        );
+        match parsed {
             Ok(ast) => {
                 modules.insert(
-                    file.module,
+                    module,
                     ParsedCftModule {
-                        path: file.path,
-                        source: file.source,
+                        path,
+                        source,
                         ast,
                     },
                 );
@@ -129,6 +174,7 @@ pub fn parse_modules(files: impl IntoIterator<Item = CftFile>) -> CftModuleSet {
     }
 
     CftModuleSet {
+        files: collected,
         modules,
         diagnostics: CftDiagnostics::new(diagnostics),
     }

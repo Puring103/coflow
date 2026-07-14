@@ -12,7 +12,7 @@ use crate::container::ModuleId;
 use crate::schema::SchemaReflection;
 use crate::{
     CftAnnotation, CftConstValue, CftDiagnostic, CftDiagnostics, CftErrorCode, CftSchemaCheckBlock,
-    CftSchemaEnum, CftSchemaType, CftSchemaTypeRef, Span,
+    CftSchemaConst, CftSchemaEnum, CftSchemaType, CftSchemaTypeRef, Span,
 };
 use coflow_structure::{BudgetExceeded, StructuralBudget, StructuralLimits};
 use std::collections::{BTreeMap, BTreeSet};
@@ -235,6 +235,32 @@ impl CftSchema {
 
     pub fn type_metas(&self) -> impl Iterator<Item = &CftTypeMeta> {
         self.types.values()
+    }
+
+    /// Returns the semantic declaration retained for language tooling.
+    #[must_use]
+    pub fn resolve_type(&self, name: &str) -> Option<&CftSchemaType> {
+        self.reflection.types.get(name)
+    }
+
+    /// Returns the semantic enum declaration retained for language tooling.
+    #[must_use]
+    pub fn resolve_enum(&self, name: &str) -> Option<&CftSchemaEnum> {
+        self.reflection.enums.get(name)
+    }
+
+    /// Returns the semantic const declaration retained for language tooling.
+    #[must_use]
+    pub fn resolve_const(&self, name: &str) -> Option<&CftSchemaConst> {
+        self.reflection.consts.get(name)
+    }
+
+    pub fn all_types(&self) -> impl Iterator<Item = &CftSchemaType> {
+        self.reflection.types.values()
+    }
+
+    pub fn all_enums(&self) -> impl Iterator<Item = &CftSchemaEnum> {
+        self.reflection.enums.values()
     }
 
     pub fn module_ids(&self) -> impl Iterator<Item = &ModuleId> {

@@ -3,7 +3,7 @@ mod worker;
 
 use coflow_api::DiagnosticSet;
 use coflow_cfd::CfdAst;
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchema;
 use coflow_project::{normalize_path, Project};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -51,7 +51,7 @@ pub(crate) enum LspRequestDocument<'a> {
 pub(crate) struct CfdRequestDocument<'a> {
     pub(crate) source: &'a str,
     pub(crate) ast: &'a CfdAst,
-    pub(crate) schema: Option<&'a CftContainer>,
+    pub(crate) schema: Option<&'a CftSchema>,
     pub(crate) build: Option<&'a LspBuild>,
 }
 
@@ -78,9 +78,9 @@ impl LspValidationCore {
             .and_then(|snapshot| snapshot.build.as_ref())
     }
 
-    pub(crate) fn schema(&self) -> Option<&CftContainer> {
+    pub(crate) fn schema(&self) -> Option<&CftSchema> {
         self.build()
-            .and_then(|build| build.schema.container.as_ref())
+            .and_then(LspBuild::schema)
     }
 
     pub(crate) fn apply_open_document(

@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::panic_in_result_fn)]
 
 use coflow_api::SourceLocation;
-use coflow_cft::CftErrorCode;
+use coflow_cft::{CftErrorCode, ModuleId};
 use coflow_project::{normalize_path, Project};
 use coflow_runtime::{compile_schema_project_with_overrides, SchemaSourceOverride};
 use std::path::PathBuf;
@@ -22,8 +22,11 @@ fn schema_overrides_match_by_module_or_path_and_reject_unmatched() -> TestResult
         }],
     )
     .map_err(|err| err.to_string())?;
-    assert!(build.container.is_some());
-    assert!(build.sources["schema/main.cft"].contains("Replacement"));
+    assert!(build.schema.is_some());
+    assert!(build
+        .modules
+        .file(&ModuleId::from("schema/main.cft"))
+        .is_some_and(|module| module.source().contains("Replacement")));
 
     let build = compile_schema_project_with_overrides(
         &project,
@@ -34,8 +37,11 @@ fn schema_overrides_match_by_module_or_path_and_reject_unmatched() -> TestResult
         }],
     )
     .map_err(|err| err.to_string())?;
-    assert!(build.container.is_some());
-    assert!(build.sources["schema/main.cft"].contains("PathReplacement"));
+    assert!(build.schema.is_some());
+    assert!(build
+        .modules
+        .file(&ModuleId::from("schema/main.cft"))
+        .is_some_and(|module| module.source().contains("PathReplacement")));
 
     let err = compile_schema_project_with_overrides(
         &project,
@@ -58,7 +64,7 @@ fn invalid_module_keeps_diagnostics_without_compiling() -> TestResult {
     let build =
         compile_schema_project_with_overrides(&project, &[]).map_err(|err| err.to_string())?;
 
-    assert!(build.container.is_none());
+    assert!(build.schema.is_none());
     assert!(build
         .diagnostics
         .iter()
@@ -82,13 +88,17 @@ fn override_parse_error_keeps_sources_and_paths() -> TestResult {
     )
     .map_err(|err| err.to_string())?;
 
-    assert!(build.container.is_none());
+    assert!(build.schema.is_none());
     assert!(build
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == CftErrorCode::UnexpectedEof.as_str()));
-    assert_eq!(build.sources["schema/main.cft"], override_source);
-    assert!(build.paths["schema/main.cft"].ends_with("main.cft"));
+    let module = build
+        .modules
+        .file(&ModuleId::from("schema/main.cft"))
+        .expect("module retained after parse failure");
+    assert_eq!(module.source(), override_source);
+    assert!(module.path().ends_with("main.cft"));
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
 

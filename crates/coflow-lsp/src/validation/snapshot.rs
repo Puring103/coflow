@@ -164,10 +164,10 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
         &input.project.config_path,
     );
 
-    for path in raw_build.paths.values() {
+    for (_, module) in raw_build.modules.modules() {
         snapshot
             .active_uris
-            .insert(preferred_diagnostic_uri(&preferred_uris, Path::new(path)));
+            .insert(preferred_diagnostic_uri(&preferred_uris, module.path()));
     }
     if cfd_failures.is_empty() {
         let definitions =

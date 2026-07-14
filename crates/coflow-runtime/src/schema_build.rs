@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_cft::{
-    build_schema, parse_modules, CftContainer, CftDimensions, CftFile, CftSchema, ModuleId,
+    build_schema, parse_modules, CftDimensions, CftFile, CftModuleSet, CftSchema, ModuleId,
 };
 use coflow_project::{normalize_path, Project};
 use std::path::PathBuf;
@@ -15,10 +15,9 @@ use crate::session::ProjectSchemaSession;
 
 #[derive(Debug)]
 pub struct SchemaBuild {
-    pub container: Option<CftContainer>,
+    pub schema: Option<CftSchema>,
+    pub modules: CftModuleSet,
     pub diagnostics: DiagnosticSet,
-    pub sources: BTreeMap<String, String>,
-    pub paths: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,10 +39,7 @@ pub fn compile_schema_project_with_overrides(
 ) -> Result<SchemaBuild, DiagnosticSet> {
     let source_set = project.schema_sources()?;
     let mut matched_overrides = vec![false; overrides.len()];
-    let mut sources = BTreeMap::new();
-    let mut paths = BTreeMap::new();
-    let mut container = CftContainer::new();
-    let mut diagnostics = Vec::new();
+    let mut files = Vec::new();
 
     for module in source_set.modules {
         let source = if let Some((index, source_override)) = overrides
@@ -62,14 +58,11 @@ pub fn compile_schema_project_with_overrides(
         } else {
             module.source
         };
-        sources.insert(module.module_id.clone(), source.clone());
-        paths.insert(
-            module.module_id.clone(),
-            module.canonical_path.display().to_string(),
-        );
-        if let Err(errors) = container.add_module(ModuleId::new(module.module_id), source) {
-            diagnostics.extend(errors.diagnostics);
-        }
+        files.push(CftFile::new(
+            ModuleId::new(module.module_id),
+            module.canonical_path,
+            source,
+        ));
     }
 
     for (index, matched) in matched_overrides.into_iter().enumerate() {
@@ -87,25 +80,35 @@ pub fn compile_schema_project_with_overrides(
         }
     }
 
-    let compiled = if diagnostics.is_empty() {
-        match container.compile() {
-            Ok(()) => Some(container),
-            Err(errors) => {
-                diagnostics.extend(errors.diagnostics);
-                None
-            }
-        }
-    } else {
-        None
+    let modules = parse_modules(files);
+    let sources = modules
+        .files()
+        .map(|(id, module)| (id.as_str().to_string(), module.source().to_string()))
+        .collect();
+    let paths = modules
+        .files()
+        .map(|(id, module)| (id.as_str().to_string(), module.path().display().to_string()))
+        .collect();
+    let dimensions = CftDimensions::new(
+        project
+            .config
+            .dimensions
+            .iter()
+            .map(|(name, config)| (name.clone(), config.variants.clone())),
+    );
+    let (schema, cft_diagnostics) = match build_schema(&modules, &dimensions) {
+        Ok(schema) => (Some(schema), Vec::new()),
+        Err(errors) => (None, errors.diagnostics),
     };
-
-    let diagnostics =
-        diagnostic_set_from_cft(dedupe_cft_diagnostics(diagnostics), &sources, &paths);
+    let diagnostics = diagnostic_set_from_cft(
+        dedupe_cft_diagnostics(cft_diagnostics),
+        &sources,
+        &paths,
+    );
     Ok(SchemaBuild {
-        container: compiled,
+        schema,
+        modules,
         diagnostics,
-        sources,
-        paths,
     })
 }
 
@@ -226,6 +229,3 @@ fn compile_project_schema(
     }
 }
 
-fn diagnostics_from_schema_build(build: &SchemaBuild) -> DiagnosticSet {
-    build.diagnostics.clone()
-}

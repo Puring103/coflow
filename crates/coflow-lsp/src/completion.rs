@@ -237,7 +237,7 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
         TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::String => {}
         TypeRefKind::Named(name) => {
             if let Some(enum_def) = build
-                .container()
+                .schema()
                 .and_then(|container| container.resolve_enum(name))
             {
                 items.extend(enum_def.variants.iter().map(|variant| {
@@ -287,7 +287,7 @@ pub(crate) fn dot_completion_items(
     chain: &[String],
 ) -> Vec<Value> {
     if chain.len() == 1 {
-        if let Some(enum_def) = build.container().and_then(|container| {
+        if let Some(enum_def) = build.schema().and_then(|container| {
             container
                 .resolve_enum(&chain[0])
                 .or_else(|| container.resolve_enum(chain[0].as_str()))
@@ -314,7 +314,7 @@ pub(crate) fn dot_completion_items(
         return Vec::new();
     };
     let Some(ty) = build
-        .container()
+        .schema()
         .and_then(|container| container.resolve_type(type_name))
     else {
         return Vec::new();
@@ -343,7 +343,7 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
             Some(documentation),
         ));
     }
-    if let Some(container) = build.container() {
+    if let Some(container) = build.schema() {
         for ty in container.all_types() {
             items.push(completion_item(
                 &ty.name,
@@ -388,7 +388,7 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
 
 fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
     let mut items = Vec::new();
-    if let Some(container) = build.container() {
+    if let Some(container) = build.schema() {
         for ty in container.all_types() {
             items.push(completion_item(
                 &ty.name,
@@ -403,10 +403,10 @@ fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
 
 fn const_completion_items(build: &LspBuild) -> Vec<Value> {
     let mut items = Vec::new();
-    if let Some(container) = build.container() {
+    if let Some(container) = build.schema() {
         for constant in container
             .module_ids()
-            .filter_map(|module_id| container.schema(module_id))
+            .filter_map(|module_id| container.module_schema(module_id))
             .flat_map(|module| &module.consts)
         {
             items.push(completion_item(
@@ -422,12 +422,12 @@ fn const_completion_items(build: &LspBuild) -> Vec<Value> {
 
 fn const_completion_items_for_type(build: &LspBuild, ty: &TypeRef) -> Vec<Value> {
     let mut items = Vec::new();
-    let Some(container) = build.container() else {
+    let Some(container) = build.schema() else {
         return items;
     };
     for constant in container
         .module_ids()
-        .filter_map(|module_id| container.schema(module_id))
+        .filter_map(|module_id| container.module_schema(module_id))
         .flat_map(|module| &module.consts)
         .filter(|constant| const_value_assignable_to_type(&constant.value, ty))
     {

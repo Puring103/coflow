@@ -59,7 +59,7 @@ pub(crate) fn hover_at(
         }
     }
 
-    if let Some(container) = build.container() {
+    if let Some(container) = build.schema() {
         if let Some(ty) = container.resolve_type(&word.text) {
             return Some(hover_response(
                 &type_hover_text(ty),
