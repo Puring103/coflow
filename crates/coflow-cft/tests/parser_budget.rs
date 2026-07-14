@@ -102,4 +102,3 @@ fn flat_syntax_nodes_use_the_same_module_budget() {
         "syntax AST exceeds structural nodes limit 3 (observed 4)"
     );
 }
-
