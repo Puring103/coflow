@@ -346,16 +346,25 @@ pub struct WriteFieldOutcome {
 pub enum CollectionEdit {
     ArrayAppend {
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
         value: Option<CfdValue>,
     },
-    ArrayRemove { index: usize },
-    ArrayMove { from: usize, to: usize },
+    ArrayRemove {
+        index: usize,
+    },
+    ArrayMove {
+        from: usize,
+        to: usize,
+    },
     DictInsert {
         key: CfdDictKey,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
         value: Option<CfdValue>,
     },
-    DictRemove { key: CfdDictKey },
+    DictRemove {
+        key: CfdDictKey,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

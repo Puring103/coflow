@@ -8,10 +8,8 @@
 )]
 
 mod common;
+use coflow_checker::{run_checks_for_dimensions_subset_with_deps, DimensionCheckPlan};
 use common::*;
-use coflow_checker::{
-    run_checks_for_dimensions_subset_with_deps, DimensionCheckPlan,
-};
 
 fn build_model(_schema: &CftContainer, builder: CfdModelBuilder<'_>) -> CfdDataModel {
     builder.build().expect("data model should build")
@@ -78,9 +76,9 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
             rooted.root == reader
                 && rooted
                     .diagnostic
-                .primary
-                .as_ref()
-                .is_some_and(|primary| primary.record == Some(target))
+                    .primary
+                    .as_ref()
+                    .is_some_and(|primary| primary.record == Some(target))
         }),
         "subset diagnostics: {diagnostics:#?}"
     );

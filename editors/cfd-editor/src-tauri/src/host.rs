@@ -35,9 +35,7 @@ impl EditorHost {
         app: AppHandle,
         dir: &Path,
     ) -> Result<ProjectSnapshot, EditorError> {
-        self.init_project_with_watch(dir, |snapshot| {
-            self.watchers.watch_session(app, snapshot)
-        })
+        self.init_project_with_watch(dir, |snapshot| self.watchers.watch_session(app, snapshot))
     }
 
     pub(crate) fn close_session(&self, session_id: u32) -> Result<(), EditorError> {
@@ -105,6 +103,8 @@ impl EditorHost {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::editor::EditorError;

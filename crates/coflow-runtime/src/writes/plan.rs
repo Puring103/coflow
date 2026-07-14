@@ -75,7 +75,7 @@ impl MutationExecutionPlan {
         match self {
             Self::Insert(plan) => visit(&plan.source, &plan.writer)?,
             Self::WriteField(plan) => visit(&plan.source, &plan.writer)?,
-            Self::Rename(RenamePlan::Noop { .. }) | Self::Folded => {}
+            Self::Rename(RenamePlan::Noop { .. }) | Self::Folded | Self::Noop { .. } => {}
             Self::Rename(RenamePlan::Write(plan)) => {
                 visit(&plan.source, &plan.writer)?;
                 for action in &plan.reference_actions {
@@ -86,7 +86,6 @@ impl MutationExecutionPlan {
                 }
             }
             Self::Delete(plan) => visit(&plan.source, &plan.writer)?,
-            Self::Noop { .. } => {}
         }
         Ok(())
     }

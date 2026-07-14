@@ -149,10 +149,8 @@ pub(crate) fn stage_field_mutation_batch(
     };
     let mut requests = Vec::with_capacity(batch.len());
     for (index, (op, execution)) in batch.iter().enumerate() {
-        let (
-            PreparedMutationOp::SetField { value, .. },
-            MutationExecutionPlan::WriteField(plan),
-        ) = (op, execution)
+        let (PreparedMutationOp::SetField { value, .. }, MutationExecutionPlan::WriteField(plan)) =
+            (op, execution)
         else {
             return Err(MutationBatchFailure {
                 index,

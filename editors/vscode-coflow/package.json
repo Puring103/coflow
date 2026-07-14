@@ -2,7 +2,7 @@
   "name": "coflow",
   "displayName": "Coflow Language Support",
   "description": "Syntax highlighting, snippets, hovers, and completions for Coflow Type File (.cft) and Coflow Data File (.cfd).",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "coflow",
   "license": "Apache-2.0",
   "engines": {

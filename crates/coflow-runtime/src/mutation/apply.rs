@@ -55,6 +55,7 @@ impl ProjectSession {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn execute_generation_mutation(
     session: &mut ProjectSession,
     registry: &ProviderRegistry,
@@ -228,17 +229,12 @@ fn prepare_execution_plans(
     let allow_noop = planned.len() == 1;
     planned
         .into_iter()
-        .map(
-            |planned| match prepare_mutation_execution(
-                session,
-                registry,
-                &planned.op,
-                allow_noop,
-            ) {
+        .map(|planned| {
+            match prepare_mutation_execution(session, registry, &planned.op, allow_noop) {
                 Ok(execution) => Ok(ExecutableMutation { planned, execution }),
                 Err(diagnostics) => Err(failed_op(&planned, diagnostics)),
-            },
-        )
+            }
+        })
         .collect()
 }
 

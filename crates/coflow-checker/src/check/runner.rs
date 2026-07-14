@@ -130,9 +130,10 @@ impl<'a> CheckRunner<'a> {
     fn run_one_record(&mut self, record_id: CfdRecordId, record: &coflow_data_model::CfdRecord) {
         let diagnostics_start = self.diagnostics.len();
         self.run_one_record_inner(record_id, record);
-        self.diagnostic_roots.extend(
-            std::iter::repeat_n(record_id, self.diagnostics.len() - diagnostics_start),
-        );
+        self.diagnostic_roots.extend(std::iter::repeat_n(
+            record_id,
+            self.diagnostics.len() - diagnostics_start,
+        ));
     }
 
     fn run_one_record_inner(

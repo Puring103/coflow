@@ -215,6 +215,7 @@ pub fn run_checks_for_dimensions_with_deps_and_options(
 ///
 /// Returns the union of the selected roots' diagnostics from the default and
 /// configured dimension rounds.
+#[must_use]
 pub fn run_checks_for_dimensions_subset_with_deps(
     schema: &CompiledSchema,
     model: &CfdDataModel,
@@ -224,12 +225,9 @@ pub fn run_checks_for_dimensions_subset_with_deps(
     if targets.is_empty() {
         return (Vec::new(), DependencyGraph::default());
     }
-    let (default_diagnostics, mut graph) = CheckRunner::new(
-        schema,
-        model,
-        StructuralLimits::default(),
-    )
-    .run_for_with_deps_rooted(targets);
+    let (default_diagnostics, mut graph) =
+        CheckRunner::new(schema, model, StructuralLimits::default())
+            .run_for_with_deps_rooted(targets);
     let mut all = default_diagnostics
         .into_iter()
         .map(|(root, diagnostic)| RootedCheckDiagnostic { root, diagnostic })

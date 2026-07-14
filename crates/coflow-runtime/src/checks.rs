@@ -75,7 +75,10 @@ pub(crate) fn run_full_project_checks(
         return render_raw_check_output(
             model,
             origins,
-            fallback.into_iter().map(|rooted| rooted.diagnostic).collect(),
+            fallback
+                .into_iter()
+                .map(|rooted| rooted.diagnostic)
+                .collect(),
         );
     }
     render_raw_check_output(
@@ -167,12 +170,15 @@ fn check_state_is_stable(
                 .as_ref()
                 .and_then(|label| label.record)
                 .is_none_or(&valid_id)
-            && rooted.diagnostic.related.iter().all(|label| {
-                label.record.is_none_or(&valid_id)
-            })
-    }) && dependencies.reads_from.iter().all(|(reader, reads)| {
-        valid_id(*reader) && reads.iter().copied().all(&valid_id)
-    })
+            && rooted
+                .diagnostic
+                .related
+                .iter()
+                .all(|label| label.record.is_none_or(&valid_id))
+    }) && dependencies
+        .reads_from
+        .iter()
+        .all(|(reader, reads)| valid_id(*reader) && reads.iter().copied().all(&valid_id))
 }
 
 fn stabilize_diagnostic(
@@ -264,9 +270,9 @@ fn render_diagnostic(
 fn render_label(model: &CfdDataModel, label: StableCheckLabel) -> Option<CfdLabel> {
     Some(CfdLabel {
         record: match label.record {
-            Some(coordinate) => Some(
-                model.record_by_type_key(&coordinate.actual_type, &coordinate.key)?,
-            ),
+            Some(coordinate) => {
+                Some(model.record_by_type_key(&coordinate.actual_type, &coordinate.key)?)
+            }
             None => None,
         },
         path: label.path,
@@ -307,6 +313,8 @@ fn render_raw_check_output(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use coflow_checker::{DependencyGraph, RootedCheckDiagnostic};
     use coflow_data_model::{CfdDiagnostic, CfdErrorCode, CfdRecordId};
 

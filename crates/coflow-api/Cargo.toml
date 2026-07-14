@@ -1,6 +1,6 @@
 [package]
 name = "coflow-api"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "Public provider API for Coflow loaders, exporters, and code generators."
 license = "Apache-2.0"

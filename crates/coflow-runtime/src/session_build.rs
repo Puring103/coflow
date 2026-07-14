@@ -7,8 +7,8 @@ use coflow_cft::CftContainer;
 use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 
-use crate::dimensions;
 use crate::checks::CheckState;
+use crate::dimensions;
 use crate::dimensions::{DimensionField, DimensionGenerationTransaction};
 use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
 use crate::load::{
@@ -381,6 +381,7 @@ fn load_data(
     Ok((output, indexes))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn load_cached_data(
     ctx: &SessionBuildContext<'_>,
     previous: &SourceDataCache,

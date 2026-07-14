@@ -693,12 +693,9 @@ fn apply_collection_edit(
 ) -> Result<CfdValue, EditorError> {
     match (value, edit) {
         (CfdValue::Array(mut items), CollectionEdit::ArrayAppend { value }) => {
-            let seed = value.or_else(|| {
-                items
-                    .last()
-                    .cloned()
-                    .or(default_item)
-            }).unwrap_or(CfdValue::Null);
+            let seed = value
+                .or_else(|| items.last().cloned().or(default_item))
+                .unwrap_or(CfdValue::Null);
             items.push(seed);
             Ok(CfdValue::Array(items))
         }
@@ -723,12 +720,14 @@ fn apply_collection_edit(
             if entries.iter().any(|(entry_key, _)| entry_key == &key) {
                 return Err(EditorError::write("dict key already exists"));
             }
-            let seed = value.or_else(|| {
-                entries
-                    .last()
-                    .map(|(_, value)| value.clone())
-                    .or(default_item)
-            }).unwrap_or(CfdValue::Null);
+            let seed = value
+                .or_else(|| {
+                    entries
+                        .last()
+                        .map(|(_, value)| value.clone())
+                        .or(default_item)
+                })
+                .unwrap_or(CfdValue::Null);
             entries.push((key, seed));
             Ok(CfdValue::Dict(entries))
         }
@@ -877,7 +876,7 @@ fn mutation_report_to_editor_error(
 
 #[cfg(test)]
 mod revision_tests {
-    #![allow(clippy::expect_used)]
+    #![allow(clippy::expect_used, clippy::panic)]
 
     use std::sync::{mpsc, Arc, Barrier};
     use std::time::Duration;
@@ -988,7 +987,10 @@ mod revision_tests {
                 .expect("commit internal write");
         });
 
-        assert!(!paths.is_empty(), "watcher did not observe the internal write");
+        assert!(
+            !paths.is_empty(),
+            "watcher did not observe the internal write"
+        );
         assert!(
             !store
                 .has_external_file_changes(snapshot.session_id, &paths)
@@ -1017,7 +1019,10 @@ mod revision_tests {
                 .expect("commit internal Excel write");
         });
 
-        assert!(!paths.is_empty(), "watcher did not observe the internal Excel write");
+        assert!(
+            !paths.is_empty(),
+            "watcher did not observe the internal Excel write"
+        );
         let relevant_paths = filter_relevant_paths(&paths);
         assert!(
             !store
@@ -1074,7 +1079,9 @@ mod revision_tests {
         sheet.write_string(0, 0, "ID").expect("write ID header");
         sheet.write_string(0, 1, "Name").expect("write name header");
         sheet.write_string(1, 0, "sword").expect("write record ID");
-        sheet.write_string(1, 1, "Sword").expect("write record name");
+        sheet
+            .write_string(1, 1, "Sword")
+            .expect("write record name");
         workbook
             .save(root.join("data/items.xlsx"))
             .expect("write workbook");

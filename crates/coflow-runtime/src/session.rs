@@ -8,8 +8,8 @@ use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdV
 use coflow_project::{path_to_slash, Project};
 use serde::{Deserialize, Serialize};
 
-use crate::dimensions::{self, dimensions_for_project, DimensionInfo};
 use crate::checks::CheckState;
+use crate::dimensions::{self, dimensions_for_project, DimensionInfo};
 use crate::files::{self, DimensionGroup, FileTreeNode, FileTreeOptions};
 use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
 use crate::load::SourceDataCache;

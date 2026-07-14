@@ -193,6 +193,7 @@ pub(crate) fn load_project_data(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn reload_project_data_from_cache(
     project: &Project,
     schema: &CftContainer,
@@ -210,14 +211,18 @@ pub(crate) fn reload_project_data_from_cache(
         batches: previous
             .batches
             .iter()
-            .filter(|batch| {
-                options.include_implicit_dimension_sources || !batch.implicit_dimension
-            })
+            .filter(|batch| options.include_implicit_dimension_sources || !batch.implicit_dimension)
             .cloned()
             .collect(),
     };
     if options.include_implicit_dimension_sources && refresh_implicit_dimension_sources {
-        refresh_dimension_source_plans(project, compiled_schema, registry, previous, &mut source_data)?;
+        refresh_dimension_source_plans(
+            project,
+            compiled_schema,
+            registry,
+            previous,
+            &mut source_data,
+        )?;
     }
 
     let mut diagnostics = DiagnosticSet::empty();
@@ -266,7 +271,7 @@ pub(crate) fn reload_project_data_from_cache(
             },
             &batch.entry.source,
         ) {
-            Ok(loaded) => batch.records = loaded.records.into(),
+            Ok(source_data) => batch.records = source_data.records.into(),
             Err(err) => diagnostics.extend(err),
         }
     }
@@ -289,6 +294,7 @@ pub(crate) fn reload_project_data_from_cache(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn load_resolved_sources(
     project: &Project,
     schema: &CompiledSchema,
@@ -437,6 +443,7 @@ fn refresh_dimension_source_plans(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_output_from_cache(
     project: &Project,
     schema: &CftContainer,
@@ -492,9 +499,7 @@ fn build_output_from_cache(
                     changed_records,
                 )
             })
-            .unwrap_or_else(|| {
-                run_full_project_checks(project, compiled_schema, &model, &origins)
-            })
+            .unwrap_or_else(|| run_full_project_checks(project, compiled_schema, &model, &origins))
     } else {
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),

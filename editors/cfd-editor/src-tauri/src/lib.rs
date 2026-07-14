@@ -1,4 +1,4 @@
-#![allow(clippy::multiple_crate_versions)]
+#![allow(clippy::multiple_crate_versions, clippy::unreachable)]
 
 use std::path::PathBuf;
 
@@ -40,10 +40,7 @@ async fn init_project(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-async fn close_session(
-    session_id: u32,
-    host: State<'_, EditorHost>,
-) -> Result<(), EditorError> {
+async fn close_session(session_id: u32, host: State<'_, EditorHost>) -> Result<(), EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.close_session(session_id)).await
 }
@@ -123,7 +120,11 @@ async fn create_record_draft(
     host: State<'_, EditorHost>,
 ) -> Result<CreateRecordDraft, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.sessions().create_record_draft(session_id, &actual_type)).await
+    run_blocking(move || {
+        host.sessions()
+            .create_record_draft(session_id, &actual_type)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]

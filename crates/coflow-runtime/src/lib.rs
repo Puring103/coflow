@@ -15,8 +15,8 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
-mod data_files;
 mod checks;
+mod data_files;
 mod data_patch;
 mod data_read;
 mod dimensions;

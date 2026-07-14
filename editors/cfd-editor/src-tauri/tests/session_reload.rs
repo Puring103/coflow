@@ -740,8 +740,7 @@ fn localized_write_reports_generated_dimension_source_as_affected() {
     let root = temp_project_dir("cfd-editor-dim-affected-files");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
-    std::fs::create_dir_all(root.join("data/dimensions/language"))
-        .expect("create dimensions dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
     std::fs::write(
         root.join("schema/main.cft"),
         r"
@@ -752,8 +751,7 @@ fn localized_write_reports_generated_dimension_source_as_affected() {
         ",
     )
     .expect("write schema");
-    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n")
-        .expect("write items");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write items");
     std::fs::write(
         root.join("data/dimensions/language/Item_name.csv"),
         "id,default,zh,en\npotion,Potion,药水,Potion\n",
@@ -796,9 +794,11 @@ dimensions:
             "data/items.csv".to_string(),
         ]
     );
-    assert!(std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
-        .expect("read generated dimension source")
-        .contains("potion,Elixir,药水,Potion"));
+    assert!(
+        std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+            .expect("read generated dimension source")
+            .contains("potion,Elixir,药水,Potion")
+    );
 }
 
 fn write_project(root: &std::path::Path, name: &str) {
