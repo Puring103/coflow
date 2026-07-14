@@ -25,7 +25,7 @@ mod scan;
 mod strings;
 mod types;
 
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdInputValue;
 use collections::{parse_array, parse_dict};
 use diagnostics::type_mismatch;
@@ -48,7 +48,7 @@ pub enum ParsedCell {
 ///
 /// Returns diagnostics when the cell text does not match the declared type.
 pub fn parse_cell(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     declared_type: &str,
     text: &str,
 ) -> Result<ParsedCell, CellValueDiagnostics> {
@@ -73,7 +73,7 @@ impl ValueContext {
 }
 
 fn parse_value(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     ty: &CellType,
     text: &str,
     context: ValueContext,
@@ -117,7 +117,7 @@ fn parse_value(
 }
 
 pub(super) fn parse_enum(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     enum_name: &str,
     text: &str,
 ) -> Result<CfdInputValue, CellValueDiagnostics> {

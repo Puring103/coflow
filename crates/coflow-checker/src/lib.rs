@@ -33,7 +33,7 @@
 mod check;
 
 use check::CheckRunner;
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdRecordId};
 pub use coflow_structure::StructuralLimits;
 use std::collections::{BTreeMap, BTreeSet};
@@ -54,7 +54,7 @@ pub(crate) struct DimensionCheckContext {
 /// # Errors
 ///
 /// Returns runtime check diagnostics for false conditions or evaluation errors.
-pub fn run_checks(schema: &CompiledSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
+pub fn run_checks(schema: &CftSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
     run_checks_with_options(schema, model, CheckOptions::default())
 }
 
@@ -65,7 +65,7 @@ pub fn run_checks(schema: &CompiledSchema, model: &CfdDataModel) -> Result<(), C
 /// Returns runtime check diagnostics, including `CFD-CHECK-020` when a limit
 /// is exhausted.
 pub fn run_checks_with_options(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     options: CheckOptions,
 ) -> Result<(), CfdDiagnostics> {
@@ -128,7 +128,7 @@ impl DimensionCheckRound {
 /// Returns the union of every failing round's diagnostics. Variant diagnostics
 /// are prefixed with `[dimension=variant]`.
 pub fn run_checks_for_dimensions(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
 ) -> Result<(), CfdDiagnostics> {
@@ -141,7 +141,7 @@ pub fn run_checks_for_dimensions(
 ///
 /// Returns the union of runtime check diagnostics from every round.
 pub fn run_checks_for_dimensions_with_options(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
     options: CheckOptions,
@@ -170,7 +170,7 @@ pub fn run_checks_for_dimensions_with_options(
 /// Returns the union of every failing round's diagnostics. The dependency
 /// graph is returned even when diagnostics fail.
 pub fn run_checks_for_dimensions_with_deps(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
@@ -184,7 +184,7 @@ pub fn run_checks_for_dimensions_with_deps(
 /// Returns the union of runtime diagnostics and the dependency graph collected
 /// before any failing root was stopped.
 pub fn run_checks_for_dimensions_with_deps_and_options(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
     options: CheckOptions,
@@ -217,7 +217,7 @@ pub fn run_checks_for_dimensions_with_deps_and_options(
 /// configured dimension rounds.
 #[must_use]
 pub fn run_checks_for_dimensions_subset_with_deps(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
     targets: &[CfdRecordId],
@@ -270,7 +270,7 @@ pub struct RootedCheckDiagnostic {
 /// Returns runtime check diagnostics for false conditions or evaluation
 /// errors discovered while checking the subset.
 pub fn run_checks_for(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     targets: &[CfdRecordId],
 ) -> Result<(), CfdDiagnostics> {
@@ -283,7 +283,7 @@ pub fn run_checks_for(
 ///
 /// Returns runtime check diagnostics for the selected records.
 pub fn run_checks_for_with_options(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     targets: &[CfdRecordId],
     options: CheckOptions,
@@ -330,7 +330,7 @@ impl DependencyGraph {
 /// either case (so callers can still wire incremental edits even when the
 /// initial state has check failures).
 pub fn run_checks_with_deps(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
     run_checks_with_deps_and_options(schema, model, CheckOptions::default())
@@ -343,7 +343,7 @@ pub fn run_checks_with_deps(
 /// Returns runtime check diagnostics and the dependency graph collected before
 /// any failing root was stopped.
 pub fn run_checks_with_deps_and_options(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     options: CheckOptions,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
@@ -387,11 +387,11 @@ pub trait CfdCheckExt {
     ///
     /// Returns runtime check diagnostics for false conditions or evaluation
     /// errors.
-    fn run_checks(&self, schema: &CompiledSchema) -> Result<(), CfdDiagnostics>;
+    fn run_checks(&self, schema: &CftSchema) -> Result<(), CfdDiagnostics>;
 }
 
 impl CfdCheckExt for CfdDataModel {
-    fn run_checks(&self, schema: &CompiledSchema) -> Result<(), CfdDiagnostics> {
+    fn run_checks(&self, schema: &CftSchema) -> Result<(), CfdDiagnostics> {
         run_checks(schema, self)
     }
 }

@@ -13,7 +13,7 @@ use coflow_checker::{run_checks_with_options, CheckOptions, StructuralLimits};
 use std::collections::BTreeSet;
 
 type BuildFn = fn(&CftContainer) -> Result<CfdDataModel, CfdDiagnostics>;
-type CheckFn = fn(&CompiledSchema, &CfdDataModel) -> Result<(), CfdDiagnostics>;
+type CheckFn = fn(&CftSchema, &CfdDataModel) -> Result<(), CfdDiagnostics>;
 type DirectFn = fn() -> CfdDiagnostics;
 type AdjacentFn = fn();
 
@@ -768,7 +768,7 @@ fn build_present_attr_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDi
     )
 }
 
-fn run_checks(schema: &CompiledSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
+fn run_checks(schema: &CftSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
     model.run_checks(schema)
 }
 

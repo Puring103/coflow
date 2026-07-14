@@ -1,9 +1,9 @@
-use super::CompiledSchema;
+use super::CftSchema;
 use crate::{CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn dimension_checks_for_type(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     type_name: &str,
 ) -> BTreeMap<String, CftSchemaCheckBlock> {
     let Some(check) = schema
@@ -37,13 +37,13 @@ pub(super) fn dimension_checks_for_type(
 }
 
 struct DimensionCheckAnalyzer<'a> {
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     current_type: &'a str,
     scopes: Vec<BTreeSet<String>>,
 }
 
 impl<'a> DimensionCheckAnalyzer<'a> {
-    fn new(schema: &'a CompiledSchema, current_type: &'a str) -> Self {
+    fn new(schema: &'a CftSchema, current_type: &'a str) -> Self {
         Self {
             schema,
             current_type,

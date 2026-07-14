@@ -1,8 +1,8 @@
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdEnumValue;
 
 pub(super) fn enum_with_value(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     enum_name: &str,
     value: i64,
 ) -> CfdEnumValue {

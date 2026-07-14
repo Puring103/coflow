@@ -26,7 +26,7 @@ mod lower;
 mod options;
 pub mod writer;
 use coflow_cfd::parse_cfd;
-use coflow_cft::{CftContainer, CompiledSchema};
+use coflow_cft::{CftContainer, CftSchema};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, RecordOrigin};
 use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
@@ -75,7 +75,7 @@ pub fn parse_cfd_input_records(
 }
 
 fn parse_cfd_input_records_with_spans(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     source: &str,
 ) -> Result<Vec<ParsedCfdInputRecord>, CfdTextLoadError> {
     let (ast, diagnostics) = parse_cfd(source);

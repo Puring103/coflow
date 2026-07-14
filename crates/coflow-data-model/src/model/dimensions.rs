@@ -1,5 +1,5 @@
 use super::{CfdDataModel, CfdRecordId, CfdValue};
-use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftSchemaTypeRef, CftSchema};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DimensionFieldLookupError {
@@ -26,7 +26,7 @@ impl CfdDataModel {
     /// or the requested variant field is not present on that storage record.
     pub fn dimension_field_value<'a>(
         &'a self,
-        schema: &CompiledSchema,
+        schema: &CftSchema,
         source_record: CfdRecordId,
         field_name: &str,
         dimension: &str,

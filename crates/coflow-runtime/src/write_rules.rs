@@ -1,5 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
-use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftSchemaTypeRef, CftSchema};
 use coflow_data_model::{
     CfdDomainId, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext,
     PendingInsertRef,
@@ -65,7 +65,7 @@ pub fn ensure_record_key_available_with_conflict_code(
 }
 
 pub(crate) fn expected_type_for_write_path(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     actual_type: &str,
     path: &[WriteFieldPathSegment],
     code: &'static str,
@@ -89,7 +89,7 @@ pub(crate) fn validate_value_at_write_path(
 }
 
 pub(crate) fn expected_type_for_cfd_path(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     actual_type: &str,
     path: &[CfdPathSegment],
     code: &'static str,
@@ -150,7 +150,7 @@ pub(crate) fn expected_type_for_cfd_path(
 
 pub(crate) fn validate_value_for_write(
     session: &ProjectSession,
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
     code: &'static str,
@@ -172,7 +172,7 @@ pub(crate) fn validate_value_for_write(
 
 pub(crate) fn validate_value_for_write_with_pending(
     session: &ProjectSession,
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
     pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
@@ -204,7 +204,7 @@ pub(crate) struct ValueValidationRequest<'a> {
 
 pub(crate) fn validate_value_semantics(
     session: &ProjectSession,
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     request: &ValueValidationRequest<'_>,
 ) -> Result<(), DiagnosticSet> {
     let context = ProjectValueSemanticContext {
@@ -222,7 +222,7 @@ pub(crate) fn validate_value_semantics(
 }
 
 pub(crate) fn ensure_object_type_assignable(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected_type: &str,
     actual_type: &str,
     code: &'static str,

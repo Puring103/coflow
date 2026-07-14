@@ -6,7 +6,7 @@ use crate::names::{
     csharp_type_name, has_annotation, index_param_name, pluralize,
 };
 use crate::CsharpCodegenError;
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -69,7 +69,7 @@ impl CsharpCodegenOptions {
 }
 
 pub fn build_project(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,

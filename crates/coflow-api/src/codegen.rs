@@ -1,10 +1,10 @@
 use crate::{ArtifactSet, DecodedOutputOptions, DiagnosticSet};
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CodegenContext<'a> {
-    pub schema: &'a CompiledSchema,
+    pub schema: &'a CftSchema,
     pub model: Option<&'a CfdDataModel>,
     pub data_format: &'a str,
     pub id_as_enum_variants: &'a serde_json::Value,

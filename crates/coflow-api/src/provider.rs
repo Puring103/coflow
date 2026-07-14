@@ -1,5 +1,5 @@
 use crate::DiagnosticSet;
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdInputRecord;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -102,7 +102,7 @@ impl ProbeResult {
 #[derive(Debug, Clone, Copy)]
 pub struct SourceLoadContext<'a> {
     pub project_root: &'a Path,
-    pub schema: &'a CompiledSchema,
+    pub schema: &'a CftSchema,
 }
 
 #[derive(Debug, Clone)]

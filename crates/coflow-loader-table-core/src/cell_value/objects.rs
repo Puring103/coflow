@@ -1,4 +1,4 @@
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdInputValue;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,7 +12,7 @@ use super::types::{full_fields, FieldMeta};
 use super::{parse_value, ValueContext};
 
 pub(super) fn parse_object(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected_type: &str,
     text: &str,
     context: ValueContext,
@@ -83,7 +83,7 @@ pub(super) fn parse_object(
 }
 
 fn validate_actual_type(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected_type: &str,
     actual_type: &str,
 ) -> Result<(), CellValueDiagnostics> {
@@ -115,7 +115,7 @@ fn validate_actual_type(
 }
 
 fn parse_named_object(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     actual_type: Option<String>,
     fields: &[FieldMeta],
     parts: &[&str],
@@ -164,7 +164,7 @@ fn parse_named_object(
 }
 
 fn parse_positional_object(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     actual_type: Option<String>,
     fields: &[FieldMeta],
     parts: &[&str],

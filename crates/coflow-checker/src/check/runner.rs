@@ -4,7 +4,7 @@ use super::evaluator::CheckEvaluator;
 use super::statements;
 use super::value::{CheckRecordRef, CheckValue, ValueLocation};
 use crate::{DependencyGraph, DimensionCheckContext};
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdRecordId, CfdValue,
 };
@@ -12,7 +12,7 @@ use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, Traver
 use std::collections::BTreeMap;
 
 pub(crate) struct CheckRunner<'a> {
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     model: &'a CfdDataModel,
     diagnostics: Vec<CfdDiagnostic>,
     diagnostic_roots: Vec<CfdRecordId>,
@@ -42,7 +42,7 @@ struct NestedFieldChecks<'a> {
 
 impl<'a> CheckRunner<'a> {
     pub(crate) fn new(
-        schema: &'a CompiledSchema,
+        schema: &'a CftSchema,
         model: &'a CfdDataModel,
         structural_limits: StructuralLimits,
     ) -> Self {
@@ -59,7 +59,7 @@ impl<'a> CheckRunner<'a> {
     }
 
     pub(crate) fn with_dimension_context(
-        schema: &'a CompiledSchema,
+        schema: &'a CftSchema,
         model: &'a CfdDataModel,
         dimension_context: DimensionCheckContext,
         structural_limits: StructuralLimits,

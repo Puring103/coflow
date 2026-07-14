@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use coflow_cft::{CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp, CompiledSchema};
+use coflow_cft::{CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp, CftSchema};
 use coflow_data_model::CfdErrorCode;
 
 use super::diagnostics::{bin_op_str, format_value_for_message, unary_op_str};
@@ -139,7 +139,7 @@ pub(super) fn compare_order(
 }
 
 pub(super) fn unary_op(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     op: CftSchemaUnaryOp,
     value: LocatedCheckValue,
 ) -> OpsResult<LocatedCheckValue> {
@@ -179,7 +179,7 @@ pub(super) fn unary_op(
 }
 
 pub(super) fn eager_bin_op(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     op: CftSchemaBinOp,
     lhs: CheckValue,
     rhs: CheckValue,

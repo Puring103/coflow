@@ -2,7 +2,7 @@ use crate::source_resolution::ConfiguredSource;
 use coflow_api::SourceLocationSpec;
 use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaType,
-    CftSchemaTypeRef, CompiledSchema, ModuleId, Span,
+    CftSchemaTypeRef, CftSchema, ModuleId, Span,
 };
 use coflow_project::{DimensionConfig, Project};
 use serde_json::{json, Value};
@@ -83,7 +83,7 @@ pub(crate) fn dimension_sources(
     sources
 }
 
-pub fn dimension_fields(schema: &CompiledSchema) -> Vec<DimensionField> {
+pub fn dimension_fields(schema: &CftSchema) -> Vec<DimensionField> {
     let mut fields = Vec::new();
     for schema_type in schema.type_metas() {
         for field in &schema_type.own_fields {

@@ -2,7 +2,7 @@ use coflow_api::{
     map_diagnostics_with_origins, origins_of, Diagnostic, DiagnosticSet, ProviderRegistry,
     ResolvedSource, SourceLoadContext, SourceLocationSpec,
 };
-use coflow_cft::{CftContainer, CompiledSchema};
+use coflow_cft::{CftContainer, CftSchema};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostics, CfdInputRecord, CfdPath, CfdPathSegment, CfdRecordId,
     RecordOrigin,
@@ -91,7 +91,7 @@ pub(crate) fn empty_load_output() -> Result<ProjectLoadOutput, DiagnosticSet> {
 pub(crate) fn load_project_data(
     project: &Project,
     schema: &CftContainer,
-    compiled_schema: &CompiledSchema,
+    compiled_schema: &CftSchema,
     registry: &ProviderRegistry,
     indexes: &mut SessionIndexBuilder,
     options: LoadProjectDataOptions,
@@ -197,7 +197,7 @@ pub(crate) fn load_project_data(
 pub(crate) fn reload_project_data_from_cache(
     project: &Project,
     schema: &CftContainer,
-    compiled_schema: &CompiledSchema,
+    compiled_schema: &CftSchema,
     registry: &ProviderRegistry,
     indexes: &mut SessionIndexBuilder,
     previous: &SourceDataCache,
@@ -297,7 +297,7 @@ pub(crate) fn reload_project_data_from_cache(
 #[allow(clippy::too_many_arguments)]
 fn load_resolved_sources(
     project: &Project,
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sources: &mut SourceIndex,
     records_index: &mut RecordIndexBuilder,
     files: &mut FileIndex,
@@ -391,7 +391,7 @@ impl SourceDataCache {
 
 fn refresh_dimension_source_plans(
     project: &Project,
-    compiled_schema: &CompiledSchema,
+    compiled_schema: &CftSchema,
     registry: &ProviderRegistry,
     previous: &SourceDataCache,
     source_data: &mut SourceDataCache,
@@ -447,7 +447,7 @@ fn refresh_dimension_source_plans(
 fn build_output_from_cache(
     project: &Project,
     schema: &CftContainer,
-    compiled_schema: &CompiledSchema,
+    compiled_schema: &CftSchema,
     indexes: &mut SessionIndexBuilder,
     source_data: SourceDataCache,
     run_checks: bool,

@@ -1,7 +1,7 @@
-use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftSchemaTypeRef, CftSchema};
 
 pub(super) fn type_after_field_segment(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     actual_type: &str,
     field_name: &str,
 ) -> Option<CftSchemaTypeRef> {
@@ -11,7 +11,7 @@ pub(super) fn type_after_field_segment(
 }
 
 pub(super) fn type_after_field_segment_for_ref(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     current_type: &CftSchemaTypeRef,
     field_name: &str,
 ) -> Option<CftSchemaTypeRef> {
@@ -24,7 +24,7 @@ pub(super) fn type_after_field_segment_for_ref(
 }
 
 pub(super) fn concrete_type_for_block(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected_type: &CftSchemaTypeRef,
     type_marker: Option<&str>,
 ) -> CftSchemaTypeRef {
@@ -71,7 +71,7 @@ pub(super) fn type_after_dict_key_segment(
 }
 
 pub(super) fn dict_key_path_matches(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     key_type: &CftSchemaTypeRef,
     source_key: &str,
     path_key: &str,

@@ -1,5 +1,5 @@
 use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdValue};
-use coflow_cft::{record_key_ident_error, CftSchemaTypeRef, CompiledSchema, Span};
+use coflow_cft::{record_key_ident_error, CftSchemaTypeRef, CftSchema, Span};
 use coflow_data_model::{CfdInputDictKey, CfdInputRecord, CfdInputValue};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,7 +12,7 @@ pub(super) struct ParsedCfdInputRecord {
 }
 
 pub(super) fn lower_records(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     ast: &CfdAst,
 ) -> Result<Vec<ParsedCfdInputRecord>, CfdTextDiagnostics> {
     ast.records
@@ -22,7 +22,7 @@ pub(super) fn lower_records(
 }
 
 fn lower_record(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     record: &CfdRecord,
 ) -> Result<ParsedCfdInputRecord, CfdTextDiagnostics> {
     validate_record_key(&record.key, record.key_span)?;
@@ -50,7 +50,7 @@ struct ObjectFields {
 }
 
 fn lower_object_entries(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     type_name: &str,
     entries: &[CfdBlockEntry],
 ) -> Result<ObjectFields, CfdTextDiagnostics> {
@@ -110,7 +110,7 @@ fn lower_object_entries(
 }
 
 fn lower_value(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     value: &CfdValue,
     ty: &CftSchemaTypeRef,
 ) -> Result<CfdInputValue, CfdTextDiagnostics> {
@@ -199,7 +199,7 @@ fn lower_string(value: &CfdValue) -> Result<CfdInputValue, CfdTextDiagnostics> {
 }
 
 fn lower_enum(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     value: &CfdValue,
     enum_name: &str,
 ) -> Result<CfdInputValue, CfdTextDiagnostics> {
@@ -225,7 +225,7 @@ fn lower_enum(
 }
 
 fn lower_object(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     value: &CfdValue,
     expected_type: &str,
 ) -> Result<CfdInputValue, CfdTextDiagnostics> {
@@ -280,7 +280,7 @@ fn lower_ref(value: &CfdValue, _expected_type: &str) -> Result<CfdInputValue, Cf
 }
 
 fn lower_array(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     value: &CfdValue,
     inner: &CftSchemaTypeRef,
 ) -> Result<CfdInputValue, CfdTextDiagnostics> {
@@ -309,7 +309,7 @@ fn lower_array(
 }
 
 fn lower_dict(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     value: &CfdValue,
     key_type: &CftSchemaTypeRef,
     value_type: &CftSchemaTypeRef,
@@ -351,7 +351,7 @@ fn lower_dict(
 }
 
 fn lower_dict_key(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     raw: &str,
     span: Span,
     ty: &CftSchemaTypeRef,
@@ -395,7 +395,7 @@ fn lower_dict_key(
 }
 
 fn lower_spread(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     value: &CfdValue,
     ty: &CftSchemaTypeRef,
 ) -> Result<CfdInputValue, CfdTextDiagnostics> {
@@ -417,7 +417,7 @@ fn validate_record_key(key: &str, span: Span) -> Result<(), CfdTextDiagnostics> 
 }
 
 fn validate_group_type(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     type_name: &str,
     span: Span,
 ) -> Result<(), CfdTextDiagnostics> {
@@ -433,7 +433,7 @@ fn validate_group_type(
 }
 
 fn validate_record_type(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     actual_type: &str,
     span: Span,
 ) -> Result<(), CfdTextDiagnostics> {
@@ -455,7 +455,7 @@ fn validate_record_type(
 }
 
 fn validate_actual_type(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected_type: &str,
     actual_type: &str,
     span: Span,

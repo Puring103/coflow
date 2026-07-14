@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::DiagnosticSet;
 use coflow_cft::{
-    CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CompiledSchema, ValueDependencyMode,
+    CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchema, ValueDependencyMode,
 };
 use coflow_data_model::{CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordOrigin};
 
@@ -12,7 +12,7 @@ use super::{
 };
 
 pub(super) fn default_record_for_type(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     type_name: &str,
     materialization: DefaultMaterialization,
 ) -> Result<CfdRecord, DiagnosticSet> {
@@ -27,7 +27,7 @@ pub(super) fn default_record_for_type(
 }
 
 pub fn default_value_for_type_ref(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     ty: &CftSchemaTypeRef,
     materialization: DefaultMaterialization,
 ) -> Result<CfdValue, DiagnosticSet> {
@@ -35,7 +35,7 @@ pub fn default_value_for_type_ref(
 }
 
 pub(super) fn default_missing_fields_for_type(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     type_name: &str,
     materialization: DefaultMaterialization,
     provided_names: &BTreeSet<String>,
@@ -48,7 +48,7 @@ pub(super) fn default_missing_fields_for_type(
 }
 
 pub(super) fn create_record_draft_for_type(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     type_name: &str,
 ) -> Result<CreateRecordDraft, DiagnosticSet> {
     ensure_type_can_materialize(schema, type_name)?;
@@ -72,12 +72,12 @@ pub(super) fn create_record_draft_for_type(
 }
 
 struct DefaultValueMaterializer<'a> {
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     memo: BTreeMap<(ValueDependencyMode, String), BTreeMap<String, CfdValue>>,
 }
 
 impl<'a> DefaultValueMaterializer<'a> {
-    const fn new(schema: &'a CompiledSchema) -> Self {
+    const fn new(schema: &'a CftSchema) -> Self {
         Self {
             schema,
             memo: BTreeMap::new(),
@@ -342,7 +342,7 @@ const fn dependency_mode(materialization: DefaultMaterialization) -> ValueDepend
 }
 
 fn required_field_draft(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     field: &CftFieldMeta,
     err: Option<&DiagnosticSet>,
     value: Option<CfdValue>,
@@ -356,7 +356,7 @@ fn required_field_draft(
 }
 
 fn required_input_for_field(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     field: &CftFieldMeta,
     err: Option<&DiagnosticSet>,
 ) -> CreateRequiredInput {
@@ -396,7 +396,7 @@ fn required_input_for_field(
 }
 
 fn ensure_type_can_materialize(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     type_name: &str,
 ) -> Result<(), DiagnosticSet> {
     let Some(schema_type) = schema.type_meta(type_name) else {

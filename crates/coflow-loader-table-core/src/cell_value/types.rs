@@ -1,4 +1,4 @@
-use coflow_cft::{CftFieldMeta, CompiledSchema};
+use coflow_cft::{CftFieldMeta, CftSchema};
 
 use super::diagnostics::{
     invalid_declared_type, CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode,
@@ -19,7 +19,7 @@ pub(super) enum CellType {
 }
 
 impl CellType {
-    pub(super) fn parse(schema: &CompiledSchema, text: &str) -> Result<Self, CellValueDiagnostics> {
+    pub(super) fn parse(schema: &CftSchema, text: &str) -> Result<Self, CellValueDiagnostics> {
         let mut parser = TypeParser::new(schema, text);
         let ty = parser.parse_type()?;
         parser.skip_ws();
@@ -46,13 +46,13 @@ impl CellType {
 }
 
 struct TypeParser<'a> {
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     text: &'a str,
     pos: usize,
 }
 
 impl<'a> TypeParser<'a> {
-    fn new(schema: &'a CompiledSchema, text: &'a str) -> Self {
+    fn new(schema: &'a CftSchema, text: &'a str) -> Self {
         Self {
             schema,
             text,
@@ -173,7 +173,7 @@ pub(super) struct FieldMeta {
 }
 
 pub(super) fn full_fields(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     type_name: &str,
 ) -> Result<Vec<FieldMeta>, CellValueDiagnostics> {
     let Some(fields) = schema.fields(type_name) else {
@@ -188,7 +188,7 @@ pub(super) fn full_fields(
 }
 
 fn field_meta(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     field: &CftFieldMeta,
 ) -> Result<FieldMeta, CellValueDiagnostics> {
     Ok(FieldMeta {

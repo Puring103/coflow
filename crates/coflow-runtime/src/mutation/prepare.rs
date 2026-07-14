@@ -337,7 +337,7 @@ pub(super) fn rename_prepared_field_references(
 }
 
 fn rename_pending_value_references(
-    schema: &coflow_cft::CompiledSchema,
+    schema: &coflow_cft::CftSchema,
     target_actual_type: &str,
     expected: &CftSchemaTypeRef,
     value: &mut CfdValue,

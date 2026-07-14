@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftSchemaTypeRef, CftSchema};
 use coflow_data_model::{
     CfdDataModel, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
 };
@@ -38,7 +38,7 @@ pub(super) struct MaterializedDimensionValue<'a> {
 
 impl DimensionRoundView {
     pub(super) fn compile(
-        schema: &CompiledSchema,
+        schema: &CftSchema,
         model: &CfdDataModel,
         context: &DimensionCheckContext,
     ) -> Self {

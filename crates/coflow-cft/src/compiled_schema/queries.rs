@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
-use crate::{CftAnnotation, CftAnnotationValue, CftSchemaTypeRef, CftTypeMeta, CompiledSchema};
+use crate::{CftAnnotation, CftAnnotationValue, CftSchemaTypeRef, CftTypeMeta, CftSchema};
 
-impl CompiledSchema {
+impl CftSchema {
     #[must_use]
     pub fn type_is_struct(&self, type_name: &str) -> bool {
         self.types

@@ -28,7 +28,7 @@ use coflow_api::{
     ArtifactFile, ArtifactSet, CodeGenerator, CodegenContext, CodegenDescriptor,
     DecodedOutputOptions, Diagnostic, DiagnosticSet, ProviderBundle, ProviderRegistrationError,
 };
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -93,7 +93,7 @@ impl std::error::Error for CsharpCodegenError {}
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
 pub fn generate_csharp(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
     database_templates: &CsharpDatabaseTemplates,
@@ -111,7 +111,7 @@ pub fn generate_csharp(
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
 pub fn generate_csharp_with_database_templates(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
     database_templates: &CsharpDatabaseTemplates,
@@ -134,7 +134,7 @@ pub fn generate_csharp_with_database_templates(
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
 pub fn generate_csharp_with_id_as_enum_variants(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
     database_templates: &CsharpDatabaseTemplates,
@@ -174,7 +174,7 @@ const MESSAGEPACK_DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTe
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
 pub fn generate_csharp_json(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     generate_csharp_with_database_templates(
@@ -193,7 +193,7 @@ pub fn generate_csharp_json(
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
 pub fn generate_csharp_json_with_id_as_enum_variants(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&std::collections::BTreeSet<String>>,
@@ -215,7 +215,7 @@ pub fn generate_csharp_json_with_id_as_enum_variants(
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
 pub fn generate_csharp_messagepack(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     generate_csharp_with_database_templates(
@@ -234,7 +234,7 @@ pub fn generate_csharp_messagepack(
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
 pub fn generate_csharp_messagepack_with_id_as_enum_variants(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&std::collections::BTreeSet<String>>,

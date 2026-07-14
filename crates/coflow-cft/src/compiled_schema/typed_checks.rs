@@ -1,4 +1,4 @@
-use super::{CftTypeMeta, CompiledSchema, LocatedBudgetError};
+use super::{CftTypeMeta, CftSchema, LocatedBudgetError};
 use crate::{CftSchemaCheckBlock, CftSchemaTypeRef, ModuleId};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -168,14 +168,14 @@ fn charge_plan_work(
 
 #[derive(Debug)]
 pub struct TypedCheckSchedule<'schema, 'dimension> {
-    schema: &'schema CompiledSchema,
+    schema: &'schema CftSchema,
     owners: std::slice::Iter<'schema, String>,
     dimension: Option<&'dimension str>,
 }
 
 impl<'schema, 'dimension> TypedCheckSchedule<'schema, 'dimension> {
     pub(super) fn new(
-        schema: &'schema CompiledSchema,
+        schema: &'schema CftSchema,
         actual_type: &str,
         dimension: Option<&'dimension str>,
     ) -> Self {

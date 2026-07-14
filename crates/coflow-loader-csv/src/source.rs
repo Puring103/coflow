@@ -1,6 +1,6 @@
 use crate::diagnostics::{CsvDiagnostic, CsvDiagnostics, CsvLocation};
 use crate::format::parse;
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdInputRecord;
 use coflow_loader_table_core::{
     collect_table_input_records as collect_shared_table_input_records, TableSheet,
@@ -110,7 +110,7 @@ pub struct CsvInputRecords {
 /// Returns diagnostics when files, headers, or cells cannot be loaded according
 /// to the schema.
 pub fn collect_input_records(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sources: &[CsvSource],
 ) -> Result<CsvInputRecords, CsvDiagnostics> {
     let table_sources = table_sources_from_csv(sources)?;

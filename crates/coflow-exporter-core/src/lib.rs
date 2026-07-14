@@ -14,7 +14,7 @@
     )
 )]
 
-use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftSchemaTypeRef, CftSchema};
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdObject, CfdRecord, CfdTable, CfdValue};
 use std::borrow::Cow;
 use std::fmt;
@@ -131,7 +131,7 @@ impl std::error::Error for ExportError {}
 /// Returns a location-bearing error when model/schema state is inconsistent or
 /// when the sink rejects an event.
 pub fn export_model_to_sink<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     sink: &mut S,
 ) -> Result<(), ExportError>
@@ -155,7 +155,7 @@ where
 }
 
 fn encode_table<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     sink: &mut S,
     table: &CfdTable,
@@ -183,7 +183,7 @@ where
 }
 
 fn encode_record<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sink: &mut S,
     declared_type: &str,
     record: &CfdRecord,
@@ -216,7 +216,7 @@ where
 }
 
 fn encode_object<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sink: &mut S,
     declared_type: &str,
     object: &CfdObject,
@@ -245,7 +245,7 @@ where
 }
 
 fn object_fields<'a>(
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     object: &CfdObject,
     location: &ExportLocation<'_>,
 ) -> Result<&'a [coflow_cft::CftFieldMeta], ExportError> {
@@ -258,7 +258,7 @@ fn object_fields<'a>(
 }
 
 fn encode_object_members<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sink: &mut S,
     declared_type: &str,
     object: &CfdObject,
@@ -302,7 +302,7 @@ where
 }
 
 fn encode_value<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sink: &mut S,
     declared_type: &CftSchemaTypeRef,
     value: &CfdValue,

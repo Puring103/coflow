@@ -36,7 +36,7 @@ impl LocatedBudgetError {
 }
 
 #[derive(Debug, Clone)]
-pub struct CompiledSchema {
+pub struct CftSchema {
     reflection: SchemaReflection,
     sources: BTreeMap<ModuleId, String>,
     consts: BTreeMap<String, CftConstValue>,
@@ -49,7 +49,7 @@ pub struct CompiledSchema {
     structural_limits: StructuralLimits,
 }
 
-impl CompiledSchema {
+impl CftSchema {
     pub(crate) fn from_reflection(
         reflection: SchemaReflection,
         sources: BTreeMap<ModuleId, String>,

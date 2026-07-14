@@ -6,7 +6,7 @@ use crate::schema::{
     CftSchemaType,
 };
 use crate::span::Span;
-use crate::CompiledSchema;
+use crate::CftSchema;
 use coflow_structure::StructuralBudget;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -59,7 +59,7 @@ pub(crate) struct CftModule {
 #[derive(Debug)]
 pub struct CftContainer {
     pub(crate) modules: BTreeMap<ModuleId, CftModule>,
-    compiled: CompiledSchema,
+    compiled: CftSchema,
     parse_options: CftParseOptions,
 }
 
@@ -67,7 +67,7 @@ impl Default for CftContainer {
     fn default() -> Self {
         Self {
             modules: BTreeMap::new(),
-            compiled: CompiledSchema::empty(),
+            compiled: CftSchema::empty(),
             parse_options: CftParseOptions::default(),
         }
     }
@@ -168,7 +168,7 @@ impl CftContainer {
             .iter()
             .map(|(id, module)| (id.clone(), module.source.clone()))
             .collect();
-        let compiled = CompiledSchema::from_reflection(
+        let compiled = CftSchema::from_reflection(
             reflection,
             sources,
             options.structural_limits,
@@ -225,12 +225,12 @@ impl CftContainer {
         }
         let mut budget = StructuralBudget::new(structural_limits);
         self.compiled =
-            CompiledSchema::from_reflection(reflection, sources, structural_limits, &mut budget)?;
+            CftSchema::from_reflection(reflection, sources, structural_limits, &mut budget)?;
         Ok(())
     }
 
     #[must_use]
-    pub const fn compiled_schema(&self) -> &CompiledSchema {
+    pub const fn compiled_schema(&self) -> &CftSchema {
         &self.compiled
     }
 
@@ -288,7 +288,7 @@ impl CftContainer {
 ///
 /// Returns parse diagnostics retained by the module set or schema/type
 /// diagnostics from the semantic compilation pass.
-pub fn build_schema(module_set: &CftModuleSet) -> Result<CompiledSchema, CftDiagnostics> {
+pub fn build_schema(module_set: &CftModuleSet) -> Result<CftSchema, CftDiagnostics> {
     if !module_set.diagnostics().is_empty() {
         return Err(module_set.diagnostics().clone());
     }

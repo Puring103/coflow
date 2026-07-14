@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::{map_diagnostics_with_origins, DiagnosticSet};
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_checker::{
     run_checks_for_dimensions_subset_with_deps, DependencyGraph, DimensionCheckPlan,
     DimensionCheckRound, RootedCheckDiagnostic,
@@ -49,7 +49,7 @@ struct StableCheckLabel {
 
 pub(crate) fn run_full_project_checks(
     project: &Project,
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
 ) -> ProjectCheckOutput {
@@ -93,7 +93,7 @@ pub(crate) fn run_full_project_checks(
 
 pub(crate) fn run_incremental_project_checks(
     project: &Project,
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
     previous: &CheckState,

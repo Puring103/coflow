@@ -1,6 +1,6 @@
 use coflow_api::DiagnosticSet;
 use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord};
-use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchema};
 use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,7 +26,7 @@ pub(super) fn rewrite_cfd_records(
     source: &str,
     records: &[AstRecord],
     actual_type: &str,
-    schema: &CompiledSchema,
+    schema: &CftSchema,
 ) -> Result<String, DiagnosticSet> {
     let schema_fields = schema.fields(actual_type).ok_or_else(|| {
         DiagnosticSet::one(diag(
@@ -53,7 +53,7 @@ pub(super) fn rewrite_cfd_records(
 fn render_cfd_record(
     source: &str,
     record: &AstRecord,
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     fields: &BTreeMap<String, &CftFieldMeta>,
 ) -> String {
     let existing = record
@@ -97,7 +97,7 @@ fn format_record_key(key: &str) -> String {
     }
 }
 
-fn default_cfd_value(schema: &CompiledSchema, field: &CftFieldMeta) -> String {
+fn default_cfd_value(schema: &CftSchema, field: &CftFieldMeta) -> String {
     let value = field.default.as_ref().map_or_else(
         || value_from_type_default(schema, &field.ty_ref),
         |default| value_from_schema_default(schema, &field.ty_ref, default),
@@ -106,7 +106,7 @@ fn default_cfd_value(schema: &CompiledSchema, field: &CftFieldMeta) -> String {
 }
 
 fn value_from_schema_default(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     ty: &CftSchemaTypeRef,
     default: &CftSchemaDefaultValue,
 ) -> CfdValue {
@@ -130,7 +130,7 @@ fn value_from_schema_default(
     }
 }
 
-fn value_from_type_default(schema: &CompiledSchema, ty: &CftSchemaTypeRef) -> CfdValue {
+fn value_from_type_default(schema: &CftSchema, ty: &CftSchemaTypeRef) -> CfdValue {
     match ty {
         CftSchemaTypeRef::Int => CfdValue::Int(0),
         CftSchemaTypeRef::Float => CfdValue::Float(0.0),
@@ -207,7 +207,7 @@ pub(super) fn serialize_value(v: &CfdValue, depth: usize) -> String {
 
 pub(super) fn serialize_value_for_type(
     v: &CfdValue,
-    schema: Option<&CompiledSchema>,
+    schema: Option<&CftSchema>,
     expected: Option<&CftSchemaTypeRef>,
     depth: usize,
 ) -> String {

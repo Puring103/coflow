@@ -6,7 +6,7 @@
     clippy::unwrap_used
 )]
 
-pub(crate) use coflow_cft::{CftContainer, CompiledSchema, ModuleId};
+pub(crate) use coflow_cft::{CftContainer, CftSchema, ModuleId};
 pub(crate) use coflow_data_model::*;
 
 pub(crate) fn compile_schema(source: &str) -> CftContainer {

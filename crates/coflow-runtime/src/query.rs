@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use coflow_api::{ProviderRegistry, WriterCapabilities};
-use coflow_cft::{CftAnnotation, CftAnnotationValue, CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftAnnotation, CftAnnotationValue, CftSchemaTypeRef, CftSchema};
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RefSite};
 
 use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
@@ -323,7 +323,7 @@ impl<'a> ProjectQueries<'a> {
     }
 }
 
-fn field_shape(schema: &CompiledSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
+fn field_shape(schema: &CftSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
     let non_nullable = non_nullable(ty);
     let named = match non_nullable {
         CftSchemaTypeRef::Named(name) => Some(name.as_str()),

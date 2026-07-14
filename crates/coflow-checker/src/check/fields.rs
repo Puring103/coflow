@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftSchemaTypeRef, CftSchema};
 use coflow_data_model::{CfdDataModel, CfdErrorCode};
 use coflow_structure::StructuralBudget;
 
@@ -9,7 +9,7 @@ use super::value::{
 };
 
 pub(super) fn field_type_for_record<'a>(
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     model: &CfdDataModel,
     record: &CheckRecordRef,
     name: &str,
@@ -20,7 +20,7 @@ pub(super) fn field_type_for_record<'a>(
 }
 
 pub(super) fn current_field(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     current: &CheckValue,
     name: &str,
@@ -43,7 +43,7 @@ pub(super) fn current_field(
 }
 
 pub(super) fn field_value(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     target: LocatedCheckValue,
     name: &str,

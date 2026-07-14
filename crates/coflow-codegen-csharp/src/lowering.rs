@@ -1,13 +1,13 @@
 use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnumMeta, CftFieldMeta, CftSchemaTypeRef, CftTypeMeta, CompiledSchema};
+use coflow_cft::{CftEnumMeta, CftFieldMeta, CftSchemaTypeRef, CftTypeMeta, CftSchema};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug)]
 pub struct CsharpLoweringPlan<'a> {
     pub int_32: bool,
     pub float_32: bool,
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     types: Vec<&'a CftTypeMeta>,
     enums: Vec<&'a CftEnumMeta>,
     fields: BTreeMap<&'a str, &'a [CftFieldMeta]>,
@@ -31,7 +31,7 @@ pub struct CsharpLoweringPlan<'a> {
 
 impl<'a> CsharpLoweringPlan<'a> {
     pub fn lower(
-        schema: &'a CompiledSchema,
+        schema: &'a CftSchema,
         int_32: bool,
         float_32: bool,
         non_empty_tables: Option<&BTreeSet<String>>,

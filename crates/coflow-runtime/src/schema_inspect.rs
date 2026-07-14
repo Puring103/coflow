@@ -1,7 +1,7 @@
 use coflow_api::FlatDiagnostic;
 use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftConstValue, CftContainer, CftSchemaDefaultValue,
-    CftSchemaTypeRef, CompiledSchema, ModuleId,
+    CftSchemaTypeRef, CftSchema, ModuleId,
 };
 use serde::Serialize;
 
@@ -245,7 +245,7 @@ fn append_module_consts(
     }));
 }
 
-fn type_ref_info(schema: &CompiledSchema, ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
+fn type_ref_info(schema: &CftSchema, ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
     match ty {
         CftSchemaTypeRef::Int => SchemaTypeRefInfo::Int,
         CftSchemaTypeRef::Float => SchemaTypeRefInfo::Float,

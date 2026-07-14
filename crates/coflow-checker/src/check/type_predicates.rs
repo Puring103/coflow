@@ -1,10 +1,10 @@
-use coflow_cft::{CftSchemaTypePredicate, CompiledSchema};
+use coflow_cft::{CftSchemaTypePredicate, CftSchema};
 use coflow_data_model::CfdDataModel;
 
 use super::value::CheckValue;
 
 pub(super) fn value_matches_predicate(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     value: &CheckValue,
     predicate: &CftSchemaTypePredicate,

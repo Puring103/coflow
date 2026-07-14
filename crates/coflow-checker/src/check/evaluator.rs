@@ -12,7 +12,7 @@ use super::ops::{self, OpsResult};
 use super::quantifiers;
 use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
 use coflow_cft::{
-    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp, CompiledSchema,
+    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp, CftSchema,
 };
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use super::value::CheckRecordRef;
 
 pub(super) struct CheckEvaluator<'a> {
-    pub(super) schema: &'a CompiledSchema,
+    pub(super) schema: &'a CftSchema,
     pub(super) model: &'a CfdDataModel,
     pub(super) check_origin: ValueLocation,
     pub(super) current: CheckValue,
@@ -52,7 +52,7 @@ pub(super) type EvalResult<T> = Result<T, EvalAbort>;
 
 impl<'a> CheckEvaluator<'a> {
     pub(super) fn new(
-        schema: &'a CompiledSchema,
+        schema: &'a CftSchema,
         model: &'a CfdDataModel,
         check_origin: ValueLocation,
         current: CheckValue,

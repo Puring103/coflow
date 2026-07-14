@@ -1,5 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity};
-use coflow_cft::{CftFieldMeta, CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftFieldMeta, CftSchemaTypeRef, CftSchema};
 use coflow_data_model::CfdEnumValue;
 
 use crate::ProjectSession;
@@ -19,7 +19,7 @@ pub use types::{
 };
 
 pub(super) fn schema_field<'a>(
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     actual_type: &str,
     field_name: &str,
 ) -> Result<&'a CftFieldMeta, DiagnosticSet> {

@@ -1,5 +1,5 @@
 use crate::{DecodedSourceOptions, Diagnostic, DiagnosticSet, ResolvedSource};
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdValue;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -23,7 +23,7 @@ pub struct SyncHeaderRequest<'a> {
     pub sheet: Option<&'a str>,
     pub actual_type: &'a str,
     pub headers: &'a [String],
-    pub schema: Option<&'a CompiledSchema>,
+    pub schema: Option<&'a CftSchema>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

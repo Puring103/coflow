@@ -8,7 +8,7 @@ mod columns;
 mod diagnostics;
 mod types;
 
-use coflow_cft::{record_key_ident_error, CompiledSchema};
+use coflow_cft::{record_key_ident_error, CftSchema};
 use coflow_data_model::{
     CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath, CfdPathSegment, RecordOrigin,
     SourceDocument,
@@ -36,7 +36,7 @@ const SKIP_IMPORT_ROW_MARKER: &str = "##";
 /// according to the schema.
 #[allow(clippy::too_many_lines)]
 pub fn collect_table_input_records(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sources: &[TableSource],
 ) -> Result<TableInputRecords, TableDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
@@ -221,7 +221,7 @@ pub fn collect_table_input_records(
 /// Returns diagnostics when the type is unknown, the header is missing required
 /// columns, or `@expand` columns are malformed.
 pub fn resolve_table_write_layout(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     source_name: &Path,
     sheet: &TableSheetConfig,
     header_row: &[String],
@@ -336,7 +336,7 @@ pub fn map_label_to_table(label: &CfdLabel, origins: &[RecordOrigin]) -> Option<
 
 #[allow(clippy::too_many_arguments)]
 fn build_expanded_object(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     source_name: &Path,
     sheet: &TableSheetConfig,
     parent_type: &str,
@@ -379,7 +379,7 @@ fn build_expanded_object(
     }
 }
 
-fn full_field_types(schema: &CompiledSchema, type_name: &str) -> Option<BTreeMap<String, String>> {
+fn full_field_types(schema: &CftSchema, type_name: &str) -> Option<BTreeMap<String, String>> {
     let fields = schema
         .fields(type_name)?
         .map(|field| (field.name.clone(), field.raw_type.clone()))

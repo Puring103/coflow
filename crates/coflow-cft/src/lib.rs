@@ -44,7 +44,7 @@ mod span;
 pub use coflow_structure::StructuralLimits;
 pub use compiled_schema::{
     CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftEnumVariantMeta, CftFieldMeta,
-    CftTypeMeta, CompiledSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
+    CftTypeMeta, CftSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
     ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
 pub use container::{build_schema, CftContainer, ModuleId};

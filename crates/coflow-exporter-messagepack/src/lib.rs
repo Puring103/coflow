@@ -18,7 +18,7 @@ use coflow_api::{
     ArtifactContentKind, ArtifactFile, ArtifactSet, DataExporter, DecodedOutputOptions, Diagnostic,
     DiagnosticSet, ExportContext, ExporterDescriptor, ProviderBundle, ProviderRegistrationError,
 };
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 use coflow_exporter_core::{export_model_to_sink, ExportError, ExportEventSink};
 use std::fmt;
@@ -57,7 +57,7 @@ impl From<ExportError> for MessagePackExportError {
 ///
 /// Returns an error carrying the record and field path that failed.
 pub fn export_messagepack_artifacts(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
 ) -> Result<ArtifactSet, MessagePackExportError> {
     let mut sink = MessagePackEventSink::default();

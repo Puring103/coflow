@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use coflow_api::{ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet};
-use coflow_cft::{CftContainer, CompiledSchema};
+use coflow_cft::{CftContainer, CftSchema};
 use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::{path_to_slash, Project};
 use serde::{Deserialize, Serialize};
@@ -58,7 +58,7 @@ pub(crate) struct ProjectSession {
 
 impl ProjectSession {
     #[must_use]
-    pub fn compiled_schema(&self) -> &CompiledSchema {
+    pub fn compiled_schema(&self) -> &CftSchema {
         self.schema.compiled_schema()
     }
 
@@ -391,7 +391,7 @@ impl ProjectSchemaSession {
     }
 
     #[must_use]
-    pub fn compiled_schema(&self) -> &CompiledSchema {
+    pub fn compiled_schema(&self) -> &CftSchema {
         self.schema.compiled_schema()
     }
 

@@ -1,7 +1,7 @@
 use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
-    CftContainer, CftFieldMeta, CftSchemaTypeRef, CftTypeMeta, CompiledSchema,
+    CftContainer, CftFieldMeta, CftSchemaTypeRef, CftTypeMeta, CftSchema,
     ValueDependencyCycle, ValueDependencyMode,
 };
 use std::collections::BTreeMap;
@@ -55,7 +55,7 @@ pub(crate) enum CfdValueDraft {
 
 #[derive(Debug, Clone)]
 pub(crate) struct DataModelCompilerContext<'a> {
-    cft: &'a CompiledSchema,
+    cft: &'a CftSchema,
     domain_index: CfdDomainIndex,
 }
 
@@ -70,7 +70,7 @@ impl<'a> DataModelCompilerContext<'a> {
         }
     }
 
-    fn build_domain_index(cft_view: &CompiledSchema) -> CfdDomainIndex {
+    fn build_domain_index(cft_view: &CftSchema) -> CfdDomainIndex {
         let type_names = cft_view.type_names().cloned().collect::<Vec<_>>();
         let type_id_by_name = type_names
             .iter()
@@ -106,7 +106,7 @@ impl<'a> DataModelCompilerContext<'a> {
         )
     }
 
-    fn domain_root_name(cft_view: &CompiledSchema, type_name: &str) -> String {
+    fn domain_root_name(cft_view: &CftSchema, type_name: &str) -> String {
         let mut current = type_name;
         while let Some(parent) = cft_view
             .type_meta(current)
@@ -118,7 +118,7 @@ impl<'a> DataModelCompilerContext<'a> {
     }
 
     fn ancestor_type_ids(
-        cft_view: &CompiledSchema,
+        cft_view: &CftSchema,
         type_id_by_name: &BTreeMap<String, CfdTypeId>,
         type_name: &str,
     ) -> Vec<CfdTypeId> {
