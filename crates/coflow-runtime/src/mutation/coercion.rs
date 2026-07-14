@@ -165,7 +165,7 @@ fn coerce_cfd_object_fields(
     actual_type: &str,
     fields: BTreeMap<String, CfdValue>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
-    let schema = session.compiled_schema();
+    let schema = session.schema();
     fields
         .into_iter()
         .map(|(name, value)| {
@@ -181,7 +181,7 @@ fn validate_value_for_write(
     value: &CfdValue,
     pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
 ) -> Result<(), DiagnosticSet> {
-    let schema = session.compiled_schema();
+    let schema = session.schema();
     write_rules::validate_value_for_write_with_pending(
         session,
         schema,
@@ -227,7 +227,7 @@ fn coerce_cfd_enum_value(
     if let Some(variant) = value.variant.as_ref() {
         // The variant name is authoritative; the backing int on the wire may
         // be stale if the editor reuses a previous selection.
-        let schema = session.compiled_schema();
+        let schema = session.schema();
         let expected_value = schema
             .enum_variant_value(enum_name, variant)
             .ok_or_else(|| {
@@ -372,7 +372,7 @@ fn ensure_object_type_assignable(
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
     write_rules::ensure_object_type_assignable(
-        session.compiled_schema(),
+        session.schema(),
         expected_type,
         actual_type,
         "MUTATION-VALUE",
@@ -385,7 +385,7 @@ fn coerce_json_object_fields(
     actual_type: &str,
     object: &Map<String, Value>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
-    let schema = session.compiled_schema();
+    let schema = session.schema();
     if !schema.has_type(actual_type) {
         return Err(one_value_error(format!(
             "unknown object type `{actual_type}`"

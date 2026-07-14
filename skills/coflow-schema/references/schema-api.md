@@ -15,24 +15,23 @@ Schema API 只描述完成解析和编译后的 CFT 结构：
 - 不构建 DataModel。
 - 不运行 `check {}` 的运行期求值。
 
-项目级宿主通常通过 `coflow-project` 和 `coflow-runtime` 获取已编译 schema；低层工具可以直接使用 `CftContainer` 注册模块并调用 `compile()`。
+项目级宿主通过 `coflow-runtime::ProjectRuntime` 获取已编译 schema；低层工具收集 `CftFile` 后调用 `parse_modules` 和 `build_schema`。
 
 ## 核心入口
 
-`CftContainer` 是编译后 schema 的主入口：
+`CftModuleSet` 是不可变的解析结果，`CftSchema` 是唯一的编译后语义 schema：
 
 ```rust
-let mut container = CftContainer::new();
-container.add_module(ModuleId::from("schema/main.cft"), source)?;
-container.compile()?;
+let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+let schema = build_schema(&modules, &CftDimensions::default())?;
 ```
 
 常用读取能力包括：
 
 | API | 用途 |
 | --- | --- |
-| `module_ids()` | 遍历模块 |
-| `source(module)` | 读取模块源文本 |
+| `CftModuleSet::files()` | 遍历模块和源文本 |
+| `CftModuleSet::module(module)` | 读取已解析的 module AST |
 | `all_types()` | 遍历所有 type |
 | `all_enums()` | 遍历所有 enum |
 | `resolve_type(name)` | 按名称查找 type |
@@ -107,7 +106,7 @@ Schema API 会保留编译后的注解。常见消费方式：
 
 工具和 Provider 应遵守这些规则：
 
-- 使用 `CftContainer` 的已编译视图，不重新读取 AST。
+- 使用 runtime generation 中的已编译 `CftSchema`，不重新读取或解析 AST。
 - 使用 `all_fields` 处理继承字段顺序。
 - 使用类型反射处理字段类型，不从字符串手写解析。
 - 使用 schema 中的 `span` 和 `module` 生成定位。
@@ -121,9 +120,9 @@ Schema API 是低层能力。完整项目运行时还会继续做：
 
 1. 读取 `coflow.yaml`。
 2. 发现并排序 schema 文件。
-3. 注册 CFT modules。
-4. 编译 schema。
-5. 注入维度合成 type。
+3. 收集 CFT files。
+4. 解析 modules 并编译 schema。
+5. 构建维度合成 type。
 6. 解析和加载 sources。
 7. 构建 DataModel。
 8. 运行 check。

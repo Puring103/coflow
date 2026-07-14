@@ -72,10 +72,10 @@ fn parser_accepts_core_syntax() {
         }
     "#;
 
-    let mut container = add_source(source).unwrap();
-    container.compile().unwrap();
-    assert!(container.has_type("Item"));
-    assert!(container.has_enum("Permission"));
+    let modules = add_source(source).unwrap();
+    let schema = build_schema(&modules, &CftDimensions::default()).unwrap();
+    assert!(schema.resolve_type("Item").is_some());
+    assert!(schema.resolve_enum("Permission").is_some());
 }
 
 #[test]
@@ -97,15 +97,15 @@ fn parser_accepts_unicode_identifiers_whitespace_and_int_division() {
         }
     "#;
 
-    let mut container = add_source(source).unwrap();
-    container.compile().unwrap();
-    assert!(container.has_type("道具"));
-    assert!(container.has_enum("稀有度"));
+    let modules = add_source(source).unwrap();
+    let schema = build_schema(&modules, &CftDimensions::default()).unwrap();
+    assert!(schema.resolve_type("道具").is_some());
+    assert!(schema.resolve_enum("稀有度").is_some());
 }
 
 #[test]
 fn lexer_accepts_float_suffix_literals() {
-    let mut container = add_source(
+    let modules = add_source(
         r#"
         const A = 1f;
         const B = 2F;
@@ -117,13 +117,13 @@ fn lexer_accepts_float_suffix_literals() {
     "#,
     )
     .unwrap();
-    container.compile().unwrap();
+    let schema = build_schema(&modules, &CftDimensions::default()).unwrap();
     assert_eq!(
-        container.resolve_const("A").map(|constant| &constant.value),
+        schema.resolve_const("A").map(|constant| &constant.value),
         Some(&CftConstValue::Float(1.0))
     );
     assert_eq!(
-        container.resolve_const("B").map(|constant| &constant.value),
+        schema.resolve_const("B").map(|constant| &constant.value),
         Some(&CftConstValue::Float(2.0))
     );
 }
@@ -198,12 +198,12 @@ fn parser_rejects_invalid_chain_comparison() {
 /// must not be parsed as the start of a comment.
 #[test]
 fn lexer_recognises_hash_comments_and_keeps_double_slash_as_int_div() {
-    let mut container = add_source(
+    let modules = add_source(
         "# leading comment\nconst N = 10; # trailing comment\ntype T { x: int; check { N // 2 >= 0; } }",
     )
     .unwrap();
-    container.compile().unwrap();
-    assert!(container.has_type("T"));
+    let schema = build_schema(&modules, &CftDimensions::default()).unwrap();
+    assert!(schema.resolve_type("T").is_some());
 }
 
 #[test]
@@ -217,12 +217,12 @@ fn parser_rejects_double_slash_at_top_level_as_invalid_item() {
 /// annotations and reject named-type annotations or value/type mismatches.
 #[test]
 fn parser_accepts_optional_const_type_annotation() {
-    let mut container = add_source(
+    let modules = add_source(
         "const A: int = 1; const B: float = 1.5; const C: bool = true; const D: string = \"x\";",
     )
     .unwrap();
-    container.compile().unwrap();
-    assert!(container.resolve_const("A").is_some());
+    let schema = build_schema(&modules, &CftDimensions::default()).unwrap();
+    assert!(schema.resolve_const("A").is_some());
 }
 
 #[test]

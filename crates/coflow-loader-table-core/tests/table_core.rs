@@ -1,6 +1,6 @@
 #![allow(clippy::panic_in_result_fn)]
 
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
 use coflow_data_model::RecordOrigin;
 use coflow_loader_table_core::{
     collect_table_input_records, TableSheet, TableSheetConfig, TableSource,
@@ -23,7 +23,7 @@ fn collects_table_rows_as_input_records() -> TestResult {
         vec![TableSheetConfig::new("Item")],
     );
 
-    let loaded = collect_table_input_records(schema.compiled_schema(), &[source])
+    let loaded = collect_table_input_records(&schema, &[source])
         .map_err(|err| format!("{err:?}"))?;
 
     assert_eq!(loaded.records.len(), 1);
@@ -35,13 +35,8 @@ fn collects_table_rows_as_input_records() -> TestResult {
     Ok(())
 }
 
-fn compile_schema(source: &str) -> Result<CftContainer, String> {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("main"), source)
-        .map_err(|err| format!("schema should parse: {err:?}"))?;
-    container
-        .compile()
-        .map_err(|err| format!("schema should compile: {err:?}"))?;
-    Ok(container)
+fn compile_schema(source: &str) -> Result<CftSchema, String> {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    build_schema(&modules, &CftDimensions::default())
+        .map_err(|err| format!("schema should compile: {err:?}"))
 }

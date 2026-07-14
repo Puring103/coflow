@@ -170,18 +170,6 @@ impl CftSchema {
         }
     }
 
-    pub(crate) const fn reflection(&self) -> &SchemaReflection {
-        &self.reflection
-    }
-
-    pub(crate) const fn sources(&self) -> &BTreeMap<ModuleId, String> {
-        &self.sources
-    }
-
-    pub(crate) const fn structural_limits(&self) -> StructuralLimits {
-        self.structural_limits
-    }
-
     fn build_dimension_storage_index(
         types: &BTreeMap<String, CftTypeMeta>,
     ) -> BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>> {

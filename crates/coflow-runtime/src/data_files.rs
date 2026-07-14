@@ -141,7 +141,7 @@ pub fn sync_data_header(
         Some(options.actual_type),
         options.sheet,
     )?;
-    let compiled_schema = session.compiled_schema();
+    let compiled_schema = session.schema();
     let result = manager.sync_header(
         table_context(session),
         &SyncHeaderRequest {
@@ -367,7 +367,7 @@ pub fn table_header_layout(
                 )
             })?,
     };
-    let compiled_schema = session.compiled_schema();
+    let compiled_schema = session.schema();
     let schema_type = compiled_schema.type_meta(&actual_type).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-TYPE",

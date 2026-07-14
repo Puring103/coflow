@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_core::{export_model_to_sink, ExportEventSink};
 use std::collections::BTreeMap;
@@ -136,15 +136,10 @@ impl ExportEventSink for TestSink {
     }
 }
 
-fn compile_schema(source: &str) -> Result<CftContainer, String> {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("main"), source)
-        .map_err(|err| format!("schema should parse: {err:?}"))?;
-    container
-        .compile()
-        .map_err(|err| format!("schema should compile: {err:?}"))?;
-    Ok(container)
+fn compile_schema(source: &str) -> Result<CftSchema, String> {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    build_schema(&modules, &CftDimensions::default())
+        .map_err(|err| format!("schema should compile: {err:?}"))
 }
 
 fn build_model(builder: coflow_data_model::CfdModelBuilder<'_>) -> Result<CfdDataModel, String> {
@@ -154,11 +149,11 @@ fn build_model(builder: coflow_data_model::CfdModelBuilder<'_>) -> Result<CfdDat
 }
 
 fn export_tables(
-    schema: &CftContainer,
+    schema: &CftSchema,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, TestValue>, String> {
     let mut sink = TestSink::default();
-    export_model_to_sink(schema.compiled_schema(), model, &mut sink)
+    export_model_to_sink(schema, model, &mut sink)
         .map_err(|err| format!("export core: {err:?}"))?;
     Ok(sink.tables)
 }
@@ -454,7 +449,7 @@ fn reports_sink_errors_with_record_and_full_field_path() -> TestResult {
     );
     let model = build_model(builder)?;
     let mut sink = FailingSink;
-    let err = export_model_to_sink(schema.compiled_schema(), &model, &mut sink)
+    let err = export_model_to_sink(&schema, &model, &mut sink)
         .expect_err("sink error should become export error");
 
     assert_eq!(
@@ -558,7 +553,7 @@ fn streams_large_arrays_through_a_constant_state_sink() -> TestResult {
     let model = build_model(builder)?;
     let mut sink = CountingSink::default();
 
-    export_model_to_sink(schema.compiled_schema(), &model, &mut sink)
+    export_model_to_sink(&schema, &model, &mut sink)
         .map_err(|err| format!("stream large array: {err}"))?;
 
     assert_eq!(sink.integers, ITEM_COUNT);

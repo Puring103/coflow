@@ -11,7 +11,7 @@ use coflow_structure::{StructuralBudget, StructuralLimits};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct CftCompileOptions {
+pub(crate) struct CftCompileOptions {
     pub structural_limits: StructuralLimits,
 }
 

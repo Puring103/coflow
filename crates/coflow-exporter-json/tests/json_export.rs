@@ -8,7 +8,7 @@
 )]
 
 use coflow_api::{ArtifactContent, DataExporter, ExportContext};
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_json::export_json_artifacts;
 use serde_json::json;
@@ -17,15 +17,10 @@ use std::collections::BTreeMap;
 
 type TestResult = Result<(), String>;
 
-fn compile_schema(source: &str) -> Result<CftContainer, String> {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("main"), source)
-        .map_err(|err| format!("schema should parse: {err:?}"))?;
-    container
-        .compile()
-        .map_err(|err| format!("schema should compile: {err:?}"))?;
-    Ok(container)
+fn compile_schema(source: &str) -> Result<CftSchema, String> {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    build_schema(&modules, &CftDimensions::default())
+        .map_err(|err| format!("schema should compile: {err:?}"))
 }
 
 fn build_model(builder: coflow_data_model::CfdModelBuilder<'_>) -> Result<CfdDataModel, String> {
@@ -35,10 +30,10 @@ fn build_model(builder: coflow_data_model::CfdModelBuilder<'_>) -> Result<CfdDat
 }
 
 fn export_tables(
-    schema: &CftContainer,
+    schema: &CftSchema,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, Value>, String> {
-    let artifacts = export_json_artifacts(schema.compiled_schema(), model)
+    let artifacts = export_json_artifacts(schema, model)
         .map_err(|err| format!("export json: {err:?}"))?;
     artifacts
         .files()
@@ -132,7 +127,7 @@ fn streaming_json_preserves_pretty_output_bytes() -> TestResult {
         ],
     );
     let model = build_model(builder)?;
-    let artifacts = export_json_artifacts(schema.compiled_schema(), &model)
+    let artifacts = export_json_artifacts(&schema, &model)
         .map_err(|err| format!("export JSON artifacts: {err}"))?;
     let ArtifactContent::Text(actual) = &artifacts.files()[0].content else {
         return Err("JSON artifact should contain text".to_string());
@@ -179,7 +174,7 @@ fn json_exporter_skips_empty_table_files() -> TestResult {
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
     let model = build_model(builder)?;
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let options = coflow_exporter_json::JsonExporter
         .decode_options(&json!({}))
         .map_err(|err| format!("decode JSON output options: {err:?}"))?;

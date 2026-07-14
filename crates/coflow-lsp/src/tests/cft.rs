@@ -13,9 +13,9 @@ type Item {\n\
   target: Monster;\n\
 }\n";
     let (_cleanup, project) = test_project("lsp-trivia", source);
-    let build = LspBuild::new(
-        compile_schema_project_with_overrides(&project, &[]).expect("compile schema"),
-    );
+    let mut runtime = coflow_runtime::ProjectRuntime::new(project);
+    runtime.refresh().expect("compile schema");
+    let build = LspBuild::new(runtime.into_latest_attempt().expect("schema attempt"));
     let document = build
         .documents
         .values()

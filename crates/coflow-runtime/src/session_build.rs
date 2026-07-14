@@ -95,7 +95,7 @@ pub(crate) fn rebuild_project_session_from_generation(
     registry: &ProviderRegistry,
     impact: &MutationImpact,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
-    let dimension_fields = dimensions::dimension_fields(session.compiled_schema());
+    let dimension_fields = dimensions::dimension_fields(session.schema());
     let ctx = SessionBuildContext {
         project: session.project.clone(),
         schema: session.schema.clone(),
@@ -124,6 +124,7 @@ fn finish_project_session(
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
     let ProjectSchemaSession {
         project,
+        modules: _,
         schema,
         mut diagnostics,
     } = schema_session;
@@ -158,7 +159,7 @@ fn finish_project_session(
 fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let mut initial_diagnostics = project.schema_diagnostic_set();
     initial_diagnostics.extend(project.data_diagnostic_set());
-    build_project_schema_with_diagnostics(project, initial_diagnostics)
+    build_project_schema_with_diagnostics(project, initial_diagnostics, &[])
 }
 
 struct SessionBuildContext<'a> {

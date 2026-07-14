@@ -57,7 +57,7 @@ schema 路径可以指向文件或目录：
 
 - 文件必须是精确小写 `.cft`。
 - 目录会递归发现精确小写 `.cft` 文件。
-- 文件按 module id 排序后注册到 `CftContainer`。
+- 文件按 module id 排序后收集为 `CftFile`。
 - 多个 schema 文件合并为一个编译后的 schema。
 
 Schema 编译阶段会处理：
@@ -70,7 +70,7 @@ Schema 编译阶段会处理：
 - 注解。
 - `check {}` 静态类型检查。
 
-`CftContainer` 将 module source、schema reflection、类型/enum 索引、typed check schedule 和 value dependency plan 作为同一个 `CompiledSchema` generation 发布。新增 module 只进入 staged 输入；只有完整编译成功才原子替换 generation，失败时查询仍读取上一份 schema 与对应 source。运行时生成的 dimension storage type 也按批次构建候选 generation，不会逐个类型发布半完成索引。
+`coflow-cft` 将 `CftFile` 解析为不可变的 `CftModuleSet`，再连同维度配置构建一个 `CftSchema`。runtime 将模块集、schema 和输入 fingerprint 作为同一个 generation 缓存；只有完整构建成功才替换已发布 generation。失败的候选仅用于诊断，语义查询继续读取上一份可用 schema。维度 storage type 属于同一次 CFT build，不会逐个发布半完成索引。
 
 只需要 schema 的命令不会要求数据源存在。
 

@@ -2,19 +2,22 @@
 #![allow(clippy::redundant_pub_crate)]
 
 pub(crate) use coflow_cft::{
-    CftConstValue, CftContainer, CftDiagnostics, CftErrorCode, CftSeverity, CftStage, ModuleId,
+    build_schema, parse_modules, CftConstValue, CftDiagnostics, CftDimensions, CftErrorCode,
+    CftFile, CftModuleSet, CftSchema, CftSeverity, CftStage, ModuleId,
 };
 
-pub(crate) fn add_source(source: &str) -> Result<CftContainer, CftDiagnostics> {
-    let mut container = CftContainer::new();
-    container.add_module(ModuleId::from("main"), source)?;
-    Ok(container)
+pub(crate) fn add_source(source: &str) -> Result<CftModuleSet, CftDiagnostics> {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    if modules.diagnostics().is_empty() {
+        Ok(modules)
+    } else {
+        Err(modules.diagnostics().clone())
+    }
 }
 
-pub(crate) fn compile_one(source: &str) -> Result<CftContainer, CftDiagnostics> {
-    let mut container = add_source(source)?;
-    container.compile()?;
-    Ok(container)
+pub(crate) fn compile_one(source: &str) -> Result<CftSchema, CftDiagnostics> {
+    let modules = add_source(source)?;
+    build_schema(&modules, &CftDimensions::default())
 }
 
 pub(crate) fn assert_has_code(diags: &CftDiagnostics, code: CftErrorCode) {

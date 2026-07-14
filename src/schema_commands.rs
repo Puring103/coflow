@@ -2,8 +2,8 @@ use crate::diagnostics::{cli_error, cli_file_error};
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
-    compile_schema_project_with_overrides, inspect_schema, schema_files, Runtime,
-    SchemaFilesReport, SchemaInspectReport, SchemaSourceOverride,
+    inspect_schema, schema_files, ProjectRuntime, Runtime, SchemaFilesReport,
+    SchemaInspectReport, SchemaTextOverride,
 };
 use serde::Serialize;
 use std::io::{self, Read, Write};
@@ -237,15 +237,17 @@ fn check_schema_source(
     source: &str,
 ) -> Result<Vec<FlatDiagnostic>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
-    let build = compile_schema_project_with_overrides(
-        project,
-        &[SchemaSourceOverride {
+    let mut runtime = ProjectRuntime::new(project.clone());
+    let refresh = runtime.refresh_with_overrides(&[SchemaTextOverride {
             requested_module: Some(target.module_id.clone()),
             normalized_path: target.canonical_path.clone(),
             source: source.to_string(),
-        }],
-    )?;
-    diagnostics.extend(build.diagnostics);
+    }]);
+    if let Some(attempt) = runtime.latest_attempt() {
+        diagnostics.extend(attempt.diagnostics().clone().into_set());
+    } else {
+        refresh?;
+    }
     Ok(diagnostics.flat_diagnostics())
 }
 

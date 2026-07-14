@@ -71,13 +71,13 @@ impl<'a> ProjectQueries<'a> {
 
     #[must_use]
     pub fn schema_has_type(self, type_name: &str) -> bool {
-        self.session.compiled_schema().has_type(type_name)
+        self.session.schema().has_type(type_name)
     }
 
     #[must_use]
     pub fn schema_type_fields(self, type_name: &str) -> Vec<(String, String)> {
         self.session
-            .compiled_schema()
+            .schema()
             .type_meta(type_name)
             .map(|meta| {
                 meta.all_fields
@@ -205,9 +205,9 @@ impl<'a> ProjectQueries<'a> {
     pub fn field_shape(self, actual_type: &str, field_name: &str) -> Option<FieldShapeInfo> {
         let ty = self
             .session
-            .compiled_schema()
+            .schema()
             .field_type(actual_type, field_name)?;
-        Some(field_shape(self.session.compiled_schema(), ty))
+        Some(field_shape(self.session.schema(), ty))
     }
 
     #[must_use]
@@ -254,7 +254,7 @@ impl<'a> ProjectQueries<'a> {
 
     #[must_use]
     pub fn id_as_enum_info(self) -> Vec<IdAsEnumInfo> {
-        let schema = self.session.compiled_schema();
+        let schema = self.session.schema();
         let model = self.session.model();
         schema
             .type_metas()

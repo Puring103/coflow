@@ -48,10 +48,6 @@ pub struct CftModuleFile {
 }
 
 impl CftModuleFile {
-    pub(crate) fn new(path: PathBuf, source: String) -> Self {
-        Self { path, source }
-    }
-
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path

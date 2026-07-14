@@ -10,7 +10,7 @@
 mod common;
 use coflow_cft::{
     build_schema, is_cft_identifier, parse_modules, record_key_ident_error, CftDimensions, CftFile,
-    CftSchemaField, CftSchemaType, CftSchemaTypeRef, ModuleId, Span, ValueDependencyMode,
+    CftSchemaTypeRef, ModuleId, ValueDependencyMode,
 };
 use common::*;
 use std::path::PathBuf;
@@ -131,7 +131,7 @@ fn record_key_identifier_helper_accepts_only_cft_identifiers() {
 #[test]
 fn value_dependency_plan_reports_direct_default_cycle() {
     let schema = compile_one("type Node { child: Node = {}; }").expect("schema compiles");
-    let compiled = schema.compiled_schema();
+    let compiled = &schema;
     let cycle = compiled
         .value_dependencies()
         .materialization_order("Node", ValueDependencyMode::SchemaDefaults)
@@ -151,7 +151,7 @@ fn value_dependency_plan_reports_indirect_default_cycle_stably() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = schema.compiled_schema();
+    let compiled = &schema;
     let cycle = compiled
         .value_dependencies()
         .materialization_order("A", ValueDependencyMode::SchemaDefaults)
@@ -171,7 +171,7 @@ fn value_dependency_plan_memoizes_shared_subgraphs_in_topological_order() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = schema.compiled_schema();
+    let compiled = &schema;
     let order = compiled
         .value_dependencies()
         .materialization_order("Root", ValueDependencyMode::SchemaDefaults)
@@ -196,7 +196,7 @@ fn typed_check_schedule_borrows_inherited_blocks_in_parent_first_order() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = schema.compiled_schema();
+    let compiled = &schema;
     let checks = compiled.check_schedule("Child", None).collect::<Vec<_>>();
 
     assert_eq!(checks.len(), 2);
@@ -233,7 +233,7 @@ fn dimension_check_schedule_includes_inherited_dimension_checks() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = schema.compiled_schema();
+    let compiled = &schema;
 
     assert_eq!(
         compiled.check_schedule("Child", Some("language")).count(),
@@ -256,7 +256,7 @@ fn dimension_check_analysis_respects_quantifier_binding_shadowing() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = schema.compiled_schema();
+    let compiled = &schema;
 
     assert_eq!(compiled.check_schedule("Item", Some("language")).count(), 0);
 }
@@ -272,7 +272,7 @@ fn compiled_schema_indexes_dimension_storage_types() {
         "#,
     )
     .expect("schema compiles");
-    let compiled = schema.compiled_schema();
+    let compiled = &schema;
 
     assert_eq!(
         compiled.dimension_storage_type("language", "Item", "name"),
@@ -286,171 +286,6 @@ fn compiled_schema_indexes_dimension_storage_types() {
         compiled.dimension_storage_type("language", "Weapon", "name"),
         Some("Item_nameVariants")
     );
-}
-
-#[test]
-fn api_exposes_schema_only_after_successful_compile() {
-    let mut container = CftContainer::new();
-    container
-        .add_module(
-            ModuleId::from("b"),
-            r#"
-                type B { value: int = LIMIT; }
-            "#,
-        )
-        .unwrap();
-    container
-        .add_module(
-            ModuleId::from("a"),
-            r#"
-                const LIMIT = 7;
-                enum E { A, B, }
-                type A { b: B; e: E = E.A; }
-            "#,
-        )
-        .unwrap();
-
-    assert!(container.resolve_type("A").is_none());
-    container.compile().unwrap();
-
-    assert_eq!(
-        container.resolve_const("LIMIT").unwrap().value,
-        CftConstValue::Int(7)
-    );
-    assert!(container.resolve_type("B").is_some());
-    assert!(container.resolve_enum("E").is_some());
-    assert_eq!(container.all_types().count(), 2);
-    assert_eq!(container.all_enums().count(), 1);
-    assert!(container.schema(&ModuleId::from("a")).is_some());
-}
-
-#[test]
-fn failed_compile_keeps_previously_published_schema() {
-    // Spec 7: "返回的引用在下次成功调用 compile 之前保持稳定" — a failed
-    // recompile must leave the prior schema observable so consumers don't
-    // get a transient empty view.
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("ok"), "type A { key: string; }")
-        .unwrap();
-    container.compile().unwrap();
-    assert!(container.has_type("A"));
-    container
-        .add_module(ModuleId::from("bad"), "type B { missing: Missing; }")
-        .unwrap();
-    // Staging a new module does not disturb the last published generation.
-    assert!(container.has_type("A"));
-    assert!(!container.has_type("B"));
-    let err = container.compile().unwrap_err();
-    assert_has_code(&err, CftErrorCode::UnknownNamedType);
-    assert!(container.has_type("A"));
-    assert!(!container.has_type("B"));
-}
-
-#[test]
-fn failed_add_module_keeps_previously_published_schema() {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("ok"), "type A { key: string; }")
-        .unwrap();
-    container.compile().unwrap();
-    assert!(container.has_type("A"));
-
-    let err = container
-        .add_module(ModuleId::from("bad"), "type B { value: ; }")
-        .unwrap_err();
-    assert_has_code(&err, CftErrorCode::ExpectedIdentifier);
-    assert!(container.has_type("A"));
-    assert_eq!(container.all_types().count(), 1);
-}
-
-#[test]
-fn failed_recompile_without_new_modules_keeps_old_schema() {
-    // If the only thing that changed between two compile calls is that the
-    // second one fails (e.g. because callers staged invalid modules earlier
-    // and only now detect it), the prior successful compile output must
-    // remain observable.
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("ok"), "type A { key: string; }")
-        .unwrap();
-    container.compile().unwrap();
-    assert!(container.has_type("A"));
-    // No new add_module call — recompile re-runs validation. Forge a failure
-    // by simulating the situation where the same content compiles repeatedly:
-    // here we just confirm that calling compile again on the already-compiled
-    // container preserves observable state.
-    container.compile().unwrap();
-    assert!(container.has_type("A"));
-}
-
-#[test]
-fn register_runtime_types_injects_schema_type_and_rejects_duplicates_atomically() {
-    let mut container = compile_one("type Item { name: string; }").unwrap();
-    let runtime_type = runtime_variants_type("Item_nameVariants");
-
-    container
-        .register_runtime_types([runtime_type.clone()])
-        .expect("runtime type registers");
-
-    let resolved = container
-        .resolve_type("Item_nameVariants")
-        .expect("runtime type is visible");
-    assert_eq!(resolved.fields.len(), 2);
-    assert_eq!(resolved.fields[0].name, "default");
-    assert_eq!(
-        resolved.fields[0].ty_ref,
-        CftSchemaTypeRef::Nullable(Box::new(CftSchemaTypeRef::String))
-    );
-    assert!(container
-        .schema(&ModuleId::from("__runtime__"))
-        .expect("runtime module")
-        .types
-        .iter()
-        .any(|ty| ty.name == "Item_nameVariants"));
-
-    let staged = runtime_variants_type("Other_nameVariants");
-    let err = container
-        .register_runtime_types([staged, runtime_type])
-        .expect_err("duplicate runtime type should fail");
-    assert_has_code(&err, CftErrorCode::DuplicateGlobalName);
-    assert!(
-        container.resolve_type("Other_nameVariants").is_none(),
-        "the valid prefix of a failed runtime batch must not be published"
-    );
-}
-
-fn runtime_variants_type(name: &str) -> CftSchemaType {
-    let fields = vec![
-        runtime_variant_field("default"),
-        runtime_variant_field("zh"),
-    ];
-    CftSchemaType {
-        module: ModuleId::from("__runtime__"),
-        name: name.to_string(),
-        parent: None,
-        is_abstract: false,
-        is_sealed: false,
-        is_singleton: false,
-        fields: fields.clone(),
-        all_fields: fields,
-        check: None,
-        annotations: Vec::new(),
-        span: Span::new(0, 0),
-    }
-}
-
-fn runtime_variant_field(name: &str) -> CftSchemaField {
-    CftSchemaField {
-        name: name.to_string(),
-        ty: "string?".to_string(),
-        ty_ref: CftSchemaTypeRef::Nullable(Box::new(CftSchemaTypeRef::String)),
-        has_default: false,
-        default: None,
-        annotations: Vec::new(),
-        dimension: None,
-        span: Span::new(0, 0),
-    }
 }
 
 #[test]
@@ -623,7 +458,7 @@ fn typed_check_plan_marks_only_fields_that_can_reach_nested_checks() {
         "#,
     )
     .expect("schema compiles");
-    let schema = container.compiled_schema();
+    let schema = container;
 
     assert!(!schema.field_has_nested_checks("Holder", "primitive"));
     assert!(schema.field_has_nested_checks("Holder", "wrapped"));

@@ -3,7 +3,7 @@ use coflow_cft::{
     CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaType, CftSchemaTypeRef, ModuleId,
 };
 use coflow_project::normalize_path;
-use coflow_runtime::SchemaBuild;
+use coflow_runtime::ProjectSchemaSession;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -11,7 +11,7 @@ use crate::definition;
 use crate::uri::{path_from_file_uri, path_to_file_uri};
 
 pub(crate) struct LspBuild {
-    pub(crate) schema: SchemaBuild,
+    pub(crate) schema: ProjectSchemaSession,
     pub(crate) documents: BTreeMap<String, LspDocument>,
     pub(crate) cfd_definitions: definition::CfdDefinitionIndex,
     module_by_uri: BTreeMap<String, String>,
@@ -26,18 +26,18 @@ pub(crate) struct LspDocument {
 }
 
 impl LspBuild {
-    pub(crate) fn new(schema: SchemaBuild) -> Self {
+    pub(crate) fn new(schema: ProjectSchemaSession) -> Self {
         let mut documents = BTreeMap::new();
         let mut module_by_uri = BTreeMap::new();
         let mut module_by_path = BTreeMap::new();
 
-        for (module_id, module) in schema.modules.files() {
+        for (module_id, module) in schema.modules().files() {
             let module_id = module_id.as_str().to_string();
             let source = module.source();
             let path = module.path().to_path_buf();
             let uri = path_to_file_uri(&path);
             let ast = schema
-                .modules
+                .modules()
                 .module(&ModuleId::new(module_id.clone()))
                 .map(|parsed| parsed.ast().clone());
             module_by_uri.insert(uri.clone(), module_id.clone());
@@ -70,8 +70,8 @@ impl LspBuild {
         self
     }
 
-    pub(crate) const fn schema(&self) -> Option<&coflow_cft::CftSchema> {
-        self.schema.schema.as_ref()
+    pub(crate) fn schema(&self) -> Option<&coflow_cft::CftSchema> {
+        Some(self.schema.schema())
     }
 
     pub(crate) fn document_by_uri(&self, uri: &str) -> Option<&LspDocument> {

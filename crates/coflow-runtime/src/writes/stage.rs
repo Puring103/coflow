@@ -22,7 +22,7 @@ pub(crate) fn preflight_mutation_op(
     else {
         return Ok(());
     };
-    let compiled_schema = session.compiled_schema();
+    let compiled_schema = session.schema();
     let request = WriteCellRequest {
         origin: &plan.target.origin,
         record_key: &plan.target.coordinate.key,
@@ -169,13 +169,13 @@ pub(crate) fn stage_field_mutation_batch(
             actual_type: &plan.target.coordinate.actual_type,
             field_path: &plan.target.field_path,
             new_value: value,
-            schema: session.compiled_schema(),
+            schema: session.schema(),
             source: &plan.source,
         });
     }
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: session.compiled_schema(),
+        schema: session.schema(),
         model: Some(&session.model),
     };
     let provider_outcomes = first_plan
@@ -219,7 +219,7 @@ fn stage_write_field(
     host_record: &RecordCoordinate,
     new_value: &CfdValue,
 ) -> Result<WriteOutcome, DiagnosticSet> {
-    let compiled_schema = session.compiled_schema();
+    let compiled_schema = session.schema();
     let request = WriteCellRequest {
         origin: &plan.target.origin,
         record_key: &plan.target.coordinate.key,
@@ -274,7 +274,7 @@ fn stage_rename_record_key(
         RenamePlan::Write(plan) => plan,
     };
     let plan: &RenameWritePlan = plan;
-    let compiled_schema = session.compiled_schema();
+    let compiled_schema = session.schema();
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
         schema: compiled_schema,
@@ -328,7 +328,7 @@ fn stage_insert_record(
     actual_type: &str,
     fields: &std::collections::BTreeMap<String, CfdValue>,
 ) -> Result<WriteOutcome, DiagnosticSet> {
-    let compiled_schema = session.compiled_schema();
+    let compiled_schema = session.schema();
     let request = InsertRecordRequest {
         source: &plan.source,
         sheet: plan.sheet.as_deref(),
@@ -359,7 +359,7 @@ fn stage_delete_record(
     plan: &DeletePlan,
     record: &RecordCoordinate,
 ) -> Result<WriteOutcome, DiagnosticSet> {
-    let compiled_schema = session.compiled_schema();
+    let compiled_schema = session.schema();
     let request = DeleteRecordRequest {
         origin: &plan.origin,
         record_key: &record.key,

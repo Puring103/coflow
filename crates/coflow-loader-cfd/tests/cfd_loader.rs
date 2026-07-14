@@ -10,7 +10,7 @@ use coflow_api::{
     ResolvedSource, SourceLoadContext, SourceLocation, SourceLocationSpec, SourceProvider,
     SourceResolveContext,
 };
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
 use coflow_data_model::CfdDataModel;
 use coflow_data_model::{CfdInputValue, CfdValue};
 use coflow_loader_cfd::{
@@ -22,13 +22,9 @@ use std::path::{Path, PathBuf};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-fn compile_schema(source: &str) -> CftContainer {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("main"), source)
-        .expect("schema should parse");
-    container.compile().expect("schema should compile");
-    container
+fn compile_schema(source: &str) -> CftSchema {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    build_schema(&modules, &CftDimensions::default()).expect("schema should compile")
 }
 
 #[test]
@@ -553,7 +549,7 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
 #[test]
 fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let schema = compile_schema("type Item { value: int; }");
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let root = std::env::temp_dir().join("coflow-cfd-loader-origin-spans");
     if root.exists() {
         fs::remove_dir_all(&root)?;

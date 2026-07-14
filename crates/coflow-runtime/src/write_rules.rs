@@ -83,7 +83,7 @@ pub(crate) fn validate_value_at_write_path(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    let schema = session.compiled_schema();
+    let schema = session.schema();
     let expected = expected_type_for_write_path(schema, actual_type, path, code, stage)?;
     validate_value_for_write(session, schema, &expected, value, code, stage)
 }

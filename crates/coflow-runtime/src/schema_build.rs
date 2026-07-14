@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_cft::{
@@ -13,30 +13,26 @@ use crate::indexes::DiagnosticsStore;
 use crate::schema_diagnostics::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
 use crate::session::ProjectSchemaSession;
 
-#[derive(Debug)]
-pub struct SchemaBuild {
-    pub schema: Option<CftSchema>,
-    pub modules: CftModuleSet,
-    pub diagnostics: DiagnosticSet,
-}
-
 #[derive(Debug, Clone)]
-pub struct SchemaSourceOverride {
+pub struct SchemaTextOverride {
     pub requested_module: Option<String>,
     pub normalized_path: PathBuf,
     pub source: String,
 }
 
-/// Compiles project schema sources with optional in-memory host overrides.
-///
-/// # Errors
-///
-/// Returns diagnostics when sources cannot be read or an override does not
-/// identify a configured schema module.
-pub fn compile_schema_project_with_overrides(
+#[derive(Debug)]
+struct ProjectSchemaBuild {
+    schema: Option<CftSchema>,
+    modules: CftModuleSet,
+    diagnostics: DiagnosticSet,
+}
+/// Collects the effective project source text before parsing it exactly once.
+/// Overrides are host snapshots (for example open LSP documents), never a
+/// second schema input model.
+fn collect_project_schema(
     project: &Project,
-    overrides: &[SchemaSourceOverride],
-) -> Result<SchemaBuild, DiagnosticSet> {
+    overrides: &[SchemaTextOverride],
+) -> Result<ProjectSchemaBuild, DiagnosticSet> {
     let source_set = project.schema_sources()?;
     let mut matched_overrides = vec![false; overrides.len()];
     let mut files = Vec::new();
@@ -105,7 +101,7 @@ pub fn compile_schema_project_with_overrides(
         &sources,
         &paths,
     );
-    Ok(SchemaBuild {
+    Ok(ProjectSchemaBuild {
         schema,
         modules,
         diagnostics,
@@ -123,30 +119,31 @@ pub(crate) fn build_project_schema_session(
     project: Project,
 ) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let diagnostics = project.schema_diagnostic_set();
-    build_project_schema_with_diagnostics(project, diagnostics)
+    build_project_schema_with_diagnostics(project, diagnostics, &[])
 }
 
 pub(crate) fn build_project_schema_with_diagnostics(
     project: Project,
     diagnostics: DiagnosticSet,
+    overrides: &[SchemaTextOverride],
 ) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let mut diagnostics = DiagnosticsStore::from_set(diagnostics);
-    let schema = if diagnostics.is_empty() {
-        match compile_project_schema(&project)? {
-            Ok(schema) => {
+    let (modules, schema) = if diagnostics.is_empty() {
+        let build = collect_project_schema(&project, overrides)?;
+        diagnostics.extend(build.diagnostics);
+        match build.schema {
+            Some(schema) => {
                 diagnostics.extend(validate_dimension_schema_config(&project, &schema));
-                schema
+                (build.modules, schema)
             }
-            Err(schema_diagnostics) => {
-                diagnostics.extend(schema_diagnostics);
-                CftSchema::empty()
-            }
+            None => (build.modules, CftSchema::empty()),
         }
     } else {
-        CftSchema::empty()
+        (parse_modules(std::iter::empty::<CftFile>()), CftSchema::empty())
     };
     Ok(ProjectSchemaSession {
         project,
+        modules: Arc::new(modules),
         schema: Arc::new(schema),
         diagnostics,
     })
@@ -184,48 +181,5 @@ fn validate_dimension_schema_config(project: &Project, schema: &CftSchema) -> Di
         });
     }
     diagnostics
-}
-
-fn compile_project_schema(
-    project: &Project,
-) -> Result<Result<CftSchema, DiagnosticSet>, DiagnosticSet> {
-    let project_diagnostics = project.schema_diagnostic_set();
-    if !project_diagnostics.is_empty() {
-        return Ok(Err(project_diagnostics));
-    }
-    let source_set = project.schema_sources()?;
-    let mut sources = BTreeMap::new();
-    let mut paths = BTreeMap::new();
-    let files = source_set.modules.into_iter().map(|module| {
-        sources.insert(module.module_id.clone(), module.source.clone());
-        paths.insert(
-            module.module_id.clone(),
-            module.canonical_path.display().to_string(),
-        );
-        CftFile::new(ModuleId::new(module.module_id), module.canonical_path, module.source)
-    });
-    let modules = parse_modules(files);
-    if !modules.diagnostics().is_empty() {
-        return Ok(Err(diagnostic_set_from_cft(
-            modules.diagnostics().diagnostics.clone(),
-            &sources,
-            &paths,
-        )));
-    }
-    let dimensions = CftDimensions::new(
-        project
-            .config
-            .dimensions
-            .iter()
-            .map(|(name, config)| (name.clone(), config.variants.clone())),
-    );
-    match build_schema(&modules, &dimensions) {
-        Ok(schema) => Ok(Ok(schema)),
-        Err(diagnostics) => Ok(Err(diagnostic_set_from_cft(
-            diagnostics.diagnostics,
-            &sources,
-            &paths,
-        ))),
-    }
 }
 

@@ -12,7 +12,7 @@ use common::*;
 
 use coflow_api::{Severity, SourceLocation};
 use coflow_project::Project;
-use coflow_runtime::compile_schema_project_with_overrides;
+use coflow_runtime::ProjectRuntime;
 use std::process::Stdio;
 
 #[test]
@@ -27,9 +27,15 @@ fn cli_lsp_and_runtime_share_the_canonical_schema_diagnostic() {
     std::fs::write(&schema_path, source).expect("write schema");
 
     let project = Project::open_schema_only(Some(&project_dir)).expect("open project");
-    let build = compile_schema_project_with_overrides(&project, &[]).expect("compile schema");
-    let expected = build
-        .diagnostics
+    let mut runtime = ProjectRuntime::new(project);
+    let _ = runtime.refresh();
+    let diagnostics = runtime
+        .latest_attempt()
+        .expect("schema attempt")
+        .diagnostics()
+        .clone()
+        .into_set();
+    let expected = diagnostics
         .iter()
         .find(|diagnostic| diagnostic.code == "CFT-SCHEMA-006")
         .expect("runtime diagnostic");
@@ -43,7 +49,7 @@ fn cli_lsp_and_runtime_share_the_canonical_schema_diagnostic() {
     assert!(matches!(
         &expected.primary.as_ref().expect("primary").location,
         SourceLocation::FileSpan { path, .. }
-            if coflow_project::normalize_path(path)
+            if coflow_project::normalize_path(&path)
                 == coflow_project::normalize_path(&schema_path)
     ));
 

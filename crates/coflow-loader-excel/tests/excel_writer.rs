@@ -13,7 +13,7 @@ use coflow_api::{
     SourceLocationSpec, SourceProvider, SourceWriter, SyncHeaderRequest, TableContext,
     TableManager, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
-use coflow_cft::CftContainer;
+use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdObject, CfdValue, RecordOrigin, SourceDocument,
 };
@@ -107,21 +107,17 @@ fn read_cell(path: &Path, sheet_name: &str, row: usize, col: usize) -> String {
     }
 }
 
-fn schema_for_items() -> CftContainer {
-    let mut schema = CftContainer::new();
-    schema
-        .add_module(
-            coflow_cft::ModuleId::from("main"),
+fn schema_for_items() -> CftSchema {
+    let modules = parse_modules([CftFile::from_source(
+        ModuleId::from("main"),
             r"
             type Item {
               name: string;
               value: int;
             }
             ",
-        )
-        .expect("schema parse");
-    schema.compile().expect("schema compile");
-    schema
+    )]);
+    build_schema(&modules, &CftDimensions::default()).expect("schema compile")
 }
 
 #[test]
@@ -142,7 +138,7 @@ fn batches_multiple_field_writes_to_one_workbook() {
             actual_type: "Item",
             field_path: &name_path,
             new_value: &sword_name,
-            schema: schema.compiled_schema(),
+            schema: &schema,
             source: &source,
         },
         WriteCellRequest {
@@ -151,7 +147,7 @@ fn batches_multiple_field_writes_to_one_workbook() {
             actual_type: "Item",
             field_path: &name_path,
             new_value: &shield_name,
-            schema: schema.compiled_schema(),
+            schema: &schema,
             source: &source,
         },
     ];
@@ -160,7 +156,7 @@ fn batches_multiple_field_writes_to_one_workbook() {
         .write_field_batch(
             WriteContext {
                 project_root: &std::env::temp_dir(),
-                schema: schema.compiled_schema(),
+                schema: &schema,
                 model: None,
             },
             &requests,
@@ -200,8 +196,8 @@ fn writer_capabilities_are_derived_from_workbook_format() {
 fn writer_rejects_xlsm_and_xls_before_mutating_workbook_bytes() {
     let seed = temp_xlsx("read-only-format-seed");
     write_seed_workbook(&seed).expect("seed workbook");
-    let schema = CftContainer::new();
-    let compiled_schema = schema.compiled_schema();
+    let schema = CftSchema::empty();
+    let compiled_schema = &schema;
     let new_value = CfdValue::String("Changed".to_string());
     let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
     let writer = ExcelWriter::new();
@@ -291,20 +287,16 @@ fn table_manager_rejects_unsafe_formats_before_create_or_sync() {
     assert_eq!(std::fs::read(&sync_path).expect("read after"), before);
 }
 
-fn schema_for_tagged_items() -> CftContainer {
-    let mut schema = CftContainer::new();
-    schema
-        .add_module(
-            coflow_cft::ModuleId::from("main"),
+fn schema_for_tagged_items() -> CftSchema {
+    let modules = parse_modules([CftFile::from_source(
+        ModuleId::from("main"),
             r"
             type Item {
               tags: [string];
             }
             ",
-        )
-        .expect("schema parse");
-    schema.compile().expect("schema compile");
-    schema
+    )]);
+    build_schema(&modules, &CftDimensions::default()).expect("schema compile")
 }
 
 fn write_tagged_workbook(path: &PathBuf) -> Result<(), XlsxError> {
@@ -317,11 +309,9 @@ fn write_tagged_workbook(path: &PathBuf) -> Result<(), XlsxError> {
     workbook.save(path)
 }
 
-fn schema_for_terrain() -> CftContainer {
-    let mut schema = CftContainer::new();
-    schema
-        .add_module(
-            coflow_cft::ModuleId::from("main"),
+fn schema_for_terrain() -> CftSchema {
+    let modules = parse_modules([CftFile::from_source(
+        ModuleId::from("main"),
             r"
             @struct sealed type EnvCfg {
               shc: float;
@@ -335,10 +325,8 @@ fn schema_for_terrain() -> CftContainer {
               env: EnvCfg;
             }
             ",
-        )
-        .expect("schema parse");
-    schema.compile().expect("schema compile");
-    schema
+    )]);
+    build_schema(&modules, &CftDimensions::default()).expect("schema compile")
 }
 
 fn write_terrain_workbook_with_expand(path: &PathBuf) -> Result<(), XlsxError> {
@@ -371,9 +359,9 @@ fn writes_string_cell_and_preserves_neighbors() {
     let path = temp_xlsx("scalar");
     write_seed_workbook(&path).expect("seed");
 
-    let schema = CftContainer::new();
+    let schema = CftSchema::empty();
 
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("New Sword".to_string());
@@ -412,9 +400,9 @@ fn writes_numeric_cell_as_text() {
     let path = temp_xlsx("number");
     write_seed_workbook(&path).expect("seed");
 
-    let schema = CftContainer::new();
+    let schema = CftSchema::empty();
 
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::Int(99);
@@ -450,9 +438,9 @@ fn writes_record_key_cell() {
     let path = temp_xlsx("key");
     write_seed_workbook(&path).expect("seed");
 
-    let schema = CftContainer::new();
+    let schema = CftSchema::empty();
 
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("blade".to_string());
@@ -488,7 +476,7 @@ fn writes_collection_element_by_rewriting_owning_cell() {
 
     let schema = schema_for_tagged_items();
 
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let origin = RecordOrigin::Table {
         document: SourceDocument::Local(path.clone()),
@@ -548,7 +536,7 @@ fn writes_expanded_object_fields_to_child_columns() {
 
     let schema = schema_for_terrain();
 
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let source_def = coflow_loader_excel::ExcelSource::new(
         &path,
@@ -593,8 +581,8 @@ fn rejects_missing_file_with_friendly_error() {
     if path.exists() {
         std::fs::remove_file(&path).expect("rm pre-existing");
     }
-    let schema = CftContainer::new();
-    let compiled_schema = schema.compiled_schema();
+    let schema = CftSchema::empty();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("X".to_string());
@@ -633,9 +621,9 @@ fn refuses_field_write_when_row_key_changed() {
         .set_value("other");
     umya_spreadsheet::writer::xlsx::write(&workbook, &path).expect("save workbook");
 
-    let schema = CftContainer::new();
+    let schema = CftSchema::empty();
 
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let new_value = CfdValue::String("New Sword".to_string());
@@ -672,7 +660,7 @@ fn inserts_record_row_and_loader_can_read_it() {
 
     let schema = schema_for_items();
 
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let writer = ExcelWriter::new();
     let fields = BTreeMap::from([
@@ -709,7 +697,7 @@ fn inserts_record_row_and_loader_can_read_it() {
         path,
         vec![coflow_loader_excel::ExcelSheet::new("Items").with_type("Item")],
     );
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let loaded = coflow_loader_excel::collect_input_records(compiled_schema, &[source_def])
         .expect("reload records");
     assert!(loaded.records.iter().any(|record| record.key == "potion"));
@@ -722,7 +710,7 @@ fn inserts_record_with_expanded_object_into_child_columns() {
 
     let schema = schema_for_terrain();
 
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let writer = ExcelWriter::new();
     let fields = BTreeMap::from([
@@ -766,9 +754,9 @@ fn deletes_record_row() {
     let path = temp_xlsx("delete");
     write_seed_workbook(&path).expect("seed");
 
-    let schema = CftContainer::new();
+    let schema = CftSchema::empty();
 
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
     let writer = ExcelWriter::new();
@@ -797,9 +785,9 @@ fn refuses_delete_when_row_key_changed() {
     let path = temp_xlsx("delete-key-guard");
     write_seed_workbook(&path).expect("seed");
 
-    let schema = CftContainer::new();
+    let schema = CftSchema::empty();
 
-    let compiled_schema = schema.compiled_schema();
+    let compiled_schema = &schema;
     let source = empty_source(&path);
     let origin = origin_for_shield(&path);
     let writer = ExcelWriter::new();

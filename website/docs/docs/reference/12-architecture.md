@@ -190,7 +190,7 @@ writer capability 与 table-operation descriptor 只对 `.xlsx` 开放。Runtime
 
 Loader 输出 source-neutral input records。它们只表达“某个来源读到了哪些记录和值”，不直接变成导出产物。
 
-`coflow-exporter-core` 借用 `CompiledSchema` 的 field metadata，并把每个 table 转成 path-aware `begin/end/key/scalar` 事件流。JSON 和 MessagePack sink 直接顺序写入最终 table buffer，不构造跨 table value tree，也不为 scalar/child aggregate 分配临时编码 buffer；sink 错误由 core 补充 table、record key 与完整字段路径。
+`coflow-exporter-core` 借用 `CftSchema` 的 field metadata，并把每个 table 转成 path-aware `begin/end/key/scalar` 事件流。JSON 和 MessagePack sink 直接顺序写入最终 table buffer，不构造跨 table value tree，也不为 scalar/child aggregate 分配临时编码 buffer；sink 错误由 core 补充 table、record key 与完整字段路径。
 
 CFD loader 是 schema-guided lowering adapter，而不是另一套文本 parser。CFD
 文本只由 `coflow-cfd` 解析一次，得到 canonical AST；`coflow-loader-cfd` 消费

@@ -8,7 +8,7 @@
 )]
 
 use coflow_api::origins_of;
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdErrorCode, CfdValue};
 use coflow_loader_excel::{
     collect_input_records, ExcelDiagnostic, ExcelDiagnostics, ExcelSheet, ExcelSource,
@@ -26,23 +26,17 @@ static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 type TestResult = Result<(), String>;
 
-fn compile_schema(source: &str) -> Result<CftContainer, String> {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("main"), source)
-        .map_err(|err| format!("schema should parse: {err:?}"))?;
-    container
-        .compile()
-        .map_err(|err| format!("schema should compile: {err:?}"))?;
-    Ok(container)
+fn compile_schema(source: &str) -> Result<CftSchema, String> {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    build_schema(&modules, &CftDimensions::default())
+        .map_err(|err| format!("schema should compile: {err:?}"))
 }
 
 fn build_model_from_excel_records(
-    schema: &CftContainer,
+    schema: &CftSchema,
     sources: &[ExcelSource],
 ) -> Result<CfdDataModel, ExcelDiagnostics> {
-    let compiled_schema = schema.compiled_schema();
-    let loaded = collect_input_records(compiled_schema, sources)?;
+    let loaded = collect_input_records(schema, sources)?;
     let origins = origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {

@@ -1,11 +1,12 @@
 //! Reference implementation of the **CFT** type-definition language used by
 //! Coflow's data pipeline.
 //!
-//! See `website/docs/docs/reference/cft.md` for the language reference. The crate exposes
-//! a [`CftContainer`] that hosts batch-registered modules and produces a
-//! schema after [`CftContainer::compile`] succeeds; loaders, code generators,
-//! and editors consume the resulting [`CftSchemaModule`] / [`CftSchemaType`] /
-//! [`CftSchemaEnum`] reflection types.
+//! See `website/docs/docs/reference/cft.md` for the language reference. Hosts
+//! collect source files with [`CftFile`], parse them once with
+//! [`parse_modules`], and build the immutable effective schema with
+//! [`build_schema`]. Loaders, code generators, and editors consume the
+//! resulting [`CftSchemaModule`] / [`CftSchemaType`] / [`CftSchemaEnum`]
+//! reflection types.
 //!
 //! Diagnostics are stable across releases: every error carries an immutable
 //! code (see [`CftErrorCode`]) and a stage tag (lex / syn / schema / type),
@@ -31,8 +32,8 @@
 )]
 
 pub mod ast;
+mod build;
 mod compiled_schema;
-mod container;
 mod dimensions;
 mod error;
 mod identifier;
@@ -49,7 +50,7 @@ pub use compiled_schema::{
     CftTypeMeta, CftSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
     ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
-pub use container::{build_schema, CftContainer};
+pub use build::build_schema;
 pub use module_id::ModuleId;
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
@@ -58,7 +59,7 @@ pub use module_set::{
 };
 pub use parser::CftParseOptions;
 pub use schema::{
-    format_schema_type_ref, CftAnnotation, CftAnnotationValue, CftCompileOptions, CftConstValue,
+    format_schema_type_ref, CftAnnotation, CftAnnotationValue, CftConstValue,
     CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaConst, CftSchemaDefaultValue, CftSchemaEnum,
     CftSchemaEnumVariant, CftSchemaField, CftSchemaModule, CftSchemaQuantifierKind, CftSchemaType,

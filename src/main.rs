@@ -24,7 +24,7 @@ use coflow::diagnostics::cli_error;
 use coflow::{data_commands, schema_commands};
 use coflow_api::DiagnosticSet;
 use coflow_project::{normalize_path, path_to_slash, Project};
-use coflow_runtime::{compile_schema_project_with_overrides, SchemaSourceOverride};
+use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
 use data_get_target::parse_data_get_target;
 use serde_json::Value;
 use std::io::Read;
@@ -247,7 +247,7 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
         } else {
             project.root_dir.join(path)
         };
-        vec![SchemaSourceOverride {
+        vec![SchemaTextOverride {
             requested_module: Some(path_to_slash(path)),
             normalized_path: normalize_path(&absolute),
             source,
@@ -255,8 +255,14 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
     } else {
         Vec::new()
     };
-    let build = compile_schema_project_with_overrides(&project, &overrides)?;
-    let diagnostics = build.diagnostics;
+    let mut runtime = ProjectRuntime::new(project.clone());
+    let refresh = runtime.refresh_with_overrides(&overrides);
+    let diagnostics = if let Some(attempt) = runtime.latest_attempt() {
+        attempt.diagnostics().clone().into_set()
+    } else {
+        refresh?;
+        DiagnosticSet::empty()
+    };
     let success = diagnostics.is_empty();
     if success && !args.json {
         println!(

@@ -67,8 +67,10 @@ pub use records::{
     dict_key_path_text, value_summary, EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo,
     RecordReferenceInfo, RecordTarget, RecordView, RefTargetInfo, WriteOutcome,
 };
-pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime, WriteProjectSession};
-pub use schema_build::{compile_schema_project_with_overrides, SchemaBuild, SchemaSourceOverride};
+pub use runtime::{
+    BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
+};
+pub use schema_build::SchemaTextOverride;
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,
     SchemaConstValueInfo, SchemaDefaultValueInfo, SchemaEnumInfo, SchemaEnumVariantInfo,

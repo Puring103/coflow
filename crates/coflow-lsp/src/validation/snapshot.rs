@@ -8,7 +8,7 @@ use crate::uri::path_to_file_uri;
 use coflow_api::{DiagnosticSet, SourceLocationSpec};
 use coflow_cfd::parse_cfd;
 use coflow_project::{discover_directory_files, normalize_path, Project};
-use coflow_runtime::{compile_schema_project_with_overrides, SchemaSourceOverride};
+use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -127,7 +127,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
     let mut overrides = Vec::new();
     for (normalized_path, document) in &input.open_documents {
         if let Some((module_id, _)) = schema_by_path.get(normalized_path) {
-            overrides.push(SchemaSourceOverride {
+            overrides.push(SchemaTextOverride {
                 requested_module: Some(module_id.clone()),
                 normalized_path: normalized_path.clone(),
                 source: document.text.clone(),
@@ -145,26 +145,31 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
 
     let (cfd_sources, cfd_failures) = add_cfd_documents(&mut snapshot, input);
 
-    let raw_build = match compile_schema_project_with_overrides(&input.project, &overrides) {
-        Ok(build) => build,
-        Err(diagnostics) => {
-            add_diagnostic_set(
-                &mut snapshot,
-                &diagnostics,
-                &preferred_uris,
-                &input.project.config_path,
-            );
+    let mut runtime = ProjectRuntime::new(input.project.clone());
+    let raw_build = match runtime.refresh_with_overrides(&overrides) {
+        Ok(_) | Err(_) => runtime.into_latest_attempt(),
+    };
+    let Some(raw_build) = raw_build else {
+        let mut fallback = ProjectRuntime::new(input.project.clone());
+        let Err(diagnostics) = fallback.refresh_with_overrides(&overrides) else {
             return snapshot;
-        }
+        };
+        add_diagnostic_set(
+            &mut snapshot,
+            &diagnostics,
+            &preferred_uris,
+            &input.project.config_path,
+        );
+        return snapshot;
     };
     add_diagnostic_set(
         &mut snapshot,
-        &raw_build.diagnostics,
+        &raw_build.diagnostics().clone().into_set(),
         &preferred_uris,
         &input.project.config_path,
     );
 
-    for (_, module) in raw_build.modules.modules() {
+    for (_, module) in raw_build.modules().modules() {
         snapshot
             .active_uris
             .insert(preferred_diagnostic_uri(&preferred_uris, module.path()));

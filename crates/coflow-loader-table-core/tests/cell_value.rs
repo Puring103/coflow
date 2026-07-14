@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputValue, CfdValue,
 };
@@ -18,24 +18,19 @@ use std::collections::BTreeSet;
 
 type TestResult = Result<(), String>;
 
-fn compile_schema(source: &str) -> Result<CftContainer, String> {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("main"), source)
-        .map_err(|err| format!("schema should parse: {err:?}"))?;
-    container
-        .compile()
-        .map_err(|err| format!("schema should compile: {err:?}"))?;
-    Ok(container)
+fn compile_schema(source: &str) -> Result<CftSchema, String> {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    build_schema(&modules, &CftDimensions::default())
+        .map_err(|err| format!("schema should compile: {err:?}"))
 }
 
-fn parse_ok(schema: &CftContainer, declared_type: &str, text: &str) -> Result<ParsedCell, String> {
-    parse_cell(schema.compiled_schema(), declared_type, text)
+fn parse_ok(schema: &CftSchema, declared_type: &str, text: &str) -> Result<ParsedCell, String> {
+    parse_cell(schema, declared_type, text)
         .map_err(|err| format!("expected `{text}` as `{declared_type}` to parse: {err:?}"))
 }
 
 fn parse_value(
-    schema: &CftContainer,
+    schema: &CftSchema,
     declared_type: &str,
     text: &str,
 ) -> Result<CfdInputValue, String> {
@@ -48,11 +43,11 @@ fn parse_value(
 }
 
 fn parse_err(
-    schema: &CftContainer,
+    schema: &CftSchema,
     declared_type: &str,
     text: &str,
 ) -> Result<CellValueDiagnostics, String> {
-    match parse_cell(schema.compiled_schema(), declared_type, text) {
+    match parse_cell(schema, declared_type, text) {
         Ok(value) => Err(format!(
             "expected `{text}` as `{declared_type}` to fail, got {value:?}"
         )),

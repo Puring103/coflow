@@ -48,9 +48,9 @@ pub(super) fn test_project_with_config(
 
 pub(super) fn test_lsp_build(name: &str, source: &str) -> (TempProject, LspBuild) {
     let (cleanup, project) = test_project(name, source);
-    let build = LspBuild::new(
-        compile_schema_project_with_overrides(&project, &[]).expect("compile schema"),
-    );
+    let mut runtime = coflow_runtime::ProjectRuntime::new(project);
+    let _ = runtime.refresh();
+    let build = LspBuild::new(runtime.into_latest_attempt().expect("schema attempt"));
     (cleanup, build)
 }
 

@@ -31,8 +31,6 @@ mod validation;
 #[cfg(test)]
 use coflow_project::normalize_path;
 use coflow_project::Project;
-#[cfg(test)]
-use coflow_runtime::compile_schema_project_with_overrides;
 use completion::completion_items;
 #[cfg(test)]
 pub(crate) use completion::{

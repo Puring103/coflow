@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use coflow_api::{ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet};
 use coflow_cft::CftSchema;
+use coflow_cft::{parse_modules, CftFile, CftModuleSet};
 use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::{path_to_slash, Project};
 use serde::{Deserialize, Serialize};
@@ -58,7 +59,7 @@ pub(crate) struct ProjectSession {
 
 impl ProjectSession {
     #[must_use]
-    pub fn compiled_schema(&self) -> &CftSchema {
+    pub fn schema(&self) -> &CftSchema {
         &self.schema
     }
 
@@ -96,6 +97,7 @@ impl ProjectSession {
     pub fn into_schema_session(self) -> ProjectSchemaSession {
         ProjectSchemaSession {
             project: self.project,
+            modules: Arc::new(parse_modules(std::iter::empty::<CftFile>())),
             schema: self.schema,
             diagnostics: self.diagnostics,
         }
@@ -142,13 +144,13 @@ impl ProjectSession {
     /// Returns `None` for unknown enum names or variants.
     #[must_use]
     pub fn enum_int_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
-        self.compiled_schema()
+        self.schema()
             .enum_variant_value(enum_name, variant)
     }
 
     #[must_use]
     pub fn enum_variants(&self, enum_name: &str) -> Vec<String> {
-        self.compiled_schema()
+        self.schema()
             .enum_meta(enum_name)
             .map(|meta| {
                 meta.all_variants
@@ -162,7 +164,7 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub fn dimensions(&self) -> Vec<DimensionInfo> {
-        let view = self.compiled_schema();
+        let view = self.schema();
         let fields = dimensions::dimension_fields(view);
         dimensions_for_project(&self.project, &fields)
     }
@@ -173,7 +175,7 @@ impl ProjectSession {
     /// without re-deriving the naming convention themselves.
     #[must_use]
     pub fn dimension_synthesized_types(&self) -> BTreeSet<String> {
-        let view = self.compiled_schema();
+        let view = self.schema();
         dimensions::dimension_fields(view)
             .into_iter()
             .map(|field| field.synthesized_type)
@@ -258,7 +260,7 @@ impl ProjectSession {
     #[must_use]
     pub fn ref_targets(&self, expected_type: &str) -> Vec<RefTargetInfo> {
         let mut targets = Vec::new();
-        let schema = self.compiled_schema();
+        let schema = self.schema();
         let Some(domain_id) = self.model.type_domain_id(expected_type) else {
             return targets;
         };
@@ -380,6 +382,7 @@ impl ProjectSession {
 #[derive(Debug)]
 pub struct ProjectSchemaSession {
     pub(crate) project: Project,
+    pub(crate) modules: Arc<CftModuleSet>,
     pub(crate) schema: Arc<CftSchema>,
     pub(crate) diagnostics: DiagnosticsStore,
 }
@@ -391,8 +394,14 @@ impl ProjectSchemaSession {
     }
 
     #[must_use]
-    pub fn compiled_schema(&self) -> &CftSchema {
+    pub fn schema(&self) -> &CftSchema {
         &self.schema
+    }
+
+    /// Parsed CFT modules paired with this schema attempt for language hosts.
+    #[must_use]
+    pub fn modules(&self) -> &CftModuleSet {
+        &self.modules
     }
 
     #[must_use]
@@ -424,7 +433,7 @@ impl ProjectSchemaSession {
     ) -> Result<ArtifactSet, DiagnosticSet> {
         codegen.generate(
             CodegenContext {
-                schema: self.compiled_schema(),
+                schema: self.schema(),
                 model: None,
                 data_format,
                 id_as_enum_variants,
