@@ -295,11 +295,7 @@ impl SourceWriter for TestWriter {
         ctx: WriteContext<'_>,
         requests: &[WriteCellRequest<'_>],
     ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
-        self.state
-            .lock()
-            .expect("lock writer state")
-            .counts
-            .batches += 1;
+        self.state.lock().expect("lock writer state").counts.batches += 1;
         requests
             .iter()
             .enumerate()
@@ -464,8 +460,11 @@ fn later_batch_write_is_not_folded_against_the_original_generation() {
 fn mutation_rebuild_reuses_the_open_generation_schema() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
     let mut session = fixture.open();
-    std::fs::write(fixture.root.join("schema.cft"), "this is no longer valid CFT")
-        .expect("replace schema after generation opens");
+    std::fs::write(
+        fixture.root.join("schema.cft"),
+        "this is no longer valid CFT",
+    )
+    .expect("replace schema after generation opens");
 
     let report = session.apply_mutation(mutation_request(vec![set_value("one", 2)]));
 
@@ -508,7 +507,7 @@ fn incremental_checks_match_full_checks_for_dependent_records() {
     let fixture = Fixture::remote(&[("txn://one", -1), ("txn://two", 1)]);
     std::fs::write(
         fixture.root.join("schema.cft"),
-        r#"
+        r"
             type Item {
                 value: int;
                 target: &Item? = null;
@@ -517,14 +516,11 @@ fn incremental_checks_match_full_checks_for_dependent_records() {
                     target == null || target.value > 0;
                 }
             }
-        "#,
+        ",
     )
     .expect("write dependent check schema");
     let mut session = fixture.open();
-    assert_eq!(
-        session.queries().diagnostics().by_stage("CHECK").len(),
-        2
-    );
+    assert_eq!(session.queries().diagnostics().by_stage("CHECK").len(), 2);
 
     let report = session.apply_mutation(mutation_request(vec![set_value("one", 2)]));
 

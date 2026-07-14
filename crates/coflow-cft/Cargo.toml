@@ -1,6 +1,6 @@
 [package]
 name = "coflow-cft"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "A Rust implementation of the CFT type definition language for Coflow."
 license = "Apache-2.0"

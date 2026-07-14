@@ -1,6 +1,6 @@
 [package]
 name = "coflow-data-model"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "Source-neutral Coflow data model built from compiled CFT schema."
 license = "Apache-2.0"

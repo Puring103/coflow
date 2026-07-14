@@ -90,17 +90,13 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
     }
 }
 
-fn start_records(
-    session: &EditorSession,
-    file_path: &str,
-) -> Vec<RecordCoordinate> {
+fn start_records(session: &EditorSession, file_path: &str) -> Vec<RecordCoordinate> {
     session
         .queries()
         .record_views_in_file(file_path)
         .filter_map(|view| {
             let coordinate = view.coordinate;
-            (!session.queries().record_references(&coordinate).is_empty())
-            .then_some(coordinate)
+            (!session.queries().record_references(&coordinate).is_empty()).then_some(coordinate)
         })
         .collect()
 }

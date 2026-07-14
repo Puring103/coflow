@@ -41,7 +41,9 @@ impl MutationImpact {
             impact
                 .affected_files
                 .extend(outcome.affected_files.iter().cloned());
-            impact.changed_records.extend(outcome.touched.iter().cloned());
+            impact
+                .changed_records
+                .extend(outcome.touched.iter().cloned());
             if let Some(inserted) = &outcome.inserted {
                 impact.structural_change = true;
                 impact.changed_records.insert(inserted.clone());

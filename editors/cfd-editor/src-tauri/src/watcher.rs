@@ -119,11 +119,10 @@ fn is_relevant_event(event: &Event) -> bool {
 }
 
 fn is_ignored_path(path: &Path) -> bool {
-    if path.extension().is_some_and(|extension| {
-        extension
-            .to_string_lossy()
-            .eq_ignore_ascii_case("xlsxtmp")
-    }) {
+    if path
+        .extension()
+        .is_some_and(|extension| extension.to_string_lossy().eq_ignore_ascii_case("xlsxtmp"))
+    {
         return true;
     }
     path.components().any(|component| {

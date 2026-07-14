@@ -14,8 +14,8 @@ use crate::options::{
 use calamine::Reader;
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, WriteCellRequest,
-    WriteBatchFailure, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, WriteBatchFailure,
+    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdValue, SourceDocument};
 use coflow_loader_table_core::writer::{
@@ -118,9 +118,8 @@ impl SourceWriter for ExcelWriter {
                     )),
                 });
             };
-            ensure_writable_excel_path(path, "edit fields").map_err(|diagnostics| {
-                WriteBatchFailure { index, diagnostics }
-            })?;
+            ensure_writable_excel_path(path, "edit fields")
+                .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
             let plan = plan_field_write(&TableFieldWrite {
                 origin: request.origin,
                 record_key: request.record_key,
@@ -133,10 +132,8 @@ impl SourceWriter for ExcelWriter {
             .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
             plans.push(plan);
         }
-        apply_plans(&plans).map_err(|(index, diagnostics)| WriteBatchFailure {
-            index,
-            diagnostics,
-        })?;
+        apply_plans(&plans)
+            .map_err(|(index, diagnostics)| WriteBatchFailure { index, diagnostics })?;
         Ok(vec![WriteOutcome::default(); requests.len()])
     }
 
