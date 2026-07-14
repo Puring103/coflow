@@ -1,4 +1,5 @@
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
+use crate::module_set::CftModuleSet;
 use crate::parser::{parse_module_with_options, CftParseOptions};
 use crate::schema::{
     compile_container, CftCompileOptions, CftSchemaConst, CftSchemaEnum, CftSchemaModule,
@@ -84,6 +85,29 @@ impl CftContainer {
     pub fn with_parse_options(parse_options: CftParseOptions) -> Self {
         Self {
             parse_options,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn from_module_set(module_set: &CftModuleSet) -> Self {
+        // The public module-set build path must reuse its parsed ASTs. This
+        // transitional adapter disappears when the compiler stops accepting a
+        // mutable container directly.
+        let modules = module_set
+            .modules
+            .iter()
+            .map(|(id, module)| {
+                (
+                    id.clone(),
+                    CftModule {
+                        source: module.source().to_string(),
+                        ast: module.ast().clone(),
+                    },
+                )
+            })
+            .collect();
+        Self {
+            modules,
             ..Self::default()
         }
     }
@@ -256,4 +280,19 @@ impl CftContainer {
     pub fn source(&self, id: &ModuleId) -> Option<&str> {
         self.compiled.sources().get(id).map(String::as_str)
     }
+}
+
+/// Builds a semantic schema from modules that have already been parsed.
+///
+/// # Errors
+///
+/// Returns parse diagnostics retained by the module set or schema/type
+/// diagnostics from the semantic compilation pass.
+pub fn build_schema(module_set: &CftModuleSet) -> Result<CompiledSchema, CftDiagnostics> {
+    if !module_set.diagnostics().is_empty() {
+        return Err(module_set.diagnostics().clone());
+    }
+    let mut container = CftContainer::from_module_set(module_set);
+    container.compile()?;
+    Ok(container.compiled)
 }

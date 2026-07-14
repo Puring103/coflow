@@ -53,7 +53,7 @@ impl ParsedCftModule {
 /// Immutable parse result shared by schema construction and language tooling.
 #[derive(Debug, Clone)]
 pub struct CftModuleSet {
-    modules: BTreeMap<ModuleId, ParsedCftModule>,
+    pub(crate) modules: BTreeMap<ModuleId, ParsedCftModule>,
     diagnostics: CftDiagnostics,
 }
 

@@ -9,8 +9,8 @@
 
 mod common;
 use coflow_cft::{
-    is_cft_identifier, parse_modules, record_key_ident_error, CftFile, CftSchemaField,
-    CftSchemaType, CftSchemaTypeRef, ModuleId, Span, ValueDependencyMode,
+    build_schema, is_cft_identifier, parse_modules, record_key_ident_error, CftFile,
+    CftSchemaField, CftSchemaType, CftSchemaTypeRef, ModuleId, Span, ValueDependencyMode,
 };
 use common::*;
 use std::path::PathBuf;
@@ -37,6 +37,23 @@ fn parsed_module_set_preserves_module_source_and_ast() {
     assert_eq!(item.source(), "type Item { id: int; }");
     assert_eq!(item.path(), PathBuf::from("schema/items.cft").as_path());
     assert_eq!(item.ast().items.len(), 1);
+}
+
+#[test]
+fn build_schema_compiles_a_parsed_module_set() {
+    let modules = parse_modules([CftFile::new(
+        ModuleId::new("schema/items.cft"),
+        PathBuf::from("schema/items.cft"),
+        "type Item { value: int; }",
+    )]);
+
+    let schema = build_schema(&modules).expect("parsed module set compiles");
+
+    assert!(schema.has_type("Item"));
+    assert_eq!(
+        schema.field_type("Item", "value"),
+        Some(&CftSchemaTypeRef::Int)
+    );
 }
 
 #[test]

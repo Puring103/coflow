@@ -47,7 +47,7 @@ pub use compiled_schema::{
     CftTypeMeta, CompiledSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
     ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
-pub use container::{CftContainer, ModuleId};
+pub use container::{build_schema, CftContainer, ModuleId};
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
 pub use module_set::{parse_modules, CftFile, CftModuleSet, ParsedCftModule};
