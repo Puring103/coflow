@@ -12,7 +12,7 @@ pub use self::budget::CftParseOptions;
 pub(super) use self::budget::Parsed;
 use self::tokens::{reserved_keyword_name, token_name};
 use crate::ast::{ModuleAst, NameRef};
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexer::{lex, Token, TokenKind};
 use crate::span::Span;

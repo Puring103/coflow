@@ -3,7 +3,7 @@ mod support;
 mod type_checker;
 
 use self::compiler::SchemaCompiler;
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::module_set::CftModuleSet;
 use crate::error::CftDiagnostics;
 use crate::span::Span;

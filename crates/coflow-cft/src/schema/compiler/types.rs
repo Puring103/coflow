@@ -1,6 +1,6 @@
 use super::SchemaCompiler;
 use crate::ast::{TypeRef, TypeRefKind};
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftErrorCode};
 use crate::schema::support::{
     has_annotation, is_valid_dict_key, FieldInfo, FieldOrigin, SymbolKind, Ty, TypeInfo,

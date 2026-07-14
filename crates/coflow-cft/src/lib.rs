@@ -38,6 +38,7 @@ mod error;
 mod identifier;
 pub mod lexer;
 mod module_set;
+mod module_id;
 pub mod parser;
 mod schema;
 mod span;
@@ -48,7 +49,8 @@ pub use compiled_schema::{
     CftTypeMeta, CftSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
     ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
-pub use container::{build_schema, CftContainer, ModuleId};
+pub use container::{build_schema, CftContainer};
+pub use module_id::ModuleId;
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
 pub use module_set::{

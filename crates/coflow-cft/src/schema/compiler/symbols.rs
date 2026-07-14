@@ -1,6 +1,6 @@
 use super::SchemaCompiler;
 use crate::ast::Item;
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftErrorCode};
 use crate::schema::support::{
     const_value, has_annotation, is_i64_power_of_two, is_reserved_identifier, ConstInfo, EnumInfo,

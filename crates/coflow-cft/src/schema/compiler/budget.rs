@@ -3,7 +3,7 @@ use crate::ast::{
     Annotation, CheckBlock, CheckExpr, CheckExprKind, CheckStmt, DefaultExpr, DefaultExprKind,
     Item, TypeRef, TypeRefKind,
 };
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftErrorCode};
 use crate::span::Span;
 use coflow_structure::{BudgetExceeded, StructuralBudget, StructureKind, TraversalCursor};

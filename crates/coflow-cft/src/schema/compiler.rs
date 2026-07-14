@@ -9,7 +9,7 @@ use super::support::{ConstInfo, EnumInfo, FieldInfo, Symbol, TypeInfo};
 use super::type_checker::TypeChecker;
 use super::{CftCompileOptions, SchemaReflection};
 use crate::ast::{ConstLiteral, TypeRefKind};
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::module_set::CftModuleSet;
 use crate::span::Span;

@@ -7,7 +7,7 @@ use crate::ast::{
     Annotation, AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, ConstLiteral,
     EnumDef, TypeDef, TypePredicate, TypeRef, TypeRefKind, UnaryOp,
 };
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::span::Span;
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -1,5 +1,5 @@
 use crate::ast::ModuleAst;
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::parser::parse_module;
 use crate::span::Span;

@@ -1,4 +1,5 @@
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
+use crate::module_id::ModuleId;
 use crate::module_set::CftModuleSet;
 use crate::parser::{parse_module_with_options, CftParseOptions};
 use crate::schema::{
@@ -9,47 +10,7 @@ use crate::span::Span;
 use crate::CftSchema;
 use coflow_structure::StructuralBudget;
 use std::collections::BTreeMap;
-use std::fmt;
 use std::ops::Deref;
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ModuleId(String);
-
-impl ModuleId {
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<&str> for ModuleId {
-    fn from(value: &str) -> Self {
-        Self::new(value)
-    }
-}
-
-impl From<String> for ModuleId {
-    fn from(value: String) -> Self {
-        Self::new(value)
-    }
-}
-
-impl fmt::Display for ModuleId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl fmt::Debug for ModuleId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
 
 #[derive(Debug, Clone)]
 pub(crate) struct CftModule {

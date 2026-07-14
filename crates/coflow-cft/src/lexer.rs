@@ -1,6 +1,6 @@
 mod tokens;
 
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::span::Span;
 pub use tokens::{Token, TokenKind};

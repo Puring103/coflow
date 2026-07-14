@@ -1,4 +1,4 @@
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::span::Span;
 use std::fmt;
 

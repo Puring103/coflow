@@ -8,7 +8,7 @@ pub use value_dependencies::{
     ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
 
-use crate::container::ModuleId;
+use crate::module_id::ModuleId;
 use crate::schema::SchemaReflection;
 use crate::{
     CftAnnotation, CftConstValue, CftDiagnostic, CftDiagnostics, CftErrorCode, CftSchemaCheckBlock,
