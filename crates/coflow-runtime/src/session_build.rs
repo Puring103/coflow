@@ -39,6 +39,14 @@ pub(crate) fn open_project_session(
     build_project_session_with_effects(project, registry, options).map(|output| output.session)
 }
 
+pub(crate) fn open_project_session_from_schema(
+    schema_session: ProjectSchemaSession,
+    registry: &ProviderRegistry,
+    options: SessionOpenOptions,
+) -> Result<ProjectSession, DiagnosticSet> {
+    finish_project_session(schema_session, registry, options).map(|output| output.session)
+}
+
 pub(crate) struct SessionBuildOutput {
     pub(crate) session: ProjectSession,
     pub(crate) changed_dimension_paths: Vec<PathBuf>,

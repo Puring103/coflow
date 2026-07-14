@@ -10,7 +10,7 @@ use coflow_project::Project;
 
 use crate::project_schema::{open_project_schema_session, open_project_schema_attempt, SchemaTextOverride};
 use crate::session::{ProjectSchemaSession, ProjectSession};
-use crate::session_build::{open_project_session, SessionOpenOptions};
+use crate::session_build::{open_project_session, open_project_session_from_schema, SessionOpenOptions};
 use crate::{
     CreateRecordDraft, DefaultMaterialization, MutationFields, MutationOp, MutationReport,
     MutationRequest, MutationValue, ProjectQueries, RecordCoordinate, WriteOutcome,
@@ -246,6 +246,15 @@ impl Runtime {
         project: Project,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
         open_project_session(project, &self.registry, SessionOpenOptions::read_only())
+            .map(|session| WriteProjectSession::new(session, self.registry.clone()))
+    }
+
+    /// Opens a write-capable data session from a runtime-built schema generation.
+    pub fn open_write_session_from_schema(
+        &self,
+        schema: ProjectSchemaSession,
+    ) -> Result<WriteProjectSession, DiagnosticSet> {
+        open_project_session_from_schema(schema, &self.registry, SessionOpenOptions::read_only())
             .map(|session| WriteProjectSession::new(session, self.registry.clone()))
     }
 }
