@@ -286,7 +286,10 @@ impl CftContainer {
 ///
 /// Returns parse diagnostics retained by the module set or schema/type
 /// diagnostics from the semantic compilation pass.
-pub fn build_schema(module_set: &CftModuleSet) -> Result<CftSchema, CftDiagnostics> {
+pub fn build_schema(
+    module_set: &CftModuleSet,
+    dimensions: &crate::CftDimensions,
+) -> Result<CftSchema, CftDiagnostics> {
     if !module_set.diagnostics().is_empty() {
         return Err(module_set.diagnostics().clone());
     }
@@ -296,10 +299,11 @@ pub fn build_schema(module_set: &CftModuleSet) -> Result<CftSchema, CftDiagnosti
         .iter()
         .map(|(id, module)| (id.clone(), module.source.clone()))
         .collect();
-    CftSchema::from_reflection(
+    let schema = CftSchema::from_reflection(
         reflection,
         sources,
         CftCompileOptions::default().structural_limits,
         &mut budget,
-    )
+    )?;
+    crate::dimensions::add_dimension_storage(schema, dimensions)
 }

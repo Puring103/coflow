@@ -57,6 +57,29 @@ pub struct CftModuleSet {
     pub(crate) diagnostics: CftDiagnostics,
 }
 
+/// Dimension variants that affect the effective CFT schema.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CftDimensions {
+    pub(crate) variants: BTreeMap<String, Vec<String>>,
+}
+
+impl CftDimensions {
+    #[must_use]
+    pub fn new(entries: impl IntoIterator<Item = (impl Into<String>, Vec<String>)>) -> Self {
+        Self {
+            variants: entries
+                .into_iter()
+                .map(|(dimension, variants)| (dimension.into(), variants))
+                .collect(),
+        }
+    }
+
+    #[must_use]
+    pub fn variants(&self, dimension: &str) -> Option<&[String]> {
+        self.variants.get(dimension).map(Vec::as_slice)
+    }
+}
+
 impl CftModuleSet {
     #[must_use]
     pub fn diagnostics(&self) -> &CftDiagnostics {

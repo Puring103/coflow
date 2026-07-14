@@ -50,6 +50,43 @@ pub struct CftSchema {
 }
 
 impl CftSchema {
+    pub(crate) fn with_extension_types(
+        self,
+        types: impl IntoIterator<Item = CftSchemaType>,
+    ) -> Result<Self, CftDiagnostics> {
+        let mut reflection = self.reflection.clone();
+        let sources = self.sources.clone();
+        let structural_limits = self.structural_limits;
+        let runtime_module = ModuleId::from("__runtime__");
+        for mut ty in types {
+            if reflection.types.contains_key(&ty.name)
+                || reflection.enums.contains_key(&ty.name)
+                || reflection.consts.contains_key(&ty.name)
+            {
+                return Err(CftDiagnostics::one(CftDiagnostic::error(
+                    CftErrorCode::DuplicateGlobalName,
+                    ty.module,
+                    ty.span,
+                    format!("duplicate global name `{}`", ty.name),
+                )));
+            }
+            ty.module = runtime_module.clone();
+            reflection
+                .modules
+                .entry(runtime_module.clone())
+                .or_insert_with(|| crate::CftSchemaModule {
+                    consts: Vec::new(),
+                    types: Vec::new(),
+                    enums: Vec::new(),
+                })
+                .types
+                .push(ty.clone());
+            reflection.types.insert(ty.name.clone(), ty);
+        }
+        let mut budget = StructuralBudget::new(structural_limits);
+        Self::from_reflection(reflection, sources, structural_limits, &mut budget)
+    }
+
     pub(crate) fn from_reflection(
         reflection: SchemaReflection,
         sources: BTreeMap<ModuleId, String>,

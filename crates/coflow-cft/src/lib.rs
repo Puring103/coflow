@@ -33,6 +33,7 @@
 pub mod ast;
 mod compiled_schema;
 mod container;
+mod dimensions;
 mod error;
 mod identifier;
 pub mod lexer;
@@ -50,7 +51,7 @@ pub use compiled_schema::{
 pub use container::{build_schema, CftContainer, ModuleId};
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
-pub use module_set::{parse_modules, CftFile, CftModuleSet, ParsedCftModule};
+pub use module_set::{parse_modules, CftDimensions, CftFile, CftModuleSet, ParsedCftModule};
 pub use parser::CftParseOptions;
 pub use schema::{
     format_schema_type_ref, CftAnnotation, CftAnnotationValue, CftCompileOptions, CftConstValue,

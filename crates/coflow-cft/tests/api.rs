@@ -9,7 +9,7 @@
 
 mod common;
 use coflow_cft::{
-    build_schema, is_cft_identifier, parse_modules, record_key_ident_error, CftFile,
+    build_schema, is_cft_identifier, parse_modules, record_key_ident_error, CftDimensions, CftFile,
     CftSchemaField, CftSchemaType, CftSchemaTypeRef, ModuleId, Span, ValueDependencyMode,
 };
 use common::*;
@@ -47,13 +47,53 @@ fn build_schema_compiles_a_parsed_module_set() {
         "type Item { value: int; }",
     )]);
 
-    let schema = build_schema(&modules).expect("parsed module set compiles");
+    let schema = build_schema(&modules, &CftDimensions::default())
+        .expect("parsed module set compiles");
 
     assert!(schema.has_type("Item"));
     assert_eq!(
         schema.field_type("Item", "value"),
         Some(&CftSchemaTypeRef::Int)
     );
+}
+
+#[test]
+fn build_schema_synthesizes_dimension_storage_from_configured_variants() {
+    let modules = parse_modules([CftFile::new(
+        ModuleId::new("schema/items.cft"),
+        PathBuf::from("schema/items.cft"),
+        "type Item { @localized name: string; }",
+    )]);
+    let dimensions = CftDimensions::new([("language", vec!["zh".to_string()])]);
+
+    let schema = build_schema(&modules, &dimensions).expect("dimension schema compiles");
+
+    let storage = schema
+        .dimension_storage_type("language", "Item", "name")
+        .expect("localized storage type");
+    let fields = schema.fields_slice(storage).expect("storage fields");
+    assert_eq!(fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(), ["default", "zh"]);
+}
+
+#[test]
+fn build_schema_rejects_dimension_storage_collision_with_enum() {
+    let modules = parse_modules([CftFile::new(
+        ModuleId::new("schema/items.cft"),
+        PathBuf::from("schema/items.cft"),
+        r#"
+            enum __coflow_dimension_Item_name { Value }
+            type Item { @localized name: string; }
+        "#,
+    )]);
+    let dimensions = CftDimensions::new([("language", vec!["zh".to_string()])]);
+
+    let diagnostics = build_schema(&modules, &dimensions)
+        .expect_err("internal storage names must share the global symbol table");
+
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == CftErrorCode::DuplicateGlobalName));
 }
 
 #[test]
