@@ -121,7 +121,6 @@ pub const CFD_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescri
     id: "cfd",
     display_name: "Coflow data text",
     extensions: &["cfd"],
-    uri_schemes: &[],
     option_keys: &[],
 };
 

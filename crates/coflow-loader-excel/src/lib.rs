@@ -61,7 +61,6 @@ pub const EXCEL_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDesc
     id: "excel",
     display_name: "Excel workbook",
     extensions: &["xlsx", "xlsm", "xls"],
-    uri_schemes: &[],
     option_keys: &["sheets"],
 };
 
@@ -219,31 +218,4 @@ mod tests {
             .any(|diagnostic| diagnostic.message == "excel source sheet `sheet` is empty"));
     }
 
-    #[test]
-    fn explicit_excel_loader_rejects_url_source() {
-        let loader = ExcelLoader;
-        let Ok(options) = loader.decode_options(&json!({})) else {
-            panic!("empty excel options should decode");
-        };
-        let source = ResolvedSource {
-            provider_id: EXCEL_LOADER_DESCRIPTOR.id.to_string(),
-            location: SourceLocationSpec::Uri("https://example.test/configs.xlsx".to_string()),
-            options,
-            display_name: "https://example.test/configs.xlsx".to_string(),
-        };
-
-        let Err(err) = loader.resolve(
-            SourceResolveContext {
-                project_root: Path::new("."),
-            },
-            &source,
-        ) else {
-            panic!("excel url source should fail");
-        };
-
-        assert!(err
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.message.contains("excel source requires `path`")));
-    }
 }

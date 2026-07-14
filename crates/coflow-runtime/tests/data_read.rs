@@ -513,36 +513,35 @@ fn directory_source_rejects_options_unknown_to_every_selected_provider() {
 }
 
 #[derive(Debug)]
-struct RemoteTableOptions {
+struct TestTableOptions {
     token: String,
 }
 
 #[derive(Debug)]
-struct FakeRemoteTable;
+struct FakeLocalTable;
 
-static FAKE_REMOTE_SOURCE: SourceProviderDescriptor = SourceProviderDescriptor {
-    id: "remote-table",
-    display_name: "Remote table",
-    extensions: &[],
-    uri_schemes: &["remote"],
+static FAKE_LOCAL_SOURCE: SourceProviderDescriptor = SourceProviderDescriptor {
+    id: "local-table",
+    display_name: "Local test table",
+    extensions: &["tabletest"],
     option_keys: &["token"],
 };
 
-static FAKE_REMOTE_TABLE: TableManagerDescriptor = TableManagerDescriptor {
-    id: "remote-table",
-    display_name: "Remote table",
-    file_extensions: &[],
+static FAKE_LOCAL_TABLE: TableManagerDescriptor = TableManagerDescriptor {
+    id: "local-table",
+    display_name: "Local test table",
+    file_extensions: &["tabletest"],
     aliases: &[],
     addressing: TableAddressing::Sheet,
 };
 
-impl SourceProvider for FakeRemoteTable {
+impl SourceProvider for FakeLocalTable {
     fn descriptor(&self) -> &'static SourceProviderDescriptor {
-        &FAKE_REMOTE_SOURCE
+        &FAKE_LOCAL_SOURCE
     }
 
     fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult {
-        if source.source_type == Some(FAKE_REMOTE_SOURCE.id) {
+        if source.source_type == Some(FAKE_LOCAL_SOURCE.id) {
             ProbeResult::certain()
         } else {
             ProbeResult::none()
@@ -558,14 +557,14 @@ impl SourceProvider for FakeRemoteTable {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| {
                 DiagnosticSet::one(Diagnostic::error(
-                    "REMOTE-OPTIONS",
-                    "REMOTE",
-                    "remote table requires token",
+                    "TABLE-OPTIONS",
+                    "TABLE",
+                    "test table requires token",
                 ))
             })?;
         Ok(DecodedSourceOptions::new(
-            FAKE_REMOTE_SOURCE.id,
-            RemoteTableOptions {
+            FAKE_LOCAL_SOURCE.id,
+            TestTableOptions {
                 token: token.to_string(),
             },
         ))
@@ -582,9 +581,9 @@ impl SourceProvider for FakeRemoteTable {
     }
 }
 
-impl TableManager for FakeRemoteTable {
+impl TableManager for FakeLocalTable {
     fn descriptor(&self) -> &'static TableManagerDescriptor {
-        &FAKE_REMOTE_TABLE
+        &FAKE_LOCAL_TABLE
     }
 
     fn create_table(
@@ -592,7 +591,7 @@ impl TableManager for FakeRemoteTable {
         _ctx: TableContext<'_>,
         request: &CreateTableRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        validate_remote_request(request.source)?;
+        validate_local_request(request.source)?;
         Ok(TableOperationResult {
             headers: request.headers.to_vec(),
             ..TableOperationResult::default()
@@ -604,7 +603,7 @@ impl TableManager for FakeRemoteTable {
         _ctx: TableContext<'_>,
         request: &SyncHeaderRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        validate_remote_request(request.source)?;
+        validate_local_request(request.source)?;
         Ok(TableOperationResult {
             headers: request.headers.to_vec(),
             added: vec!["name".to_string()],
@@ -613,27 +612,27 @@ impl TableManager for FakeRemoteTable {
     }
 }
 
-fn validate_remote_request(source: &ResolvedSource) -> Result<(), DiagnosticSet> {
-    if source.location != SourceLocationSpec::Uri("remote://document".to_string()) {
+fn validate_local_request(source: &ResolvedSource) -> Result<(), DiagnosticSet> {
+    if !matches!(source.location, SourceLocationSpec::Path(_)) {
         return Err(DiagnosticSet::one(Diagnostic::error(
-            "REMOTE-LOCATION",
-            "REMOTE",
-            "unexpected remote location",
+            "TABLE-LOCATION",
+            "TABLE",
+            "unexpected local location",
         )));
     }
-    let options = source.options::<RemoteTableOptions>(FAKE_REMOTE_SOURCE.id)?;
+    let options = source.options::<TestTableOptions>(FAKE_LOCAL_SOURCE.id)?;
     if options.token != "secret" {
         return Err(DiagnosticSet::one(Diagnostic::error(
-            "REMOTE-TOKEN",
-            "REMOTE",
-            "unexpected remote token",
+            "TABLE-TOKEN",
+            "TABLE",
+            "unexpected token",
         )));
     }
     Ok(())
 }
 
 #[test]
-fn table_operations_use_one_location_neutral_runtime_path() {
+fn table_operations_use_local_runtime_path() {
     let root = std::env::temp_dir().join(format!(
         "coflow-location-neutral-table-{}",
         std::process::id()
@@ -641,9 +640,10 @@ fn table_operations_use_one_location_neutral_runtime_path() {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("create project dir");
     std::fs::write(root.join("schema.cft"), "type Item { name: string; }\n").expect("write schema");
+    std::fs::write(root.join("data.tabletest"), "").expect("write table source");
     std::fs::write(
         root.join("coflow.yaml"),
-        "schema: schema.cft\nsources:\n  - type: remote-table\n    url: remote://document\n    token: secret\n",
+        "schema: schema.cft\nsources:\n  - type: local-table\n    path: data.tabletest\n    token: secret\n",
     )
     .expect("write config");
 
@@ -651,37 +651,37 @@ fn table_operations_use_one_location_neutral_runtime_path() {
     let session = schema_session(project).expect("schema session");
     let mut registry = coflow_api::ProviderRegistry::default();
     registry
-        .register_source_provider(FakeRemoteTable)
+        .register_source_provider(FakeLocalTable)
         .expect("register source provider");
     registry
-        .register_table_manager(FakeRemoteTable)
+        .register_table_manager(FakeLocalTable)
         .expect("register table manager");
 
     let created = create_data_file(
         &session,
         &registry,
         DataCreateFileOptions {
-            file: "remote://document".to_string(),
+            file: "data.tabletest".to_string(),
             actual_type: Some("Item".to_string()),
             provider: None,
             sheet: Some("Items".to_string()),
         },
     )
-    .expect("create remote table");
-    assert_eq!(created.provider, "remote-table");
+    .expect("create local table");
+    assert_eq!(created.provider, "local-table");
     assert_eq!(created.headers, ["id", "name"]);
 
     let synced = sync_data_header(
         &session,
         &registry,
         DataSyncHeaderOptions {
-            file: "remote://document".to_string(),
+            file: "data.tabletest".to_string(),
             actual_type: "Item".to_string(),
             provider: None,
             sheet: Some("Items".to_string()),
         },
     )
-    .expect("sync remote table header");
+    .expect("sync local table header");
     assert_eq!(synced.added, ["name"]);
 
     let _ = std::fs::remove_dir_all(root);

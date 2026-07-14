@@ -30,7 +30,7 @@ pub(super) fn excel_writer_capabilities(source: &ResolvedSource) -> WriterCapabi
         {
             WriterCapabilities::local_full()
         }
-        SourceLocationSpec::Path(_) | SourceLocationSpec::Uri(_) => WriterCapabilities::read_only(),
+        SourceLocationSpec::Path(_) => WriterCapabilities::read_only(),
     }
 }
 

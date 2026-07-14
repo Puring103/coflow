@@ -12,7 +12,6 @@
 | schema 字段变更后同步本地文件 | `coflow data sync-header --file <file> --type <Type>` |
 | 少量记录增删改/重命名 | `coflow data patch --patch '<json>'` |
 | 复杂 CFD 整理 | `coflow data write-file --file <file.cfd> --stdin --check` |
-| 远端飞书/Lark 表格 | 只用 `data patch`，不要整文件写入 |
 
 ## 新增记录
 

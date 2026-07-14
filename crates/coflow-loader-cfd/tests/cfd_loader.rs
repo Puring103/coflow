@@ -551,37 +551,6 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
 }
 
 #[test]
-fn explicit_cfd_loader_rejects_url_source() -> TestResult {
-    let source = ResolvedSource {
-        provider_id: CFD_LOADER_DESCRIPTOR.id.to_string(),
-        location: SourceLocationSpec::Uri("https://example.test/items.cfd".to_string()),
-        options: CfdLoader
-            .decode_options(&serde_json::Value::Null)
-            .expect("decode cfd options"),
-        display_name: "https://example.test/items.cfd".to_string(),
-    };
-
-    let err = CfdLoader
-        .resolve(
-            SourceResolveContext {
-                project_root: Path::new("."),
-            },
-            &source,
-        )
-        .expect_err("cfd url source should fail");
-
-    if err
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.message.contains("cfd source requires `path`"))
-    {
-        Ok(())
-    } else {
-        Err(format!("unexpected diagnostics: {err:?}").into())
-    }
-}
-
-#[test]
 fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let schema = compile_schema("type Item { value: int; }");
     let compiled_schema = schema.compiled_schema();

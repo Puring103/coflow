@@ -3,7 +3,7 @@
 ## 标准工程闭环
 
 1. 用 CFT 固定数据结构、默认值、引用关系和 `check {}` 业务规则。
-2. 根据数据形态选择 source：大量同构记录用 Excel/CSV，复杂嵌套、模板覆盖和少量结构化配置用 CFD，在线协作用飞书/Lark 表格。
+2. 根据数据形态选择 source：大量同构记录用 Excel/CSV，复杂嵌套、模板覆盖和少量结构化配置用 CFD。
 3. 用 `coflow check <project>` 作为提交前和 CI 的基础 gate。
 4. 用 `coflow build <project>` 在构建阶段统一导出 JSON/MessagePack 和可选 C# 代码。
 5. 程序只消费生成产物；手写配置只放在 schema/source 中，不放进 `outputs.*.dir`。
@@ -33,7 +33,6 @@
 | --- | --- |
 | 大量同构数值和文本 | Excel 或 CSV |
 | 复杂嵌套对象、多态数组、模板覆盖 | CFD |
-| 需要在线多人协作 | 飞书/Lark 表格 |
 | 简单自动生成或程序维护数据 | CSV 或 CFD |
 
 ## 检查策略

@@ -96,13 +96,6 @@ pub fn lsp_label_location(location: &coflow_api::SourceLocation) -> LspLabelLoca
             end_line: range.end.line,
             end_character: range.end.character,
         },
-        coflow_api::SourceLocation::RemoteCell { document, .. } => LspLabelLocation {
-            document: LspLabelDocument::Uri(document.clone()),
-            start_line: range.start.line,
-            start_character: range.start.character,
-            end_line: range.end.line,
-            end_character: range.end.character,
-        },
     }
 }
 

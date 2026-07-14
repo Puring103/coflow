@@ -2,7 +2,7 @@
 
 CFT（Coflow Type File，`.cft`）是专为 coflow 设计的 schema 语言，用来声明配置数据的类型、字段、默认值、引用、继承、多态和业务校验规则。
 
-`.cft` 文件只包含 schema 定义，不包含数据，不执行 I/O。Excel、CSV、CFD、飞书/Lark 表格等数据源都会按照编译后的 CFT schema 解析、校验并导出。
+`.cft` 文件只包含 schema 定义，不包含数据，不执行 I/O。Excel、CSV、CFD 等数据源都会按照编译后的 CFT schema 解析、校验并导出。
 
 下面是一个包含 `enum`、`type` 和 `check` 的简单示例：
 
@@ -524,7 +524,7 @@ const NAME: string = "hero";
 
 ## 和数据源的关系
 
-CFT 只定义 schema，不保存 record 数据。数据来自 Excel、CSV、CFD、飞书/Lark 表格等 source。
+CFT 只定义 schema，不保存 record 数据。数据来自 Excel、CSV、CFD 等 source。
 
 数据源会根据 CFT schema 解析单元格或文本值：
 

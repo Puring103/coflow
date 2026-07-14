@@ -7,6 +7,5 @@
 - Excel 编写要点。
 - CSV 编写要点。
 - CFD 文本配置适用场景。
-- 飞书/Lark Sheet 作为远端 source。
 - 表头同步、创建文件和 patch。
 - 错误定位方式。

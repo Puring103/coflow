@@ -2,17 +2,13 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use coflow_api::{
-    Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec, SourceTransaction,
-    SourceTransactionCompensation, WriteContext,
-};
+use coflow_api::{Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec, SourceTransaction, WriteContext};
 
 use super::plan::MutationExecutionPlan;
 
 #[derive(Debug, Default)]
 pub(crate) struct MutationTransaction {
     local: LocalFileTransaction,
-    providers: Vec<ProviderTransaction>,
 }
 
 impl MutationTransaction {
@@ -32,7 +28,6 @@ impl MutationTransaction {
                 transaction.enlist(source, declared)
             });
             if let Err(mut diagnostics) = enlisted {
-                transaction.abort_into(&mut diagnostics);
                 return Err(diagnostics);
             }
         }
@@ -46,113 +41,25 @@ impl MutationTransaction {
     ) -> Result<(), DiagnosticSet> {
         match declared {
             SourceTransaction::RuntimeSnapshot => {
-                let SourceLocationSpec::Path(path) = &source.location else {
-                    return Err(DiagnosticSet::one(Diagnostic::error(
-                        "WRITE-TXN-CONTRACT",
-                        "WRITE",
-                        format!(
-                            "provider `{}` requested a runtime snapshot for non-local source `{}`",
-                            source.provider_id, source.display_name
-                        ),
-                    )));
-                };
+                let SourceLocationSpec::Path(path) = &source.location;
                 self.local.snapshot_file(path)?;
             }
-            SourceTransaction::Compensation(compensation) => {
-                self.providers.push(ProviderTransaction {
-                    source: source.display_name.clone(),
-                    compensation,
-                });
-            }
-            SourceTransaction::Unsupported => {
-                return Err(SourceTransaction::unsupported_diagnostic(source));
-            }
         }
         Ok(())
     }
 
-    pub(crate) fn commit(mut self) -> Result<(), DiagnosticSet> {
-        let mut failure = None;
-        for provider in &mut self.providers {
-            if let Err(provider_diagnostics) = provider.compensation.prepare_commit() {
-                failure = Some((provider.source.clone(), provider_diagnostics));
-                break;
-            }
-        }
-        if let Some((source, provider_diagnostics)) = failure {
-            let mut diagnostics = DiagnosticSet::one(transaction_error(
-                "WRITE-TXN-COMMIT",
-                &source,
-                "prepare publication for",
-            ));
-            diagnostics.extend(provider_diagnostics);
-            self.compensate_into(&mut diagnostics);
-            return Err(diagnostics);
-        }
-        for provider in &mut self.providers {
-            provider.compensation.commit();
-        }
+    pub(crate) fn commit(self) -> Result<(), DiagnosticSet> {
         Ok(())
     }
 
-    pub(crate) fn compensate_into(mut self, diagnostics: &mut DiagnosticSet) {
-        for provider in self.providers.iter_mut().rev() {
-            if let Err(provider_diagnostics) = provider.compensation.compensate() {
-                diagnostics.push(transaction_error(
-                    "WRITE-TXN-COMPENSATE",
-                    &provider.source,
-                    "compensate",
-                ));
-                diagnostics.extend(provider_diagnostics);
-            }
-        }
+    pub(crate) fn compensate_into(self, diagnostics: &mut DiagnosticSet) {
         self.local.rollback_into(diagnostics);
-    }
-
-    fn abort_into(&mut self, diagnostics: &mut DiagnosticSet) {
-        for provider in self.providers.iter_mut().rev() {
-            if let Err(provider_diagnostics) = provider.compensation.abort() {
-                diagnostics.push(transaction_error(
-                    "WRITE-TXN-ABORT",
-                    &provider.source,
-                    "abort",
-                ));
-                diagnostics.extend(provider_diagnostics);
-            }
-        }
-    }
-}
-
-struct ProviderTransaction {
-    source: String,
-    compensation: Box<dyn SourceTransactionCompensation>,
-}
-
-impl std::fmt::Debug for ProviderTransaction {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("ProviderTransaction")
-            .field("source", &self.source)
-            .field("compensation", &"..")
-            .finish()
     }
 }
 
 fn source_key(source: &ResolvedSource) -> String {
-    match &source.location {
-        SourceLocationSpec::Path(path) => {
-            format!("{}:path:{}", source.provider_id, path.display())
-        }
-        SourceLocationSpec::Uri(uri) => format!("{}:uri:{uri}", source.provider_id),
-    }
-}
-
-fn transaction_error(code: &str, source: &str, operation: &str) -> Diagnostic {
-    Diagnostic::error(
-        code,
-        "WRITE",
-        format!("failed to {operation} source transaction for `{source}`"),
-    )
+    let SourceLocationSpec::Path(path) = &source.location;
+    format!("{}:path:{}", source.provider_id, path.display())
 }
 
 #[derive(Debug, Default)]

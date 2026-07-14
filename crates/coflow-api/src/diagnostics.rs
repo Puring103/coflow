@@ -219,12 +219,6 @@ pub enum SourceLocation {
         row: usize,
         column: usize,
     },
-    RemoteCell {
-        document: String,
-        sheet: Option<String>,
-        row: usize,
-        column: usize,
-    },
     ProjectConfig {
         path: PathBuf,
         key_path: Vec<String>,
@@ -250,7 +244,7 @@ impl SourceLocation {
                 end_character,
                 ..
             } => TextRange::from_parts(*start_line, *start_character, *end_line, *end_character),
-            Self::TableCell { row, column, .. } | Self::RemoteCell { row, column, .. } => {
+            Self::TableCell { row, column, .. } => {
                 TextRange::from_parts(
                     row.saturating_sub(1),
                     column.saturating_sub(1),
@@ -265,7 +259,7 @@ impl SourceLocation {
     #[must_use]
     pub fn sheet(&self) -> Option<&str> {
         match self {
-            Self::TableCell { sheet, .. } | Self::RemoteCell { sheet, .. } => sheet.as_deref(),
+            Self::TableCell { sheet, .. } => sheet.as_deref(),
             Self::FileSpan { .. } | Self::ProjectConfig { .. } | Self::Artifact { .. } => None,
         }
     }
@@ -273,7 +267,7 @@ impl SourceLocation {
     #[must_use]
     pub fn cell_name(&self) -> Option<String> {
         match self {
-            Self::TableCell { row, column, .. } | Self::RemoteCell { row, column, .. } => {
+            Self::TableCell { row, column, .. } => {
                 spreadsheet_cell_name(*row, *column)
             }
             Self::FileSpan { .. } | Self::ProjectConfig { .. } | Self::Artifact { .. } => None,
@@ -304,17 +298,6 @@ impl From<coflow_data_model::SourceLocation> for SourceLocation {
                 column,
             } => Self::TableCell {
                 path,
-                sheet,
-                row,
-                column,
-            },
-            coflow_data_model::SourceLocation::RemoteCell {
-                document,
-                sheet,
-                row,
-                column,
-            } => Self::RemoteCell {
-                document,
                 sheet,
                 row,
                 column,
@@ -427,7 +410,6 @@ pub fn source_location_display_path(location: &SourceLocation) -> String {
         | SourceLocation::TableCell { path, .. }
         | SourceLocation::ProjectConfig { path, .. }
         | SourceLocation::Artifact { path } => path_to_slash(path),
-        SourceLocation::RemoteCell { document, .. } => document.clone(),
     }
 }
 

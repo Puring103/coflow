@@ -39,7 +39,6 @@ pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         can_insert_record: true,
         can_delete_record: true,
         requires_full_refresh_after_write: true,
-        is_remote: false,
     },
 };
 

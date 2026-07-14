@@ -9,7 +9,7 @@ Coflow 的主线是数据处理：CFT 定义数据形状，数据源提供记录
 ```mermaid
 flowchart TD
   Project["项目入口<br/>coflow.yaml / schema paths / sources"] --> Schema["CFT Schema<br/>类型 / 默认值 / check"]
-  Project --> Sources["数据源<br/>Excel / CSV / CFD / Lark / 维度隐式 source"]
+  Project --> Sources["数据源<br/>Excel / CSV / CFD / 维度隐式 source"]
   Sources --> Providers["Loader Providers<br/>解析不同来源"]
   Providers --> Records["Input Records<br/>来源无关"]
   Schema --> Model
@@ -65,7 +65,7 @@ flowchart TD
 | `coflow-cfd` | 唯一 CFD syntax parser、canonical AST 和 source spans |
 | `coflow-structure` | parser/compiler/evaluator 共用的递归深度、节点数和工作量预算 |
 | `coflow-data-model` | record/object/value 模型、默认值、引用、索引和 DataModel 诊断 |
-| `coflow-loader-table-core` | Excel/CSV/Lark 共享表格加载、表头协调和单元格值解析 |
+| `coflow-loader-table-core` | Excel/CSV 共享表格加载、表头协调和单元格值解析 |
 | `coflow-loader-*` | 具体数据源 loader/writer |
 | `coflow-exporter-core` | JSON/MessagePack 共享导出遍历规则 |
 | `coflow-exporter-*` | 具体数据导出格式 |
@@ -167,29 +167,19 @@ Provider registry 持有 loader、writer、exporter 和 codegen。默认 registr
 | loader/writer | `excel` |
 | loader/writer | `csv` |
 | loader/writer | `cfd` |
-| loader/writer | `lark-sheet` |
 | exporter | `json` |
 | exporter | `messagepack` |
 | codegen | `csharp` |
 
 runtime 只依赖 registry 和 trait，不依赖具体 Provider crate 的实现细节。扩展新数据源、导出格式或代码生成目标时，应优先通过 Provider 接口接入。
 
-本地文件和远程 URI 的 table operation 共用 runtime preparation interface：匹配
-项目 source、选择 provider、复用 decoded options、校验 provider role，然后调用
-`TableManager`。CLI 不包含 Excel/Lark 分支；新增远程表格 provider 不需要修改宿主。
+本地文件的 table operation 使用统一 runtime preparation interface：匹配项目 source、
+选择 provider、复用 decoded options、校验 provider role，然后调用 `TableManager`。
 
 表头同步的列身份、增删集合和旧列到新列的行投影由
 `coflow-loader-table-core::writer::HeaderReconciliationPlan` 一次计算。CSV、Excel
-和 Lark adapter 只执行该计划，不各自实现列匹配。重复的空表头槽位按出现次序
-匹配，因此 `@expand` 字段在新增、删除或重排其他字段后仍保持原数据绑定。远程
-表格同步会覆盖旧、新表头的最大矩形宽度，确保被删除的尾列不会继续残留数据。
-
-Lark loader、writer 和 table manager 由 `lark_provider_roles` 创建，并共享一个
-`LarkRemote`。该深模块统一拥有 tenant token、wiki URL 解析、sheet metadata、
-HTTP method 标记和 token-expiry retry。凭证缓存按 app id 与 secret 的 SHA-256
-指纹共同隔离，document metadata 也按凭证隔离；secret、指纹和 access token
-不会进入 Debug 输出。每个远程请求最多在明确的 token-expired 响应后重试一次，
-transport diagnostic 始终包含 HTTP method、operation 和 retry 阶段。
+adapter 只执行该计划，不各自实现列匹配。重复的空表头槽位按出现次序匹配，因此
+`@expand` 字段在新增、删除或重排其他字段后仍保持原数据绑定。
 
 Excel source provider 的 read descriptor 接受 `.xlsx`、`.xlsm` 和 `.xls`，但
 writer capability 与 table-operation descriptor 只对 `.xlsx` 开放。Runtime 查询
@@ -219,7 +209,7 @@ DataModel 统一处理：
 - 继承索引。
 - `@singleton` 约束。
 
-因此 Excel、CSV、CFD 和飞书/Lark 的数据最终使用同一套规则。Provider 不应该各自实现业务校验。
+因此 Excel、CSV 和 CFD 的数据最终使用同一套规则。Provider 不应该各自实现业务校验。
 
 ## 宿主边界
 

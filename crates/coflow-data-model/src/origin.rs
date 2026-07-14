@@ -5,7 +5,7 @@
 //! truth used by:
 //! - diagnostics: to map record-anchored errors back to file/cell locations,
 //! - writers: to dispatch edits back to the correct source (CFD text, Excel
-//!   workbook, Lark spreadsheet, ...).
+//!   workbook, CSV file, ...).
 //!
 //! Origins are source-neutral: they describe *where* a record lives, not
 //! *which loader* produced it. Loaders set the appropriate variant when they
@@ -33,7 +33,7 @@ pub enum RecordOrigin {
         path: PathBuf,
         span: Option<TextSpan>,
     },
-    /// Record came from a tabular source (Excel workbook, Lark spreadsheet).
+    /// Record came from a tabular source.
     Table {
         document: SourceDocument,
         sheet: String,
@@ -62,10 +62,7 @@ impl RecordOrigin {
         match self {
             Self::None => None,
             Self::File { path, .. } => Some(path.display().to_string()),
-            Self::Table { document, .. } => Some(match document {
-                SourceDocument::Local(path) => path.display().to_string(),
-                SourceDocument::Remote(uri) => uri.clone(),
-            }),
+            Self::Table { document, .. } => Some(document.path().display().to_string()),
         }
     }
 
@@ -73,11 +70,8 @@ impl RecordOrigin {
     #[must_use]
     pub fn local_path(&self) -> Option<&PathBuf> {
         match self {
-            Self::File { path, .. }
-            | Self::Table {
-                document: SourceDocument::Local(path),
-                ..
-            } => Some(path),
+            Self::File { path, .. } => Some(path),
+            Self::Table { document, .. } => Some(document.path()),
             _ => None,
         }
     }
@@ -117,31 +111,31 @@ impl RecordOrigin {
                         root_field(path).and_then(|field| (field == "id").then_some(*id_column))
                     })
                     .unwrap_or(*id_column);
-                Some(match document {
-                    SourceDocument::Local(p) => SourceLocation::TableCell {
-                        path: p.clone(),
-                        sheet: Some(sheet.clone()),
-                        row: *row,
-                        column,
-                    },
-                    SourceDocument::Remote(doc) => SourceLocation::RemoteCell {
-                        document: doc.clone(),
-                        sheet: Some(sheet.clone()),
-                        row: *row,
-                        column,
-                    },
+                Some(SourceLocation::TableCell {
+                    path: document.path().clone(),
+                    sheet: Some(sheet.clone()),
+                    row: *row,
+                    column,
                 })
             }
         }
     }
 }
 
-/// A document key: either a local file or a remote document URI.
+/// A local source document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceDocument {
     Local(PathBuf),
-    Remote(String),
+}
+
+impl SourceDocument {
+    #[must_use]
+    pub const fn path(&self) -> &PathBuf {
+        match self {
+            Self::Local(path) => path,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,12 +159,6 @@ pub enum SourceLocation {
     },
     TableCell {
         path: PathBuf,
-        sheet: Option<String>,
-        row: usize,
-        column: usize,
-    },
-    RemoteCell {
-        document: String,
         sheet: Option<String>,
         row: usize,
         column: usize,

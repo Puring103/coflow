@@ -13,7 +13,6 @@ pub use options::{DecodedOutputOptions, DecodedSourceOptions};
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceLocationSpec {
     Path(PathBuf),
-    Uri(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,7 +55,6 @@ pub struct SourceProviderDescriptor {
     pub id: &'static str,
     pub display_name: &'static str,
     pub extensions: &'static [&'static str],
-    pub uri_schemes: &'static [&'static str],
     pub option_keys: &'static [&'static str],
 }
 

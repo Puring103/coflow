@@ -112,7 +112,6 @@ fn dependency_graph_enforces_internal_crate_boundaries() {
         "coflow-loader-cfd",
         "coflow-loader-csv",
         "coflow-loader-excel",
-        "coflow-loader-lark",
         "coflow-exporter-json",
         "coflow-exporter-messagepack",
         "coflow-codegen-csharp",
@@ -136,7 +135,6 @@ fn shared_algorithms_have_dedicated_dependency_owners() {
     for provider in [
         "coflow-loader-csv",
         "coflow-loader-excel",
-        "coflow-loader-lark",
     ] {
         graph.assert_depends_on(provider, "coflow-loader-table-core");
     }

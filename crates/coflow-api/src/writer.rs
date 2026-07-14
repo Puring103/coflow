@@ -8,14 +8,14 @@ pub use requests::{
     SpreadRewriteTarget, WriteBatchFailure, WriteCellRequest, WriteContext, WriteFieldPathSegment,
     WriteOutcome,
 };
-pub use transaction::{SourceTransaction, SourceTransactionCompensation};
+pub use transaction::SourceTransaction;
 
-use crate::{Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec};
+use crate::{Diagnostic, DiagnosticSet, ResolvedSource};
 
 /// Trait for source-specific writers that persist field edits.
 ///
 /// Implementations dispatch on [`RecordOrigin`] to locate the cell/span and
-/// write the new value to the source (file, remote API, ...). The runtime owns
+/// write the new value to the source file. The runtime owns
 /// transaction-level mutation reporting and generation rebuilds.
 pub trait SourceWriter: Send + Sync {
     fn descriptor(&self) -> &'static WriterDescriptor;
@@ -32,23 +32,18 @@ pub trait SourceWriter: Send + Sync {
     /// Start the rollback contract for one resolved source before any writer
     /// method mutates it.
     ///
-    /// Local path sources default to runtime-managed byte snapshots. Remote
-    /// sources must explicitly return a provider compensation handle or are
-    /// rejected by transactional mutation commands.
+    /// Local path sources use runtime-managed byte snapshots.
     ///
     /// # Errors
     ///
-    /// Returns diagnostics when the provider cannot initialize its remote
-    /// transaction state.
+    /// Returns diagnostics when the provider cannot initialize its transaction state.
     fn begin_transaction(
         &self,
         _ctx: WriteContext<'_>,
         source: &ResolvedSource,
     ) -> Result<SourceTransaction, DiagnosticSet> {
-        Ok(match source.location {
-            SourceLocationSpec::Path(_) => SourceTransaction::RuntimeSnapshot,
-            SourceLocationSpec::Uri(_) => SourceTransaction::Unsupported,
-        })
+        let _ = source;
+        Ok(SourceTransaction::RuntimeSnapshot)
     }
 
     /// Cheap pre-flight check: type matches, target file exists, etc. The

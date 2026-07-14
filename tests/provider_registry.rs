@@ -13,10 +13,6 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
         "missing csv source provider",
     )?;
     ensure(
-        registry.source_provider("lark-sheet").is_some(),
-        "missing lark-sheet source provider",
-    )?;
-    ensure(
         registry.source_provider("cfd").is_some(),
         "missing cfd source provider",
     )?;
@@ -27,10 +23,6 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
     ensure(
         registry.source_writer("csv").is_some(),
         "missing csv writer",
-    )?;
-    ensure(
-        registry.source_writer("lark-sheet").is_some(),
-        "missing lark-sheet writer",
     )?;
     ensure(
         registry.source_writer("cfd").is_some(),
@@ -47,10 +39,6 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
     ensure(
         registry.table_manager("cfd").is_some(),
         "missing cfd table manager",
-    )?;
-    ensure(
-        registry.table_manager("lark-sheet").is_some(),
-        "missing lark-sheet table manager",
     )?;
     ensure(
         registry

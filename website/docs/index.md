@@ -118,13 +118,6 @@ id    name       cost hp
 &#125;</code></pre>
 </div>
 <div class="source">
-<header><b>Lark</b><span>飞书表格 · Buff</span></header>
-<pre v-pre class="table"><code><span class="tok-mute">id      duration  stack</span>
-<span class="tok-brand">burn</span>    3.0       1
-<span class="tok-brand">frozen</span>  2.0       1
-<span class="tok-brand">shield</span>  5.0       3</code></pre>
-</div>
-<div class="source">
 <header><b>CSV</b><span>loot.csv</span></header>
 <pre v-pre class="table"><code><span class="tok-mute">boss,drop,weight</span>
 dragon,fireball,50

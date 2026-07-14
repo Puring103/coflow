@@ -128,11 +128,10 @@ fn recognizes_default_id_header_aliases_as_record_key_columns() -> TestResult {
 }
 
 #[test]
-fn maps_remote_table_data_model_diagnostics_to_remote_cells() -> TestResult {
+fn maps_local_table_data_model_diagnostics_to_cells() -> TestResult {
     let schema = compile_schema("type Item { name: string; }")?;
-    let source = TableSource::remote(
-        "lark:sht_test",
-        "https://example.feishu.cn/wiki/wiki_token",
+    let source = TableSource::new(
+        "data/items.xlsx",
         vec![TableSheet::new(
             "物品表",
             vec![
@@ -171,7 +170,7 @@ fn maps_remote_table_data_model_diagnostics_to_remote_cells() -> TestResult {
     assert_eq!(
         primary.location,
         coflow_loader_table_core::TableLocation {
-            file: PathBuf::from("https://example.feishu.cn/wiki/wiki_token"),
+            file: PathBuf::from("data/items.xlsx"),
             sheet: Some("物品表".to_string()),
             row: Some(3),
             column: Some(1),

@@ -216,7 +216,6 @@ pub(super) fn validate_sources_collecting(
                     ));
                 }
             }
-            SourceLocationSpec::Uri(_) => {}
         }
     }
     diagnostics
@@ -252,17 +251,7 @@ fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<ProjectDia
                     ],
                 ));
             }
-            SourceLocationSpec::Uri(uri) if uri.trim().is_empty() => {
-                diagnostics.push(ProjectDiagnostic::new(
-                    format!("{source_label}.url is empty"),
-                    [
-                        "sources".to_string(),
-                        source_index_key.clone(),
-                        "url".to_string(),
-                    ],
-                ));
-            }
-            SourceLocationSpec::Path(_) | SourceLocationSpec::Uri(_) => {}
+            SourceLocationSpec::Path(_) => {}
         }
     }
     diagnostics

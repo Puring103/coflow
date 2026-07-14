@@ -14,7 +14,7 @@ use coflow_data_model::{
     SourceDocument,
 };
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::cell_value::{parse_cell, ParsedCell};
 use columns::{
@@ -324,10 +324,7 @@ pub fn map_label_to_table(label: &CfdLabel, origins: &[RecordOrigin]) -> Option<
     let column = path_column(&label.path, field_columns).or_else(|| {
         root_field(&label.path).and_then(|field| (field == "id").then_some(*id_column))
     });
-    let name = match document {
-        SourceDocument::Local(p) => p.clone(),
-        SourceDocument::Remote(doc) => PathBuf::from(doc),
-    };
+    let name = document.path().clone();
     Some(TableLabel {
         location: TableLocation::new(name)
             .sheet(sheet.clone())

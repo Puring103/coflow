@@ -21,7 +21,6 @@ const MOCK_CFD_CAPS: WriterCapabilities = {
   can_insert_record: true,
   can_delete_record: true,
   requires_full_refresh_after_write: true,
-  is_remote: false,
 }
 
 export const MOCK_PROJECT: ProjectSnapshot = {

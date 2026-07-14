@@ -37,7 +37,6 @@ pub static EXCEL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         can_insert_record: true,
         can_delete_record: true,
         requires_full_refresh_after_write: true,
-        is_remote: false,
     },
 };
 
@@ -264,10 +263,6 @@ fn local_plan_path(plan: &TableWritePlan) -> Result<&Path, DiagnosticSet> {
         | TableWritePlan::AppendRow(TableAppendRow { document, .. })
         | TableWritePlan::DeleteRow(TableDeleteRow { document, .. }) => match document {
             SourceDocument::Local(path) => Ok(path),
-            SourceDocument::Remote(_) => Err(DiagnosticSet::one(diag(
-                "EXCEL-WRITE",
-                "excel writer requires a local table document",
-            ))),
         },
     }
 }

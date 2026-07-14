@@ -5,7 +5,7 @@
 ## 计划内容
 
 - 先用 CFT 固定数据结构和业务规则。
-- 按数据形态选择 Excel、CSV、CFD 或飞书/Lark 表格。
+- 按数据形态选择 Excel、CSV 或 CFD。
 - 提交前运行 `coflow check`。
 - 构建阶段统一运行 `coflow build`。
 - 程序消费生成的 JSON、MessagePack 或 C# 代码。

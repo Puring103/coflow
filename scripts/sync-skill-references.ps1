@@ -90,11 +90,6 @@ $Mappings = @(
         Url = "$PublicDocsBase/docs/reference/04-sources/04-csv"
     }
     @{
-        Source = "website/docs/docs/reference/04-sources/05-lark.md"
-        Target = "skills/coflow-data/references/lark.md"
-        Url = "$PublicDocsBase/docs/reference/04-sources/05-lark"
-    }
-    @{
         Source = "website/docs/docs/reference/08-cli.md"
         Target = "skills/coflow-data/references/cli.md"
         Url = "$PublicDocsBase/docs/reference/08-cli"

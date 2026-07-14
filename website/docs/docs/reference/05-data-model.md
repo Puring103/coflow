@@ -1,6 +1,6 @@
 # 数据模型
 
-Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Excel、CSV、CFD、飞书/Lark 表格和维度隐式 source 都会先被 Provider 转换成来源无关的 input records，再由 DataModel 统一处理默认值、类型检查、引用解析、继承索引和业务校验。
+Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Excel、CSV、CFD 和维度隐式 source 都会先被 Provider 转换成来源无关的 input records，再由 DataModel 统一处理默认值、类型检查、引用解析、继承索引和业务校验。
 
 数据模型不保留数据源格式差异。导出、代码生成、编辑器视图和 `check {}` 都基于同一个模型工作。
 
@@ -158,7 +158,7 @@ DataModel 同时维护：
 
 Provider 只负责把来源格式转成 input records，并提供来源定位：
 
-- Excel / CSV / Lark 负责表头、行、单元格文本读取。
+- Excel / CSV 负责表头、行、单元格文本读取。
 - CFD 负责文本记录解析。
 - 维度生成负责维护隐式 source 文件。
 

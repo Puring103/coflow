@@ -63,7 +63,6 @@ pub const CSV_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescri
     id: "csv",
     display_name: "CSV file",
     extensions: &["csv"],
-    uri_schemes: &[],
     option_keys: &["sheets"],
 };
 

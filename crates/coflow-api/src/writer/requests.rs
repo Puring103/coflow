@@ -20,8 +20,7 @@ pub struct WriteCellRequest<'a> {
     /// typed source representations (e.g. CFD) use this for serialization.
     pub schema: &'a CompiledSchema,
     /// Original `ResolvedSource` that produced the record. Writers consult
-    /// `source.options` to retrieve provider-specific configuration (Lark
-    /// app credentials, alternate Excel sheet mappings, etc.).
+    /// `source.options` to retrieve provider-specific configuration.
     pub source: &'a ResolvedSource,
 }
 

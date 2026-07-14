@@ -23,7 +23,6 @@ members = [
     "crates/coflow-loader-table-core",
     "crates/coflow-loader-csv",
     "crates/coflow-loader-excel",
-    "crates/coflow-loader-lark",
     "crates/coflow-exporter-json",
     "crates/coflow-exporter-core",
     "crates/coflow-exporter-messagepack",

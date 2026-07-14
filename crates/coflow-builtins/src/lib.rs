@@ -48,9 +48,6 @@ pub fn register_default_providers(
 pub fn default_provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
     let mut bundle = coflow_loader_excel::provider_bundle()?;
     bundle.merge(coflow_loader_csv::provider_bundle()?)?;
-    bundle.merge(coflow_loader_lark::provider_bundle(
-        coflow_loader_lark::UreqLarkHttpClient,
-    )?)?;
     bundle.merge(coflow_loader_cfd::provider_bundle()?)?;
     bundle.merge(coflow_exporter_json::provider_bundle()?)?;
     bundle.merge(coflow_exporter_messagepack::provider_bundle()?)?;

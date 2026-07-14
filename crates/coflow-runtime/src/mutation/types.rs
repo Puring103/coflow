@@ -225,8 +225,8 @@ mod tests {
     #[test]
     fn mutation_failure_keeps_structured_diagnostics_after_flattening() {
         let primary = Label {
-            location: SourceLocation::RemoteCell {
-                document: "txn://items".to_string(),
+            location: SourceLocation::TableCell {
+                path: "items.csv".into(),
                 sheet: Some("items".to_string()),
                 row: 2,
                 column: 3,
@@ -234,8 +234,8 @@ mod tests {
             message: Some("primary".to_string()),
         };
         let related = Label {
-            location: SourceLocation::RemoteCell {
-                document: "txn://items".to_string(),
+            location: SourceLocation::TableCell {
+                path: "items.csv".into(),
                 sheet: Some("items".to_string()),
                 row: 4,
                 column: 3,

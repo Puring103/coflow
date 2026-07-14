@@ -464,24 +464,22 @@ coflow data create-file examples/rpg --file data/items.cfd --provider cfd
 在已有表格 source 中创建 sheet/table，并按当前 schema 写入表头。
 
 ```powershell
-coflow data create-table [CONFIG_OR_DIR] --source SOURCE [--type TYPE] [--provider excel|lark-sheet] [--sheet SHEET] [--human]
+coflow data create-table [CONFIG_OR_DIR] --source SOURCE [--type TYPE] [--provider excel] [--sheet SHEET] [--human]
 ```
 
 示例：
 
 ```powershell
 coflow data create-table examples/rpg --source data/gameplay.xlsx --type Item --sheet Item
-coflow data create-table examples/rpg --source lark:sht_xxxxx --type Item --provider lark-sheet --sheet Item
 ```
 
 规则：
 
-- `--source` 是项目相对 Excel 文件，或已配置的飞书/Lark 远端 source 地址。
-- `--provider` 省略时，`lark:`、飞书/Lark URL 会推断为 `lark-sheet`，其他 source 默认按 Excel 表格处理。
-- `--type` 用来决定表头字段；创建 Lark table 时必须提供。
+- `--source` 是项目相对 Excel 文件。
+- `--provider` 省略时按文件扩展名推断。
+- `--type` 用来决定表头字段。
 - `--sheet` 是要创建的 sheet/table 名；省略时使用 `--type`。
 - Excel source 会拒绝创建已存在的 sheet。
-- Lark source 必须能匹配 `coflow.yaml` 中已配置的 `lark-sheet` source，并使用该 source 的 `app_id` / `app_secret` 访问远端表格。
 
 ### `data sync-header`
 
@@ -523,7 +521,7 @@ Get-Content data/items.cfd | coflow data write-file examples/rpg --file data/ite
 
 - 只接受精确小写 `.cfd` 文件。
 - `--file` 必须位于项目配置中的本地 CFD source 覆盖范围内。
-- 不能写入表格文件、远端 source、输出目录、显式非 CFD provider source 或未配置路径。
+- 不能写入表格文件、输出目录、显式非 CFD provider source 或未配置路径。
 - `data write-file` 不创建新 source。新增 CFD 文件应先用 `data create-file --provider cfd`
   创建并纳入可写范围，再用 `data write-file` 重写内容。
 - `--dry-run` 不落盘，只比较目标文件内容并输出报告。

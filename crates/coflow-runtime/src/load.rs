@@ -532,7 +532,6 @@ fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
                 .unwrap_or(path.as_path());
             path_to_slash(relative)
         }
-        SourceLocationSpec::Uri(uri) => uri.clone(),
     }
 }
 

@@ -2,7 +2,7 @@
 
 Excel source 使用 `excel` Provider 读取 `.xlsx`、`.xlsm`、`.xls` workbook，并把 sheet 转成共享表格模型。
 
-Excel 与 CSV、飞书/Lark 共享 [表格 Source](./02-table.md) 规则：第一行表头、`id` 列作为 key、`sheets` 映射、`columns` 映射、`#` 控制列和 `@expand`。
+Excel 与 CSV 共享 [表格 Source](./02-table.md) 规则：第一行表头、`id` 列作为 key、`sheets` 映射、`columns` 映射、`#` 控制列和 `@expand`。
 
 ## 配置示例
 

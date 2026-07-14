@@ -1,6 +1,6 @@
 # 表格 Source
 
-Excel、CSV 和飞书/Lark 表格共享表格加载语义。表格 source 适合维护大量同构记录；复杂嵌套对象、数组、字典和覆盖模板通常更适合 [CFD](../03-language/02-cfd.md)。
+Excel 和 CSV 表格共享表格加载语义。表格 source 适合维护大量同构记录；复杂嵌套对象、数组、字典和覆盖模板通常更适合 [CFD](../03-language/02-cfd.md)。
 
 ## 基本规则
 
@@ -103,12 +103,11 @@ type Item {
 
 ```powershell
 coflow data create-table <project> --source data/gameplay.xlsx --type Item --sheet Item
-coflow data create-table <project> --source lark:sht_xxxxx --type Item --provider lark-sheet --sheet Item
 ```
 
 它和 `data create-file` 的边界不同：
 
 - `data create-file` 创建新的本地 `.cfd`、`.csv` 或 Excel 文件。
-- `data create-table` 在已有 Excel workbook 或远端 Lark spreadsheet 中创建一个 sheet/table。
+- `data create-table` 在已有 Excel workbook 中创建一个 sheet。
 
 创建表格只需要 schema，不加载完整 DataModel，也不执行 `check {}`。创建后如果要确认数据源整体可用，继续运行 `coflow check`。
