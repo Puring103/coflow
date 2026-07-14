@@ -7,7 +7,7 @@ use crate::compiler_context::DataModelCompilerContext;
 use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdPath};
 use crate::edge_index::{build_ref_indexes, build_spread_indexes};
 use crate::model::{CfdDataModel, CfdInputRecord, CfdObject, CfdRecord, CfdRecordId};
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchema;
 use coflow_structure::StructuralLimits;
 use resolve::ValueResolver;
 use validate::Validator;
@@ -21,7 +21,7 @@ pub(crate) struct ModelCompiler<'a> {
 
 impl<'a> ModelCompiler<'a> {
     pub(crate) fn new(
-        schema_source: &'a CftContainer,
+        schema_source: &'a CftSchema,
         input: Vec<CfdInputRecord>,
         structural_limits: StructuralLimits,
     ) -> Self {

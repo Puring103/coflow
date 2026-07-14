@@ -9,4 +9,4 @@ pub use info::{
 pub use regenerate::regenerate_dimension_sources;
 pub(crate) use regenerate::DimensionGenerationTransaction;
 pub(crate) use synthesize::dimension_sources;
-pub use synthesize::{dimension_fields, inject_dimension_types, DimensionField};
+pub use synthesize::{dimension_fields, DimensionField};

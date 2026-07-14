@@ -408,7 +408,7 @@ dimensions:
     let synth = records
         .records
         .iter()
-        .find(|row| row.coordinate.actual_type == "Item_nameVariants")
+        .find(|row| row.coordinate.actual_type == "__coflow_dimension_Item_name")
         .expect("synth row");
     let default_field = synth
         .fields

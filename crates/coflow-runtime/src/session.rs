@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use coflow_api::{ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet};
-use coflow_cft::{CftContainer, CftSchema};
+use coflow_cft::CftSchema;
 use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::{path_to_slash, Project};
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ impl RecordCoordinate {
 #[derive(Debug)]
 pub(crate) struct ProjectSession {
     pub(crate) project: Project,
-    pub(crate) schema: Arc<CftContainer>,
+    pub(crate) schema: Arc<CftSchema>,
     pub(crate) model: CfdDataModel,
     pub(crate) diagnostics: DiagnosticsStore,
     pub(crate) sources: SourceIndex,
@@ -59,7 +59,7 @@ pub(crate) struct ProjectSession {
 impl ProjectSession {
     #[must_use]
     pub fn compiled_schema(&self) -> &CftSchema {
-        self.schema.compiled_schema()
+        &self.schema
     }
 
     #[must_use]
@@ -380,7 +380,7 @@ impl ProjectSession {
 #[derive(Debug)]
 pub struct ProjectSchemaSession {
     pub(crate) project: Project,
-    pub(crate) schema: Arc<CftContainer>,
+    pub(crate) schema: Arc<CftSchema>,
     pub(crate) diagnostics: DiagnosticsStore,
 }
 
@@ -392,7 +392,7 @@ impl ProjectSchemaSession {
 
     #[must_use]
     pub fn compiled_schema(&self) -> &CftSchema {
-        self.schema.compiled_schema()
+        &self.schema
     }
 
     #[must_use]

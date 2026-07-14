@@ -1,7 +1,7 @@
 use coflow_api::FlatDiagnostic;
 use coflow_cft::{
-    CftAnnotation, CftAnnotationValue, CftConstValue, CftContainer, CftSchemaDefaultValue,
-    CftSchemaTypeRef, CftSchema, ModuleId,
+    CftAnnotation, CftAnnotationValue, CftConstValue, CftSchemaDefaultValue, CftSchemaTypeRef,
+    CftSchema, ModuleId,
 };
 use serde::Serialize;
 
@@ -221,7 +221,7 @@ pub fn schema_files(session: &ProjectSchemaSession) -> SchemaFilesReport {
     }
 }
 
-fn consts(schema: &CftContainer) -> Vec<SchemaConstInfo> {
+fn consts(schema: &CftSchema) -> Vec<SchemaConstInfo> {
     let mut consts = Vec::new();
     for module_id in schema.module_ids() {
         append_module_consts(schema, module_id, &mut consts);
@@ -231,11 +231,11 @@ fn consts(schema: &CftContainer) -> Vec<SchemaConstInfo> {
 }
 
 fn append_module_consts(
-    schema: &CftContainer,
+    schema: &CftSchema,
     module_id: &ModuleId,
     out: &mut Vec<SchemaConstInfo>,
 ) {
-    let Some(module) = schema.schema(module_id) else {
+    let Some(module) = schema.module_schema(module_id) else {
         return;
     };
     out.extend(module.consts.iter().map(|schema_const| SchemaConstInfo {

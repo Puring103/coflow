@@ -230,7 +230,7 @@ fn dimension_field_lookup_reads_variant_storage_without_exposing_storage_to_call
     let item_id = model.lookup_assignable("Item", "potion").expect("item");
 
     let resolved = model
-        .dimension_field_value(schema.compiled_schema(), item_id, "name", "platform", "pc")
+        .dimension_field_value(&schema, item_id, "name", "platform", "pc")
         .expect("variant lookup should resolve");
 
     assert_eq!(
@@ -284,7 +284,7 @@ fn dimension_field_lookup_uses_field_name_for_singleton_storage_records() {
 
     let resolved = model
         .dimension_field_value(
-            schema.compiled_schema(),
+            &schema,
             singleton_id,
             "welcome",
             "language",

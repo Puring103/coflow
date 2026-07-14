@@ -16,7 +16,7 @@ pub use value::{CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdValue};
 
 use crate::diagnostic::CfdPath;
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchema;
 use coflow_structure::StructuralLimits;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -39,7 +39,7 @@ pub struct CfdDataModel {
 
 impl CfdDataModel {
     #[must_use]
-    pub fn builder(schema: &CftContainer) -> CfdModelBuilder<'_> {
+    pub fn builder(schema: &CftSchema) -> CfdModelBuilder<'_> {
         CfdModelBuilder::new(schema)
     }
 
@@ -377,14 +377,14 @@ impl CfdDataModel {
 
 #[derive(Debug)]
 pub struct CfdModelBuilder<'a> {
-    schema: &'a CftContainer,
+    schema: &'a CftSchema,
     records: Vec<CfdInputRecord>,
     structural_limits: StructuralLimits,
 }
 
 impl<'a> CfdModelBuilder<'a> {
     #[must_use]
-    pub fn new(schema: &'a CftContainer) -> Self {
+    pub fn new(schema: &'a CftSchema) -> Self {
         Self {
             schema,
             records: Vec::new(),

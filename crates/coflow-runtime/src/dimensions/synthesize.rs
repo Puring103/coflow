@@ -1,10 +1,7 @@
 use crate::source_resolution::ConfiguredSource;
 use coflow_api::SourceLocationSpec;
-use coflow_cft::{
-    CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaType,
-    CftSchemaTypeRef, CftSchema, ModuleId, Span,
-};
-use coflow_project::{DimensionConfig, Project};
+use coflow_cft::CftSchema;
+use coflow_project::Project;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,33 +14,6 @@ pub struct DimensionField {
     pub bucket: String,
     pub synthesized_type: String,
     pub is_singleton: bool,
-}
-
-pub fn inject_dimension_types(
-    schema: &mut CftContainer,
-    configs: &std::collections::BTreeMap<String, DimensionConfig>,
-) -> Result<Vec<DimensionField>, coflow_cft::CftDiagnostics> {
-    let view = schema.compiled_schema();
-    let fields = dimension_fields(view);
-    let synthesized = fields
-        .iter()
-        .filter_map(|field| {
-            let config = configs.get(&field.dimension)?;
-            let source_type = view.type_meta(&field.source_type)?;
-            let source_field = source_type
-                .own_fields
-                .iter()
-                .find(|candidate| candidate.name == field.source_field)?;
-            Some(synthesized_type(
-                &field.synthesized_type,
-                field,
-                &source_field.ty_ref,
-                &config.variants,
-            ))
-        })
-        .collect::<Vec<_>>();
-    schema.register_runtime_types(synthesized)?;
-    Ok(fields)
 }
 
 pub(crate) fn dimension_sources(
@@ -98,84 +68,21 @@ pub fn dimension_fields(schema: &CftSchema) -> Vec<DimensionField> {
                     .bucket
                     .clone()
                     .unwrap_or_else(|| schema_type.name.clone()),
-                synthesized_type: format!("{}_{}Variants", schema_type.name, field.name),
+                // Missing dimension config is diagnosed before data loading. The
+                // fallback only preserves enough identity for that diagnostic.
+                synthesized_type: schema
+                    .dimension_storage_type(
+                        &dimension.dimension,
+                        &schema_type.name,
+                        &field.name,
+                    )
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("{}_{}Variants", schema_type.name, field.name)),
                 is_singleton: schema_type.is_singleton,
             });
         }
     }
     fields
-}
-
-fn synthesized_type(
-    name: &str,
-    field: &DimensionField,
-    source_ty: &CftSchemaTypeRef,
-    variants: &[String],
-) -> CftSchemaType {
-    let mut fields = Vec::with_capacity(variants.len() + 1);
-    fields.push(synthesized_field("default", source_ty));
-    fields.extend(
-        variants
-            .iter()
-            .map(|variant| synthesized_field(variant, source_ty)),
-    );
-    CftSchemaType {
-        module: ModuleId::from("__runtime__"),
-        name: name.to_string(),
-        parent: None,
-        is_abstract: false,
-        is_sealed: false,
-        is_singleton: false,
-        fields: fields.clone(),
-        all_fields: fields,
-        check: None,
-        annotations: vec![CftAnnotation {
-            name: "__coflow_dimension_storage".to_string(),
-            args: vec![
-                CftAnnotationValue::String(field.dimension.clone()),
-                CftAnnotationValue::String(field.source_type.clone()),
-                CftAnnotationValue::String(field.source_field.clone()),
-            ],
-        }],
-        span: Span::new(0, 0),
-    }
-}
-
-fn synthesized_field(name: &str, source_ty: &CftSchemaTypeRef) -> CftSchemaField {
-    let inner_ty = non_nullable_type(source_ty).clone();
-    CftSchemaField {
-        name: name.to_string(),
-        ty: format!("{}?", format_type_ref(&inner_ty)),
-        ty_ref: CftSchemaTypeRef::Nullable(Box::new(inner_ty)),
-        has_default: false,
-        default: None,
-        annotations: Vec::new(),
-        dimension: None,
-        span: Span::new(0, 0),
-    }
-}
-
-fn non_nullable_type(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
-    match ty {
-        CftSchemaTypeRef::Nullable(inner) => non_nullable_type(inner),
-        other => other,
-    }
-}
-
-fn format_type_ref(ty: &CftSchemaTypeRef) -> String {
-    match ty {
-        CftSchemaTypeRef::Int => "int".to_string(),
-        CftSchemaTypeRef::Float => "float".to_string(),
-        CftSchemaTypeRef::Bool => "bool".to_string(),
-        CftSchemaTypeRef::String => "string".to_string(),
-        CftSchemaTypeRef::Named(name) => name.clone(),
-        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
-        CftSchemaTypeRef::Array(inner) => format!("[{}]", format_type_ref(inner)),
-        CftSchemaTypeRef::Dict(key, value) => {
-            format!("{{{}: {}}}", format_type_ref(key), format_type_ref(value))
-        }
-        CftSchemaTypeRef::Nullable(inner) => format!("{}?", format_type_ref(inner)),
-    }
 }
 
 fn source_for_dimension_file(

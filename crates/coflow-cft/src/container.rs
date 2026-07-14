@@ -10,6 +10,7 @@ use crate::CftSchema;
 use coflow_structure::StructuralBudget;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::ops::Deref;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ModuleId(String);
@@ -277,6 +278,16 @@ impl CftContainer {
                 .collect(),
             diagnostics: CftDiagnostics::new(Vec::new()),
         }
+    }
+}
+
+// Transitional compatibility for callers being moved to the immutable schema API.
+// The container is removed once all hosts and test helpers construct CftSchema directly.
+impl Deref for CftContainer {
+    type Target = CftSchema;
+
+    fn deref(&self) -> &Self::Target {
+        &self.compiled
     }
 }
 

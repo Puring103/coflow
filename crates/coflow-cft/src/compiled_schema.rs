@@ -154,7 +154,8 @@ impl CftSchema {
         Ok(view)
     }
 
-    pub(crate) fn empty() -> Self {
+    #[must_use]
+    pub fn empty() -> Self {
         Self {
             reflection: SchemaReflection::default(),
             sources: BTreeMap::new(),
@@ -234,6 +235,20 @@ impl CftSchema {
 
     pub fn type_metas(&self) -> impl Iterator<Item = &CftTypeMeta> {
         self.types.values()
+    }
+
+    pub fn module_ids(&self) -> impl Iterator<Item = &ModuleId> {
+        self.reflection.modules.keys()
+    }
+
+    #[must_use]
+    pub fn module_schema(&self, module: &ModuleId) -> Option<&crate::CftSchemaModule> {
+        self.reflection.modules.get(module)
+    }
+
+    #[must_use]
+    pub fn source(&self, module: &ModuleId) -> Option<&str> {
+        self.sources.get(module).map(String::as_str)
     }
 
     pub fn const_names(&self) -> impl Iterator<Item = &String> {

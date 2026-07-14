@@ -1,8 +1,8 @@
 use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
-    CftContainer, CftFieldMeta, CftSchemaTypeRef, CftTypeMeta, CftSchema,
-    ValueDependencyCycle, ValueDependencyMode,
+    CftFieldMeta, CftSchema, CftSchemaTypeRef, CftTypeMeta, ValueDependencyCycle,
+    ValueDependencyMode,
 };
 use std::collections::BTreeMap;
 
@@ -60,12 +60,11 @@ pub(crate) struct DataModelCompilerContext<'a> {
 }
 
 impl<'a> DataModelCompilerContext<'a> {
-    pub(crate) fn new(schema: &'a CftContainer) -> Self {
-        let cft_view = schema.compiled_schema();
-        let domain_index = Self::build_domain_index(cft_view);
+    pub(crate) fn new(schema: &'a CftSchema) -> Self {
+        let domain_index = Self::build_domain_index(schema);
 
         Self {
-            cft: cft_view,
+            cft: schema,
             domain_index,
         }
     }

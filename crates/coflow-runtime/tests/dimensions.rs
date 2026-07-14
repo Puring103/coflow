@@ -5,7 +5,7 @@
 )]
 
 use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
-use coflow_cft::{CftContainer, Dimension, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
 use coflow_project::Project;
 use coflow_runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime, WriteProjectSession};
@@ -35,24 +35,27 @@ fn open_read_only_session(
     Runtime::new(registry.clone()).open_read_only_session(project)
 }
 
-fn schema_with_localized_string() -> CftContainer {
-    let mut container = CftContainer::new();
-    container
-        .add_module(
-            ModuleId::from("schema/main.cft"),
-            r#"
+fn compile_schema(source: &str) -> CftSchema {
+    let modules = parse_modules([CftFile::new(
+        ModuleId::from("schema/main.cft"),
+        "schema/main.cft".into(),
+        source,
+    )]);
+    build_schema(&modules, &CftDimensions::default()).expect("compile succeeds")
+}
+
+fn schema_with_localized_string() -> CftSchema {
+    compile_schema(
+        r#"
             type Item {
               @localized
               name: string;
             }
             "#,
-        )
-        .expect("schema source compiles");
-    container.compile().expect("compile succeeds");
-    container
+    )
 }
 
-fn build_simple_model() -> (CftContainer, CfdDataModel) {
+fn build_simple_model() -> (CftSchema, CfdDataModel) {
     let schema = schema_with_localized_string();
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_input_record(CfdInputRecord::new(
@@ -67,25 +70,17 @@ fn build_simple_model() -> (CftContainer, CfdDataModel) {
 #[test]
 fn schema_publishes_localized_field_metadata() {
     let (schema, _) = build_simple_model();
-    let item = schema.resolve_type("Item").unwrap();
-    let field = item.all_fields.iter().find(|f| f.name == "name").unwrap();
+    let field = schema.field_meta("Item", "name").unwrap();
     assert!(field
         .dimension
         .as_ref()
-        .is_some_and(|dimension| matches!(dimension.kind, Dimension::Localized)));
+        .is_some_and(|dimension| dimension.dimension == "language"));
 }
 
 #[test]
 fn singleton_schema_publishes_is_singleton() {
-    let mut container = CftContainer::new();
-    container
-        .add_module(
-            ModuleId::from("schema/main.cft"),
-            "@singleton type Cfg { value: int; }",
-        )
-        .expect("source compiles");
-    container.compile().expect("compile succeeds");
-    let cfg = container.resolve_type("Cfg").unwrap();
+    let schema = compile_schema("@singleton type Cfg { value: int; }");
+    let cfg = schema.type_meta("Cfg").unwrap();
     assert!(cfg.is_singleton);
 }
 
@@ -243,7 +238,9 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let variants = session.queries().schema_type_fields("Item_nameVariants");
+    let variants = session
+        .queries()
+        .schema_type_fields("__coflow_dimension_Item_name");
     assert_eq!(
         variants
             .iter()
@@ -308,7 +305,9 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let variants = session.queries().schema_type_fields("Item_nameVariants");
+    let variants = session
+        .queries()
+        .schema_type_fields("__coflow_dimension_Item_name");
     assert_eq!(
         variants
             .iter()
@@ -321,7 +320,7 @@ dimensions:
         .has_source_file("data/dimensions/platform/Item_name.csv"));
     assert!(session
         .queries()
-        .record_view("Item_nameVariants", "potion")
+        .record_view("__coflow_dimension_Item_name", "potion")
         .is_some());
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -363,7 +362,9 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let variants = session.queries().schema_type_fields("Item_nameVariants");
+    let variants = session
+        .queries()
+        .schema_type_fields("__coflow_dimension_Item_name");
     assert_eq!(variants[0].1, "string?");
     assert_eq!(variants[1].1, "string?");
 
@@ -482,8 +483,12 @@ dimensions:
         session.queries().diagnostics().as_set()
     );
 
-    assert!(session.queries().schema_has_type("Base_nameVariants"));
-    assert!(!session.queries().schema_has_type("Child_nameVariants"));
+    assert!(session
+        .queries()
+        .schema_has_type("__coflow_dimension_Base_name"));
+    assert!(!session
+        .queries()
+        .schema_has_type("__coflow_dimension_Child_name"));
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/Base_name.csv"))
         .expect("read inherited dimension csv");
     assert_eq!(generated, "id,default,zh\nchild,Potion,null\n");
@@ -1322,7 +1327,7 @@ fn language_dimension_regenerates_singleton_cfd_with_defaults_and_preserved_vari
     .expect("write singleton source");
     std::fs::write(
         root.join("data/dimensions/language/UiText.cfd"),
-        r#"welcome: UiText_welcomeVariants {
+        r#"welcome: __coflow_dimension_UiText_welcome {
     default: "Old",
     zh: "欢迎",
     en: null,
@@ -1356,7 +1361,7 @@ dimensions:
         .expect("read generated dimension cfd");
     assert_eq!(
         generated,
-        "welcome: UiText_welcomeVariants {\n    default: \"Welcome\",\n    zh: \"欢迎\",\n    en: null,\n}\n\n"
+        "welcome: __coflow_dimension_UiText_welcome {\n    default: \"Welcome\",\n    zh: \"欢迎\",\n    en: null,\n}\n\n"
     );
     assert!(session
         .queries()
@@ -1366,14 +1371,14 @@ dimensions:
 }
 
 /// Regression: spec 17 §1.1 — source record `Item.potion` and synthetic
-/// dimension record `Item_nameVariants.potion` share the record key `potion`
+/// dimension record `__coflow_dimension_Item_name.potion` share the record key `potion`
 /// but live in different types. The pre-refactor `RecordIndex` keyed records
 /// by bare `key`, so the second `add(potion)` clobbered the first and
 /// `keys_for_file("Item_name.csv")` returned the wrong record's fields.
 ///
 /// After Phase 2, `RecordIndex` is keyed by `(actual_type, key)`. Both
 /// records coexist; `ids_in_file("Item_name.csv")` lists only the synthetic
-/// row and `record.actual_type` resolves to `Item_nameVariants` (not `Item`).
+/// row and `record.actual_type` resolves to `__coflow_dimension_Item_name` (not `Item`).
 #[test]
 fn synthetic_and_source_records_with_same_key_do_not_collide() {
     let root = std::env::temp_dir().join(format!(
@@ -1429,8 +1434,8 @@ dimensions:
         .expect("source `Item.potion` should be indexed");
     let synthetic = session
         .queries()
-        .record_view("Item_nameVariants", "potion")
-        .expect("synthetic `Item_nameVariants.potion` should be indexed");
+        .record_view("__coflow_dimension_Item_name", "potion")
+        .expect("synthetic dimension record should be indexed");
     assert_eq!(source.display_path, "data/items.csv");
     assert_eq!(
         synthetic.display_path,
@@ -1449,14 +1454,14 @@ dimensions:
         "synthetic file index should hold only the variant record"
     );
     let coordinate = &records_in_variants_file[0].coordinate;
-    assert_eq!(coordinate.actual_type, "Item_nameVariants");
+    assert_eq!(coordinate.actual_type, "__coflow_dimension_Item_name");
     assert_eq!(coordinate.key, "potion");
 
     // `record_view` returns the synthetic record's fields when addressed by
     // its coordinate — not the source `Item` record's fields.
     let view = session
         .queries()
-        .record_view("Item_nameVariants", "potion")
+        .record_view("__coflow_dimension_Item_name", "potion")
         .expect("record view");
     assert!(view.record.fields().contains_key("default"));
     assert!(view.record.fields().contains_key("zh"));

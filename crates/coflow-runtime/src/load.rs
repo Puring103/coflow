@@ -2,7 +2,7 @@ use coflow_api::{
     map_diagnostics_with_origins, origins_of, Diagnostic, DiagnosticSet, ProviderRegistry,
     ResolvedSource, SourceLoadContext, SourceLocationSpec,
 };
-use coflow_cft::{CftContainer, CftSchema};
+use coflow_cft::CftSchema;
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostics, CfdInputRecord, CfdPath, CfdPathSegment, CfdRecordId,
     RecordOrigin,
@@ -90,7 +90,7 @@ pub(crate) fn empty_load_output() -> Result<ProjectLoadOutput, DiagnosticSet> {
 
 pub(crate) fn load_project_data(
     project: &Project,
-    schema: &CftContainer,
+    schema: &CftSchema,
     compiled_schema: &CftSchema,
     registry: &ProviderRegistry,
     indexes: &mut SessionIndexBuilder,
@@ -196,7 +196,7 @@ pub(crate) fn load_project_data(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn reload_project_data_from_cache(
     project: &Project,
-    schema: &CftContainer,
+    schema: &CftSchema,
     compiled_schema: &CftSchema,
     registry: &ProviderRegistry,
     indexes: &mut SessionIndexBuilder,
@@ -446,7 +446,7 @@ fn refresh_dimension_source_plans(
 #[allow(clippy::too_many_arguments)]
 fn build_output_from_cache(
     project: &Project,
-    schema: &CftContainer,
+    schema: &CftSchema,
     compiled_schema: &CftSchema,
     indexes: &mut SessionIndexBuilder,
     source_data: SourceDataCache,
@@ -588,7 +588,7 @@ pub fn format_cfd_path(path: &CfdPath) -> String {
 }
 
 pub(crate) fn empty_model() -> Result<CfdDataModel, DiagnosticSet> {
-    CfdDataModel::builder(&CftContainer::new())
+    CfdDataModel::builder(&CftSchema::empty())
         .build()
         .map_err(|_| {
             DiagnosticSet::one(Diagnostic::error(

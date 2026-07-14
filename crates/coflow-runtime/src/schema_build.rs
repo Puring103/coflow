@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{
+    build_schema, parse_modules, CftContainer, CftDimensions, CftFile, CftSchema, ModuleId,
+};
 use coflow_project::{normalize_path, Project};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -128,28 +130,17 @@ pub(crate) fn build_project_schema_with_diagnostics(
     let mut diagnostics = DiagnosticsStore::from_set(diagnostics);
     let schema = if diagnostics.is_empty() {
         match compile_project_schema(&project)? {
-            Ok(mut schema) => {
+            Ok(schema) => {
                 diagnostics.extend(validate_dimension_schema_config(&project, &schema));
-                if diagnostics.is_empty() {
-                    if let Err(err) =
-                        dimensions::inject_dimension_types(&mut schema, &project.config.dimensions)
-                    {
-                        diagnostics.extend(diagnostic_set_from_cft(
-                            err.diagnostics,
-                            &BTreeMap::new(),
-                            &BTreeMap::new(),
-                        ));
-                    }
-                }
                 schema
             }
             Err(schema_diagnostics) => {
                 diagnostics.extend(schema_diagnostics);
-                CftContainer::new()
+                CftSchema::empty()
             }
         }
     } else {
-        CftContainer::new()
+        CftSchema::empty()
     };
     Ok(ProjectSchemaSession {
         project,
@@ -158,10 +149,10 @@ pub(crate) fn build_project_schema_with_diagnostics(
     })
 }
 
-fn validate_dimension_schema_config(project: &Project, schema: &CftContainer) -> DiagnosticSet {
+fn validate_dimension_schema_config(project: &Project, schema: &CftSchema) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
     let mut required = BTreeSet::new();
-    for field in dimensions::dimension_fields(schema.compiled_schema()) {
+    for field in dimensions::dimension_fields(schema) {
         required.insert(field.dimension);
     }
     for dimension in required {
@@ -194,26 +185,44 @@ fn validate_dimension_schema_config(project: &Project, schema: &CftContainer) ->
 
 fn compile_project_schema(
     project: &Project,
-) -> Result<Result<CftContainer, DiagnosticSet>, DiagnosticSet> {
+) -> Result<Result<CftSchema, DiagnosticSet>, DiagnosticSet> {
     let project_diagnostics = project.schema_diagnostic_set();
     if !project_diagnostics.is_empty() {
         return Ok(Err(project_diagnostics));
     }
-    let build = compile_schema_project_with_overrides(project, &[])?;
-    let diagnostics = diagnostics_from_schema_build(&build);
-    if diagnostics.is_empty() {
-        build
-            .container
-            .ok_or_else(|| {
-                DiagnosticSet::one(Diagnostic::error(
-                    "PROJECT-SCHEMA",
-                    "PROJECT",
-                    "schema compilation did not produce a container",
-                ))
-            })
-            .map(Ok)
-    } else {
-        Ok(Err(diagnostics))
+    let source_set = project.schema_sources()?;
+    let mut sources = BTreeMap::new();
+    let mut paths = BTreeMap::new();
+    let files = source_set.modules.into_iter().map(|module| {
+        sources.insert(module.module_id.clone(), module.source.clone());
+        paths.insert(
+            module.module_id.clone(),
+            module.canonical_path.display().to_string(),
+        );
+        CftFile::new(ModuleId::new(module.module_id), module.canonical_path, module.source)
+    });
+    let modules = parse_modules(files);
+    if !modules.diagnostics().is_empty() {
+        return Ok(Err(diagnostic_set_from_cft(
+            modules.diagnostics().diagnostics.clone(),
+            &sources,
+            &paths,
+        )));
+    }
+    let dimensions = CftDimensions::new(
+        project
+            .config
+            .dimensions
+            .iter()
+            .map(|(name, config)| (name.clone(), config.variants.clone())),
+    );
+    match build_schema(&modules, &dimensions) {
+        Ok(schema) => Ok(Ok(schema)),
+        Err(diagnostics) => Ok(Err(diagnostic_set_from_cft(
+            diagnostics.diagnostics,
+            &sources,
+            &paths,
+        ))),
     }
 }
 

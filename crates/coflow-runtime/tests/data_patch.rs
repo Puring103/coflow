@@ -354,14 +354,14 @@ fn patch_rejects_insert_and_delete_on_dimension_variant_tables() {
             DataPatchOp::InsertRecord {
                 file: "data/dimensions/language/Item_name.csv".to_string(),
                 sheet: Some("Item_name".to_string()),
-                actual_type: "Item_nameVariants".to_string(),
+                actual_type: "__coflow_dimension_Item_name".to_string(),
                 key: "extra".to_string(),
                 fields: std::collections::BTreeMap::default(),
                 materialization: DefaultMaterialization::Minimal,
             },
             DataPatchOp::DeleteRecord {
                 record: PatchRecordSelector {
-                    actual_type: "Item_nameVariants".to_string(),
+                    actual_type: "__coflow_dimension_Item_name".to_string(),
                     key: "potion".to_string(),
                 },
                 file: None,

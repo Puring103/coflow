@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use coflow_api::{DiagnosticSet, ProviderRegistry};
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 
@@ -128,7 +128,7 @@ fn finish_project_session(
         mut diagnostics,
     } = schema_session;
 
-    let dimension_fields = dimensions::dimension_fields(schema.compiled_schema());
+    let dimension_fields = dimensions::dimension_fields(&schema);
     let ctx = SessionBuildContext {
         project,
         schema,
@@ -163,7 +163,7 @@ fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, Diagno
 
 struct SessionBuildContext<'a> {
     project: Project,
-    schema: Arc<CftContainer>,
+    schema: Arc<CftSchema>,
     registry: &'a ProviderRegistry,
     dimension_mode: DimensionBuildMode,
     dimension_fields: Vec<DimensionField>,
@@ -362,7 +362,7 @@ fn load_data(
     let output = match load_project_data(
         &ctx.project,
         &ctx.schema,
-        ctx.schema.compiled_schema(),
+        &ctx.schema,
         ctx.registry,
         &mut indexes,
         LoadProjectDataOptions {
@@ -396,7 +396,7 @@ fn load_cached_data(
     let output = match reload_project_data_from_cache(
         &ctx.project,
         &ctx.schema,
-        ctx.schema.compiled_schema(),
+        &ctx.schema,
         ctx.registry,
         &mut indexes,
         previous,

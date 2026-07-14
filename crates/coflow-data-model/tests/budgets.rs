@@ -14,7 +14,7 @@ fn nested_array(depth: usize) -> CfdInputValue {
 }
 
 fn build_nested_array(
-    schema: &CftContainer,
+    schema: &CftSchema,
     structural_limits: StructuralLimits,
 ) -> Result<CfdDataModel, CfdDiagnostics> {
     let mut builder = CfdDataModel::builder(schema).with_structural_limits(structural_limits);
@@ -81,7 +81,7 @@ fn structural_budget_is_independent_for_each_top_level_record() {
 }
 
 fn spread_chain_model(
-    schema: &CftContainer,
+    schema: &CftSchema,
     max_work: u64,
 ) -> Result<CfdDataModel, CfdDiagnostics> {
     let mut builder =
