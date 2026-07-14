@@ -23,6 +23,13 @@ impl CftFile {
             source: source.into(),
         }
     }
+
+    /// Creates a collected file whose module id is also its logical path.
+    #[must_use]
+    pub fn from_source(module: ModuleId, source: impl Into<String>) -> Self {
+        let path = PathBuf::from(module.as_str());
+        Self::new(module, path, source)
+    }
 }
 
 /// A parsed CFT module retained for diagnostics and language tooling.

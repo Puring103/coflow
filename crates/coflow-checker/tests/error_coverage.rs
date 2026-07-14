@@ -12,7 +12,7 @@ use common::*;
 use coflow_checker::{run_checks_with_options, CheckOptions, StructuralLimits};
 use std::collections::BTreeSet;
 
-type BuildFn = fn(&CftContainer) -> Result<CfdDataModel, CfdDiagnostics>;
+type BuildFn = fn(&CftSchema) -> Result<CfdDataModel, CfdDiagnostics>;
 type CheckFn = fn(&CftSchema, &CfdDataModel) -> Result<(), CfdDiagnostics>;
 type DirectFn = fn() -> CfdDiagnostics;
 type AdjacentFn = fn();
@@ -42,8 +42,8 @@ fn diagnostics_for(case: &Case) -> CfdDiagnostics {
         Phase::Check(build, check) => {
             let schema = compile_schema(case.schema);
             let model = build(&schema).expect("check coverage model should build");
-            let compiled = schema.compiled_schema();
-            check(compiled, &model).expect_err(case.name)
+            let compiled = schema;
+            check(&compiled, &model).expect_err(case.name)
         }
     }
 }
@@ -358,7 +358,7 @@ fn cases() -> Vec<Case> {
     ]
 }
 
-fn build_singleton_count_invalid(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_singleton_count_invalid(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     // Two records of a singleton type triggers SingletonRecordCountInvalid.
     model_from_records(
         schema,
@@ -380,7 +380,7 @@ fn adjacent_singleton_count_valid() {
     );
 }
 
-fn build_singleton_key_invalid(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_singleton_key_invalid(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     // A singleton record with an invalid identifier key. We use a leading
     // digit to slip past the generic InvalidRecordKey path's prerequisites
     // and reach the singleton-specific check.
@@ -394,7 +394,7 @@ fn build_singleton_key_invalid(schema: &CftContainer) -> Result<CfdDataModel, Cf
     )
 }
 
-fn build_singleton_key_collision(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_singleton_key_collision(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [
@@ -415,7 +415,7 @@ fn adjacent_singleton_keys_unique() {
 }
 
 fn model_from_records(
-    schema: &CftContainer,
+    schema: &CftSchema,
     records: impl IntoIterator<Item = CfdInputRecord>,
 ) -> Result<CfdDataModel, CfdDiagnostics> {
     let mut builder = CfdDataModel::builder(schema);
@@ -433,15 +433,15 @@ fn one_record(
     CfdInputRecord::new(key, actual_type, fields)
 }
 
-fn build_unknown_type(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_unknown_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(schema, [one_record("missing", "Missing", [])])
 }
 
-fn build_abstract_record_type(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_abstract_record_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(schema, [one_record("reward", "Reward", [])])
 }
 
-fn build_missing_object_type(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_missing_object_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -455,7 +455,7 @@ fn build_missing_object_type(schema: &CftContainer) -> Result<CfdDataModel, CfdD
     )
 }
 
-fn build_object_type_mismatch(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_object_type_mismatch(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -469,7 +469,7 @@ fn build_object_type_mismatch(schema: &CftContainer) -> Result<CfdDataModel, Cfd
     )
 }
 
-fn build_unknown_field(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_unknown_field(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -483,18 +483,18 @@ fn build_unknown_field(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnos
     )
 }
 
-fn build_missing_required_field(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_missing_required_field(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(schema, [one_record("item", "Item", [])])
 }
 
 fn build_schema_default_dependency_cycle(
-    schema: &CftContainer,
+    schema: &CftSchema,
 ) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(schema, [one_record("root", "Node", [])])
 }
 
 fn build_data_structure_limit_exceeded(
-    schema: &CftContainer,
+    schema: &CftSchema,
 ) -> Result<CfdDataModel, CfdDiagnostics> {
     let mut builder =
         CfdDataModel::builder(schema).with_structural_limits(StructuralLimits::new(3, 100, 100));
@@ -509,7 +509,7 @@ fn build_data_structure_limit_exceeded(
     builder.build()
 }
 
-fn build_type_mismatch(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_type_mismatch(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -520,7 +520,7 @@ fn build_type_mismatch(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnos
     )
 }
 
-fn build_invalid_enum_variant(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_invalid_enum_variant(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -531,7 +531,7 @@ fn build_invalid_enum_variant(schema: &CftContainer) -> Result<CfdDataModel, Cfd
     )
 }
 
-fn build_duplicate_dict_key(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_duplicate_dict_key(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -548,7 +548,7 @@ fn build_duplicate_dict_key(schema: &CftContainer) -> Result<CfdDataModel, CfdDi
     )
 }
 
-fn build_missing_id_field(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_missing_id_field(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -559,7 +559,7 @@ fn build_missing_id_field(schema: &CftContainer) -> Result<CfdDataModel, CfdDiag
     )
 }
 
-fn build_invalid_record_key(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_invalid_record_key(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -570,7 +570,7 @@ fn build_invalid_record_key(schema: &CftContainer) -> Result<CfdDataModel, CfdDi
     )
 }
 
-fn build_duplicate_id(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_duplicate_id(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [
@@ -580,7 +580,7 @@ fn build_duplicate_id(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnost
     )
 }
 
-fn build_duplicate_polymorphic_id(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_duplicate_polymorphic_id(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [
@@ -598,7 +598,7 @@ fn build_duplicate_polymorphic_id(schema: &CftContainer) -> Result<CfdDataModel,
     )
 }
 
-fn build_missing_ref_target(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_missing_ref_target(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -609,7 +609,7 @@ fn build_missing_ref_target(schema: &CftContainer) -> Result<CfdDataModel, CfdDi
     )
 }
 
-fn build_check_failed_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_check_failed_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -656,7 +656,7 @@ const fn scalar_false_schema() -> &'static str {
     "#
 }
 
-fn build_scalar_false_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_scalar_false_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [
@@ -699,7 +699,7 @@ const fn quantifier_false_schema() -> &'static str {
     "#
 }
 
-fn build_quantifier_false_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_quantifier_false_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -732,15 +732,15 @@ fn build_quantifier_false_model(schema: &CftContainer) -> Result<CfdDataModel, C
     )
 }
 
-fn build_default_item_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_default_item_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(schema, [one_record("item", "Item", [])])
 }
 
-fn build_default_holder_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_default_holder_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(schema, [one_record("holder", "Holder", [])])
 }
 
-fn build_empty_nums_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_empty_nums_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -751,7 +751,7 @@ fn build_empty_nums_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiag
     )
 }
 
-fn build_present_attr_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_present_attr_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -783,9 +783,9 @@ fn assert_builds(
 fn assert_checks(schema_source: &str, records: impl IntoIterator<Item = CfdInputRecord>) {
     let schema = compile_schema(schema_source);
     let model = model_from_records(&schema, records).expect("adjacent-valid model should build");
-    let compiled = schema.compiled_schema();
+    let compiled = schema;
     model
-        .run_checks(compiled)
+        .run_checks(&compiled)
         .expect("adjacent-valid checks should pass");
 }
 
@@ -852,7 +852,7 @@ fn check_budget_exceeded() -> CfdDiagnostics {
     )
     .expect("budget coverage model builds");
     run_checks_with_options(
-        schema.compiled_schema(),
+        &schema,
         &model,
         CheckOptions {
             structural_limits: StructuralLimits::new(100, 100, 1),
@@ -876,7 +876,7 @@ fn adjacent_check_budget_valid() {
     )
     .expect("adjacent budget model builds");
     run_checks_with_options(
-        schema.compiled_schema(),
+        &schema,
         &model,
         CheckOptions {
             structural_limits: StructuralLimits::new(100, 100, 2),

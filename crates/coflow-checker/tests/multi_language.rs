@@ -7,7 +7,7 @@ use coflow_checker::{
     run_checks, run_checks_for_dimensions, run_checks_for_dimensions_with_deps, DimensionCheckPlan,
 };
 
-fn build_simple_model(schema: &CftContainer) -> CfdDataModel {
+fn build_simple_model(schema: &CftSchema) -> CfdDataModel {
     let mut builder = CfdDataModel::builder(schema);
     builder.add_input_record(CfdInputRecord::new(
         "potion",
@@ -18,7 +18,7 @@ fn build_simple_model(schema: &CftContainer) -> CfdDataModel {
 }
 
 fn build_dimension_model(
-    schema: &CftContainer,
+    schema: &CftSchema,
     zh_name: CfdInputValue,
     en_name: CfdInputValue,
 ) -> CfdDataModel {
@@ -40,7 +40,7 @@ fn build_dimension_model(
     builder.build().expect("model builds")
 }
 
-fn dimension_schema() -> CftContainer {
+fn dimension_schema() -> CftSchema {
     compile_schema(
         r#"
             type Item {
@@ -71,7 +71,7 @@ fn default_round_passes_when_default_value_satisfies_check() {
         "#,
     );
     let model = build_simple_model(&schema);
-    run_checks(schema.compiled_schema(), &model).expect("default round passes");
+    run_checks(&schema, &model).expect("default round passes");
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn dimension_variant_record_can_make_a_passing_check_fail_for_one_language() {
     );
     let dimensions = language_dimensions();
 
-    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &dimensions)
+    let err = run_checks_for_dimensions(&schema, &model, &dimensions)
         .expect_err("empty zh variant should fail check");
 
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
@@ -101,7 +101,7 @@ fn null_dimension_variant_skips_that_field_check() {
     let model = build_dimension_model(&schema, CfdInputValue::Null, CfdInputValue::from("Potion"));
     let dimensions = language_dimensions();
 
-    run_checks_for_dimensions(schema.compiled_schema(), &model, &dimensions)
+    run_checks_for_dimensions(&schema, &model, &dimensions)
         .expect("null zh variant skips check");
 }
 
@@ -110,7 +110,7 @@ fn missing_dimension_variant_record_is_an_eval_error_not_a_skip() {
     let schema = dimension_schema();
     let model = build_simple_model(&schema);
 
-    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
         .expect_err("missing synthesized variant record should be reported");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
@@ -153,7 +153,7 @@ fn missing_dimension_variant_field_is_an_eval_error_not_a_skip() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
         .expect_err("missing synthesized variant field should be reported");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
@@ -205,7 +205,7 @@ fn variant_rounds_only_run_checks_that_read_top_level_dimension_fields() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
         .expect_err("default count and zh name checks should fail");
 
     assert_eq!(err.diagnostics.len(), 2, "diagnostics: {err:?}");
@@ -275,7 +275,7 @@ fn null_dimension_variant_skips_methods_and_operators_by_control_flow() {
     ));
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+    run_checks_for_dimensions(&schema, &model, &language_dimensions())
         .expect("null zh variant should skip related checks without type errors");
 }
 
@@ -321,7 +321,7 @@ fn nested_dimension_fields_do_not_trigger_variant_round_checks() {
     ));
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+    run_checks_for_dimensions(&schema, &model, &language_dimensions())
         .expect("nested localized fields are not variant-expanded");
 }
 
@@ -368,7 +368,7 @@ fn nested_inline_record_checks_do_not_run_in_variant_rounds() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
         .expect_err("default nested check should still fail");
 
     assert_eq!(err.diagnostics.len(), 1, "diagnostics: {err:?}");
@@ -420,7 +420,7 @@ fn inherited_dimension_checks_run_for_child_records() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
         .expect_err("inherited dimension checks must run for child records");
 
     assert_eq!(
@@ -446,7 +446,7 @@ fn dimension_dependency_graph_includes_variant_records() {
     );
 
     let (result, graph) = run_checks_for_dimensions_with_deps(
-        schema.compiled_schema(),
+        &schema,
         &model,
         &language_dimensions(),
     );
@@ -524,7 +524,7 @@ fn dimension_variant_inline_objects_resolve_refs_from_storage_paths() {
     let model = builder.build().expect("model builds");
 
     let err = run_checks_for_dimensions(
-        schema.compiled_schema(),
+        &schema,
         &model,
         &DimensionCheckPlan::from_variants("language", ["zh"]),
     )
@@ -583,7 +583,7 @@ fn localized_object_variants_run_nested_type_checks_at_logical_paths() {
     ));
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
         .expect_err("the zh materialized object should run Text checks");
     let failures = err
         .diagnostics
@@ -647,7 +647,7 @@ fn localized_aggregate_variants_preserve_array_paths() {
     let model = builder.build().expect("model builds");
 
     let err = run_checks_for_dimensions(
-        schema.compiled_schema(),
+        &schema,
         &model,
         &DimensionCheckPlan::from_variants("language", ["zh"]),
     )
@@ -705,7 +705,7 @@ fn localized_aggregate_variants_preserve_dict_paths() {
     let model = builder.build().expect("model builds");
 
     let err = run_checks_for_dimensions(
-        schema.compiled_schema(),
+        &schema,
         &model,
         &DimensionCheckPlan::from_variants("language", ["zh"]),
     )
@@ -769,7 +769,7 @@ fn null_localized_aggregate_variants_skip_nested_checks() {
     let model = builder.build().expect("model builds");
 
     run_checks_for_dimensions(
-        schema.compiled_schema(),
+        &schema,
         &model,
         &DimensionCheckPlan::from_variants("language", ["zh"]),
     )
@@ -824,7 +824,7 @@ fn localized_object_nested_checks_resolve_refs_from_variant_storage() {
     let model = builder.build().expect("model builds");
 
     let err = run_checks_for_dimensions(
-        schema.compiled_schema(),
+        &schema,
         &model,
         &DimensionCheckPlan::from_variants("language", ["zh"]),
     )
@@ -889,7 +889,7 @@ fn nested_variant_checks_record_storage_dependencies_without_parent_checks() {
         .expect("storage");
 
     let (result, graph) = run_checks_for_dimensions_with_deps(
-        schema.compiled_schema(),
+        &schema,
         &model,
         &DimensionCheckPlan::from_variants("language", ["zh"]),
     );
@@ -914,7 +914,7 @@ fn empty_dimensions_map_runs_default_round() {
     );
     let model = build_simple_model(&schema);
     run_checks_for_dimensions(
-        schema.compiled_schema(),
+        &schema,
         &model,
         &DimensionCheckPlan::default(),
     )
@@ -939,7 +939,7 @@ fn non_dimensional_fields_are_unaffected_by_dimension_rounds() {
     ));
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(schema.compiled_schema(), &model, &language_dimensions())
+    run_checks_for_dimensions(&schema, &model, &language_dimensions())
         .expect("non-dimensional is unchanged");
 }
 
@@ -962,7 +962,7 @@ fn unknown_dimensions_are_accepted_but_do_not_run_extra_check_rounds() {
     let model = builder.build().expect("model builds");
     let dimensions = dimension_plan("platform", ["pc", "mobile"]);
 
-    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &dimensions)
+    let err = run_checks_for_dimensions(&schema, &model, &dimensions)
         .expect_err("default check still fails once");
 
     assert_eq!(err.diagnostics.len(), 1, "diagnostics: {err:?}");
@@ -1009,7 +1009,7 @@ fn variant_rounds_run_for_every_configured_dimension() {
     let model = builder.build().expect("model builds");
     let dimensions = dimension_plan("platform", ["pc", "mobile"]);
 
-    let err = run_checks_for_dimensions(schema.compiled_schema(), &model, &dimensions)
+    let err = run_checks_for_dimensions(&schema, &model, &dimensions)
         .expect_err("empty pc variant should fail check");
 
     assert!(
