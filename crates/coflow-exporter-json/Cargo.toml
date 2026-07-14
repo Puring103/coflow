@@ -1,6 +1,6 @@
 [package]
 name = "coflow-exporter-json"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 description = "JSON exporter for validated Coflow data models."
 license = "Apache-2.0"

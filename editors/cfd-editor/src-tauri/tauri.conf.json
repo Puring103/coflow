@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "productName": "CFD Editor",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "identifier": "com.coflow.cfdeditor",
   "build": {
     "beforeDevCommand": "npm run frontend:dev",

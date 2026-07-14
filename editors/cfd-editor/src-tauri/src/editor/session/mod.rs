@@ -580,15 +580,12 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
         }
         let row = record_view_to_row(&view, &ctx);
         for field in &row.fields {
-            let index = match column_index.get(&field.name) {
-                Some(index) => *index,
-                None => {
-                    let index = columns.len();
-                    columns.push((field.name.clone(), ColumnStats::default()));
-                    column_index.insert(field.name.clone(), index);
-                    index
-                }
-            };
+            let index = column_index.get(&field.name).copied().unwrap_or_else(|| {
+                let index = columns.len();
+                columns.push((field.name.clone(), ColumnStats::default()));
+                column_index.insert(field.name.clone(), index);
+                index
+            });
             let stats = &mut columns[index].1;
             stats.type_names.insert(row.coordinate.actual_type.clone());
             let summary_len = row.field_summaries.get(&field.name).map_or(0, String::len);
