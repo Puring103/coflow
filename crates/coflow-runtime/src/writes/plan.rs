@@ -32,7 +32,6 @@ pub(crate) struct InsertPlan {
 }
 
 pub(crate) struct WriteFieldPlan {
-    pub(super) host_coordinate: RecordCoordinate,
     pub(super) target: WriteTarget,
     pub(super) source: ResolvedSource,
     pub(super) writer: Arc<dyn SourceWriter>,
@@ -212,7 +211,6 @@ fn prepare_write_field(
     let source = source_for_id(session, target.source_id)?;
     let writer = lookup_source_writer(registry, &source)?;
     Ok(Some(WriteFieldPlan {
-        host_coordinate: record_ref.coordinate.clone(),
         target,
         source,
         writer,

@@ -246,10 +246,10 @@ fn field_write_outcome(
     provider_outcome: coflow_api::WriteOutcome,
 ) -> WriteOutcome {
     WriteOutcome {
-        touched: if host_record == &plan.host_coordinate {
+        touched: if host_record == &plan.target.coordinate {
             vec![host_record.clone()]
         } else {
-            vec![host_record.clone(), plan.host_coordinate.clone()]
+            vec![host_record.clone(), plan.target.coordinate.clone()]
         },
         inserted: None,
         deleted: None,

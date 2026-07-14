@@ -439,18 +439,19 @@ dimensions:
 }
 
 #[test]
-fn write_field_reports_spread_source_old_value_and_affected_file() {
+fn spread_write_reports_source_and_matches_full_check_diagnostics() {
     let root = temp_project_dir("cfd-editor-spread-write-outcome");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
         root.join("schema.cft"),
-        r"
+        r#"
             type Item {
                 name: string;
                 power: int;
+                check { name == "Base"; }
             }
-        ",
+        "#,
     )
     .expect("write schema");
     std::fs::write(
@@ -494,6 +495,42 @@ fn write_field_reports_spread_source_old_value_and_affected_file() {
         "affected files should include spread source file: {:?}",
         outcome.affected_files
     );
+    let mut incremental_check_diagnostics = outcome
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.stage == "CHECK")
+        .cloned()
+        .collect::<Vec<_>>();
+    for diagnostic in &mut incremental_check_diagnostics {
+        if let Some(path) = diagnostic.file_path.as_deref() {
+            diagnostic.file_path = Some(
+                std::path::Path::new(path)
+                    .strip_prefix(&root)
+                    .expect("incremental diagnostic path under project root")
+                    .to_string_lossy()
+                    .replace('\\', "/"),
+            );
+        }
+    }
+    let incremental_check_records = incremental_check_diagnostics
+        .iter()
+        .filter_map(|diagnostic| diagnostic.record_key.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        incremental_check_records,
+        std::collections::BTreeSet::from(["base".to_string(), "child".to_string()])
+    );
+
+    let full = store
+        .reload_session(snapshot.session_id)
+        .expect("reload spread project");
+    let full_check_diagnostics = full
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.stage == "CHECK")
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(incremental_check_diagnostics, full_check_diagnostics);
 }
 
 #[test]
