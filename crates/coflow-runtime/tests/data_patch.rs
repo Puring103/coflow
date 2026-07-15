@@ -311,6 +311,52 @@ fn session(root: &std::path::Path) -> coflow_runtime::WriteProjectSession {
         .expect("session")
 }
 
+fn write_singleton_dimension_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "@singleton type UiText { @localized welcome: string; }",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/ui.cfd"),
+        "UiText: UiText { welcome: \"Welcome\" }\n",
+    )
+    .expect("write singleton");
+    std::fs::write(
+        root.join("data/dimensions/language/UiText.cfd"),
+        "welcome: UiText { default: \"Welcome\", zh: \"欢迎\" }\n",
+    )
+    .expect("write singleton dimension");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/ui.cfd
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+}
+
+fn assert_incremental_diagnostics_match_fresh(
+    incremental: &coflow_runtime::WriteProjectSession,
+    root: &std::path::Path,
+) {
+    let fresh = session(root);
+    assert_eq!(
+        incremental
+            .queries()
+            .diagnostics()
+            .as_set()
+            .flat_diagnostics(),
+        fresh.queries().diagnostics().as_set().flat_diagnostics(),
+    );
+}
+
 #[test]
 fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     let root = std::env::temp_dir().join(format!("coflow-data-patch-{}", std::process::id()));
@@ -424,8 +470,7 @@ fn dimension_patch_reports_invalid_coordinates_without_writing() {
                     key: "potion".to_string(),
                 },
                 field: coflow_cft::FieldName::new("name").expect("field name"),
-                dimension: coflow_cft::DimensionName::new("language")
-                    .expect("dimension name"),
+                dimension: coflow_cft::DimensionName::new("language").expect("dimension name"),
                 variant: coflow_cft::VariantName::new("zh").expect("variant name"),
                 path: Vec::new(),
             },
@@ -491,7 +536,9 @@ fn dimension_mutation_reports_schema_and_path_errors_without_writing() {
                 "name",
                 "language",
                 "zh",
-                vec![coflow_data_model::CfdPathSegment::Field("missing".to_string())],
+                vec![coflow_data_model::CfdPathSegment::Field(
+                    "missing".to_string(),
+                )],
             ),
             "MUTATION-DIMENSION-PATH",
         ),
@@ -638,6 +685,132 @@ fn patch_writes_and_clears_record_owned_dimension_values() {
         "diagnostics: {:?}",
         restore_from_missing.diagnostics
     );
+    assert_incremental_diagnostics_match_fresh(&session, &root);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn failed_dimension_write_keeps_the_published_generation() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-write-failure-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_dimension_project(&root);
+    let mut session = session(&root);
+    let revision = session.revision();
+    let before = session
+        .queries()
+        .record_view("Item", "potion")
+        .expect("published record")
+        .record
+        .dimension_field("name")
+        .expect("published dimension overlay")
+        .variants["zh"]
+        .value
+        .clone();
+    std::fs::write(
+        root.join("data/dimensions/language/Item_name.csv"),
+        "malformed\n",
+    )
+    .expect("replace managed source after opening the session");
+
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: PatchDimensionValueSelector {
+                record: PatchRecordSelector {
+                    actual_type: "Item".to_string(),
+                    key: "potion".to_string(),
+                },
+                field: coflow_cft::FieldName::new("name").expect("field name"),
+                dimension: coflow_cft::DimensionName::new("language").expect("dimension name"),
+                variant: coflow_cft::VariantName::new("zh").expect("variant name"),
+                path: Vec::new(),
+            },
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                before.clone(),
+            )),
+            value: json!("new value"),
+        }],
+    });
+
+    assert!(!report.write_ok);
+    assert!(report
+        .failed
+        .iter()
+        .flat_map(|failure| &failure.diagnostics)
+        .any(|diagnostic| diagnostic.code == "CSV-DIMENSION-WRITE"));
+    assert_eq!(session.revision(), revision);
+    assert_eq!(
+        session
+            .queries()
+            .record_view("Item", "potion")
+            .expect("old record remains published")
+            .record
+            .dimension_field("name")
+            .expect("old overlay remains published")
+            .variants["zh"]
+            .value,
+        before,
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn failed_singleton_dimension_write_reports_cfd_diagnostic_and_keeps_generation() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-singleton-dimension-write-failure-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_singleton_dimension_project(&root);
+    let mut session = session(&root);
+    let revision = session.revision();
+    std::fs::write(root.join("data/dimensions/language/UiText.cfd"), "")
+        .expect("remove managed row after opening the session");
+
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: PatchDimensionValueSelector {
+                record: PatchRecordSelector {
+                    actual_type: "UiText".to_string(),
+                    key: "UiText".to_string(),
+                },
+                field: coflow_cft::FieldName::new("welcome").expect("field name"),
+                dimension: coflow_cft::DimensionName::new("language").expect("dimension name"),
+                variant: coflow_cft::VariantName::new("zh").expect("variant name"),
+                path: Vec::new(),
+            },
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                coflow_data_model::CfdValue::String("欢迎".to_string()),
+            )),
+            value: json!("new value"),
+        }],
+    });
+
+    assert!(!report.write_ok);
+    assert!(report
+        .failed
+        .iter()
+        .flat_map(|failure| &failure.diagnostics)
+        .any(|diagnostic| diagnostic.code == "CFD-DIMENSION-WRITE"));
+    assert_eq!(session.revision(), revision);
+    assert_eq!(
+        session
+            .queries()
+            .record_view("UiText", "UiText")
+            .expect("old singleton remains published")
+            .record
+            .dimension_field("welcome")
+            .expect("old overlay remains published")
+            .variants["zh"]
+            .value,
+        coflow_data_model::CfdValue::String("欢迎".to_string()),
+    );
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -668,6 +841,7 @@ fn rename_record_rewrites_refs_in_dimension_overlays() {
     let dimension = std::fs::read_to_string(root.join("data/dimensions/platform/Offer_item.csv"))
         .expect("read dimension source");
     assert!(dimension.contains("starter,&elixir,&elixir"), "{dimension}");
+    assert_incremental_diagnostics_match_fresh(&session, &root);
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -718,6 +892,7 @@ fn rename_and_delete_owner_record_rewrite_dimension_rows() {
     assert!(deleted.write_ok, "diagnostics: {:?}", deleted.diagnostics);
     let after_delete = std::fs::read_to_string(&dimension_file).expect("read deleted dimension");
     assert!(!after_delete.contains("elixir,"), "{after_delete}");
+    assert_incremental_diagnostics_match_fresh(&session, &root);
 
     let _ = std::fs::remove_dir_all(root);
 }

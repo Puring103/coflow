@@ -22,12 +22,17 @@ pub(super) fn resolve_dimension_sources(
             continue;
         }
         let directory = resolver.project.resolve_path(out_dir);
-        if !directory.exists() {
-            continue;
+        match directory.try_exists() {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) => {
+                return Err(discovery_diagnostic(
+                    resolver, &directory, "inspect", &error,
+                ));
+            }
         }
-        let entries = fs::read_dir(&directory).map_err(|error| {
-            discovery_diagnostic(resolver, &directory, "read", &error)
-        })?;
+        let entries = fs::read_dir(&directory)
+            .map_err(|error| discovery_diagnostic(resolver, &directory, "read", &error))?;
         let mut paths = entries
             .map(|entry| {
                 entry.map(|entry| entry.path()).map_err(|error| {
@@ -72,10 +77,7 @@ fn configured_dimension_source(
     fields: &[&DimensionField],
     path: PathBuf,
 ) -> Option<(ConfiguredSource, DimensionField)> {
-    let extension = path
-        .extension()
-        .and_then(|ext| ext.to_str())?
-        .to_string();
+    let extension = path.extension().and_then(|ext| ext.to_str())?.to_string();
     if !matches!(extension.as_str(), "csv" | "cfd") {
         return None;
     }

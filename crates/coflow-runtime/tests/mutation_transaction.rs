@@ -117,49 +117,55 @@ impl SourceProvider for TestProvider {
         let SourceLocationSpec::Path(path) = &source.location;
         let key = source_record_key(source);
         let (value, origin) = if key == "local" {
-                let value = std::fs::read_to_string(path)
-                    .map_err(|error| test_error("TEST-LOAD", error.to_string()))?
-                    .trim()
-                    .parse::<i64>()
-                    .map_err(|error| test_error("TEST-LOAD", error.to_string()))?;
-                (
-                    value,
-                    RecordOrigin::File {
-                        path: path.clone(),
-                        span: None,
-                    },
-                )
-            } else {
-                let value = {
-                    let state = self.state.lock().expect("lock test provider state");
-                    if state.faults.fail_load_after_write && state.counts.writes > 0 {
-                        return Err(test_error(
+            let value = std::fs::read_to_string(path)
+                .map_err(|error| test_error("TEST-LOAD", error.to_string()))?
+                .trim()
+                .parse::<i64>()
+                .map_err(|error| test_error("TEST-LOAD", error.to_string()))?;
+            (
+                value,
+                RecordOrigin::File {
+                    path: path.clone(),
+                    span: None,
+                },
+            )
+        } else {
+            let value = {
+                let state = self.state.lock().expect("lock test provider state");
+                if state.faults.fail_load_after_write && state.counts.writes > 0 {
+                    return Err(test_error(
+                        "TEST-LOAD",
+                        "injected post-write rebuild failure",
+                    ));
+                }
+                let source_name = source_name(source);
+                state
+                    .remote_values
+                    .get(&source_name)
+                    .copied()
+                    .ok_or_else(|| {
+                        test_error(
                             "TEST-LOAD",
-                            "injected post-write rebuild failure",
-                        ));
-                    }
-                    let source_name = source_name(source);
-                    state.remote_values.get(&source_name).copied().ok_or_else(|| {
-                        test_error("TEST-LOAD", format!("missing provider value for `{source_name}`"))
+                            format!("missing provider value for `{source_name}`"),
+                        )
                     })?
-                };
-                (
-                    value,
-                    RecordOrigin::Table {
-                        document: SourceDocument::Local(path.clone()),
-                        sheet: "items".to_string(),
-                        row: 2,
-                        id_column: 1,
-                        field_columns: BTreeMap::from([(vec!["value".to_string()], 2)]),
-                    },
-                )
             };
+            (
+                value,
+                RecordOrigin::Table {
+                    document: SourceDocument::Local(path.clone()),
+                    sheet: "items".to_string(),
+                    row: 2,
+                    id_column: 1,
+                    field_columns: BTreeMap::from([(vec!["value".to_string()], 2)]),
+                },
+            )
+        };
         let mut fields = BTreeMap::from([("value", CfdInputValue::Int(value))]);
-        if ctx
-            .schema
-            .resolve_type("Item")
-            .is_some_and(|item| item.own_fields().any(|field| field.name.as_str() == "target"))
-        {
+        if ctx.schema.resolve_type("Item").is_some_and(|item| {
+            item.own_fields()
+                .any(|field| field.name.as_str() == "target")
+        }) {
             fields.insert(
                 "target",
                 if key == "two" {
@@ -204,16 +210,23 @@ impl SourceWriter for TestWriter {
         } else if state.faults.unsupported_remote {
             Ok(SourceTransaction::Unsupported)
         } else {
-                let snapshot = state.remote_values.get(&source_name).copied().ok_or_else(|| {
-                    test_error("TEST-BEGIN", format!("missing provider value for `{source_name}`"))
+            let snapshot = state
+                .remote_values
+                .get(&source_name)
+                .copied()
+                .ok_or_else(|| {
+                    test_error(
+                        "TEST-BEGIN",
+                        format!("missing provider value for `{source_name}`"),
+                    )
                 })?;
-                Ok(SourceTransaction::Compensation(Box::new(
-                    TestCompensation {
-                        state: Arc::clone(&self.state),
-                        source: source_name,
-                        snapshot,
-                    },
-                )))
+            Ok(SourceTransaction::Compensation(Box::new(
+                TestCompensation {
+                    state: Arc::clone(&self.state),
+                    source: source_name,
+                    snapshot,
+                },
+            )))
         };
         drop(state);
         transaction
@@ -253,7 +266,9 @@ impl SourceWriter for TestWriter {
                 std::fs::write(path, value.to_string())
                     .map_err(|error| test_error("TEST-WRITE", error.to_string()))?;
             } else {
-                state.remote_values.insert(source_name(request.source), *value);
+                state
+                    .remote_values
+                    .insert(source_name(request.source), *value);
             }
             (call, state.faults.emit_provider_diagnostic)
         };
@@ -692,7 +707,7 @@ fn compensation_failure_is_retained_in_transaction_diagnostics() {
 }
 
 #[test]
-fn later_prepare_commit_failure_compensates_before_any_source_is_published() {
+fn later_provider_publication_failure_compensates_every_source() {
     let fixture = Fixture::remote(&[("txn://one", 1), ("txn://two", 2)]);
     fixture
         .state

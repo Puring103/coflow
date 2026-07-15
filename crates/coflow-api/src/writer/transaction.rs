@@ -12,10 +12,13 @@ pub trait SourceTransactionCompensation: Send {
     /// Restore the source after a staged mutation.
     fn compensate(&mut self) -> Result<(), DiagnosticSet>;
 
-    /// Verify that final publication can succeed without losing compensation.
+    /// Publish staged writes while retaining enough state to compensate them.
+    ///
+    /// The runtime calls this for every provider before finalizing any provider.
+    /// A successful implementation must remain compensatable until `commit`.
     fn prepare_commit(&mut self) -> Result<(), DiagnosticSet>;
 
-    /// Publish after every participating source prepared successfully.
+    /// Release compensation state after every provider published successfully.
     fn commit(&mut self);
 }
 

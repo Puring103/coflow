@@ -196,8 +196,7 @@ fn read_only_session_reports_unreadable_dimension_source_directory() {
         "type Item { @localized name: string; }",
     )
     .expect("write schema");
-    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n")
-        .expect("write records");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write records");
     std::fs::write(root.join("data/dimensions/language"), "not a directory")
         .expect("write invalid dimension directory");
     std::fs::write(
@@ -238,6 +237,61 @@ dimensions:
 }
 
 #[test]
+fn build_session_reports_unreadable_dimension_generation_directory_without_modifying_it() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-generation-discovery-error-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/dimensions")).expect("create data dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        "type Item { @localized name: string; }",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write records");
+    let invalid_directory = root.join("data/dimensions/language");
+    std::fs::write(&invalid_directory, "not a directory").expect("write invalid directory");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let session = build_session(project, &csv_dimension_registry())
+        .expect("data diagnostics are published through the build session");
+    let diagnostics = session.queries().diagnostics().as_set();
+    assert!(
+        diagnostics
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "DIM-SOURCE-DISCOVERY-001"),
+        "diagnostics: {diagnostics:?}",
+    );
+    assert_eq!(
+        std::fs::read_to_string(&invalid_directory).expect("read unchanged invalid directory"),
+        "not a directory"
+    );
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
 fn dimension_load_reports_invalid_csv_variant_values() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-dim-invalid-csv-value-{}",
@@ -247,10 +301,12 @@ fn dimension_load_reports_invalid_csv_variant_values() {
         std::fs::remove_dir_all(&root).expect("clean temp dir");
     }
     std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create data dir");
-    std::fs::write(root.join("schema.cft"), "type Item { @localized power: int; }")
-        .expect("write schema");
-    std::fs::write(root.join("data/items.csv"), "id,power\npotion,1\n")
-        .expect("write records");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { @localized power: int; }",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,power\npotion,1\n").expect("write records");
     std::fs::write(
         root.join("data/dimensions/language/Item_power.csv"),
         "id,default,zh\npotion,1,not_an_int\n",
@@ -290,11 +346,8 @@ fn dimension_load_reports_invalid_cfd_variant_values() {
         "type Item { @localized power: int; }",
     )
     .expect("write schema");
-    std::fs::write(
-        root.join("data/config.cfd"),
-        "item: Item { power: 1 }\n",
-    )
-    .expect("write record");
+    std::fs::write(root.join("data/config.cfd"), "item: Item { power: 1 }\n")
+        .expect("write record");
     std::fs::write(
         root.join("data/dimensions/language/Item_power.cfd"),
         "item: Item { default: 1, zh: not_an_int }\n",
@@ -349,10 +402,11 @@ fn singleton_dimension_load_requires_an_owner_record() {
     let registry = coflow_builtins::default_provider_registry().expect("default registry");
     let diagnostics = open_read_only_session(project, &registry)
         .expect_err("singleton load without an owner must fail");
-    assert!(diagnostics
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "RUNTIME-DIMENSION-SINGLETON"),
+    assert!(
+        diagnostics
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "RUNTIME-DIMENSION-SINGLETON"),
         "diagnostics: {diagnostics:?}"
     );
     std::fs::remove_dir_all(root).expect("remove temp dir");
