@@ -37,15 +37,18 @@ coflow --help
 
 也可以直接下载 [最新 Release](https://github.com/Puring103/coflow/releases/latest)。
 
+Windows Release 提供包含 CLI 与可视化编辑器的完整版安装包，以及不含编辑器的
+CLI-only 安装包。macOS 暂时只发布 CLI 压缩包。
+
 ### AI Agent Skills
 
-一条命令安装仓库全部 skills（覆盖工作流、schema 建模、数据维护）：
+CLI 内置仓库全部 skills（覆盖工作流、schema 建模、数据维护），无需 Node.js：
 
 ```powershell
-npx skills add Puring103/coflow -g --skill "*" --copy -y
+coflow skill install -g
 ```
 
-也可以直接把上面这行命令复制给 AI agent，让它在本机完成安装。
+省略 `-g` 时安装到当前 Coflow 项目的 `.agents/skills/`。
 
 ---
 

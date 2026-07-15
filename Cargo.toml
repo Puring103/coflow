@@ -1,6 +1,6 @@
 [package]
 name = "coflow"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 description = "Project-level command-line tools for Coflow."
 license = "Apache-2.0"
@@ -67,6 +67,8 @@ coflow-data-model = { path = "crates/coflow-data-model" }
 coflow-lsp = { path = "crates/coflow-lsp" }
 coflow-project = { path = "crates/coflow-project" }
 coflow-runtime = { path = "crates/coflow-runtime" }
+dirs = "6"
+include_dir = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
@@ -77,4 +79,5 @@ coflow-loader-csv = { path = "crates/coflow-loader-csv" }
 coflow-loader-excel = { path = "crates/coflow-loader-excel" }
 calamine = "0.35"
 rust_xlsxwriter = "0.95"
+tempfile = "3"
 toml = "0.9"

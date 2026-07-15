@@ -226,6 +226,8 @@ where
 pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let host = EditorHost::new().map_err(|err| err.to_string())?;
             app.manage(host);

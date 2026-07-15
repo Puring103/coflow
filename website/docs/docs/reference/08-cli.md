@@ -617,6 +617,46 @@ patch value 支持普通 JSON 值，也支持以下特殊对象：
 provider writer 返回的诊断，再附加新 generation 的项目诊断；`check_ok` 根据这两部分共同计算。
 `affected_files` 给出 runtime 确认实际写入的项目 source 路径，批内同一来源只出现一次。
 
+## `skill`
+
+`skill` 管理由 Coflow CLI 内置的 AI agent skills，不依赖 Node.js、`npm` 或网络。
+
+安装到当前 Coflow 项目：
+
+```powershell
+coflow skill install [CONFIG_OR_DIR]
+```
+
+目标目录为项目根目录下的 `.agents/skills/`。安装包含 `coflow-workflow`、
+`coflow-schema` 和 `coflow-data`，重复运行会用当前 CLI 内置版本替换已有副本。
+
+安装到当前用户：
+
+```powershell
+coflow skill install -g
+```
+
+全局安装始终写入 `$HOME/.agents/skills/`，并探测 Claude Code、Cursor、Gemini CLI、
+GitHub Copilot、OpenCode 和 Windsurf 的专用全局目录。安装记录保存在
+`$HOME/.coflow/skill-installs.json`，供状态查询和安全卸载使用。
+
+查询状态：
+
+```powershell
+coflow skill status [CONFIG_OR_DIR]
+coflow skill status -g
+```
+
+加 `--json` 输出机器可读报告。卸载命令为：
+
+```powershell
+coflow skill uninstall [CONFIG_OR_DIR]
+coflow skill uninstall -g
+```
+
+项目卸载只删除项目中的三个 Coflow skill。全局卸载只访问已知 agent 目标，并删除
+三个 Coflow skill，不删除 agent 的共享 skills 根目录或其他来源安装的 skill。
+
 ## 命令矩阵
 
 | 命令 | 需要 schema | 需要数据源 | 构建 DataModel | 执行 CFT check | 写入文件 |
@@ -635,6 +675,8 @@ provider writer 返回的诊断，再附加新 generation 的项目诊断；`che
 | `data sync-header` | 是 | 否 | 否 | 否 | 更新本地数据文件 |
 | `data write-file` | 是 | 是 | 可选 | 可选 | 写 `.cfd` |
 | `data patch` | 是 | 是 | 是 | 是 | 通过 writer 修改数据 |
+| `skill install/uninstall` | 项目模式需要 | 否 | 否 | 否 | 写入或删除 Coflow skills |
+| `skill status` | 项目模式需要 | 否 | 否 | 否 | 否 |
 | `check` | 是 | 是 | 是 | 是 | 否 |
 | `build` | 是 | 是 | 是 | 是 | 数据和可选代码 |
 | `export json` | 是 | 是 | 是 | 是 | JSON 数据 |

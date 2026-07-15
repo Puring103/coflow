@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "productName": "CFD Editor",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "identifier": "com.coflow.cfdeditor",
   "build": {
     "beforeDevCommand": "npm run frontend:dev",
@@ -27,5 +27,15 @@
     "active": false,
     "targets": "all"
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQzOUQ2MUE5QTYwQTRGQjAKUldTd1R3cW1xV0dkMHh3MVAvNzhRdWR0alppR1Z4aXM0azRFbGhWZVFWT01IMzQveEpqaVh0c1UK",
+      "endpoints": [
+        "https://github.com/Puring103/coflow/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }

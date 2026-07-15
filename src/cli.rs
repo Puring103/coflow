@@ -29,12 +29,42 @@ pub(crate) enum Command {
     Schema(SchemaArgs),
     /// Data inspection and patch tools for automation and AI agents.
     Data(DataArgs),
+    /// Install, remove, or inspect bundled Coflow agent skills.
+    Skill(SkillArgs),
 }
 
 #[derive(Debug, Args)]
 pub(crate) struct InitArgs {
     #[arg(value_name = "DIR")]
     pub(crate) dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SkillArgs {
+    #[command(subcommand)]
+    pub(crate) command: SkillCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum SkillCommand {
+    /// Install bundled skills into a project or the current user's agent directories.
+    Install(SkillScopeArgs),
+    /// Remove bundled skills from a project or the current user's agent directories.
+    Uninstall(SkillScopeArgs),
+    /// Show bundled skill installation status.
+    Status(SkillScopeArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SkillScopeArgs {
+    #[arg(value_name = "CONFIG_OR_DIR", conflicts_with = "global")]
+    pub(crate) config_or_dir: Option<PathBuf>,
+    /// Use current-user global agent skill directories instead of a Coflow project.
+    #[arg(short = 'g', long)]
+    pub(crate) global: bool,
+    /// Emit machine-readable JSON.
+    #[arg(long)]
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]

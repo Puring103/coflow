@@ -1,6 +1,6 @@
 [package]
 name = "coflow-loader-excel"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 description = "Excel .xlsx loader for Coflow data models."
 license = "Apache-2.0"

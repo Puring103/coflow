@@ -1,6 +1,6 @@
 [package]
 name = "coflow-codegen-csharp"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 description = "Shared C# runtime code generator core for Coflow data formats."
 license = "Apache-2.0"

@@ -7,6 +7,7 @@ import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { InspectorPanel } from './components/InspectorPanel'
 import { Icon } from './components/Icon'
 import { ObjectDraftHost } from './components/ObjectDraftHost'
+import { UpdateControl } from './components/UpdateControl'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
@@ -1114,6 +1115,7 @@ export default function App() {
               {api.isTauri ? '未打开项目' : '浏览器预览（Mock）'}
             </div>
           )}
+          {api.isTauri && <UpdateControl />}
         </div>
 
         <div
