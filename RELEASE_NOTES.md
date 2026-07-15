@@ -79,3 +79,7 @@
 - `5e1b6321` feat(editor): unify keyboard selection interactions
 - `259a821e` refactor: clarify cft compiler architecture
 - `72c4a832` feat(editor): improve keyboard editing controls
+- `39c8588d` chore: prepare v0.7.0 release
+- `749c2c13` chore: satisfy v0.7.0 release gate
+- `2c519607` refactor: close v0.7.0 release gate findings
+- Final release-note publication: finalized the complete v0.7.0 changelog and release metadata.
