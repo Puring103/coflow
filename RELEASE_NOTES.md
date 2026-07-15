@@ -1,24 +1,79 @@
-# Coflow 0.6.3
+# Coflow 0.7.0
 
-## Editor Updates
+## Highlights
 
-- The Windows CFD Editor can now check for complete application updates from the lower-left sidebar, download them with progress feedback, and launch the signed installer.
-- The full Windows installer includes both the editor and `coflow` CLI, configures `PATH`, and installs Coflow skills for supported agents.
+### Canonical Schema And Dimension Architecture
 
-## Native Skill Management
+- Rebuilt the CFT pipeline around immutable parsed modules and one canonical `CftSchema`, shared by the runtime, LSP, editor, loaders, checker, exporters, and code generators.
+- Reorganized `coflow-cft` into explicit syntax, module, diagnostics, schema, compiler, and execution-plan boundaries, removing the old container, reflection, compatibility, `compiled`, and mixed support layers.
+- Replaced synthetic dimension types and records with record-owned dimension overlays, typed coordinates, precomputed indexes, and canonical check plans.
+- Kept schema construction as the fixed two-argument `build_schema(modules, dimensions)` API. Structural protection remains internal and is not user-configurable.
+- Schema generations are now runtime-owned and reused for data-only mutations; schema inputs are reparsed only when they change.
 
-- Added `coflow skill install`, `coflow skill uninstall`, and `coflow skill status` commands, including JSON output for automation.
-- Skills are embedded in the CLI, so installation does not require Node.js or `npx`.
-- Project installation is the default. Use `-g` to install globally for common agents; uninstall removes only files tracked by Coflow.
+### Runtime Reliability
 
-## Release Packages
+- Centralized dimension source discovery and mutation planning in the runtime.
+- Hardened local and provider transactions, staging, compensation, generation publication, incremental checks, and dimension regeneration failure handling.
+- Added artifact generation history under Coflow state while retaining atomic active-manifest publication.
+- Expanded differential, diagnostic, transaction, reload, and boundary coverage across the schema and dimension pipeline.
 
-- Windows provides a full editor-and-CLI installer and a separate CLI-only installer. The installers detect and migrate incompatible legacy Coflow installations.
-- macOS currently provides CLI-only archives for Apple Silicon and Intel.
-- Release assets are limited to the installers, updater manifest and signature, macOS CLI archives, and VS Code extension.
+### Editor Workflow
+
+- Added consistent keyboard selection and editing across table, record, and inspector views.
+- Added cell-text copy and paste in the record view using the same parser and renderer as table editing.
+- Added reusable searchable native selectors for enum, reference, polymorphic type, and dictionary-key editing.
+- Improved focus transitions between search, record fields, nested values, and the record sidebar.
+- Moved mutation and parse failures into unobtrusive floating notices instead of layout-shifting banners.
 
 ## Compatibility
 
-- Removed the built-in Lark spreadsheet provider and remote `url` sources. Projects must migrate
-  those inputs to local Excel, CSV, or CFD sources before upgrading.
+- The built-in Lark spreadsheet provider, remote `url` sources, and URI source locations have been removed. Migrate those inputs to local Excel, CSV, or CFD sources before upgrading.
 - Local source formats and the JSON, MessagePack, and C# output contracts remain unchanged.
+
+## Included Commits Since v0.6.3
+
+- `5e7f7147` refactor: remove lark and remote sources
+- `a3517d4d` docs: add schema generation refactor plan
+- `fbc99b95` feat: add immutable cft module set
+- `e5988bb6` feat: build schema from parsed modules
+- `a8ae9e8e` refactor: rename compiled schema to cft schema
+- `ca84f615` refactor: compile cft schema from module set
+- `2752a8d6` feat: synthesize dimensions during cft build
+- `524189db` refactor: move runtime sessions to cft schema
+- `36396246` refactor: share parsed modules with schema hosts
+- `ee692faf` test: compile checker fixtures with cft schema
+- `2ab79fc4` refactor: separate cft module identity from container
+- `a52cc583` refactor: centralize schema generations in runtime
+- `a600fcc2` refactor: remove remaining schema build terminology
+- `a0ca7fd3` chore: clean schema refactor diff
+- `897c5ba9` chore: remove trailing schema test whitespace
+- `bc21382b` refactor: open editor sessions from schema generations
+- `3c99266d` docs: plan canonical cft schema and dimension overlays
+- `9eb16d31` refactor: unify cft module storage
+- `0775795f` refactor: add typed cft schema names
+- `821ef04e` refactor: establish canonical cft schema
+- `5ad93a0f` refactor: replace dimension storage with record overlays
+- `d122475f` feat: index and mutate dimension overlays
+- `c78a752a` refactor: clarify coflow-cft module boundaries
+- `dd16f40a` refactor: complete canonical schema and dimension edits
+- `94ca65af` refactor: remove obsolete schema compatibility paths
+- `bdbe6a40` docs: finalize cft schema migration
+- `16c81af5` docs: mark schema migration complete
+- `1013bd2d` Merge branch 'main' into codex/schema-generation-architecture
+- `e9cd237c` docs: document remote source removal
+- `032cd278` fix: centralize dimension source discovery
+- `12aa95a5` fix: restore provider transaction compensation
+- `10b595bf` refactor: share cft modules with lsp
+- `dabea632` test: cover dimension diagnostics
+- `a0d94daf` refactor: extract dimension mutation modules
+- `e280a00e` fix: harden dimension generation transactions
+- `f6467473` test: close dimension transaction coverage gaps
+- `6502e0c0` test: compare complete dimension diagnostics
+- `31a4b5c4` Merge pull request #16 from Puring103/codex/schema-generation-architecture
+- `245be0be` feat(editor): select table cells in inspector
+- `1d31d966` feat: keep artifact history under coflow state
+- `05ba5d68` feat(editor): add keyboard cell editing and clipboard syntax
+- `9aa1310a` fix: enforce schema and dimension source invariants
+- `5e1b6321` feat(editor): unify keyboard selection interactions
+- `259a821e` refactor: clarify cft compiler architecture
+- `72c4a832` feat(editor): improve keyboard editing controls
