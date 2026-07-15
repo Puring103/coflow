@@ -1,8 +1,5 @@
 use coflow_api::FlatDiagnostic;
-use coflow_cft::{
-    CftAnnotation, CftAnnotationValue, CftConstValue, CftContainer, CftSchemaDefaultValue,
-    CftSchemaTypeRef, CompiledSchema, ModuleId,
-};
+use coflow_cft::{CftConstValue, CftSchema, CftSchemaDefaultValue, CftSchemaTypeRef};
 use serde::Serialize;
 
 use crate::ProjectSchemaSession;
@@ -12,6 +9,7 @@ pub struct SchemaInspectReport {
     pub types: Vec<SchemaTypeInfo>,
     pub enums: Vec<SchemaEnumInfo>,
     pub consts: Vec<SchemaConstInfo>,
+    pub dimensions: Vec<SchemaDimensionInfo>,
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
@@ -22,14 +20,16 @@ pub struct SchemaFilesReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct SchemaTypeInfo {
     pub module: String,
     pub name: String,
     pub parent: Option<String>,
     pub is_abstract: bool,
     pub is_sealed: bool,
+    pub is_struct: bool,
     pub is_singleton: bool,
-    pub annotations: Vec<SchemaAnnotation>,
+    pub id_as_enum: Option<String>,
     pub fields: Vec<SchemaFieldInfo>,
 }
 
@@ -37,18 +37,23 @@ pub struct SchemaTypeInfo {
 pub struct SchemaFieldInfo {
     pub name: String,
     pub ty: SchemaTypeRefInfo,
-    pub raw_type: String,
     pub has_default: bool,
     pub default: Option<SchemaDefaultValueInfo>,
-    pub annotations: Vec<SchemaAnnotation>,
-    pub dimension: Option<String>,
+    pub is_expand: bool,
+    pub dimension: Option<SchemaFieldDimensionInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SchemaFieldDimensionInfo {
+    pub name: String,
+    pub bucket: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SchemaEnumInfo {
     pub module: String,
     pub name: String,
-    pub annotations: Vec<SchemaAnnotation>,
+    pub is_flag: bool,
     pub variants: Vec<SchemaEnumVariantInfo>,
 }
 
@@ -57,24 +62,19 @@ pub struct SchemaEnumVariantInfo {
     pub name: String,
     #[serde(with = "coflow_data_model::serde_i64")]
     pub value: i64,
-    pub annotations: Vec<SchemaAnnotation>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SchemaAnnotation {
+pub struct SchemaDimensionInfo {
     pub name: String,
-    pub args: Vec<SchemaAnnotationValueInfo>,
+    pub variants: Vec<String>,
+    pub fields: Vec<SchemaDimensionFieldInfo>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum SchemaAnnotationValueInfo {
-    Name(String),
-    String(String),
-    Int(#[serde(with = "coflow_data_model::serde_i64")] i64),
-    Float(f64),
-    Bool(bool),
-    Null,
+pub struct SchemaDimensionFieldInfo {
+    pub declaring_type: String,
+    pub field: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -137,58 +137,72 @@ pub fn inspect_schema(
     type_filter: Option<&str>,
     include_derived: bool,
 ) -> SchemaInspectReport {
-    let view = session.compiled_schema();
-    let mut type_names = view.type_names().cloned().collect::<Vec<_>>();
+    let Some(view) = session.schema() else {
+        return SchemaInspectReport {
+            types: Vec::new(),
+            enums: Vec::new(),
+            consts: Vec::new(),
+            dimensions: Vec::new(),
+            diagnostics: session.diagnostics.flat_diagnostics(),
+        };
+    };
+    let mut type_names = view
+        .all_types()
+        .map(|ty| ty.name.clone())
+        .collect::<Vec<_>>();
     type_names.sort();
     if let Some(filter) = type_filter {
-        type_names
-            .retain(|name| name == filter || (include_derived && view.is_assignable(name, filter)));
+        type_names.retain(|name| {
+            name.as_str() == filter || (include_derived && view.is_assignable(name, filter))
+        });
     }
 
     let types = type_names
         .into_iter()
-        .filter_map(|name| view.type_meta(&name))
+        .filter_map(|name| view.resolve_type(&name))
         .map(|ty| SchemaTypeInfo {
-            module: ty.module.clone(),
-            name: ty.name.clone(),
-            parent: ty.parent.clone(),
+            module: ty.module.to_string(),
+            name: ty.name.to_string(),
+            parent: ty.parent.as_ref().map(ToString::to_string),
             is_abstract: ty.is_abstract,
             is_sealed: ty.is_sealed,
+            is_struct: ty.is_struct,
             is_singleton: ty.is_singleton,
-            annotations: annotations(&ty.annotations),
+            id_as_enum: ty.id_as_enum.as_ref().map(ToString::to_string),
             fields: view
-                .fields(&ty.name)
+                .resolve_type(&ty.name)
                 .into_iter()
-                .flatten()
+                .flat_map(coflow_cft::CftType::all_fields)
                 .map(|field| SchemaFieldInfo {
-                    name: field.name.clone(),
-                    ty: type_ref_info(view, &field.ty_ref),
-                    raw_type: field.raw_type.clone(),
-                    has_default: field.has_default,
+                    name: field.name.to_string(),
+                    ty: type_ref_info(&field.ty_ref),
+                    has_default: field.default.is_some(),
                     default: field.default.as_ref().map(default_value_info),
-                    annotations: annotations(&field.annotations),
+                    is_expand: field.is_expand,
                     dimension: field
                         .dimension
                         .as_ref()
-                        .map(|dimension| dimension.dimension.clone()),
+                        .map(|dimension| SchemaFieldDimensionInfo {
+                            name: dimension.dimension.to_string(),
+                            bucket: dimension.bucket.as_ref().map(ToString::to_string),
+                        }),
                 })
                 .collect(),
         })
         .collect();
 
     let mut enums = view
-        .enum_metas()
+        .all_enums()
         .map(|schema_enum| SchemaEnumInfo {
-            module: schema_enum.module.clone(),
-            name: schema_enum.name.clone(),
-            annotations: annotations(&schema_enum.annotations),
+            module: schema_enum.module.to_string(),
+            name: schema_enum.name.to_string(),
+            is_flag: schema_enum.is_flag,
             variants: schema_enum
-                .all_variants
+                .variants
                 .iter()
                 .map(|variant| SchemaEnumVariantInfo {
-                    name: variant.name.clone(),
+                    name: variant.name.to_string(),
                     value: variant.value,
-                    annotations: annotations(&variant.annotations),
                 })
                 .collect(),
         })
@@ -198,7 +212,22 @@ pub fn inspect_schema(
     SchemaInspectReport {
         types,
         enums,
-        consts: consts(&session.schema),
+        consts: consts(view),
+        dimensions: view
+            .all_dimensions()
+            .map(|dimension| SchemaDimensionInfo {
+                name: dimension.name.to_string(),
+                variants: dimension.variants.iter().map(ToString::to_string).collect(),
+                fields: dimension
+                    .fields
+                    .iter()
+                    .map(|field| SchemaDimensionFieldInfo {
+                        declaring_type: field.declaring_type.to_string(),
+                        field: field.name.to_string(),
+                    })
+                    .collect(),
+            })
+            .collect(),
         diagnostics: session.diagnostics.flat_diagnostics(),
     }
 }
@@ -206,13 +235,11 @@ pub fn inspect_schema(
 #[must_use]
 pub fn schema_files(session: &ProjectSchemaSession) -> SchemaFilesReport {
     let files = session
-        .schema
-        .module_ids()
-        .filter_map(|module| {
-            session.schema.source(module).map(|source| SchemaFileInfo {
-                module: module.to_string(),
-                source: source.to_string(),
-            })
+        .modules()
+        .modules()
+        .map(|(module_id, module)| SchemaFileInfo {
+            module: module_id.to_string(),
+            source: module.source().to_string(),
         })
         .collect();
     SchemaFilesReport {
@@ -221,83 +248,46 @@ pub fn schema_files(session: &ProjectSchemaSession) -> SchemaFilesReport {
     }
 }
 
-fn consts(schema: &CftContainer) -> Vec<SchemaConstInfo> {
-    let mut consts = Vec::new();
-    for module_id in schema.module_ids() {
-        append_module_consts(schema, module_id, &mut consts);
-    }
+fn consts(schema: &CftSchema) -> Vec<SchemaConstInfo> {
+    let mut consts = schema
+        .all_consts()
+        .map(|schema_const| SchemaConstInfo {
+            module: schema_const.module.to_string(),
+            name: schema_const.name.to_string(),
+            value: const_value_info(&schema_const.value),
+        })
+        .collect::<Vec<_>>();
     consts.sort_by(|left, right| left.name.cmp(&right.name));
     consts
 }
 
-fn append_module_consts(
-    schema: &CftContainer,
-    module_id: &ModuleId,
-    out: &mut Vec<SchemaConstInfo>,
-) {
-    let Some(module) = schema.schema(module_id) else {
-        return;
-    };
-    out.extend(module.consts.iter().map(|schema_const| SchemaConstInfo {
-        module: schema_const.module.to_string(),
-        name: schema_const.name.clone(),
-        value: const_value_info(&schema_const.value),
-    }));
-}
-
-fn type_ref_info(schema: &CompiledSchema, ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
+fn type_ref_info(ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
     match ty {
         CftSchemaTypeRef::Int => SchemaTypeRefInfo::Int,
         CftSchemaTypeRef::Float => SchemaTypeRefInfo::Float,
         CftSchemaTypeRef::Bool => SchemaTypeRefInfo::Bool,
         CftSchemaTypeRef::String => SchemaTypeRefInfo::String,
-        CftSchemaTypeRef::Named(name) => {
-            let target_kind = if schema.is_schema_enum(name) {
-                "enum"
-            } else if schema.has_type(name) {
-                "type"
-            } else {
-                "unknown"
-            };
-            SchemaTypeRefInfo::Named {
-                name: name.clone(),
-                target_kind: target_kind.to_string(),
-            }
-        }
-        CftSchemaTypeRef::Ref(target) => SchemaTypeRefInfo::Ref {
-            target: target.clone(),
+        CftSchemaTypeRef::Object(name) => SchemaTypeRefInfo::Named {
+            name: name.to_string(),
+            target_kind: "type".to_string(),
+        },
+        CftSchemaTypeRef::Enum(name) => SchemaTypeRefInfo::Named {
+            name: name.to_string(),
+            target_kind: "enum".to_string(),
+        },
+        CftSchemaTypeRef::RecordRef(target) => SchemaTypeRefInfo::Ref {
+            target: target.to_string(),
         },
         CftSchemaTypeRef::Array(inner) => SchemaTypeRefInfo::Array {
-            item: Box::new(type_ref_info(schema, inner)),
+            item: Box::new(type_ref_info(inner)),
         },
         CftSchemaTypeRef::Dict(key, value) => SchemaTypeRefInfo::Dict {
-            key: Box::new(type_ref_info(schema, key)),
-            value: Box::new(type_ref_info(schema, value)),
+            key: Box::new(type_ref_info(key)),
+            value: Box::new(type_ref_info(value)),
         },
         CftSchemaTypeRef::Nullable(inner) => SchemaTypeRefInfo::Nullable {
-            inner: Box::new(type_ref_info(schema, inner)),
+            inner: Box::new(type_ref_info(inner)),
         },
-    }
-}
-
-fn annotations(items: &[CftAnnotation]) -> Vec<SchemaAnnotation> {
-    items
-        .iter()
-        .map(|annotation| SchemaAnnotation {
-            name: annotation.name.clone(),
-            args: annotation.args.iter().map(annotation_value_info).collect(),
-        })
-        .collect()
-}
-
-fn annotation_value_info(value: &CftAnnotationValue) -> SchemaAnnotationValueInfo {
-    match value {
-        CftAnnotationValue::Name(value) => SchemaAnnotationValueInfo::Name(value.clone()),
-        CftAnnotationValue::String(value) => SchemaAnnotationValueInfo::String(value.clone()),
-        CftAnnotationValue::Int(value) => SchemaAnnotationValueInfo::Int(*value),
-        CftAnnotationValue::Float(value) => SchemaAnnotationValueInfo::Float(*value),
-        CftAnnotationValue::Bool(value) => SchemaAnnotationValueInfo::Bool(*value),
-        CftAnnotationValue::Null => SchemaAnnotationValueInfo::Null,
     }
 }
 
@@ -313,8 +303,8 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
             variant,
             value,
         } => SchemaDefaultValueInfo::Enum {
-            enum_name: enum_name.clone(),
-            variant: variant.clone(),
+            enum_name: enum_name.to_string(),
+            variant: variant.to_string(),
             value: *value,
         },
         CftSchemaDefaultValue::EmptyArray => SchemaDefaultValueInfo::EmptyArray,

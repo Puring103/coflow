@@ -120,9 +120,7 @@ fn is_within_configured_local_data_source(project: &Project, canonical_path: &Pa
         {
             return false;
         }
-        let SourceLocationSpec::Path(path) = source.location() else {
-            return false;
-        };
+        let SourceLocationSpec::Path(path) = source.location();
         let source_path = project.resolve_path(path);
         let Ok(source_canonical) = std::fs::canonicalize(source_path) else {
             return false;

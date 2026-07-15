@@ -1,10 +1,10 @@
 //! Record views and write outcomes exposed at the engine boundary.
 
 use coflow_api::DiagnosticSet;
-use coflow_data_model::RecordOrigin;
 use coflow_data_model::{
     format_cfd_dict_key, CfdDictKey, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdValue,
 };
+use coflow_data_model::{RecordOrigin, SourceLocation};
 use serde::{Deserialize, Serialize};
 
 use super::RecordCoordinate;
@@ -79,6 +79,86 @@ pub struct RefTargetInfo {
 pub struct RecordReferenceInfo {
     pub target: RecordCoordinate,
     pub path: CfdPath,
+    pub dimension: Option<coflow_data_model::DimensionRefCoordinate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum DimensionValueState {
+    Missing,
+    Value(CfdValue),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct DimensionValueView {
+    pub state: DimensionValueState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<DimensionValueOrigin>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DimensionValueOrigin {
+    FileSpan {
+        path: String,
+        start_line: usize,
+        start_character: usize,
+        end_line: usize,
+        end_character: usize,
+    },
+    TableCell {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sheet: Option<String>,
+        row: usize,
+        column: usize,
+    },
+}
+
+impl DimensionValueOrigin {
+    pub(crate) fn from_record_origin(origin: &RecordOrigin) -> Option<Self> {
+        match origin.location_for_path(&CfdPath::default())? {
+            SourceLocation::FileSpan {
+                path,
+                start_line,
+                start_character,
+                end_line,
+                end_character,
+            } => Some(Self::FileSpan {
+                path: path.display().to_string(),
+                start_line,
+                start_character,
+                end_line,
+                end_character,
+            }),
+            SourceLocation::TableCell {
+                path,
+                sheet,
+                row,
+                column,
+            } => Some(Self::TableCell {
+                path: path.display().to_string(),
+                sheet,
+                row,
+                column,
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

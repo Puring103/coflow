@@ -3,14 +3,16 @@ mod worker;
 
 use coflow_api::DiagnosticSet;
 use coflow_cfd::CfdAst;
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchema;
 use coflow_project::{normalize_path, Project};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use crate::path_from_file_uri;
 use crate::state::{LspBuild, LspDocument};
+use coflow_runtime::ProjectRuntime;
 
 pub(crate) use snapshot::{
     build_snapshot, ValidationInput, ValidationRevision, ValidationSnapshot,
@@ -22,6 +24,9 @@ pub(crate) struct LspValidationCore {
     project_diagnostics: Option<DiagnosticSet>,
     open_documents: BTreeMap<PathBuf, OpenDocument>,
     published_uris: BTreeSet<String>,
+    // The worker receives a clone of this handle, so unchanged CFT input
+    // reuses the runtime generation across validation revisions.
+    schema_runtime: Arc<Mutex<ProjectRuntime>>,
     revision: ValidationRevision,
     snapshot: Option<ValidationSnapshot>,
 }
@@ -51,13 +56,14 @@ pub(crate) enum LspRequestDocument<'a> {
 pub(crate) struct CfdRequestDocument<'a> {
     pub(crate) source: &'a str,
     pub(crate) ast: &'a CfdAst,
-    pub(crate) schema: Option<&'a CftContainer>,
+    pub(crate) schema: Option<&'a CftSchema>,
     pub(crate) build: Option<&'a LspBuild>,
 }
 
 impl LspValidationCore {
-    pub(crate) const fn new(project: Project) -> Self {
+    pub(crate) fn new(project: Project) -> Self {
         Self {
+            schema_runtime: Arc::new(Mutex::new(ProjectRuntime::new(project.clone()))),
             project,
             project_diagnostics: None,
             open_documents: BTreeMap::new(),
@@ -78,9 +84,8 @@ impl LspValidationCore {
             .and_then(|snapshot| snapshot.build.as_ref())
     }
 
-    pub(crate) fn schema(&self) -> Option<&CftContainer> {
-        self.build()
-            .and_then(|build| build.schema.container.as_ref())
+    pub(crate) fn schema(&self) -> Option<&CftSchema> {
+        self.build().and_then(LspBuild::schema)
     }
 
     pub(crate) fn apply_open_document(
@@ -148,6 +153,7 @@ impl LspValidationCore {
             &self.project,
             self.project_diagnostics.as_ref(),
             &self.open_documents,
+            Arc::clone(&self.schema_runtime),
         )
     }
 
@@ -297,6 +303,10 @@ impl LspValidationCore {
         if config_changed {
             match Project::open_schema_only(Some(&self.project.root_dir)) {
                 Ok(project) => {
+                    // A new configuration can select a different schema set,
+                    // so its generation cache must not survive this boundary.
+                    self.schema_runtime =
+                        Arc::new(Mutex::new(ProjectRuntime::new(project.clone())));
                     self.project = project;
                     self.project_diagnostics = None;
                 }

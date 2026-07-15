@@ -7,7 +7,7 @@ use coflow_project::{DimensionConfig, Project};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::synthesize::DimensionField;
+use super::sources::DimensionField;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -22,12 +22,11 @@ pub struct DimensionInfo {
     /// `config.display_name` → built-in (`"language" → "本地化"`) → `name`.
     pub display_name: String,
     pub variants: Vec<String>,
-    /// Output directory (project-relative path string) for synthesized
-    /// dimension records, or `None` when no `out_dir` is configured.
+    /// Output directory (project-relative path string) for managed dimension
+    /// sources, or `None` when no `out_dir` is configured.
     pub out_dir: Option<String>,
     /// Schema fields belonging to this dimension. Wire only the source
-    /// type/field/synthesized type — the schema view itself is not part of
-    /// the editor's surface.
+    /// type and field; the schema view itself is not part of the editor surface.
     pub fields: Vec<DimensionFieldInfo>,
 }
 
@@ -40,12 +39,10 @@ pub struct DimensionInfo {
 pub struct DimensionFieldInfo {
     pub source_type: String,
     pub source_field: String,
-    pub synthesized_type: String,
     pub is_singleton: bool,
 }
 
-/// Resolve all configured dimensions into `DimensionInfo`. Synthetic fields
-/// passed in are typically the result of `dimension_fields(schema)`.
+/// Resolve all configured dimensions into `DimensionInfo`.
 #[must_use]
 pub fn dimensions_for_project(project: &Project, fields: &[DimensionField]) -> Vec<DimensionInfo> {
     let mut by_name: std::collections::BTreeMap<&str, Vec<&DimensionField>> =
@@ -73,9 +70,8 @@ pub fn dimensions_for_project(project: &Project, fields: &[DimensionField]) -> V
             .unwrap_or_default()
             .iter()
             .map(|field| DimensionFieldInfo {
-                source_type: field.source_type.clone(),
-                source_field: field.source_field.clone(),
-                synthesized_type: field.synthesized_type.clone(),
+                source_type: field.source_type.to_string(),
+                source_field: field.source_field.to_string(),
                 is_singleton: field.is_singleton,
             })
             .collect();

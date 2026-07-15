@@ -1,6 +1,6 @@
 # 单元格值语法
 
-单元格值语法用于 Excel、CSV 和飞书/Lark 表格。它是 schema-guided 的：每个单元格都会按 CFT 字段类型解析。
+单元格值语法用于 Excel 和 CSV 表格。它是 schema-guided 的：每个单元格都会按 CFT 字段类型解析。
 
 同一段文本在不同目标类型下含义可能不同。例如 `true` 在 `bool` 字段里是布尔值，在 `string` 字段里是字符串。
 

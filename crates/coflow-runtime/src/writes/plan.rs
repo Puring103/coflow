@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use coflow_api::{
-    Diagnostic, DiagnosticSet, ProviderRegistry, ResolvedSource, SourceWriter,
-    WriteFieldPathSegment,
+    Diagnostic, DiagnosticSet, DimensionSourceManager, ProviderRegistry, ResolvedSource,
+    SourceWriter, WriteFieldPathSegment,
 };
 use coflow_data_model::{CfdValue, RecordOrigin};
 
+use crate::dimensions::DimensionField;
 use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate};
 
@@ -19,6 +20,7 @@ use crate::write_rules;
 pub(crate) enum MutationExecutionPlan {
     Insert(InsertPlan),
     WriteField(WriteFieldPlan),
+    WriteDimension(DimensionWritePlan),
     Rename(RenamePlan),
     Delete(DeletePlan),
     Noop { coordinate: RecordCoordinate },
@@ -37,6 +39,17 @@ pub(crate) struct WriteFieldPlan {
     pub(super) writer: Arc<dyn SourceWriter>,
 }
 
+pub(crate) struct DimensionWritePlan {
+    pub(super) source: ResolvedSource,
+    pub(super) manager: Arc<dyn DimensionSourceManager>,
+}
+
+pub(crate) struct DimensionRecordAction {
+    pub(super) source: ResolvedSource,
+    pub(super) manager: Arc<dyn DimensionSourceManager>,
+    pub(super) field: DimensionField,
+}
+
 pub(crate) enum RenamePlan {
     Noop { coordinate: RecordCoordinate },
     Write(Box<RenameWritePlan>),
@@ -50,6 +63,7 @@ pub(crate) struct RenameWritePlan {
     pub(super) writer: Arc<dyn SourceWriter>,
     pub(super) reference_actions: Vec<ReferenceUpdateAction>,
     pub(super) rewrite_actions: Vec<SourceRewriteAction>,
+    pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
 
 pub(crate) struct DeletePlan {
@@ -58,6 +72,7 @@ pub(crate) struct DeletePlan {
     pub(super) display_path: String,
     pub(super) source: ResolvedSource,
     pub(super) writer: Arc<dyn SourceWriter>,
+    pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
 
 impl MutationExecutionPlan {
@@ -70,22 +85,31 @@ impl MutationExecutionPlan {
 
     pub(crate) fn visit_sources<E>(
         &self,
-        mut visit: impl FnMut(&ResolvedSource, &Arc<dyn SourceWriter>) -> Result<(), E>,
+        mut visit: impl FnMut(&ResolvedSource, Option<&Arc<dyn SourceWriter>>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::Insert(plan) => visit(&plan.source, &plan.writer)?,
-            Self::WriteField(plan) => visit(&plan.source, &plan.writer)?,
+            Self::Insert(plan) => visit(&plan.source, Some(&plan.writer))?,
+            Self::WriteField(plan) => visit(&plan.source, Some(&plan.writer))?,
+            Self::WriteDimension(plan) => visit(&plan.source, None)?,
             Self::Rename(RenamePlan::Noop { .. }) | Self::Folded | Self::Noop { .. } => {}
             Self::Rename(RenamePlan::Write(plan)) => {
-                visit(&plan.source, &plan.writer)?;
+                visit(&plan.source, Some(&plan.writer))?;
                 for action in &plan.reference_actions {
-                    visit(action.source(), &action.writer)?;
+                    visit(action.source(), action.writer())?;
                 }
                 for action in &plan.rewrite_actions {
-                    visit(action.source(), &action.writer)?;
+                    visit(action.source(), Some(&action.writer))?;
+                }
+                for action in &plan.dimension_actions {
+                    visit(&action.source, None)?;
                 }
             }
-            Self::Delete(plan) => visit(&plan.source, &plan.writer)?,
+            Self::Delete(plan) => {
+                visit(&plan.source, Some(&plan.writer))?;
+                for action in &plan.dimension_actions {
+                    visit(&action.source, None)?;
+                }
+            }
         }
         Ok(())
     }
@@ -161,6 +185,21 @@ pub(crate) fn prepare_mutation_execution(
                 MutationExecutionPlan::WriteField,
             )
         }),
+        PreparedMutationOp::WriteDimensionValue { write_file, .. } => {
+            let source = source_for_file(session, write_file)?;
+            let manager = registry
+                .dimension_source_manager(&source.provider_id)
+                .ok_or_else(|| {
+                    transaction_invariant(format!(
+                        "dimension source provider `{}` disappeared before mutation planning",
+                        source.provider_id
+                    ))
+                })?;
+            Ok(MutationExecutionPlan::WriteDimension(DimensionWritePlan {
+                source,
+                manager,
+            }))
+        }
         PreparedMutationOp::RenameRecord {
             record, new_key, ..
         } => prepare_rename(session, registry, record, new_key).map(MutationExecutionPlan::Rename),
@@ -241,6 +280,7 @@ fn prepare_rename(
     let reference_actions = reference_update_actions(session, registry, target_ref.id, new_key)?;
     let rewrite_actions =
         source_rewrite_actions(session, registry, target_ref.id, &record.key, new_key)?;
+    let dimension_actions = dimension_record_actions(session, registry, &record.actual_type)?;
     Ok(RenamePlan::Write(Box::new(RenameWritePlan {
         old_coordinate: target_ref.coordinate.clone(),
         origin: target_ref.origin.clone(),
@@ -249,6 +289,7 @@ fn prepare_rename(
         writer,
         reference_actions,
         rewrite_actions,
+        dimension_actions,
     })))
 }
 
@@ -274,13 +315,52 @@ fn prepare_delete(
     };
     let source = source_for_id(session, record_ref.source_id)?;
     let writer = lookup_source_writer(registry, &source)?;
+    let dimension_actions = dimension_record_actions(session, registry, &record.actual_type)?;
     Ok(DeletePlan {
         coordinate: record_ref.coordinate.clone(),
         origin: model_record.origin.clone(),
         display_path: record_ref.display_path.clone(),
         source,
         writer,
+        dimension_actions,
     })
+}
+
+fn dimension_record_actions(
+    session: &ProjectSession,
+    registry: &ProviderRegistry,
+    actual_type: &str,
+) -> Result<Vec<DimensionRecordAction>, DiagnosticSet> {
+    let schema = session.schema();
+    let mut actions = Vec::new();
+    for (entry, field) in session.source_data.dimension_sources() {
+        let applies = schema
+            .field(actual_type, &field.source_field)
+            .is_some_and(|schema_field| {
+                schema_field.declaring_type == field.source_type
+                    && schema_field
+                        .dimension
+                        .as_ref()
+                        .is_some_and(|binding| binding.dimension == field.dimension)
+            });
+        if !applies {
+            continue;
+        }
+        let manager = registry
+            .dimension_source_manager(&entry.source.provider_id)
+            .ok_or_else(|| {
+                transaction_invariant(format!(
+                    "dimension source provider `{}` disappeared before record mutation planning",
+                    entry.source.provider_id
+                ))
+            })?;
+        actions.push(DimensionRecordAction {
+            source: entry.source.clone(),
+            manager,
+            field: field.clone(),
+        });
+    }
+    Ok(actions)
 }
 
 fn sheet_for_file_type(session: &ProjectSession, file: &str, actual_type: &str) -> Option<String> {
@@ -296,4 +376,12 @@ fn sheet_for_file_type(session: &ProjectSession, file: &str, actual_type: &str) 
         }
     }
     None
+}
+
+fn transaction_invariant(message: impl Into<String>) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic::error(
+        "MUTATION-TXN-INVARIANT",
+        "MUTATION",
+        message,
+    ))
 }

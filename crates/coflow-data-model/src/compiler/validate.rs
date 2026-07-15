@@ -7,7 +7,7 @@ use crate::compiler_context::{
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdEnumValue, CfdInputValue, CfdRecordId, CfdValue};
 use crate::origin::RecordOrigin;
-use coflow_cft::{CftFieldMeta, CftSchemaTypeRef};
+use coflow_cft::{CftField, CftSchemaTypeRef};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -91,13 +91,16 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         path: CfdPath,
         cursor: TraversalCursor,
     ) -> Option<RecordDraft> {
-        // Copy the shared schema reference so that the &'s [CftFieldMeta] slice
+        // Copy the shared schema reference so that the shared field slice
         // obtained below has a lifetime independent of `self`, allowing
         // &mut self methods to be called while iterating over the fields.
         let schema = self.schema;
         let diagnostic_start = self.diagnostics.len();
 
-        let Some(is_abstract) = schema.type_meta(actual_type).map(|meta| meta.is_abstract) else {
+        let Some(is_abstract) = schema
+            .resolve_type(actual_type)
+            .map(|meta| meta.is_abstract)
+        else {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::UnknownType,
@@ -175,12 +178,12 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             out.extend(spread_fields);
         }
         for field in fields {
-            let field_path = path.clone().field(field.name.clone());
-            let value = if let Some(value) = input_fields.get(&field.name) {
+            let field_path = path.clone().field(field.name.as_str());
+            let value = if let Some(value) = input_fields.get(field.name.as_str()) {
                 // An explicit field overrides any spread-imported value.
-                spread_field_sources.remove(&field.name);
+                spread_field_sources.remove(field.name.as_str());
                 self.validate_field_value(field, value, record, field_path, cursor)
-            } else if out.contains_key(&field.name) {
+            } else if out.contains_key(field.name.as_str()) {
                 continue;
             } else if let Some(default) = &field.default {
                 self.default_field_value(field, default, record, field_path, cursor)
@@ -195,7 +198,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 None
             };
             if let Some(value) = value {
-                out.insert(field.name.clone(), value);
+                out.insert(field.name.to_string(), value);
             }
         }
 
@@ -215,7 +218,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
 
     fn validate_field_value(
         &mut self,
-        field: &CftFieldMeta,
+        field: &CftField,
         value: &CfdInputValue,
         record: Option<CfdRecordId>,
         path: CfdPath,
@@ -276,10 +279,10 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 Some(CfdValueDraft::Value(CfdValue::String(value.clone())))
             }
             (
-                CftSchemaTypeRef::Named(expected),
+                CftSchemaTypeRef::Enum(expected),
                 CfdInputValue::EnumVariant { enum_name, variant },
-            ) if self.schema.is_schema_enum(expected) => {
-                if enum_name != expected {
+            ) => {
+                if enum_name.as_str() != expected.as_str() {
                     self.push(
                         CfdDiagnostic::error(
                             CfdErrorCode::TypeMismatch,
@@ -292,14 +295,14 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 let enum_value = self.resolve_enum_value(enum_name, variant, record, path)?;
                 Some(CfdValueDraft::Value(CfdValue::Enum(enum_value)))
             }
-            (CftSchemaTypeRef::Ref(expected), CfdInputValue::RecordRef(key)) => {
+            (CftSchemaTypeRef::RecordRef(expected), CfdInputValue::RecordRef(key)) => {
                 Some(CfdValueDraft::PendingRef {
-                    expected_type: expected.clone(),
+                    expected_type: expected.to_string(),
                     key: key.clone(),
                 })
             }
             (
-                CftSchemaTypeRef::Named(expected),
+                CftSchemaTypeRef::Object(expected),
                 CfdInputValue::Object {
                     actual_type,
                     fields,
@@ -322,7 +325,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                     );
                     return None;
                 } else {
-                    expected.clone()
+                    expected.to_string()
                 };
                 let spreads = match value {
                     CfdInputValue::ObjectSpread { spreads, .. } => spreads.as_slice(),
@@ -399,19 +402,20 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                     .full_fields(type_name)
                     .map(|field| {
                         (
-                            field.name.clone(),
+                            field.name.to_string(),
                             CfdValueDraft::PendingSpreadField {
                                 source_type: type_name.to_string(),
                                 key: key.clone(),
-                                field: field.name.clone(),
+                                field: field.name.to_string(),
                             },
                         )
                     })
                     .collect(),
             ),
             CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. } => {
+                let object_type = self.schema.resolve_type(type_name)?.name.clone();
                 let draft = self.validate_value_inner(
-                    &CftSchemaTypeRef::Named(type_name.to_string()),
+                    &CftSchemaTypeRef::Object(object_type),
                     spread,
                     record,
                     path,

@@ -25,7 +25,7 @@ coflow skill install -g
 | --- | --- |
 | `coflow-workflow` | 项目流程、`coflow.yaml`、`check/build`、CI、诊断处理和最佳实践 |
 | `coflow-schema` | CFT schema、类型/字段/默认值、引用、多态、`check {}`、本地化和数据结构设计 |
-| `coflow-data` | CFD、Excel、CSV、飞书/Lark 数据源、创建文件、同步表头和 `data patch` |
+| `coflow-data` | CFD、Excel、CSV 数据源、创建文件、同步表头和 `data patch` |
 
 ## Agent 工作流
 

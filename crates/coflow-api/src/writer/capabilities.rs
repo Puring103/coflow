@@ -28,7 +28,6 @@ pub struct WriterCapabilities {
     pub can_insert_record: bool,
     pub can_delete_record: bool,
     pub requires_full_refresh_after_write: bool,
-    pub is_remote: bool,
 }
 
 impl WriterCapabilities {
@@ -41,7 +40,6 @@ impl WriterCapabilities {
             can_insert_record: false,
             can_delete_record: false,
             requires_full_refresh_after_write: false,
-            is_remote: false,
         }
     }
 
@@ -54,20 +52,6 @@ impl WriterCapabilities {
             can_insert_record: true,
             can_delete_record: true,
             requires_full_refresh_after_write: true,
-            is_remote: false,
-        }
-    }
-
-    #[must_use]
-    pub fn remote_field_edit() -> Self {
-        Self {
-            provider_id: String::new(),
-            can_edit_field: true,
-            can_edit_key: true,
-            can_insert_record: false,
-            can_delete_record: false,
-            requires_full_refresh_after_write: true,
-            is_remote: true,
         }
     }
 

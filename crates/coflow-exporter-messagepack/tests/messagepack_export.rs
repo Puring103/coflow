@@ -8,7 +8,7 @@
 )]
 
 use coflow_api::{ArtifactContent, DataExporter};
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_messagepack::export_messagepack_artifacts;
 use rmpv::Value;
@@ -27,15 +27,10 @@ fn messagepack_exporter_rejects_output_options() {
     assert_eq!(diagnostics.diagnostics[0].code, "MESSAGEPACK-OPTIONS");
 }
 
-fn compile_schema(source: &str) -> Result<CftContainer, String> {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("main"), source)
-        .map_err(|err| format!("schema should parse: {err:?}"))?;
-    container
-        .compile()
-        .map_err(|err| format!("schema should compile: {err:?}"))?;
-    Ok(container)
+fn compile_schema(source: &str) -> Result<CftSchema, String> {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    build_schema(&modules, &CftDimensionInputs::default())
+        .map_err(|err| format!("schema should compile: {err:?}"))
 }
 
 fn build_model(builder: coflow_data_model::CfdModelBuilder<'_>) -> Result<CfdDataModel, String> {
@@ -45,10 +40,10 @@ fn build_model(builder: coflow_data_model::CfdModelBuilder<'_>) -> Result<CfdDat
 }
 
 fn export_tables(
-    schema: &CftContainer,
+    schema: &CftSchema,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, Value>, String> {
-    let artifacts = export_messagepack_artifacts(schema.compiled_schema(), model)
+    let artifacts = export_messagepack_artifacts(schema, model)
         .map_err(|err| format!("export msgpack: {err:?}"))?;
     artifacts
         .files()

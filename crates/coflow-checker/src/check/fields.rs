@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 use coflow_data_model::{CfdDataModel, CfdErrorCode};
 use coflow_structure::StructuralBudget;
 
@@ -9,18 +9,19 @@ use super::value::{
 };
 
 pub(super) fn field_type_for_record<'a>(
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     model: &CfdDataModel,
     record: &CheckRecordRef,
     name: &str,
 ) -> Option<&'a CftSchemaTypeRef> {
     record
         .actual_type(model)
-        .and_then(|actual_type| schema.field_type(actual_type, name))
+        .and_then(|actual_type| schema.field(actual_type, name))
+        .map(|field| &field.ty_ref)
 }
 
 pub(super) fn current_field(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     current: &CheckValue,
     name: &str,
@@ -43,7 +44,7 @@ pub(super) fn current_field(
 }
 
 pub(super) fn field_value(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     target: LocatedCheckValue,
     name: &str,
@@ -106,7 +107,7 @@ pub(super) fn virtual_id(
 fn budget_error(exceeded: LocatedBudgetExceeded) -> OpsError {
     OpsError::new(
         CfdErrorCode::CheckBudgetExceeded,
-        exceeded.location,
+        *exceeded.location,
         exceeded.error.to_string(),
     )
 }

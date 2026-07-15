@@ -1,5 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity};
-use coflow_cft::{CftFieldMeta, CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftField, CftSchema, CftSchemaTypeRef};
 use coflow_data_model::CfdEnumValue;
 
 use crate::ProjectSession;
@@ -7,29 +7,30 @@ use crate::ProjectSession;
 mod apply;
 mod coercion;
 mod defaults;
+mod dimension;
 mod plan;
 mod prepare;
 mod types;
 
-pub(crate) use types::PreparedMutationOp;
 pub use types::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
-    DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
-    MutationReport, MutationRequest, MutationValue,
+    DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,
+    MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
 };
+pub(crate) use types::{DimensionSourceCoordinate, PreparedMutationOp};
 
 pub(super) fn schema_field<'a>(
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     actual_type: &str,
     field_name: &str,
-) -> Result<&'a CftFieldMeta, DiagnosticSet> {
-    if !schema.has_type(actual_type) {
+) -> Result<&'a CftField, DiagnosticSet> {
+    if schema.resolve_type(actual_type).is_none() {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown type `{actual_type}`"),
         ));
     }
-    schema.field_meta(actual_type, field_name).ok_or_else(|| {
+    schema.field(actual_type, field_name).ok_or_else(|| {
         one_path_error(format!(
             "unknown field `{field_name}` on type `{actual_type}`"
         ))
@@ -45,7 +46,7 @@ pub(super) fn enum_value(
         .strip_prefix(enum_name)
         .and_then(|rest| rest.strip_prefix('.'))
         .unwrap_or(raw_variant);
-    let schema = session.compiled_schema();
+    let schema = session.schema();
     let int_value = schema
         .enum_variant_value(enum_name, variant)
         .ok_or_else(|| one_value_error(format!("unknown enum variant `{enum_name}.{variant}`")))?;
@@ -54,10 +55,6 @@ pub(super) fn enum_value(
         variant: Some(variant.to_string()),
         value: int_value,
     })
-}
-
-pub(super) fn is_schema_enum(session: &ProjectSession, name: &str) -> bool {
-    session.compiled_schema().is_schema_enum(name)
 }
 
 fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {

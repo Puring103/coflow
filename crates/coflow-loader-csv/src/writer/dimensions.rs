@@ -1,10 +1,16 @@
 use coflow_api::{
-    DecodedSourceOptions, DiagnosticSet, DimensionSourceManager, DimensionSourceManagerDescriptor,
+    DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest,
+    DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    SourceLocationSpec, TableContext,
+    RewriteDimensionRecordRequest, SourceLocationSpec, TableContext, WriteDimensionValueRequest,
 };
-use coflow_data_model::{CfdDictKey, CfdValue};
-use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
+use coflow_cft::{CftSchemaTypeRef, RecordKey};
+use coflow_data_model::{
+    CfdDictKey, CfdInputDimensionValue, CfdValue, RecordOrigin, SourceDocument,
+};
+use coflow_loader_table_core::cell_value::{
+    parse_schema_cell, render_cell_value, CellRenderError, ParsedCell,
+};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -24,6 +30,113 @@ impl DimensionSourceManager for CsvWriter {
         &CSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
     }
 
+    fn load_dimension_source(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &DimensionSourceLoadRequest<'_>,
+    ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        let text = fs::read_to_string(path).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION",
+                format!(
+                    "failed to read dimension source `{}`: {err}",
+                    path.display()
+                ),
+            ))
+        })?;
+        let rows = parse(&text).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION",
+                format!(
+                    "failed to parse dimension source `{}`: {err}",
+                    path.display()
+                ),
+            ))
+        })?;
+        let Some(header) = rows.first() else {
+            return Ok(DimensionSourceLoadResult::default());
+        };
+        let Some(id_column) = header.iter().position(|name| name == "id") else {
+            return Err(DiagnosticSet::one(diag(
+                "CSV-DIMENSION",
+                "dimension CSV requires an `id` column",
+            )));
+        };
+        let variant_columns = request
+            .schema
+            .dimension
+            .variants
+            .iter()
+            .filter_map(|variant| {
+                header
+                    .iter()
+                    .position(|name| name == variant.as_str())
+                    .map(|column| (variant, column))
+            })
+            .collect::<Vec<_>>();
+        let nullable_type = CftSchemaTypeRef::Nullable(Box::new(
+            request.schema.source_field.ty_ref.non_nullable().clone(),
+        ));
+        let mut values = Vec::new();
+        let mut diagnostics = DiagnosticSet::empty();
+        for (row_index, row) in rows.iter().enumerate().skip(1) {
+            let Some(raw_key) = row.get(id_column).filter(|key| !key.trim().is_empty()) else {
+                continue;
+            };
+            let source_key = match RecordKey::new(raw_key.clone()) {
+                Ok(key) => key,
+                Err(err) => {
+                    diagnostics.push(Diagnostic::error("CSV-DIMENSION", "CSV", err.to_string()));
+                    continue;
+                }
+            };
+            for (variant, column) in &variant_columns {
+                let Some(text) = row.get(*column) else {
+                    continue;
+                };
+                let parsed = match parse_schema_cell(request.schema.schema, &nullable_type, text) {
+                    Ok(parsed) => parsed,
+                    Err(err) => {
+                        diagnostics.push(Diagnostic::error(
+                            "CSV-DIMENSION-VALUE",
+                            "CSV",
+                            err.diagnostics
+                                .into_iter()
+                                .map(|item| item.message)
+                                .collect::<Vec<_>>()
+                                .join("; "),
+                        ));
+                        continue;
+                    }
+                };
+                let ParsedCell::Value(value) = parsed else {
+                    continue;
+                };
+                values.push(CfdInputDimensionValue {
+                    source_type: request.schema.source_type.name.clone(),
+                    source_key: source_key.clone(),
+                    field: request.schema.source_field.name.clone(),
+                    dimension: request.schema.dimension.name.clone(),
+                    variant: (*variant).clone(),
+                    value,
+                    origin: RecordOrigin::Table {
+                        document: SourceDocument::Local(path.clone()),
+                        sheet: request.source.display_name.clone(),
+                        row: row_index,
+                        id_column,
+                        field_columns: std::iter::once((Vec::new(), *column)).collect(),
+                    },
+                });
+            }
+        }
+        if diagnostics.is_empty() {
+            Ok(DimensionSourceLoadResult { values })
+        } else {
+            Err(diagnostics)
+        }
+    }
+
     fn source_options(
         &self,
         request: &DimensionSourceOptionsRequest<'_>,
@@ -36,17 +149,155 @@ impl DimensionSourceManager for CsvWriter {
         }))
     }
 
+    fn write_dimension_value(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &WriteDimensionValueRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        let text = fs::read_to_string(path).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                format!(
+                    "failed to read dimension source `{}`: {err}",
+                    path.display()
+                ),
+            ))
+        })?;
+        let mut rows = parse(&text).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                format!(
+                    "failed to parse dimension source `{}`: {err}",
+                    path.display()
+                ),
+            ))
+        })?;
+        let Some(header) = rows.first() else {
+            return Err(DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                "dimension CSV is empty",
+            )));
+        };
+        let id_column = header.iter().position(|name| name == "id").ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                "dimension CSV requires an `id` column",
+            ))
+        })?;
+        let variant_column = header
+            .iter()
+            .position(|name| name == request.variant.as_str())
+            .ok_or_else(|| {
+                DiagnosticSet::one(diag(
+                    "CSV-DIMENSION-WRITE",
+                    format!("unknown dimension variant `{}`", request.variant),
+                ))
+            })?;
+        let header_len = header.len();
+        let matching_rows = rows
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter(|(_, row)| {
+                row.get(id_column)
+                    .is_some_and(|key| key == request.source_key.as_str())
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let [row_index] = matching_rows.as_slice() else {
+            return Err(DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                format!(
+                    "dimension source requires exactly one row for `{}`, found {}",
+                    request.source_key,
+                    matching_rows.len()
+                ),
+            )));
+        };
+        let row = &mut rows[*row_index];
+        row.resize(header_len, String::new());
+        row[variant_column] = match request.new_value {
+            None => String::new(),
+            Some(CfdValue::Null) => "null".to_string(),
+            Some(value) => render_dimension_csv_value(value),
+        };
+        let body = write(&rows);
+        write_if_changed(path, &body, "CSV-DIMENSION-WRITE")
+    }
+
+    fn rewrite_dimension_record(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &RewriteDimensionRecordRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        let text = fs::read_to_string(path).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                format!(
+                    "failed to read dimension source `{}`: {err}",
+                    path.display()
+                ),
+            ))
+        })?;
+        let mut rows = parse(&text).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                format!(
+                    "failed to parse dimension source `{}`: {err}",
+                    path.display()
+                ),
+            ))
+        })?;
+        let Some(header) = rows.first() else {
+            return Err(DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                "dimension CSV is empty",
+            )));
+        };
+        let id_column = header.iter().position(|name| name == "id").ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                "dimension CSV requires an `id` column",
+            ))
+        })?;
+        let header_len = header.len();
+        let matching_rows = rows
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter(|(_, row)| {
+                row.get(id_column)
+                    .is_some_and(|key| key == request.old_key.as_str())
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let [row_index] = matching_rows.as_slice() else {
+            return Err(DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                format!(
+                    "dimension source requires exactly one row for `{}`, found {}",
+                    request.old_key,
+                    matching_rows.len()
+                ),
+            )));
+        };
+        if let Some(new_key) = request.new_key {
+            rows[*row_index].resize(header_len, String::new());
+            rows[*row_index][id_column] = new_key.to_string();
+        } else {
+            rows.remove(*row_index);
+        }
+        write_if_changed(path, &write(&rows), "CSV-DIMENSION-WRITE")
+    }
+
     fn sync_dimension_source(
         &self,
         _ctx: TableContext<'_>,
         request: &DimensionSourceRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CSV-DIMENSION",
-                "csv dimension source requires a local path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         let expected_keys = request
             .entries
             .iter()
@@ -65,7 +316,7 @@ impl DimensionSourceManager for CsvWriter {
                 record.push(
                     row.variants
                         .get(variant)
-                        .map_or_else(|| "null".to_string(), |value| csv_variant_cell(value)),
+                        .map_or_else(|| "null".to_string(), Clone::clone),
                 );
             }
             rows.push(record);
@@ -161,14 +412,6 @@ fn read_existing_dimension_csv(
         }
     }
     Ok(out)
-}
-
-fn csv_variant_cell(value: &str) -> String {
-    if value.is_empty() {
-        "null".to_string()
-    } else {
-        value.to_string()
-    }
 }
 
 fn render_dimension_csv_value(value: &CfdValue) -> String {

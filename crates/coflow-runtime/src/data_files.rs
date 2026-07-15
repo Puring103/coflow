@@ -141,7 +141,9 @@ pub fn sync_data_header(
         Some(options.actual_type),
         options.sheet,
     )?;
-    let compiled_schema = session.compiled_schema();
+    let schema = session
+        .schema()
+        .ok_or_else(|| session.diagnostics().clone().into_set())?;
     let result = manager.sync_header(
         table_context(session),
         &SyncHeaderRequest {
@@ -151,7 +153,7 @@ pub fn sync_data_header(
                 .then_some(layout.sheet.as_str()),
             actual_type: &layout.actual_type,
             headers: &layout.headers,
-            schema: Some(compiled_schema),
+            schema: Some(schema),
         },
     )?;
     Ok(report(
@@ -198,17 +200,10 @@ fn table_operation_source(
             requested
         } else if let Some(configured_provider) = &configured.source_type {
             configured_provider.clone()
-        } else if matches!(configured.location(), SourceLocationSpec::Path(_)) {
-            resolve_provider_id(registry, None, target)?
         } else {
-            String::new()
+            resolve_provider_id(registry, None, target)?
         };
-        let location = match configured.location() {
-            SourceLocationSpec::Uri(_) => SourceLocationSpec::Uri(target.to_string()),
-            SourceLocationSpec::Path(_) => {
-                SourceLocationSpec::Path(project.resolve_path(Path::new(target)))
-            }
-        };
+        let location = SourceLocationSpec::Path(project.resolve_path(Path::new(target)));
         let source = SourceResolver::new(project, registry).resolve_exact_at(
             configured,
             (!provider_id.is_empty()).then_some(provider_id.as_str()),
@@ -218,12 +213,6 @@ fn table_operation_source(
         return Ok((source.provider_id.clone(), source));
     }
 
-    if is_uri_target(target) {
-        return Err(one_data_file_error(
-            "DATA-FILE-SOURCE",
-            format!("remote table source `{target}` is not configured"),
-        ));
-    }
     let provider_id = resolve_provider_id(registry, requested_provider, target)?;
     let source = SourceResolver::new(project, registry).resolve_unconfigured(
         &provider_id,
@@ -231,22 +220,6 @@ fn table_operation_source(
         target.to_string(),
     )?;
     Ok((provider_id, source))
-}
-
-fn is_uri_target(target: &str) -> bool {
-    let Some((scheme, remainder)) = target.split_once(':') else {
-        return false;
-    };
-    if scheme.len() == 1 && (remainder.starts_with('\\') || remainder.starts_with('/')) {
-        return false;
-    }
-    let mut chars = scheme.chars();
-    chars
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic())
-        && chars.all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
-        })
 }
 
 trait TableManagerDescriptorExt {
@@ -396,8 +369,10 @@ pub fn table_header_layout(
                 )
             })?,
     };
-    let compiled_schema = session.compiled_schema();
-    let schema_type = compiled_schema.type_meta(&actual_type).ok_or_else(|| {
+    let schema = session
+        .schema()
+        .ok_or_else(|| session.diagnostics().clone().into_set())?;
+    let schema_type = schema.resolve_type(&actual_type).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-TYPE",
             format!("unknown CFT type `{actual_type}`"),
@@ -419,15 +394,15 @@ pub fn table_header_layout(
     let mut headers = vec![header_options.key_column().to_string()];
     let field_headers = header_options.field_headers();
     headers.extend(
-        compiled_schema
-            .full_fields(&actual_type)
-            .unwrap_or(&[])
-            .iter()
+        schema
+            .resolve_type(&actual_type)
+            .into_iter()
+            .flat_map(coflow_cft::CftType::all_fields)
             .map(|field| {
                 field_headers
-                    .get(&field.name)
+                    .get(field.name.as_str())
                     .cloned()
-                    .unwrap_or_else(|| field.name.clone())
+                    .unwrap_or_else(|| field.name.to_string())
             }),
     );
     Ok(TableHeaderLayout {
@@ -446,9 +421,7 @@ fn configured_table_source<'a>(project: &'a Project, file: &str) -> Option<&'a S
 }
 
 fn source_location_matches(project: &Project, source: &SourceConfig, file: &str) -> bool {
-    let SourceLocationSpec::Path(path) = source.location() else {
-        return matches!(source.location(), SourceLocationSpec::Uri(uri) if uri == file);
-    };
+    let SourceLocationSpec::Path(path) = source.location();
     let requested = path_to_slash(Path::new(file));
     let configured = path_to_slash(path);
     if configured == requested {

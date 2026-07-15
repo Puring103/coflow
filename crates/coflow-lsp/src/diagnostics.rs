@@ -80,7 +80,6 @@ enum LspLabelDocument {
     #[default]
     Unknown,
     Path(PathBuf),
-    Uri(String),
 }
 
 pub fn lsp_label_location(location: &coflow_api::SourceLocation) -> LspLabelLocation {
@@ -91,13 +90,6 @@ pub fn lsp_label_location(location: &coflow_api::SourceLocation) -> LspLabelLoca
         | coflow_api::SourceLocation::Artifact { path }
         | coflow_api::SourceLocation::TableCell { path, .. } => LspLabelLocation {
             document: LspLabelDocument::Path(path.clone()),
-            start_line: range.start.line,
-            start_character: range.start.character,
-            end_line: range.end.line,
-            end_character: range.end.character,
-        },
-        coflow_api::SourceLocation::RemoteCell { document, .. } => LspLabelLocation {
-            document: LspLabelDocument::Uri(document.clone()),
             start_line: range.start.line,
             start_character: range.start.character,
             end_line: range.end.line,
@@ -129,7 +121,6 @@ pub fn label_uri(
 ) -> String {
     match &location.document {
         LspLabelDocument::Path(path) => preferred_diagnostic_uri(preferred_uris, path),
-        LspLabelDocument::Uri(uri) => uri.clone(),
         LspLabelDocument::Unknown => preferred_diagnostic_uri(preferred_uris, Path::new("")),
     }
 }

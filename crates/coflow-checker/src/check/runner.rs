@@ -4,7 +4,7 @@ use super::evaluator::CheckEvaluator;
 use super::statements;
 use super::value::{CheckRecordRef, CheckValue, ValueLocation};
 use crate::{DependencyGraph, DimensionCheckContext};
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdRecordId, CfdValue,
 };
@@ -12,7 +12,7 @@ use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, Traver
 use std::collections::BTreeMap;
 
 pub(crate) struct CheckRunner<'a> {
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     model: &'a CfdDataModel,
     diagnostics: Vec<CfdDiagnostic>,
     diagnostic_roots: Vec<CfdRecordId>,
@@ -42,7 +42,7 @@ struct NestedFieldChecks<'a> {
 
 impl<'a> CheckRunner<'a> {
     pub(crate) fn new(
-        schema: &'a CompiledSchema,
+        schema: &'a CftSchema,
         model: &'a CfdDataModel,
         structural_limits: StructuralLimits,
     ) -> Self {
@@ -59,7 +59,7 @@ impl<'a> CheckRunner<'a> {
     }
 
     pub(crate) fn with_dimension_context(
-        schema: &'a CompiledSchema,
+        schema: &'a CftSchema,
         model: &'a CfdDataModel,
         dimension_context: DimensionCheckContext,
         structural_limits: StructuralLimits,
@@ -141,9 +141,6 @@ impl<'a> CheckRunner<'a> {
         record_id: CfdRecordId,
         record: &coflow_data_model::CfdRecord,
     ) {
-        if self.schema.is_dimension_storage_type(record.actual_type()) {
-            return;
-        }
         let location = ValueLocation::root(record_id);
         let mut traversal_budget = Some(StructuralBudget::new(self.structural_limits));
         let Some(root_cursor) =
@@ -284,7 +281,6 @@ impl<'a> CheckRunner<'a> {
             let logical_location = root_location.field(&field);
             match round.materialize(self.model, root_record, &field, &logical_location) {
                 Ok(Some(materialized)) => {
-                    self.note_read_from(root_record, materialized.storage_record);
                     self.run_nested_value_checks(
                         Some(root_record),
                         materialized.value,
@@ -300,7 +296,7 @@ impl<'a> CheckRunner<'a> {
                     location,
                     message,
                 }) => {
-                    let location = location.unwrap_or_else(|| logical_location.clone());
+                    let location = (*location).unwrap_or_else(|| logical_location.clone());
                     self.diagnostics.push(
                         CfdDiagnostic::error(code, message)
                             .with_primary(Some(location.blame.record), location.blame.path),
@@ -308,15 +304,6 @@ impl<'a> CheckRunner<'a> {
                 }
             }
         }
-    }
-
-    fn note_read_from(&mut self, root: CfdRecordId, target: CfdRecordId) {
-        let Some(deps) = self.deps.as_mut() else {
-            return;
-        };
-        let mut collector = deps.collector_for(Some(root));
-        collector.note_read_from(target);
-        deps.extend_root(Some(root), collector);
     }
 
     fn enter_data_value(

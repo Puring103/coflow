@@ -60,12 +60,7 @@ impl TableManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &CreateTableRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CSV-TABLE",
-                "csv table manager requires a local path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         if path.exists() {
             return Err(DiagnosticSet::one(diag(
                 "CSV-TABLE",
@@ -100,12 +95,7 @@ impl TableManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &SyncHeaderRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CSV-TABLE",
-                "csv table manager requires a local path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         let text = fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-TABLE",

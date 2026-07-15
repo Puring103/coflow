@@ -71,6 +71,11 @@ pub fn check_project(
     project: &Project,
     registry: &ProviderRegistry,
 ) -> Result<CommandOutcome<CheckReport>, DiagnosticSet> {
+    let mut diagnostics = project.schema_diagnostic_set();
+    diagnostics.extend(project.data_diagnostic_set());
+    if !diagnostics.is_empty() {
+        return Ok(CommandOutcome::Diagnostics(diagnostics));
+    }
     let runtime = Runtime::new(registry.clone());
     let session = runtime.build_project_session(project.clone())?;
     if session.queries().has_diagnostics() {
@@ -223,7 +228,7 @@ pub fn generate_project_code(
     let command = format!("coflow codegen {codegen_id}");
     let output = required_code_output(project, codegen_id, &command)?;
     let data_format = configured_data_format(project, &command)?;
-    let session = Runtime::build_schema_session(project.clone())?;
+    let session = Runtime::open_schema_session(project.clone())?;
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }

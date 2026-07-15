@@ -92,8 +92,8 @@ fn bitwise_or_xor_and_share_one_left_associative_precedence_level() {
     assert!(matches!(inner_rhs.kind, CftSchemaCheckExprKind::Int(2)));
 }
 
-fn first_check_expr<'a>(container: &'a CftContainer, type_name: &str) -> &'a CftSchemaCheckExpr {
-    let ty = container.resolve_type(type_name).expect("type");
+fn first_check_expr<'a>(schema: &'a CftSchema, type_name: &str) -> &'a CftSchemaCheckExpr {
+    let ty = schema.resolve_type(type_name).expect("type");
     let check = ty.check.as_ref().expect("check block");
     let CftSchemaCheckStmt::Expr(expr) = &check.stmts[0] else {
         panic!("expected expression statement");

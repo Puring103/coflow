@@ -1,9 +1,9 @@
-#![allow(clippy::expect_used)]
+#![allow(clippy::expect_used, clippy::unwrap_used)]
 
 mod common;
 use common::*;
 
-use coflow_cft::CftSchemaTypeRef;
+use coflow_cft::{CftSchemaTypeRef, TypeName};
 use std::collections::BTreeMap;
 
 struct EmptyContext;
@@ -30,7 +30,7 @@ fn complete_validation_rejects_missing_nested_required_fields() {
             type Parent { child: Child; }
         ",
     );
-    let compiled = schema.compiled_schema();
+    let compiled = &schema;
     let value = CfdValue::Object(Box::new(CfdObject::new(
         "Parent",
         BTreeMap::from([(
@@ -42,7 +42,7 @@ fn complete_validation_rejects_missing_nested_required_fields() {
     let err = validate_complete_value_for_schema(
         compiled,
         &EmptyContext,
-        &CftSchemaTypeRef::Named("Parent".to_string()),
+        &CftSchemaTypeRef::Object(TypeName::new("Parent").unwrap()),
         &value,
         None,
     )
@@ -57,8 +57,8 @@ fn complete_validation_rejects_missing_nested_required_fields() {
 #[test]
 fn fragment_validation_allows_missing_fields_but_checks_provided_values() {
     let schema = compile_schema("type Child { required: int; }");
-    let compiled = schema.compiled_schema();
-    let expected = CftSchemaTypeRef::Named("Child".to_string());
+    let compiled = &schema;
+    let expected = CftSchemaTypeRef::Object(TypeName::new("Child").unwrap());
     let empty = CfdValue::Object(Box::new(CfdObject::new("Child", BTreeMap::new())));
 
     validate_fragment_value_for_schema(compiled, &EmptyContext, &expected, &empty, None)
@@ -77,13 +77,13 @@ fn fragment_validation_allows_missing_fields_but_checks_provided_values() {
 #[test]
 fn complete_validation_allows_omitted_schema_defaults() {
     let schema = compile_schema("type Child { defaulted: int = 1; }");
-    let compiled = schema.compiled_schema();
+    let compiled = &schema;
     let value = CfdValue::Object(Box::new(CfdObject::new("Child", BTreeMap::new())));
 
     validate_complete_value_for_schema(
         compiled,
         &EmptyContext,
-        &CftSchemaTypeRef::Named("Child".to_string()),
+        &CftSchemaTypeRef::Object(TypeName::new("Child").unwrap()),
         &value,
         None,
     )

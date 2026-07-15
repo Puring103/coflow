@@ -7,7 +7,7 @@
 )]
 
 mod common;
-use coflow_cft::CftSchemaTypeRef;
+use coflow_cft::{CftSchemaTypeRef, TypeName};
 use common::*;
 
 #[test]
@@ -26,27 +26,26 @@ fn ref_type_compiles_object_references_and_nested_shapes() {
     .expect("& object reference fields should compile");
 
     let holder = schema.resolve_type("Holder").expect("Holder type");
-    assert_eq!(holder.fields[0].ty, "&Item");
+    let fields = holder.own_fields().collect::<Vec<_>>();
+    let item = TypeName::new("Item").unwrap();
+    assert_eq!(fields[0].ty_ref.display_label(), "&Item");
+    assert_eq!(fields[0].ty_ref, CftSchemaTypeRef::RecordRef(item.clone()));
+    assert_eq!(fields[1].ty_ref.display_label(), "&Item?");
     assert_eq!(
-        holder.fields[0].ty_ref,
-        CftSchemaTypeRef::Ref("Item".to_string())
+        fields[1].ty_ref,
+        CftSchemaTypeRef::Nullable(Box::new(CftSchemaTypeRef::RecordRef(item.clone())))
     );
-    assert_eq!(holder.fields[1].ty, "&Item?");
+    assert_eq!(fields[2].ty_ref.display_label(), "[&Item]");
     assert_eq!(
-        holder.fields[1].ty_ref,
-        CftSchemaTypeRef::Nullable(Box::new(CftSchemaTypeRef::Ref("Item".to_string())))
+        fields[2].ty_ref,
+        CftSchemaTypeRef::Array(Box::new(CftSchemaTypeRef::RecordRef(item.clone())))
     );
-    assert_eq!(holder.fields[2].ty, "[&Item]");
+    assert_eq!(fields[3].ty_ref.display_label(), "{string: &Item}");
     assert_eq!(
-        holder.fields[2].ty_ref,
-        CftSchemaTypeRef::Array(Box::new(CftSchemaTypeRef::Ref("Item".to_string())))
-    );
-    assert_eq!(holder.fields[3].ty, "{string: &Item}");
-    assert_eq!(
-        holder.fields[3].ty_ref,
+        fields[3].ty_ref,
         CftSchemaTypeRef::Dict(
             Box::new(CftSchemaTypeRef::String),
-            Box::new(CftSchemaTypeRef::Ref("Item".to_string())),
+            Box::new(CftSchemaTypeRef::RecordRef(item)),
         )
     );
 }

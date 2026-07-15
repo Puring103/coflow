@@ -63,10 +63,10 @@ fn execute_generation_mutation(
     mut failed: Vec<MutationFailedOp>,
     executable: &[ExecutableMutation],
 ) -> MutationReport {
-    let compiled_schema = session.compiled_schema();
+    let schema = session.schema();
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: compiled_schema,
+        schema,
         model: Some(&session.model),
     };
     let transaction =
@@ -272,6 +272,20 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
         | PreparedMutationOp::FoldedSetField { record, write_file } => {
             ("set_field", Some(record.clone()), Some(write_file.clone()))
         }
+        PreparedMutationOp::WriteDimensionValue {
+            record,
+            new_value,
+            write_file,
+            ..
+        } => (
+            if new_value.is_some() {
+                "set_dimension_value"
+            } else {
+                "clear_dimension_value"
+            },
+            Some(record.clone()),
+            Some(write_file.clone()),
+        ),
         PreparedMutationOp::RenameRecord {
             record,
             new_key,
@@ -337,6 +351,13 @@ const fn prepared_op_name(op: &PreparedMutationOp) -> &'static str {
         }
         PreparedMutationOp::SetField { .. } | PreparedMutationOp::FoldedSetField { .. } => {
             "set_field"
+        }
+        PreparedMutationOp::WriteDimensionValue { new_value, .. } => {
+            if new_value.is_some() {
+                "set_dimension_value"
+            } else {
+                "clear_dimension_value"
+            }
         }
         PreparedMutationOp::RenameRecord { .. } | PreparedMutationOp::FoldedRenameRecord { .. } => {
             "rename_record"

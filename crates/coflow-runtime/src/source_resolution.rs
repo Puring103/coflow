@@ -10,6 +10,8 @@ use coflow_api::{
 use coflow_project::{discover_directory_files, Project, SourceConfig};
 use serde_json::Value;
 
+mod dimensions;
+
 pub(crate) type ResolvedLoaderSource = (Arc<dyn SourceProvider>, ResolvedSource);
 
 #[derive(Clone)]
@@ -61,6 +63,13 @@ impl<'a> SourceResolver<'a> {
             (!configured.provider_id.is_empty()).then_some(configured.provider_id.as_str());
         let provider = self.select(configured, source_type)?;
         self.decode_and_expand(&provider, configured)
+    }
+
+    pub(crate) fn resolve_dimension_sources(
+        &self,
+        fields: &[crate::dimensions::DimensionField],
+    ) -> Result<Vec<(ResolvedLoaderSource, crate::dimensions::DimensionField)>, DiagnosticSet> {
+        dimensions::resolve_dimension_sources(self, fields)
     }
 
     pub(crate) fn resolve_exact_at(
@@ -124,9 +133,7 @@ impl<'a> SourceResolver<'a> {
         &self,
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(directory) = &configured.location else {
-            return Ok(Vec::new());
-        };
+        let SourceLocationSpec::Path(directory) = &configured.location;
         let files = discover_directory_files(directory).map_err(|error| {
             DiagnosticSet::one(project_diagnostic(
                 &self.project.config_path,
@@ -252,14 +259,9 @@ fn configured_source(
     source: &SourceConfig,
     source_index: Option<usize>,
 ) -> ConfiguredSource {
-    let location = match source.location() {
-        SourceLocationSpec::Path(path) => SourceLocationSpec::Path(project.resolve_path(path)),
-        SourceLocationSpec::Uri(uri) => SourceLocationSpec::Uri(uri.clone()),
-    };
-    let display_name = match source.location() {
-        SourceLocationSpec::Path(path) => path.display().to_string(),
-        SourceLocationSpec::Uri(uri) => uri.clone(),
-    };
+    let SourceLocationSpec::Path(path) = source.location();
+    let location = SourceLocationSpec::Path(project.resolve_path(path));
+    let display_name = path.display().to_string();
     ConfiguredSource {
         provider_id: source.source_type.clone().unwrap_or_default(),
         location,
@@ -416,10 +418,8 @@ fn loader_selection_diagnostic(
     spec: &ConfiguredSource,
     error: SourceProviderSelectionError,
 ) -> Diagnostic {
-    let source = match &spec.location {
-        SourceLocationSpec::Path(path) => path.display().to_string(),
-        SourceLocationSpec::Uri(uri) => uri.clone(),
-    };
+    let SourceLocationSpec::Path(path) = &spec.location;
+    let source = path.display().to_string();
     match error {
         SourceProviderSelectionError::UnknownSourceProvider { id } => project_diagnostic(
             config_path,
@@ -471,7 +471,6 @@ mod tests {
         id: "contract-test",
         display_name: "Contract test",
         extensions: &[],
-        uri_schemes: &["contract"],
         option_keys: &[],
     };
 
@@ -511,9 +510,9 @@ mod tests {
         };
         let configured = ConfiguredSource {
             provider_id: DESCRIPTOR.id.to_string(),
-            location: SourceLocationSpec::Uri("contract://source".to_string()),
+            location: SourceLocationSpec::Path("contract.source".into()),
             options: Value::Null,
-            display_name: "contract://source".to_string(),
+            display_name: "contract.source".to_string(),
             source_index: Some(0),
         };
         let result = decode_configured_source(&provider, &configured, Path::new("coflow.yaml"));
@@ -531,9 +530,9 @@ mod tests {
         };
         let source = ResolvedSource {
             provider_id: "other-provider".to_string(),
-            location: SourceLocationSpec::Uri("contract://source".to_string()),
+            location: SourceLocationSpec::Path("contract.source".into()),
             options: DecodedSourceOptions::new(DESCRIPTOR.id, ()),
-            display_name: "contract://source".to_string(),
+            display_name: "contract.source".to_string(),
         };
         let result = validate_resolved_source(&provider, &source);
         assert!(result.is_err(), "foreign resolved source must be rejected");

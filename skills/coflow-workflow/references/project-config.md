@@ -74,7 +74,7 @@ schema:
 
 ## `sources`
 
-`sources` 配置数据输入。每个 source 必须且只能设置 `path` 或 `url` 之一。
+`sources` 配置本地数据输入。每个 source 必须设置 `path`。
 
 ```yaml
 sources:
@@ -108,30 +108,6 @@ sources:
 
 目录里不支持的扩展名会被忽略。
 
-### 远端 source
-
-`url` 用于远端数据源，例如飞书/Lark 电子表格：
-
-```yaml
-sources:
-  - type: lark-sheet
-    url: https://example.feishu.cn/wiki/xxxxx
-    app_id: cli_xxx
-    app_secret: xxx
-```
-
-已知电子表格 token 时，也可以写成：
-
-```yaml
-sources:
-  - type: lark-sheet
-    url: lark:<spreadsheet_token>
-    app_id: cli_xxx
-    app_secret: xxx
-```
-
-暂不支持飞书多维表格/Base。
-
 ### `type`
 
 `type` 是可选 provider id：
@@ -142,19 +118,13 @@ sources:
     path: data/story.cfd
 ```
 
-省略时，Coflow 会通过 provider registry probe 推断 provider。远端飞书 source 通常显式写：
-
-```yaml
-type: lark-sheet
-```
-
 如果多个 provider 都能处理同一个 source，应该显式指定 `type`。
 
 ### provider options
 
-除 `type`、`path`、`url` 之外的字段会原样传给 provider 作为 options。
+除 `type`、`path` 之外的字段会原样传给 provider 作为 options。
 
-例如 Excel 和飞书电子表格都支持 `sheets`：
+例如 Excel 支持 `sheets`：
 
 ```yaml
 sources:
@@ -168,19 +138,9 @@ sources:
           Name: name
 ```
 
-provider options 可以直接写普通字符串：
-
-```yaml
-sources:
-  - type: lark-sheet
-    url: lark:<spreadsheet_token>
-    app_id: cli_xxx
-    app_secret: xxx
-```
-
 ## `sheets`
 
-`sheets` 用于配置 Excel workbook 或飞书电子表格中的 sheet 映射。
+`sheets` 用于配置 Excel workbook 中的 sheet 映射。
 
 省略 `sheets` 时：
 
@@ -193,7 +153,7 @@ sources:
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `sheet` | 是 | Excel worksheet 或飞书 sheet 名称。 |
+| `sheet` | 是 | Excel worksheet 名称。 |
 | `type` | 否 | 目标 CFT 类型名。省略时使用 `sheet`。 |
 | `key` | 否 | record key 表头列名。省略时使用 `id`、`Id` 或 `ID`。 |
 | `columns` | 否 | 表头文本到 CFT 字段名的重命名映射。 |
@@ -296,24 +256,6 @@ sources:
 ```
 
 如果 `data/` 中同时存在 `items.xlsx`、`monsters.csv` 和 `story.cfd`，Coflow 会递归发现支持的文件。上面的 `sheets` 配置只影响表格类 source；`story.cfd` 仍按照 CFD 文本中的记录类型加载。
-
-飞书/Lark 表格使用同样的 `sheets` 结构：
-
-```yaml
-sources:
-  - type: lark-sheet
-    url: https://example.feishu.cn/wiki/xxxxx
-    app_id: cli_xxx
-    app_secret: xxx
-    sheets:
-      - sheet: 物品表
-        type: Item
-        key: 物品ID
-        columns:
-          名称: name
-          稀有度: rarity
-          价格: price
-```
 
 ## `outputs`
 
@@ -422,15 +364,9 @@ dimensions:
 
 ## 常见错误
 
-### source 同时设置 `path` 和 `url`
+### source 缺少 `path`
 
-```yaml
-sources:
-  - path: data/items.xlsx
-    url: lark:xxxx
-```
-
-每个 source 必须且只能设置 `path` 或 `url` 之一。
+每个 source 必须设置本地文件或目录的 `path`。
 
 ### source 使用未知字段
 
@@ -439,7 +375,7 @@ sources:
   - file: data/items.xlsx
 ```
 
-source 只使用通用字段 `type`、`path`、`url` 加 provider options。表达本地文件或目录时使用 `path`。
+source 只使用通用字段 `type`、`path` 加 provider options。表达本地文件或目录时使用 `path`。
 
 ### schema 扩展名大小写不正确
 

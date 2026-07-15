@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 
 use coflow_api::{
     ArtifactSet, CodeGenerator, CodegenContext, DataExporter, DecodedOutputOptions, DiagnosticSet,
@@ -7,17 +8,196 @@ use coflow_api::{
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
 
-use crate::schema_build::build_project_schema_session;
+use crate::project_schema::{
+    open_project_schema_attempt, open_project_schema_session, SchemaTextOverride,
+};
 use crate::session::{ProjectSchemaSession, ProjectSession};
-use crate::session_build::{open_project_session, SessionOpenOptions};
+use crate::session_build::{
+    open_project_session, open_project_session_from_schema, SessionOpenOptions,
+};
 use crate::{
-    CreateRecordDraft, DefaultMaterialization, MutationFields, MutationOp, MutationReport,
-    MutationRequest, MutationValue, ProjectQueries, RecordCoordinate, WriteOutcome,
+    CreateRecordDraft, DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation,
+    MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue, ProjectQueries,
+    RecordCoordinate, WriteOutcome,
 };
 
 #[derive(Debug, Clone)]
 pub struct Runtime {
     registry: ProviderRegistry,
+}
+
+/// Owns the published schema generation for one project.
+///
+/// Hosts call [`Self::refresh`] after filesystem-backed project changes;
+/// the runtime, rather than an editor, decides whether schema inputs changed.
+#[derive(Debug)]
+pub struct ProjectRuntime {
+    project: Project,
+    published: Option<SchemaGeneration>,
+    attempted: Option<SchemaGeneration>,
+}
+
+/// Runtime-private cache record for one immutable schema generation.
+///
+/// Keeping parsed modules and the semantic schema behind the same fingerprint
+/// ensures language hosts never reparse text that the compiler already read.
+#[derive(Debug)]
+struct SchemaGeneration {
+    fingerprint: u64,
+    session: ProjectSchemaSession,
+}
+
+impl ProjectRuntime {
+    #[must_use]
+    pub const fn new(project: Project) -> Self {
+        Self {
+            project,
+            published: None,
+            attempted: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn project(&self) -> &Project {
+        &self.project
+    }
+
+    #[must_use]
+    pub fn schema(&self) -> Option<&ProjectSchemaSession> {
+        self.published
+            .as_ref()
+            .map(|generation| &generation.session)
+    }
+
+    /// Returns the latest build attempt, including an invalid CFT module set.
+    /// Language tooling uses this for diagnostics while [`Self::schema`] keeps
+    /// pointing at the last successfully published schema.
+    #[must_use]
+    pub fn latest_attempt(&self) -> Option<&ProjectSchemaSession> {
+        self.attempted
+            .as_ref()
+            .or(self.published.as_ref())
+            .map(|generation| &generation.session)
+    }
+
+    #[must_use]
+    pub fn into_latest_attempt(self) -> Option<ProjectSchemaSession> {
+        self.attempted
+            .or(self.published)
+            .map(|generation| generation.session)
+    }
+
+    /// Refreshes the published schema only when CFT text or dimension variants change.
+    ///
+    /// A failed rebuild leaves the last successful generation available for
+    /// language tooling, while the returned diagnostics still prevent callers
+    /// from treating the failed refresh as a valid project build.
+    ///
+    /// # Errors
+    ///
+    /// Returns project, schema, or source diagnostics when the candidate cannot be built.
+    pub fn refresh(&mut self) -> Result<bool, DiagnosticSet> {
+        self.refresh_with_overrides(&[])
+    }
+
+    /// Rebuilds from a host's current in-memory CFT document snapshots.
+    ///
+    /// A failed candidate is retained only as `latest_attempt` for diagnostics;
+    /// it never replaces the published generation used by semantic consumers.
+    ///
+    /// # Errors
+    ///
+    /// Returns project, schema, or source diagnostics when the candidate cannot be built.
+    pub fn refresh_with_overrides(
+        &mut self,
+        overrides: &[SchemaTextOverride],
+    ) -> Result<bool, DiagnosticSet> {
+        let fingerprint = schema_input_fingerprint(&self.project, overrides)?;
+        if self
+            .attempted
+            .as_ref()
+            .is_some_and(|generation| generation.fingerprint == fingerprint)
+        {
+            return self.attempt_result();
+        }
+        if self
+            .published
+            .as_ref()
+            .is_some_and(|generation| generation.fingerprint == fingerprint)
+        {
+            return Ok(false);
+        }
+
+        let diagnostics = self.project.schema_diagnostic_set();
+        let session = open_project_schema_attempt(self.project.clone(), diagnostics, overrides)?;
+        let generation = SchemaGeneration {
+            fingerprint,
+            session,
+        };
+        let diagnostics = generation.session.diagnostics().clone().into_set();
+        let changed = self
+            .published
+            .as_ref()
+            .is_none_or(|published| published.fingerprint != fingerprint);
+
+        // Publish only a fully valid schema; failed editor text must not
+        // invalidate semantic queries that still rely on the last good one.
+        self.attempted = Some(generation);
+        if diagnostics.is_empty() {
+            self.published = self.attempted.take();
+            return Ok(changed);
+        }
+        Err(diagnostics)
+    }
+
+    fn attempt_result(&self) -> Result<bool, DiagnosticSet> {
+        let Some(attempt) = self.attempted.as_ref() else {
+            return Ok(false);
+        };
+        let diagnostics = attempt.session.diagnostics().clone().into_set();
+        if diagnostics.is_empty() {
+            Ok(false)
+        } else {
+            Err(diagnostics)
+        }
+    }
+}
+
+fn schema_input_fingerprint(
+    project: &Project,
+    overrides: &[SchemaTextOverride],
+) -> Result<u64, DiagnosticSet> {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for module in project.schema_sources()?.modules {
+        module.module_id.hash(&mut hasher);
+        module.canonical_path.hash(&mut hasher);
+        let source = overrides
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, source_override)| {
+                source_override
+                    .requested_module
+                    .as_deref()
+                    .is_some_and(|requested| requested == module.module_id)
+                    || coflow_project::normalize_path(&module.canonical_path)
+                        == source_override.normalized_path
+            })
+            .map_or(&module.source, |(_, source_override)| {
+                &source_override.source
+            });
+        source.hash(&mut hasher);
+    }
+    for source_override in overrides {
+        source_override.requested_module.hash(&mut hasher);
+        source_override.normalized_path.hash(&mut hasher);
+        source_override.source.hash(&mut hasher);
+    }
+    for (dimension, config) in &project.config.dimensions {
+        dimension.hash(&mut hasher);
+        config.variants.hash(&mut hasher);
+    }
+    Ok(hasher.finish())
 }
 
 impl Runtime {
@@ -36,8 +216,8 @@ impl Runtime {
     /// # Errors
     ///
     /// Returns unrecoverable project/config/schema I/O diagnostics.
-    pub fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
-        build_project_schema_session(project)
+    pub fn open_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
+        open_project_schema_session(project)
     }
 
     /// Opens data for editor, inspection, and background tasks that must not
@@ -79,6 +259,19 @@ impl Runtime {
         project: Project,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
         open_project_session(project, &self.registry, SessionOpenOptions::read_only())
+            .map(|session| WriteProjectSession::new(session, self.registry.clone()))
+    }
+
+    /// Opens a write-capable data session from a runtime-built schema generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when project sources cannot be opened against the schema.
+    pub fn open_write_session_from_schema(
+        &self,
+        schema: ProjectSchemaSession,
+    ) -> Result<WriteProjectSession, DiagnosticSet> {
+        open_project_session_from_schema(schema, &self.registry, SessionOpenOptions::read_only())
             .map(|session| WriteProjectSession::new(session, self.registry.clone()))
     }
 }
@@ -151,7 +344,7 @@ impl BuildProjectSession {
     ) -> Result<ArtifactSet, DiagnosticSet> {
         exporter.export(
             ExportContext {
-                schema: self.session.compiled_schema(),
+                schema: self.session.schema(),
                 model: self.session.model(),
             },
             options,
@@ -173,7 +366,7 @@ impl BuildProjectSession {
     ) -> Result<ArtifactSet, DiagnosticSet> {
         codegen.generate(
             CodegenContext {
-                schema: self.session.compiled_schema(),
+                schema: self.session.schema(),
                 model: include_model.then_some(self.session.model()),
                 data_format,
                 id_as_enum_variants,
@@ -281,6 +474,40 @@ impl WriteProjectSession {
             file: None,
             path: path.to_vec(),
             value: MutationValue::Cfd(new_value.clone()),
+        })
+    }
+
+    /// Writes one record-owned dimension variant value.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the coordinate is invalid or the managed
+    /// dimension source cannot be written.
+    pub fn write_dimension_value(
+        &mut self,
+        coordinate: DimensionValueCoordinate,
+        new_value: &CfdValue,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::SetDimensionValue {
+            coordinate,
+            expected: DimensionValueExpectation::Any,
+            value: MutationValue::Cfd(new_value.clone()),
+        })
+    }
+
+    /// Clears one record-owned dimension variant so it becomes missing.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the coordinate is invalid or the managed
+    /// dimension source cannot be written.
+    pub fn clear_dimension_value(
+        &mut self,
+        coordinate: DimensionValueCoordinate,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::ClearDimensionValue {
+            coordinate,
+            expected: DimensionValueExpectation::Any,
         })
     }
 

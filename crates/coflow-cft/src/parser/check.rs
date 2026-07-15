@@ -3,9 +3,9 @@ use crate::ast::{
     BinOp, CheckBlock, CheckExpr, CheckExprKind, CheckStmt, CmpOp, QuantifierKind, TypePredicate,
     UnaryOp,
 };
-use crate::container::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexer::TokenKind;
+use crate::module_id::ModuleId;
 use crate::span::Span;
 use coflow_structure::StructureKind;
 

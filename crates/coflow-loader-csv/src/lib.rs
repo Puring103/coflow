@@ -63,7 +63,6 @@ pub const CSV_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescri
     id: "csv",
     display_name: "CSV file",
     extensions: &["csv"],
-    uri_schemes: &[],
     option_keys: &["sheets"],
 };
 
@@ -99,16 +98,7 @@ impl SourceProvider for CsvLoader {
         _ctx: SourceResolveContext<'_>,
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &source.location else {
-            if source.provider_id == CSV_LOADER_DESCRIPTOR.id {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "CSV-SOURCE",
-                    "CSV",
-                    "csv source requires `path`",
-                )));
-            }
-            return Ok(Vec::new());
-        };
+        let SourceLocationSpec::Path(path) = &source.location;
         if path.is_dir() {
             return collect_csv_sources(path, source);
         }
@@ -132,13 +122,7 @@ impl SourceProvider for CsvLoader {
         ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let SourceLocationSpec::Path(file) = &source.location else {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "CSV-SOURCE",
-                "CSV",
-                "csv source requires `path`",
-            )));
-        };
+        let SourceLocationSpec::Path(file) = &source.location;
         let sheets = csv_sheets(csv_source_options(source)?);
         let csv_source = CsvSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[csv_source])

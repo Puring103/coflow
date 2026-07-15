@@ -4,7 +4,6 @@
  * Stable, wire-friendly coordinate of a top-level record.
  *
  * Top-level records always have an `(actual_type, key)` pair that uniquely
- * identifies them inside a model build, even when synthetic dimension
- * records share keys with their source records.
+ * identifies them inside a model build.
  */
 export type RecordCoordinate = { actual_type: string, key: string, };

@@ -1,6 +1,6 @@
 use coflow_cfd::CfdAst;
 use coflow_cft::ast::Item;
-use coflow_cft::{CftContainer, Span};
+use coflow_cft::{CftSchema, Span};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -37,7 +37,7 @@ impl CfdDefinitionIndex {
         Self { records }
     }
 
-    fn location(&self, schema: &CftContainer, expected_type: &str, key: &str) -> Option<Value> {
+    fn location(&self, schema: &CftSchema, expected_type: &str, key: &str) -> Option<Value> {
         if let Some(location) = self
             .records
             .get(expected_type)
@@ -47,13 +47,12 @@ impl CfdDefinitionIndex {
             return Some(location.clone());
         }
         schema
-            .compiled_schema()
             .concrete_assignable_types(expected_type)?
             .into_iter()
-            .filter(|actual_type| actual_type != expected_type)
+            .filter(|actual_type| actual_type.as_str() != expected_type)
             .find_map(|actual_type| {
                 self.records
-                    .get(&actual_type)
+                    .get(actual_type.as_str())
                     .and_then(|records| records.get(key))
                     .and_then(|locations| locations.first())
                     .cloned()
@@ -63,15 +62,8 @@ impl CfdDefinitionIndex {
 
 /// Find the LSP location (uri + range) of a CFT type definition by name.
 pub(crate) fn cft_type_definition_location(build: &LspBuild, type_name: &str) -> Option<Value> {
-    use coflow_cft::parser::parse_module;
-    use coflow_cft::ModuleId;
-
-    for (module_id, document) in &build.documents {
-        let Some(ast) = document
-            .ast
-            .clone()
-            .or_else(|| parse_module(&ModuleId::new(module_id.clone()), &document.source).ok())
-        else {
+    for document in build.documents.values() {
+        let Some(ast) = document.ast() else {
             continue;
         };
 
@@ -83,7 +75,7 @@ pub(crate) fn cft_type_definition_location(build: &LspBuild, type_name: &str) ->
                 Item::Const(_) => continue,
             };
             if name == type_name {
-                let range = byte_range(&document.source, name_span.start, name_span.end);
+                let range = byte_range(document.source(), name_span.start, name_span.end);
                 return Some(json!({
                     "uri": document.uri,
                     "range": range,
@@ -235,7 +227,7 @@ fn ast_enum_variant_name_span(
 }
 
 fn global_location(build: &LspBuild, name: &str) -> Option<Value> {
-    let container = build.container()?;
+    let container = build.schema()?;
     if let Some(ty) = container.resolve_type(name) {
         let document = build.document_by_module(&ty.module)?;
         return Some(location(
@@ -307,6 +299,6 @@ pub(crate) fn cfd_record_definition_location(
     key: &str,
 ) -> Option<Value> {
     build
-        .container()
+        .schema()
         .and_then(|schema| build.cfd_definitions.location(schema, expected_type, key))
 }

@@ -404,7 +404,7 @@ fn open_schema_session(
 ) -> Result<(ProjectSchemaSession, ProviderRegistry), DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     let registry = default_provider_registry()?;
-    let session = Runtime::build_schema_session(project)?;
+    let session = Runtime::open_schema_session(project)?;
     Ok((session, registry))
 }
 

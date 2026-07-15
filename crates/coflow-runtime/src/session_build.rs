@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use coflow_api::{DiagnosticSet, ProviderRegistry};
-use coflow_cft::CftContainer;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 
@@ -15,7 +15,7 @@ use crate::load::{
     empty_load_output, empty_model, load_project_data, reload_project_data_from_cache,
     LoadDiagnostics, LoadProjectDataOptions, ProjectLoadOutput, SourceDataCache,
 };
-use crate::schema_build::build_project_schema_with_diagnostics;
+use crate::project_schema::open_project_schema_attempt;
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::writes::MutationImpact;
 
@@ -37,6 +37,14 @@ pub(crate) fn open_project_session(
     options: SessionOpenOptions,
 ) -> Result<ProjectSession, DiagnosticSet> {
     build_project_session_with_effects(project, registry, options).map(|output| output.session)
+}
+
+pub(crate) fn open_project_session_from_schema(
+    schema_session: ProjectSchemaSession,
+    registry: &ProviderRegistry,
+    options: SessionOpenOptions,
+) -> Result<ProjectSession, DiagnosticSet> {
+    finish_project_session(schema_session, registry, options).map(|output| output.session)
 }
 
 pub(crate) struct SessionBuildOutput {
@@ -87,7 +95,7 @@ pub(crate) fn build_project_session_with_effects(
     registry: &ProviderRegistry,
     options: SessionOpenOptions,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
-    finish_project_session(build_schema_session(project)?, registry, options)
+    finish_project_session(open_schema_session(project)?, registry, options)
 }
 
 pub(crate) fn rebuild_project_session_from_generation(
@@ -95,7 +103,7 @@ pub(crate) fn rebuild_project_session_from_generation(
     registry: &ProviderRegistry,
     impact: &MutationImpact,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
-    let dimension_fields = dimensions::dimension_fields(session.compiled_schema());
+    let dimension_fields = dimensions::dimension_fields(session.schema());
     let ctx = SessionBuildContext {
         project: session.project.clone(),
         schema: session.schema.clone(),
@@ -124,11 +132,16 @@ fn finish_project_session(
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
     let ProjectSchemaSession {
         project,
+        modules: _,
         schema,
         mut diagnostics,
     } = schema_session;
 
-    let dimension_fields = dimensions::dimension_fields(schema.compiled_schema());
+    let Some(schema) = schema else {
+        return Err(diagnostics.into_set());
+    };
+
+    let dimension_fields = dimensions::dimension_fields(&schema);
     let ctx = SessionBuildContext {
         project,
         schema,
@@ -146,7 +159,7 @@ fn finish_project_session(
     } = if diagnostics.is_empty() {
         build_data_pipeline(&ctx, &mut diagnostics)?
     } else {
-        LoadedSessionData::empty()?
+        LoadedSessionData::empty(&ctx.schema)?
     };
 
     Ok(SessionBuildOutput {
@@ -155,15 +168,15 @@ fn finish_project_session(
     })
 }
 
-fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
+fn open_schema_session(project: Project) -> Result<ProjectSchemaSession, DiagnosticSet> {
     let mut initial_diagnostics = project.schema_diagnostic_set();
     initial_diagnostics.extend(project.data_diagnostic_set());
-    build_project_schema_with_diagnostics(project, initial_diagnostics)
+    open_project_schema_attempt(project, initial_diagnostics, &[])
 }
 
 struct SessionBuildContext<'a> {
     project: Project,
-    schema: Arc<CftContainer>,
+    schema: Arc<CftSchema>,
     registry: &'a ProviderRegistry,
     dimension_mode: DimensionBuildMode,
     dimension_fields: Vec<DimensionField>,
@@ -189,9 +202,9 @@ struct LoadedSessionData {
 }
 
 impl LoadedSessionData {
-    fn empty() -> Result<Self, DiagnosticSet> {
+    fn empty(schema: &CftSchema) -> Result<Self, DiagnosticSet> {
         Ok(Self {
-            model: empty_model()?,
+            model: empty_model(schema)?,
             indexes: SessionIndexes::default(),
             source_data: SourceDataCache::default(),
             check_state: CheckState::default(),
@@ -215,7 +228,7 @@ fn build_data_pipeline(
                 load_failure.diagnostics.logical_locations,
             );
             return Ok(LoadedSessionData {
-                model: empty_model()?,
+                model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
@@ -268,7 +281,7 @@ fn rebuild_data_pipeline(
                 load_failure.diagnostics.logical_locations,
             );
             return Ok(LoadedSessionData {
-                model: empty_model()?,
+                model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
@@ -310,7 +323,7 @@ fn rebuild_data_pipeline(
                     load_failure.diagnostics.diagnostics,
                     load_failure.diagnostics.logical_locations,
                 );
-                output = empty_load_output()?;
+                output = diagnostic_fallback_output(&ctx.schema, diagnostics)?;
                 indexes = load_failure.indexes;
             }
         }
@@ -348,9 +361,19 @@ fn reload_with_dimensions(
                 load_failure.diagnostics.diagnostics,
                 load_failure.diagnostics.logical_locations,
             );
-            Ok((empty_load_output()?, load_failure.indexes))
+            Ok((
+                diagnostic_fallback_output(&ctx.schema, diagnostics)?,
+                load_failure.indexes,
+            ))
         }
     }
+}
+
+fn diagnostic_fallback_output(
+    schema: &CftSchema,
+    diagnostics: &DiagnosticsStore,
+) -> Result<ProjectLoadOutput, DiagnosticSet> {
+    empty_load_output(schema).map_err(|_| diagnostics.as_set().clone())
 }
 
 fn load_data(
@@ -362,7 +385,6 @@ fn load_data(
     let output = match load_project_data(
         &ctx.project,
         &ctx.schema,
-        ctx.schema.compiled_schema(),
         ctx.registry,
         &mut indexes,
         LoadProjectDataOptions {
@@ -396,7 +418,6 @@ fn load_cached_data(
     let output = match reload_project_data_from_cache(
         &ctx.project,
         &ctx.schema,
-        ctx.schema.compiled_schema(),
         ctx.registry,
         &mut indexes,
         previous,
@@ -450,7 +471,7 @@ fn build_read_only_data(
                 load_failure.diagnostics.logical_locations,
             );
             return Ok(LoadedSessionData {
-                model: empty_model()?,
+                model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),

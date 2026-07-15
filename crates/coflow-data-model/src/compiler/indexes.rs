@@ -139,7 +139,7 @@ pub(super) fn validate_singletons(
 ) {
     let singleton_names: Vec<String> = schema
         .singleton_types()
-        .map(|meta| meta.name.clone())
+        .map(|meta| meta.name.to_string())
         .collect();
 
     let mut seen_keys: BTreeMap<String, (String, CfdRecordId)> = BTreeMap::new();

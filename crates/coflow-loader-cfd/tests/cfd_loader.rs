@@ -1,34 +1,30 @@
 #![allow(
     clippy::expect_used,
+    clippy::needless_borrow,
     clippy::needless_raw_string_hashes,
     clippy::panic,
     clippy::panic_in_result_fn,
+    clippy::redundant_field_names,
     clippy::unwrap_used
 )]
 
 use coflow_api::{
     ResolvedSource, SourceLoadContext, SourceLocation, SourceLocationSpec, SourceProvider,
-    SourceResolveContext,
 };
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::CfdDataModel;
 use coflow_data_model::{CfdInputValue, CfdValue};
 use coflow_loader_cfd::{
     load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextErrorCode, CfdTextLoadError,
-    CFD_LOADER_DESCRIPTOR,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-fn compile_schema(source: &str) -> CftContainer {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("main"), source)
-        .expect("schema should parse");
-    container.compile().expect("schema should compile");
-    container
+fn compile_schema(source: &str) -> CftSchema {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile")
 }
 
 #[test]
@@ -551,40 +547,9 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
 }
 
 #[test]
-fn explicit_cfd_loader_rejects_url_source() -> TestResult {
-    let source = ResolvedSource {
-        provider_id: CFD_LOADER_DESCRIPTOR.id.to_string(),
-        location: SourceLocationSpec::Uri("https://example.test/items.cfd".to_string()),
-        options: CfdLoader
-            .decode_options(&serde_json::Value::Null)
-            .expect("decode cfd options"),
-        display_name: "https://example.test/items.cfd".to_string(),
-    };
-
-    let err = CfdLoader
-        .resolve(
-            SourceResolveContext {
-                project_root: Path::new("."),
-            },
-            &source,
-        )
-        .expect_err("cfd url source should fail");
-
-    if err
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.message.contains("cfd source requires `path`"))
-    {
-        Ok(())
-    } else {
-        Err(format!("unexpected diagnostics: {err:?}").into())
-    }
-}
-
-#[test]
 fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let schema = compile_schema("type Item { value: int; }");
-    let compiled_schema = schema.compiled_schema();
+    let schema = &schema;
     let root = std::env::temp_dir().join("coflow-cfd-loader-origin-spans");
     if root.exists() {
         fs::remove_dir_all(&root)?;
@@ -601,7 +566,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
         .load(
             SourceLoadContext {
                 project_root: &root,
-                schema: compiled_schema,
+                schema: schema,
             },
             &ResolvedSource {
                 provider_id: "cfd".to_string(),

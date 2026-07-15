@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::{map_diagnostics_with_origins, DiagnosticSet};
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_checker::{
     run_checks_for_dimensions_subset_with_deps, DependencyGraph, DimensionCheckPlan,
     DimensionCheckRound, RootedCheckDiagnostic,
@@ -45,11 +45,12 @@ struct StableCheckLabel {
     record: Option<RecordCoordinate>,
     path: CfdPath,
     message: Option<String>,
+    origin: Option<RecordOrigin>,
 }
 
 pub(crate) fn run_full_project_checks(
     project: &Project,
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
 ) -> ProjectCheckOutput {
@@ -93,7 +94,7 @@ pub(crate) fn run_full_project_checks(
 
 pub(crate) fn run_incremental_project_checks(
     project: &Project,
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
     previous: &CheckState,
@@ -218,6 +219,7 @@ fn stabilize_label(model: &CfdDataModel, label: CfdLabel) -> Option<StableCheckL
         },
         path: label.path,
         message: label.message,
+        origin: label.origin,
     })
 }
 
@@ -277,6 +279,7 @@ fn render_label(model: &CfdDataModel, label: StableCheckLabel) -> Option<CfdLabe
         },
         path: label.path,
         message: label.message,
+        origin: label.origin,
     })
 }
 
@@ -323,7 +326,11 @@ mod tests {
 
     #[test]
     fn unstable_check_state_preserves_raw_diagnostics_and_disables_incremental_reuse() {
-        let model = empty_model().expect("build empty model");
+        let modules = coflow_cft::parse_modules(std::iter::empty::<coflow_cft::CftFile>());
+        let dimensions =
+            coflow_cft::CftDimensionInputs::new(std::iter::empty::<(String, Vec<String>)>());
+        let schema = coflow_cft::build_schema(&modules, &dimensions).expect("build empty schema");
+        let model = empty_model(&schema).expect("build empty model");
         let diagnostic = CfdDiagnostic::error(CfdErrorCode::CheckFailed, "preserve me");
         let rooted = RootedCheckDiagnostic {
             root: CfdRecordId::from_index(99),

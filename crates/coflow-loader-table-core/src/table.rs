@@ -8,15 +8,15 @@ mod columns;
 mod diagnostics;
 mod types;
 
-use coflow_cft::{record_key_ident_error, CompiledSchema};
+use coflow_cft::{record_key_ident_error, CftSchema, CftSchemaTypeRef};
 use coflow_data_model::{
     CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath, CfdPathSegment, RecordOrigin,
     SourceDocument,
 };
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use crate::cell_value::{parse_cell, ParsedCell};
+use crate::cell_value::{parse_schema_cell, ParsedCell};
 use columns::{
     field_columns_from_resolved, resolve_columns, ExpandedSubColumn, IdColumn, ResolvedColumn,
 };
@@ -36,7 +36,7 @@ const SKIP_IMPORT_ROW_MARKER: &str = "##";
 /// according to the schema.
 #[allow(clippy::too_many_lines)]
 pub fn collect_table_input_records(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sources: &[TableSource],
 ) -> Result<TableInputRecords, TableDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
@@ -168,7 +168,7 @@ pub fn collect_table_input_records(
                         .sheet(sheet.sheet.clone())
                         .cell(excel_row, column.excel_column);
                     let text = table_cell_text(row.get(column.index));
-                    let parsed = match parse_cell(schema, &column.field_type, &text) {
+                    let parsed = match parse_schema_cell(schema, &column.field_type, &text) {
                         Ok(parsed) => parsed,
                         Err(err) => {
                             diagnostics.extend(table_load_error_diagnostics(
@@ -221,7 +221,7 @@ pub fn collect_table_input_records(
 /// Returns diagnostics when the type is unknown, the header is missing required
 /// columns, or `@expand` columns are malformed.
 pub fn resolve_table_write_layout(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     source_name: &Path,
     sheet: &TableSheetConfig,
     header_row: &[String],
@@ -324,10 +324,7 @@ pub fn map_label_to_table(label: &CfdLabel, origins: &[RecordOrigin]) -> Option<
     let column = path_column(&label.path, field_columns).or_else(|| {
         root_field(&label.path).and_then(|field| (field == "id").then_some(*id_column))
     });
-    let name = match document {
-        SourceDocument::Local(p) => p.clone(),
-        SourceDocument::Remote(doc) => PathBuf::from(doc),
-    };
+    let name = document.path().clone();
     Some(TableLabel {
         location: TableLocation::new(name)
             .sheet(sheet.clone())
@@ -339,7 +336,7 @@ pub fn map_label_to_table(label: &CfdLabel, origins: &[RecordOrigin]) -> Option<
 
 #[allow(clippy::too_many_arguments)]
 fn build_expanded_object(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     source_name: &Path,
     sheet: &TableSheetConfig,
     parent_type: &str,
@@ -356,7 +353,7 @@ fn build_expanded_object(
             .sheet(sheet.sheet.clone())
             .cell(excel_row, child.excel_column);
         let text = table_cell_text(row.get(child.index));
-        let parsed = match parse_cell(schema, &child.field_type, &text) {
+        let parsed = match parse_schema_cell(schema, &child.field_type, &text) {
             Ok(parsed) => parsed,
             Err(err) => {
                 diagnostics.extend(table_load_error_diagnostics(TableLoadError::CellParse {
@@ -382,10 +379,14 @@ fn build_expanded_object(
     }
 }
 
-fn full_field_types(schema: &CompiledSchema, type_name: &str) -> Option<BTreeMap<String, String>> {
+fn full_field_types(
+    schema: &CftSchema,
+    type_name: &str,
+) -> Option<BTreeMap<String, CftSchemaTypeRef>> {
     let fields = schema
-        .fields(type_name)?
-        .map(|field| (field.name.clone(), field.raw_type.clone()))
+        .resolve_type(type_name)?
+        .all_fields()
+        .map(|field| (field.name.to_string(), field.ty_ref.clone()))
         .collect();
     Some(fields)
 }

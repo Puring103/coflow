@@ -1,5 +1,17 @@
 use crate::origin::RecordOrigin;
+use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CfdInputDimensionValue {
+    pub source_type: TypeName,
+    pub source_key: RecordKey,
+    pub field: FieldName,
+    pub dimension: DimensionName,
+    pub variant: VariantName,
+    pub value: CfdInputValue,
+    pub origin: RecordOrigin,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdInputRecord {

@@ -61,7 +61,6 @@ pub const EXCEL_LOADER_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDesc
     id: "excel",
     display_name: "Excel workbook",
     extensions: &["xlsx", "xlsm", "xls"],
-    uri_schemes: &[],
     option_keys: &["sheets"],
 };
 
@@ -97,16 +96,7 @@ impl SourceProvider for ExcelLoader {
         _ctx: SourceResolveContext<'_>,
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &source.location else {
-            if source.provider_id == EXCEL_LOADER_DESCRIPTOR.id {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "EXCEL-SOURCE",
-                    "EXCEL",
-                    "excel source requires `path`",
-                )));
-            }
-            return Ok(Vec::new());
-        };
+        let SourceLocationSpec::Path(path) = &source.location;
         if path.is_dir() {
             return collect_excel_sources(path, source);
         }
@@ -128,13 +118,7 @@ impl SourceProvider for ExcelLoader {
         ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let SourceLocationSpec::Path(file) = &source.location else {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "EXCEL-SOURCE",
-                "EXCEL",
-                "excel source requires `path`",
-            )));
-        };
+        let SourceLocationSpec::Path(file) = &source.location;
         let sheets = excel_sheets(excel_source_options(source)?);
         let excel_source = ExcelSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[excel_source])
@@ -196,8 +180,6 @@ mod tests {
 
     use super::*;
     use serde_json::json;
-    use std::path::Path;
-
     #[test]
     fn rejects_empty_sheet_name_in_options() {
         let loader = ExcelLoader;
@@ -217,33 +199,5 @@ mod tests {
         assert!(err
             .iter()
             .any(|diagnostic| diagnostic.message == "excel source sheet `sheet` is empty"));
-    }
-
-    #[test]
-    fn explicit_excel_loader_rejects_url_source() {
-        let loader = ExcelLoader;
-        let Ok(options) = loader.decode_options(&json!({})) else {
-            panic!("empty excel options should decode");
-        };
-        let source = ResolvedSource {
-            provider_id: EXCEL_LOADER_DESCRIPTOR.id.to_string(),
-            location: SourceLocationSpec::Uri("https://example.test/configs.xlsx".to_string()),
-            options,
-            display_name: "https://example.test/configs.xlsx".to_string(),
-        };
-
-        let Err(err) = loader.resolve(
-            SourceResolveContext {
-                project_root: Path::new("."),
-            },
-            &source,
-        ) else {
-            panic!("excel url source should fail");
-        };
-
-        assert!(err
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.message.contains("excel source requires `path`")));
     }
 }

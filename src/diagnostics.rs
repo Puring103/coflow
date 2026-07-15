@@ -199,15 +199,6 @@ fn label_location(label: &Label) -> JsonLocation {
             end_line: range.end.line,
             end_character: range.end.character,
         },
-        SourceLocation::RemoteCell { .. } => JsonLocation {
-            path: label.location.display_path(),
-            sheet: label.location.sheet().map(str::to_string),
-            cell: label.location.cell_name(),
-            start_line: range.start.line,
-            start_character: range.start.character,
-            end_line: range.end.line,
-            end_character: range.end.character,
-        },
         SourceLocation::ProjectConfig { path, .. } | SourceLocation::Artifact { path } => {
             JsonLocation {
                 path: path.display().to_string(),

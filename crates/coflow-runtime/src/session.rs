@@ -3,7 +3,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use coflow_api::{ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet};
-use coflow_cft::{CftContainer, CompiledSchema};
+use coflow_cft::CftSchema;
+use coflow_cft::{parse_modules, CftFile, CftModuleSet};
 use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::{path_to_slash, Project};
 use serde::{Deserialize, Serialize};
@@ -19,8 +20,7 @@ use crate::writes::record_value_at_path;
 /// Stable, wire-friendly coordinate of a top-level record.
 ///
 /// Top-level records always have an `(actual_type, key)` pair that uniquely
-/// identifies them inside a model build, even when synthetic dimension
-/// records share keys with their source records.
+/// identifies them inside a model build.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -45,7 +45,7 @@ impl RecordCoordinate {
 #[derive(Debug)]
 pub(crate) struct ProjectSession {
     pub(crate) project: Project,
-    pub(crate) schema: Arc<CftContainer>,
+    pub(crate) schema: Arc<CftSchema>,
     pub(crate) model: CfdDataModel,
     pub(crate) diagnostics: DiagnosticsStore,
     pub(crate) sources: SourceIndex,
@@ -58,8 +58,8 @@ pub(crate) struct ProjectSession {
 
 impl ProjectSession {
     #[must_use]
-    pub fn compiled_schema(&self) -> &CompiledSchema {
-        self.schema.compiled_schema()
+    pub fn schema(&self) -> &CftSchema {
+        &self.schema
     }
 
     #[must_use]
@@ -96,7 +96,8 @@ impl ProjectSession {
     pub fn into_schema_session(self) -> ProjectSchemaSession {
         ProjectSchemaSession {
             project: self.project,
-            schema: self.schema,
+            modules: Arc::new(parse_modules(std::iter::empty::<CftFile>())),
+            schema: Some(self.schema),
             diagnostics: self.diagnostics,
         }
     }
@@ -142,18 +143,17 @@ impl ProjectSession {
     /// Returns `None` for unknown enum names or variants.
     #[must_use]
     pub fn enum_int_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
-        self.compiled_schema()
-            .enum_variant_value(enum_name, variant)
+        self.schema().enum_variant_value(enum_name, variant)
     }
 
     #[must_use]
     pub fn enum_variants(&self, enum_name: &str) -> Vec<String> {
-        self.compiled_schema()
-            .enum_meta(enum_name)
+        self.schema()
+            .resolve_enum(enum_name)
             .map(|meta| {
-                meta.all_variants
+                meta.variants
                     .iter()
-                    .map(|variant| variant.name.clone())
+                    .map(|variant| variant.name.to_string())
                     .collect()
             })
             .unwrap_or_default()
@@ -162,22 +162,9 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub fn dimensions(&self) -> Vec<DimensionInfo> {
-        let view = self.compiled_schema();
+        let view = self.schema();
         let fields = dimensions::dimension_fields(view);
         dimensions_for_project(&self.project, &fields)
-    }
-
-    /// Set of dimension-synthesized runtime type names (e.g.
-    /// `"Item_nameVariants"`). Hosts use this to mark synthesized
-    /// records so their `default` slot renders as read-only in editors,
-    /// without re-deriving the naming convention themselves.
-    #[must_use]
-    pub fn dimension_synthesized_types(&self) -> BTreeSet<String> {
-        let view = self.compiled_schema();
-        dimensions::dimension_fields(view)
-            .into_iter()
-            .map(|field| field.synthesized_type)
-            .collect()
     }
 
     /// Lookup a single dimension by name.
@@ -258,7 +245,7 @@ impl ProjectSession {
     #[must_use]
     pub fn ref_targets(&self, expected_type: &str) -> Vec<RefTargetInfo> {
         let mut targets = Vec::new();
-        let schema = self.compiled_schema();
+        let schema = self.schema();
         let Some(domain_id) = self.model.type_domain_id(expected_type) else {
             return targets;
         };
@@ -377,10 +364,11 @@ impl ProjectSession {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProjectSchemaSession {
     pub(crate) project: Project,
-    pub(crate) schema: Arc<CftContainer>,
+    pub(crate) modules: Arc<CftModuleSet>,
+    pub(crate) schema: Option<Arc<CftSchema>>,
     pub(crate) diagnostics: DiagnosticsStore,
 }
 
@@ -391,8 +379,14 @@ impl ProjectSchemaSession {
     }
 
     #[must_use]
-    pub fn compiled_schema(&self) -> &CompiledSchema {
-        self.schema.compiled_schema()
+    pub fn schema(&self) -> Option<&CftSchema> {
+        self.schema.as_deref()
+    }
+
+    /// Parsed CFT modules paired with this schema attempt for language hosts.
+    #[must_use]
+    pub fn modules(&self) -> &CftModuleSet {
+        &self.modules
     }
 
     #[must_use]
@@ -422,9 +416,12 @@ impl ProjectSchemaSession {
         data_format: &str,
         id_as_enum_variants: &serde_json::Value,
     ) -> Result<ArtifactSet, DiagnosticSet> {
+        let schema = self
+            .schema()
+            .ok_or_else(|| self.diagnostics.clone().into_set())?;
         codegen.generate(
             CodegenContext {
-                schema: self.compiled_schema(),
+                schema,
                 model: None,
                 data_format,
                 id_as_enum_variants,

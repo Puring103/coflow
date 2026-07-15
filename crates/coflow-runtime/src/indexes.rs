@@ -227,8 +227,7 @@ impl SourceId {
 
 /// Index of every top-level record in the project.
 ///
-/// The authoritative key is `(actual_type, key)` so synthetic records that
-/// share a key with their source record do not collide.
+/// The authoritative key is `(actual_type, key)`.
 ///
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RecordIndex {

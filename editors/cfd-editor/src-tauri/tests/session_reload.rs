@@ -356,7 +356,7 @@ missing,,,No
 }
 
 #[test]
-fn dimension_synth_default_field_carries_read_only_annotation() {
+fn dimension_sources_do_not_expose_synthetic_editor_records() {
     let root = temp_project_dir("cfd-editor-dim-read-only");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
@@ -405,36 +405,9 @@ dimensions:
             "data/dimensions/language/Item_name.csv",
         )
         .expect("get dimension records");
-    let synth = records
-        .records
-        .iter()
-        .find(|row| row.coordinate.actual_type == "Item_nameVariants")
-        .expect("synth row");
-    let default_field = synth
-        .fields
-        .iter()
-        .find(|field| field.name == "default")
-        .expect("default field");
-    let default_annotation = default_field
-        .annotation
-        .as_ref()
-        .expect("default field annotation");
     assert!(
-        default_annotation.read_only,
-        "dimension-synth `default` field should be flagged read-only so the editor \
-         steers writes to the source record; got annotation: {default_annotation:?}",
-    );
-    let variant_field = synth
-        .fields
-        .iter()
-        .find(|field| field.name == "zh")
-        .expect("zh field");
-    assert!(
-        !variant_field
-            .annotation
-            .as_ref()
-            .is_some_and(|annotation| annotation.read_only),
-        "variant slots stay editable",
+        records.records.is_empty(),
+        "managed dimension files must not appear as synthetic record rows"
     );
 }
 

@@ -30,7 +30,7 @@ impl ProjectSession {
         type_name: &str,
         materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
-        let record = default_record_for_type(self.compiled_schema(), type_name, materialization)?;
+        let record = default_record_for_type(self.schema(), type_name, materialization)?;
         Ok(CfdValue::Object(Box::new(record.object)))
     }
 
@@ -46,7 +46,7 @@ impl ProjectSession {
     /// Returns diagnostics when `type_name` is unknown or cannot be inserted
     /// as a concrete top-level record draft.
     pub fn create_record_draft(&self, type_name: &str) -> Result<CreateRecordDraft, DiagnosticSet> {
-        create_record_draft_for_type(self.compiled_schema(), type_name)
+        create_record_draft_for_type(self.schema(), type_name)
     }
 
     /// Build a default value for an item of the collection at `path`.
@@ -61,7 +61,7 @@ impl ProjectSession {
         path: &[CfdPathSegment],
     ) -> Result<CfdValue, DiagnosticSet> {
         let ty = write_rules::expected_type_for_cfd_path(
-            self.compiled_schema(),
+            self.schema(),
             actual_type,
             path,
             "MUTATION-PATH",
@@ -76,7 +76,7 @@ impl ProjectSession {
             }
         };
         match item_ty.non_nullable() {
-            CftSchemaTypeRef::Ref(target_type) => self
+            CftSchemaTypeRef::RecordRef(target_type) => self
                 .ref_targets(target_type)
                 .into_iter()
                 .next()
@@ -90,7 +90,7 @@ impl ProjectSession {
                     )
                 }),
             _ => default_value_for_type_ref(
-                self.compiled_schema(),
+                self.schema(),
                 item_ty,
                 DefaultMaterialization::EditableShape,
             ),
@@ -98,6 +98,7 @@ impl ProjectSession {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn prepare_one(
     session: &ProjectSession,
     op: MutationOp,
@@ -114,7 +115,6 @@ pub(super) fn prepare_one(
         } => {
             ensure_source_file(session, &file)?;
             ensure_type_can_insert(session, &actual_type)?;
-            ensure_not_dimension_storage_type(session, &actual_type, "insert")?;
             ensure_record_key_available(
                 session,
                 &actual_type,
@@ -159,6 +159,27 @@ pub(super) fn prepare_one(
                 value,
             })
         }
+        MutationOp::SetDimensionValue {
+            coordinate,
+            expected,
+            value,
+        } => super::dimension::prepare_dimension_value(
+            session,
+            coordinate,
+            expected,
+            Some(value),
+            pending_records,
+        ),
+        MutationOp::ClearDimensionValue {
+            coordinate,
+            expected,
+        } => super::dimension::prepare_dimension_value(
+            session,
+            coordinate,
+            expected,
+            None,
+            pending_records,
+        ),
         MutationOp::RenameRecord {
             record,
             file,
@@ -193,7 +214,6 @@ pub(super) fn prepare_one(
             })
         }
         MutationOp::DeleteRecord { record, file } => {
-            ensure_not_dimension_storage_type(session, &record.actual_type, "delete")?;
             ensure_file_guard(session, &record, file.as_deref())?;
             let report_file = file.or_else(|| record_file(session, &record).map(ToOwned::to_owned));
             Ok(PreparedMutationOp::DeleteRecord {
@@ -235,7 +255,7 @@ pub(super) fn prepare_set_on_pending_insert(
         file_guard,
     )?;
     let expected = write_rules::expected_type_for_cfd_path(
-        session.compiled_schema(),
+        session.schema(),
         actual_type,
         path,
         "MUTATION-PATH",
@@ -293,7 +313,7 @@ pub(super) fn rename_pending_insert_references(
     old_key: &str,
     new_key: &str,
 ) -> Result<(), DiagnosticSet> {
-    let schema = session.compiled_schema();
+    let schema = session.schema();
     for (name, value) in fields {
         let field = schema_field(schema, host_actual_type, name)?;
         rename_pending_value_references(
@@ -317,7 +337,7 @@ pub(super) fn rename_prepared_field_references(
     old_key: &str,
     new_key: &str,
 ) -> Result<(), DiagnosticSet> {
-    let schema = session.compiled_schema();
+    let schema = session.schema();
     let expected = write_rules::expected_type_for_cfd_path(
         schema,
         host_actual_type,
@@ -337,7 +357,7 @@ pub(super) fn rename_prepared_field_references(
 }
 
 fn rename_pending_value_references(
-    schema: &coflow_cft::CompiledSchema,
+    schema: &coflow_cft::CftSchema,
     target_actual_type: &str,
     expected: &CftSchemaTypeRef,
     value: &mut CfdValue,
@@ -353,7 +373,7 @@ fn rename_pending_value_references(
             old_key,
             new_key,
         ),
-        (CftSchemaTypeRef::Ref(target_type), CfdValue::Ref(key))
+        (CftSchemaTypeRef::RecordRef(target_type), CfdValue::Ref(key))
             if key == old_key && schema.is_assignable(target_actual_type, target_type) =>
         {
             *key = new_key.to_string();
@@ -382,16 +402,16 @@ fn rename_pending_value_references(
                 );
             }
         }
-        (CftSchemaTypeRef::Named(_), CfdValue::Object(object)) => {
+        (CftSchemaTypeRef::Object(_), CfdValue::Object(object)) => {
             let actual_type = object.actual_type().to_string();
             for (name, field_value) in object.fields_mut() {
-                let Some(field_type) = schema.field_type(&actual_type, name) else {
+                let Some(field) = schema.field(&actual_type, name) else {
                     continue;
                 };
                 rename_pending_value_references(
                     schema,
                     target_actual_type,
-                    field_type,
+                    &field.ty_ref,
                     field_value,
                     old_key,
                     new_key,
@@ -424,7 +444,7 @@ fn set_pending_insert_value(
     set_nested_value(current, &path[1..], value)
 }
 
-fn set_nested_value(
+pub(super) fn set_nested_value(
     current: &mut CfdValue,
     path: &[CfdPathSegment],
     value: CfdValue,
@@ -457,13 +477,13 @@ fn prepare_insert_fields(
     let provided = prepare_provided_insert_fields(session, actual_type, fields)?;
     let provided_names = provided.keys().cloned().collect::<BTreeSet<_>>();
     let mut out = default_missing_fields_for_type(
-        session.compiled_schema(),
+        session.schema(),
         actual_type,
         materialization,
         &provided_names,
     )?;
     out.extend(provided);
-    let schema = session.compiled_schema();
+    let schema = session.schema();
     for (name, value) in &out {
         let field = schema_field(schema, actual_type, name)?;
         write_rules::validate_value_semantics(
@@ -488,7 +508,7 @@ fn prepare_provided_insert_fields(
     fields: MutationFields,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
     let mut out = BTreeMap::new();
-    let schema = session.compiled_schema();
+    let schema = session.schema();
     match fields {
         MutationFields::Empty => {}
         MutationFields::Json(fields) => {
@@ -521,7 +541,7 @@ fn expected_value_for_path(
     path: &[CfdPathSegment],
 ) -> Result<ExpectedValue, DiagnosticSet> {
     let current = write_rules::expected_type_for_cfd_path(
-        session.compiled_schema(),
+        session.schema(),
         &coordinate.actual_type,
         path,
         "MUTATION-PATH",
@@ -625,8 +645,8 @@ fn ensure_type_can_insert(
     session: &ProjectSession,
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
-    let schema = session.compiled_schema();
-    let Some(schema_type) = schema.type_meta(actual_type) else {
+    let schema = session.schema();
+    let Some(schema_type) = schema.resolve_type(actual_type) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown insert type `{actual_type}`"),
@@ -642,22 +662,6 @@ fn ensure_type_can_insert(
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("singleton type `{actual_type}` cannot be inserted"),
-        ));
-    }
-    Ok(())
-}
-
-fn ensure_not_dimension_storage_type(
-    session: &ProjectSession,
-    actual_type: &str,
-    operation: &str,
-) -> Result<(), DiagnosticSet> {
-    if session.dimension_synthesized_types().contains(actual_type) {
-        return Err(one_mutation_error(
-            "MUTATION-DIMENSION",
-            format!(
-                "dimension variant type `{actual_type}` cannot {operation} records; edit existing variant fields instead"
-            ),
         ));
     }
     Ok(())

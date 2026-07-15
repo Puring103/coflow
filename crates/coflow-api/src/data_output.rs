@@ -1,10 +1,10 @@
 use crate::{ArtifactContentKind, ArtifactSet, DecodedOutputOptions, DiagnosticSet};
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ExportContext<'a> {
-    pub schema: &'a CompiledSchema,
+    pub schema: &'a CftSchema,
     pub model: &'a CfdDataModel,
 }
 

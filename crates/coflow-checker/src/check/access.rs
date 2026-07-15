@@ -130,7 +130,7 @@ pub(super) fn index_value(
 fn budget_error(exceeded: LocatedBudgetExceeded) -> OpsError {
     OpsError::new(
         CfdErrorCode::CheckBudgetExceeded,
-        exceeded.location,
+        *exceeded.location,
         exceeded.error.to_string(),
     )
 }

@@ -1,8 +1,8 @@
 use crate::compiler_context::{CfdValueDraft, DataModelCompilerContext, RecordDraft};
 use crate::diagnostic::CfdPath;
 use crate::model::{
-    CfdDomainId, CfdRecord, CfdRecordId, CfdValue, RefEdge, RefEdgeId, RefSite, SpreadEdge,
-    SpreadEdgeId, SpreadSite,
+    CfdDomainId, CfdRecord, CfdRecordId, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId,
+    RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
 };
 use coflow_cft::CftSchemaTypeRef;
 use std::collections::{BTreeMap, BTreeSet};
@@ -212,7 +212,7 @@ pub(crate) fn build_ref_indexes(
             let Some(field) = context
                 .schema
                 .full_fields(record.actual_type())
-                .find(|field| field.name == *name)
+                .find(|field| field.name.as_str() == name)
             else {
                 continue;
             };
@@ -220,10 +220,36 @@ pub(crate) fn build_ref_indexes(
                 value,
                 &field.ty_ref,
                 host,
-                root.clone().field(name.clone()),
+                &root.clone().field(name.clone()),
+                None,
                 &context,
                 &mut out,
             );
+        }
+        for (field_name, values) in &record.dimension_fields {
+            let Some(field) = context
+                .schema
+                .full_fields(record.actual_type())
+                .find(|field| field.name.as_str() == field_name)
+            else {
+                continue;
+            };
+            for (variant, value) in &values.variants {
+                let coordinate = DimensionRefCoordinate {
+                    field: field.name.clone(),
+                    dimension: values.dimension.clone(),
+                    variant: variant.clone(),
+                };
+                collect_ref_edges(
+                    &value.value,
+                    &field.ty_ref,
+                    host,
+                    &root.clone().field(field_name.clone()),
+                    Some(&coordinate),
+                    &context,
+                    &mut out,
+                );
+            }
         }
     }
     out
@@ -248,15 +274,16 @@ fn collect_ref_edges(
     value: &CfdValue,
     ty: &CftSchemaTypeRef,
     host: CfdRecordId,
-    path: CfdPath,
+    path: &CfdPath,
+    dimension: Option<&DimensionRefCoordinate>,
     context: &RefEdgeBuildContext<'_, '_>,
     out: &mut RefIndexes,
 ) {
-    if context.is_spread_inherited_path(host, &path) {
+    if dimension.is_none() && context.is_spread_inherited_path(host, path) {
         return;
     }
     match (value, ty.non_nullable()) {
-        (CfdValue::Ref(key), CftSchemaTypeRef::Ref(expected_type)) => {
+        (CfdValue::Ref(key), CftSchemaTypeRef::RecordRef(expected_type)) => {
             let Some(expected_type_id) = context.schema.type_id(expected_type) else {
                 return;
             };
@@ -277,13 +304,14 @@ fn collect_ref_edges(
             let Some(target_type) = context.schema.type_id(target_record.actual_type()) else {
                 return;
             };
-            let site = RefSite::new(host, path.clone());
+            let site = dimension.map_or_else(
+                || RefSite::new(host, path.clone()),
+                |dimension| RefSite::in_dimension(host, path.clone(), dimension.clone()),
+            );
             let id = RefEdgeId::new(out.edges.len());
             out.edges.push(RefEdge {
                 id,
                 site: site.clone(),
-                host,
-                path,
                 expected_type: expected_type_id,
                 domain,
                 key: key.clone(),
@@ -294,12 +322,12 @@ fn collect_ref_edges(
             out.by_host.entry(host).or_default().push(id);
             out.by_target.entry(target).or_default().push(id);
         }
-        (CfdValue::Object(boxed), CftSchemaTypeRef::Named(_)) => {
+        (CfdValue::Object(boxed), CftSchemaTypeRef::Object(_)) => {
             for (name, inner) in &boxed.fields {
                 let Some(field) = context
                     .schema
                     .full_fields(&boxed.actual_type)
-                    .find(|field| field.name == *name)
+                    .find(|field| field.name.as_str() == name)
                 else {
                     continue;
                 };
@@ -307,7 +335,8 @@ fn collect_ref_edges(
                     inner,
                     &field.ty_ref,
                     host,
-                    path.clone().field(name.clone()),
+                    &path.clone().field(name.clone()),
+                    dimension,
                     context,
                     out,
                 );
@@ -319,7 +348,8 @@ fn collect_ref_edges(
                     item,
                     inner_ty,
                     host,
-                    path.clone().index(index),
+                    &path.clone().index(index),
+                    dimension,
                     context,
                     out,
                 );
@@ -331,7 +361,8 @@ fn collect_ref_edges(
                     item,
                     value_ty,
                     host,
-                    path.clone().dict_key_value(key),
+                    &path.clone().dict_key_value(key),
+                    dimension,
                     context,
                     out,
                 );

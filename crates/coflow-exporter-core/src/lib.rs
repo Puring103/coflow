@@ -14,7 +14,7 @@
     )
 )]
 
-use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftField, CftSchema, CftSchemaTypeRef};
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdObject, CfdRecord, CfdTable, CfdValue};
 use std::borrow::Cow;
 use std::fmt;
@@ -131,7 +131,7 @@ impl std::error::Error for ExportError {}
 /// Returns a location-bearing error when model/schema state is inconsistent or
 /// when the sink rejects an event.
 pub fn export_model_to_sink<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     sink: &mut S,
 ) -> Result<(), ExportError>
@@ -139,7 +139,7 @@ where
     S: ExportEventSink,
 {
     for schema_type in schema
-        .type_metas()
+        .all_types()
         .filter(|schema_type| !schema_type.is_abstract)
     {
         let table = model.table(&schema_type.name);
@@ -155,7 +155,7 @@ where
 }
 
 fn encode_table<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     sink: &mut S,
     table: &CfdTable,
@@ -183,7 +183,7 @@ where
 }
 
 fn encode_record<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sink: &mut S,
     declared_type: &str,
     record: &CfdRecord,
@@ -209,14 +209,14 @@ where
         declared_type,
         &record.object,
         TypeTagMode::Never,
-        fields,
+        &fields,
         location,
     )?;
     sink_event(location, sink.end_map())
 }
 
 fn encode_object<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sink: &mut S,
     declared_type: &str,
     object: &CfdObject,
@@ -238,32 +238,35 @@ where
         declared_type,
         object,
         tag_mode,
-        fields,
+        &fields,
         location,
     )?;
     sink_event(location, sink.end_map())
 }
 
 fn object_fields<'a>(
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     object: &CfdObject,
     location: &ExportLocation<'_>,
-) -> Result<&'a [coflow_cft::CftFieldMeta], ExportError> {
-    schema.fields_slice(object.actual_type()).ok_or_else(|| {
-        ExportError::at(
-            location,
-            format!("unknown CFT type `{}` during export", object.actual_type()),
-        )
-    })
+) -> Result<Vec<&'a CftField>, ExportError> {
+    schema
+        .resolve_type(object.actual_type())
+        .map(|ty| ty.all_fields().collect())
+        .ok_or_else(|| {
+            ExportError::at(
+                location,
+                format!("unknown CFT type `{}` during export", object.actual_type()),
+            )
+        })
 }
 
 fn encode_object_members<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sink: &mut S,
     declared_type: &str,
     object: &CfdObject,
     tag_mode: TypeTagMode,
-    fields: &[coflow_cft::CftFieldMeta],
+    fields: &[&CftField],
     location: &mut ExportLocation<'_>,
 ) -> Result<(), ExportError>
 where
@@ -282,7 +285,7 @@ where
     for field in fields {
         let checkpoint = location.enter_field(&field.name);
         let result = (|| {
-            let value = object.fields().get(&field.name).ok_or_else(|| {
+            let value = object.fields().get(field.name.as_str()).ok_or_else(|| {
                 ExportError::at(
                     location,
                     format!(
@@ -302,7 +305,7 @@ where
 }
 
 fn encode_value<S>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sink: &mut S,
     declared_type: &CftSchemaTypeRef,
     value: &CfdValue,
@@ -333,7 +336,7 @@ where
         CfdValue::Enum(value) => sink_event(location, sink.int(value.value)),
         CfdValue::Object(object) => {
             let type_name = match declared_type {
-                CftSchemaTypeRef::Named(type_name) => type_name,
+                CftSchemaTypeRef::Object(type_name) => type_name,
                 other => {
                     return Err(ExportError::at(
                         location,
@@ -470,17 +473,5 @@ fn dict_key_string(key: &CfdDictKey) -> Cow<'_, str> {
 }
 
 fn display_type_ref(ty: &CftSchemaTypeRef) -> String {
-    match ty {
-        CftSchemaTypeRef::Int => "int".to_string(),
-        CftSchemaTypeRef::Float => "float".to_string(),
-        CftSchemaTypeRef::Bool => "bool".to_string(),
-        CftSchemaTypeRef::String => "string".to_string(),
-        CftSchemaTypeRef::Named(name) => name.clone(),
-        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
-        CftSchemaTypeRef::Array(inner) => format!("[{}]", display_type_ref(inner)),
-        CftSchemaTypeRef::Dict(key, value) => {
-            format!("{{{}: {}}}", display_type_ref(key), display_type_ref(value))
-        }
-        CftSchemaTypeRef::Nullable(inner) => format!("{}?", display_type_ref(inner)),
-    }
+    ty.display_label()
 }

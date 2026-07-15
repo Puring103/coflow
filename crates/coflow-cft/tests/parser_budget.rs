@@ -1,14 +1,13 @@
 #![allow(clippy::expect_used, clippy::panic_in_result_fn)]
 
 use coflow_cft::parser::{parse_module, parse_module_with_options};
-use coflow_cft::{CftContainer, CftErrorCode, CftParseOptions, ModuleId, Span, StructuralLimits};
+use coflow_cft::{CftErrorCode, CftParseOptions, ModuleId, Span, StructuralLimits};
 
 const fn options(max_depth: u64, max_nodes: u64) -> CftParseOptions {
     CftParseOptions {
         structural_limits: StructuralLimits::new(max_depth, max_nodes, 10_000),
     }
 }
-
 fn parse(source: &str, max_depth: u64, max_nodes: u64) -> Result<(), coflow_cft::CftDiagnostics> {
     parse_module_with_options(
         &ModuleId::from("main"),
@@ -102,28 +101,4 @@ fn flat_syntax_nodes_use_the_same_module_budget() {
         error.message,
         "syntax AST exceeds structural nodes limit 3 (observed 4)"
     );
-}
-
-#[test]
-fn container_parse_policy_is_immutable_and_failed_modules_are_not_published() {
-    let mut strict = CftContainer::with_parse_options(options(2, 100));
-    strict
-        .add_module(ModuleId::from("base"), "type Base { value: int; }")
-        .expect("shallow base module");
-    strict.compile().expect("base schema compiles");
-
-    let diagnostics = strict
-        .add_module(ModuleId::from("deep"), "type Deep { value: [[[int]]]; }")
-        .expect_err("strict container rejects deep module");
-    assert!(diagnostics
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == CftErrorCode::SyntaxStructureLimitExceeded));
-    assert_eq!(strict.module_ids().count(), 1);
-    assert!(strict.schema(&ModuleId::from("base")).is_some());
-
-    let mut relaxed = CftContainer::with_parse_options(options(4, 100));
-    relaxed
-        .add_module(ModuleId::from("deep"), "type Deep { value: [[[int]]]; }")
-        .expect("relaxed container accepts the same module");
 }

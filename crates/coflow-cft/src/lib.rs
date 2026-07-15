@@ -1,11 +1,12 @@
 //! Reference implementation of the **CFT** type-definition language used by
 //! Coflow's data pipeline.
 //!
-//! See `website/docs/docs/reference/cft.md` for the language reference. The crate exposes
-//! a [`CftContainer`] that hosts batch-registered modules and produces a
-//! schema after [`CftContainer::compile`] succeeds; loaders, code generators,
-//! and editors consume the resulting [`CftSchemaModule`] / [`CftSchemaType`] /
-//! [`CftSchemaEnum`] reflection types.
+//! See `website/docs/docs/reference/cft.md` for the language reference. Hosts
+//! collect source files with [`CftFile`], parse them once with
+//! [`parse_modules`], and build the immutable effective schema with
+//! [`build_schema`]. Loaders, code generators, and editors consume the
+//! resulting [`CftSchema`] and its canonical [`CftType`], [`CftField`], and
+//! [`CftEnum`] declarations.
 //!
 //! Diagnostics are stable across releases: every error carries an immutable
 //! code (see [`CftErrorCode`]) and a stage tag (lex / syn / schema / type),
@@ -31,30 +32,40 @@
 )]
 
 pub mod ast;
-mod compiled_schema;
-mod container;
+mod build;
+mod compiled;
+mod dimensions;
 mod error;
 mod identifier;
 pub mod lexer;
+mod module_id;
+mod module_set;
+mod names;
 pub mod parser;
 mod schema;
 mod span;
 
+pub use build::build_schema;
 pub use coflow_structure::StructuralLimits;
-pub use compiled_schema::{
-    CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftEnumVariantMeta, CftFieldMeta,
-    CftTypeMeta, CompiledSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
-    ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
+pub use compiled::{
+    format_schema_type_ref, CftConst, CftConstValue, CftDimension, CftEnum, CftEnumVariant,
+    CftField, CftFieldDimension, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr,
+    CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaDefaultValue,
+    CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp, CftType,
 };
-pub use container::{CftContainer, ModuleId};
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
+pub use module_id::ModuleId;
+pub use module_set::{
+    parse_modules, CftDimensionInput, CftDimensionInputs, CftFile, CftModule, CftModuleSet,
+};
+pub use names::{
+    BucketName, CftNameError, ConstName, DimensionName, EnumName, EnumVariantName, FieldName,
+    RecordKey, TypeName, VariantName,
+};
 pub use parser::CftParseOptions;
 pub use schema::{
-    format_schema_type_ref, CftAnnotation, CftAnnotationValue, CftCompileOptions, CftConstValue,
-    CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
-    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaConst, CftSchemaDefaultValue, CftSchemaEnum,
-    CftSchemaEnumVariant, CftSchemaField, CftSchemaModule, CftSchemaQuantifierKind, CftSchemaType,
-    CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp, Dimension, DimensionSpec,
+    CftEnumValue, CftSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
+    ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
 pub use span::Span;

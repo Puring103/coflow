@@ -70,9 +70,7 @@ fn validate_dimension_source_overlap_collecting(
 
     let mut diagnostics = Vec::new();
     for (index, source) in sources.iter().enumerate() {
-        let SourceLocationSpec::Path(path) = source.location() else {
-            continue;
-        };
+        let SourceLocationSpec::Path(path) = source.location();
         let source_path = normalize_path(&resolve_project_relative(root_dir, path));
         for (dimension, out_dir) in &dimension_dirs {
             if source_path == *out_dir || source_path.starts_with(out_dir) {
@@ -216,7 +214,6 @@ pub(super) fn validate_sources_collecting(
                     ));
                 }
             }
-            SourceLocationSpec::Uri(_) => {}
         }
     }
     diagnostics
@@ -252,17 +249,7 @@ fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<ProjectDia
                     ],
                 ));
             }
-            SourceLocationSpec::Uri(uri) if uri.trim().is_empty() => {
-                diagnostics.push(ProjectDiagnostic::new(
-                    format!("{source_label}.url is empty"),
-                    [
-                        "sources".to_string(),
-                        source_index_key.clone(),
-                        "url".to_string(),
-                    ],
-                ));
-            }
-            SourceLocationSpec::Path(_) | SourceLocationSpec::Uri(_) => {}
+            SourceLocationSpec::Path(_) => {}
         }
     }
     diagnostics

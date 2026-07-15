@@ -1,5 +1,5 @@
 use calamine::{open_workbook_auto, Data, Reader, Sheets};
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::CfdInputRecord;
 use coflow_loader_table_core::{
     collect_table_input_records as collect_shared_table_input_records, TableSheet,
@@ -121,7 +121,7 @@ pub struct ExcelInputRecords {
 /// Returns diagnostics when workbooks, sheets, headers, or cells cannot be loaded
 /// according to the schema.
 pub fn collect_input_records(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     sources: &[ExcelSource],
 ) -> Result<ExcelInputRecords, ExcelDiagnostics> {
     let table_sources = table_sources_from_excel(sources)?;

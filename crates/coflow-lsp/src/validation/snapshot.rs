@@ -8,10 +8,11 @@ use crate::uri::path_to_file_uri;
 use coflow_api::{DiagnosticSet, SourceLocationSpec};
 use coflow_cfd::parse_cfd;
 use coflow_project::{discover_directory_files, normalize_path, Project};
-use coflow_runtime::{compile_schema_project_with_overrides, SchemaSourceOverride};
+use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ValidationRevision(u64);
@@ -33,6 +34,7 @@ pub(crate) struct ValidationInput {
     project: Project,
     project_diagnostics: Option<DiagnosticSet>,
     open_documents: BTreeMap<PathBuf, OpenDocument>,
+    schema_runtime: Arc<Mutex<ProjectRuntime>>,
 }
 
 impl ValidationInput {
@@ -41,12 +43,14 @@ impl ValidationInput {
         project: &Project,
         project_diagnostics: Option<&DiagnosticSet>,
         open_documents: &BTreeMap<PathBuf, OpenDocument>,
+        schema_runtime: Arc<Mutex<ProjectRuntime>>,
     ) -> Self {
         Self {
             revision,
             project: project.clone(),
             project_diagnostics: project_diagnostics.cloned(),
             open_documents: open_documents.clone(),
+            schema_runtime,
         }
     }
 
@@ -127,7 +131,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
     let mut overrides = Vec::new();
     for (normalized_path, document) in &input.open_documents {
         if let Some((module_id, _)) = schema_by_path.get(normalized_path) {
-            overrides.push(SchemaSourceOverride {
+            overrides.push(SchemaTextOverride {
                 requested_module: Some(module_id.clone()),
                 normalized_path: normalized_path.clone(),
                 source: document.text.clone(),
@@ -145,29 +149,34 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
 
     let (cfd_sources, cfd_failures) = add_cfd_documents(&mut snapshot, input);
 
-    let raw_build = match compile_schema_project_with_overrides(&input.project, &overrides) {
-        Ok(build) => build,
-        Err(diagnostics) => {
-            add_diagnostic_set(
-                &mut snapshot,
-                &diagnostics,
-                &preferred_uris,
-                &input.project.config_path,
-            );
-            return snapshot;
-        }
+    let raw_build = input.schema_runtime.lock().ok().and_then(|mut runtime| {
+        let _ = runtime.refresh_with_overrides(&overrides);
+        runtime.latest_attempt().cloned()
+    });
+    let Some(raw_build) = raw_build else {
+        add_diagnostic_set(
+            &mut snapshot,
+            &DiagnosticSet::one(coflow_api::Diagnostic::error(
+                "CFT-LSP",
+                "LSP",
+                "schema runtime did not produce a schema attempt",
+            )),
+            &preferred_uris,
+            &input.project.config_path,
+        );
+        return snapshot;
     };
     add_diagnostic_set(
         &mut snapshot,
-        &raw_build.diagnostics,
+        &raw_build.diagnostics().clone().into_set(),
         &preferred_uris,
         &input.project.config_path,
     );
 
-    for path in raw_build.paths.values() {
+    for (_, module) in raw_build.modules().modules() {
         snapshot
             .active_uris
-            .insert(preferred_diagnostic_uri(&preferred_uris, Path::new(path)));
+            .insert(preferred_diagnostic_uri(&preferred_uris, module.path()));
     }
     if cfd_failures.is_empty() {
         let definitions =
@@ -281,9 +290,7 @@ fn collect_cfd_sources(
     let mut sources = Vec::new();
     let mut failures = Vec::new();
     for source in &project.config.sources {
-        let SourceLocationSpec::Path(path) = source.location() else {
-            continue;
-        };
+        let SourceLocationSpec::Path(path) = source.location();
         let resolved = project.resolve_path(path);
         if resolved.is_dir() {
             match discover_directory_files(&resolved) {

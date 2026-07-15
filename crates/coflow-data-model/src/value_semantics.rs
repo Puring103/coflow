@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchemaTypeRef, CompiledSchema};
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 
 use crate::model::{CfdDictKey, CfdDomainId, CfdEnumValue, CfdRecordId, CfdValue};
 
@@ -45,7 +45,7 @@ pub trait CfdValueSemanticContext {
 /// invalid, or when a referenced record cannot be resolved from the semantic
 /// context.
 pub fn validate_complete_value_for_schema<C: CfdValueSemanticContext>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     context: &C,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
@@ -68,7 +68,7 @@ pub fn validate_complete_value_for_schema<C: CfdValueSemanticContext>(
 /// Returns an error when a provided value has the wrong shape or invalid
 /// enum/object/ref semantics. Missing object fields are intentionally legal.
 pub fn validate_fragment_value_for_schema<C: CfdValueSemanticContext>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     context: &C,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
@@ -97,7 +97,7 @@ enum ValueCompleteness {
 /// Returns an error when the actual type is unknown, abstract, singleton-only, or
 /// not assignable to the expected type.
 pub fn validate_object_type_assignable(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected_type: &str,
     actual_type: &str,
 ) -> Result<(), CfdValueSemanticError> {
@@ -105,11 +105,11 @@ pub fn validate_object_type_assignable(
 }
 
 fn validate_object_type_assignable_in_view(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected_type: &str,
     actual_type: &str,
 ) -> Result<(), CfdValueSemanticError> {
-    let Some(schema_type) = schema.type_meta(actual_type) else {
+    let Some(schema_type) = schema.resolve_type(actual_type) else {
         return Err(CfdValueSemanticError::new(format!(
             "unknown object type `{actual_type}`"
         )));
@@ -133,7 +133,7 @@ fn validate_object_type_assignable_in_view(
 }
 
 fn validate_value_inner<C: CfdValueSemanticContext>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     context: &C,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
@@ -174,17 +174,21 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             pending_insert,
             completeness,
         ),
-        CftSchemaTypeRef::Ref(expected_type) => {
+        CftSchemaTypeRef::RecordRef(expected_type) => {
             validate_ref_value(schema, context, expected_type, value, pending_insert)
         }
-        CftSchemaTypeRef::Named(name) => {
-            validate_named_value(schema, context, name, value, pending_insert, completeness)
+        CftSchemaTypeRef::Object(name) => {
+            validate_object_value(schema, context, name, value, pending_insert, completeness)
         }
+        CftSchemaTypeRef::Enum(name) => match value {
+            CfdValue::Enum(enum_value) => validate_enum(schema, name, enum_value),
+            _ => Err(type_mismatch(&format!("enum `{name}`"), value)),
+        },
     }
 }
 
 fn validate_array<C: CfdValueSemanticContext>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     context: &C,
     inner: &CftSchemaTypeRef,
     value: &CfdValue,
@@ -201,7 +205,7 @@ fn validate_array<C: CfdValueSemanticContext>(
 }
 
 fn validate_dict<C: CfdValueSemanticContext>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     context: &C,
     key: &CftSchemaTypeRef,
     item: &CftSchemaTypeRef,
@@ -227,7 +231,7 @@ fn validate_dict<C: CfdValueSemanticContext>(
 }
 
 fn validate_ref_value<C: CfdValueSemanticContext>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     context: &C,
     expected_type: &str,
     value: &CfdValue,
@@ -247,25 +251,8 @@ fn validate_ref_value<C: CfdValueSemanticContext>(
     }
 }
 
-fn validate_named_value<C: CfdValueSemanticContext>(
-    schema: &CompiledSchema,
-    context: &C,
-    name: &str,
-    value: &CfdValue,
-    pending_insert: Option<PendingInsertRef<'_>>,
-    completeness: ValueCompleteness,
-) -> Result<(), CfdValueSemanticError> {
-    if schema.is_schema_enum(name) {
-        return match value {
-            CfdValue::Enum(enum_value) => validate_enum(schema, name, enum_value),
-            _ => Err(type_mismatch(&format!("enum `{name}`"), value)),
-        };
-    }
-    validate_object_value(schema, context, name, value, pending_insert, completeness)
-}
-
 fn validate_object_value<C: CfdValueSemanticContext>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     context: &C,
     expected_type: &str,
     value: &CfdValue,
@@ -276,7 +263,7 @@ fn validate_object_value<C: CfdValueSemanticContext>(
         CfdValue::Object(record) => {
             validate_object_type_assignable_in_view(schema, expected_type, record.actual_type())?;
             for (name, value) in record.fields() {
-                let Some(field_ty) = schema.field_type(record.actual_type(), name) else {
+                let Some(field) = schema.field(record.actual_type(), name) else {
                     return Err(CfdValueSemanticError::new(format!(
                         "unknown field `{name}` on type `{}`",
                         record.actual_type()
@@ -285,15 +272,22 @@ fn validate_object_value<C: CfdValueSemanticContext>(
                 validate_value_inner(
                     schema,
                     context,
-                    field_ty,
+                    &field.ty_ref,
                     value,
                     pending_insert,
                     completeness,
                 )?;
             }
             if completeness == ValueCompleteness::Complete {
-                for field in schema.full_fields(record.actual_type()).unwrap_or(&[]) {
-                    if field.default.is_none() && !record.fields().contains_key(&field.name) {
+                let schema_type = schema.resolve_type(record.actual_type()).ok_or_else(|| {
+                    CfdValueSemanticError::new(format!(
+                        "unknown object type `{}`",
+                        record.actual_type()
+                    ))
+                })?;
+                for field in schema_type.all_fields() {
+                    if field.default.is_none() && !record.fields().contains_key(field.name.as_str())
+                    {
                         return Err(CfdValueSemanticError::new(format!(
                             "missing required field `{}` on object type `{}`",
                             field.name,
@@ -312,16 +306,14 @@ fn validate_object_value<C: CfdValueSemanticContext>(
 }
 
 fn validate_dict_key(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected: &CftSchemaTypeRef,
     value: &CfdDictKey,
 ) -> Result<(), CfdValueSemanticError> {
     match (non_nullable(expected), value) {
         (CftSchemaTypeRef::String, CfdDictKey::String(_))
         | (CftSchemaTypeRef::Int, CfdDictKey::Int(_)) => Ok(()),
-        (CftSchemaTypeRef::Named(enum_name), CfdDictKey::Enum(enum_value))
-            if schema.is_schema_enum(enum_name) =>
-        {
+        (CftSchemaTypeRef::Enum(enum_name), CfdDictKey::Enum(enum_value)) => {
             validate_enum(schema, enum_name, enum_value)
         }
         _ => Err(CfdValueSemanticError::new(
@@ -331,7 +323,7 @@ fn validate_dict_key(
 }
 
 fn validate_enum(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     expected_enum: &str,
     value: &CfdEnumValue,
 ) -> Result<(), CfdValueSemanticError> {
@@ -362,7 +354,7 @@ fn validate_enum(
 }
 
 fn validate_ref_target<C: CfdValueSemanticContext>(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     context: &C,
     expected_type: &str,
     target_key: &str,

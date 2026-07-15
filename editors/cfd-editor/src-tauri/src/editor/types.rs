@@ -253,11 +253,7 @@ pub struct FieldAnnotation {
     pub enum_type: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub nullable: bool,
-    /// True when the field's value is derived from another record (currently:
-    /// the synthesized `default` slot on a dimension variant type mirrors the
-    /// source record's field). Writing into it isn't blocked at the engine
-    /// layer, but the editor renders it as read-only to steer edits to the
-    /// source record instead.
+    /// True when this cell is exposed for inspection but cannot be edited.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub read_only: bool,
     /// Template annotation for elements of an array/dict field. Carries the
@@ -334,6 +330,21 @@ pub struct WriteFieldOutcome {
     /// field. The front-end refreshes any caches keyed by the old coordinate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub renamed: Option<RecordCoordinate>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct WriteDimensionValueOutcome {
+    pub revision: u32,
+    pub coordinate: coflow_runtime::DimensionValueCoordinate,
+    pub old_value: coflow_runtime::DimensionValueState,
+    pub new_value: coflow_runtime::DimensionValueState,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    pub affected_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

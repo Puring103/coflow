@@ -31,8 +31,6 @@ mod validation;
 #[cfg(test)]
 use coflow_project::normalize_path;
 use coflow_project::Project;
-#[cfg(test)]
-use coflow_runtime::compile_schema_project_with_overrides;
 use completion::completion_items;
 #[cfg(test)]
 pub(crate) use completion::{
@@ -46,7 +44,7 @@ use definition::{
     cft_type_definition_location, definitions_at,
 };
 #[cfg(test)]
-use diagnostics::{label_uri, lsp_diagnostic, lsp_label_location};
+use diagnostics::lsp_diagnostic;
 use document_symbols::document_symbols;
 pub(crate) use documentation::is_builtin_name;
 use formatting::format_cft;
@@ -65,8 +63,6 @@ pub(crate) use state::{
     enum_variant_exists, field_by_chain, field_by_type, quantifier_bindings_at,
     type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
-#[cfg(test)]
-use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::io::{self, BufReader, Write};
 #[cfg(test)]
@@ -331,7 +327,7 @@ fn cfd_definition(document: &validation::CfdRequestDocument<'_>, offset: usize) 
 }
 
 impl<W: Write> LspServer<W> {
-    const fn new(project: Project, writer: W) -> Self {
+    fn new(project: Project, writer: W) -> Self {
         Self {
             core: LspValidationCore::new(project),
             writer,
@@ -585,7 +581,7 @@ impl<W: Write> LspServer<W> {
                 return self.write_response(id, &json!([]));
             };
             let formatted = format_cft(&document.source);
-            if formatted == document.source {
+            if formatted == document.source() {
                 json!([])
             } else {
                 json!([{

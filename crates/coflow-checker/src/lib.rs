@@ -33,7 +33,7 @@
 mod check;
 
 use check::CheckRunner;
-use coflow_cft::CompiledSchema;
+use coflow_cft::CftSchema;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdRecordId};
 pub use coflow_structure::StructuralLimits;
 use std::collections::{BTreeMap, BTreeSet};
@@ -54,7 +54,7 @@ pub(crate) struct DimensionCheckContext {
 /// # Errors
 ///
 /// Returns runtime check diagnostics for false conditions or evaluation errors.
-pub fn run_checks(schema: &CompiledSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
+pub fn run_checks(schema: &CftSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
     run_checks_with_options(schema, model, CheckOptions::default())
 }
 
@@ -65,7 +65,7 @@ pub fn run_checks(schema: &CompiledSchema, model: &CfdDataModel) -> Result<(), C
 /// Returns runtime check diagnostics, including `CFD-CHECK-020` when a limit
 /// is exhausted.
 pub fn run_checks_with_options(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     options: CheckOptions,
 ) -> Result<(), CfdDiagnostics> {
@@ -128,7 +128,7 @@ impl DimensionCheckRound {
 /// Returns the union of every failing round's diagnostics. Variant diagnostics
 /// are prefixed with `[dimension=variant]`.
 pub fn run_checks_for_dimensions(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
 ) -> Result<(), CfdDiagnostics> {
@@ -141,7 +141,7 @@ pub fn run_checks_for_dimensions(
 ///
 /// Returns the union of runtime check diagnostics from every round.
 pub fn run_checks_for_dimensions_with_options(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
     options: CheckOptions,
@@ -157,7 +157,13 @@ pub fn run_checks_for_dimensions_with_options(
         };
         let runner =
             CheckRunner::with_dimension_context(schema, model, context, options.structural_limits);
-        push_dimension_diagnostics(&mut all, &round.dimension, &round.variant, runner.run());
+        push_dimension_diagnostics(
+            &mut all,
+            model,
+            &round.dimension,
+            &round.variant,
+            runner.run(),
+        );
     }
     diagnostics_result(all)
 }
@@ -170,7 +176,7 @@ pub fn run_checks_for_dimensions_with_options(
 /// Returns the union of every failing round's diagnostics. The dependency
 /// graph is returned even when diagnostics fail.
 pub fn run_checks_for_dimensions_with_deps(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
@@ -184,7 +190,7 @@ pub fn run_checks_for_dimensions_with_deps(
 /// Returns the union of runtime diagnostics and the dependency graph collected
 /// before any failing root was stopped.
 pub fn run_checks_for_dimensions_with_deps_and_options(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
     options: CheckOptions,
@@ -203,7 +209,7 @@ pub fn run_checks_for_dimensions_with_deps_and_options(
             CheckRunner::with_dimension_context(schema, model, context, options.structural_limits);
         let (result, variant_graph) = runner.run_with_deps();
         merge_dependency_graph(&mut graph, variant_graph);
-        push_dimension_diagnostics(&mut all, &round.dimension, &round.variant, result);
+        push_dimension_diagnostics(&mut all, model, &round.dimension, &round.variant, result);
     }
     (diagnostics_result(all), graph)
 }
@@ -217,7 +223,7 @@ pub fn run_checks_for_dimensions_with_deps_and_options(
 /// configured dimension rounds.
 #[must_use]
 pub fn run_checks_for_dimensions_subset_with_deps(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     plan: &DimensionCheckPlan,
     targets: &[CfdRecordId],
@@ -246,6 +252,7 @@ pub fn run_checks_for_dimensions_subset_with_deps(
         let (diagnostics, variant_graph) = runner.run_for_with_deps_rooted(targets);
         merge_dependency_graph(&mut graph, variant_graph);
         all.extend(diagnostics.into_iter().map(|(root, mut diagnostic)| {
+            attach_dimension_origins(model, &round.dimension, &round.variant, &mut diagnostic);
             diagnostic.message = format!(
                 "[{}={}] {}",
                 round.dimension, round.variant, diagnostic.message
@@ -270,7 +277,7 @@ pub struct RootedCheckDiagnostic {
 /// Returns runtime check diagnostics for false conditions or evaluation
 /// errors discovered while checking the subset.
 pub fn run_checks_for(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     targets: &[CfdRecordId],
 ) -> Result<(), CfdDiagnostics> {
@@ -283,7 +290,7 @@ pub fn run_checks_for(
 ///
 /// Returns runtime check diagnostics for the selected records.
 pub fn run_checks_for_with_options(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     targets: &[CfdRecordId],
     options: CheckOptions,
@@ -330,7 +337,7 @@ impl DependencyGraph {
 /// either case (so callers can still wire incremental edits even when the
 /// initial state has check failures).
 pub fn run_checks_with_deps(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
     run_checks_with_deps_and_options(schema, model, CheckOptions::default())
@@ -343,7 +350,7 @@ pub fn run_checks_with_deps(
 /// Returns runtime check diagnostics and the dependency graph collected before
 /// any failing root was stopped.
 pub fn run_checks_with_deps_and_options(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     model: &CfdDataModel,
     options: CheckOptions,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
@@ -352,16 +359,65 @@ pub fn run_checks_with_deps_and_options(
 
 fn push_dimension_diagnostics(
     all: &mut Vec<coflow_data_model::CfdDiagnostic>,
+    model: &CfdDataModel,
     dimension: &str,
     variant: &str,
     result: Result<(), CfdDiagnostics>,
 ) {
     if let Err(diagnostics) = result {
         for mut diagnostic in diagnostics.diagnostics {
+            attach_dimension_origins(model, dimension, variant, &mut diagnostic);
             diagnostic.message = format!("[{dimension}={variant}] {}", diagnostic.message);
             all.push(diagnostic);
         }
     }
+}
+
+fn attach_dimension_origins(
+    model: &CfdDataModel,
+    dimension: &str,
+    variant: &str,
+    diagnostic: &mut coflow_data_model::CfdDiagnostic,
+) {
+    if let Some(primary) = &mut diagnostic.primary {
+        attach_dimension_origin(model, dimension, variant, primary);
+    }
+    for related in &mut diagnostic.related {
+        attach_dimension_origin(model, dimension, variant, related);
+    }
+}
+
+fn attach_dimension_origin(
+    model: &CfdDataModel,
+    dimension: &str,
+    variant: &str,
+    label: &mut coflow_data_model::CfdLabel,
+) {
+    let Some(record) = label.record.and_then(|record| model.record(record)) else {
+        return;
+    };
+    let Some(field) = label
+        .path
+        .segments
+        .iter()
+        .find_map(|segment| match segment {
+            coflow_data_model::CfdPathSegment::Field(field) => Some(field.as_str()),
+            coflow_data_model::CfdPathSegment::Index(_)
+            | coflow_data_model::CfdPathSegment::DictKey(_) => None,
+        })
+    else {
+        return;
+    };
+    let Some(values) = record
+        .dimension_field(field)
+        .filter(|values| values.dimension.as_str() == dimension)
+    else {
+        return;
+    };
+    label.origin = values
+        .variants
+        .get(variant)
+        .map(|value| value.origin.clone());
 }
 
 fn diagnostics_result(
@@ -387,11 +443,11 @@ pub trait CfdCheckExt {
     ///
     /// Returns runtime check diagnostics for false conditions or evaluation
     /// errors.
-    fn run_checks(&self, schema: &CompiledSchema) -> Result<(), CfdDiagnostics>;
+    fn run_checks(&self, schema: &CftSchema) -> Result<(), CfdDiagnostics>;
 }
 
 impl CfdCheckExt for CfdDataModel {
-    fn run_checks(&self, schema: &CompiledSchema) -> Result<(), CfdDiagnostics> {
+    fn run_checks(&self, schema: &CftSchema) -> Result<(), CfdDiagnostics> {
         run_checks(schema, self)
     }
 }

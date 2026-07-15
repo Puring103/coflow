@@ -87,21 +87,6 @@ impl TableSource {
             configs,
         }
     }
-
-    #[must_use]
-    pub fn remote(
-        name: impl Into<PathBuf>,
-        document: impl Into<String>,
-        sheets: Vec<TableSheet>,
-        configs: Vec<TableSheetConfig>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            document: SourceDocument::Remote(document.into()),
-            sheets,
-            configs,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

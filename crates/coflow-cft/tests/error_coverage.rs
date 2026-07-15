@@ -10,7 +10,7 @@
 mod common;
 use common::*;
 
-use coflow_cft::{CftCompileOptions, CftParseOptions, StructuralLimits};
+use coflow_cft::{CftFile, CftParseOptions, StructuralLimits};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Copy)]
@@ -19,7 +19,6 @@ enum Phase {
     Compile,
     DuplicateModule,
     StrictParse,
-    StrictCompile,
 }
 
 struct Case {
@@ -35,13 +34,11 @@ fn diagnostics_for(case: &Case) -> CftDiagnostics {
         Phase::AddModule => add_source(case.source).unwrap_err(),
         Phase::Compile => compile_one(case.source).unwrap_err(),
         Phase::DuplicateModule => {
-            let mut container = CftContainer::new();
-            container
-                .add_module(ModuleId::from("main"), "type A {}")
-                .unwrap();
-            container
-                .add_module(ModuleId::from("main"), "type B {}")
-                .unwrap_err()
+            let modules = parse_modules([
+                CftFile::from_source(ModuleId::from("main"), "type A {}"),
+                CftFile::from_source(ModuleId::from("main"), "type B {}"),
+            ]);
+            modules.diagnostics().clone()
         }
         Phase::StrictParse => coflow_cft::parser::parse_module_with_options(
             &ModuleId::from("main"),
@@ -51,17 +48,6 @@ fn diagnostics_for(case: &Case) -> CftDiagnostics {
             },
         )
         .unwrap_err(),
-        Phase::StrictCompile => {
-            let mut container = CftContainer::new();
-            container
-                .add_module(ModuleId::from("main"), case.source)
-                .unwrap();
-            container
-                .compile_with_options(CftCompileOptions {
-                    structural_limits: StructuralLimits::new(1, 100, 100),
-                })
-                .unwrap_err()
-        }
     }
 }
 
@@ -178,13 +164,6 @@ fn cases() -> Vec<Case> {
             source: "type A { value: [int]; }",
             adjacent_valid_source: "type A { value: int; }",
             codes: &[CftErrorCode::SyntaxStructureLimitExceeded],
-        },
-        Case {
-            name: "schema structure limit exceeded",
-            phase: Phase::StrictCompile,
-            source: "type A { value: [int]; }",
-            adjacent_valid_source: "type A { value: int; }",
-            codes: &[CftErrorCode::SchemaStructureLimitExceeded],
         },
         Case {
             name: "duplicate module",
@@ -595,7 +574,14 @@ fn every_error_code_has_a_diagnostic_case() {
         .map(|code| format!("{code:?}"))
         .collect::<BTreeSet<_>>();
 
-    let missing = declared.difference(&covered).cloned().collect::<Vec<_>>();
+    // Schema compiler limits are internal now that build_schema owns its
+    // compilation options; no public operation can request a strict limit.
+    let unreachable_from_public_api = BTreeSet::from(["SchemaStructureLimitExceeded".to_string()]);
+    let missing = declared
+        .difference(&covered)
+        .filter(|code| !unreachable_from_public_api.contains(*code))
+        .cloned()
+        .collect::<Vec<_>>();
     assert!(
         missing.is_empty(),
         "missing diagnostic coverage for error codes: {missing:?}"
@@ -625,7 +611,14 @@ fn error_code_cases_accept_adjacent_valid_inputs() {
     for case in cases() {
         match case.phase {
             Phase::AddModule | Phase::Compile => {
-                compile_one(case.adjacent_valid_source).unwrap_or_else(|err| {
+                compile_one_with_dimensions(
+                    case.adjacent_valid_source,
+                    CftDimensionInputs::new([
+                        ("language", vec!["zh".to_string()]),
+                        ("platform", vec!["pc".to_string()]),
+                    ]),
+                )
+                .unwrap_or_else(|err| {
                     panic!(
                         "{} adjacent-valid case should compile: {:?}",
                         case.name, err
@@ -633,58 +626,36 @@ fn error_code_cases_accept_adjacent_valid_inputs() {
                 });
             }
             Phase::DuplicateModule => {
-                let mut container = CftContainer::new();
-                container
-                    .add_module(ModuleId::from("main"), case.adjacent_valid_source)
-                    .unwrap_or_else(|err| {
-                        panic!("{} adjacent-valid case should add: {:?}", case.name, err)
-                    });
-                container
-                    .add_module(ModuleId::from("other"), "type B {}")
-                    .unwrap_or_else(|err| {
-                        panic!(
-                            "{} adjacent-valid second module should add: {:?}",
-                            case.name, err
-                        )
-                    });
-                container.compile().unwrap_or_else(|err| {
+                let modules = parse_modules([
+                    CftFile::from_source(ModuleId::from("main"), case.adjacent_valid_source),
+                    CftFile::from_source(ModuleId::from("other"), "type B {}"),
+                ]);
+                build_schema(
+                    &modules,
+                    &CftDimensionInputs::new([
+                        ("language", vec!["zh".to_string()]),
+                        ("platform", vec!["pc".to_string()]),
+                    ]),
+                )
+                .unwrap_or_else(|err| {
                     panic!(
                         "{} adjacent-valid modules should compile: {:?}",
                         case.name, err
                     )
                 });
             }
-            Phase::StrictParse | Phase::StrictCompile => {
+            Phase::StrictParse => {
                 let options = StructuralLimits::new(1, 100, 100);
-                if matches!(case.phase, Phase::StrictParse) {
-                    coflow_cft::parser::parse_module_with_options(
-                        &ModuleId::from("main"),
-                        case.adjacent_valid_source,
-                        CftParseOptions {
-                            structural_limits: options,
-                        },
-                    )
-                    .unwrap_or_else(|err| {
-                        panic!("{} adjacent-valid case should parse: {:?}", case.name, err)
-                    });
-                } else {
-                    let mut container = CftContainer::new();
-                    container
-                        .add_module(ModuleId::from("main"), case.adjacent_valid_source)
-                        .unwrap_or_else(|err| {
-                            panic!("{} adjacent-valid case should add: {:?}", case.name, err)
-                        });
-                    container
-                        .compile_with_options(CftCompileOptions {
-                            structural_limits: options,
-                        })
-                        .unwrap_or_else(|err| {
-                            panic!(
-                                "{} adjacent-valid case should compile: {:?}",
-                                case.name, err
-                            )
-                        });
-                }
+                coflow_cft::parser::parse_module_with_options(
+                    &ModuleId::from("main"),
+                    case.adjacent_valid_source,
+                    CftParseOptions {
+                        structural_limits: options,
+                    },
+                )
+                .unwrap_or_else(|err| {
+                    panic!("{} adjacent-valid case should parse: {:?}", case.name, err)
+                });
             }
         }
     }

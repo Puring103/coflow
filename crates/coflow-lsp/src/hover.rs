@@ -1,5 +1,5 @@
 use coflow_cft::ast::{Annotation, Item};
-use coflow_cft::{CftConstValue, CftSchemaType};
+use coflow_cft::{CftConstValue, CftType};
 use serde_json::{json, Value};
 use std::fmt::Write as _;
 
@@ -52,14 +52,16 @@ pub(crate) fn hover_at(
             return Some(hover_response(
                 &format!(
                     "CFT field `{}`.`{}`: `{}`.",
-                    type_name, field.name, field.ty
+                    type_name,
+                    field.name,
+                    field.ty_ref.display_label()
                 ),
                 &byte_range(&document.source, word.start, word.end),
             ));
         }
     }
 
-    if let Some(container) = build.container() {
+    if let Some(container) = build.schema() {
         if let Some(ty) = container.resolve_type(&word.text) {
             return Some(hover_response(
                 &type_hover_text(ty),
@@ -88,14 +90,15 @@ pub(crate) fn hover_at(
         }
         if let Some(current_type) = current_type_at(build, document, offset) {
             if let Some(field) = current_type
-                .all_fields
-                .iter()
-                .find(|field| field.name == word.text)
+                .all_fields()
+                .find(|field| field.name.as_str() == word.text)
             {
                 return Some(hover_response(
                     &format!(
                         "CFT field `{}`.`{}`: `{}`.",
-                        current_type.name, field.name, field.ty
+                        current_type.name,
+                        field.name,
+                        field.ty_ref.display_label()
                     ),
                     &byte_range(&document.source, word.start, word.end),
                 ));
@@ -106,7 +109,7 @@ pub(crate) fn hover_at(
     None
 }
 
-fn type_hover_text(ty: &CftSchemaType) -> String {
+fn type_hover_text(ty: &CftType) -> String {
     let mut flags = Vec::new();
     if ty.is_abstract {
         flags.push("abstract");
@@ -122,7 +125,7 @@ fn type_hover_text(ty: &CftSchemaType) -> String {
     if let Some(parent) = &ty.parent {
         let _ = write!(text, " extends `{parent}`");
     }
-    let _ = write!(text, " with {} field(s).", ty.all_fields.len());
+    let _ = write!(text, " with {} field(s).", ty.all_fields().count());
     text
 }
 

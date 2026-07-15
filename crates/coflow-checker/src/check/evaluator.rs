@@ -11,9 +11,7 @@ use super::fields;
 use super::ops::{self, OpsResult};
 use super::quantifiers;
 use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
-use coflow_cft::{
-    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp, CompiledSchema,
-};
+use coflow_cft::{CftSchema, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp};
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
@@ -21,7 +19,7 @@ use std::collections::BTreeMap;
 use super::value::CheckRecordRef;
 
 pub(super) struct CheckEvaluator<'a> {
-    pub(super) schema: &'a CompiledSchema,
+    pub(super) schema: &'a CftSchema,
     pub(super) model: &'a CfdDataModel,
     pub(super) check_origin: ValueLocation,
     pub(super) current: CheckValue,
@@ -52,7 +50,7 @@ pub(super) type EvalResult<T> = Result<T, EvalAbort>;
 
 impl<'a> CheckEvaluator<'a> {
     pub(super) fn new(
-        schema: &'a CompiledSchema,
+        schema: &'a CftSchema,
         model: &'a CfdDataModel,
         check_origin: ValueLocation,
         current: CheckValue,
@@ -123,7 +121,7 @@ impl<'a> CheckEvaluator<'a> {
                 location,
                 message,
             }) => {
-                self.diag_at(code, location, message);
+                self.diag_at(code, *location, message);
                 Err(EvalAbort::Error)
             }
         }
@@ -230,10 +228,12 @@ impl<'a> CheckEvaluator<'a> {
             }
             return Ok(value);
         }
-        if let Some(value) = self.schema.const_value(name) {
-            return Ok(LocatedCheckValue::value(CheckValue::from_const(value)));
+        if let Some(value) = self.schema.resolve_const(name) {
+            return Ok(LocatedCheckValue::value(CheckValue::from_const(
+                &value.value,
+            )));
         }
-        if self.schema.is_schema_enum(name) {
+        if self.schema.resolve_enum(name).is_some() {
             return Ok(LocatedCheckValue::value(CheckValue::EnumNamespace(
                 name.to_string(),
             )));
@@ -293,7 +293,7 @@ impl<'a> CheckEvaluator<'a> {
         let signature = self.resolve_call_signature(CallSignature::resolve_function(
             name,
             args.len(),
-            self.schema.is_schema_enum(name),
+            self.schema.resolve_enum(name).is_some(),
         ))?;
 
         match signature.target {

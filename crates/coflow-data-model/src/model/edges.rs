@@ -1,5 +1,6 @@
 use super::ids::{CfdDomainId, CfdRecordId, CfdTypeId};
 use crate::diagnostic::{CfdPath, CfdPathSegment};
+use coflow_cft::{DimensionName, FieldName, VariantName};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -9,13 +10,38 @@ use std::collections::BTreeSet;
 pub struct RefSite {
     pub host: CfdRecordId,
     pub path: CfdPath,
+    pub dimension: Option<DimensionRefCoordinate>,
 }
 
 impl RefSite {
     #[must_use]
     pub const fn new(host: CfdRecordId, path: CfdPath) -> Self {
-        Self { host, path }
+        Self {
+            host,
+            path,
+            dimension: None,
+        }
     }
+
+    #[must_use]
+    pub const fn in_dimension(
+        host: CfdRecordId,
+        path: CfdPath,
+        dimension: DimensionRefCoordinate,
+    ) -> Self {
+        Self {
+            host,
+            path,
+            dimension: Some(dimension),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DimensionRefCoordinate {
+    pub field: FieldName,
+    pub dimension: DimensionName,
+    pub variant: VariantName,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -37,8 +63,6 @@ impl RefEdgeId {
 pub struct RefEdge {
     pub id: RefEdgeId,
     pub site: RefSite,
-    pub host: CfdRecordId,
-    pub path: CfdPath,
     pub expected_type: CfdTypeId,
     pub domain: CfdDomainId,
     pub key: String,

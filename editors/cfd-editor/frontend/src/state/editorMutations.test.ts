@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { WriteFieldOutcome } from '../bindings/WriteFieldOutcome'
+import type { WriteDimensionValueOutcome } from '../bindings/WriteDimensionValueOutcome'
 import { committed, MutationHistoryController, superseded } from './editorState'
 import {
   EditorMutationController,
@@ -31,9 +32,13 @@ function writeOutcome(revision: number, oldValue: string, newValue: string): Wri
   }
 }
 
-function backend(writeField: EditorMutationBackend['writeField']): EditorMutationBackend {
+function backend(
+  writeField: EditorMutationBackend['writeField'],
+  writeDimensionValue: EditorMutationBackend['writeDimensionValue'] = vi.fn(),
+): EditorMutationBackend {
   return {
     writeField,
+    writeDimensionValue,
     editCollection: vi.fn(),
     renameRecordKey: vi.fn(),
     insertRecord: vi.fn(),
@@ -41,7 +46,95 @@ function backend(writeField: EditorMutationBackend['writeField']): EditorMutatio
   }
 }
 
+const dimensionCoordinate = {
+  actual_type: 'Item',
+  record_key: 'sword',
+  field: 'name',
+  dimension: 'language',
+  variant: 'zh',
+  path: [],
+}
+
+function dimensionOutcome(
+  revision: number,
+  oldValue: string | null,
+  newValue: string | null,
+): WriteDimensionValueOutcome {
+  return {
+    revision,
+    coordinate: dimensionCoordinate,
+    old_value: oldValue === null
+      ? { kind: 'missing' }
+      : { kind: 'value', value: { kind: 'string', value: oldValue } },
+    new_value: newValue === null
+      ? { kind: 'missing' }
+      : { kind: 'value', value: { kind: 'string', value: newValue } },
+    diagnostics: [],
+    affected_files: ['data/dimensions/language/Item_name.csv'],
+  }
+}
+
 describe('EditorMutationController', () => {
+  it('coalesces dimension writes and uses authoritative states for undo and redo', async () => {
+    const writeDimensionValue = vi.fn()
+      .mockResolvedValueOnce(dimensionOutcome(2, null, '最终值'))
+      .mockResolvedValueOnce(dimensionOutcome(3, '最终值', null))
+      .mockResolvedValueOnce(dimensionOutcome(4, null, '最终值'))
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(
+      backend(vi.fn(), writeDimensionValue),
+      port,
+      history,
+    )
+    const missing = { kind: 'missing' as const }
+    const first = mutations.writeDimensionValue(
+      'data/dimensions/language/Item_name.csv',
+      dimensionCoordinate,
+      missing,
+      { kind: 'value', value: { kind: 'string', value: '中间值' } },
+    )
+    const latest = mutations.writeDimensionValue(
+      'data/dimensions/language/Item_name.csv',
+      dimensionCoordinate,
+      missing,
+      { kind: 'value', value: { kind: 'string', value: '最终值' } },
+    )
+    await Promise.all([first, latest])
+
+    expect(writeDimensionValue).toHaveBeenCalledTimes(1)
+    expect(writeDimensionValue).toHaveBeenCalledWith(
+      1,
+      dimensionCoordinate,
+      missing,
+      { kind: 'value', value: { kind: 'string', value: '最终值' } },
+    )
+    expect(history.getSnapshot().undo).toHaveLength(1)
+
+    await mutations.undo()
+    expect(writeDimensionValue).toHaveBeenNthCalledWith(
+      2,
+      1,
+      dimensionCoordinate,
+      { kind: 'value', value: { kind: 'string', value: '最终值' } },
+      missing,
+    )
+    await mutations.redo()
+    expect(writeDimensionValue).toHaveBeenNthCalledWith(
+      3,
+      1,
+      dimensionCoordinate,
+      missing,
+      { kind: 'value', value: { kind: 'string', value: '最终值' } },
+    )
+  })
+
   it('skips backend writes for deep value no-ops', async () => {
     const writeField = vi.fn()
     const port: EditorMutationPort = {

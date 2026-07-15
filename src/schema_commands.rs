@@ -2,8 +2,8 @@ use crate::diagnostics::{cli_error, cli_file_error};
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
-    compile_schema_project_with_overrides, inspect_schema, schema_files, Runtime,
-    SchemaFilesReport, SchemaInspectReport, SchemaSourceOverride,
+    inspect_schema, schema_files, ProjectRuntime, Runtime, SchemaFilesReport, SchemaInspectReport,
+    SchemaTextOverride, SchemaTypeRefInfo,
 };
 use serde::Serialize;
 use std::io::{self, Read, Write};
@@ -65,7 +65,7 @@ pub fn inspect(
     human: bool,
 ) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
-    let session = Runtime::build_schema_session(project)?;
+    let session = Runtime::open_schema_session(project)?;
     let report = inspect_schema(&session, type_filter, include_derived);
     if human {
         write_schema_inspect_human(&report)?;
@@ -83,7 +83,7 @@ pub fn inspect(
 /// cannot be built, or output cannot be written.
 pub fn files(config_or_dir: Option<&Path>, human: bool) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
-    let session = Runtime::build_schema_session(project)?;
+    let session = Runtime::open_schema_session(project)?;
     let report = schema_files(&session);
     if human {
         write_schema_files_human(&report)?;
@@ -237,15 +237,17 @@ fn check_schema_source(
     source: &str,
 ) -> Result<Vec<FlatDiagnostic>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
-    let build = compile_schema_project_with_overrides(
-        project,
-        &[SchemaSourceOverride {
-            requested_module: Some(target.module_id.clone()),
-            normalized_path: target.canonical_path.clone(),
-            source: source.to_string(),
-        }],
-    )?;
-    diagnostics.extend(build.diagnostics);
+    let mut runtime = ProjectRuntime::new(project.clone());
+    let refresh = runtime.refresh_with_overrides(&[SchemaTextOverride {
+        requested_module: Some(target.module_id.clone()),
+        normalized_path: target.canonical_path.clone(),
+        source: source.to_string(),
+    }]);
+    if let Some(attempt) = runtime.latest_attempt() {
+        diagnostics.extend(attempt.diagnostics().clone().into_set());
+    } else {
+        refresh?;
+    }
     Ok(diagnostics.flat_diagnostics())
 }
 
@@ -253,11 +255,8 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
     let mut stdout = io::stdout().lock();
     for ty in &report.types {
         writeln!(stdout, "type {}", ty.name).map_err(|err| output_error(&err))?;
-        for annotation in &ty.annotations {
-            writeln!(stdout, "  @{}", annotation.name).map_err(|err| output_error(&err))?;
-        }
         for field in &ty.fields {
-            writeln!(stdout, "  {}: {}", field.name, field.raw_type)
+            writeln!(stdout, "  {}: {}", field.name, display_type_ref(&field.ty))
                 .map_err(|err| output_error(&err))?;
         }
     }
@@ -272,6 +271,26 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
         writeln!(stdout, "const {}", schema_const.name).map_err(|err| output_error(&err))?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
+}
+
+fn display_type_ref(ty: &SchemaTypeRefInfo) -> String {
+    match ty {
+        SchemaTypeRefInfo::Int => "int".to_string(),
+        SchemaTypeRefInfo::Float => "float".to_string(),
+        SchemaTypeRefInfo::Bool => "bool".to_string(),
+        SchemaTypeRefInfo::String => "string".to_string(),
+        SchemaTypeRefInfo::Named { name, .. } => name.clone(),
+        SchemaTypeRefInfo::Ref { target } => format!("&{target}"),
+        SchemaTypeRefInfo::Array { item } => format!("{}[]", display_type_ref(item)),
+        SchemaTypeRefInfo::Dict { key, value } => {
+            format!(
+                "dict<{}, {}>",
+                display_type_ref(key),
+                display_type_ref(value)
+            )
+        }
+        SchemaTypeRefInfo::Nullable { inner } => format!("{}?", display_type_ref(inner)),
+    }
 }
 
 fn write_schema_files_human(report: &SchemaFilesReport) -> Result<(), DiagnosticSet> {

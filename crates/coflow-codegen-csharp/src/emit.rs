@@ -9,10 +9,9 @@ use crate::model::{
     CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpParameter,
     CsharpProperty, CsharpType,
 };
-use crate::names::{camel_case, has_annotation};
+use crate::names::camel_case;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnumMeta, CftSchemaTypeRef};
-use coflow_cft::{CftFieldMeta, CftTypeMeta};
+use coflow_cft::{CftEnum, CftField, CftSchemaTypeRef, CftType};
 use std::collections::{BTreeSet, HashSet};
 
 pub use database::build_csharp_database;
@@ -20,14 +19,14 @@ use identifiers::{csharp_public_member_name, csharp_public_type_name, field_loca
 use loaders::{field_type_requires_context, loader_method, polymorphic_loader};
 use types::{csharp_field_property_type, csharp_type};
 
-pub fn build_csharp_enum(schema_enum: &CftEnumMeta) -> CsharpEnum {
+pub fn build_csharp_enum(schema_enum: &CftEnum) -> CsharpEnum {
     CsharpEnum {
         name: csharp_public_type_name(&schema_enum.name),
-        is_flags: has_annotation(&schema_enum.annotations, "flag"),
+        is_flags: schema_enum.is_flag,
         summary: None,
         obsolete: false,
         variants: schema_enum
-            .all_variants
+            .variants
             .iter()
             .map(|variant| CsharpEnumVariant {
                 name: csharp_public_member_name(&variant.name),
@@ -40,16 +39,16 @@ pub fn build_csharp_enum(schema_enum: &CftEnumMeta) -> CsharpEnum {
 }
 
 pub fn build_csharp_type(
-    schema_type: &CftTypeMeta,
+    schema_type: &CftType,
     view: &CsharpLoweringPlan<'_>,
 ) -> Result<CsharpType, CsharpCodegenError> {
-    let ty = view.type_meta(&schema_type.name)?;
+    let ty = view.resolve_type(&schema_type.name)?;
     let mut constructor_parameters = Vec::new();
     let mut base_constructor_args = Vec::new();
     let mut assignments = Vec::new();
     let mut properties = Vec::new();
 
-    let is_struct = view.type_is_struct(schema_type);
+    let is_struct = schema_type.is_struct;
     let is_table = !schema_type.is_abstract && type_is_table(&schema_type.name, view);
     if is_table {
         add_id_constructor_member(
@@ -63,8 +62,7 @@ pub fn build_csharp_type(
     }
 
     let own_field_names = schema_type
-        .own_fields
-        .iter()
+        .own_fields()
         .map(|field| field.name.clone())
         .collect::<BTreeSet<_>>();
 
@@ -131,7 +129,7 @@ pub fn build_csharp_type(
 }
 
 fn add_id_constructor_member(
-    schema_type: &CftTypeMeta,
+    schema_type: &CftType,
     view: &CsharpLoweringPlan<'_>,
     constructor_parameters: &mut Vec<CsharpParameter>,
     base_constructor_args: &mut Vec<String>,
@@ -163,7 +161,7 @@ fn add_id_constructor_member(
 }
 
 fn add_field_constructor_member(
-    field: &CftFieldMeta,
+    field: &CftField,
     property_type: String,
     local_name: String,
     view: &CsharpLoweringPlan<'_>,
@@ -193,11 +191,11 @@ fn type_is_table(type_name: &str, view: &CsharpLoweringPlan<'_>) -> bool {
 
 fn has_concrete_parent(type_name: &str, view: &CsharpLoweringPlan<'_>) -> bool {
     let mut parent = view
-        .type_meta(type_name)
+        .resolve_type(type_name)
         .ok()
         .and_then(|ty| ty.parent.as_deref());
     while let Some(parent_name) = parent {
-        let Ok(parent_ty) = view.type_meta(parent_name) else {
+        let Ok(parent_ty) = view.resolve_type(parent_name) else {
             return false;
         };
         if !parent_ty.is_abstract {
@@ -219,10 +217,10 @@ pub(super) fn backing_field_name(
         .map(|_| format!("_{}", camel_case(property_name)))
 }
 
-fn type_declaration(schema_type: &CftTypeMeta, view: &CsharpLoweringPlan<'_>) -> String {
+fn type_declaration(schema_type: &CftType, view: &CsharpLoweringPlan<'_>) -> String {
     let prefix = if schema_type.is_abstract {
         "public abstract partial class"
-    } else if view.type_is_struct(schema_type) {
+    } else if schema_type.is_struct {
         "public partial struct"
     } else if schema_type.is_sealed || !view.type_has_descendants(&schema_type.name) {
         "public sealed partial class"
@@ -234,7 +232,7 @@ fn type_declaration(schema_type: &CftTypeMeta, view: &CsharpLoweringPlan<'_>) ->
     if let Some(parent) = schema_type
         .parent
         .as_ref()
-        .filter(|_| !view.type_is_struct(schema_type))
+        .filter(|_| !schema_type.is_struct)
     {
         interfaces.push(view.csharp_type_name(parent));
     }

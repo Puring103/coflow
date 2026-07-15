@@ -2,7 +2,7 @@
 
 use coflow_api::{DiagnosticSet, ProviderRegistry, WriterCapabilities};
 use coflow_project::Project;
-use coflow_runtime::{FileTreeNode, Runtime};
+use coflow_runtime::{FileTreeNode, ProjectRuntime, Runtime};
 use std::collections::HashMap;
 
 use super::diagnostics::diagnostics_from_store;
@@ -36,9 +36,16 @@ pub(super) fn build_session(
     let yaml_path = project.config_path.clone();
     let project_root = project.root_dir.clone();
     let runtime = Runtime::new(registry.clone());
-    let engine = runtime.open_write_session(project).map_err(|err| {
-        EditorError::project(prefixed_diagnostics("failed to build project", &err))
-    })?;
+    let mut schema_runtime = ProjectRuntime::new(project);
+    let _ = schema_runtime.refresh();
+    let schema_session = schema_runtime
+        .into_latest_attempt()
+        .ok_or_else(|| EditorError::project("failed to build project schema".to_string()))?;
+    let engine = runtime
+        .open_write_session_from_schema(schema_session)
+        .map_err(|err| {
+            EditorError::project(prefixed_diagnostics("failed to build project", &err))
+        })?;
     let file_tree = engine.queries().file_tree();
     let diagnostics = diagnostics_from_store(engine.queries().diagnostics(), &project_root);
 

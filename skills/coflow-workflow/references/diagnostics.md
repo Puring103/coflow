@@ -83,7 +83,6 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 | `EXCEL` | Excel source、workbook、sheet、column、cell |
 | `CSV` | CSV source 或写回 |
 | `CFD` | CFD source、文本解析或写回 |
-| `LARK` | 飞书/Lark source、鉴权、读取或写回 |
 | `CELL` | 表格单元格值解析 |
 | `DATA` | DataModel 构建 |
 | `REF` | `&Type` 记录引用解析 |
@@ -116,7 +115,7 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 
 1. `CLI` / `PROJECT` / `DIM-CONFIG`：命令和项目配置。
 2. `CFT-LEX` / `CFT-SYN` / `CFT-SCHEMA` / `CFT-TYPE`：CFT schema。
-3. `EXCEL` / `CSV` / `LARK` / `CELL` / `CFD-TEXT`：数据源读取和文本解析。
+3. `EXCEL` / `CSV` / `CELL` / `CFD-TEXT`：数据源读取和文本解析。
 4. `CFD-DATA` / `CFD-REF`：DataModel 和引用。
 5. `CFD-CHECK`：业务规则。
 6. `CODEGEN` / `ARTIFACT`：生成和输出目录。

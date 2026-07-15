@@ -5,7 +5,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue, RecordOrigin, SourceDocument,
 };
@@ -17,13 +17,9 @@ use coflow_loader_table_core::{resolve_table_write_layout, TableSheetConfig};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-fn compile_schema(source: &str) -> CftContainer {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("main"), source)
-        .expect("schema parse");
-    container.compile().expect("schema compile");
-    container
+fn compile_schema(source: &str) -> CftSchema {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    build_schema(&modules, &CftDimensionInputs::default()).expect("schema compile")
 }
 
 fn table_origin(field_columns: BTreeMap<Vec<String>, usize>) -> RecordOrigin {
@@ -377,7 +373,6 @@ fn expanded_object_edit_writes_each_child_column() {
 
 #[test]
 fn unmapped_field_path_returns_diagnostic() {
-    let _schema = CftContainer::new();
     let origin = table_origin(BTreeMap::new());
     let path = field_path("missing");
     let new_value = CfdValue::Int(1);
@@ -450,7 +445,7 @@ fn write_layout_resolves_expand_child_columns_from_header() {
         }
         ",
     );
-    let compiled_schema = schema.compiled_schema();
+    let schema = &schema;
     let header = vec![
         "id".to_string(),
         "name".to_string(),
@@ -460,7 +455,7 @@ fn write_layout_resolves_expand_child_columns_from_header() {
     ];
 
     let layout = resolve_table_write_layout(
-        compiled_schema,
+        schema,
         &PathBuf::from("terrain.xlsx"),
         &TableSheetConfig::new("Terrain"),
         &header,

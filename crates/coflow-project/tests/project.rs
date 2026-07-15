@@ -157,10 +157,10 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
             true,
         ),
         (
-            "empty-source-url",
+            "remote-source-url",
             "schema: schema/main.cft\nsources:\n  - url: '  '\n",
-            "sources[0].url is empty",
-            true,
+            "unknown field `url`",
+            false,
         ),
         (
             "data-empty-dir",
@@ -343,10 +343,6 @@ sources:
     sheets:
       - sheet: Item
         type: Item
-  - type: lark-sheet
-    url: https://example.feishu.cn/wiki/wiki_token
-    app_id: ${COFLOW_TEST_APP_ID}
-    app_secret: direct_secret
 outputs:
   data:
     type: custom-export
@@ -377,16 +373,6 @@ outputs:
     assert_eq!(
         project.config.sources[0].options["sheets"][0]["sheet"],
         serde_json::Value::String("Item".to_string())
-    );
-    assert_eq!(
-        project.config.sources[1].location,
-        coflow_api::SourceLocationSpec::Uri(
-            "https://example.feishu.cn/wiki/wiki_token".to_string()
-        )
-    );
-    assert_eq!(
-        project.config.sources[1].options["app_id"],
-        serde_json::Value::String("${COFLOW_TEST_APP_ID}".to_string())
     );
     assert_eq!(
         project
@@ -420,11 +406,6 @@ fn project_config_rejects_old_source_fields() -> TestResult {
             "schema: schema/main.cft\nsources:\n  - dir: data\n",
             "unknown field `dir`",
         ),
-        (
-            "old-lark-sheet",
-            "schema: schema/main.cft\nsources:\n  - lark_sheet:\n      app_id: a\n      app_secret: b\n      spreadsheet_token: t\n",
-            "unknown field `lark_sheet`",
-        ),
     ] {
         let config = root.join(format!("{name}.yaml"));
         std::fs::write(&config, yaml).map_err(|err| err.to_string())?;
@@ -432,15 +413,17 @@ fn project_config_rejects_old_source_fields() -> TestResult {
             .err()
             .map(|diagnostics| diagnostics.to_string())
             .or_else(|| {
-                Project::open_schema_only(Some(&config)).ok().map(|project| {
-                    project
-                        .schema_diagnostic_set()
-                        .diagnostics
-                        .into_iter()
-                        .map(|diagnostic| diagnostic.message)
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
+                Project::open_schema_only(Some(&config))
+                    .ok()
+                    .map(|project| {
+                        project
+                            .schema_diagnostic_set()
+                            .diagnostics
+                            .into_iter()
+                            .map(|diagnostic| diagnostic.message)
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
             })
             .unwrap_or_default();
         assert!(
@@ -538,53 +521,6 @@ sources:
         err.contains("duplicate key `A`"),
         "expected duplicate key diagnostic, got `{err}`"
     );
-    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
-}
-
-#[test]
-fn project_config_accepts_remote_url_source_with_provider_sheet_options() -> TestResult {
-    let root = temp_project_dir("coflow-project-remote-provider-sheet-options");
-    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
-    std::fs::write(
-        root.join("schema/main.cft"),
-        "type Item { name: string; }\n",
-    )
-    .map_err(|err| err.to_string())?;
-    std::fs::write(
-        root.join("coflow.yaml"),
-        r#"schema: schema/main.cft
-sources:
-  - type: lark-sheet
-    url: https://example.feishu.cn/wiki/wiki_token
-    app_id: cli_test
-    app_secret: secret_test
-    sheets:
-      - sheet: 物品表
-        type: Item
-        key: 配置ID
-        columns:
-          名称: name
-"#,
-    )
-    .map_err(|err| err.to_string())?;
-
-    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
-    assert!(project.schema_diagnostic_set().is_empty());
-    let source = &project.config.sources[0];
-    assert_eq!(source.source_type.as_deref(), Some("lark-sheet"));
-    assert_eq!(
-        source.location,
-        coflow_api::SourceLocationSpec::Uri(
-            "https://example.feishu.cn/wiki/wiki_token".to_string()
-        )
-    );
-    assert_eq!(source.options["app_id"], "cli_test");
-    assert_eq!(source.options["app_secret"], "secret_test");
-    assert_eq!(
-        source.options["sheets"][0]["key"],
-        serde_json::Value::String("配置ID".to_string())
-    );
-
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
 

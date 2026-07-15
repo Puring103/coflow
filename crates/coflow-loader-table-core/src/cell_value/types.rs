@@ -1,4 +1,4 @@
-use coflow_cft::{CftFieldMeta, CompiledSchema};
+use coflow_cft::{CftField, CftSchema, CftSchemaTypeRef};
 
 use super::diagnostics::{
     invalid_declared_type, CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode,
@@ -19,7 +19,27 @@ pub(super) enum CellType {
 }
 
 impl CellType {
-    pub(super) fn parse(schema: &CompiledSchema, text: &str) -> Result<Self, CellValueDiagnostics> {
+    pub(super) fn from_schema_type(ty: &CftSchemaTypeRef) -> Self {
+        match ty {
+            CftSchemaTypeRef::Int => Self::Int,
+            CftSchemaTypeRef::Float => Self::Float,
+            CftSchemaTypeRef::Bool => Self::Bool,
+            CftSchemaTypeRef::String => Self::String,
+            CftSchemaTypeRef::Object(name) => Self::Type(name.to_string()),
+            CftSchemaTypeRef::Enum(name) => Self::Enum(name.to_string()),
+            CftSchemaTypeRef::RecordRef(name) => Self::Ref(name.to_string()),
+            CftSchemaTypeRef::Array(inner) => Self::Array(Box::new(Self::from_schema_type(inner))),
+            CftSchemaTypeRef::Dict(key, value) => Self::Dict(
+                Box::new(Self::from_schema_type(key)),
+                Box::new(Self::from_schema_type(value)),
+            ),
+            CftSchemaTypeRef::Nullable(inner) => {
+                Self::Nullable(Box::new(Self::from_schema_type(inner)))
+            }
+        }
+    }
+
+    pub(super) fn parse(schema: &CftSchema, text: &str) -> Result<Self, CellValueDiagnostics> {
         let mut parser = TypeParser::new(schema, text);
         let ty = parser.parse_type()?;
         parser.skip_ws();
@@ -46,13 +66,13 @@ impl CellType {
 }
 
 struct TypeParser<'a> {
-    schema: &'a CompiledSchema,
+    schema: &'a CftSchema,
     text: &'a str,
     pos: usize,
 }
 
 impl<'a> TypeParser<'a> {
-    fn new(schema: &'a CompiledSchema, text: &'a str) -> Self {
+    fn new(schema: &'a CftSchema, text: &'a str) -> Self {
         Self {
             schema,
             text,
@@ -80,7 +100,7 @@ impl<'a> TypeParser<'a> {
                     "reference type is missing target type",
                 ));
             }
-            if !self.schema.has_type(&name) {
+            if self.schema.resolve_type(&name).is_none() {
                 return Err(invalid_declared_type(format!(
                     "reference target `{name}` is not an object type"
                 )));
@@ -118,7 +138,7 @@ impl<'a> TypeParser<'a> {
             "float" => CellType::Float,
             "bool" => CellType::Bool,
             "string" => CellType::String,
-            other if self.schema.is_schema_enum(other) => CellType::Enum(other.to_string()),
+            other if self.schema.resolve_enum(other).is_some() => CellType::Enum(other.to_string()),
             other => CellType::Type(other.to_string()),
         })
     }
@@ -173,10 +193,10 @@ pub(super) struct FieldMeta {
 }
 
 pub(super) fn full_fields(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     type_name: &str,
 ) -> Result<Vec<FieldMeta>, CellValueDiagnostics> {
-    let Some(fields) = schema.fields(type_name) else {
+    let Some(schema_type) = schema.resolve_type(type_name) else {
         return Err(CellValueDiagnostics {
             diagnostics: vec![CellValueDiagnostic {
                 code: CellValueErrorCode::UnknownType,
@@ -184,15 +204,12 @@ pub(super) fn full_fields(
             }],
         });
     };
-    fields.map(|field| field_meta(schema, field)).collect()
+    Ok(schema_type.all_fields().map(field_meta).collect())
 }
 
-fn field_meta(
-    schema: &CompiledSchema,
-    field: &CftFieldMeta,
-) -> Result<FieldMeta, CellValueDiagnostics> {
-    Ok(FieldMeta {
-        name: field.name.clone(),
-        ty: CellType::parse(schema, &field.raw_type)?,
-    })
+fn field_meta(field: &CftField) -> FieldMeta {
+    FieldMeta {
+        name: field.name.to_string(),
+        ty: CellType::from_schema_type(&field.ty_ref),
+    }
 }

@@ -1,330 +1,275 @@
-mod compiler;
-mod support;
-mod type_checker;
+mod dimension_checks;
+mod queries;
+mod typed_checks;
+mod value_dependencies;
 
-use self::compiler::SchemaCompiler;
-use crate::container::{CftContainer, ModuleId};
-use crate::error::CftDiagnostics;
-use crate::span::Span;
-use coflow_structure::{StructuralBudget, StructuralLimits};
+pub use typed_checks::{TypedCheckPlan, TypedCheckSchedule};
+pub use value_dependencies::{
+    ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
+};
+
+use crate::compiled::CompiledSchema;
+use crate::module_id::ModuleId;
+use crate::{
+    CftConst, CftDiagnostic, CftDiagnostics, CftDimension, CftDimensionInputs, CftEnum,
+    CftErrorCode, CftField, CftType, ConstName, DimensionName, EnumName, EnumVariantName, Span,
+    TypeName,
+};
+use coflow_structure::{BudgetExceeded, StructuralBudget};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct CftCompileOptions {
-    pub structural_limits: StructuralLimits,
+#[derive(Debug)]
+pub(super) struct LocatedBudgetError {
+    pub(super) error: BudgetExceeded,
+    pub(super) module: ModuleId,
+    pub(super) span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaModule {
-    pub consts: Vec<CftSchemaConst>,
-    pub types: Vec<CftSchemaType>,
-    pub enums: Vec<CftSchemaEnum>,
+impl LocatedBudgetError {
+    fn into_diagnostics(self) -> CftDiagnostics {
+        CftDiagnostics::one(CftDiagnostic::error(
+            CftErrorCode::SchemaStructureLimitExceeded,
+            self.module,
+            self.span,
+            self.error.to_string(),
+        ))
+    }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaConst {
-    pub module: ModuleId,
-    pub name: String,
-    pub value: CftConstValue,
-    pub span: Span,
+#[derive(Debug, Clone)]
+pub struct CftSchema {
+    consts: BTreeMap<ConstName, CftConst>,
+    pub(crate) types: BTreeMap<TypeName, CftType>,
+    enums: BTreeMap<EnumName, CftEnum>,
+    children_by_parent: BTreeMap<TypeName, Vec<TypeName>>,
+    dimensions: BTreeMap<DimensionName, CftDimension>,
+    type_by_id_as_enum: BTreeMap<EnumName, TypeName>,
+    typed_checks: TypedCheckPlan,
+    value_dependencies: ValueDependencyPlan,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum CftConstValue {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    String(String),
-}
+impl CftSchema {
+    pub(crate) fn from_compiled(
+        compiled: CompiledSchema,
+        dimension_inputs: &CftDimensionInputs,
+        budget: &mut StructuralBudget,
+    ) -> Result<Self, CftDiagnostics> {
+        let consts = compiled.consts;
+        let enums = compiled.enums;
+        let types = compiled.types;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaType {
-    pub module: ModuleId,
-    pub name: String,
-    pub parent: Option<String>,
-    pub is_abstract: bool,
-    pub is_sealed: bool,
-    pub is_singleton: bool,
-    pub fields: Vec<CftSchemaField>,     // 自身字段（不含继承）
-    pub all_fields: Vec<CftSchemaField>, // 含继承的完整字段列表
-    pub check: Option<CftSchemaCheckBlock>,
-    pub annotations: Vec<CftAnnotation>,
-    pub span: Span,
-}
+        let children_by_parent = types.values().fold(
+            BTreeMap::<TypeName, Vec<TypeName>>::new(),
+            |mut children, ty| {
+                if let Some(parent) = &ty.parent {
+                    children
+                        .entry(parent.clone())
+                        .or_default()
+                        .push(ty.name.clone());
+                }
+                children
+            },
+        );
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CftSchemaTypeRef {
-    Int,
-    Float,
-    Bool,
-    String,
-    Named(String),
-    Ref(String),
-    Array(Box<CftSchemaTypeRef>),
-    Dict(Box<CftSchemaTypeRef>, Box<CftSchemaTypeRef>),
-    Nullable(Box<CftSchemaTypeRef>),
-}
-
-impl CftSchemaTypeRef {
-    #[must_use]
-    pub const fn is_nullable(&self) -> bool {
-        matches!(self, Self::Nullable(_))
+        let dimensions = crate::dimensions::build_dimensions(&types, dimension_inputs)?;
+        let type_by_id_as_enum = types
+            .values()
+            .filter_map(|ty| {
+                ty.id_as_enum
+                    .as_ref()
+                    .map(|enum_name| (enum_name.clone(), ty.name.clone()))
+            })
+            .collect();
+        let typed_checks = TypedCheckPlan::compile(&types, budget)
+            .map_err(LocatedBudgetError::into_diagnostics)?;
+        let value_dependencies = ValueDependencyPlan::compile(&types, budget)
+            .map_err(LocatedBudgetError::into_diagnostics)?;
+        Ok(Self {
+            consts,
+            types,
+            enums,
+            children_by_parent,
+            dimensions,
+            type_by_id_as_enum,
+            typed_checks,
+            value_dependencies,
+        })
     }
 
     #[must_use]
-    pub fn non_nullable(&self) -> &Self {
-        match self {
-            Self::Nullable(inner) => inner.non_nullable(),
-            other => other,
+    pub const fn value_dependencies(&self) -> &ValueDependencyPlan {
+        &self.value_dependencies
+    }
+
+    /// Returns the semantic declaration retained for language tooling.
+    #[must_use]
+    pub fn resolve_type(&self, name: &str) -> Option<&CftType> {
+        self.types.get(name)
+    }
+
+    /// Returns the semantic enum declaration retained for language tooling.
+    #[must_use]
+    pub fn resolve_enum(&self, name: &str) -> Option<&CftEnum> {
+        self.enums.get(name)
+    }
+
+    /// Returns the semantic const declaration retained for language tooling.
+    #[must_use]
+    pub fn resolve_const(&self, name: &str) -> Option<&CftConst> {
+        self.consts.get(name)
+    }
+
+    pub fn all_types(&self) -> impl Iterator<Item = &CftType> {
+        self.types.values()
+    }
+
+    pub fn all_enums(&self) -> impl Iterator<Item = &CftEnum> {
+        self.enums.values()
+    }
+
+    pub fn all_consts(&self) -> impl Iterator<Item = &CftConst> {
+        self.consts.values()
+    }
+
+    #[must_use]
+    pub fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
+        let mut current = Some(actual_type);
+        while let Some(name) = current {
+            if name == expected_type {
+                return true;
+            }
+            current = self.types.get(name).and_then(|meta| meta.parent.as_deref());
+        }
+        false
+    }
+
+    #[must_use]
+    pub fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
+        let meta = self.enums.get(enum_name)?;
+        let index = *meta.variant_by_name.get(variant)?;
+        meta.variants.get(index).map(|variant| variant.value)
+    }
+
+    #[must_use]
+    pub fn enum_value_from_int(&self, enum_name: &str, value: i64) -> Option<CftEnumValue> {
+        let meta = self.enums.get(enum_name)?;
+        let index = *meta.variant_by_value.get(&value)?;
+        let variant = meta.variants.get(index)?;
+        Some(CftEnumValue {
+            enum_name: meta.name.clone(),
+            variant: Some(variant.name.clone()),
+            value,
+        })
+    }
+
+    #[must_use]
+    pub fn check_schedule<'schema, 'dimension>(
+        &'schema self,
+        actual_type: &str,
+        dimension: Option<&'dimension str>,
+    ) -> TypedCheckSchedule<'schema, 'dimension> {
+        TypedCheckSchedule::new(self, actual_type, dimension)
+    }
+
+    #[must_use]
+    pub fn field_has_nested_checks(&self, actual_type: &str, field_name: &str) -> bool {
+        self.typed_checks
+            .field_has_nested_checks(actual_type, field_name)
+    }
+
+    #[must_use]
+    pub fn resolve_dimension(&self, name: &str) -> Option<&CftDimension> {
+        self.dimensions.get(name)
+    }
+
+    pub fn all_dimensions(&self) -> impl Iterator<Item = &CftDimension> {
+        self.dimensions.values()
+    }
+
+    #[must_use]
+    pub fn type_for_id_as_enum(&self, enum_name: &str) -> Option<&CftType> {
+        self.types.get(self.type_by_id_as_enum.get(enum_name)?)
+    }
+
+    #[must_use]
+    pub fn field(&self, actual_type: &str, field_name: &str) -> Option<&CftField> {
+        self.types.get(actual_type)?.field(field_name)
+    }
+
+    pub fn children(&self, type_name: &TypeName) -> &[TypeName] {
+        self.children_by_parent
+            .get(type_name)
+            .map_or(&[], Vec::as_slice)
+    }
+
+    #[must_use]
+    pub fn range_is_polymorphic(&self, type_name: &str) -> bool {
+        self.types
+            .get(type_name)
+            .is_some_and(|meta| meta.is_abstract || !self.children(&meta.name).is_empty())
+    }
+
+    #[must_use]
+    pub fn assignable_target_names(&self, actual_type: &str) -> Vec<TypeName> {
+        let mut out = Vec::new();
+        let mut current = Some(actual_type);
+        while let Some(name) = current {
+            out.push(TypeName::from_validated(name.to_string()));
+            current = self.types.get(name).and_then(|meta| meta.parent.as_deref());
+        }
+        out
+    }
+
+    pub fn singleton_types(&self) -> impl Iterator<Item = &CftType> {
+        self.types.values().filter(|meta| meta.is_singleton)
+    }
+
+    #[must_use]
+    pub fn concrete_assignable_types(&self, type_name: &str) -> Option<Vec<TypeName>> {
+        let mut out = Vec::new();
+        let meta = self.types.get(type_name)?;
+        if !meta.is_abstract {
+            out.push(TypeName::from_validated(type_name.to_string()));
+        }
+        self.collect_concrete_descendants(type_name, &mut out);
+        Some(out)
+    }
+
+    fn collect_concrete_descendants(&self, type_name: &str, out: &mut Vec<TypeName>) {
+        let Some(parent) = self.types.get(type_name) else {
+            return;
+        };
+        for child in self.children(&parent.name) {
+            let Some(child_meta) = self.types.get(child) else {
+                continue;
+            };
+            if !child_meta.is_abstract {
+                out.push(child.clone());
+            }
+            self.collect_concrete_descendants(child, out);
         }
     }
+}
 
+impl CftType {
     #[must_use]
-    pub fn display_label(&self) -> String {
-        format_schema_type_ref(self)
+    pub fn field(&self, name: &str) -> Option<&CftField> {
+        let index = *self.field_by_name.get(name)?;
+        self.all_fields.get(index).map(AsRef::as_ref)
     }
-}
 
-#[must_use]
-pub fn format_schema_type_ref(ty: &CftSchemaTypeRef) -> String {
-    match ty {
-        CftSchemaTypeRef::Int => "int".to_string(),
-        CftSchemaTypeRef::Float => "float".to_string(),
-        CftSchemaTypeRef::Bool => "bool".to_string(),
-        CftSchemaTypeRef::String => "string".to_string(),
-        CftSchemaTypeRef::Named(name) => name.clone(),
-        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
-        CftSchemaTypeRef::Array(inner) => format!("[{}]", format_schema_type_ref(inner)),
-        CftSchemaTypeRef::Dict(key, value) => {
-            format!(
-                "{{{}: {}}}",
-                format_schema_type_ref(key),
-                format_schema_type_ref(value)
-            )
-        }
-        CftSchemaTypeRef::Nullable(inner) => format!("{}?", format_schema_type_ref(inner)),
+    pub fn own_fields(&self) -> impl Iterator<Item = &CftField> {
+        self.own_fields.iter().map(AsRef::as_ref)
+    }
+
+    pub fn all_fields(&self) -> impl Iterator<Item = &CftField> {
+        self.all_fields.iter().map(AsRef::as_ref)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Dimension {
-    Localized,
-    Custom(String),
-}
-
-impl Dimension {
-    /// Returns the canonical dimension name used as a key in variant maps and
-    /// synthesized type names.
-    #[must_use]
-    pub fn name(&self) -> &str {
-        match self {
-            Self::Localized => "language",
-            Self::Custom(name) => name.as_str(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DimensionSpec {
-    pub kind: Dimension,
-    pub bucket: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaField {
-    pub name: String,
-    pub ty: String,
-    pub ty_ref: CftSchemaTypeRef,
-    pub has_default: bool,
-    pub default: Option<CftSchemaDefaultValue>,
-    pub annotations: Vec<CftAnnotation>,
-    pub dimension: Option<DimensionSpec>,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CftSchemaDefaultValue {
-    Null,
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    String(String),
-    Enum {
-        enum_name: String,
-        variant: String,
-        value: i64,
-    },
-    EmptyArray,
-    EmptyObject,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaCheckBlock {
-    pub stmts: Vec<CftSchemaCheckStmt>,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CftSchemaCheckStmt {
-    Expr(CftSchemaCheckExpr),
-    Quantifier {
-        kind: CftSchemaQuantifierKind,
-        binding: String,
-        collection: CftSchemaCheckExpr,
-        body: Vec<CftSchemaCheckStmt>,
-        span: Span,
-    },
-    When {
-        condition: CftSchemaCheckExpr,
-        body: Vec<CftSchemaCheckStmt>,
-        span: Span,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaCheckExpr {
-    pub kind: CftSchemaCheckExprKind,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CftSchemaCheckExprKind {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Null,
-    String(String),
-    Name(String),
-    Field {
-        expr: Box<CftSchemaCheckExpr>,
-        name: String,
-    },
-    Index {
-        expr: Box<CftSchemaCheckExpr>,
-        index: Box<CftSchemaCheckExpr>,
-    },
-    Is {
-        expr: Box<CftSchemaCheckExpr>,
-        predicate: CftSchemaTypePredicate,
-    },
-    Call {
-        name: String,
-        args: Vec<CftSchemaCheckExpr>,
-    },
-    MethodCall {
-        receiver: Box<CftSchemaCheckExpr>,
-        name: String,
-        args: Vec<CftSchemaCheckExpr>,
-    },
-    BinOp {
-        op: CftSchemaBinOp,
-        lhs: Box<CftSchemaCheckExpr>,
-        rhs: Box<CftSchemaCheckExpr>,
-    },
-    Unary {
-        op: CftSchemaUnaryOp,
-        expr: Box<CftSchemaCheckExpr>,
-    },
-    CmpChain {
-        first: Box<CftSchemaCheckExpr>,
-        rest: Vec<(CftSchemaCmpOp, CftSchemaCheckExpr)>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CftSchemaTypePredicate {
-    Type(String),
-    Null,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CftSchemaQuantifierKind {
-    All,
-    Any,
-    None,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CftSchemaBinOp {
-    Or,
-    And,
-    BitOr,
-    BitXor,
-    BitAnd,
-    Add,
-    Sub,
-    Shl,
-    Shr,
-    Mul,
-    Div,
-    IntDiv,
-    Mod,
-    Pow,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CftSchemaUnaryOp {
-    Not,
-    BitNot,
-    Neg,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CftSchemaCmpOp {
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaEnum {
-    pub module: ModuleId,
-    pub name: String,
-    pub variants: Vec<CftSchemaEnumVariant>,
-    pub annotations: Vec<CftAnnotation>,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaEnumVariant {
-    pub name: String,
+pub struct CftEnumValue {
+    pub enum_name: EnumName,
+    pub variant: Option<EnumVariantName>,
     pub value: i64,
-    pub annotations: Vec<CftAnnotation>,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftAnnotation {
-    pub name: String,
-    pub args: Vec<CftAnnotationValue>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CftAnnotationValue {
-    Name(String),
-    String(String),
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Null,
-}
-
-#[derive(Debug, Clone, Default)]
-pub(crate) struct SchemaReflection {
-    pub(crate) modules: BTreeMap<ModuleId, CftSchemaModule>,
-    pub(crate) consts: BTreeMap<String, CftSchemaConst>,
-    pub(crate) types: BTreeMap<String, CftSchemaType>,
-    pub(crate) enums: BTreeMap<String, CftSchemaEnum>,
-}
-
-pub(crate) fn compile_container(
-    container: &CftContainer,
-    options: CftCompileOptions,
-) -> Result<(SchemaReflection, StructuralBudget), CftDiagnostics> {
-    let mut compiler = SchemaCompiler::new(container, options);
-    let reflection = compiler.compile()?;
-    Ok((reflection, compiler.budget))
 }

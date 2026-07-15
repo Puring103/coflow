@@ -4,7 +4,7 @@
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
 use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdSyntaxDiagnostic, CfdValue};
-use coflow_cft::{CftContainer, CftSchemaTypeRef, Span};
+use coflow_cft::{CftSchema, CftSchemaTypeRef, Span};
 use serde_json::{json, Value};
 
 // ── Semantic token type indices (must match SEMANTIC_TOKEN_TYPES in lib.rs) ──
@@ -188,7 +188,7 @@ fn collect_comment_tokens(source: &str, c: &mut TokenCollector<'_>) {
 /// Hover: return type info when cursor is on a type name span.
 ///
 /// Returns `Value::Null` when there is nothing to show.
-pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftContainer>, offset: usize) -> Value {
+pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usize) -> Value {
     for record in &ast.records {
         if span_contains(record.type_span, offset) {
             let detail = schema
@@ -216,7 +216,7 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftContainer>, offset: 
             if span_contains(field.name_span, offset) {
                 let detail = schema
                     .and_then(|s| s.resolve_type(&record.type_name))
-                    .and_then(|t| t.all_fields.iter().find(|f| f.name == field.name))
+                    .and_then(|t| t.all_fields().find(|f| f.name.as_str() == field.name))
                     .map_or_else(
                         || format!("`{}`", field.name),
                         |f| format!("```\n{}: {}\n```", f.name, fmt_type_ref(&f.ty_ref)),
@@ -232,12 +232,7 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftContainer>, offset: 
 }
 
 /// Completion: field names when cursor is inside a record body.
-pub fn completion(
-    _source: &str,
-    ast: &CfdAst,
-    schema: Option<&CftContainer>,
-    offset: usize,
-) -> Value {
+pub fn completion(_source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usize) -> Value {
     let Some(schema) = schema else {
         return json!([]);
     };
@@ -252,12 +247,11 @@ pub fn completion(
         let existing: std::collections::BTreeSet<&str> =
             record.fields.iter().map(|f| f.name.as_str()).collect();
         let items: Vec<Value> = schema_type
-            .all_fields
-            .iter()
+            .all_fields()
             .filter(|f| !existing.contains(f.name.as_str()))
             .map(|f| {
                 json!({
-                    "label": f.name,
+                    "label": f.name.as_str(),
                     "kind": 5,  // Field
                     "detail": fmt_type_ref(&f.ty_ref),
                 })
@@ -270,7 +264,7 @@ pub fn completion(
     let types: Vec<Value> = schema
         .all_types()
         .filter(|t| !t.is_abstract)
-        .map(|t| json!({ "label": t.name, "kind": 7 }))
+        .map(|t| json!({ "label": t.name.as_str(), "kind": 7 }))
         .collect();
     json!(types)
 }
@@ -332,7 +326,7 @@ fn type_name_in_value(value: &CfdValue, offset: usize) -> Option<&str> {
 /// CFD record field.
 pub fn definition_field_name<'a>(
     ast: &'a CfdAst,
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     offset: usize,
 ) -> Option<(String, &'a str)> {
     for record in &ast.records {
@@ -348,7 +342,7 @@ pub fn definition_field_name<'a>(
 
 fn field_name_in_entry<'a>(
     entry: &'a CfdBlockEntry,
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     owner_type: String,
     offset: usize,
 ) -> Option<(String, &'a str)> {
@@ -362,7 +356,7 @@ fn field_name_in_entry<'a>(
 
 fn field_name_in_fields<'a>(
     fields: &'a [coflow_cfd::CfdField],
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     owner_type: String,
     offset: usize,
 ) -> Option<(String, &'a str)> {
@@ -373,9 +367,8 @@ fn field_name_in_fields<'a>(
         let next_owner = schema
             .and_then(|schema| schema.resolve_type(&owner_type))
             .and_then(|ty| {
-                ty.all_fields
-                    .iter()
-                    .find(|schema_field| schema_field.name == field.name)
+                ty.all_fields()
+                    .find(|schema_field| schema_field.name.as_str() == field.name)
             })
             .and_then(|schema_field| named_type_name(&schema_field.ty_ref))
             .map(str::to_string);
@@ -390,7 +383,7 @@ fn field_name_in_fields<'a>(
 
 fn field_name_in_value<'a>(
     value: &'a CfdValue,
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     owner_type: String,
     offset: usize,
 ) -> Option<(String, &'a str)> {
@@ -434,7 +427,7 @@ fn field_name_in_value<'a>(
 
 fn named_type_name(ty: &CftSchemaTypeRef) -> Option<&str> {
     match ty {
-        CftSchemaTypeRef::Named(name) => Some(name),
+        CftSchemaTypeRef::Object(name) => Some(name),
         CftSchemaTypeRef::Nullable(inner) => named_type_name(inner),
         _ => None,
     }
@@ -443,7 +436,7 @@ fn named_type_name(ty: &CftSchemaTypeRef) -> Option<&str> {
 /// Definition: return the expected schema type and key under a reference.
 pub fn definition_ref_target(
     ast: &CfdAst,
-    schema: Option<&CftContainer>,
+    schema: Option<&CftSchema>,
     offset: usize,
 ) -> Option<(String, String)> {
     let schema = schema?;
@@ -459,7 +452,7 @@ pub fn definition_ref_target(
 
 fn ref_target_in_entry(
     entry: &CfdBlockEntry,
-    schema: &CftContainer,
+    schema: &CftSchema,
     owner_type: &str,
     offset: usize,
 ) -> Option<(String, String)> {
@@ -467,24 +460,26 @@ fn ref_target_in_entry(
         CfdBlockEntry::Field(field) => {
             let owner = schema.resolve_type(owner_type)?;
             let field_type = &owner
-                .all_fields
-                .iter()
-                .find(|candidate| candidate.name == field.name)?
+                .all_fields()
+                .find(|candidate| candidate.name.as_str() == field.name)?
                 .ty_ref;
             ref_target_in_value(&field.value, schema, field_type, offset)
         }
-        CfdBlockEntry::Spread(value, _) => ref_target_in_value(
-            value,
-            schema,
-            &CftSchemaTypeRef::Ref(owner_type.to_string()),
-            offset,
-        ),
+        CfdBlockEntry::Spread(value, _) => {
+            let owner = schema.resolve_type(owner_type)?;
+            ref_target_in_value(
+                value,
+                schema,
+                &CftSchemaTypeRef::RecordRef(owner.name.clone()),
+                offset,
+            )
+        }
     }
 }
 
 fn ref_target_in_value(
     value: &CfdValue,
-    schema: &CftContainer,
+    schema: &CftSchema,
     expected_type: &CftSchemaTypeRef,
     offset: usize,
 ) -> Option<(String, String)> {
@@ -548,7 +543,7 @@ fn strip_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
 
 fn reference_target_type(ty: &CftSchemaTypeRef) -> Option<&str> {
     match strip_nullable(ty) {
-        CftSchemaTypeRef::Named(name) | CftSchemaTypeRef::Ref(name) => Some(name),
+        CftSchemaTypeRef::Object(name) | CftSchemaTypeRef::RecordRef(name) => Some(name),
         _ => None,
     }
 }
@@ -560,19 +555,7 @@ fn span_contains(span: Span, offset: usize) -> bool {
 }
 
 fn fmt_type_ref(ty: &CftSchemaTypeRef) -> String {
-    match ty {
-        CftSchemaTypeRef::Int => "int".to_string(),
-        CftSchemaTypeRef::Float => "float".to_string(),
-        CftSchemaTypeRef::Bool => "bool".to_string(),
-        CftSchemaTypeRef::String => "string".to_string(),
-        CftSchemaTypeRef::Named(name) => name.clone(),
-        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
-        CftSchemaTypeRef::Array(inner) => format!("[{}]", fmt_type_ref(inner)),
-        CftSchemaTypeRef::Dict(k, v) => {
-            format!("{{{}: {}}}", fmt_type_ref(k), fmt_type_ref(v))
-        }
-        CftSchemaTypeRef::Nullable(inner) => format!("{}?", fmt_type_ref(inner)),
-    }
+    ty.display_label()
 }
 
 pub fn byte_range(source: &str, start: usize, end: usize) -> Value {

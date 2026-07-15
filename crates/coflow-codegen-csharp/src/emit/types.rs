@@ -3,7 +3,7 @@ use coflow_cft::{CftSchemaDefaultValue, CftSchemaTypeRef};
 use crate::lowering::CsharpLoweringPlan;
 use crate::names::{escape_csharp_string, format_float};
 use crate::CsharpCodegenError;
-use coflow_cft::CftFieldMeta;
+use coflow_cft::CftField;
 
 use super::identifiers::csharp_public_member_name;
 
@@ -25,7 +25,10 @@ pub(super) fn csharp_type(ty: &CftSchemaTypeRef, view: &CsharpLoweringPlan<'_>) 
         }
         CftSchemaTypeRef::Bool => "bool".to_string(),
         CftSchemaTypeRef::String => "string".to_string(),
-        CftSchemaTypeRef::Named(name) | CftSchemaTypeRef::Ref(name) => view.csharp_named_type(name),
+        CftSchemaTypeRef::Object(name) | CftSchemaTypeRef::RecordRef(name) => {
+            view.csharp_type_name(name)
+        }
+        CftSchemaTypeRef::Enum(name) => view.csharp_enum_name(name),
         CftSchemaTypeRef::Array(inner) => format!("List<{}>", csharp_type(inner, view)),
         CftSchemaTypeRef::Dict(key, value) => {
             format!(
@@ -43,7 +46,7 @@ pub(super) fn csharp_type(ty: &CftSchemaTypeRef, view: &CsharpLoweringPlan<'_>) 
 /// normally receive (including `IReadOnlyList<T>` / `IReadOnlyDictionary<...>`
 /// for collection fields).
 pub(super) fn csharp_field_property_type(
-    field: &CftFieldMeta,
+    field: &CftField,
     view: &CsharpLoweringPlan<'_>,
 ) -> String {
     let inner = csharp_property_type(&field.ty_ref, view);
@@ -114,7 +117,7 @@ fn string_default_expr(
     view: &CsharpLoweringPlan<'_>,
 ) -> String {
     match ty.non_nullable() {
-        CftSchemaTypeRef::Named(name) if view.is_id_as_enum(name) => {
+        CftSchemaTypeRef::Enum(name) if view.is_id_as_enum(name) => {
             let enum_name = view.csharp_enum_name(name);
             let value = escape_csharp_string(value);
             format!("({enum_name})Enum.Parse(typeof({enum_name}), \"{value}\")")

@@ -1,7 +1,7 @@
 mod tokens;
 
-use crate::container::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
+use crate::module_id::ModuleId;
 use crate::span::Span;
 pub use tokens::{Token, TokenKind};
 use unicode_ident::{is_xid_continue, is_xid_start};

@@ -1,14 +1,16 @@
 use std::collections::BTreeSet;
 
 use coflow_api::{ProviderRegistry, WriterCapabilities};
-use coflow_cft::{CftAnnotation, CftAnnotationValue, CftSchemaTypeRef, CompiledSchema};
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RefSite};
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_data_model::{
+    CfdPath, CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup, RefSite,
+};
 
 use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
 use crate::{
-    DiagnosticsStore, DimensionInfo, EffectiveFieldWrite, FieldShapeInfo, FileTreeNode,
-    FileTreeOptions, IdAsEnumInfo, ProjectSession, RecordCoordinate, RecordReferenceInfo,
-    RecordView, RefTargetInfo,
+    DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState, DimensionValueView,
+    EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, FileTreeOptions, IdAsEnumInfo,
+    ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
 };
 
 /// Read-only capability over one immutable project generation.
@@ -71,18 +73,17 @@ impl<'a> ProjectQueries<'a> {
 
     #[must_use]
     pub fn schema_has_type(self, type_name: &str) -> bool {
-        self.session.compiled_schema().has_type(type_name)
+        self.session.schema().resolve_type(type_name).is_some()
     }
 
     #[must_use]
     pub fn schema_type_fields(self, type_name: &str) -> Vec<(String, String)> {
         self.session
-            .compiled_schema()
-            .type_meta(type_name)
+            .schema()
+            .resolve_type(type_name)
             .map(|meta| {
-                meta.all_fields
-                    .iter()
-                    .map(|field| (field.name.clone(), field.raw_type.clone()))
+                meta.all_fields()
+                    .map(|field| (field.name.to_string(), field.ty_ref.display_label()))
                     .collect()
             })
             .unwrap_or_default()
@@ -163,13 +164,48 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
-    pub fn dimension_synthesized_types(self) -> BTreeSet<String> {
-        self.session.dimension_synthesized_types()
+    pub fn dimension(self, name: &str) -> Option<DimensionInfo> {
+        self.session.dimension(name)
     }
 
     #[must_use]
-    pub fn dimension(self, name: &str) -> Option<DimensionInfo> {
-        self.session.dimension(name)
+    pub fn dimension_value(
+        self,
+        coordinate: &crate::DimensionValueCoordinate,
+    ) -> Option<DimensionValueView> {
+        let record_id = self.id_for_coordinate(
+            coordinate.actual_type.as_str(),
+            coordinate.record_key.as_str(),
+        )?;
+        match self
+            .session
+            .model()
+            .dimension_field_value(
+                self.session.schema(),
+                record_id,
+                coordinate.field.as_str(),
+                coordinate.dimension.as_str(),
+                coordinate.variant.as_str(),
+            )
+            .ok()?
+        {
+            DimensionValueLookup::Value { value, origin } => Some(DimensionValueView {
+                state: DimensionValueState::Value(
+                    dimension_value_at_path(value, &coordinate.path)?.clone(),
+                ),
+                origin: DimensionValueOrigin::from_record_origin(origin),
+            }),
+            DimensionValueLookup::ExplicitNull { origin } => {
+                coordinate.path.is_empty().then(|| DimensionValueView {
+                    state: DimensionValueState::Value(CfdValue::Null),
+                    origin: DimensionValueOrigin::from_record_origin(origin),
+                })
+            }
+            DimensionValueLookup::Missing => Some(DimensionValueView {
+                state: DimensionValueState::Missing,
+                origin: None,
+            }),
+        }
     }
 
     #[must_use]
@@ -203,11 +239,8 @@ impl<'a> ProjectQueries<'a> {
 
     #[must_use]
     pub fn field_shape(self, actual_type: &str, field_name: &str) -> Option<FieldShapeInfo> {
-        let ty = self
-            .session
-            .compiled_schema()
-            .field_type(actual_type, field_name)?;
-        Some(field_shape(self.session.compiled_schema(), ty))
+        let field = self.session.schema().field(actual_type, field_name)?;
+        Some(field_shape(self.session.schema(), &field.ty_ref))
     }
 
     #[must_use]
@@ -246,7 +279,8 @@ impl<'a> ProjectQueries<'a> {
             .filter_map(|edge| {
                 Some(RecordReferenceInfo {
                     target: self.coordinate_of(edge.target)?,
-                    path: edge.path.clone(),
+                    path: edge.site.path.clone(),
+                    dimension: edge.site.dimension.clone(),
                 })
             })
             .collect()
@@ -254,15 +288,15 @@ impl<'a> ProjectQueries<'a> {
 
     #[must_use]
     pub fn id_as_enum_info(self) -> Vec<IdAsEnumInfo> {
-        let schema = self.session.compiled_schema();
+        let schema = self.session.schema();
         let model = self.session.model();
         schema
-            .type_metas()
+            .all_types()
             .filter_map(|schema_type| {
-                let enum_name = annotation_name_arg(&schema_type.annotations, "idAsEnum")?;
+                let enum_name = schema_type.id_as_enum.as_ref()?.to_string();
                 let is_flags = schema
-                    .enum_meta(&enum_name)
-                    .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
+                    .resolve_enum(&enum_name)
+                    .is_some_and(|schema_enum| schema_enum.is_flag);
                 let ids = model.polymorphic_index(&schema_type.name).map_or_else(
                     || {
                         model
@@ -323,25 +357,49 @@ impl<'a> ProjectQueries<'a> {
     }
 }
 
-fn field_shape(schema: &CompiledSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
+fn dimension_value_at_path<'a>(
+    mut value: &'a CfdValue,
+    path: &[CfdPathSegment],
+) -> Option<&'a CfdValue> {
+    for segment in path {
+        value = match (segment, value) {
+            (CfdPathSegment::Field(field), CfdValue::Object(object)) => {
+                object.fields().get(field)?
+            }
+            (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
+            (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => {
+                entries.iter().find_map(|(candidate, value)| {
+                    (coflow_data_model::format_cfd_dict_key(candidate) == *key).then_some(value)
+                })?
+            }
+            _ => return None,
+        };
+    }
+    Some(value)
+}
+
+fn field_shape(schema: &CftSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
     let non_nullable = non_nullable(ty);
-    let named = match non_nullable {
-        CftSchemaTypeRef::Named(name) => Some(name.as_str()),
-        _ => None,
-    };
     let ref_target_type = match non_nullable {
-        CftSchemaTypeRef::Ref(name) => Some(name.clone()),
+        CftSchemaTypeRef::RecordRef(name) => Some(name.to_string()),
         _ => None,
     };
-    let enum_type = named
-        .filter(|name| schema.is_schema_enum(name))
-        .map(str::to_string);
-    let polymorphic_types = named
-        .and_then(|name| schema.type_meta(name).map(|meta| (name, meta)))
-        .filter(|(_, meta)| meta.is_abstract)
-        .and_then(|(name, _)| schema.concrete_assignable_types(name))
-        .filter(|types| types.len() >= 2)
-        .unwrap_or_default();
+    let enum_type = match non_nullable {
+        CftSchemaTypeRef::Enum(name) => Some(name.to_string()),
+        _ => None,
+    };
+    let polymorphic_types = match non_nullable {
+        CftSchemaTypeRef::Object(name) => Some(name.as_str()),
+        _ => None,
+    }
+    .and_then(|name| schema.resolve_type(name).map(|meta| (name, meta)))
+    .filter(|(_, meta)| meta.is_abstract)
+    .and_then(|(name, _)| schema.concrete_assignable_types(name))
+    .filter(|types| types.len() >= 2)
+    .unwrap_or_default()
+    .into_iter()
+    .map(|name| name.to_string())
+    .collect();
     let collection_item = match non_nullable {
         CftSchemaTypeRef::Array(item) | CftSchemaTypeRef::Dict(_, item) => {
             Some(Box::new(field_shape(schema, item)))
@@ -363,19 +421,4 @@ fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
         CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
         _ => ty,
     }
-}
-
-fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
-    annotations
-        .iter()
-        .find(|annotation| annotation.name == name)
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|argument| match argument {
-            CftAnnotationValue::Name(value) => Some(value.clone()),
-            _ => None,
-        })
-}
-
-fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
-    annotations.iter().any(|annotation| annotation.name == name)
 }

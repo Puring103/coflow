@@ -18,7 +18,7 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
             expected_key,
             cells,
         } => {
-            let path = local_path(document)?;
+            let path = local_path(document);
             mutate_csv(path, |rows| {
                 let Some(first) = cells.first() else {
                     return Ok(());
@@ -35,7 +35,7 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
             sheet: _,
             values,
         }) => {
-            let path = local_path(document)?;
+            let path = local_path(document);
             mutate_csv(path, |rows| {
                 // 1-based row index of the new row.
                 let row = rows.len() + 1;
@@ -59,7 +59,7 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
             id_column,
             expected_key,
         }) => {
-            let path = local_path(document)?;
+            let path = local_path(document);
             mutate_csv(path, |rows| {
                 ensure_expected_key(rows, path, *row, *id_column, expected_key)?;
                 let idx = row.checked_sub(1).ok_or_else(|| {
@@ -77,14 +77,9 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
     }
 }
 
-fn local_path(document: &SourceDocument) -> Result<&Path, DiagnosticSet> {
-    let SourceDocument::Local(path) = document else {
-        return Err(DiagnosticSet::one(diag(
-            "CSV-WRITE",
-            "csv writer requires a local table document",
-        )));
-    };
-    Ok(path)
+fn local_path(document: &SourceDocument) -> &Path {
+    let SourceDocument::Local(path) = document;
+    path
 }
 
 /// Read the CSV, hand the mutable rows to `mutate`, then write the result

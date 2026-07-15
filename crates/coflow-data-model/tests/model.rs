@@ -201,67 +201,103 @@ fn data_model_resolves_shared_spread_source_for_multiple_consumers() {
 }
 
 #[test]
-fn dimension_field_lookup_reads_variant_storage_without_exposing_storage_to_callers() {
-    let schema = compile_schema(
+fn dimension_field_lookup_reads_record_owned_overlay() {
+    let schema = compile_schema_with_dimensions(
         r#"
             type Item {
                 @dimension("platform")
                 name: string;
             }
-
-            @__coflow_dimension_storage("platform", "Item", "name")
-            type Item_nameVariants {
-                default: string?;
-                pc: string?;
-            }
         "#,
+        CftDimensionInputs::new([("platform", vec!["pc".to_string()])]),
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
-    builder.add_record(
-        "potion",
-        "Item_nameVariants",
-        [
-            ("default", CfdInputValue::from("Potion")),
-            ("pc", CfdInputValue::from("PC Potion")),
-        ],
-    );
+    builder.add_input_dimension_value(CfdInputDimensionValue {
+        source_type: coflow_cft::TypeName::new("Item").unwrap(),
+        source_key: coflow_cft::RecordKey::new("potion").unwrap(),
+        field: coflow_cft::FieldName::new("name").unwrap(),
+        dimension: coflow_cft::DimensionName::new("platform").unwrap(),
+        variant: coflow_cft::VariantName::new("pc").unwrap(),
+        value: CfdInputValue::from("PC Potion"),
+        origin: RecordOrigin::None,
+    });
     let model = builder.build().expect("data model should build");
     let item_id = model.lookup_assignable("Item", "potion").expect("item");
 
     let resolved = model
-        .dimension_field_value(schema.compiled_schema(), item_id, "name", "platform", "pc")
+        .dimension_field_value(&schema, item_id, "name", "platform", "pc")
         .expect("variant lookup should resolve");
 
-    assert_eq!(
-        resolved.record,
-        model.lookup_assignable("Item_nameVariants", "potion")
-    );
-    assert_eq!(resolved.value, &CfdValue::String("PC Potion".to_string()));
-    assert_eq!(
-        resolved.field_type,
-        Some(coflow_cft::CftSchemaTypeRef::Nullable(Box::new(
-            coflow_cft::CftSchemaTypeRef::String
-        )))
-    );
+    assert!(matches!(
+        resolved,
+        DimensionValueLookup::Value {
+            value: CfdValue::String(value),
+            origin: RecordOrigin::None,
+        } if value == "PC Potion"
+    ));
+    assert_eq!(model.record_count(), 1);
 }
 
 #[test]
-fn dimension_field_lookup_uses_field_name_for_singleton_storage_records() {
-    let schema = compile_schema(
+fn dimension_refs_are_precomputed_with_typed_coordinates() {
+    let schema = compile_schema_with_dimensions(
+        r#"
+            type Item { name: string; }
+            type Offer {
+                @dimension("platform")
+                item: &Item;
+            }
+        "#,
+        CftDimensionInputs::new([("platform", vec!["pc".to_string()])]),
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
+    builder.add_record(
+        "starter",
+        "Offer",
+        [("item", CfdInputValue::record_ref("potion"))],
+    );
+    builder.add_input_dimension_value(CfdInputDimensionValue {
+        source_type: coflow_cft::TypeName::new("Offer").unwrap(),
+        source_key: coflow_cft::RecordKey::new("starter").unwrap(),
+        field: coflow_cft::FieldName::new("item").unwrap(),
+        dimension: coflow_cft::DimensionName::new("platform").unwrap(),
+        variant: coflow_cft::VariantName::new("pc").unwrap(),
+        value: CfdInputValue::record_ref("potion"),
+        origin: RecordOrigin::None,
+    });
+
+    let model = builder.build().expect("data model should build");
+    let offer = model.lookup_assignable("Offer", "starter").expect("offer");
+    let item = model.lookup_assignable("Item", "potion").expect("item");
+    let edges = model.direct_ref_edges_from_host(offer).collect::<Vec<_>>();
+
+    assert_eq!(edges.len(), 2);
+    assert!(edges.iter().any(|edge| edge.site.dimension.is_none()));
+    let overlay = edges
+        .iter()
+        .find(|edge| edge.site.dimension.is_some())
+        .expect("overlay ref edge");
+    let coordinate = overlay.site.dimension.as_ref().unwrap();
+    assert_eq!(coordinate.field.as_str(), "item");
+    assert_eq!(coordinate.dimension.as_str(), "platform");
+    assert_eq!(coordinate.variant.as_str(), "pc");
+    assert_eq!(overlay.target, item);
+    assert_eq!(model.direct_ref_edges_to_target(item).count(), 2);
+}
+
+#[test]
+fn dimension_field_lookup_uses_singleton_owner_record() {
+    let schema = compile_schema_with_dimensions(
         r#"
             @singleton
             type UiText {
                 @localized
                 welcome: string;
             }
-
-            @__coflow_dimension_storage("language", "UiText", "welcome")
-            type UiText_welcomeVariants {
-                default: string?;
-                zh: string?;
-            }
         "#,
+        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -269,34 +305,31 @@ fn dimension_field_lookup_uses_field_name_for_singleton_storage_records() {
         "UiText",
         [("welcome", CfdInputValue::from("Welcome"))],
     );
-    builder.add_record(
-        "welcome",
-        "UiText_welcomeVariants",
-        [
-            ("default", CfdInputValue::from("Welcome")),
-            ("zh", CfdInputValue::from("欢迎")),
-        ],
-    );
+    builder.add_input_dimension_value(CfdInputDimensionValue {
+        source_type: coflow_cft::TypeName::new("UiText").unwrap(),
+        source_key: coflow_cft::RecordKey::new("UiText").unwrap(),
+        field: coflow_cft::FieldName::new("welcome").unwrap(),
+        dimension: coflow_cft::DimensionName::new("language").unwrap(),
+        variant: coflow_cft::VariantName::new("zh").unwrap(),
+        value: CfdInputValue::from("欢迎"),
+        origin: RecordOrigin::None,
+    });
     let model = builder.build().expect("data model should build");
     let singleton_id = model
         .lookup_assignable("UiText", "UiText")
         .expect("singleton");
 
     let resolved = model
-        .dimension_field_value(
-            schema.compiled_schema(),
-            singleton_id,
-            "welcome",
-            "language",
-            "zh",
-        )
+        .dimension_field_value(&schema, singleton_id, "welcome", "language", "zh")
         .expect("singleton variant lookup should resolve by field name");
 
-    assert_eq!(
-        resolved.record,
-        model.lookup_assignable("UiText_welcomeVariants", "welcome")
-    );
-    assert_eq!(resolved.value, &CfdValue::String("欢迎".to_string()));
+    assert!(matches!(
+        resolved,
+        DimensionValueLookup::Value {
+            value: CfdValue::String(value),
+            ..
+        } if value == "欢迎"
+    ));
 }
 
 #[test]

@@ -28,7 +28,10 @@ impl MutationTransaction {
                 if !seen.insert(key) {
                     return Ok(());
                 }
-                let declared = writer.begin_transaction(ctx, source)?;
+                let declared = writer.map_or_else(
+                    || Ok(SourceTransaction::RuntimeSnapshot),
+                    |writer| writer.begin_transaction(ctx, source),
+                )?;
                 transaction.enlist(source, declared)
             });
             if let Err(mut diagnostics) = enlisted {
@@ -46,16 +49,7 @@ impl MutationTransaction {
     ) -> Result<(), DiagnosticSet> {
         match declared {
             SourceTransaction::RuntimeSnapshot => {
-                let SourceLocationSpec::Path(path) = &source.location else {
-                    return Err(DiagnosticSet::one(Diagnostic::error(
-                        "WRITE-TXN-CONTRACT",
-                        "WRITE",
-                        format!(
-                            "provider `{}` requested a runtime snapshot for non-local source `{}`",
-                            source.provider_id, source.display_name
-                        ),
-                    )));
-                };
+                let SourceLocationSpec::Path(path) = &source.location;
                 self.local.snapshot_file(path)?;
             }
             SourceTransaction::Compensation(compensation) => {
@@ -139,12 +133,8 @@ impl std::fmt::Debug for ProviderTransaction {
 }
 
 fn source_key(source: &ResolvedSource) -> String {
-    match &source.location {
-        SourceLocationSpec::Path(path) => {
-            format!("{}:path:{}", source.provider_id, path.display())
-        }
-        SourceLocationSpec::Uri(uri) => format!("{}:uri:{uri}", source.provider_id),
-    }
+    let SourceLocationSpec::Path(path) = &source.location;
+    format!("{}:path:{}", source.provider_id, path.display())
 }
 
 fn transaction_error(code: &str, source: &str, operation: &str) -> Diagnostic {

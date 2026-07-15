@@ -1,17 +1,16 @@
 use coflow_cft::ast::{CheckStmt, Item};
-use coflow_cft::{
-    CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaType, CftSchemaTypeRef, ModuleId,
-};
+use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftSchemaTypeRef, CftType, ModuleId};
 use coflow_project::normalize_path;
-use coflow_runtime::SchemaBuild;
+use coflow_runtime::ProjectSchemaSession;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::definition;
 use crate::uri::{path_from_file_uri, path_to_file_uri};
 
 pub(crate) struct LspBuild {
-    pub(crate) schema: SchemaBuild,
+    pub(crate) schema: ProjectSchemaSession,
     pub(crate) documents: BTreeMap<String, LspDocument>,
     pub(crate) cfd_definitions: definition::CfdDefinitionIndex,
     module_by_uri: BTreeMap<String, String>,
@@ -21,33 +20,39 @@ pub(crate) struct LspBuild {
 pub(crate) struct LspDocument {
     pub(crate) module_id: String,
     pub(crate) uri: String,
-    pub(crate) source: String,
-    pub(crate) ast: Option<coflow_cft::ast::ModuleAst>,
+    pub(crate) source: Arc<str>,
+    pub(crate) ast: Option<Arc<coflow_cft::ast::ModuleAst>>,
+}
+
+impl LspDocument {
+    pub(crate) fn source(&self) -> &str {
+        &self.source
+    }
+
+    pub(crate) fn ast(&self) -> Option<&coflow_cft::ast::ModuleAst> {
+        self.ast.as_deref()
+    }
 }
 
 impl LspBuild {
-    pub(crate) fn new(schema: SchemaBuild) -> Self {
+    pub(crate) fn new(schema: ProjectSchemaSession) -> Self {
         let mut documents = BTreeMap::new();
         let mut module_by_uri = BTreeMap::new();
         let mut module_by_path = BTreeMap::new();
 
-        for (module_id, source) in &schema.sources {
-            let path = schema
-                .paths
-                .get(module_id)
-                .map_or_else(|| PathBuf::from(module_id), PathBuf::from);
+        for (module_id, module) in schema.modules().modules() {
+            let module_id = module_id.as_str().to_string();
+            let path = module.path().to_path_buf();
             let uri = path_to_file_uri(&path);
-            let ast =
-                coflow_cft::parser::parse_module(&ModuleId::new(module_id.clone()), source).ok();
             module_by_uri.insert(uri.clone(), module_id.clone());
             module_by_path.insert(normalize_path(&path), module_id.clone());
             documents.insert(
                 module_id.clone(),
                 LspDocument {
-                    module_id: module_id.clone(),
+                    module_id,
                     uri,
-                    source: source.clone(),
-                    ast,
+                    source: module.shared_source(),
+                    ast: module.shared_ast(),
                 },
             );
         }
@@ -69,8 +74,8 @@ impl LspBuild {
         self
     }
 
-    pub(crate) const fn container(&self) -> Option<&coflow_cft::CftContainer> {
-        self.schema.container.as_ref()
+    pub(crate) fn schema(&self) -> Option<&coflow_cft::CftSchema> {
+        self.schema.schema()
     }
 
     pub(crate) fn document_by_uri(&self, uri: &str) -> Option<&LspDocument> {
@@ -91,9 +96,11 @@ pub(crate) fn current_type_at<'a>(
     build: &'a LspBuild,
     document: &LspDocument,
     offset: usize,
-) -> Option<&'a CftSchemaType> {
-    build.container()?.all_types().find(|ty| {
-        ty.module.as_str() == document.module_id && ty.span.start <= offset && offset <= ty.span.end
+) -> Option<&'a CftType> {
+    build.schema()?.all_types().find(|ty| {
+        ty.module.as_str() == document.module_id
+            && ty.span.start <= offset
+            && offset <= ty.span.end
     })
 }
 
@@ -101,7 +108,7 @@ pub(crate) fn current_field_at(
     document: &LspDocument,
     offset: usize,
 ) -> Option<&coflow_cft::ast::FieldDef> {
-    let ast = document.ast.as_ref()?;
+    let ast = document.ast()?;
     for item in &ast.items {
         if let Item::Type(ty) = item {
             if ty.span.start <= offset && offset <= ty.span.end {
@@ -140,9 +147,8 @@ fn type_of_name(
 ) -> Option<CftSchemaTypeRef> {
     let current_type = current_type_at(build, document, offset)?;
     let field = current_type
-        .all_fields
-        .iter()
-        .find(|field| field.name == name)?;
+        .all_fields()
+        .find(|field| field.name.as_str() == name)?;
     Some(field_receiver_type(field))
 }
 
@@ -150,28 +156,31 @@ pub(crate) fn field_by_type<'a>(
     build: &'a LspBuild,
     type_name: &str,
     field_name: &str,
-) -> Option<(&'a CftSchemaType, &'a CftSchemaField)> {
-    let container = build.container()?;
-    let mut current = container.resolve_type(type_name);
+) -> Option<(&'a CftType, &'a CftField)> {
+    let schema = build.schema()?;
+    let mut current = schema.resolve_type(type_name);
     while let Some(ty) = current {
-        if let Some(field) = ty.fields.iter().find(|field| field.name == field_name) {
+        if let Some(field) = ty
+            .own_fields()
+            .find(|field| field.name.as_str() == field_name)
+        {
             return Some((ty, field));
         }
         current = ty
             .parent
             .as_deref()
-            .and_then(|parent| container.resolve_type(parent));
+            .and_then(|parent| schema.resolve_type(parent));
     }
     None
 }
 
-fn field_receiver_type(field: &CftSchemaField) -> CftSchemaTypeRef {
+fn field_receiver_type(field: &CftField) -> CftSchemaTypeRef {
     field.ty_ref.clone()
 }
 
 pub(crate) fn type_name_of_schema_ref(ty: &CftSchemaTypeRef) -> Option<&str> {
     match ty {
-        CftSchemaTypeRef::Named(name) => Some(name),
+        CftSchemaTypeRef::Object(name) => Some(name),
         CftSchemaTypeRef::Nullable(inner) => type_name_of_schema_ref(inner),
         _ => None,
     }
@@ -182,7 +191,7 @@ pub(crate) fn field_by_chain<'a>(
     document: &LspDocument,
     offset: usize,
     chain: &[String],
-) -> Option<(String, &'a CftSchemaField)> {
+) -> Option<(String, &'a CftField)> {
     let (field_name, receiver) = chain.split_last()?;
     let receiver_type = type_of_chain(build, document, offset, receiver)?;
     let type_name = type_name_of_schema_ref(&receiver_type)?;
@@ -193,22 +202,22 @@ pub(crate) fn field_by_chain<'a>(
 pub(crate) fn enum_variant_by_chain<'a>(
     build: &'a LspBuild,
     chain: &[String],
-) -> Option<(&'a CftSchemaEnum, &'a CftSchemaEnumVariant)> {
+) -> Option<(&'a CftEnum, &'a CftEnumVariant)> {
     if chain.len() != 2 {
         return None;
     }
-    let enum_def = build.container()?.resolve_enum(&chain[0])?;
+    let enum_def = build.schema()?.resolve_enum(&chain[0])?;
     let variant = enum_def
         .variants
         .iter()
-        .find(|variant| variant.name == chain[1])?;
+        .find(|variant| variant.name.as_str() == chain[1])?;
     Some((enum_def, variant))
 }
 
 pub(crate) fn enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
     build
-        .container()
-        .is_some_and(|container| container.resolve_enum(enum_name).is_some())
+        .schema()
+        .is_some_and(|schema| schema.resolve_enum(enum_name).is_some())
         || ast_enum_name_exists(build, enum_name)
 }
 
@@ -219,7 +228,7 @@ pub(crate) fn enum_variant_exists(build: &LspBuild, enum_name: &str, variant_nam
 
 fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
     build.documents.values().any(|document| {
-        document.ast.as_ref().is_some_and(|ast| {
+        document.ast().is_some_and(|ast| {
             ast.items
                 .iter()
                 .any(|item| matches!(item, Item::Enum(enum_def) if enum_def.name == enum_name))
@@ -229,7 +238,7 @@ fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
 
 pub(crate) fn quantifier_bindings_at(document: &LspDocument, offset: usize) -> Vec<String> {
     let mut bindings = Vec::new();
-    let Some(ast) = &document.ast else {
+    let Some(ast) = document.ast() else {
         return bindings;
     };
     for item in &ast.items {

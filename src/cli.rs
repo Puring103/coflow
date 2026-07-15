@@ -368,13 +368,13 @@ pub(crate) struct DataCreateFileArgs {
 pub(crate) struct DataCreateTableArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Project-relative Excel file or configured remote source URI.
+    /// Project-relative table file.
     #[arg(long, value_name = "SOURCE")]
     pub(crate) source: String,
     /// Concrete record type for table headers.
     #[arg(long = "type", value_name = "TYPE")]
     pub(crate) actual_type: Option<String>,
-    /// Table provider: excel or lark-sheet.
+    /// Table provider, inferred from the local file when omitted.
     #[arg(long, value_name = "PROVIDER")]
     pub(crate) provider: Option<String>,
     /// Sheet name to create.

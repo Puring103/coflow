@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use coflow_cft::{CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp, CompiledSchema};
+use coflow_cft::{CftSchema, CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp};
 use coflow_data_model::CfdErrorCode;
 
 use super::diagnostics::{bin_op_str, format_value_for_message, unary_op_str};
@@ -9,7 +9,7 @@ use super::value::{values_equal, CheckValue, LocatedCheckValue, ValueLocation};
 
 pub(super) struct OpsError {
     code: CfdErrorCode,
-    location: Option<ValueLocation>,
+    location: Box<Option<ValueLocation>>,
     message: String,
 }
 
@@ -21,7 +21,7 @@ impl OpsError {
     ) -> Self {
         Self {
             code,
-            location,
+            location: Box::new(location),
             message: message.into(),
         }
     }
@@ -31,7 +31,7 @@ impl OpsError {
     }
 
     pub(super) fn into_parts(self) -> (CfdErrorCode, Option<ValueLocation>, String) {
-        (self.code, self.location, self.message)
+        (self.code, *self.location, self.message)
     }
 }
 
@@ -139,7 +139,7 @@ pub(super) fn compare_order(
 }
 
 pub(super) fn unary_op(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     op: CftSchemaUnaryOp,
     value: LocatedCheckValue,
 ) -> OpsResult<LocatedCheckValue> {
@@ -179,7 +179,7 @@ pub(super) fn unary_op(
 }
 
 pub(super) fn eager_bin_op(
-    schema: &CompiledSchema,
+    schema: &CftSchema,
     op: CftSchemaBinOp,
     lhs: CheckValue,
     rhs: CheckValue,

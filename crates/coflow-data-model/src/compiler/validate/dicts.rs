@@ -55,10 +55,10 @@ impl Validator<'_, '_> {
             }
             (CftSchemaTypeRef::Int, CfdInputDictKey::Int(value)) => Some(CfdDictKey::Int(*value)),
             (
-                CftSchemaTypeRef::Named(expected),
+                CftSchemaTypeRef::Enum(expected),
                 CfdInputDictKey::EnumVariant { enum_name, variant },
-            ) if self.schema.is_schema_enum(expected) => {
-                if enum_name != expected {
+            ) => {
+                if enum_name.as_str() != expected.as_str() {
                     self.push(
                         CfdDiagnostic::error(
                             CfdErrorCode::TypeMismatch,

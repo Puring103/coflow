@@ -25,7 +25,6 @@ static SOURCE_DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescriptor {
     id: PROVIDER_ID,
     display_name: "Transaction test source",
     extensions: &["txn"],
-    uri_schemes: &["txn"],
     option_keys: &[],
 };
 
@@ -39,7 +38,6 @@ static WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         can_insert_record: false,
         can_delete_record: false,
         requires_full_refresh_after_write: true,
-        is_remote: true,
     },
 };
 
@@ -116,53 +114,58 @@ impl SourceProvider for TestProvider {
             .expect("lock test provider state")
             .counts
             .loads += 1;
-        let (value, origin) = match &source.location {
-            SourceLocationSpec::Path(path) => {
-                let value = std::fs::read_to_string(path)
-                    .map_err(|error| test_error("TEST-LOAD", error.to_string()))?
-                    .trim()
-                    .parse::<i64>()
-                    .map_err(|error| test_error("TEST-LOAD", error.to_string()))?;
-                (
-                    value,
-                    RecordOrigin::File {
-                        path: path.clone(),
-                        span: None,
-                    },
-                )
-            }
-            SourceLocationSpec::Uri(uri) => {
-                let value = {
-                    let state = self.state.lock().expect("lock test provider state");
-                    if state.faults.fail_load_after_write && state.counts.writes > 0 {
-                        return Err(test_error(
-                            "TEST-LOAD",
-                            "injected post-write rebuild failure",
-                        ));
-                    }
-                    state.remote_values.get(uri).copied().ok_or_else(|| {
-                        test_error("TEST-LOAD", format!("missing remote value for `{uri}`"))
-                    })?
-                };
-                (
-                    value,
-                    RecordOrigin::Table {
-                        document: SourceDocument::Remote(uri.clone()),
-                        sheet: "items".to_string(),
-                        row: 2,
-                        id_column: 1,
-                        field_columns: BTreeMap::from([(vec!["value".to_string()], 2)]),
-                    },
-                )
-            }
-        };
+        let SourceLocationSpec::Path(path) = &source.location;
         let key = source_record_key(source);
+        let (value, origin) = if key == "local" {
+            let value = std::fs::read_to_string(path)
+                .map_err(|error| test_error("TEST-LOAD", error.to_string()))?
+                .trim()
+                .parse::<i64>()
+                .map_err(|error| test_error("TEST-LOAD", error.to_string()))?;
+            (
+                value,
+                RecordOrigin::File {
+                    path: path.clone(),
+                    span: None,
+                },
+            )
+        } else {
+            let value = {
+                let state = self.state.lock().expect("lock test provider state");
+                if state.faults.fail_load_after_write && state.counts.writes > 0 {
+                    return Err(test_error(
+                        "TEST-LOAD",
+                        "injected post-write rebuild failure",
+                    ));
+                }
+                let source_name = source_name(source);
+                state
+                    .remote_values
+                    .get(&source_name)
+                    .copied()
+                    .ok_or_else(|| {
+                        test_error(
+                            "TEST-LOAD",
+                            format!("missing provider value for `{source_name}`"),
+                        )
+                    })?
+            };
+            (
+                value,
+                RecordOrigin::Table {
+                    document: SourceDocument::Local(path.clone()),
+                    sheet: "items".to_string(),
+                    row: 2,
+                    id_column: 1,
+                    field_columns: BTreeMap::from([(vec!["value".to_string()], 2)]),
+                },
+            )
+        };
         let mut fields = BTreeMap::from([("value", CfdInputValue::Int(value))]);
-        if ctx
-            .schema
-            .type_meta("Item")
-            .is_some_and(|item| item.own_fields.iter().any(|field| field.name == "target"))
-        {
+        if ctx.schema.resolve_type("Item").is_some_and(|item| {
+            item.own_fields()
+                .any(|field| field.name.as_str() == "target")
+        }) {
             fields.insert(
                 "target",
                 if key == "two" {
@@ -202,23 +205,28 @@ impl SourceWriter for TestWriter {
                 format!("injected begin failure for `{source_name}`"),
             ));
         }
-        let transaction = match &source.location {
-            SourceLocationSpec::Path(_) => Ok(SourceTransaction::RuntimeSnapshot),
-            SourceLocationSpec::Uri(uri) if state.faults.unsupported_remote => {
-                Ok(SourceTransaction::Unsupported)
-            }
-            SourceLocationSpec::Uri(uri) => {
-                let snapshot = state.remote_values.get(uri).copied().ok_or_else(|| {
-                    test_error("TEST-BEGIN", format!("missing remote value for `{uri}`"))
+        let transaction = if source_record_key(source) == "local" {
+            Ok(SourceTransaction::RuntimeSnapshot)
+        } else if state.faults.unsupported_remote {
+            Ok(SourceTransaction::Unsupported)
+        } else {
+            let snapshot = state
+                .remote_values
+                .get(&source_name)
+                .copied()
+                .ok_or_else(|| {
+                    test_error(
+                        "TEST-BEGIN",
+                        format!("missing provider value for `{source_name}`"),
+                    )
                 })?;
-                Ok(SourceTransaction::Compensation(Box::new(
-                    TestCompensation {
-                        state: Arc::clone(&self.state),
-                        source: uri.clone(),
-                        snapshot,
-                    },
-                )))
-            }
+            Ok(SourceTransaction::Compensation(Box::new(
+                TestCompensation {
+                    state: Arc::clone(&self.state),
+                    source: source_name,
+                    snapshot,
+                },
+            )))
         };
         drop(state);
         transaction
@@ -253,12 +261,14 @@ impl SourceWriter for TestWriter {
             let mut state = self.state.lock().expect("lock test writer state");
             state.counts.writes += 1;
             let call = state.counts.writes;
-            match &request.source.location {
-                SourceLocationSpec::Path(path) => std::fs::write(path, value.to_string())
-                    .map_err(|error| test_error("TEST-WRITE", error.to_string()))?,
-                SourceLocationSpec::Uri(uri) => {
-                    state.remote_values.insert(uri.clone(), *value);
-                }
+            let SourceLocationSpec::Path(path) = &request.source.location;
+            if source_record_key(request.source) == "local" {
+                std::fs::write(path, value.to_string())
+                    .map_err(|error| test_error("TEST-WRITE", error.to_string()))?;
+            } else {
+                state
+                    .remote_values
+                    .insert(source_name(request.source), *value);
             }
             (call, state.faults.emit_provider_diagnostic)
         };
@@ -551,7 +561,7 @@ fn provider_diagnostics_and_affected_files_survive_successful_rebuild() {
     ]));
 
     assert!(report.write_ok);
-    assert_eq!(report.affected_files, vec!["txn://one".to_string()]);
+    assert_eq!(report.affected_files, vec!["one.txn".to_string()]);
     assert_eq!(
         report
             .diagnostics
@@ -697,7 +707,7 @@ fn compensation_failure_is_retained_in_transaction_diagnostics() {
 }
 
 #[test]
-fn later_prepare_commit_failure_compensates_before_any_source_is_published() {
+fn later_provider_publication_failure_compensates_every_source() {
     let fixture = Fixture::remote(&[("txn://one", 1), ("txn://two", 2)]);
     fixture
         .state
@@ -768,7 +778,10 @@ impl Fixture {
         write_schema(&root);
         let mut sources = String::new();
         for (uri, _) in values {
-            let _ = writeln!(sources, "  - type: transaction-test\n    url: {uri}");
+            let key = uri.rsplit("//").next().unwrap_or(uri);
+            std::fs::write(root.join(format!("{key}.txn")), "provider-owned")
+                .expect("write provider source marker");
+            let _ = writeln!(sources, "  - type: transaction-test\n    path: {key}.txn");
         }
         std::fs::write(
             root.join("coflow.yaml"),
@@ -872,19 +885,20 @@ fn has_diagnostic(report: &coflow_runtime::MutationReport, code: &str) -> bool {
 }
 
 fn source_record_key(source: &ResolvedSource) -> String {
-    match &source.location {
-        SourceLocationSpec::Path(_) => "local".to_string(),
-        SourceLocationSpec::Uri(uri) => uri
-            .rsplit("//")
-            .next()
-            .map_or_else(|| uri.clone(), ToOwned::to_owned),
-    }
+    let SourceLocationSpec::Path(path) = &source.location;
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn source_name(source: &ResolvedSource) -> String {
-    match &source.location {
-        SourceLocationSpec::Path(path) => path.display().to_string(),
-        SourceLocationSpec::Uri(uri) => uri.clone(),
+    let SourceLocationSpec::Path(path) = &source.location;
+    let key = source_record_key(source);
+    if key == "local" {
+        path.display().to_string()
+    } else {
+        format!("txn://{key}")
     }
 }
 

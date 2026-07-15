@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
-use coflow_data_model::{CfdPathSegment, CfdValue};
+use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -37,6 +38,17 @@ pub enum MutationOp {
         path: Vec<CfdPathSegment>,
         value: MutationValue,
     },
+    SetDimensionValue {
+        coordinate: DimensionValueCoordinate,
+        #[serde(default)]
+        expected: DimensionValueExpectation,
+        value: MutationValue,
+    },
+    ClearDimensionValue {
+        coordinate: DimensionValueCoordinate,
+        #[serde(default)]
+        expected: DimensionValueExpectation,
+    },
     RenameRecord {
         record: RecordCoordinate,
         #[serde(default)]
@@ -48,6 +60,46 @@ pub enum MutationOp {
         #[serde(default)]
         file: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct DimensionValueCoordinate {
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub actual_type: TypeName,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub record_key: RecordKey,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub field: FieldName,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub dimension: DimensionName,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub variant: VariantName,
+    #[serde(default)]
+    pub path: Vec<CfdPathSegment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DimensionSourceCoordinate {
+    pub source_type: TypeName,
+    pub source_key: RecordKey,
+    pub field: FieldName,
+    pub dimension: DimensionName,
+    pub variant: VariantName,
+    pub path: CfdPath,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum DimensionValueExpectation {
+    #[default]
+    Any,
+    Missing,
+    Value(MutationValue),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +183,12 @@ pub(crate) enum PreparedMutationOp {
         write_file: String,
         path: Vec<coflow_api::WriteFieldPathSegment>,
         value: CfdValue,
+    },
+    WriteDimensionValue {
+        record: RecordCoordinate,
+        coordinate: DimensionSourceCoordinate,
+        new_value: Option<CfdValue>,
+        write_file: String,
     },
     RenameRecord {
         record: RecordCoordinate,
@@ -225,8 +283,8 @@ mod tests {
     #[test]
     fn mutation_failure_keeps_structured_diagnostics_after_flattening() {
         let primary = Label {
-            location: SourceLocation::RemoteCell {
-                document: "txn://items".to_string(),
+            location: SourceLocation::TableCell {
+                path: "items.csv".into(),
                 sheet: Some("items".to_string()),
                 row: 2,
                 column: 3,
@@ -234,8 +292,8 @@ mod tests {
             message: Some("primary".to_string()),
         };
         let related = Label {
-            location: SourceLocation::RemoteCell {
-                document: "txn://items".to_string(),
+            location: SourceLocation::TableCell {
+                path: "items.csv".into(),
                 sheet: Some("items".to_string()),
                 row: 4,
                 column: 3,

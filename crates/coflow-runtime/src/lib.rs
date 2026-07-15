@@ -24,10 +24,10 @@ mod files;
 mod indexes;
 mod load;
 mod mutation;
+mod project_schema;
 mod query;
 mod records;
 mod runtime;
-mod schema_build;
 mod schema_diagnostics;
 mod schema_inspect;
 mod session;
@@ -42,7 +42,7 @@ pub use data_files::{
 };
 pub use data_patch::{
     DataPatchAppliedOp, DataPatchFailedOp, DataPatchOp, DataPatchReport, DataPatchRequest,
-    PatchPathSegment, PatchRecordSelector,
+    PatchDimensionValueSelector, PatchPathSegment, PatchRecordSelector,
 };
 pub use data_read::{
     data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery, DataListReport,
@@ -59,19 +59,22 @@ pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef
 pub use load::format_cfd_path as format_field_path;
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
-    DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
-    MutationReport, MutationRequest, MutationValue,
+    DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,
+    MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
 };
+pub use project_schema::SchemaTextOverride;
 pub use query::ProjectQueries;
 pub use records::{
-    dict_key_path_text, value_summary, EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo,
-    RecordReferenceInfo, RecordTarget, RecordView, RefTargetInfo, WriteOutcome,
+    dict_key_path_text, value_summary, DimensionValueOrigin, DimensionValueState,
+    DimensionValueView, EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo, RecordReferenceInfo,
+    RecordTarget, RecordView, RefTargetInfo, WriteOutcome,
 };
-pub use runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime, WriteProjectSession};
-pub use schema_build::{compile_schema_project_with_overrides, SchemaBuild, SchemaSourceOverride};
+pub use runtime::{
+    BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
+};
 pub use schema_inspect::{
-    inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,
-    SchemaConstValueInfo, SchemaDefaultValueInfo, SchemaEnumInfo, SchemaEnumVariantInfo,
+    inspect_schema, schema_files, SchemaConstInfo, SchemaConstValueInfo, SchemaDefaultValueInfo,
+    SchemaDimensionFieldInfo, SchemaDimensionInfo, SchemaEnumInfo, SchemaEnumVariantInfo,
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,
 };

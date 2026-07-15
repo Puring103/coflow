@@ -1,25 +1,28 @@
 #![allow(
     clippy::expect_used,
+    clippy::needless_pass_by_value,
     clippy::needless_raw_string_hashes,
     clippy::panic,
     clippy::panic_in_result_fn,
+    clippy::redundant_field_names,
     clippy::too_many_lines,
     clippy::unwrap_used
 )]
 
 use super::*;
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use std::collections::BTreeMap;
 
-fn compile_schema(source: &str) -> Result<CftContainer, String> {
-    let mut container = CftContainer::new();
-    container
-        .add_module(ModuleId::from("main"), source)
-        .map_err(|err| format!("add schema module: {err:?}"))?;
-    container
-        .compile()
-        .map_err(|err| format!("compile schema: {err:?}"))?;
-    Ok(container)
+fn compile_schema(source: &str) -> Result<CftSchema, String> {
+    compile_schema_with_dimensions(source, CftDimensionInputs::default())
+}
+
+fn compile_schema_with_dimensions(
+    source: &str,
+    dimensions: CftDimensionInputs,
+) -> Result<CftSchema, String> {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+    build_schema(&modules, &dimensions).map_err(|err| format!("compile schema: {err:?}"))
 }
 fn generated_file<'a>(files: &'a [GeneratedFile], name: &str) -> Result<&'a str, String> {
     files
@@ -87,12 +90,11 @@ fn messagepack_database_templates() -> CsharpDatabaseTemplates {
 }
 
 fn generate_json(
-    schema: &CftContainer,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let compiled_schema = schema.compiled_schema();
     generate_csharp(
-        compiled_schema,
+        schema,
         options,
         CsharpDataFormat::Json,
         &json_database_templates(),
@@ -100,12 +102,11 @@ fn generate_json(
 }
 
 fn generate_messagepack(
-    schema: &CftContainer,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let compiled_schema = schema.compiled_schema();
     generate_csharp(
-        compiled_schema,
+        schema,
         options,
         CsharpDataFormat::MessagePack,
         &messagepack_database_templates(),
@@ -113,13 +114,12 @@ fn generate_messagepack(
 }
 
 fn generate_json_with_id_as_enum_variants(
-    schema: &CftContainer,
+    schema: &CftSchema,
     options: &CsharpCodegenOptions,
     variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let compiled_schema = schema.compiled_schema();
     generate_csharp_with_id_as_enum_variants(
-        compiled_schema,
+        schema,
         options,
         CsharpDataFormat::Json,
         &json_database_templates(),
@@ -130,7 +130,7 @@ fn generate_json_with_id_as_enum_variants(
 
 #[test]
 fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), String> {
-    let schema = compile_schema(
+    let schema = compile_schema_with_dimensions(
         r#"
             type Item {
                 @localized
@@ -138,6 +138,7 @@ fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), Strin
                 count: int;
             }
         "#,
+        CftDimensionInputs::new([("language", vec!["en".to_string(), "zh".to_string()])]),
     )?;
     let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
@@ -960,14 +961,14 @@ fn provider_generation_preserves_multiple_validation_diagnostics() -> Result<(),
             type foo_bar {}
         "#,
     )?;
-    let compiled_schema = schema.compiled_schema();
+    let schema = &schema;
     let options = CsharpCodeGenerator
         .decode_options(&serde_json::json!({"namespace": "invalid namespace"}))
         .map_err(|diagnostics| format!("decode C# options: {diagnostics:?}"))?;
     let diagnostics = CsharpCodeGenerator
         .generate(
             CodegenContext {
-                schema: compiled_schema,
+                schema: schema,
                 model: None,
                 data_format: "json",
                 id_as_enum_variants: &serde_json::Value::Null,
@@ -984,14 +985,14 @@ fn provider_generation_preserves_multiple_validation_diagnostics() -> Result<(),
 #[test]
 fn provider_generation_honors_database_class_option() -> Result<(), String> {
     let schema = compile_schema("type Item {}")?;
-    let compiled_schema = schema.compiled_schema();
+    let schema = &schema;
     let options = CsharpCodeGenerator
         .decode_options(&serde_json::json!({"database_class": "RuntimeConfig"}))
         .map_err(|diagnostics| format!("decode C# options: {diagnostics:?}"))?;
     let artifacts = CsharpCodeGenerator
         .generate(
             CodegenContext {
-                schema: compiled_schema,
+                schema: schema,
                 model: None,
                 data_format: "json",
                 id_as_enum_variants: &serde_json::Value::Null,

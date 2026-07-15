@@ -1,6 +1,6 @@
 mod info;
 mod regenerate;
-mod synthesize;
+mod sources;
 
 pub use info::{
     builtin_display_name, dimensions_for_project, resolved_display_name, DimensionFieldInfo,
@@ -8,5 +8,4 @@ pub use info::{
 };
 pub use regenerate::regenerate_dimension_sources;
 pub(crate) use regenerate::DimensionGenerationTransaction;
-pub(crate) use synthesize::dimension_sources;
-pub use synthesize::{dimension_fields, inject_dimension_types, DimensionField};
+pub use sources::{dimension_fields, DimensionField};

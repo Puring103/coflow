@@ -39,7 +39,6 @@ pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         can_insert_record: true,
         can_delete_record: true,
         requires_full_refresh_after_write: true,
-        is_remote: false,
     },
 };
 
@@ -83,12 +82,7 @@ impl SourceWriter for CsvWriter {
         _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CSV-WRITE",
-                "csv writer requires a local path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         // CSV has exactly one sheet (the file itself). If the caller picked
         // a sheet name, accept it as a label; otherwise fall back to the
         // file stem so the resulting plan's `sheet` field is non-empty.
@@ -165,7 +159,7 @@ fn read_csv_layout(
     sheet: &str,
     actual_type: &str,
     options: &CsvSourceOptions,
-    schema: &coflow_cft::CompiledSchema,
+    schema: &coflow_cft::CftSchema,
 ) -> Result<CsvLayout, DiagnosticSet> {
     let text = fs::read_to_string(path).map_err(|err| {
         DiagnosticSet::one(diag(

@@ -15,7 +15,6 @@ pub struct ProjectConfig {
     pub outputs: OutputsConfig,
     pub dimensions: BTreeMap<String, DimensionConfig>,
 }
-
 impl<'de> Deserialize<'de> for ProjectConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -133,26 +132,17 @@ impl<'de> Deserialize<'de> for SourceConfig {
     {
         let mut fields = no_duplicate_object(deserializer)?;
         reject_removed_source_fields(&fields).map_err(de::Error::custom)?;
+        if fields.contains_key("url") {
+            return Err(de::Error::custom("unknown field `url`"));
+        }
         let source_type = fields
             .remove("type")
             .map(string_field("source `type`"))
             .transpose()
             .map_err(de::Error::custom)?;
         let path = fields.remove("path");
-        let url = fields.remove("url");
-        let location = match (path, url) {
-            (Some(path), None) => {
-                SourceLocationSpec::Path(path_value(path).map_err(de::Error::custom)?)
-            }
-            (None, Some(url)) => {
-                SourceLocationSpec::Uri(url_value(url).map_err(de::Error::custom)?)
-            }
-            (Some(_), Some(_)) | (None, None) => {
-                return Err(de::Error::custom(
-                    "source must set exactly one of `path` or `url`",
-                ))
-            }
-        };
+        let path = path.ok_or_else(|| de::Error::custom("source must set `path`"))?;
+        let location = SourceLocationSpec::Path(path_value(path).map_err(de::Error::custom)?);
         let options = Value::Object(fields);
         Ok(Self {
             source_type,
@@ -306,7 +296,7 @@ where
 }
 
 fn reject_removed_source_fields(fields: &Map<String, Value>) -> Result<(), String> {
-    for key in ["file", "dir", "lark_sheet"] {
+    for key in ["file", "dir"] {
         if fields.contains_key(key) {
             return Err(format!("unknown field `{key}`"));
         }
@@ -319,11 +309,4 @@ fn path_value(value: Value) -> Result<PathBuf, String> {
         return Err("source `path` must be a string".to_string());
     };
     Ok(PathBuf::from(value))
-}
-
-fn url_value(value: Value) -> Result<String, String> {
-    let Value::String(value) = value else {
-        return Err("source `url` must be a string".to_string());
-    };
-    Ok(value)
 }

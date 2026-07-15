@@ -60,7 +60,16 @@ impl CfdDiagnostic {
             record,
             path,
             message: None,
+            origin: None,
         });
+        self
+    }
+
+    #[must_use]
+    pub fn with_primary_origin(mut self, origin: crate::RecordOrigin) -> Self {
+        if let Some(primary) = &mut self.primary {
+            primary.origin = Some(origin);
+        }
         self
     }
 
@@ -83,6 +92,7 @@ impl CfdDiagnostic {
             record,
             path,
             message: Some(message.into()),
+            origin: None,
         });
         self
     }
@@ -93,6 +103,7 @@ pub struct CfdLabel {
     pub record: Option<CfdRecordId>,
     pub path: CfdPath,
     pub message: Option<String>,
+    pub origin: Option<crate::RecordOrigin>,
 }
 
 #[derive(

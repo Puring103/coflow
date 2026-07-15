@@ -1,6 +1,6 @@
 use crate::{DecodedSourceOptions, Diagnostic, DiagnosticSet, ResolvedSource};
-use coflow_cft::CompiledSchema;
-use coflow_data_model::CfdValue;
+use coflow_cft::{CftDimension, CftField, CftSchema, CftType, RecordKey, VariantName};
+use coflow_data_model::{CfdInputDimensionValue, CfdValue};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -23,7 +23,7 @@ pub struct SyncHeaderRequest<'a> {
     pub sheet: Option<&'a str>,
     pub actual_type: &'a str,
     pub headers: &'a [String],
-    pub schema: Option<&'a CompiledSchema>,
+    pub schema: Option<&'a CftSchema>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -190,6 +190,42 @@ pub struct DimensionSourceRequest<'a> {
     pub variants: &'a [String],
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct DimensionSourceSchema<'a> {
+    pub schema: &'a CftSchema,
+    pub dimension: &'a CftDimension,
+    pub source_type: &'a CftType,
+    pub source_field: &'a CftField,
+}
+
+#[derive(Debug, Clone)]
+pub struct DimensionSourceLoadRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub schema: DimensionSourceSchema<'a>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DimensionSourceLoadResult {
+    pub values: Vec<CfdInputDimensionValue>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WriteDimensionValueRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub schema: DimensionSourceSchema<'a>,
+    pub source_key: &'a RecordKey,
+    pub variant: &'a VariantName,
+    pub new_value: Option<&'a CfdValue>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RewriteDimensionRecordRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub schema: DimensionSourceSchema<'a>,
+    pub old_key: &'a RecordKey,
+    pub new_key: Option<&'a RecordKey>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DimensionSourceEntry {
     pub key: String,
@@ -204,6 +240,50 @@ pub struct DimensionSourceResult {
 
 pub trait DimensionSourceManager: Send + Sync {
     fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor;
+
+    /// Load managed variant values directly into record-owned overlay inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the source cannot be parsed against the
+    /// canonical field schema.
+    fn load_dimension_source(
+        &self,
+        _ctx: TableContext<'_>,
+        _request: &DimensionSourceLoadRequest<'_>,
+    ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
+        Err(unsupported_table_operation("loading dimension sources"))
+    }
+
+    /// Write or clear one variant value in a managed dimension source.
+    ///
+    /// `None` clears the physical value so the overlay becomes missing;
+    /// `Some(CfdValue::Null)` stores an explicit null.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the coordinate is stale or cannot be written.
+    fn write_dimension_value(
+        &self,
+        _ctx: TableContext<'_>,
+        _request: &WriteDimensionValueRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        Err(unsupported_table_operation("writing dimension values"))
+    }
+
+    /// Rename or delete one owner-record row while preserving its variants.
+    /// `None` deletes the row; `Some` replaces its record key.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the managed row cannot be rewritten.
+    fn rewrite_dimension_record(
+        &self,
+        _ctx: TableContext<'_>,
+        _request: &RewriteDimensionRecordRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        Err(unsupported_table_operation("rewriting dimension records"))
+    }
 
     /// Decodes provider options for a generated dimension source.
     ///
