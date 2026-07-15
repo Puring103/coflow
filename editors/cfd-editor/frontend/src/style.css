@@ -299,11 +299,65 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 
 .sidebar-empty {
+  flex: 1;
   padding: 16px 12px;
   color: var(--text-mute);
   font-size: 12px;
   text-align: center;
 }
+
+.sidebar-update {
+  flex-shrink: 0;
+  padding: 5px 6px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.sidebar-update-button {
+  position: relative;
+  width: 100%;
+  height: 28px;
+  display: grid;
+  grid-template-columns: 14px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-mute);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.sidebar-update-button:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--text);
+}
+
+.sidebar-update-button:disabled { cursor: default; }
+.sidebar-update-button.available {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
+.sidebar-version {
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  white-space: nowrap;
+}
+
+.sidebar-update-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@keyframes update-icon-spin { to { transform: rotate(360deg); } }
+.update-icon-spinning { animation: update-icon-spin 0.9s linear infinite; }
 
 /* ─── File tree ─── */
 .file-tree {

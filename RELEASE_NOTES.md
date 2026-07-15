@@ -1,38 +1,22 @@
-# Coflow 0.6.1
+# Coflow 0.6.3
 
-## Highlights
+## Editor Updates
 
-- Editor writes now reuse immutable runtime generations, reload only affected sources, and rerun
-  checks for invalidated records and their dependents while preserving full-check equivalence.
-- Scalar edits project into the editor immediately. Queued writes coalesce safely, retain pending
-  optimistic values across publications, and reject stale replay or rollback after external
-  generation changes.
-- Graph views retain layout when scalar data changes and rerun layout only when topology or
-  container shape changes.
+- The Windows CFD Editor can now check for complete application updates from the lower-left sidebar, download them with progress feedback, and launch the signed installer.
+- The full Windows installer includes both the editor and `coflow` CLI, configures `PATH`, and installs Coflow skills for supported agents.
 
-## Performance
+## Native Skill Management
 
-- Equal scalar writes are detected before opening a provider transaction or advancing the project
-  generation.
-- Adjacent Excel field writes are planned and saved once per workbook.
-- Schema sessions and immutable source batches are reused between compatible generations, and
-  stable check diagnostics avoid unnecessary cloning.
-- Editor-attributed source and generated-dimension writes no longer trigger a duplicate watcher
-  reload.
+- Added `coflow skill install`, `coflow skill uninstall`, and `coflow skill status` commands, including JSON output for automation.
+- Skills are embedded in the CLI, so installation does not require Node.js or `npx`.
+- Project installation is the default. Use `-g` to install globally for common agents; uninstall removes only files tracked by Coflow.
 
-## Reliability and Correctness
+## Release Packages
 
-- Spread writes publish every affected file and invalidate checks for both the displayed host and
-  persisted source records.
-- Editor diagnostics are derived from the current generation across table, record, inspector, and
-  graph views.
-- Undo and redo shortcuts are routed through committed controls so mutation history remains
-  serialized with pending writes.
-- Excel temporary files are ignored by the watcher, and merged cells are loaded without treating
-  covered cells as conflicting values.
-- Runtime mutation batches preserve ordered field-write semantics, failure indexes, and
-  transaction compensation.
+- Windows provides a full editor-and-CLI installer and a separate CLI-only installer. The installers detect and migrate incompatible legacy Coflow installations.
+- macOS currently provides CLI-only archives for Apple Silicon and Intel.
+- Release assets are limited to the installers, updater manifest and signature, macOS CLI archives, and VS Code extension.
 
 ## Compatibility
 
-- No intentional breaking changes from 0.6.0.
+- No intentional breaking changes from 0.6.2.

@@ -24,6 +24,15 @@ jobs:
         with:
           node-version: 22
 
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1
+          $version = $line.Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match Cargo version $version"
+          }
+
       - name: Sync skill references
         shell: pwsh
         run: |
@@ -44,7 +53,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Test
+      - name: Test workspace
         run: cargo test --workspace
 
       - name: Check TypeScript bindings
@@ -60,29 +69,164 @@ jobs:
       - name: Test VS Code extension
         run: node editors/vscode-coflow/test/extension-unit.test.js
 
-  build:
-    name: Build ${{ matrix.name }}
+  windows-full:
+    name: Windows full installer
     needs: ci
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install editor dependencies
+        run: npm ci
+        working-directory: editors/cfd-editor
+
+      - name: Install editor frontend dependencies
+        run: npm ci
+        working-directory: editors/cfd-editor/frontend
+
+      - name: Build CLI sidecar
+        run: cargo build --release --target $env:TARGET -p coflow
+
+      - name: Prepare CLI sidecar
+        shell: pwsh
+        run: |
+          $destination = "editors/cfd-editor/src-tauri/binaries/coflow-$env:TARGET.exe"
+          New-Item -ItemType Directory -Force (Split-Path $destination) | Out-Null
+          Copy-Item "target/$env:TARGET/release/coflow.exe" $destination -Force
+
+      - name: Build full NSIS installer
+        run: npm run tauri -- build --target $env:TARGET --bundles nsis --config src-tauri/tauri.release.conf.json
+        working-directory: editors/cfd-editor
+
+      - name: Sign updater and stage release assets
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "TAURI_SIGNING_PRIVATE_KEY is not configured"
+          }
+
+          $installer = Get-ChildItem "target/$env:TARGET/release/bundle/nsis/*-setup.exe" |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw "Full NSIS installer was not produced"
+          }
+
+          $tauriCli = "editors/cfd-editor/node_modules/@tauri-apps/cli/tauri.js"
+          $signArgs = @($tauriCli, "signer", "sign", "--password", "", $installer.FullName)
+          & node $signArgs
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to sign the updater installer"
+          }
+
+          $signaturePath = "$($installer.FullName).sig"
+          $signature = (Get-Content -Raw $signaturePath).Trim()
+          if ([string]::IsNullOrWhiteSpace($signature)) {
+            throw "Updater signature is empty"
+          }
+
+          $versionLine = Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"' |
+            Select-Object -First 1
+          $version = $versionLine.Matches[0].Groups[1].Value
+          $assetName = "coflow-tools-windows-x64-setup.exe"
+          $tag = "v$version"
+          $url = "https://github.com/${{ github.repository }}/releases/download/$tag/$assetName"
+
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          Copy-Item $installer.FullName "release-assets/$assetName" -Force
+          Copy-Item $signaturePath "release-assets/$assetName.sig" -Force
+
+          $manifest = [ordered]@{
+            version = $version
+            notes = (Get-Content -Raw RELEASE_NOTES.md)
+            pub_date = (Get-Date).ToUniversalTime().ToString("o")
+            platforms = [ordered]@{
+              "windows-x86_64" = [ordered]@{
+                signature = $signature
+                url = $url
+              }
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM release-assets/latest.json
+
+      - name: Upload full installer assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-full
+          path: release-assets/*
+
+  windows-cli:
+    name: Windows CLI-only installer
+    needs: ci
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build CLI
+        run: cargo build --release --target $env:TARGET -p coflow
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build CLI-only installer
+        shell: pwsh
+        run: |
+          $versionLine = Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"' |
+            Select-Object -First 1
+          $version = $versionLine.Matches[0].Groups[1].Value
+          $input = Join-Path $pwd "dist/windows-cli/input"
+          $output = Join-Path $pwd "release-assets"
+          New-Item -ItemType Directory -Force $input, $output | Out-Null
+          Copy-Item "target/$env:TARGET/release/coflow.exe" "$input/coflow.exe" -Force
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            packaging/windows/coflow-cli.iss `
+            "/DAppVersion=$version" `
+            "/DSourceDir=$input" `
+            "/DOutputDir=$output"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to build CLI-only installer"
+          }
+
+      - name: Upload CLI-only installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-cli
+          path: release-assets/coflow-cli-windows-x64-setup.exe
+
+  macos-cli:
+    name: macOS CLI ${{ matrix.arch }}
+    needs: ci
+    runs-on: macos-latest
     strategy:
       matrix:
         include:
-          - name: windows-x64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-            binary: coflow.exe
-            archive: coflow-windows-x64.zip
-          - name: macos-arm64
-            os: macos-latest
+          - arch: arm64
             target: aarch64-apple-darwin
-            binary: coflow
-            archive: coflow-macos-arm64.tar.gz
-          - name: macos-x64
-            os: macos-latest
+          - arch: x64
             target: x86_64-apple-darwin
-            binary: coflow
-            archive: coflow-macos-x64.tar.gz
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,25 +236,20 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+      - name: Build CLI
+        run: cargo build --release --target ${{ matrix.target }} -p coflow
 
-      - name: Package (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
+      - name: Package CLI
         run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ matrix.binary }}" -DestinationPath "${{ matrix.archive }}"
+          mkdir -p release-assets
+          tar -czf "release-assets/coflow-cli-macos-${{ matrix.arch }}.tar.gz" \
+            -C "target/${{ matrix.target }}/release" coflow
 
-      - name: Package (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          tar -czf "${{ matrix.archive }}" -C "target/${{ matrix.target }}/release" "${{ matrix.binary }}"
-
-      - name: Upload artifact
+      - name: Upload macOS CLI
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
-          path: ${{ matrix.archive }}
+          name: release-macos-cli-${{ matrix.arch }}
+          path: release-assets/*
 
   vsix:
     name: Build VSIX
@@ -129,136 +268,43 @@ jobs:
         run: npx --yes @vscode/vsce package
         working-directory: editors/vscode-coflow
 
-      - name: Upload artifact
+      - name: Upload VSIX
         uses: actions/upload-artifact@v4
         with:
-          name: vsix
+          name: release-vsix
           path: editors/vscode-coflow/*.vsix
-
-  editor:
-    name: Build CFD Editor ${{ matrix.name }}
-    needs: ci
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - name: windows-x64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-            binary: cfd-editor.exe
-            archive: cfd-editor-windows-x64.zip
-          - name: macos-arm64
-            os: macos-latest
-            target: aarch64-apple-darwin
-            binary: cfd-editor
-            archive: cfd-editor-macos-arm64.tar.gz
-          - name: macos-x64
-            os: macos-latest
-            target: x86_64-apple-darwin
-            binary: cfd-editor
-            archive: cfd-editor-macos-x64.tar.gz
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install editor dependencies
-        run: npm ci
-        working-directory: editors/cfd-editor
-
-      - name: Install editor frontend dependencies
-        run: npm ci
-        working-directory: editors/cfd-editor/frontend
-
-      - name: Build editor
-        run: node node_modules/@tauri-apps/cli/tauri.js build --target ${{ matrix.target }} --no-bundle
-        working-directory: editors/cfd-editor
-
-      - name: Package editor (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ matrix.binary }}" -DestinationPath "${{ matrix.archive }}"
-
-      - name: Package editor (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          tar -czf "${{ matrix.archive }}" -C "target/${{ matrix.target }}/release" "${{ matrix.binary }}"
-
-      - name: Upload editor artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: editor-${{ matrix.name }}
-          path: ${{ matrix.archive }}
-
-  windows-installer:
-    name: Build Windows Installer
-    needs: [build, editor]
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download CLI artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-x64
-          path: artifacts/cli
-
-      - name: Download editor artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: editor-windows-x64
-          path: artifacts/editor
-
-      - name: Install Inno Setup
-        shell: pwsh
-        run: choco install innosetup --no-progress --yes
-
-      - name: Prepare installer input
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist/windows-installer/input
-          Expand-Archive artifacts/cli/coflow-windows-x64.zip dist/windows-installer/input -Force
-          Expand-Archive artifacts/editor/cfd-editor-windows-x64.zip dist/windows-installer/input -Force
-
-      - name: Build installer
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}" -replace '^v', ''
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging/windows/coflow-tools.iss "/DAppVersion=$version"
-
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-installer
-          path: dist/windows-installer/output/*.exe
 
   release:
     name: Create Release
-    needs: [build, vsix, editor, windows-installer]
+    needs: [windows-full, windows-cli, macos-cli, vsix]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download all artifacts
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release assets
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: release-assets
           merge-multiple: true
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: List release assets
+        run: find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*
+          tag_name: v${{ steps.version.outputs.version }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
           body_path: RELEASE_NOTES.md

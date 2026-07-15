@@ -644,9 +644,10 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
         }
         let row = record_view_to_row(&view, &ctx);
         for field in &row.fields {
-            let index = *column_index.entry(field.name.clone()).or_insert_with(|| {
+            let index = column_index.get(&field.name).copied().unwrap_or_else(|| {
                 let index = columns.len();
                 columns.push((field.name.clone(), ColumnStats::default()));
+                column_index.insert(field.name.clone(), index);
                 index
             });
             let stats = &mut columns[index].1;

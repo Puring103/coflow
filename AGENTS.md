@@ -25,6 +25,9 @@ cargo test --workspace
 Do not package or release while any of these commands fail.
 Release and packaging workflows should keep this full gate.
 
+Updater key setup, release assets, and installer behavior are documented in
+`docs/releasing.md`.
+
 The skill reference sync copies public website reference docs into synced files under
 `skills/*/references/*.md`. Synced files intentionally have no file header; source mappings live in
 `scripts/sync-skill-references.ps1`, and public URLs are listed from each skill's `SKILL.md`. Run the

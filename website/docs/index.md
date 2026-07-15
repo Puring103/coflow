@@ -34,8 +34,8 @@ coflow --help</code></pre>
 <div class="start__section">
 <div class="start__label"><span class="start__step">02</span>安装 AI Agent Skills</div>
 <div class="start__snippet">
-<pre v-pre><code>npx skills add Puring103/coflow -g --skill "*" --copy -y</code></pre>
-<button type="button" class="start__copy" data-clip='npx skills add Puring103/coflow -g --skill "*" --copy -y' aria-label="复制 skills 安装命令">复制</button>
+<pre v-pre><code>coflow skill install -g</code></pre>
+<button type="button" class="start__copy" data-clip="coflow skill install -g" aria-label="复制 skills 安装命令">复制</button>
 </div>
 </div>
 

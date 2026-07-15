@@ -1,4 +1,5 @@
 target/
+editors/cfd-editor/src-tauri/binaries/
 dist/
 examples/*/generated/**
 !examples/*/generated/

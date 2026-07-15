@@ -4,13 +4,20 @@
 
 ## 安装
 
-外部 Coflow 项目通常安装三个 skills：
+`coflow` CLI 内置三个 skills，不依赖 Node.js。安装到当前 Coflow 项目：
 
 ```powershell
-npx skills add Puring103/coflow -g --skill coflow-workflow --copy -y
-npx skills add Puring103/coflow -g --skill coflow-schema --copy -y
-npx skills add Puring103/coflow -g --skill coflow-data --copy -y
+coflow skill install <project>
 ```
+
+安装到当前用户的通用和已检测 agent 目录：
+
+```powershell
+coflow skill install -g
+```
+
+使用 `coflow skill status` / `coflow skill status -g` 查看状态，使用对应的
+`coflow skill uninstall` 命令卸载。
 
 ## Skill 分工
 

@@ -39,6 +39,7 @@ use cli::{
     BuildArgs, CftArgs, CftCheckArgs, CftCommand, Cli, CodegenArgs, CodegenCommand,
     CodegenCsharpArgs, Command, DataArgs, DataCommand, ExportArgs, ExportCommand, ExportJsonArgs,
     ExportMessagePackArgs, InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand,
+    SkillArgs, SkillCommand, SkillScopeArgs,
 };
 
 fn main() -> ExitCode {
@@ -63,7 +64,67 @@ fn run() -> Result<bool, DiagnosticSet> {
         Command::Codegen(command) => run_codegen(&command),
         Command::Schema(command) => run_schema(&command),
         Command::Data(command) => run_data(&command),
+        Command::Skill(command) => run_skill(&command),
     }
+}
+
+fn run_skill(command: &SkillArgs) -> Result<bool, DiagnosticSet> {
+    match &command.command {
+        SkillCommand::Install(args) => write_skill_report(
+            if args.global {
+                coflow::skill_commands::install_global()?
+            } else {
+                coflow::skill_commands::install_project(args.config_or_dir.as_deref())?
+            },
+            args,
+        ),
+        SkillCommand::Uninstall(args) => write_skill_report(
+            if args.global {
+                coflow::skill_commands::uninstall_global()?
+            } else {
+                coflow::skill_commands::uninstall_project(args.config_or_dir.as_deref())?
+            },
+            args,
+        ),
+        SkillCommand::Status(args) => write_skill_report(
+            if args.global {
+                coflow::skill_commands::status_global()?
+            } else {
+                coflow::skill_commands::status_project(args.config_or_dir.as_deref())?
+            },
+            args,
+        ),
+    }
+}
+
+fn write_skill_report(
+    report: coflow::skill_commands::SkillReport,
+    args: &SkillScopeArgs,
+) -> Result<bool, DiagnosticSet> {
+    if args.json {
+        let output = serde_json::to_string_pretty(&report)
+            .map_err(|error| output_error(format!("failed to serialize skill report: {error}")))?;
+        println!("{output}");
+    } else {
+        println!(
+            "{} bundled skills ({}, version {})",
+            report.operation, report.scope, report.bundle_version
+        );
+        for target in report.targets {
+            let state = if target.installed {
+                "installed"
+            } else {
+                "not installed"
+            };
+            println!(
+                "  {} [{}] ({})",
+                target.path.display(),
+                target.agents.join(", "),
+                state
+            );
+        }
+    }
+    Ok(true)
 }
 
 fn run_cft(command: &CftArgs) -> Result<bool, DiagnosticSet> {

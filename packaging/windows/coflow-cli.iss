@@ -1,6 +1,6 @@
-; Inno Setup script for the Windows Coflow Tools installer.
+; Inno Setup script for the Windows CLI-only package.
 
-#define AppName "Coflow Tools"
+#define AppName "Coflow CLI"
 #define AppPublisher "Coflow"
 #define AppUrl "https://github.com/Puring103/coflow"
 
@@ -25,20 +25,20 @@
 #endif
 
 [Setup]
-AppId={{EC88990D-CC9E-4C34-8CA5-04AA3517E5A7}
+AppId={{BCC224F8-C097-430C-9071-891235F401F0}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
 AppPublisherURL={#AppUrl}
 AppSupportURL={#AppUrl}
 AppUpdatesURL={#AppUrl}
-DefaultDirName={localappdata}\Programs\Coflow
+DefaultDirName={localappdata}\Programs\Coflow CLI
 DefaultGroupName=Coflow
 DisableProgramGroupPage=yes
 OutputDir={#OutputDir}
-OutputBaseFilename=coflow-tools-windows-x64-setup
+OutputBaseFilename=coflow-cli-windows-x64-setup
 SetupIconFile={#IconPath}
-UninstallDisplayIcon={app}\editor\cfd-editor.exe
+UninstallDisplayIcon={app}\bin\coflow.exe
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
@@ -49,16 +49,59 @@ ChangesEnvironment=yes
 
 [Files]
 Source: "{#SourceDir}\coflow.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
-Source: "{#SourceDir}\cfd-editor.exe"; DestDir: "{app}\editor"; Flags: ignoreversion
 Source: "{#LicensePath}"; DestDir: "{app}"; Flags: ignoreversion
 
-[Icons]
-Name: "{group}\CFD Editor"; Filename: "{app}\editor\cfd-editor.exe"; WorkingDir: "{userdocs}"
+[Run]
+Filename: "{app}\bin\coflow.exe"; Parameters: "skill install -g"; StatusMsg: "Installing Coflow agent skills..."; Flags: runhidden waituntilterminated
+
+[UninstallRun]
+Filename: "{app}\bin\coflow.exe"; Parameters: "skill uninstall -g"; RunOnceId: "UninstallCoflowSkills"; Flags: runhidden waituntilterminated
 
 [Code]
 const
   EnvironmentKey = 'Environment';
   PathName = 'Path';
+  FullProductUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Coflow Tools';
+  LegacyFullProductUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{EC88990D-CC9E-4C34-8CA5-04AA3517E5A7}_is1';
+
+function InitializeSetup(): Boolean;
+var
+  FullInstallLocation: string;
+begin
+  Result := True;
+  if RegQueryStringValue(
+    HKEY_CURRENT_USER,
+    FullProductUninstallKey,
+    'InstallLocation',
+    FullInstallLocation
+  ) then
+  begin
+    SuppressibleMsgBox(
+      'Coflow Tools is already installed. It includes the CLI, so the CLI-only package is not needed.',
+      mbInformation,
+      MB_OK,
+      IDOK
+    );
+    Result := False;
+    Exit;
+  end;
+
+  if RegQueryStringValue(
+    HKEY_CURRENT_USER,
+    LegacyFullProductUninstallKey,
+    'UninstallString',
+    FullInstallLocation
+  ) then
+  begin
+    SuppressibleMsgBox(
+      'A legacy Coflow Tools installation is present and already includes the CLI. Install the new full package to migrate it.',
+      mbInformation,
+      MB_OK,
+      IDOK
+    );
+    Result := False;
+  end;
+end;
 
 function NormalizePath(Value: string): string;
 begin
