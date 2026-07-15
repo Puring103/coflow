@@ -2,7 +2,7 @@
 
 ## 文档状态
 
-- 状态：迁移、文档同步、完整 release gate 和最终独立审查均已完成；等待提交与 PR 更新。
+- 状态：已完成；迁移、文档同步、完整 release gate、最终独立审查、分批提交和 PR 更新均已完成。
 - 范围：`coflow-cft` 整个 crate、canonical schema、维度 schema、DataModel overlay，以及直接依赖这些结构的 runtime/provider/checker/export/codegen/editor/LSP。
 - 迁移策略：允许破坏内部 Rust API，旧 reflection/meta、synthetic dimension type/record 和兼容别名最终全部删除。
 - 语言语义：不修改 CFT 语法、annotation 可用范围、继承、多态、默认值、check、记录引用、维度文件格式和导出格式。
