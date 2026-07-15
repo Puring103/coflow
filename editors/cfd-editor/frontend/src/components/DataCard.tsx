@@ -245,7 +245,9 @@ const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
 const ValueRowSelectionCtx = createContext<{
   selectedFieldPath?: FieldPathSegment[] | null
+  selectedActionPathWire?: string | null
   onSelectValue?: (fieldPath: FieldPathSegment[]) => void
+  onSelectAction?: (pathWire: string) => void
   onEditingFinished?: () => void
 } | null>(null)
 
@@ -327,7 +329,9 @@ export interface ExpandedProps {
    *  Cleared via `onHighlightConsumed` alongside `highlightField`. */
   expandAlongPath?: string | null
   selectedFieldPath?: FieldPathSegment[] | null
+  selectedActionPathWire?: string | null
   onSelectValue?: (fieldPath: FieldPathSegment[]) => void
+  onSelectAction?: (pathWire: string) => void
   onEditingFinished?: () => void
 }
 
@@ -346,7 +350,9 @@ export function DataCardExpanded({
   onDiagnosticBadgeClick,
   expandAlongPath,
   selectedFieldPath,
+  selectedActionPathWire,
   onSelectValue,
+  onSelectAction,
   onEditingFinished,
 }: ExpandedProps) {
   const ctx = useMemo(
@@ -453,7 +459,7 @@ export function DataCardExpanded({
     </div>
   )
   const wrapped = (
-    <ValueRowSelectionCtx.Provider value={{ selectedFieldPath, onSelectValue, onEditingFinished }}>
+    <ValueRowSelectionCtx.Provider value={{ selectedFieldPath, selectedActionPathWire, onSelectValue, onSelectAction, onEditingFinished }}>
       <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
         <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
       </ControlledExpansionCtx.Provider>
@@ -800,7 +806,7 @@ function ScalarFieldRow({
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
 
   return (
-    <div className={`dc-row${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div className={`dc-row${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 12 }}>
         {leading}
         <span className="dc-row-label-text">{label}</span>
@@ -1397,7 +1403,7 @@ function ExpandableRow({
 
   return (
     <>
-      <div className={`dc-row dc-row-foldout${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+      <div className={`dc-row dc-row-foldout${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 4 }}>
           {leading}
           <span className="dc-fold-arrow">
@@ -1487,6 +1493,7 @@ function ExpandableRow({
             <CollectionAddRow
               container={value}
               depth={depth + 1}
+              fieldPath={fieldPath}
               onCollectionEdit={edit => onCollectionEdit(fieldPath, edit)}
               itemAnnotation={annotationItem(valueAnnotation)}
             />
@@ -1684,9 +1691,10 @@ function DeleteButton({ onClick, title }: { onClick: () => void; title: string }
   )
 }
 
-function CollectionAddRow({ container, depth, onCollectionEdit, itemAnnotation }: {
+function CollectionAddRow({ container, depth, fieldPath, onCollectionEdit, itemAnnotation }: {
   container: FieldValue & { kind: 'array' | 'dict' }
   depth: number
+  fieldPath: FieldPathSegment[]
   onCollectionEdit: (edit: CollectionEdit) => void
   itemAnnotation?: FieldAnnotation
 }) {
@@ -1695,6 +1703,9 @@ function CollectionAddRow({ container, depth, onCollectionEdit, itemAnnotation }
   const [addError, setAddError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const { openObjectDraft } = useObjectDraft()
+  const rowSelection = useContext(ValueRowSelectionCtx)
+  const pathWire = JSON.stringify(fieldPath)
+  const selected = rowSelection?.selectedActionPathWire === pathWire
 
   function reset() { setAdding(false); setDupError(null); setAddError(null) }
 
@@ -1718,7 +1729,7 @@ function CollectionAddRow({ container, depth, onCollectionEdit, itemAnnotation }
 
   if (container.kind === 'array') {
     return (
-      <div className="dc-row dc-row-add" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
+      <div className={`dc-row dc-row-add${selected ? ' keyboard-selected' : ''}`} data-depth={depth} data-add-path-wire={pathWire} style={{ paddingLeft: depth * INDENT_PX + 8 }} onMouseDown={() => rowSelection?.onSelectAction?.(pathWire)}>
         <button
           className="btn-add-item"
           disabled={busy}
@@ -1761,7 +1772,7 @@ function CollectionAddRow({ container, depth, onCollectionEdit, itemAnnotation }
     reset()
   }
   return (
-    <div className="dc-row dc-row-add" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
+    <div className={`dc-row dc-row-add${selected ? ' keyboard-selected' : ''}`} data-depth={depth} data-add-path-wire={pathWire} style={{ paddingLeft: depth * INDENT_PX + 8 }} onMouseDown={() => rowSelection?.onSelectAction?.(pathWire)}>
       {!adding ? (
         <button className="btn-add-item" onClick={() => { setAdding(true); setDupError(null) }}>
           <Icon name="plus" size={11} /> 添加项

@@ -1321,7 +1321,9 @@ export default function App() {
                     onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
                     selection={inspectorSelection}
-                    onSelectValue={(coordinate, path) => openValueInspector(currentRoute.file, coordinate, path)}
+                    onSelectValue={(coordinate, path) => {
+                      setInspectorSelection(valueSelection(currentRoute.file, coordinate, path))
+                    }}
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
                     onCollectionEdit={(coordinate, path, edit) => editCollection(currentRoute.file, coordinate, path, edit)}
                     onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
@@ -1381,7 +1383,8 @@ export default function App() {
           )}
         </div>
         <InspectorPanel
-          open={inspectorOpen || ((currentRoute?.view === 'table' || currentRoute?.view === 'graph') && !!activeFileData)}
+          open={currentRoute?.view !== 'record'
+            && (inspectorOpen || ((currentRoute?.view === 'table' || currentRoute?.view === 'graph') && !!activeFileData))}
           collapsed={inspectorCollapsed}
           onToggleCollapse={() => setInspectorCollapsed(v => !v)}
           data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}

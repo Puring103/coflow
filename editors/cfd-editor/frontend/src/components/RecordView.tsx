@@ -6,6 +6,7 @@ import type { RecordRow } from '../bindings/RecordRow'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import {
   coordinateId,
+  errorMessage,
   recordActualType,
   recordKey,
   sameCoordinate,
@@ -35,6 +36,7 @@ import {
   type RecordItemDirection,
   type VisibleRecordItem,
 } from '../state/recordItemNavigation'
+import { selectionEditIntentForKey } from '../state/selectionKeyboard'
 
 interface Props {
   data: FileRecords
@@ -65,6 +67,8 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [expandedByRecord, setExpandedByRecord] = useState<ExpandedPathMap>(() => new Map())
+  const [selectedActionPathWire, setSelectedActionPathWire] = useState<string | null>(null)
+  const [keyboardNotice, setKeyboardNotice] = useState<string | null>(null)
   const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const mainRef = useRef<HTMLDivElement>(null)
@@ -77,6 +81,8 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     && sameCoordinate(selection.coordinate, coordinate)
     ? selection.fieldPath
     : null
+
+  useEffect(() => setSelectedActionPathWire(null), [expansionOwner])
 
   // Record-level highlight burns off after the header flashes — the child
   // DataCardExpanded only clears the highlight for field-level jumps.
@@ -130,15 +136,19 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     const ids = sidebarRecords.map(r => coordinateId(r.coordinate))
     if (ids.length === 0) return
     const cur = document.activeElement as HTMLElement | null
-    const idx = ids.indexOf(cur?.dataset.coordinateId ?? '')
+    const idx = Math.max(0, ids.indexOf(activeId))
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       const next = ids[Math.min(idx + 1, ids.length - 1)]
-      sidebarRef.current?.querySelector<HTMLElement>(`[data-coordinate-id="${cssEscape(next)}"]`)?.focus()
+      const nextRecord = sidebarRecords.find(r => coordinateId(r.coordinate) === next)
+      if (nextRecord && next !== activeId) onOpenRecord(nextRecord.coordinate)
+      requestAnimationFrame(() => sidebarRef.current?.querySelector<HTMLElement>(`[data-coordinate-id="${cssEscape(next)}"]`)?.focus())
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       const prev = ids[Math.max(idx - 1, 0)]
-      sidebarRef.current?.querySelector<HTMLElement>(`[data-coordinate-id="${cssEscape(prev)}"]`)?.focus()
+      const previousRecord = sidebarRecords.find(r => coordinateId(r.coordinate) === prev)
+      if (previousRecord && prev !== activeId) onOpenRecord(previousRecord.coordinate)
+      requestAnimationFrame(() => sidebarRef.current?.querySelector<HTMLElement>(`[data-coordinate-id="${cssEscape(prev)}"]`)?.focus())
     } else if (e.key === 'Enter') {
       const id = cur?.dataset.coordinateId
       const next = id ? sidebarRecords.find(r => coordinateId(r.coordinate) === id) : null
@@ -149,54 +159,92 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     }
   }
 
-  const onMainKeyDown = (e: React.KeyboardEvent) => {
+  const onMainKeyDown = async (e: React.KeyboardEvent) => {
     if (isNativeEditorTarget(e.target)) return
-    if (
-      e.key !== 'ArrowUp'
-      && e.key !== 'ArrowDown'
-      && e.key !== 'ArrowLeft'
-      && e.key !== 'ArrowRight'
-    ) return
     const root = mainRef.current
     if (!root) return
-    const elements = Array.from(root.querySelectorAll<HTMLElement>('.dc-row[data-field-path-wire]'))
+    const elements = Array.from(root.querySelectorAll<HTMLElement>(
+      '.dc-row[data-field-path-wire], .dc-row-add[data-add-path-wire]',
+    ))
     if (elements.length === 0) return
     const items: VisibleRecordItem[] = elements.map(element => ({
-      id: element.dataset.fieldPath ?? '',
+      id: recordItemId(element),
       depth: Number(element.dataset.depth ?? 0),
       expandable: element.classList.contains('dc-row-foldout'),
     }))
     const selectedWire = selectedFieldPath ? JSON.stringify(selectedFieldPath) : null
-    let current = selectedWire
-      ? elements.find(element => element.dataset.fieldPathWire === selectedWire)
-      : null
+    const current = selectedActionPathWire
+      ? elements.find(element => element.dataset.addPathWire === selectedActionPathWire)
+      : selectedWire
+        ? elements.find(element => element.dataset.fieldPathWire === selectedWire)
+        : null
+    const isDirection = e.key === 'ArrowUp'
+      || e.key === 'ArrowDown'
+      || e.key === 'ArrowLeft'
+      || e.key === 'ArrowRight'
+    if (!isDirection) {
+      if (!current) return
+      if (current.dataset.addPathWire) {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          current.querySelector<HTMLButtonElement>('.btn-add-item')?.click()
+        }
+        return
+      }
+      const path = parseWireFieldPath(current.dataset.fieldPathWire)
+      const valueKind = current.dataset.valueKind as FieldValue['kind'] | undefined
+      const editable = current.dataset.keyboardEditable === 'true'
+      if (!path || !valueKind || !editable || !onWriteField) return
+      const intent = selectionEditIntentForKey(
+        e.key,
+        e.ctrlKey || e.metaKey || e.altKey,
+        valueKind,
+      )
+      if (!intent) return
+      e.preventDefault()
+      if (intent.kind === 'clear' || intent.kind === 'toggle-bool') {
+        try {
+          const next: FieldValue = intent.kind === 'clear'
+            ? { kind: 'null' }
+            : { kind: 'bool', value: current.dataset.boolValue !== 'true' }
+          await onWriteField(record.coordinate, path, next)
+          setKeyboardNotice(null)
+        } catch (error) {
+          setKeyboardNotice(`无法编辑：${errorMessage(error)}`)
+        } finally {
+          requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }))
+        }
+        return
+      }
+      focusRecordValueEditor(current, intent.kind === 'replace' ? intent.text : null)
+      return
+    }
     if (!current) {
       e.preventDefault()
-      const firstPath = parseWireFieldPath(elements[0].dataset.fieldPathWire)
-      if (firstPath) onSelectValue?.(record.coordinate, firstPath)
+      selectRecordItem(elements[0], record.coordinate, onSelectValue, setSelectedActionPathWire)
       return
     }
     const result = moveRecordItem(
       items,
-      current.dataset.fieldPath ?? '',
+      recordItemId(current),
       e.key as RecordItemDirection,
     )
     if (!result) return
     e.preventDefault()
-    const target = elements.find(element => element.dataset.fieldPath === result.id)
+    const target = elements.find(element => recordItemId(element) === result.id)
     if (!target) return
     if (result.kind === 'toggle') {
+      const expansionPath = target.dataset.fieldPath
+      if (!expansionPath) return
       setExpandedByRecord(currentMap => updateExpandedPath(
         currentMap,
         expansionOwner,
-        result.id,
-        !expandedPaths.has(result.id),
+        expansionPath,
+        !expandedPaths.has(expansionPath),
       ))
       return
     }
-    const path = parseWireFieldPath(target.dataset.fieldPathWire)
-    if (!path) return
-    onSelectValue?.(record.coordinate, path)
+    selectRecordItem(target, record.coordinate, onSelectValue, setSelectedActionPathWire)
     target.scrollIntoView({ block: 'nearest' })
   }
 
@@ -265,7 +313,9 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         onKeyDown={onMainKeyDown}
         onMouseDownCapture={e => {
           const target = e.target as HTMLElement
-          if (target.closest('.dc-row[data-field-path-wire]') && !isNativeEditorTarget(target)) {
+          const addRow = target.closest('.dc-row-add[data-add-path-wire]')
+          if (addRow) e.preventDefault()
+          if (addRow || (target.closest('.dc-row[data-field-path-wire]') && !isNativeEditorTarget(target))) {
             mainRef.current?.focus({ preventScroll: true })
           }
         }}
@@ -307,13 +357,19 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           highlightField={highlightField === RECORD_HIGHLIGHT_SENTINEL ? null : highlightField}
           expandAlongPath={highlightField && highlightField !== RECORD_HIGHLIGHT_SENTINEL ? highlightField : null}
           onHighlightConsumed={onHighlightConsumed}
-          selectedFieldPath={selectedFieldPath}
-          onSelectValue={path => onSelectValue?.(record.coordinate, path)}
+          selectedFieldPath={selectedActionPathWire ? null : selectedFieldPath}
+          selectedActionPathWire={selectedActionPathWire}
+          onSelectValue={path => {
+            setSelectedActionPathWire(null)
+            onSelectValue?.(record.coordinate, path)
+          }}
+          onSelectAction={setSelectedActionPathWire}
           onEditingFinished={() => mainRef.current?.focus({ preventScroll: true })}
           onDiagnosticBadgeClick={onDiagnosticBadgeClick
             ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)
             : undefined}
         />
+        {keyboardNotice && <span className="table-cell-notice" role="status">{keyboardNotice}</span>}
       </div>
       {showNewRecord && onInsertRecord && onCreateRecordDraft && (
         <CreateRecordDialog
@@ -331,6 +387,55 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
 function cssEscape(s: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s)
   return s.replace(/["\\]/g, '\\$&')
+}
+
+function recordItemId(element: HTMLElement): string {
+  return element.dataset.addPathWire
+    ? `add:${element.dataset.addPathWire}`
+    : `value:${element.dataset.fieldPathWire ?? ''}`
+}
+
+function selectRecordItem(
+  element: HTMLElement,
+  coordinate: RecordCoordinate,
+  onSelectValue: Props['onSelectValue'],
+  setSelectedActionPathWire: (value: string | null) => void,
+) {
+  const actionPath = element.dataset.addPathWire
+  if (actionPath) {
+    setSelectedActionPathWire(actionPath)
+    return
+  }
+  const path = parseWireFieldPath(element.dataset.fieldPathWire)
+  if (!path) return
+  setSelectedActionPathWire(null)
+  onSelectValue?.(coordinate, path)
+}
+
+function focusRecordValueEditor(row: HTMLElement, replacement: string | null) {
+  const editor = row.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+    '.dc-row-value input:not([type="checkbox"]), .dc-row-value textarea, .dc-row-value select',
+  )
+  if (!editor) return
+  editor.focus({ preventScroll: true })
+  if (editor instanceof HTMLSelectElement) {
+    try {
+      editor.showPicker()
+    } catch {
+      // The native picker may require a WebView-supported activation context.
+    }
+    return
+  }
+  if (replacement !== null) {
+    const prototype = editor instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype
+    Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(editor, replacement)
+    editor.dispatchEvent(new Event('input', { bubbles: true }))
+    editor.setSelectionRange(replacement.length, replacement.length)
+    return
+  }
+  editor.select()
 }
 
 function parseWireFieldPath(raw: string | undefined): FieldPathSegment[] | null {

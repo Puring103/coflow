@@ -24,8 +24,10 @@ import {
   diagnosticSeverity,
   errorMessage,
   fieldPathField,
+  nullValue,
   recordActualType,
   recordKey,
+  sameCoordinate,
   type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
@@ -45,10 +47,10 @@ import {
   type EditorSelection,
 } from '../state/editorSelection'
 import {
-  editIntentForKey,
   moveTableSelection,
   type TableDirection,
 } from '../state/tableCellNavigation'
+import { selectionEditIntentForKey } from '../state/selectionKeyboard'
 
 interface Props {
   data: FileRecords
@@ -360,6 +362,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       requestAnimationFrame(() => tableScrollRef.current?.focus({ preventScroll: true }))
                     } catch (error) {
                       setCellNotice(`输入格式不正确：${errorMessage(error)}`)
+                      setSyntaxEdit(current => current?.key === editKey ? null : current)
+                      requestAnimationFrame(() => tableScrollRef.current?.focus({ preventScroll: true }))
                     }
                   }}
                 />
@@ -379,6 +383,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   enumType={cellEnumType(f)}
                   nullable={cellNullable(f)}
                   onCommit={cellEditable && writeFn ? next => writeFn(row.original.coordinate, [fieldPathField(name)], next) : undefined}
+                  onEditingFinished={() => tableScrollRef.current?.focus({ preventScroll: true })}
                 />
                 {cellBadge}
               </span>
@@ -428,6 +433,48 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const padBefore = virtualRows.length > 0 ? virtualRows[0].start : 0
   const padAfter = virtualRows.length > 0 ? totalHeight - virtualRows[virtualRows.length - 1].end : 0
 
+  const revealTableSelection = (target: EditorSelection, openDropdown: boolean) => {
+    if (target.filePath !== data.file_path) return
+    const rowIndex = rows.findIndex(row => sameCoordinate(row.original.coordinate, target.coordinate))
+    if (rowIndex < 0) return
+    rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
+    const columnId = target.kind === 'record'
+      ? 'key'
+      : selectedTopLevelField(target.fieldPath)
+    if (!columnId) return
+    const key = tableCellKey(target.coordinate, columnId)
+    let attempts = 0
+    const reveal = () => {
+      const cell = tableScrollRef.current?.querySelector<HTMLElement>(
+        `[data-table-cell-key="${CSS.escape(key)}"]`,
+      )
+      if (!cell && attempts < 4) {
+        attempts += 1
+        requestAnimationFrame(reveal)
+        return
+      }
+      cell?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      if (!openDropdown) return
+      const select = cell?.querySelector<HTMLSelectElement>('select.dc-pill-select')
+      if (!select) return
+      select.focus({ preventScroll: true })
+      try {
+        select.showPicker()
+      } catch {
+        // Some WebViews allow focus but not programmatic native picker opening.
+      }
+    }
+    // Try in the keyboard event's activation window so native showPicker()
+    // is permitted. Virtualized rows fall back to the animation-frame retry.
+    reveal()
+  }
+
+  useEffect(() => {
+    if (selection) revealTableSelection(selection, false)
+  // Row/column identity and selection are the only inputs that can move the target.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection, rows.length, allFieldNames.join('\u001f')])
+
   // Close context menu on Escape.
   useEffect(() => {
     if (!contextMenu) return
@@ -471,8 +518,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 setSyntaxEdit(null)
                 if (next.kind === 'record') onSelectRecord?.(next.coordinate)
                 else onSelectValue?.(next.coordinate, next.fieldPath)
-                const index = visibleCoordinates.findIndex(coordinate => coordinateId(coordinate) === coordinateId(next.coordinate))
-                if (index >= 0) rowVirtualizer.scrollToIndex(index, { align: 'auto' })
+                revealTableSelection(next, true)
               }
               return
             }
@@ -510,9 +556,23 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               return
             }
 
-            const intent = editable ? editIntentForKey(e.key, modified) : null
+            const intent = editable && selectedCell
+              ? selectionEditIntentForKey(e.key, modified, selectedCell.value.kind)
+              : null
             if (!intent) return
             e.preventDefault()
+            if (intent.kind === 'clear' || intent.kind === 'toggle-bool') {
+              try {
+                const next = intent.kind === 'clear'
+                  ? nullValue()
+                  : { kind: 'bool' as const, value: !(selectedCell?.value.kind === 'bool' && selectedCell.value.value) }
+                await onWriteField?.(selection.coordinate, selection.fieldPath, next)
+                setCellNotice(null)
+              } catch (error) {
+                setCellNotice(`无法编辑：${errorMessage(error)}`)
+              }
+              return
+            }
             try {
               const initialText = intent.kind === 'replace'
                 ? intent.text
@@ -599,6 +659,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                         <td
                           key={cell.id}
                           className={classes || undefined}
+                          data-table-cell-key={tableCellKey(row.original.coordinate, cell.column.id)}
                           style={{ width: cell.column.getSize() }}
                           aria-selected={selected || undefined}
                           onMouseDown={e => {
@@ -851,7 +912,7 @@ function CellSyntaxEditor({
 }
 
 function EditableCell({
-  value, editable, refTargetType, enumType, nullable, onCommit,
+  value, editable, refTargetType, enumType, nullable, onCommit, onEditingFinished,
 }: {
   value: FieldValue
   editable: boolean
@@ -859,6 +920,7 @@ function EditableCell({
   enumType?: string
   nullable?: boolean
   onCommit?: (next: FieldValue) => void
+  onEditingFinished?: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
@@ -866,6 +928,10 @@ function EditableCell({
   // null cells become editable when the schema tells us they hold an enum/ref/bool
   const isNullDropdown = value.kind === 'null' && !!(enumType || refTargetType)
   const canEdit = editable && (isScalar || isNullDropdown) && !!onCommit
+  const commitAndRestoreFocus = (next: FieldValue) => {
+    onCommit!(next)
+    requestAnimationFrame(() => onEditingFinished?.())
+  }
 
   // Bool: checkbox, always visible
   if (canEdit && value.kind === 'bool') {
@@ -889,7 +955,7 @@ function EditableCell({
           value={value as FieldValue & { kind: 'enum' | 'null' }}
           enumType={enumType}
           nullable={nullable}
-          onCommit={onCommit!}
+          onCommit={commitAndRestoreFocus}
         />
       </div>
     )
@@ -901,7 +967,7 @@ function EditableCell({
       <div className="cell-edit-wrap">
         <RefDirectSelect
           value={value as FieldValue & { kind: 'ref' | 'null' }}
-          onCommit={onCommit!}
+          onCommit={commitAndRestoreFocus}
           targetType={refTargetType}
           nullable={nullable}
         />

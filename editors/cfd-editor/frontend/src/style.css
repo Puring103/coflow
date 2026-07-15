@@ -1544,6 +1544,17 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   background: var(--bg-4);
   box-shadow: inset 2px 0 0 var(--accent);
 }
+.dc-row.keyboard-selected > .dc-row-label,
+.dc-row.keyboard-selected > .dc-row-value {
+  background: var(--bg-4);
+}
+.dc-row.keyboard-selected > .dc-row-label {
+  color: var(--text);
+}
+.dc-row-add.keyboard-selected .btn-add-item {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
 .rv-main:focus {
   outline: none;
 }
