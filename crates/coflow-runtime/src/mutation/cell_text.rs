@@ -19,16 +19,17 @@ pub(crate) fn parse_cell_text_value(
         "MUTATION-PATH",
         "MUTATION",
     )?;
-    let parsed = parse_cell(session.schema(), &expected.display_label(), text).map_err(|error| {
-        one_value_error(
-            error
-                .diagnostics
-                .into_iter()
-                .map(|diagnostic| diagnostic.message)
-                .collect::<Vec<_>>()
-                .join("; "),
-        )
-    })?;
+    let parsed =
+        parse_cell(session.schema(), &expected.display_label(), text).map_err(|error| {
+            one_value_error(
+                error
+                    .diagnostics
+                    .into_iter()
+                    .map(|diagnostic| diagnostic.message)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            )
+        })?;
     let ParsedCell::Value(input) = parsed else {
         return Err(one_value_error(
             "empty cell text omits a value; use `null` for a nullable field",

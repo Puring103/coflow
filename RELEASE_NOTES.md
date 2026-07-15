@@ -16,6 +16,7 @@
 - Hardened local and provider transactions, staging, compensation, generation publication, incremental checks, and dimension regeneration failure handling.
 - Added artifact generation history under Coflow state while retaining atomic active-manifest publication.
 - Expanded differential, diagnostic, transaction, reload, and boundary coverage across the schema and dimension pipeline.
+- Updated public and bundled skill references to describe the final canonical dimension pipeline.
 
 ### Editor Workflow
 

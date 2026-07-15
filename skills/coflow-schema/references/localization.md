@@ -21,7 +21,7 @@ dimension: language
 
 ## 配置维度
 
-当前内建维度是 `language`。在 `coflow.yaml` 中使用 `dimensions.language` 启用：
+所有维度使用相同的配置和校验流程。`language` 是 `@localized` 使用的内建维度名，在 `coflow.yaml` 中使用 `dimensions.language` 启用：
 
 ```yaml
 dimensions:
@@ -62,7 +62,7 @@ type Item {
 - `zh`、`en`、`ja` 等变体值维护在 `dimensions.language.out_dir` 下的维度文件中。
 - 检查时，Coflow 会用默认值和各语言变体分别执行相关规则。
 
-如果 schema 中存在 `@localized` 字段，但没有配置 `dimensions.language`，Coflow 会报告项目配置诊断。
+如果 schema 中存在 `@localized` 字段，但没有配置 `dimensions.language`，Coflow 会报告缺失维度 binding 的 CFT schema 诊断。
 
 ## Record Overlay
 
@@ -102,7 +102,7 @@ staff_ice,Ice Staff,冰杖,Ice Staff
 | `default` | 源数据中的默认值，由 Coflow 刷新 |
 | 变体列 | 对应 variant 的值，由人工或翻译流程维护 |
 
-singleton type 的维度字段生成 CFD 文件，每个字段一条 record。
+singleton type 的同一维度字段合并到一份 CFD 文件，每个字段一条 record；生成、加载和写入都以整份物理文件为事务边界。
 
 维度文件由 runtime 自动发现，不需要手动写进 `sources`。Provider 按原 `CftField` 类型直接解析变体值，并把值与 CSV cell 或 CFD span origin 一起交给 owner record overlay。
 

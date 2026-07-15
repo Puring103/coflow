@@ -78,11 +78,9 @@ fn configured_dimension_names_and_variants_are_validated_generically() {
         "dimension `platform` has invalid variant `desktop-web`"
     );
 
-    let duplicate_variant = CftDimensionInputs::try_new([(
-        "platform",
-        vec!["pc".to_string(), "pc".to_string()],
-    )])
-    .expect_err("duplicate dimension variant must fail");
+    let duplicate_variant =
+        CftDimensionInputs::try_new([("platform", vec!["pc".to_string(), "pc".to_string()])])
+            .expect_err("duplicate dimension variant must fail");
     assert_eq!(
         duplicate_variant.to_string(),
         "dimension `platform` has duplicate variant `pc`"

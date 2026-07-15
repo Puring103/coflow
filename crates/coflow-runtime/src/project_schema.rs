@@ -133,9 +133,7 @@ pub(crate) fn open_project_schema_attempt(
         let build = collect_project_schema(&project, overrides)?;
         diagnostics.extend(build.diagnostics);
         match build.schema {
-            Some(schema) => {
-                (build.modules, Some(schema))
-            }
+            Some(schema) => (build.modules, Some(schema)),
             None => (build.modules, None),
         }
     } else {

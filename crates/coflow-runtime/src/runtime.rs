@@ -411,14 +411,16 @@ impl WriteProjectSession {
         let value = self
             .queries()
             .field_value(&coordinate.actual_type, &coordinate.key, path)
-            .ok_or_else(|| DiagnosticSet::one(coflow_api::Diagnostic {
-                code: "MUTATION-PATH".to_string(),
-                stage: "MUTATION".to_string(),
-                severity: Severity::Error,
-                message: "selected field was not found".to_string(),
-                primary: None,
-                related: Vec::new(),
-            }))?;
+            .ok_or_else(|| {
+                DiagnosticSet::one(coflow_api::Diagnostic {
+                    code: "MUTATION-PATH".to_string(),
+                    stage: "MUTATION".to_string(),
+                    severity: Severity::Error,
+                    message: "selected field was not found".to_string(),
+                    primary: None,
+                    related: Vec::new(),
+                })
+            })?;
         crate::mutation::render_cell_text_value(value)
     }
 
@@ -429,12 +431,7 @@ impl WriteProjectSession {
         path: &[CfdPathSegment],
         text: &str,
     ) -> Result<CfdValue, DiagnosticSet> {
-        crate::mutation::parse_cell_text_value(
-            &self.session,
-            &coordinate.actual_type,
-            path,
-            text,
-        )
+        crate::mutation::parse_cell_text_value(&self.session, &coordinate.actual_type, path, text)
     }
 
     #[must_use]

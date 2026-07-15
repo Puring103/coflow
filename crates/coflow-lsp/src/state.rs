@@ -98,9 +98,7 @@ pub(crate) fn current_type_at<'a>(
     offset: usize,
 ) -> Option<&'a CftType> {
     build.schema()?.all_types().find(|ty| {
-        ty.module.as_str() == document.module_id
-            && ty.span.start <= offset
-            && offset <= ty.span.end
+        ty.module.as_str() == document.module_id && ty.span.start <= offset && offset <= ty.span.end
     })
 }
 

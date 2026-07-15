@@ -323,7 +323,7 @@ outputs:
 
 ## `dimensions`
 
-`dimensions` 用于配置维度/变体数据。目前内建使用 `language` 维度支持 `@localized` 字段。
+`dimensions` 用于配置维度/变体数据。每个维度使用相同的配置和校验规则；`language` 是 `@localized` 使用的内建维度名。
 
 ```yaml
 dimensions:
@@ -337,13 +337,13 @@ dimensions:
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `dimensions.language.variants` | 是 | 语言变体列表。每个值必须是合法 CFT 标识符，不能重复，不能是保留变体 `default`。 |
-| `dimensions.language.out_dir` | 是 | 维度合成文件输出目录。可为绝对路径或项目相对路径。 |
-| `dimensions.language.display_name` | 否 | 编辑器中展示这一组维度文件的人类可读名称。省略时 `language` 默认显示为「本地化」。 |
+| `dimensions.<name>.variants` | 是 | 维度变体列表。每个值必须是合法 CFT 标识符，不能重复，不能是保留变体 `default`。 |
+| `dimensions.<name>.out_dir` | 是 | 维度文件的独占托管目录。可为绝对路径或项目相对路径，不能与其他维度目录重叠。 |
+| `dimensions.<name>.display_name` | 否 | 编辑器中展示这一组维度文件的人类可读名称。省略时使用维度名；`language` 默认显示为「本地化」。 |
 
-如果不配置 `dimensions`，Coflow 不会构造任何维度数据。schema 中存在 `@localized` 字段但缺少 `dimensions.language` 时，会报告维度配置诊断。
+如果不配置 `dimensions`，Coflow 不会构造任何维度数据。schema 字段引用未配置的维度时，会报告 CFT schema 诊断。
 
-`out_dir` 下的文件由 Coflow 按维度规则生成和维护。语言维度会把源数据中的默认值写入 `default`，再按 `variants` 生成对应变体列或记录，让后续 check 可以在每个语言变体下执行。
+`out_dir` 下的文件由 Coflow 按维度规则生成和维护。普通目录 source 递归发现文件时会自动跳过嵌套的维度托管目录；不要把托管目录或其中的文件显式加入 `sources`。维度文件会把源数据中的默认值写入 `default`，再按 `variants` 生成对应变体列或记录。
 
 配置本地化时使用 `dimensions.language`：
 

@@ -209,15 +209,15 @@ CLI、编辑器和自动化命令复用这些 capability，而不是导入 ownin
 
 ## 维度文件
 
-`dimensions.language` 启用语言维度时，runtime 会：
+配置 `dimensions.<name>` 后，schema build 和 runtime 会：
 
-1. 扫描 schema 中的 `@localized` 字段。
-2. 注入合成 type。
-3. 在 `dimensions.language.out_dir` 下维护维度数据文件。
-4. 把维度文件注册为隐式 source。
-5. 按默认值轮和语言变体轮执行相关 check。
+1. 把 `@dimension(name)` 字段绑定到 canonical dimension；`@localized` 等价绑定到 `language`。
+2. 在各自的 `dimensions.<name>.out_dir` 独占目录下维护维度数据文件。
+3. 把维度文件注册为隐式 source，并按原字段类型解析 variant 值。
+4. 把 variant overlay 附着到 owner record，不生成合成 type、record 或独立 store。
+5. 按默认值轮和各维度的配置 variant 轮执行相关 check。
 
-维度数据进入普通 source / DataModel / check 流程，不是独立的外部覆盖层。
+维度数据复用普通 source / DataModel / check 流程，overlay 是 owner record 的一部分。
 
 ## 产物写入
 

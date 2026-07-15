@@ -13,13 +13,13 @@ mod plan;
 mod prepare;
 mod types;
 
+pub(crate) use cell_text::{parse_cell_text_value, render_cell_text_value};
 pub use types::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,
     MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
 };
 pub(crate) use types::{DimensionSourceCoordinate, PreparedMutationOp};
-pub(crate) use cell_text::{parse_cell_text_value, render_cell_text_value};
 
 pub(super) fn schema_field<'a>(
     schema: &'a CftSchema,

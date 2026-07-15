@@ -717,7 +717,9 @@ dimensions:
     let diagnostics = project.schema_diagnostic_set();
     assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "DIM-SOURCE-007"
-            && diagnostic.message.contains("every dimension requires an exclusive managed directory")
+            && diagnostic
+                .message
+                .contains("every dimension requires an exclusive managed directory")
     }));
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())

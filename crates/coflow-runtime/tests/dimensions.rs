@@ -699,8 +699,7 @@ fn directory_source_excludes_nested_managed_dimension_directory() {
         "type Item { @localized name: string; }",
     )
     .expect("write schema");
-    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n")
-        .expect("write data");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write data");
     std::fs::write(
         root.join("coflow.yaml"),
         r#"schema: schema.cft
@@ -728,10 +727,7 @@ dimensions:
     assert!(session
         .queries()
         .has_source_file("data/dimensions/language/Item_name.csv"));
-    assert!(session
-        .queries()
-        .record_view("Item", "potion")
-        .is_some());
+    assert!(session.queries().record_view("Item", "potion").is_some());
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
@@ -1928,8 +1924,7 @@ fn singleton_dimension_source_preserves_loads_and_writes_multiple_fields() {
     if root.exists() {
         std::fs::remove_dir_all(&root).expect("clean temp dir");
     }
-    std::fs::create_dir_all(root.join("data/dimensions/language"))
-        .expect("create dimensions dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
     std::fs::write(
         root.join("schema.cft"),
         r#"@singleton

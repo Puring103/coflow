@@ -466,10 +466,7 @@ impl FileIndex {
 
     pub(crate) fn add_source_file(&mut self, display_path: String, source_id: SourceId) {
         self.source_files.insert(display_path.clone());
-        let sources = self
-            .display_to_sources
-            .entry(display_path)
-            .or_default();
+        let sources = self.display_to_sources.entry(display_path).or_default();
         if !sources.contains(&source_id) {
             sources.push(source_id);
         }
