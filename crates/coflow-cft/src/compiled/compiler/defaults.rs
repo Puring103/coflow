@@ -2,7 +2,7 @@ use super::SchemaCompiler;
 use crate::ast::{DefaultExpr, DefaultExprKind};
 use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftErrorCode};
-use crate::schema::support::{types_assignable, SymbolKind, Ty};
+use crate::compiled::support::{types_assignable, SymbolKind, Ty};
 use std::collections::BTreeSet;
 
 impl SchemaCompiler<'_> {

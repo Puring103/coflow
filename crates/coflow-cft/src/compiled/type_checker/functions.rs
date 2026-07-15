@@ -1,7 +1,7 @@
 use super::TypeChecker;
 use crate::ast::{CheckExpr, CheckExprKind, NameRef};
 use crate::error::CftErrorCode;
-use crate::schema::support::{
+use crate::compiled::support::{
     min_max_supported, types_comparable, unique_supported, unwrap_nullable, Ty,
 };
 use crate::span::Span;

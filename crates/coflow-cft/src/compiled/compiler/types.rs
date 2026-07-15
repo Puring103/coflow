@@ -2,7 +2,7 @@ use super::SchemaCompiler;
 use crate::ast::{TypeRef, TypeRefKind};
 use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftErrorCode};
-use crate::schema::support::{
+use crate::compiled::support::{
     has_annotation, is_valid_dict_key, FieldInfo, FieldOrigin, SymbolKind, Ty, TypeInfo,
 };
 use crate::span::Span;

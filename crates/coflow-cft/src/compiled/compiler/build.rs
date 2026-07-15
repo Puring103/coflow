@@ -1,9 +1,9 @@
 use super::SchemaCompiler;
 use crate::ast::{AnnotationArg, DefaultExpr, DefaultExprKind, FieldDef};
-use crate::schema::support::{
+use crate::compiled::support::{
     build_schema_type_ref, convert_check_block, find_annotation, has_annotation,
 };
-use crate::schema::{
+use crate::compiled::{
     CftConst, CftConstValue, CftEnum, CftEnumVariant, CftField, CftFieldDimension,
     CftSchemaDefaultValue, CftType, CompiledSchema,
 };

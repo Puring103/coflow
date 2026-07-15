@@ -2,7 +2,7 @@ use super::SchemaCompiler;
 use crate::ast::{Annotation, AnnotationArg, FieldDef};
 use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftErrorCode};
-use crate::schema::support::{
+use crate::compiled::support::{
     find_annotation, has_annotation, AnnotationSpec, AnnotationTarget, SymbolKind, Ty,
 };
 use crate::span::Span;
