@@ -1,4 +1,4 @@
-use coflow_cft::ast::Annotation;
+use coflow_cft::syntax::ast::Annotation;
 
 pub(crate) const KEYWORDS: &[(&str, &str)] = &[
     ("const", "Define a compile-time constant."),

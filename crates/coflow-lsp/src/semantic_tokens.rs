@@ -1,8 +1,8 @@
-use coflow_cft::ast::{
+use coflow_cft::syntax::ast::{
     Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, ConstLiteral, DefaultExpr,
     DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
-use coflow_cft::lexer::{lex, TokenKind};
+use coflow_cft::syntax::lexer::{lex, TokenKind};
 use coflow_cft::{ModuleId, Span};
 
 use crate::position::position_from_byte;
@@ -240,7 +240,7 @@ fn add_lex_semantic_token(
 fn add_ast_semantic_tokens(
     build: &LspBuild,
     document: &LspDocument,
-    ast: &coflow_cft::ast::ModuleAst,
+    ast: &coflow_cft::syntax::ast::ModuleAst,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     for annotation in &ast.dangling_annotations {
@@ -590,7 +590,7 @@ fn add_check_expr_semantic(
         CheckExprKind::Is { expr, predicate } => {
             add_check_expr_semantic(build, document, expr, tokens);
             match predicate {
-                coflow_cft::ast::TypePredicate::Type(name) => {
+                coflow_cft::syntax::ast::TypePredicate::Type(name) => {
                     push_semantic_span(
                         &document.source,
                         name.span,
@@ -599,7 +599,7 @@ fn add_check_expr_semantic(
                         tokens,
                     );
                 }
-                coflow_cft::ast::TypePredicate::Null(span) => {
+                coflow_cft::syntax::ast::TypePredicate::Null(span) => {
                     push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
                 }
             }

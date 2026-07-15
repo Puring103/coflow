@@ -10,7 +10,9 @@
 mod common;
 use common::*;
 
-use coflow_cft::{CftFile, CftParseOptions, StructuralLimits};
+use coflow_cft::syntax::parser::CftParseOptions;
+use coflow_cft::CftFile;
+use coflow_structure::StructuralLimits;
 use std::collections::BTreeSet;
 
 #[derive(Clone, Copy)]
@@ -40,7 +42,7 @@ fn diagnostics_for(case: &Case) -> CftDiagnostics {
             ]);
             modules.diagnostics().clone()
         }
-        Phase::StrictParse => coflow_cft::parser::parse_module_with_options(
+        Phase::StrictParse => coflow_cft::syntax::parser::parse_module_with_options(
             &ModuleId::from("main"),
             case.source,
             CftParseOptions {
@@ -613,7 +615,7 @@ fn error_code_cases_accept_adjacent_valid_inputs() {
             Phase::AddModule | Phase::Compile => {
                 compile_one_with_dimensions(
                     case.adjacent_valid_source,
-                    CftDimensionInputs::new([
+                    valid_dimensions([
                         ("language", vec!["zh".to_string()]),
                         ("platform", vec!["pc".to_string()]),
                     ]),
@@ -632,7 +634,7 @@ fn error_code_cases_accept_adjacent_valid_inputs() {
                 ]);
                 build_schema(
                     &modules,
-                    &CftDimensionInputs::new([
+                    &valid_dimensions([
                         ("language", vec!["zh".to_string()]),
                         ("platform", vec!["pc".to_string()]),
                     ]),
@@ -646,7 +648,7 @@ fn error_code_cases_accept_adjacent_valid_inputs() {
             }
             Phase::StrictParse => {
                 let options = StructuralLimits::new(1, 100, 100);
-                coflow_cft::parser::parse_module_with_options(
+                coflow_cft::syntax::parser::parse_module_with_options(
                     &ModuleId::from("main"),
                     case.adjacent_valid_source,
                     CftParseOptions {
@@ -780,7 +782,7 @@ fn important_error_code_branches_emit_stable_codes() {
 }
 
 fn declared_error_code_names() -> BTreeSet<String> {
-    let source = include_str!("../src/error.rs");
+    let source = include_str!("../src/diagnostics/codes.rs");
     let enum_body = source
         .split("pub enum CftErrorCode {")
         .nth(1)

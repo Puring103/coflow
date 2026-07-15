@@ -1,7 +1,8 @@
 #![allow(clippy::expect_used, clippy::panic_in_result_fn)]
 
-use coflow_cft::parser::{parse_module, parse_module_with_options};
-use coflow_cft::{CftErrorCode, CftParseOptions, ModuleId, Span, StructuralLimits};
+use coflow_cft::syntax::parser::{parse_module, parse_module_with_options, CftParseOptions};
+use coflow_cft::{CftErrorCode, ModuleId, Span};
+use coflow_structure::StructuralLimits;
 
 const fn options(max_depth: u64, max_nodes: u64) -> CftParseOptions {
     CftParseOptions {

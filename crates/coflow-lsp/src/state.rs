@@ -1,4 +1,4 @@
-use coflow_cft::ast::{CheckStmt, Item};
+use coflow_cft::syntax::ast::{CheckStmt, Item};
 use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftSchemaTypeRef, CftType, ModuleId};
 use coflow_project::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
@@ -21,7 +21,7 @@ pub(crate) struct LspDocument {
     pub(crate) module_id: String,
     pub(crate) uri: String,
     pub(crate) source: Arc<str>,
-    pub(crate) ast: Option<Arc<coflow_cft::ast::ModuleAst>>,
+    pub(crate) ast: Option<Arc<coflow_cft::syntax::ast::ModuleAst>>,
 }
 
 impl LspDocument {
@@ -29,7 +29,7 @@ impl LspDocument {
         &self.source
     }
 
-    pub(crate) fn ast(&self) -> Option<&coflow_cft::ast::ModuleAst> {
+    pub(crate) fn ast(&self) -> Option<&coflow_cft::syntax::ast::ModuleAst> {
         self.ast.as_deref()
     }
 }
@@ -107,7 +107,7 @@ pub(crate) fn current_type_at<'a>(
 pub(crate) fn current_field_at(
     document: &LspDocument,
     offset: usize,
-) -> Option<&coflow_cft::ast::FieldDef> {
+) -> Option<&coflow_cft::syntax::ast::FieldDef> {
     let ast = document.ast()?;
     for item in &ast.items {
         if let Item::Type(ty) = item {

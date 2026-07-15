@@ -209,7 +209,8 @@ fn dimension_field_lookup_reads_record_owned_overlay() {
                 name: string;
             }
         "#,
-        CftDimensionInputs::new([("platform", vec!["pc".to_string()])]),
+        CftDimensionInputs::try_new([("platform", vec!["pc".to_string()])])
+            .expect("valid dimension fixture"),
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
@@ -249,7 +250,8 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
                 item: &Item;
             }
         "#,
-        CftDimensionInputs::new([("platform", vec!["pc".to_string()])]),
+        CftDimensionInputs::try_new([("platform", vec!["pc".to_string()])])
+            .expect("valid dimension fixture"),
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
@@ -297,7 +299,8 @@ fn dimension_field_lookup_uses_singleton_owner_record() {
                 welcome: string;
             }
         "#,
-        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
+        CftDimensionInputs::try_new([("language", vec!["zh".to_string()])])
+            .expect("valid dimension fixture"),
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(

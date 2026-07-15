@@ -1,7 +1,7 @@
 use super::common::*;
 use super::*;
 use crate::completion::receiver_chain_before_dot;
-use coflow_cft::ast::Item;
+use coflow_cft::syntax::ast::Item;
 use coflow_cft::CftSchemaTypeRef;
 
 #[test]

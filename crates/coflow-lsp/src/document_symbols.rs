@@ -1,4 +1,4 @@
-use coflow_cft::{ast::Item, Span};
+use coflow_cft::{syntax::ast::Item, Span};
 use serde_json::{json, Value};
 
 use crate::{position::range_from_span, LspDocument};

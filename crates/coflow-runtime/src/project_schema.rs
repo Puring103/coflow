@@ -82,13 +82,20 @@ fn collect_project_schema(
         .modules()
         .map(|(id, module)| (id.as_str().to_string(), module.path().display().to_string()))
         .collect();
-    let dimensions = CftDimensionInputs::new(
+    let dimensions = CftDimensionInputs::try_new(
         project
             .config
             .dimensions
             .iter()
             .map(|(name, config)| (name.clone(), config.variants.clone())),
-    );
+    )
+    .map_err(|error| {
+        DiagnosticSet::one(Diagnostic::error(
+            "RUNTIME-INTERNAL",
+            "RUNTIME",
+            format!("validated project dimensions are invalid: {error}"),
+        ))
+    })?;
     let (schema, cft_diagnostics) = match build_schema(&modules, &dimensions) {
         Ok(schema) => (Some(schema), Vec::new()),
         Err(errors) => (None, errors.diagnostics),

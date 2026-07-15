@@ -1,5 +1,5 @@
 use coflow_cfd::CfdAst;
-use coflow_cft::ast::Item;
+use coflow_cft::syntax::ast::Item;
 use coflow_cft::{CftSchema, Span};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -68,7 +68,7 @@ pub(crate) fn cft_type_definition_location(build: &LspBuild, type_name: &str) ->
         };
 
         for item in &ast.items {
-            use coflow_cft::ast::Item;
+            use coflow_cft::syntax::ast::Item;
             let (name, name_span) = match item {
                 Item::Type(t) => (t.name.as_str(), t.name_span),
                 Item::Enum(e) => (e.name.as_str(), e.name_span),

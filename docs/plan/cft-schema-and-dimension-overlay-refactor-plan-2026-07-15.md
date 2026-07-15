@@ -2,7 +2,7 @@
 
 ## 文档状态
 
-- 状态：已完成；迁移、文档同步、完整 release gate、最终独立审查、分批提交和 PR 更新均已完成。
+- 状态：已完成；2026-07-16 补齐原计划遗漏的 `coflow-cft` 文件结构、compiler 职责拆分和技术债清理。
 - 范围：`coflow-cft` 整个 crate、canonical schema、维度 schema、DataModel overlay，以及直接依赖这些结构的 runtime/provider/checker/export/codegen/editor/LSP。
 - 迁移策略：允许破坏内部 Rust API，旧 reflection/meta、synthetic dimension type/record 和兼容别名最终全部删除。
 - 语言语义：不修改 CFT 语法、annotation 可用范围、继承、多态、默认值、check、记录引用、维度文件格式和导出格式。
@@ -47,6 +47,9 @@
 - mutation/editor 使用强类型稳定坐标和 expected-state stale-write 防护；undo/redo/coalescing/rollback 共用同一坐标。
 - `data patch` 继续使用 `coordinate.record.{type,key}` 既有 JSON 形态，只在命令边界转换为内部强类型坐标。
 - `dimensions/synthesize.rs` 已改为只负责 source discovery 的 `dimensions/sources.rs`。
+- `coflow-cft` 已按 `syntax/module/diagnostics/schema/compiler/plans` 边界重排；旧 `compiled` 和 `support.rs` 混合层已删除。
+- schema build 保持唯一两参数 `build_schema` 入口，结构预算固定为内部默认值，不提供 build options API。
+- dimension check plan 保存 canonical statement 索引，不再复制 check IR，并将分析工作计入结构预算。
 
 实施提交按 module、typed names、canonical schema、record overlay、mutation/index、crate 边界和最终清理分批完成。用户工作区中的 `examples/**` 改动不属于本迁移提交。
 
@@ -59,7 +62,7 @@ CftModuleSet
   source/path/AST/parse diagnostics
         |
         v
-compile_schema(modules, dimensions, options)
+build_schema(modules, dimensions)
         |
         v
 CftSchema
@@ -158,10 +161,9 @@ pub fn diagnostics(&self) -> &CftDiagnostics;
 ### 无状态编译入口
 
 ```rust
-pub fn compile_schema(
+pub fn build_schema(
     modules: &CftModuleSet,
     dimensions: &CftDimensionInputs,
-    options: CftCompileOptions,
 ) -> Result<CftSchema, CftDiagnostics>;
 ```
 
@@ -171,7 +173,7 @@ pub fn compile_schema(
 - parse diagnostics 存在时拒绝 semantic publication。
 - compiler pass 失败时不返回部分 schema。
 - “保留上一份成功 schema”属于 runtime session publication，不属于 `coflow-cft`。
-- `CftCompileOptions.structural_limits` 只影响当前 build，不存入 `CftSchema`。
+- structural limits 是固定默认值的内部异常输入保护，不进入公共 build API，也不存入 `CftSchema`。
 
 ### 强类型名称
 
@@ -443,7 +445,7 @@ impl CftType {
 - 只引用 canonical typed names、字段语义和 check 节点；
 - 不复制 `CftType` 或 `CftField`；
 - 不作为 wire/schema inspect 数据；
-- 结构预算来自当前 `CftCompileOptions`。
+- 结构预算使用 crate 内部固定的默认 limits。
 
 ### Compiler Pass
 
@@ -670,7 +672,7 @@ pub struct DimensionValueCoordinate {
 
 ```text
 discover/parse CFT modules
-  -> compile_schema
+  -> build_schema
   -> resolve ordinary sources
   -> load ordinary records
   -> build intent 下 sync dimension files
@@ -779,6 +781,8 @@ src/
     queries.rs
     compiler/
       mod.rs
+      entry.rs
+      state.rs
       symbols.rs
       annotations.rs
       enums.rs
@@ -786,10 +790,14 @@ src/
       inheritance.rs
       defaults.rs
       checks.rs
+      check_functions.rs
+      check_operators.rs
       checked_type.rs
       budget.rs
       lower.rs
     plans/
+      mod.rs
+      dimension_checks.rs
       typed_checks.rs
       value_dependencies.rs
 ```
@@ -824,7 +832,7 @@ src/
 
 1. 合并 `CftModuleFile` 与 `ParsedCftModule` 为 `CftModule`。
 2. `CftModuleSet` 只保留单一 module map。
-3. 建立无状态 `compile_schema`。
+3. 建立无状态 `build_schema`。
 4. 迁移 runtime/LSP 调用方分别持有 module set 和成功 schema。
 5. 删除 `CftContainer` 和 container stateful compile API。
 6. 删除 file/module 双查询。

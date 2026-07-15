@@ -7,6 +7,7 @@ use super::quantifiers;
 use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
 use coflow_cft::{
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckStmt, CftSchemaQuantifierKind,
+    ScheduledCheckBlock,
 };
 use coflow_data_model::CfdErrorCode;
 use coflow_structure::StructureKind;
@@ -17,6 +18,31 @@ pub(super) fn eval_check_block(
     check: &CftSchemaCheckBlock,
 ) -> EvalFlow {
     eval_stmts(evaluator, &check.stmts)
+}
+
+pub(super) fn eval_scheduled_check_block(
+    evaluator: &mut CheckEvaluator<'_>,
+    scheduled: ScheduledCheckBlock<'_>,
+) -> EvalFlow {
+    let Some(indices) = scheduled.statement_indices() else {
+        return eval_check_block(evaluator, scheduled.block());
+    };
+    let mut skipped = false;
+    for index in indices {
+        let Some(stmt) = scheduled.block().stmts.get(*index) else {
+            continue;
+        };
+        match eval_stmt(evaluator, stmt) {
+            EvalFlow::Continue => {}
+            EvalFlow::Skipped => skipped = true,
+            EvalFlow::HardStop => return EvalFlow::HardStop,
+        }
+    }
+    if skipped {
+        EvalFlow::Skipped
+    } else {
+        EvalFlow::Continue
+    }
 }
 
 fn eval_stmts(evaluator: &mut CheckEvaluator<'_>, stmts: &[CftSchemaCheckStmt]) -> EvalFlow {

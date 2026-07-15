@@ -105,7 +105,8 @@ fn schema_with_localized_string() -> CftSchema {
               name: string;
             }
             "#,
-        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
+        CftDimensionInputs::try_new([("language", vec!["zh".to_string()])])
+            .expect("valid dimension fixture"),
     )
 }
 

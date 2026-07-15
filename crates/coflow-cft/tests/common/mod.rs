@@ -19,6 +19,12 @@ pub(crate) fn compile_one(source: &str) -> Result<CftSchema, CftDiagnostics> {
     compile_one_with_dimensions(source, CftDimensionInputs::default())
 }
 
+pub(crate) fn valid_dimensions(
+    entries: impl IntoIterator<Item = (impl Into<String>, Vec<String>)>,
+) -> CftDimensionInputs {
+    CftDimensionInputs::try_new(entries).expect("valid dimension fixture")
+}
+
 pub(crate) fn compile_one_with_dimensions(
     source: &str,
     dimensions: CftDimensionInputs,

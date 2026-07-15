@@ -11,10 +11,11 @@ pub(crate) fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
     build_schema(
         &modules,
-        &CftDimensionInputs::new([
+        &CftDimensionInputs::try_new([
             ("language", vec!["zh".to_string(), "en".to_string()]),
             ("platform", vec!["pc".to_string(), "mobile".to_string()]),
-        ]),
+        ])
+        .expect("valid dimension fixture"),
     )
     .expect("schema should compile")
 }

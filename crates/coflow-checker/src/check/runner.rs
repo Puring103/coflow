@@ -223,7 +223,7 @@ impl<'a> CheckRunner<'a> {
             evaluator.dimension_round.clone_from(&self.dimension_round);
         }
         for check in checks {
-            let _ = statements::eval_check_block(&mut evaluator, check);
+            let _ = statements::eval_scheduled_check_block(&mut evaluator, check);
         }
         let (diagnostics, collector) = evaluator.into_outputs();
         self.diagnostics.extend(diagnostics);

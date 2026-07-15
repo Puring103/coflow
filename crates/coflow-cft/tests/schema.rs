@@ -316,7 +316,7 @@ fn schema_compiles_localized_annotation_to_language_dimension() {
                 description: string;
             }
         "#,
-        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
+        valid_dimensions([("language", vec!["zh".to_string()])]),
     )
     .expect("localized fields should compile");
 
@@ -340,7 +340,7 @@ fn schema_compiles_localized_bucket_to_dimension_spec() {
                 icon: string;
             }
         "#,
-        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
+        valid_dimensions([("language", vec!["zh".to_string()])]),
     )
     .expect("localized bucket should compile");
 
@@ -363,7 +363,7 @@ fn schema_compiles_named_localized_bucket_to_dimension_spec() {
                 icon: string;
             }
         "#,
-        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
+        valid_dimensions([("language", vec!["zh".to_string()])]),
     )
     .expect("named localized bucket should compile");
 
@@ -386,7 +386,7 @@ fn schema_compiles_custom_dimension_annotation_to_dimension_spec() {
                 name: string;
             }
         "#,
-        CftDimensionInputs::new([("platform", vec!["pc".to_string()])]),
+        valid_dimensions([("platform", vec!["pc".to_string()])]),
     )
     .expect("custom dimension field should compile");
     let item = schema.resolve_type("Item").expect("Item type");

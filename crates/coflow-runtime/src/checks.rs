@@ -327,8 +327,7 @@ mod tests {
     #[test]
     fn unstable_check_state_preserves_raw_diagnostics_and_disables_incremental_reuse() {
         let modules = coflow_cft::parse_modules(std::iter::empty::<coflow_cft::CftFile>());
-        let dimensions =
-            coflow_cft::CftDimensionInputs::new(std::iter::empty::<(String, Vec<String>)>());
+        let dimensions = coflow_cft::CftDimensionInputs::default();
         let schema = coflow_cft::build_schema(&modules, &dimensions).expect("build empty schema");
         let model = empty_model(&schema).expect("build empty model");
         let diagnostic = CfdDiagnostic::error(CfdErrorCode::CheckFailed, "preserve me");

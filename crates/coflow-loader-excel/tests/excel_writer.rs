@@ -29,11 +29,7 @@ static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 fn empty_schema() -> CftSchema {
     let modules = parse_modules(std::iter::empty::<CftFile>());
-    build_schema(
-        &modules,
-        &CftDimensionInputs::new(std::iter::empty::<(String, Vec<String>)>()),
-    )
-    .expect("compile empty test schema")
+    build_schema(&modules, &CftDimensionInputs::default()).expect("compile empty test schema")
 }
 
 fn temp_xlsx(name: &str) -> PathBuf {

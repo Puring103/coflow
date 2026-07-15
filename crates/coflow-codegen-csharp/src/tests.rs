@@ -138,7 +138,8 @@ fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), Strin
                 count: int;
             }
         "#,
-        CftDimensionInputs::new([("language", vec!["en".to_string(), "zh".to_string()])]),
+        CftDimensionInputs::try_new([("language", vec!["en".to_string(), "zh".to_string()])])
+            .expect("valid dimension fixture"),
     )?;
     let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;

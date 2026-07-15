@@ -1,4 +1,4 @@
-use coflow_cft::ast::{Item, TypeRef, TypeRefKind};
+use coflow_cft::syntax::ast::{Item, TypeRef, TypeRefKind};
 use coflow_cft::CftConstValue;
 use serde_json::{json, Map, Value};
 
@@ -217,7 +217,7 @@ fn const_value_completion_items() -> Vec<Value> {
 
 fn field_default_completion_items(
     build: &LspBuild,
-    field: Option<&coflow_cft::ast::FieldDef>,
+    field: Option<&coflow_cft::syntax::ast::FieldDef>,
 ) -> Vec<Value> {
     let mut items = Vec::new();
     let Some(field) = field else {
@@ -518,7 +518,10 @@ pub(crate) fn completion_scope(document: &LspDocument, offset: usize) -> Complet
     CompletionScope::TopLevel
 }
 
-fn check_block_contains(check: Option<&coflow_cft::ast::CheckBlock>, offset: usize) -> bool {
+fn check_block_contains(
+    check: Option<&coflow_cft::syntax::ast::CheckBlock>,
+    offset: usize,
+) -> bool {
     check.is_some_and(|check| check.span.start <= offset && offset <= check.span.end)
 }
 
