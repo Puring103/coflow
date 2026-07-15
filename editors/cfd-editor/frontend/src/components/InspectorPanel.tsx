@@ -30,6 +30,7 @@ interface Props {
   onToggleCollapse: () => void
   data: FileRecords | null
   coordinate: RecordCoordinate | null
+  fieldPath?: FieldPathSegment[] | null
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
   width: number
@@ -64,6 +65,7 @@ export function InspectorPanel({
   onToggleCollapse,
   data,
   coordinate,
+  fieldPath,
   readOnly,
   diagnostics,
   width,
@@ -124,6 +126,13 @@ export function InspectorPanel({
   const recordSeverity = diagnosticProjection.severity
 
   const canRename = !readOnly && data?.capabilities.can_edit_key && !!onRenameRecord
+  const selectedTopField = fieldPath?.[0]?.kind === 'field'
+    ? fieldPath[0].value
+    : null
+  const inspectorFields = selectedTopField && record
+    ? record.fields.filter(field => field.name === selectedTopField)
+    : record?.fields ?? []
+  const inspectingValue = fieldPath !== null && fieldPath !== undefined
   const expansionOwner = data && coordinate
     ? `${data.file_path}:${coordinateId(coordinate)}`
     : null
@@ -137,7 +146,7 @@ export function InspectorPanel({
     <aside
       className={`inspector-panel${collapsed ? ' collapsed' : ''}${dragging ? ' dragging' : ''}`}
       style={collapsed ? undefined : { width }}
-      aria-label="记录详情面板"
+      aria-label={inspectingValue ? '单元格详情面板' : '记录详情面板'}
     >
       <div
         className="inspector-splitter"
@@ -160,7 +169,7 @@ export function InspectorPanel({
         >
           <Icon name="chevron-right" size={13} className={collapsed ? '' : 'icon-flip-h'} />
         </button>
-        {!collapsed && <span className="inspector-title">记录详情</span>}
+        {!collapsed && <span className="inspector-title">{inspectingValue ? '单元格详情' : '记录详情'}</span>}
         {!collapsed && (
           <button
             className="btn btn-icon"
@@ -176,38 +185,44 @@ export function InspectorPanel({
         <div className="inspector-body">
           {record && data ? (
             <>
-              <CardHeader
-                recordKey={recordKey(record)}
-                actualType={recordActualType(record)}
-                filePath={data.file_path}
-                onRename={canRename && onRenameRecord
-                  ? async (next) => { await onRenameRecord(data.file_path, record.coordinate, next) }
-                  : undefined}
-                diagSeverity={recordSeverity}
-                onDiagBadgeClick={onDiagnosticBadgeClick
-                  ? () => onDiagnosticBadgeClick(record.coordinate, null)
-                  : undefined}
-              />
-              <DataCardExpanded
-                fields={record.fields}
-                expandedPaths={expandedPaths}
-                onRowToggle={expansionOwner
-                  ? (path, expanded) => {
-                    setExpandedByRecord(current => updateExpandedPath(current, expansionOwner, path, expanded))
-                  }
-                  : undefined}
-                actualType={recordActualType(record)}
-                onEdit={readOnly || !onWriteField
-                  ? undefined
-                  : (path, val) => { onWriteField(data.file_path, record.coordinate, path, val) }}
-                onCollectionEdit={readOnly || !onCollectionEdit
-                  ? undefined
-                  : (path, edit) => { onCollectionEdit(data.file_path, record.coordinate, path, edit) }}
-                diagnostics={fieldDiags}
-                onDiagnosticBadgeClick={onDiagnosticBadgeClick
-                  ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)
-                  : undefined}
-              />
+              {!inspectingValue && (
+                <CardHeader
+                  recordKey={recordKey(record)}
+                  actualType={recordActualType(record)}
+                  filePath={data.file_path}
+                  onRename={canRename && onRenameRecord
+                    ? async (next) => { await onRenameRecord(data.file_path, record.coordinate, next) }
+                    : undefined}
+                  diagSeverity={recordSeverity}
+                  onDiagBadgeClick={onDiagnosticBadgeClick
+                    ? () => onDiagnosticBadgeClick(record.coordinate, null)
+                    : undefined}
+                />
+              )}
+              {!inspectingValue || inspectorFields.length > 0 ? (
+                <DataCardExpanded
+                  fields={inspectorFields}
+                  expandedPaths={expandedPaths}
+                  onRowToggle={expansionOwner
+                    ? (path, expanded) => {
+                      setExpandedByRecord(current => updateExpandedPath(current, expansionOwner, path, expanded))
+                    }
+                    : undefined}
+                  actualType={recordActualType(record)}
+                  onEdit={readOnly || !onWriteField
+                    ? undefined
+                    : (path, val) => { onWriteField(data.file_path, record.coordinate, path, val) }}
+                  onCollectionEdit={readOnly || !onCollectionEdit
+                    ? undefined
+                    : (path, edit) => { onCollectionEdit(data.file_path, record.coordinate, path, edit) }}
+                  diagnostics={fieldDiags}
+                  onDiagnosticBadgeClick={onDiagnosticBadgeClick
+                    ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)
+                    : undefined}
+                />
+              ) : (
+                <div className="empty-hint">选中的单元格不存在</div>
+              )}
             </>
           ) : (
             <div className="empty-hint">未选择记录</div>

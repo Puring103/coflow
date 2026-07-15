@@ -949,6 +949,10 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 /* 表格行选中：左侧 accent 色条 + 背景 */
 .table-row.selected td { background: var(--bg-4) !important; }
 .table-row.selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+.table-row td.selected-cell {
+  background: var(--bg-4) !important;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
 .table-row-error td:first-child   { box-shadow: inset 2px 0 0 var(--red); }
 .table-row-warning td:first-child { box-shadow: inset 2px 0 0 var(--yellow); }
 .data-table tr { height: var(--h-row); }

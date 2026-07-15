@@ -25,6 +25,7 @@ import {
   fieldPathField,
   recordActualType,
   recordKey,
+  sameCoordinate,
   type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
@@ -38,6 +39,11 @@ import {
 import { CreateRecordDialog } from './CreateRecordDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
+import {
+  selectionMatchesRecord,
+  selectionMatchesValue,
+  type EditorSelection,
+} from '../state/editorSelection'
 
 interface Props {
   data: FileRecords
@@ -46,11 +52,12 @@ interface Props {
   diagnostics?: DiagnosticItem[]
   /** Pre-populate the search filter from the parent global search bar. */
   searchQuery?: string
-  /** Currently selected coordinate (lifted to App so it can drive the
-   *  shared right-side inspector and survive a view switch). */
-  selectedCoordinate?: RecordCoordinate | null
-  /** Click on a row: select it (opens the inspector in the parent). */
+  /** Current record/value selection, lifted so it can drive the inspector. */
+  selection?: EditorSelection | null
+  /** Click on the Key cell: select the record. */
   onSelectRecord?: (coordinate: RecordCoordinate) => void
+  /** Click on a field cell: select that value. */
+  onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => void
   /** Click on blank space inside the table view: deselect / close inspector. */
   onClearSelection?: () => void
   /** Dbl-click / context-menu jump to the dedicated record view. */
@@ -70,10 +77,9 @@ interface Props {
 
 const ROW_H = 30
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selectedCoordinate, onSelectRecord, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
-  const selectedId = selectedCoordinate ? coordinateId(selectedCoordinate) : null
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
   const [globalFilter, setGlobalFilter] = useState(searchQuery ?? '')
@@ -454,29 +460,44 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 return (
                   <tr
                     key={row.id}
-                    className={`table-row${selectedId === coordinateId(row.original.coordinate) ? ' selected' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
-                    onMouseDown={e => {
-                      // Use mousedown (fires before the browser opens the native
-                      // select dropdown) so the state update is committed before
-                      // the dropdown opens. stopPropagation prevents the table-view
-                      // onClick from calling onClearSelection.
-                      e.stopPropagation()
-                      onSelectRecord?.(row.original.coordinate)
-                    }}
+                    className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
                     onContextMenu={e => {
                       e.preventDefault()
                       setContextMenu({ x: e.clientX, y: e.clientY, row: row.original })
                     }}
                   >
-                    {row.getVisibleCells().map(cell => (
-                      <td
-                        key={cell.id}
-                        className={pillColumns.has(cell.column.id) ? 'pill-cell' : undefined}
-                        style={{ width: cell.column.getSize() }}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
+                    {row.getVisibleCells().map(cell => {
+                      const fieldPath = cell.column.id === 'key'
+                        ? null
+                        : [fieldPathField(cell.column.id)]
+                      const selected = fieldPath !== null && selectionMatchesValue(
+                        selection ?? null,
+                        data.file_path,
+                        row.original.coordinate,
+                        fieldPath,
+                      )
+                      const classes = [
+                        pillColumns.has(cell.column.id) ? 'pill-cell' : '',
+                        selected ? 'selected-cell' : '',
+                      ].filter(Boolean).join(' ')
+                      return (
+                        <td
+                          key={cell.id}
+                          className={classes || undefined}
+                          style={{ width: cell.column.getSize() }}
+                          aria-selected={selected || undefined}
+                          onMouseDown={e => {
+                            // Runs before native selects open, so the inspector
+                            // follows the cell even when its editor consumes click.
+                            e.stopPropagation()
+                            if (fieldPath) onSelectValue?.(row.original.coordinate, fieldPath)
+                            else onSelectRecord?.(row.original.coordinate)
+                          }}
+                        >
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      )
+                    })}
                   </tr>
                 )
               })}
@@ -549,7 +570,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               const coordinate = contextMenu.row.coordinate
               setContextMenu(null)
               if (!window.confirm(`确认删除记录 ${key}？此操作不可撤销。`)) return
-              if (selectedId === coordinateId(coordinate)) onClearSelection?.()
+              if (selection && sameCoordinate(selection.coordinate, coordinate)) onClearSelection?.()
               await onDeleteRecord(coordinate)
             }}>
               <Icon name="close" size={13} aria-hidden />

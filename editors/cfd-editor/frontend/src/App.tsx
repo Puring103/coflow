@@ -47,6 +47,11 @@ import {
 } from './state/editorMutations'
 import { historyShortcutFor } from './state/editorShortcuts'
 import { projectFieldValue, projectFieldValueAtRevision } from './state/fieldProjection'
+import {
+  recordSelection,
+  valueSelection,
+  type EditorSelection,
+} from './state/editorSelection'
 import './style.css'
 
 const GRAPH_DEPTH = 3
@@ -148,11 +153,14 @@ export default function App() {
   })
   const [splitterDragging, setSplitterDragging] = useState(false)
 
-  // Right-side inspector panel: shared between table and graph views. Selection
-  // lives here so switching views keeps the same record highlighted. Overlays
-  // content area without pushing it. Width persisted to localStorage.
-  const [inspectorCoord, setInspectorCoord] = useState<{ file: string; coordinate: RecordCoordinate } | null>(null)
-  const inspectorOpen = inspectorCoord !== null
+  // Right-side inspector panel: table cells select one value, while the Key
+  // column and graph nodes select the whole record.
+  const [inspectorSelection, setInspectorSelection] = useState<EditorSelection | null>(null)
+  const inspectorOpen = inspectorSelection !== null
+  const inspectorCoord = useMemo(() => inspectorSelection
+    ? { file: inspectorSelection.filePath, coordinate: inspectorSelection.coordinate }
+    : null,
+  [inspectorSelection])
   const [inspectorW, setInspectorW] = useState<number>(() => {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('cfd-editor-inspector-w') : null
     const n = raw ? parseInt(raw, 10) : NaN
@@ -162,12 +170,19 @@ export default function App() {
     try { localStorage.setItem('cfd-editor-inspector-w', String(inspectorW)) } catch { /* quota */ }
   }, [inspectorW])
   const openInspector = useCallback((file: string, coordinate: RecordCoordinate) => {
-    setInspectorCoord(prev => {
-      if (prev && prev.file === file && sameCoordinate(prev.coordinate, coordinate)) return prev
-      return { file, coordinate }
+    setInspectorSelection(prev => {
+      if (prev?.kind === 'record' && prev.filePath === file && sameCoordinate(prev.coordinate, coordinate)) return prev
+      return recordSelection(file, coordinate)
     })
   }, [])
-  const closeInspector = useCallback(() => setInspectorCoord(null), [])
+  const openValueInspector = useCallback((
+    file: string,
+    coordinate: RecordCoordinate,
+    fieldPath: FieldPathSegment[],
+  ) => {
+    setInspectorSelection(valueSelection(file, coordinate, fieldPath))
+  }, [])
+  const closeInspector = useCallback(() => setInspectorSelection(null), [])
 
   // Auto-load mock data only when not running in Tauri (browser preview).
   useEffect(() => {
@@ -589,7 +604,7 @@ export default function App() {
       ) {
         router.replace({ ...router.current, coordinate: newCoordinate })
       }
-      setInspectorCoord(current => (
+      setInspectorSelection(current => (
         current && sameCoordinate(current.coordinate, oldCoordinate)
           ? { ...current, coordinate: newCoordinate }
           : current
@@ -876,6 +891,12 @@ export default function App() {
       if (currentRoute?.view === 'table') openInspector(currentRoute.file, coordinate)
     },
     [currentRoute?.view, currentRoute?.file, openInspector],
+  )
+  const tableOnSelectValue = useCallback(
+    (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => {
+      if (currentRoute?.view === 'table') openValueInspector(currentRoute.file, coordinate, fieldPath)
+    },
+    [currentRoute?.view, currentRoute?.file, openValueInspector],
   )
   const tableOnOpenRecord = useCallback(
     (coordinate: RecordCoordinate) => {
@@ -1246,12 +1267,11 @@ export default function App() {
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     searchQuery={globalSearch}
-                    selectedCoordinate={
-                      inspectorCoord && inspectorCoord.file === currentRoute.file
-                        ? inspectorCoord.coordinate
-                        : null
-                    }
+                    selection={inspectorSelection?.filePath === currentRoute.file
+                      ? inspectorSelection
+                      : null}
                     onSelectRecord={tableOnSelectRecord}
+                    onSelectValue={tableOnSelectValue}
                     onClearSelection={closeInspector}
                     onOpenRecord={tableOnOpenRecord}
                     onWriteField={tableOnWriteField}
@@ -1337,6 +1357,7 @@ export default function App() {
           onToggleCollapse={() => setInspectorCollapsed(v => !v)}
           data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}
           coordinate={inspectorCoord?.coordinate ?? null}
+          fieldPath={inspectorSelection?.kind === 'value' ? inspectorSelection.fieldPath : null}
           readOnly={inspectorCoord ? !isEditableFile(fileDataCache[inspectorCoord.file]) : true}
           diagnostics={project?.diagnostics}
           width={inspectorW}
