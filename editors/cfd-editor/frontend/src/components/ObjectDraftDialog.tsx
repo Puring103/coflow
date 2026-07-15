@@ -7,6 +7,7 @@ import type { FieldValue } from '../wire'
 import { DataCardExpanded } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
+import { SearchableSelect } from './SearchableSelect'
 
 interface Props {
   /** Displayed as the dialog title, e.g. "新建记录" or "切换类型". */
@@ -121,22 +122,18 @@ export function ObjectDraftDialog({
           <div className="gn-color-bar" />
           {headerExtras}
           {polymorphicTypes.length >= 2 && onTypeChange ? (
-            <select
+            <SearchableSelect
               className="create-record-type-select"
               value={actualType}
-              aria-label="选择类型"
-              onChange={e => {
-                const next = e.target.value
+              ariaLabel="选择类型"
+              options={[
+                ...(!polymorphicTypes.includes(actualType) ? [{ value: actualType }] : []),
+                ...polymorphicTypes.map(type => ({ value: type })),
+              ]}
+              onCommit={next => {
                 if (next && next !== actualType) onTypeChange(next)
               }}
-            >
-              {!polymorphicTypes.includes(actualType) && (
-                <option value={actualType}>{actualType}</option>
-              )}
-              {polymorphicTypes.map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
+            />
           ) : (
             <span className="create-record-type-tag">{actualType}</span>
           )}

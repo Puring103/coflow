@@ -15,7 +15,11 @@ describe('record item navigation', () => {
 
   it('returns to the closest visible parent with left', () => {
     expect(moveRecordItem(items, 'stats.health', 'ArrowLeft')).toEqual({ kind: 'select', id: 'stats' })
-    expect(moveRecordItem(items, 'stats', 'ArrowLeft')).toBeNull()
+    expect(moveRecordItem(items, 'stats', 'ArrowLeft')).toEqual({ kind: 'boundary', edge: 'parent' })
+  })
+
+  it('reports the boundary above the first visible item', () => {
+    expect(moveRecordItem(items, 'stats', 'ArrowUp')).toEqual({ kind: 'boundary', edge: 'before' })
   })
 
   it('toggles expandable items with right', () => {

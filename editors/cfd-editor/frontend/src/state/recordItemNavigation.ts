@@ -9,6 +9,7 @@ export type RecordItemDirection = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'Arrow
 export type RecordItemNavigation =
   | { kind: 'select'; id: string }
   | { kind: 'toggle'; id: string }
+  | { kind: 'boundary'; edge: 'before' | 'parent' }
 
 export function moveRecordItem(
   items: readonly VisibleRecordItem[],
@@ -21,13 +22,15 @@ export function moveRecordItem(
     const next = index + (direction === 'ArrowDown' ? 1 : -1)
     return next >= 0 && next < items.length
       ? { kind: 'select', id: items[next].id }
-      : null
+      : direction === 'ArrowUp'
+        ? { kind: 'boundary', edge: 'before' }
+        : null
   }
   if (direction === 'ArrowRight') {
     return items[index].expandable ? { kind: 'toggle', id: currentId } : null
   }
   const depth = items[index].depth
-  if (depth <= 0) return null
+  if (depth <= 0) return { kind: 'boundary', edge: 'parent' }
   for (let parent = index - 1; parent >= 0; parent -= 1) {
     if (items[parent].depth < depth) return { kind: 'select', id: items[parent].id }
   }

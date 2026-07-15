@@ -54,6 +54,7 @@ import {
 } from '../value/fieldValue'
 import { useObjectDraft } from './ObjectDraftHost'
 import { NODE_PEEK_FIELDS } from './DataCard.geometry'
+import { SearchableSelect } from './SearchableSelect'
 
 export function CardHeader({
   recordKey,
@@ -859,6 +860,7 @@ export function DirectEditor({
   enumType?: string
   nullable?: boolean
 }) {
+  const rowSelection = useContext(ValueRowSelectionCtx)
   if (value.kind === 'bool') {
     return (
       <input
@@ -870,10 +872,10 @@ export function DirectEditor({
     )
   }
   if (value.kind === 'enum' || (value.kind === 'null' && enumType)) {
-    return <EnumDirectSelect value={value as FieldValue & { kind: 'enum' | 'null' }} onCommit={onCommit} enumType={enumType} nullable={nullable} />
+    return <EnumDirectSelect value={value as FieldValue & { kind: 'enum' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} enumType={enumType} nullable={nullable} />
   }
   if (value.kind === 'ref' || (value.kind === 'null' && refTargetType)) {
-    return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'null' }} onCommit={onCommit} targetType={refTargetType} nullable={nullable} />
+    return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
   }
   if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string') {
     return <TextDirectInput value={value} onCommit={onCommit} />
@@ -948,11 +950,13 @@ function TextDirectInput({
 export function EnumDirectSelect({
   value,
   onCommit,
+  onExit,
   enumType,
   nullable = false,
 }: {
   value: FieldValue & { kind: 'enum' | 'null' }
   onCommit: (next: FieldValue) => void
+  onExit?: () => void
   /** Required when `value.kind === 'null'`: the enum type this field expects. */
   enumType?: string
   /** When true, offer a "(null)" option so the field can be cleared. */
@@ -1009,34 +1013,35 @@ export function EnumDirectSelect({
     )
   }
   return (
-    <select
+    <SearchableSelect
       className={pillClass}
       style={{ '--enum-color': color } as React.CSSProperties}
-      value={current}
-      onChange={e => commit(e.target.value)}
-    >
-      {(nullable || value.kind === 'null') && (
-        <option value={NULL_SENTINEL} disabled={!nullable}>
-          {nullable ? '(null)' : '选择枚举...'}
-        </option>
-      )}
-      {value.kind === 'enum' && !variants.includes(current) && <option value={current}>{current}</option>}
-      {variants.map(v => <option key={v} value={v}>{v}</option>)}
-    </select>
+      value={value.kind === 'null' && !nullable ? '' : current}
+      placeholder="选择枚举..."
+      options={[
+        ...(nullable ? [{ value: NULL_SENTINEL }] : []),
+        ...(value.kind === 'enum' && !variants.includes(current) ? [{ value: current }] : []),
+        ...variants.map(v => ({ value: v })),
+      ]}
+      onCommit={commit}
+      onExit={onExit}
+    />
   )
 }
 
-const NULL_SENTINEL = '__cfd_null__'
+const NULL_SENTINEL = '(null)'
 
 export function RefDirectSelect({
   value,
   onCommit,
+  onExit,
   targetType,
   autoFocus = false,
   nullable = false,
 }: {
   value: FieldValue & { kind: 'ref' | 'null' }
   onCommit: (next: FieldValue) => void
+  onExit?: () => void
   targetType?: string
   autoFocus?: boolean
   /** When true, offer a "(null)" option so the field can be cleared. */
@@ -1086,25 +1091,20 @@ export function RefDirectSelect({
     const hasCurrent = value.kind === 'ref' && !!value.value && targets.some(target => target.key === value.value)
     return (
       <span className="dc-pill-wrap dc-pill-wrap-ref">
-        <select
+        <SearchableSelect
           className="dc-pill-select dc-pill-select-ref dc-pill-select-inwrap"
-          value={selectedValue}
+          value={value.kind === 'null' && !nullable ? '' : selectedValue}
           autoFocus={autoFocus}
           title={targetType}
-          onChange={e => commit(e.target.value)}
-        >
-          {(nullable || value.kind === 'null') && (
-            <option value={NULL_SENTINEL} disabled={!nullable}>
-              {nullable ? '(null)' : '选择引用...'}
-            </option>
-          )}
-          {value.kind === 'ref' && !hasCurrent && value.value && <option value={value.value}>{value.value}</option>}
-          {targets.map(target => (
-            <option key={target.label} value={target.key} title={target.label}>
-              {target.key}
-            </option>
-          ))}
-        </select>
+          placeholder="选择引用..."
+          options={[
+            ...(nullable ? [{ value: NULL_SENTINEL }] : []),
+            ...(value.kind === 'ref' && !hasCurrent && value.value ? [{ value: value.value }] : []),
+            ...targets.map(target => ({ value: target.key, label: target.label })),
+          ]}
+          onCommit={commit}
+          onExit={onExit}
+        />
       </span>
     )
   }
@@ -1255,16 +1255,17 @@ function EnumSelect({
     )
   }
   return (
-    <select
+    <SearchableSelect
       className="dc-input"
-      defaultValue={current}
+      value={current}
       autoFocus
-      onChange={e => onCommit(e.target.value)}
-      onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
-    >
-      {!variants.includes(current) && <option value={current}>{current}</option>}
-      {variants.map(v => <option key={v} value={v}>{v}</option>)}
-    </select>
+      options={[
+        ...(!variants.includes(current) ? [{ value: current }] : []),
+        ...variants.map(v => ({ value: v })),
+      ]}
+      onCommit={onCommit}
+      onExit={onCancel}
+    />
   )
 }
 
@@ -1306,17 +1307,18 @@ function RefSelect({
   const loadedTargets = targets ?? []
   if (targetType && loadedTargets.length > 0) {
     return (
-      <select
+      <SearchableSelect
         className="dc-input dc-input-ref-select"
-        defaultValue={value.value}
+        value={value.value}
+        placeholder="选择..."
         autoFocus
-        onChange={e => onCommit(refValue(e.target.value))}
-        onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
-      >
-        {!value.value && <option value="" disabled>选择...</option>}
-        {value.value && !loadedTargets.some(target => target.key === value.value) && <option value={value.value}>{value.value}</option>}
-        {loadedTargets.map(target => <option key={target.label} value={target.key}>{target.label}</option>)}
-      </select>
+        options={[
+          ...(value.value && !loadedTargets.some(target => target.key === value.value) ? [{ value: value.value }] : []),
+          ...loadedTargets.map(target => ({ value: target.key, label: target.label })),
+        ]}
+        onCommit={next => onCommit(refValue(next))}
+        onExit={onCancel}
+      />
     )
   }
 
@@ -1849,18 +1851,17 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
     }
     return (
       <span className="dc-add-form">
-        <select
+        <SearchableSelect
           className="dc-input"
           autoFocus
-          defaultValue=""
-          onChange={e => {
-            if (e.target.value) onCommit({ kind: 'enum', value: { enum_name: sampleKey.value.enum_name, variant: e.target.value, value: 0n } })
+          value=""
+          placeholder="选择..."
+          options={variants.map(v => ({ value: v }))}
+          onCommit={next => {
+            if (next) onCommit({ kind: 'enum', value: { enum_name: sampleKey.value.enum_name, variant: next, value: 0n } })
           }}
-          onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
-        >
-          <option value="" disabled>选择...</option>
-          {variants.map(v => <option key={v} value={v}>{v}</option>)}
-        </select>
+          onExit={onCancel}
+        />
         <button className="btn-tiny" onClick={onCancel}>x</button>
       </span>
     )

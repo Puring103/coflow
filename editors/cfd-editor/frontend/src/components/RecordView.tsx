@@ -51,6 +51,8 @@ interface Props {
   onOpenRecord: (coordinate: RecordCoordinate) => void
   selection?: EditorSelection | null
   onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => void
+  onRenderCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => Promise<string>
+  onParseCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], text: string) => Promise<FieldValue>
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
   onCollectionEdit?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], edit: CollectionEdit) => Promise<RecordRow | void>
   onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
@@ -62,7 +64,7 @@ interface Props {
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, selection, onSelectValue, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -132,12 +134,20 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     diagnosticProjection(row).severity
 
   const onSidebarKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowRight' && e.key !== 'Enter') return
     const ids = sidebarRecords.map(r => coordinateId(r.coordinate))
     if (ids.length === 0) return
     const cur = document.activeElement as HTMLElement | null
     const idx = Math.max(0, ids.indexOf(activeId))
-    if (e.key === 'ArrowDown') {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      const first = mainRef.current?.querySelector<HTMLElement>('.dc-row[data-field-path-wire]')
+      if (first) {
+        selectRecordItem(first, record.coordinate, onSelectValue, setSelectedActionPathWire)
+        mainRef.current?.focus({ preventScroll: true })
+        first.scrollIntoView({ block: 'nearest' })
+      }
+    } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       const next = ids[Math.min(idx + 1, ids.length - 1)]
       const nextRecord = sidebarRecords.find(r => coordinateId(r.coordinate) === next)
@@ -194,7 +204,34 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       const path = parseWireFieldPath(current.dataset.fieldPathWire)
       const valueKind = current.dataset.valueKind as FieldValue['kind'] | undefined
       const editable = current.dataset.keyboardEditable === 'true'
-      if (!path || !valueKind || !editable || !onWriteField) return
+      if (!path || !valueKind) return
+      const lower = e.key.toLowerCase()
+      if ((e.ctrlKey || e.metaKey) && lower === 'c' && onRenderCellText) {
+        e.preventDefault()
+        try {
+          const text = await onRenderCellText(record.coordinate, path)
+          await navigator.clipboard.writeText(text)
+          setKeyboardNotice(null)
+        } catch (error) {
+          setKeyboardNotice(`复制失败：${errorMessage(error)}`)
+        }
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && lower === 'v' && editable && onParseCellText && onWriteField) {
+        e.preventDefault()
+        try {
+          const text = await navigator.clipboard.readText()
+          const next = await onParseCellText(record.coordinate, path, text)
+          await onWriteField(record.coordinate, path, next)
+          setKeyboardNotice(null)
+        } catch (error) {
+          setKeyboardNotice(`粘贴格式不正确：${errorMessage(error)}`)
+        } finally {
+          requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }))
+        }
+        return
+      }
+      if (!editable || !onWriteField) return
       const intent = selectionEditIntentForKey(
         e.key,
         e.ctrlKey || e.metaKey || e.altKey,
@@ -231,6 +268,17 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     )
     if (!result) return
     e.preventDefault()
+    if (result.kind === 'boundary') {
+      if (result.edge === 'before') {
+        fieldSearchRef.current?.focus({ preventScroll: true })
+        fieldSearchRef.current?.select()
+      } else {
+        sidebarRef.current?.querySelector<HTMLElement>(
+          `[data-coordinate-id="${cssEscape(activeId)}"]`,
+        )?.focus({ preventScroll: true })
+      }
+      return
+    }
     const target = elements.find(element => recordItemId(element) === result.id)
     if (!target) return
     if (result.kind === 'toggle') {
@@ -336,6 +384,15 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
             placeholder="搜索字段…"
             value={fieldSearch}
             onChange={e => setFieldSearch(e.target.value)}
+            onKeyDown={e => {
+              if (e.key !== 'ArrowDown') return
+              const first = mainRef.current?.querySelector<HTMLElement>('.dc-row[data-field-path-wire]')
+              if (!first) return
+              e.preventDefault()
+              selectRecordItem(first, record.coordinate, onSelectValue, setSelectedActionPathWire)
+              mainRef.current?.focus({ preventScroll: true })
+              first.scrollIntoView({ block: 'nearest' })
+            }}
             aria-label="搜索字段"
           />
           {fieldSearch && (
@@ -418,6 +475,14 @@ function focusRecordValueEditor(row: HTMLElement, replacement: string | null) {
   )
   if (!editor) return
   editor.focus({ preventScroll: true })
+  if (editor instanceof HTMLInputElement && editor.classList.contains('searchable-select')) {
+    try {
+      editor.showPicker()
+    } catch {
+      // Typing still searches when the WebView cannot open the datalist.
+    }
+    return
+  }
   if (editor instanceof HTMLSelectElement) {
     try {
       editor.showPicker()

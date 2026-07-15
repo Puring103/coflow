@@ -1324,6 +1324,8 @@ export default function App() {
                     onSelectValue={(coordinate, path) => {
                       setInspectorSelection(valueSelection(currentRoute.file, coordinate, path))
                     }}
+                    onRenderCellText={tableOnRenderCellText}
+                    onParseCellText={tableOnParseCellText}
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
                     onCollectionEdit={(coordinate, path, edit) => editCollection(currentRoute.file, coordinate, path, edit)}
                     onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}

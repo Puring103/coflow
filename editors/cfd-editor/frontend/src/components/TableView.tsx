@@ -433,7 +433,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const padBefore = virtualRows.length > 0 ? virtualRows[0].start : 0
   const padAfter = virtualRows.length > 0 ? totalHeight - virtualRows[virtualRows.length - 1].end : 0
 
-  const revealTableSelection = (target: EditorSelection, openDropdown: boolean) => {
+  const revealTableSelection = (target: EditorSelection) => {
     if (target.filePath !== data.file_path) return
     const rowIndex = rows.findIndex(row => sameCoordinate(row.original.coordinate, target.coordinate))
     if (rowIndex < 0) return
@@ -454,23 +454,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         return
       }
       cell?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-      if (!openDropdown) return
-      const select = cell?.querySelector<HTMLSelectElement>('select.dc-pill-select')
-      if (!select) return
-      select.focus({ preventScroll: true })
-      try {
-        select.showPicker()
-      } catch {
-        // Some WebViews allow focus but not programmatic native picker opening.
-      }
     }
-    // Try in the keyboard event's activation window so native showPicker()
-    // is permitted. Virtualized rows fall back to the animation-frame retry.
     reveal()
   }
 
   useEffect(() => {
-    if (selection) revealTableSelection(selection, false)
+    if (selection) revealTableSelection(selection)
   // Row/column identity and selection are the only inputs that can move the target.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection, rows.length, allFieldNames.join('\u001f')])
@@ -518,7 +507,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 setSyntaxEdit(null)
                 if (next.kind === 'record') onSelectRecord?.(next.coordinate)
                 else onSelectValue?.(next.coordinate, next.fieldPath)
-                revealTableSelection(next, true)
+                revealTableSelection(next)
               }
               return
             }
@@ -531,6 +520,18 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             const editable = !!selectedCell && canEdit && !cellReadOnly(selectedCell)
             const modified = e.ctrlKey || e.metaKey || e.altKey
             const lower = e.key.toLowerCase()
+
+            if (e.key === 'Enter') {
+              const dropdown = tableScrollRef.current?.querySelector<HTMLSelectElement>(
+                `[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] select.searchable-select`,
+              )
+              if (dropdown) {
+                e.preventDefault()
+                dropdown.focus({ preventScroll: true })
+                try { dropdown.showPicker() } catch { /* typing still searches the datalist */ }
+                return
+              }
+            }
 
             if ((e.ctrlKey || e.metaKey) && lower === 'c' && onRenderCellText) {
               e.preventDefault()
@@ -956,6 +957,7 @@ function EditableCell({
           enumType={enumType}
           nullable={nullable}
           onCommit={commitAndRestoreFocus}
+          onExit={onEditingFinished}
         />
       </div>
     )
@@ -970,6 +972,7 @@ function EditableCell({
           onCommit={commitAndRestoreFocus}
           targetType={refTargetType}
           nullable={nullable}
+          onExit={onEditingFinished}
         />
       </div>
     )
