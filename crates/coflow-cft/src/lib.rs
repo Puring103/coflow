@@ -40,6 +40,7 @@ mod identifier;
 pub mod lexer;
 mod module_set;
 mod module_id;
+mod names;
 pub mod parser;
 mod schema;
 mod span;
@@ -52,6 +53,10 @@ pub use cft_schema::{
 };
 pub use build::build_schema;
 pub use module_id::ModuleId;
+pub use names::{
+    BucketName, CftNameError, ConstName, DimensionName, EnumName, EnumVariantName, FieldName,
+    RecordKey, TypeName, VariantName,
+};
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
 pub use module_set::{
