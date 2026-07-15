@@ -8,7 +8,7 @@ pub use requests::{
     SpreadRewriteTarget, WriteBatchFailure, WriteCellRequest, WriteContext, WriteFieldPathSegment,
     WriteOutcome,
 };
-pub use transaction::SourceTransaction;
+pub use transaction::{SourceTransaction, SourceTransactionCompensation};
 
 use crate::{Diagnostic, DiagnosticSet, ResolvedSource};
 

@@ -148,7 +148,12 @@ fn execute_generation_mutation(
         return report_without_publish(session, false, failed);
     }
 
-    drop(transaction);
+    if let Err(diagnostics) = transaction.commit() {
+        if let Some(last) = executable.last() {
+            failed.push(failed_op(&last.planned, diagnostics));
+        }
+        return report_without_publish(session, false, failed);
+    }
 
     let affected_files = impact
         .affected_files
