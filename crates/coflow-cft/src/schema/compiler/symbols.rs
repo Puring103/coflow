@@ -12,7 +12,10 @@ use std::collections::{BTreeMap, BTreeSet};
 impl SchemaCompiler<'_> {
     pub(super) fn report_dangling_annotations(&mut self) {
         for (module_id, module) in &self.modules.modules {
-            for annotation in &module.ast.dangling_annotations {
+            let Some(ast) = module.ast.as_ref() else {
+                continue;
+            };
+            for annotation in &ast.dangling_annotations {
                 self.push_diag(
                     CftErrorCode::AnnotationWithoutTarget,
                     module_id,
@@ -20,7 +23,7 @@ impl SchemaCompiler<'_> {
                     "annotation has no target",
                 );
             }
-            for item in &module.ast.items {
+            for item in &ast.items {
                 match item {
                     Item::Const(def) => {
                         for annotation in &def.annotations {
@@ -59,7 +62,10 @@ impl SchemaCompiler<'_> {
 
     pub(super) fn collect_symbols(&mut self) {
         for (module_id, module) in &self.modules.modules {
-            for item in &module.ast.items {
+            let Some(ast) = module.ast.as_ref() else {
+                continue;
+            };
+            for item in &ast.items {
                 match item {
                     Item::Const(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);

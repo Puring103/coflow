@@ -24,7 +24,7 @@ pub fn build_schema(
     let sources = module_set
         .modules
         .iter()
-        .map(|(id, module)| (id.clone(), module.source.clone()))
+        .map(|(id, module)| (id.clone(), module.source().to_string()))
         .collect();
     let schema = CftSchema::from_reflection(
         reflection,

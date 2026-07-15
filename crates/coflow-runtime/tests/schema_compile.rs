@@ -24,7 +24,7 @@ fn schema_overrides_match_by_module_or_path_and_reject_unmatched() -> TestResult
     assert!(!build.has_diagnostics());
     assert!(build
         .modules()
-        .file(&ModuleId::from("schema/main.cft"))
+        .module(&ModuleId::from("schema/main.cft"))
         .is_some_and(|module| module.source().contains("Replacement")));
 
     let build = build_schema_attempt(
@@ -38,7 +38,7 @@ fn schema_overrides_match_by_module_or_path_and_reject_unmatched() -> TestResult
     assert!(!build.has_diagnostics());
     assert!(build
         .modules()
-        .file(&ModuleId::from("schema/main.cft"))
+        .module(&ModuleId::from("schema/main.cft"))
         .is_some_and(|module| module.source().contains("PathReplacement")));
 
     let err = ProjectRuntime::new(project.clone())
@@ -93,7 +93,7 @@ fn override_parse_error_keeps_sources_and_paths() -> TestResult {
         .any(|diagnostic| diagnostic.code == CftErrorCode::UnexpectedEof.as_str()));
     let module = build
         .modules()
-        .file(&ModuleId::from("schema/main.cft"))
+        .module(&ModuleId::from("schema/main.cft"))
         .expect("module retained after parse failure");
     assert_eq!(module.source(), override_source);
     assert!(module.path().ends_with("main.cft"));

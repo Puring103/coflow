@@ -31,15 +31,12 @@ impl LspBuild {
         let mut module_by_uri = BTreeMap::new();
         let mut module_by_path = BTreeMap::new();
 
-        for (module_id, module) in schema.modules().files() {
+        for (module_id, module) in schema.modules().modules() {
             let module_id = module_id.as_str().to_string();
             let source = module.source();
             let path = module.path().to_path_buf();
             let uri = path_to_file_uri(&path);
-            let ast = schema
-                .modules()
-                .module(&ModuleId::new(module_id.clone()))
-                .map(|parsed| parsed.ast().clone());
+            let ast = module.ast().cloned();
             module_by_uri.insert(uri.clone(), module_id.clone());
             module_by_path.insert(normalize_path(&path), module_id.clone());
             documents.insert(

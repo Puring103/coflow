@@ -19,11 +19,14 @@ impl SchemaCompiler<'_> {
         let modules = self.modules;
         let budget = &mut self.budget;
         for (module_id, module) in &modules.modules {
+            let Some(ast) = module.ast.as_ref() else {
+                continue;
+            };
             if let Err(error) = validate_module(
                 budget,
                 module_id,
-                &module.ast.items,
-                &module.ast.dangling_annotations,
+                &ast.items,
+                &ast.dangling_annotations,
             ) {
                 self.diagnostics.push(CftDiagnostic::error(
                     CftErrorCode::SchemaStructureLimitExceeded,

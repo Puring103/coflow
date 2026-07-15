@@ -55,7 +55,7 @@ pub use module_id::ModuleId;
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
 pub use module_set::{
-    parse_modules, CftDimensions, CftFile, CftModuleFile, CftModuleSet, ParsedCftModule,
+    parse_modules, CftDimensions, CftFile, CftModule, CftModuleSet,
 };
 pub use parser::CftParseOptions;
 pub use schema::{

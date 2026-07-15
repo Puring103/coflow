@@ -36,7 +36,7 @@ fn parsed_module_set_preserves_module_source_and_ast() {
         .expect("collected item module");
     assert_eq!(item.source(), "type Item { id: int; }");
     assert_eq!(item.path(), PathBuf::from("schema/items.cft").as_path());
-    assert_eq!(item.ast().items.len(), 1);
+    assert_eq!(item.ast().expect("parsed AST").items.len(), 1);
 }
 
 #[test]

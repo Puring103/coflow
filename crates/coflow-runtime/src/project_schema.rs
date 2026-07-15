@@ -78,11 +78,11 @@ fn collect_project_schema(
 
     let modules = parse_modules(files);
     let sources = modules
-        .files()
+        .modules()
         .map(|(id, module)| (id.as_str().to_string(), module.source().to_string()))
         .collect();
     let paths = modules
-        .files()
+        .modules()
         .map(|(id, module)| (id.as_str().to_string(), module.path().display().to_string()))
         .collect();
     let dimensions = CftDimensions::new(
