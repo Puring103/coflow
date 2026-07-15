@@ -128,7 +128,7 @@ fn reconcile_dimension_sources(
                 DiagnosticSet::one(dimension_diagnostic(
                     config_path,
                     dimension,
-                    "DIM-SOURCE-DISCOVERY-002",
+                    "DIM-SOURCE-DISCOVERY-001",
                     format!(
                         "failed to enumerate dimension source directory `{}`: {error}",
                         out_dir.display()
@@ -156,7 +156,7 @@ fn reconcile_dimension_sources(
                 DiagnosticSet::one(dimension_diagnostic(
                     config_path,
                     dimension,
-                    "DIM-SOURCE-DISCOVERY-003",
+                    "DIM-SOURCE-DISCOVERY-001",
                     format!(
                         "failed to inspect dimension source `{}`: {error}",
                         operation.path.display()
@@ -533,7 +533,23 @@ fn dimension_diagnostic(
 
 #[cfg(test)]
 mod tests {
-    use super::DimensionGenerationTransaction;
+    use super::{
+        commit_dimension_generation, DimensionGenerationOperation, DimensionGenerationPlan,
+        DimensionGenerationPlanOp, DimensionGenerationTransaction,
+    };
+    use coflow_api::ProviderRegistry;
+    use coflow_project::Project;
+
+    fn test_project(root: &std::path::Path) -> Project {
+        std::fs::write(root.join("schema.cft"), "type Item { name: string; }")
+            .expect("write schema");
+        std::fs::write(
+            root.join("coflow.yaml"),
+            "schema: schema.cft\nsources: []\n",
+        )
+        .expect("write config");
+        Project::open_schema_only(Some(root)).expect("open project")
+    }
 
     #[test]
     fn snapshot_errors_are_reported_and_do_not_enlist_the_path() {
@@ -556,6 +572,79 @@ mod tests {
             .iter()
             .any(|diagnostic| diagnostic.code == "DIM-SOURCE-SNAPSHOT-001"));
         assert!(transaction.is_empty());
+        std::fs::remove_dir_all(root).expect("remove temp dir");
+    }
+
+    #[test]
+    fn generation_operation_failures_report_stable_codes() {
+        let root = std::env::temp_dir().join(format!(
+            "coflow-runtime-dimension-operation-errors-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create temp dir");
+        let project = test_project(&root);
+        let missing_move = root.join("missing-old.csv");
+        let missing_remove = root.join("missing-stale.csv");
+        let generated = root.join("generated.csv");
+        let plan = DimensionGenerationPlan {
+            operations: vec![
+                DimensionGenerationPlanOp::Move {
+                    from: missing_move,
+                    to: root.join("moved.csv"),
+                },
+                DimensionGenerationPlanOp::Remove(missing_remove),
+                DimensionGenerationPlanOp::Sync(DimensionGenerationOperation {
+                    dimension: "language".to_string(),
+                    provider_id: "missing-provider".to_string(),
+                    path: generated,
+                    sheet: "Item_name".to_string(),
+                    actual_type: "Item".to_string(),
+                    entries: Vec::new(),
+                    variants: vec!["zh".to_string()],
+                    bucket: "Item".to_string(),
+                    is_singleton: false,
+                }),
+            ],
+        };
+
+        let result = commit_dimension_generation(&project, plan, &ProviderRegistry::default());
+        let codes = result
+            .diagnostics
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert!(codes.contains("DIM-SOURCE-002"));
+        assert!(codes.contains("DIM-SOURCE-005"));
+        assert!(codes.contains("DIM-SOURCE-006"));
+        std::fs::remove_dir_all(root).expect("remove temp dir");
+    }
+
+    #[test]
+    fn rollback_reports_restore_failures() {
+        let root = std::env::temp_dir().join(format!(
+            "coflow-runtime-dimension-rollback-error-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create temp dir");
+        let source = root.join("Item_name.csv");
+        let config = root.join("coflow.yaml");
+        std::fs::write(&source, "original").expect("write source");
+        let mut transaction = DimensionGenerationTransaction::default();
+        transaction
+            .snapshot_file(&source, "language", &config)
+            .expect("snapshot source");
+        std::fs::remove_file(&source).expect("remove source");
+        std::fs::create_dir(&source).expect("replace source with directory");
+
+        let diagnostics = transaction.rollback(&config);
+
+        assert!(diagnostics
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "DIM-SOURCE-ROLLBACK-001"));
         std::fs::remove_dir_all(root).expect("remove temp dir");
     }
 }

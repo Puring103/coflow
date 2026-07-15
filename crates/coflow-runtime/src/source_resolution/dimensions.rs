@@ -10,6 +10,7 @@ pub(super) fn resolve_dimension_sources(
     fields: &[DimensionField],
 ) -> Result<Vec<(ResolvedLoaderSource, DimensionField)>, DiagnosticSet> {
     let mut sources = Vec::new();
+    let mut diagnostics = DiagnosticSet::empty();
     for (dimension, config) in &resolver.project.config.dimensions {
         let Some(out_dir) = config.out_dir.as_ref() else {
             continue;
@@ -26,20 +27,33 @@ pub(super) fn resolve_dimension_sources(
             Ok(true) => {}
             Ok(false) => continue,
             Err(error) => {
-                return Err(discovery_diagnostic(
+                diagnostics.extend(discovery_diagnostic(
                     resolver, &directory, "inspect", &error,
                 ));
+                continue;
             }
         }
-        let entries = fs::read_dir(&directory)
-            .map_err(|error| discovery_diagnostic(resolver, &directory, "read", &error))?;
-        let mut paths = entries
+        let entries = match fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) => {
+                diagnostics.extend(discovery_diagnostic(resolver, &directory, "read", &error));
+                continue;
+            }
+        };
+        let paths = entries
             .map(|entry| {
                 entry.map(|entry| entry.path()).map_err(|error| {
                     discovery_diagnostic(resolver, &directory, "enumerate", &error)
                 })
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>();
+        let mut paths = match paths {
+            Ok(paths) => paths,
+            Err(error) => {
+                diagnostics.extend(error);
+                continue;
+            }
+        };
         paths.sort();
 
         for path in paths {
@@ -48,12 +62,21 @@ pub(super) fn resolve_dimension_sources(
             else {
                 continue;
             };
-            for resolved in resolver.resolve_implicit(&configured)? {
-                sources.push((resolved, field.clone()));
+            match resolver.resolve_implicit(&configured) {
+                Ok(resolved_sources) => {
+                    for resolved in resolved_sources {
+                        sources.push((resolved, field.clone()));
+                    }
+                }
+                Err(error) => diagnostics.extend(error),
             }
         }
     }
-    Ok(sources)
+    if diagnostics.is_empty() {
+        Ok(sources)
+    } else {
+        Err(diagnostics)
+    }
 }
 
 fn discovery_diagnostic(

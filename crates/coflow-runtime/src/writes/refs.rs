@@ -91,29 +91,23 @@ impl OwnedDimensionWriteRequest {
         schema: &'a CftSchema,
     ) -> Result<WriteDimensionValueRequest<'a>, DiagnosticSet> {
         let source_type = schema.resolve_type(&self.source_type).ok_or_else(|| {
-            DiagnosticSet::one(coflow_api::Diagnostic::error(
-                "WRITE-DIMENSION-SCHEMA",
-                "WRITE",
-                format!("unknown dimension source type `{}`", self.source_type),
+            transaction_invariant(format!(
+                "dimension source type `{}` disappeared before reference rewrite",
+                self.source_type
             ))
         })?;
         let source_field = schema
             .field(&self.source_type, &self.source_field)
             .ok_or_else(|| {
-                DiagnosticSet::one(coflow_api::Diagnostic::error(
-                    "WRITE-DIMENSION-SCHEMA",
-                    "WRITE",
-                    format!(
-                        "unknown dimension source field `{}.{}`",
-                        self.source_type, self.source_field
-                    ),
+                transaction_invariant(format!(
+                    "dimension source field `{}.{}` disappeared before reference rewrite",
+                    self.source_type, self.source_field
                 ))
             })?;
         let dimension = schema.resolve_dimension(&self.dimension).ok_or_else(|| {
-            DiagnosticSet::one(coflow_api::Diagnostic::error(
-                "WRITE-DIMENSION-SCHEMA",
-                "WRITE",
-                format!("unknown dimension `{}`", self.dimension),
+            transaction_invariant(format!(
+                "dimension `{}` disappeared before reference rewrite",
+                self.dimension
             ))
         })?;
         Ok(WriteDimensionValueRequest {
@@ -228,14 +222,11 @@ pub(super) fn reference_update_actions(
                 .schema()
                 .field(host_record.actual_type(), &dimension.field)
                 .ok_or_else(|| {
-                    dimension_ref_error(
-                        "WRITE-DIMENSION-SCHEMA",
-                        format!(
-                            "unknown dimension host field `{}.{}`",
-                            host_record.actual_type(),
-                            dimension.field
-                        ),
-                    )
+                    transaction_invariant(format!(
+                        "dimension host field `{}.{}` disappeared before reference rewrite",
+                        host_record.actual_type(),
+                        dimension.field
+                    ))
                 })?;
             let source_entry = session
                 .source_data
@@ -245,24 +236,18 @@ pub(super) fn reference_update_actions(
                     dimension.dimension.as_str(),
                 )
                 .ok_or_else(|| {
-                    dimension_ref_error(
-                        "WRITE-DIMENSION-SOURCE",
-                        format!(
-                            "dimension field `{}.{}` has no managed source",
-                            field.declaring_type, field.name
-                        ),
-                    )
+                    transaction_invariant(format!(
+                        "dimension field `{}.{}` lost its managed source before reference rewrite",
+                        field.declaring_type, field.name
+                    ))
                 })?;
             let manager = registry
                 .dimension_source_manager(&source_entry.provider_id)
                 .ok_or_else(|| {
-                    dimension_ref_error(
-                        "WRITE-DIMENSION-PROVIDER",
-                        format!(
-                            "dimension source provider `{}` is not registered",
-                            source_entry.provider_id
-                        ),
-                    )
+                    transaction_invariant(format!(
+                        "dimension source provider `{}` disappeared before reference rewrite",
+                        source_entry.provider_id
+                    ))
                 })?;
             actions.push(ReferenceUpdateAction::Dimension {
                 manager,
@@ -274,7 +259,9 @@ pub(super) fn reference_update_actions(
                     dimension: dimension.dimension.clone(),
                     variant: dimension.variant.clone(),
                     source_key: RecordKey::new(host_record.key().to_string()).map_err(|error| {
-                        dimension_ref_error("WRITE-DIMENSION-KEY", error.to_string())
+                        transaction_invariant(format!(
+                            "validated model record key became invalid before reference rewrite: {error}"
+                        ))
                     })?,
                     new_value: root,
                 },
@@ -305,8 +292,12 @@ pub(super) fn reference_update_actions(
     Ok(actions)
 }
 
-fn dimension_ref_error(code: &'static str, message: impl Into<String>) -> DiagnosticSet {
-    DiagnosticSet::one(coflow_api::Diagnostic::error(code, "WRITE", message))
+fn transaction_invariant(message: impl Into<String>) -> DiagnosticSet {
+    DiagnosticSet::one(coflow_api::Diagnostic::error(
+        "MUTATION-TXN-INVARIANT",
+        "MUTATION",
+        message,
+    ))
 }
 
 fn replace_ref_value(current: &mut CfdValue, path: &[CfdPathSegment], new_key: &str) -> bool {

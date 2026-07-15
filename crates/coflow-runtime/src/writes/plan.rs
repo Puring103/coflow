@@ -190,13 +190,9 @@ pub(crate) fn prepare_mutation_execution(
             let manager = registry
                 .dimension_source_manager(&source.provider_id)
                 .ok_or_else(|| {
-                    DiagnosticSet::one(Diagnostic::error(
-                        "WRITE-DIMENSION-PROVIDER",
-                        "WRITE",
-                        format!(
-                            "dimension source provider `{}` is not registered",
-                            source.provider_id
-                        ),
+                    transaction_invariant(format!(
+                        "dimension source provider `{}` disappeared before mutation planning",
+                        source.provider_id
                     ))
                 })?;
             Ok(MutationExecutionPlan::WriteDimension(DimensionWritePlan {
@@ -353,13 +349,9 @@ fn dimension_record_actions(
         let manager = registry
             .dimension_source_manager(&entry.source.provider_id)
             .ok_or_else(|| {
-                DiagnosticSet::one(Diagnostic::error(
-                    "WRITE-DIMENSION-PROVIDER",
-                    "WRITE",
-                    format!(
-                        "dimension source provider `{}` is not registered",
-                        entry.source.provider_id
-                    ),
+                transaction_invariant(format!(
+                    "dimension source provider `{}` disappeared before record mutation planning",
+                    entry.source.provider_id
                 ))
             })?;
         actions.push(DimensionRecordAction {
@@ -384,4 +376,12 @@ fn sheet_for_file_type(session: &ProjectSession, file: &str, actual_type: &str) 
         }
     }
     None
+}
+
+fn transaction_invariant(message: impl Into<String>) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic::error(
+        "MUTATION-TXN-INVARIANT",
+        "MUTATION",
+        message,
+    ))
 }

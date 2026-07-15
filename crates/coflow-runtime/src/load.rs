@@ -450,29 +450,23 @@ fn load_dimension_batch(
         .dimension_source_manager(&source.provider_id)
         .ok_or_else(|| DiagnosticSet::one(missing_cached_provider(&source.provider_id)))?;
     let source_type = schema.resolve_type(&field.source_type).ok_or_else(|| {
-        DiagnosticSet::one(Diagnostic::error(
-            "RUNTIME-DIMENSION-SCHEMA",
-            "RUNTIME",
-            format!("unknown dimension source type `{}`", field.source_type),
+        runtime_invariant(format!(
+            "dimension source type `{}` disappeared before loading",
+            field.source_type
         ))
     })?;
     let source_field = schema
         .field(&field.source_type, &field.source_field)
         .ok_or_else(|| {
-            DiagnosticSet::one(Diagnostic::error(
-                "RUNTIME-DIMENSION-SCHEMA",
-                "RUNTIME",
-                format!(
-                    "unknown dimension source field `{}.{}`",
-                    field.source_type, field.source_field
-                ),
+            runtime_invariant(format!(
+                "dimension source field `{}.{}` disappeared before loading",
+                field.source_type, field.source_field
             ))
         })?;
     let dimension = schema.resolve_dimension(&field.dimension).ok_or_else(|| {
-        DiagnosticSet::one(Diagnostic::error(
-            "RUNTIME-DIMENSION-SCHEMA",
-            "RUNTIME",
-            format!("unknown dimension `{}`", field.dimension),
+        runtime_invariant(format!(
+            "dimension `{}` disappeared before loading",
+            field.dimension
         ))
     })?;
     let mut values = manager
@@ -559,28 +553,28 @@ fn refresh_dimension_source_plans(
     match resolver.resolve_dimension_sources(&dimension_fields) {
         Ok(resolved_sources) => {
             for ((_, source), field) in resolved_sources {
-            let display_path = display_path_for(project, &source);
-            let entry = ResolvedSourceEntry {
-                provider_id: source.provider_id.clone(),
-                source,
-                display_path,
-            };
-            let dimension_values = previous
-                .batches
-                .iter()
-                .find(|batch| {
-                    batch.dimension_field.is_some()
-                        && batch.entry.provider_id == entry.provider_id
-                        && batch.entry.source.location == entry.source.location
-                })
-                .map_or_else(Arc::default, |batch| Arc::clone(&batch.dimension_values));
-            source_data.batches.push(CachedSourceBatch {
-                entry,
-                records: Arc::default(),
-                dimension_values,
-                dimension_field: Some(field),
-            });
-        }
+                let display_path = display_path_for(project, &source);
+                let entry = ResolvedSourceEntry {
+                    provider_id: source.provider_id.clone(),
+                    source,
+                    display_path,
+                };
+                let dimension_values = previous
+                    .batches
+                    .iter()
+                    .find(|batch| {
+                        batch.dimension_field.is_some()
+                            && batch.entry.provider_id == entry.provider_id
+                            && batch.entry.source.location == entry.source.location
+                    })
+                    .map_or_else(Arc::default, |batch| Arc::clone(&batch.dimension_values));
+                source_data.batches.push(CachedSourceBatch {
+                    entry,
+                    records: Arc::default(),
+                    dimension_values,
+                    dimension_field: Some(field),
+                });
+            }
         }
         Err(err) => diagnostics.extend(err),
     }
@@ -679,6 +673,10 @@ fn missing_cached_provider(provider_id: &str) -> Diagnostic {
     )
 }
 
+fn runtime_invariant(message: impl Into<String>) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic::error("RUNTIME-INTERNAL", "RUNTIME", message))
+}
+
 fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
     match &source.location {
         SourceLocationSpec::Path(path) => {
@@ -743,11 +741,17 @@ pub fn format_cfd_path(path: &CfdPath) -> String {
 }
 
 pub(crate) fn empty_model(schema: &CftSchema) -> Result<CfdDataModel, DiagnosticSet> {
-    CfdDataModel::builder(schema).build().map_err(|_| {
-        DiagnosticSet::one(Diagnostic::error(
-            "RUNTIME-INTERNAL",
-            "RUNTIME",
-            "empty model build failed",
-        ))
-    })
+    CfdDataModel::builder(schema)
+        .build()
+        .map_err(|_| runtime_invariant("empty model build failed"))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn runtime_invariants_use_the_internal_diagnostic_family() {
+        let diagnostics = super::runtime_invariant("injected invariant failure");
+        assert_eq!(diagnostics.diagnostics[0].code, "RUNTIME-INTERNAL");
+        assert_eq!(diagnostics.diagnostics[0].stage, "RUNTIME");
+    }
 }

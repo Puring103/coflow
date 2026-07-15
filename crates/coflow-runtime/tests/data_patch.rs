@@ -13,6 +13,88 @@ use coflow_runtime::{
     PatchRecordSelector, RecordCoordinate, Runtime,
 };
 use serde_json::json;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+#[derive(Debug, Default)]
+struct FailingReloadCsvManager {
+    fail_next_load: Arc<AtomicBool>,
+}
+
+impl coflow_api::DimensionSourceManager for FailingReloadCsvManager {
+    fn descriptor(&self) -> &'static coflow_api::DimensionSourceManagerDescriptor {
+        coflow_api::DimensionSourceManager::descriptor(&coflow_loader_csv::CsvWriter::new())
+    }
+
+    fn load_dimension_source(
+        &self,
+        ctx: coflow_api::TableContext<'_>,
+        request: &coflow_api::DimensionSourceLoadRequest<'_>,
+    ) -> Result<coflow_api::DimensionSourceLoadResult, coflow_api::DiagnosticSet> {
+        if self.fail_next_load.swap(false, Ordering::SeqCst) {
+            return Err(coflow_api::DiagnosticSet::one(
+                coflow_api::Diagnostic::error(
+                    "TEST-DIMENSION-RELOAD",
+                    "TEST",
+                    "injected dimension reload failure after write",
+                ),
+            ));
+        }
+        coflow_api::DimensionSourceManager::load_dimension_source(
+            &coflow_loader_csv::CsvWriter::new(),
+            ctx,
+            request,
+        )
+    }
+
+    fn write_dimension_value(
+        &self,
+        ctx: coflow_api::TableContext<'_>,
+        request: &coflow_api::WriteDimensionValueRequest<'_>,
+    ) -> Result<coflow_api::DimensionSourceResult, coflow_api::DiagnosticSet> {
+        let result = coflow_api::DimensionSourceManager::write_dimension_value(
+            &coflow_loader_csv::CsvWriter::new(),
+            ctx,
+            request,
+        )?;
+        self.fail_next_load.store(true, Ordering::SeqCst);
+        Ok(result)
+    }
+
+    fn rewrite_dimension_record(
+        &self,
+        ctx: coflow_api::TableContext<'_>,
+        request: &coflow_api::RewriteDimensionRecordRequest<'_>,
+    ) -> Result<coflow_api::DimensionSourceResult, coflow_api::DiagnosticSet> {
+        coflow_api::DimensionSourceManager::rewrite_dimension_record(
+            &coflow_loader_csv::CsvWriter::new(),
+            ctx,
+            request,
+        )
+    }
+
+    fn source_options(
+        &self,
+        request: &coflow_api::DimensionSourceOptionsRequest<'_>,
+    ) -> Result<coflow_api::DecodedSourceOptions, coflow_api::DiagnosticSet> {
+        coflow_api::DimensionSourceManager::source_options(
+            &coflow_loader_csv::CsvWriter::new(),
+            request,
+        )
+    }
+
+    fn sync_dimension_source(
+        &self,
+        ctx: coflow_api::TableContext<'_>,
+        request: &coflow_api::DimensionSourceRequest<'_>,
+    ) -> Result<coflow_api::DimensionSourceResult, coflow_api::DiagnosticSet> {
+        coflow_api::DimensionSourceManager::sync_dimension_source(
+            &coflow_loader_csv::CsvWriter::new(),
+            ctx,
+            request,
+        )
+    }
+}
 
 fn write_project(root: &std::path::Path) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
@@ -275,13 +357,14 @@ fn write_dimension_ref_project(root: &std::path::Path) {
             type Offer {
                 @dimension("platform")
                 item: &Item;
+                check { item.name != "BAD"; }
             }
         "#,
     )
     .expect("write schema");
     std::fs::write(
         root.join("data/main.cfd"),
-        "potion: Item { name: \"Potion\" }\nstarter: Offer { item: &potion }\n",
+        "potion: Item { name: \"Potion\" }\nbad: Item { name: \"BAD\" }\nstarter: Offer { item: &potion }\n",
     )
     .expect("write records");
     std::fs::write(
@@ -340,6 +423,65 @@ dimensions:
 "#,
     )
     .expect("write config");
+}
+
+fn write_checked_dimension_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"type Item {
+            @localized name: string;
+            check { name != "BAD"; }
+        }"#,
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write items");
+    std::fs::write(
+        root.join("data/dimensions/language/Item_name.csv"),
+        "id,default,zh\npotion,Potion,GOOD\n",
+    )
+    .expect("write checked dimension");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+}
+
+fn check_signatures<'a>(
+    diagnostics: impl IntoIterator<Item = &'a coflow_api::FlatDiagnostic>,
+) -> Vec<(String, String, String)> {
+    diagnostics
+        .into_iter()
+        .filter(|diagnostic| diagnostic.stage == "CHECK")
+        .map(|diagnostic| {
+            (
+                diagnostic.code.clone(),
+                diagnostic.stage.clone(),
+                diagnostic.message.clone(),
+            )
+        })
+        .collect()
+}
+
+fn fresh_check_signatures(root: &std::path::Path) -> Vec<(String, String, String)> {
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let fresh = Runtime::new(registry())
+        .open_read_only_session(project)
+        .expect("fresh read-only session");
+    let diagnostics = fresh.queries().diagnostics().as_set().flat_diagnostics();
+    check_signatures(&diagnostics)
 }
 
 fn assert_incremental_diagnostics_match_fresh(
@@ -816,6 +958,214 @@ fn failed_singleton_dimension_write_reports_cfd_diagnostic_and_keeps_generation(
 }
 
 #[test]
+fn checked_dimension_mutations_match_full_diagnostics() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-checked-dimension-incremental-{}",
+        std::process::id()
+    ));
+    let full_root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-checked-dimension-full-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&full_root);
+    write_checked_dimension_project(&root);
+    write_checked_dimension_project(&full_root);
+    let mut session = session(&root);
+    let dimension_file = root.join("data/dimensions/language/Item_name.csv");
+    let selector = PatchDimensionValueSelector {
+        record: PatchRecordSelector {
+            actual_type: "Item".to_string(),
+            key: "potion".to_string(),
+        },
+        field: coflow_cft::FieldName::new("name").expect("field name"),
+        dimension: coflow_cft::DimensionName::new("language").expect("dimension name"),
+        variant: coflow_cft::VariantName::new("zh").expect("variant name"),
+        path: Vec::new(),
+    };
+
+    let pass = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: selector.clone(),
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                coflow_data_model::CfdValue::String("GOOD".to_string()),
+            )),
+            value: json!("BETTER"),
+        }],
+    });
+    assert!(pass.write_ok && pass.check_ok, "diagnostics: {pass:?}");
+    std::fs::write(
+        full_root.join("data/dimensions/language/Item_name.csv"),
+        "id,default,zh\npotion,Potion,BETTER\n",
+    )
+    .expect("write full pass source");
+    assert_eq!(
+        check_signatures(&pass.diagnostics),
+        fresh_check_signatures(&full_root)
+    );
+
+    let explicit_null = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: selector.clone(),
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                coflow_data_model::CfdValue::String("BETTER".to_string()),
+            )),
+            value: serde_json::Value::Null,
+        }],
+    });
+    assert!(
+        explicit_null.write_ok && explicit_null.check_ok,
+        "diagnostics: {explicit_null:?}"
+    );
+    std::fs::write(
+        full_root.join("data/dimensions/language/Item_name.csv"),
+        "id,default,zh\npotion,Potion,null\n",
+    )
+    .expect("write full null source");
+    assert_eq!(
+        check_signatures(&explicit_null.diagnostics),
+        fresh_check_signatures(&full_root)
+    );
+
+    let revision_before_missing = session.revision();
+    let missing = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::ClearDimensionValue {
+            coordinate: selector.clone(),
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                coflow_data_model::CfdValue::Null,
+            )),
+        }],
+    });
+    assert!(
+        missing.write_ok && !missing.check_ok,
+        "missing report: {missing:?}"
+    );
+    assert_eq!(session.revision(), revision_before_missing + 1);
+    assert!(std::fs::read_to_string(&dimension_file)
+        .expect("read missing source")
+        .contains("potion,Potion,\n"));
+    std::fs::write(
+        full_root.join("data/dimensions/language/Item_name.csv"),
+        "id,default,zh\npotion,Potion,\n",
+    )
+    .expect("write full missing source");
+    assert_eq!(
+        check_signatures(&missing.diagnostics),
+        fresh_check_signatures(&full_root)
+    );
+
+    let restore = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: selector.clone(),
+            expected: coflow_runtime::DimensionValueExpectation::Missing,
+            value: json!("GOOD"),
+        }],
+    });
+    assert!(restore.write_ok && restore.check_ok);
+    let revision_before_bad = session.revision();
+    let bad = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: selector,
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                coflow_data_model::CfdValue::String("GOOD".to_string()),
+            )),
+            value: json!("BAD"),
+        }],
+    });
+    assert!(bad.write_ok && !bad.check_ok, "bad report: {bad:?}");
+    assert_eq!(session.revision(), revision_before_bad + 1);
+    assert!(std::fs::read_to_string(&dimension_file)
+        .expect("read bad source")
+        .contains("potion,Potion,BAD\n"));
+    std::fs::write(
+        full_root.join("data/dimensions/language/Item_name.csv"),
+        "id,default,zh\npotion,Potion,BAD\n",
+    )
+    .expect("write full bad source");
+    let incremental_bad = check_signatures(&bad.diagnostics);
+    assert!(!incremental_bad.is_empty());
+    assert_eq!(incremental_bad, fresh_check_signatures(&full_root));
+
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(full_root);
+}
+
+#[test]
+fn dimension_reload_failure_compensates_written_file_and_keeps_old_generation() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-reload-failure-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_checked_dimension_project(&root);
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_source_provider(coflow_loader_csv::CsvLoader)
+        .expect("csv loader");
+    registry
+        .register_dimension_source_manager(FailingReloadCsvManager::default())
+        .expect("failing dimension manager");
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let mut session = Runtime::new(registry)
+        .open_write_session(project)
+        .expect("open write session");
+    let dimension_file = root.join("data/dimensions/language/Item_name.csv");
+    let before_file = std::fs::read(&dimension_file).expect("read source before mutation");
+    let before_revision = session.revision();
+
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: PatchDimensionValueSelector {
+                record: PatchRecordSelector {
+                    actual_type: "Item".to_string(),
+                    key: "potion".to_string(),
+                },
+                field: coflow_cft::FieldName::new("name").expect("field name"),
+                dimension: coflow_cft::DimensionName::new("language").expect("dimension name"),
+                variant: coflow_cft::VariantName::new("zh").expect("variant name"),
+                path: Vec::new(),
+            },
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                coflow_data_model::CfdValue::String("GOOD".to_string()),
+            )),
+            value: json!("NEW"),
+        }],
+    });
+
+    assert!(!report.write_ok);
+    assert!(report
+        .failed
+        .iter()
+        .flat_map(|failure| &failure.diagnostics)
+        .any(|diagnostic| diagnostic.code == "TEST-DIMENSION-RELOAD"));
+    assert_eq!(session.revision(), before_revision);
+    assert_eq!(
+        std::fs::read(&dimension_file).expect("read compensated dimension source"),
+        before_file,
+    );
+    assert_eq!(
+        session
+            .queries()
+            .record_view("Item", "potion")
+            .expect("old record remains published")
+            .record
+            .dimension_field("name")
+            .expect("old overlay remains published")
+            .variants["zh"]
+            .value,
+        coflow_data_model::CfdValue::String("GOOD".to_string()),
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn rename_record_rewrites_refs_in_dimension_overlays() {
     let root = std::env::temp_dir().join(format!(
         "coflow-data-patch-dimension-ref-rename-{}",
@@ -843,6 +1193,56 @@ fn rename_record_rewrites_refs_in_dimension_overlays() {
     assert!(dimension.contains("starter,&elixir,&elixir"), "{dimension}");
     assert_incremental_diagnostics_match_fresh(&session, &root);
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn dimension_reference_checks_match_full_diagnostics() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-ref-check-incremental-{}",
+        std::process::id()
+    ));
+    let full_root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-ref-check-full-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&full_root);
+    write_dimension_ref_project(&root);
+    write_dimension_ref_project(&full_root);
+    let mut session = session(&root);
+
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: PatchDimensionValueSelector {
+                record: PatchRecordSelector {
+                    actual_type: "Offer".to_string(),
+                    key: "starter".to_string(),
+                },
+                field: coflow_cft::FieldName::new("item").expect("field name"),
+                dimension: coflow_cft::DimensionName::new("platform").expect("dimension name"),
+                variant: coflow_cft::VariantName::new("pc").expect("variant name"),
+                path: Vec::new(),
+            },
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                coflow_data_model::CfdValue::Ref("potion".to_string()),
+            )),
+            value: json!({ "$ref": "bad" }),
+        }],
+    });
+
+    assert!(report.write_ok && !report.check_ok, "report: {report:?}");
+    std::fs::write(
+        full_root.join("data/dimensions/platform/Offer_item.csv"),
+        "id,default,pc\nstarter,&potion,&bad\n",
+    )
+    .expect("write full reference source");
+    let incremental = check_signatures(&report.diagnostics);
+    assert!(!incremental.is_empty());
+    assert_eq!(incremental, fresh_check_signatures(&full_root));
+
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(full_root);
 }
 
 #[test]

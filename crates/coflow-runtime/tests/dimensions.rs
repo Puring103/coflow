@@ -18,6 +18,46 @@ use coflow_runtime::{
     BuildProjectSession, DimensionValueCoordinate, DimensionValueOrigin, ReadOnlyProjectSession,
     Runtime, WriteProjectSession,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+#[derive(Debug)]
+struct SnapshotSabotageCsvManager {
+    target: std::path::PathBuf,
+    sync_called: Arc<AtomicBool>,
+}
+
+impl coflow_api::DimensionSourceManager for SnapshotSabotageCsvManager {
+    fn descriptor(&self) -> &'static coflow_api::DimensionSourceManagerDescriptor {
+        coflow_api::DimensionSourceManager::descriptor(&coflow_loader_csv::CsvWriter::new())
+    }
+
+    fn source_options(
+        &self,
+        request: &coflow_api::DimensionSourceOptionsRequest<'_>,
+    ) -> Result<coflow_api::DecodedSourceOptions, DiagnosticSet> {
+        std::fs::create_dir(&self.target).map_err(|error| {
+            DiagnosticSet::one(coflow_api::Diagnostic::error(
+                "TEST-SNAPSHOT-SETUP",
+                "TEST",
+                error.to_string(),
+            ))
+        })?;
+        coflow_api::DimensionSourceManager::source_options(
+            &coflow_loader_csv::CsvWriter::new(),
+            request,
+        )
+    }
+
+    fn sync_dimension_source(
+        &self,
+        _ctx: coflow_api::TableContext<'_>,
+        _request: &coflow_api::DimensionSourceRequest<'_>,
+    ) -> Result<coflow_api::DimensionSourceResult, DiagnosticSet> {
+        self.sync_called.store(true, Ordering::SeqCst);
+        Ok(coflow_api::DimensionSourceResult { changed: true })
+    }
+}
 
 fn csv_dimension_registry() -> ProviderRegistry {
     let mut registry = ProviderRegistry::default();
@@ -237,6 +277,73 @@ dimensions:
 }
 
 #[test]
+fn read_only_session_aggregates_multiple_dimension_directory_errors() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-source-multiple-errors-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/dimensions")).expect("create data dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"type Item {
+            @localized name: string;
+            @dimension("platform") label: string;
+        }"#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.csv"),
+        "id,name,label\npotion,Potion,Potion\n",
+    )
+    .expect("write records");
+    std::fs::write(root.join("data/dimensions/language"), "not a directory")
+        .expect("write invalid language directory");
+    std::fs::write(root.join("data/dimensions/platform"), "not a directory")
+        .expect("write invalid platform directory");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+  platform:
+    variants: [pc]
+    out_dir: data/dimensions/platform
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let session = open_read_only_session(project, &csv_dimension_registry())
+        .expect("read-only sessions publish load diagnostics");
+    let messages = session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "PROJECT-001")
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(messages.len(), 2, "diagnostics: {messages:?}");
+    assert!(messages.iter().any(|message| message.contains("language")));
+    assert!(messages.iter().any(|message| message.contains("platform")));
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
 fn build_session_reports_unreadable_dimension_generation_directory_without_modifying_it() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-dim-generation-discovery-error-{}",
@@ -288,6 +395,70 @@ dimensions:
         "not a directory"
     );
 
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn build_session_does_not_sync_or_publish_when_dimension_snapshot_fails() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-generation-snapshot-error-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { @localized name: string; }",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write records");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+    let target = root.join("data/dimensions/language/Item_name.csv");
+    let sync_called = Arc::new(AtomicBool::new(false));
+    let mut registry = ProviderRegistry::default();
+    registry
+        .register_source_provider(coflow_loader_csv::CsvLoader)
+        .expect("csv loader");
+    registry
+        .register_dimension_source_manager(SnapshotSabotageCsvManager {
+            target: target.clone(),
+            sync_called: Arc::clone(&sync_called),
+        })
+        .expect("sabotage dimension manager");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let session = build_session(project, &registry)
+        .expect("generation diagnostics are published through the build session");
+
+    assert!(session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "DIM-SOURCE-SNAPSHOT-001"));
+    assert!(!sync_called.load(Ordering::SeqCst));
+    assert!(target.is_dir());
+    assert!(!session
+        .queries()
+        .has_source_file("data/dimensions/language/Item_name.csv"));
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
 
