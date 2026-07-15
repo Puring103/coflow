@@ -238,6 +238,127 @@ dimensions:
 }
 
 #[test]
+fn dimension_load_reports_invalid_csv_variant_values() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-invalid-csv-value-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create data dir");
+    std::fs::write(root.join("schema.cft"), "type Item { @localized power: int; }")
+        .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,power\npotion,1\n")
+        .expect("write records");
+    std::fs::write(
+        root.join("data/dimensions/language/Item_power.csv"),
+        "id,default,zh\npotion,1,not_an_int\n",
+    )
+    .expect("write invalid dimension value");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/items.csv\n    type: csv\n    sheets:\n      - sheet: items\n        type: Item\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\n",
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let session = open_read_only_session(project, &csv_dimension_registry())
+        .expect("publish load diagnostics");
+    assert!(session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "CSV-DIMENSION-VALUE"));
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn dimension_load_reports_invalid_cfd_variant_values() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-invalid-cfd-value-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { @localized power: int; }",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/config.cfd"),
+        "item: Item { power: 1 }\n",
+    )
+    .expect("write record");
+    std::fs::write(
+        root.join("data/dimensions/language/Item_power.cfd"),
+        "item: Item { default: 1, zh: not_an_int }\n",
+    )
+    .expect("write invalid dimension value");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/config.cfd\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\n",
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let registry = coflow_builtins::default_provider_registry().expect("default registry");
+    let session = open_read_only_session(project, &registry).expect("publish load diagnostics");
+    assert!(session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "CFD-DIMENSION-VALUE"));
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn singleton_dimension_load_requires_an_owner_record() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-singleton-owner-missing-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "@singleton type Config { @localized power: int; }",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/dimensions/language/Config.cfd"),
+        "power: Config { default: 1, zh: 2 }\n",
+    )
+    .expect("write dimension value");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources: []\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\n",
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let registry = coflow_builtins::default_provider_registry().expect("default registry");
+    let diagnostics = open_read_only_session(project, &registry)
+        .expect_err("singleton load without an owner must fail");
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "RUNTIME-DIMENSION-SINGLETON"),
+        "diagnostics: {diagnostics:?}"
+    );
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
 fn language_dimension_publishes_overlay_and_implicit_source() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-dim-synthesis-{}",

@@ -228,7 +228,7 @@ fn build_data_pipeline(
                 load_failure.diagnostics.logical_locations,
             );
             return Ok(LoadedSessionData {
-                model: empty_model(&ctx.schema)?,
+                model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
@@ -281,7 +281,7 @@ fn rebuild_data_pipeline(
                 load_failure.diagnostics.logical_locations,
             );
             return Ok(LoadedSessionData {
-                model: empty_model(&ctx.schema)?,
+                model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
@@ -323,7 +323,7 @@ fn rebuild_data_pipeline(
                     load_failure.diagnostics.diagnostics,
                     load_failure.diagnostics.logical_locations,
                 );
-                output = empty_load_output(&ctx.schema)?;
+                output = diagnostic_fallback_output(&ctx.schema, diagnostics)?;
                 indexes = load_failure.indexes;
             }
         }
@@ -361,9 +361,19 @@ fn reload_with_dimensions(
                 load_failure.diagnostics.diagnostics,
                 load_failure.diagnostics.logical_locations,
             );
-            Ok((empty_load_output(&ctx.schema)?, load_failure.indexes))
+            Ok((
+                diagnostic_fallback_output(&ctx.schema, diagnostics)?,
+                load_failure.indexes,
+            ))
         }
     }
+}
+
+fn diagnostic_fallback_output(
+    schema: &CftSchema,
+    diagnostics: &DiagnosticsStore,
+) -> Result<ProjectLoadOutput, DiagnosticSet> {
+    empty_load_output(schema).map_err(|_| diagnostics.as_set().clone())
 }
 
 fn load_data(
@@ -461,7 +471,7 @@ fn build_read_only_data(
                 load_failure.diagnostics.logical_locations,
             );
             return Ok(LoadedSessionData {
-                model: empty_model(&ctx.schema)?,
+                model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
