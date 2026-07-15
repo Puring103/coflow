@@ -16,9 +16,9 @@
 use clap::Parser;
 use cli_output::{display_path, project_path, write_json_diagnostics, write_project_diagnostics};
 use coflow::commands::{
-    build_project, check_project, export_project_data, generate_project_code, BuildOptions,
-    CodegenOptions, CommandOutcome, ExportOptions, CSHARP_CODEGEN_ID, JSON_EXPORTER_ID,
-    MESSAGEPACK_EXPORTER_ID,
+    build_project, check_project, clean_project, export_project_data, generate_project_code,
+    BuildOptions, CodegenOptions, CommandOutcome, ExportOptions, CSHARP_CODEGEN_ID,
+    JSON_EXPORTER_ID, MESSAGEPACK_EXPORTER_ID,
 };
 use coflow::diagnostics::cli_error;
 use coflow::{data_commands, schema_commands};
@@ -36,7 +36,7 @@ mod cli_output;
 mod data_get_target;
 
 use cli::{
-    BuildArgs, CftArgs, CftCheckArgs, CftCommand, Cli, CodegenArgs, CodegenCommand,
+    BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, CodegenCommand,
     CodegenCsharpArgs, Command, DataArgs, DataCommand, ExportArgs, ExportCommand, ExportJsonArgs,
     ExportMessagePackArgs, InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand,
     SkillArgs, SkillCommand, SkillScopeArgs,
@@ -60,6 +60,7 @@ fn run() -> Result<bool, DiagnosticSet> {
         Command::Lsp(args) => run_lsp(&args),
         Command::Check(args) => project_check(&args),
         Command::Build(args) => project_build(&args),
+        Command::Clean(args) => project_clean(&args),
         Command::Export(command) => run_export(&command),
         Command::Codegen(command) => run_codegen(&command),
         Command::Schema(command) => run_schema(&command),
@@ -404,6 +405,18 @@ fn project_build(args: &BuildArgs) -> Result<bool, DiagnosticSet> {
             Ok(false)
         }
     }
+}
+
+fn project_clean(args: &CleanArgs) -> Result<bool, DiagnosticSet> {
+    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let report = clean_project(&project)?;
+    println!(
+        "Cleaned {} historical generations and {} staging entries from {}",
+        report.generations_removed,
+        report.staging_removed,
+        project_path(&project, &project.root_dir.join(".coflow"))
+    );
+    Ok(true)
 }
 
 fn export_json(args: &ExportJsonArgs) -> Result<bool, DiagnosticSet> {

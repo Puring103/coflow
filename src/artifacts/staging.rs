@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct StagedArtifactDir {
     requested_dir: PathBuf,
     staging_dir: PathBuf,
+    slot: String,
     sealed: bool,
 }
 
@@ -21,10 +22,12 @@ pub struct PublishedArtifactDir {
 }
 
 pub(super) fn stage_artifact_set(
+    state_dir: &Path,
+    slot: &str,
     dir: &Path,
     artifacts: ArtifactSet,
 ) -> Result<StagedArtifactDir, DiagnosticSet> {
-    let staged = StagedArtifactDir::create(dir)?;
+    let staged = StagedArtifactDir::create(state_dir, slot, dir)?;
     for artifact in artifacts.into_files() {
         let path = staged.path().join(&artifact.relative_path);
         if let Some(parent) = path.parent() {
@@ -96,21 +99,25 @@ fn write_verified_file(path: &Path, contents: &[u8]) -> Result<(), DiagnosticSet
 }
 
 impl StagedArtifactDir {
-    pub fn create(requested_dir: &Path) -> Result<Self, DiagnosticSet> {
-        let parent = requested_dir.parent().unwrap_or_else(|| Path::new("."));
+    pub fn create(
+        state_dir: &Path,
+        slot: &str,
+        requested_dir: &Path,
+    ) -> Result<Self, DiagnosticSet> {
+        let parent = state_dir.join("staging");
         fault::check(Point::CreateOutputParent).map_err(|err| {
             diagnostic_set(
                 requested_dir,
                 format!("failed to create `{}`: {err}", parent.display()),
             )
         })?;
-        fs::create_dir_all(parent).map_err(|err| {
+        fs::create_dir_all(&parent).map_err(|err| {
             diagnostic_set(
                 requested_dir,
                 format!("failed to create `{}`: {err}", parent.display()),
             )
         })?;
-        let staging_dir = unique_sidecar_path(requested_dir, "staging");
+        let staging_dir = unique_artifact_path(&parent, slot);
         fault::check(Point::CreateStagingDirectory).map_err(|err| {
             diagnostic_set(
                 requested_dir,
@@ -126,6 +133,7 @@ impl StagedArtifactDir {
         Ok(Self {
             requested_dir: requested_dir.to_path_buf(),
             staging_dir,
+            slot: slot.to_string(),
             sealed: false,
         })
     }
@@ -136,7 +144,19 @@ impl StagedArtifactDir {
     }
 
     pub(super) fn seal(mut self) -> Result<PublishedArtifactDir, DiagnosticSet> {
-        let generation_dir = unique_sidecar_path(&self.requested_dir, "generation");
+        let state_dir = self
+            .staging_dir
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or_else(|| Path::new("."));
+        let generation_parent = state_dir.join("generations");
+        fs::create_dir_all(&generation_parent).map_err(|err| {
+            diagnostic_set(
+                &self.requested_dir,
+                format!("failed to create `{}`: {err}", generation_parent.display()),
+            )
+        })?;
+        let generation_dir = unique_artifact_path(&generation_parent, &self.slot);
         fault::check(Point::SealGeneration)
             .and_then(|()| fs::rename(&self.staging_dir, &generation_dir))
             .map_err(|err| {
@@ -206,17 +226,9 @@ const fn sync_directory_tree(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn unique_sidecar_path(target: &Path, kind: &str) -> PathBuf {
-    let parent = target.parent().unwrap_or_else(|| Path::new("."));
-    let name = target
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("artifacts");
+fn unique_artifact_path(parent: &Path, slot: &str) -> PathBuf {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos());
-    parent.join(format!(
-        ".{name}.coflow-{kind}-{}-{suffix}",
-        std::process::id()
-    ))
+    parent.join(format!("{slot}-{}-{suffix}", std::process::id()))
 }

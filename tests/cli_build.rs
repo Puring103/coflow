@@ -362,17 +362,56 @@ fn build_publishes_one_manifest_over_immutable_generations() {
     );
     assert!(!requested_data.exists());
     assert!(!requested_code.exists());
+    let generation_root = root.join(".coflow/artifacts/generations");
+    let canonical_generation_root =
+        std::fs::canonicalize(&generation_root).expect("canonical generation root");
+    for generation in [&first_data, &first_code, &second_data, &second_code] {
+        assert!(
+            std::fs::canonicalize(generation)
+                .expect("canonical generation")
+                .starts_with(&canonical_generation_root),
+            "generation should be stored under .coflow: {}",
+            generation.display()
+        );
+    }
     let versioned_lock: Value = serde_json::from_slice(
         &std::fs::read(root.join("coflow.enum.lock.json")).expect("read versioned enum lock"),
     )
     .expect("parse versioned enum lock");
     assert_eq!(versioned_lock, active_enum_lock(&root));
 
-    let state_entries = std::fs::read_dir(root.join(".coflow/artifacts"))
-        .expect("read artifact state")
-        .map(|entry| entry.expect("artifact state entry").file_name())
-        .collect::<Vec<_>>();
-    assert_eq!(state_entries, vec![std::ffi::OsString::from("active.json")]);
+    assert_eq!(directory_count(&generation_root), 4);
+
+    let abandoned_staging = root.join(".coflow/artifacts/staging/abandoned");
+    std::fs::create_dir_all(&abandoned_staging).expect("create abandoned staging entry");
+    std::fs::write(abandoned_staging.join("partial.txt"), "partial")
+        .expect("write abandoned staging file");
+    let clean = coflow()
+        .args(["clean", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run clean");
+    assert!(
+        clean.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&clean.stdout),
+        String::from_utf8_lossy(&clean.stderr)
+    );
+    assert!(String::from_utf8_lossy(&clean.stdout)
+        .contains("Cleaned 2 historical generations and 1 staging entries"));
+    assert_eq!(directory_count(&generation_root), 2);
+    assert!(second_data.is_dir());
+    assert!(second_code.is_dir());
+    assert!(!first_data.exists());
+    assert!(!first_code.exists());
+    assert!(!abandoned_staging.exists());
+}
+
+fn directory_count(path: &std::path::Path) -> usize {
+    std::fs::read_dir(path)
+        .expect("read directory")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|file_type| file_type.is_dir()))
+        .count()
 }
 
 #[cfg(unix)]

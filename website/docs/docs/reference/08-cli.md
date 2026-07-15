@@ -241,9 +241,17 @@ coflow export messagepack examples/rpg --out generated/data
 
 ### 不可变 generation
 
-`outputs.data.dir` 或 `--out` 指定 generation 的放置锚点。Coflow 在同级位置写入不可变 generation，命令成功信息输出实际目录。当前 data generation 记录在项目目录的 `.coflow/artifacts/active.json` 中。
+`outputs.data.dir` 或 `--out` 保留为输出放置锚点。Coflow 将不可变 generation 分类写入项目目录的 `.coflow/artifacts/generations/`，将发布中的临时目录写入 `.coflow/artifacts/staging/`，不会在输出锚点同级留下隐藏 sidecar。命令成功信息输出实际目录，当前 data generation 记录在 `.coflow/artifacts/active.json` 中。
 
 所有文件写入、同步和回读验证成功后，Coflow 才原子替换唯一 active manifest。失败时旧 manifest 和旧 generation 仍然完整。不要修改 generation 文件；新发布不会原地覆盖它们。
+
+## `clean`
+
+```powershell
+coflow clean [CONFIG_OR_DIR]
+```
+
+清除 `.coflow/artifacts/generations/` 中未被 active manifest 引用的历史 generation，以及 `.coflow/artifacts/staging/` 中断遗留的临时条目。当前活动 generation 和 active manifest 保持不变，清理后无需重新构建。
 
 ## `codegen`
 
@@ -699,6 +707,7 @@ coflow skill uninstall -g
 | `skill status` | 项目模式需要 | 否 | 否 | 否 | 否 |
 | `check` | 是 | 是 | 是 | 是 | 否 |
 | `build` | 是 | 是 | 是 | 是 | 数据和可选代码 |
+| `clean` | 否 | 否 | 否 | 否 | 删除历史 generation 和 staging |
 | `export json` | 是 | 是 | 是 | 是 | JSON 数据 |
 | `export messagepack` | 是 | 是 | 是 | 是 | MessagePack 数据 |
 | `codegen csharp` | 是 | 否 | 否 | 否 | C# 代码 |

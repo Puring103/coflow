@@ -10,6 +10,4 @@ website/docs/.vitepress/dist/
 website/docs/.vitepress/cache/
 .claude/
 .coflow/
-**/.*.coflow-generation-*
-**/.*.coflow-staging-*
 ~$*.xlsx

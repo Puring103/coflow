@@ -22,6 +22,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub(crate) fn clean_history(project: &Project) -> Result<(usize, usize), DiagnosticSet> {
+    publication::clean_history(project)
+}
+
 pub fn output_dir(
     project: &Project,
     output: &OutputConfig,
@@ -463,7 +467,12 @@ impl PreparedArtifactRelease<'_> {
         let mut staged = Vec::with_capacity(self.outputs.len());
         let mut metadata = Vec::with_capacity(self.outputs.len());
         for output in self.outputs {
-            let staged_output = stage_artifact_set(&output.dir, output.artifacts)?;
+            let staged_output = stage_artifact_set(
+                &publication::artifact_state_dir(self.project),
+                output.slot,
+                &output.dir,
+                output.artifacts,
+            )?;
             staged.push((output.slot, staged_output));
             metadata.push((output.slot, output.provider_id, output.display_name));
         }

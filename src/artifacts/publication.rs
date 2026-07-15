@@ -324,12 +324,15 @@ fn write_versioned_enum_lock(project: &Project, lock: &Value) -> Result<(), Diag
 }
 
 fn manifest_path(project: &Project) -> PathBuf {
+    artifact_state_dir(project).join(ACTIVE_MANIFEST)
+}
+
+pub(crate) fn artifact_state_dir(project: &Project) -> PathBuf {
     project
         .config_path
         .parent()
         .unwrap_or(&project.root_dir)
         .join(STATE_DIR)
-        .join(ACTIVE_MANIFEST)
 }
 
 pub fn enum_lockfile_path(project: &Project) -> PathBuf {
@@ -338,6 +341,74 @@ pub fn enum_lockfile_path(project: &Project) -> PathBuf {
         .parent()
         .unwrap_or(&project.root_dir)
         .join(ENUM_LOCKFILE_NAME)
+}
+
+pub(crate) fn clean_history(project: &Project) -> Result<(usize, usize), DiagnosticSet> {
+    let active = load_active_manifest(project)?
+        .into_iter()
+        .flat_map(|manifest| manifest.outputs.into_values())
+        .map(|output| output.generation_dir)
+        .collect::<BTreeSet<_>>();
+    let state_dir = artifact_state_dir(project);
+    let generations_removed = clean_children(&state_dir.join("generations"), &active)?;
+    let staging_removed = clean_children(&state_dir.join("staging"), &BTreeSet::new())?;
+    Ok((generations_removed, staging_removed))
+}
+
+fn clean_children(parent: &Path, preserved: &BTreeSet<PathBuf>) -> Result<usize, DiagnosticSet> {
+    if !parent.exists() {
+        return Ok(0);
+    }
+    let entries = fs::read_dir(parent).map_err(|err| {
+        diagnostic_set(
+            parent,
+            format!(
+                "failed to read artifact history `{}`: {err}",
+                parent.display()
+            ),
+        )
+    })?;
+    let mut removed = 0;
+    for entry in entries {
+        let entry = entry.map_err(|err| {
+            diagnostic_set(
+                parent,
+                format!(
+                    "failed to read artifact history `{}`: {err}",
+                    parent.display()
+                ),
+            )
+        })?;
+        let path = entry.path();
+        if preserved.contains(&path) {
+            continue;
+        }
+        let file_type = entry.file_type().map_err(|err| {
+            diagnostic_set(
+                &path,
+                format!(
+                    "failed to inspect artifact history `{}`: {err}",
+                    path.display()
+                ),
+            )
+        })?;
+        let result = if file_type.is_dir() {
+            fs::remove_dir_all(&path)
+        } else {
+            fs::remove_file(&path)
+        };
+        result.map_err(|err| {
+            diagnostic_set(
+                &path,
+                format!(
+                    "failed to remove artifact history `{}`: {err}",
+                    path.display()
+                ),
+            )
+        })?;
+        removed += 1;
+    }
+    Ok(removed)
 }
 
 fn unique_revision() -> String {
@@ -375,8 +446,14 @@ mod tests {
         let requested = root.join("generated/data");
         let old_lock = json!({"ItemId": {"old": 0}});
         let new_lock = json!({"ItemId": {"new": 1}});
-        let baseline =
-            stage_artifact_set(&requested, artifact_set("old")).expect("stage baseline artifacts");
+        let state_dir = super::artifact_state_dir(&project);
+        let baseline = stage_artifact_set(
+            &state_dir,
+            DATA_OUTPUT_SLOT,
+            &requested,
+            artifact_set("old"),
+        )
+        .expect("stage baseline artifacts");
         let baseline = publish_artifacts(
             &project,
             vec![(DATA_OUTPUT_SLOT, baseline)],
@@ -393,7 +470,13 @@ mod tests {
 
         let result = {
             let _injection = fault::inject(point);
-            stage_artifact_set(&requested, artifact_set("new")).and_then(|staged| {
+            stage_artifact_set(
+                &state_dir,
+                DATA_OUTPUT_SLOT,
+                &requested,
+                artifact_set("new"),
+            )
+            .and_then(|staged| {
                 publish_artifacts(
                     &project,
                     vec![(DATA_OUTPUT_SLOT, staged)],
@@ -432,7 +515,7 @@ mod tests {
             );
         }
         assert_eq!(
-            generation_count(requested.parent().expect("output parent")),
+            generation_count(&state_dir.join("generations")),
             1,
             "{point:?} leaked an unactivated generation"
         );
@@ -461,12 +544,7 @@ mod tests {
         std::fs::read_dir(parent)
             .expect("read output parent")
             .filter_map(Result::ok)
-            .filter(|entry| {
-                entry
-                    .file_name()
-                    .to_string_lossy()
-                    .contains(".coflow-generation-")
-            })
+            .filter(|entry| entry.file_type().is_ok_and(|file_type| file_type.is_dir()))
             .count()
     }
 }

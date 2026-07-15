@@ -60,6 +60,25 @@ pub struct BuildReport {
     pub code: Option<CodegenReport>,
 }
 
+#[derive(Debug)]
+pub struct CleanReport {
+    pub generations_removed: usize,
+    pub staging_removed: usize,
+}
+
+/// Removes inactive artifact generations and abandoned staging entries.
+///
+/// # Errors
+///
+/// Returns diagnostics when artifact state cannot be read or removed.
+pub fn clean_project(project: &Project) -> Result<CleanReport, DiagnosticSet> {
+    let (generations_removed, staging_removed) = crate::artifacts::clean_history(project)?;
+    Ok(CleanReport {
+        generations_removed,
+        staging_removed,
+    })
+}
+
 /// Runs schema, data loading, and CFT check validation for a project.
 ///
 /// # Errors

@@ -68,7 +68,7 @@ examples/rpg/generated/data
 examples/rpg/generated/csharp
 ```
 
-Coflow 每次构建都会写入并验证新的不可变 generation，再原子替换 `.coflow/artifacts/active.json`。命令成功信息会输出实际 generation 目录；程序也可以从 active manifest 的 `outputs.data.generation_dir` / `outputs.code.generation_dir` 读取。不要修改 generation 文件。
+Coflow 每次构建都会在 `.coflow/artifacts/generations/` 写入并验证新的不可变 generation，再原子替换 `.coflow/artifacts/active.json`。命令成功信息会输出实际 generation 目录；程序也可以从 active manifest 的 `outputs.data.generation_dir` / `outputs.code.generation_dir` 读取。不要修改 generation 文件。使用 `coflow clean [CONFIG_OR_DIR]` 清理历史 generation 和中断遗留的 staging；当前活动 generation 会保留。
 
 单独运行某个阶段：
 

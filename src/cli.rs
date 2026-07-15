@@ -21,6 +21,8 @@ pub(crate) enum Command {
     Check(ProjectCheckArgs),
     /// Run validation, data export, and configured code generation.
     Build(BuildArgs),
+    /// Remove historical artifact generations and abandoned temporary files.
+    Clean(CleanArgs),
     /// Export project data.
     Export(ExportArgs),
     /// Generate runtime code.
@@ -119,6 +121,12 @@ pub(crate) struct BuildArgs {
     /// Override outputs.code.namespace for this invocation.
     #[arg(long, value_name = "NAME")]
     pub(crate) namespace: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct CleanArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    pub(crate) config_or_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
