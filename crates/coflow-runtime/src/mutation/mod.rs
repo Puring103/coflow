@@ -7,6 +7,7 @@ use crate::ProjectSession;
 mod apply;
 mod coercion;
 mod defaults;
+mod dimension;
 mod plan;
 mod prepare;
 mod types;
