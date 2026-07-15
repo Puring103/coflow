@@ -13,6 +13,10 @@ modules and builds the final semantic schema. `coflow-runtime` owns schema
 generation caching and decides whether a project refresh needs a schema rebuild.
 Hosts do not build, inject, or cache schemas themselves.
 
+This migration also intentionally removes the built-in Lark provider, remote `url` sources,
+and URI source locations. That compatibility break is independent of the schema-generation
+pipeline; local Excel, CSV, and CFD sources remain supported.
+
 ## Final Interfaces
 
 ```rust

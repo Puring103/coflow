@@ -6,6 +6,7 @@
 - 范围：`coflow-cft` 整个 crate、canonical schema、维度 schema、DataModel overlay，以及直接依赖这些结构的 runtime/provider/checker/export/codegen/editor/LSP。
 - 迁移策略：允许破坏内部 Rust API，旧 reflection/meta、synthetic dimension type/record 和兼容别名最终全部删除。
 - 语言语义：不修改 CFT 语法、annotation 可用范围、继承、多态、默认值、check、记录引用、维度文件格式和导出格式。
+- 兼容性决定：同时移除内置 Lark provider、远程 `url` source 和 URI source location；这是已确认的用户可见 breaking change，本地 Excel/CSV/CFD source 不受影响。
 - 本计划替代此前所有 ID-first、generation、独立 dimension store 和 synthetic storage 方案。
 
 ## 最终设计结论

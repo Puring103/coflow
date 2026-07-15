@@ -19,4 +19,6 @@
 
 ## Compatibility
 
-- No intentional breaking changes from 0.6.2.
+- Removed the built-in Lark spreadsheet provider and remote `url` sources. Projects must migrate
+  those inputs to local Excel, CSV, or CFD sources before upgrading.
+- Local source formats and the JSON, MessagePack, and C# output contracts remain unchanged.
