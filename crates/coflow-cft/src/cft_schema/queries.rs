@@ -1,21 +1,16 @@
 use std::collections::BTreeSet;
 
-use crate::{
-    CftAnnotation, CftAnnotationValue, CftSchema, CftSchemaTypeRef, CftType, EnumName, TypeName,
-};
+use crate::{CftSchema, CftSchemaTypeRef, CftType, EnumName, TypeName};
 
 impl CftSchema {
     #[must_use]
     pub fn type_is_struct(&self, type_name: &str) -> bool {
-        self.types
-            .get(type_name)
-            .is_some_and(|ty| annotation_exists(&ty.annotations, "struct"))
+        self.types.get(type_name).is_some_and(|ty| ty.is_struct)
     }
 
     #[must_use]
     pub fn type_id_as_enum(&self, type_name: &str) -> Option<EnumName> {
-        annotation_name_arg(&self.types.get(type_name)?.annotations, "idAsEnum")
-            .map(EnumName::from_validated)
+        self.types.get(type_name)?.id_as_enum.clone()
     }
 
     #[must_use]
@@ -23,8 +18,8 @@ impl CftSchema {
         let mut current = Some(type_name);
         while let Some(name) = current {
             let meta = self.types.get(name)?;
-            if let Some(enum_name) = annotation_name_arg(&meta.annotations, "idAsEnum") {
-                return Some(EnumName::from_validated(enum_name));
+            if let Some(enum_name) = &meta.id_as_enum {
+                return Some(enum_name.clone());
             }
             current = meta.parent.as_deref();
         }
@@ -33,20 +28,12 @@ impl CftSchema {
 
     #[must_use]
     pub fn is_id_as_enum(&self, enum_name: &str) -> bool {
-        self.types.values().any(|ty| {
-            annotation_name_arg(&ty.annotations, "idAsEnum").as_deref() == Some(enum_name)
-        })
+        self.type_by_id_as_enum.contains_key(enum_name)
     }
 
     #[must_use]
     pub fn id_as_enum_names(&self) -> BTreeSet<EnumName> {
-        self.types
-            .values()
-            .filter_map(|ty| {
-                annotation_name_arg(&ty.annotations, "idAsEnum")
-                    .map(EnumName::from_validated)
-            })
-            .collect()
+        self.type_by_id_as_enum.keys().cloned().collect()
     }
 
     #[must_use]
@@ -101,19 +88,4 @@ impl CftSchema {
             | CftSchemaTypeRef::String => {}
         }
     }
-}
-
-fn annotation_exists(annotations: &[CftAnnotation], name: &str) -> bool {
-    annotations.iter().any(|annotation| annotation.name == name)
-}
-
-fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
-    annotations
-        .iter()
-        .find(|annotation| annotation.name == name)
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|arg| match arg {
-            CftAnnotationValue::Name(value) => Some(value.clone()),
-            _ => None,
-        })
 }

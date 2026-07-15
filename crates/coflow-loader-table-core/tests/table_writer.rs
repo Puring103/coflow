@@ -5,7 +5,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue, RecordOrigin, SourceDocument,
 };
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensions::default()).expect("schema compile")
+    build_schema(&modules, &CftDimensionInputs::default()).expect("schema compile")
 }
 
 fn table_origin(field_columns: BTreeMap<Vec<String>, usize>) -> RecordOrigin {

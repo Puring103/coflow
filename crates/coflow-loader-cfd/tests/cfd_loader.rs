@@ -10,7 +10,7 @@ use coflow_api::{
     ResolvedSource, SourceLoadContext, SourceLocation, SourceLocationSpec, SourceProvider,
     SourceResolveContext,
 };
-use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::CfdDataModel;
 use coflow_data_model::{CfdInputValue, CfdValue};
 use coflow_loader_cfd::{
@@ -24,7 +24,7 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensions::default()).expect("schema should compile")
+    build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile")
 }
 
 #[test]

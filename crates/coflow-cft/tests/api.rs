@@ -9,7 +9,7 @@
 
 mod common;
 use coflow_cft::{
-    build_schema, is_cft_identifier, parse_modules, record_key_ident_error, CftDimensions, CftFile,
+    build_schema, is_cft_identifier, parse_modules, record_key_ident_error, CftDimensionInputs, CftFile,
     CftSchemaTypeRef, ModuleId, ValueDependencyMode,
 };
 use common::*;
@@ -47,7 +47,7 @@ fn build_schema_compiles_a_parsed_module_set() {
         "type Item { value: int; }",
     )]);
 
-    let schema = build_schema(&modules, &CftDimensions::default())
+    let schema = build_schema(&modules, &CftDimensionInputs::default())
         .expect("parsed module set compiles");
 
     assert!(schema.has_type("Item"));
@@ -58,25 +58,34 @@ fn build_schema_compiles_a_parsed_module_set() {
 }
 
 #[test]
-fn build_schema_synthesizes_dimension_storage_from_configured_variants() {
+fn build_schema_models_configured_dimension_directly() {
     let modules = parse_modules([CftFile::new(
         ModuleId::new("schema/items.cft"),
         PathBuf::from("schema/items.cft"),
         "type Item { @localized name: string; }",
     )]);
-    let dimensions = CftDimensions::new([("language", vec!["zh".to_string()])]);
+    let dimensions = CftDimensionInputs::new([("language", vec!["zh".to_string()])]);
 
     let schema = build_schema(&modules, &dimensions).expect("dimension schema compiles");
 
-    let storage = schema
-        .dimension_storage_type("language", "Item", "name")
-        .expect("localized storage type");
-    let fields = schema.fields_slice(storage).expect("storage fields");
-    assert_eq!(fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(), ["default", "zh"]);
+    let dimension = schema
+        .resolve_dimension("language")
+        .expect("localized dimension");
+    assert_eq!(
+        dimension
+            .variants
+            .iter()
+            .map(|variant| variant.as_str())
+            .collect::<Vec<_>>(),
+        ["zh"]
+    );
+    assert_eq!(dimension.fields.len(), 1);
+    assert_eq!(dimension.fields[0].declaring_type.as_str(), "Item");
+    assert_eq!(schema.type_names().count(), 1);
 }
 
 #[test]
-fn build_schema_rejects_dimension_storage_collision_with_enum() {
+fn dimension_schema_does_not_reserve_generated_type_names() {
     let modules = parse_modules([CftFile::new(
         ModuleId::new("schema/items.cft"),
         PathBuf::from("schema/items.cft"),
@@ -85,15 +94,11 @@ fn build_schema_rejects_dimension_storage_collision_with_enum() {
             type Item { @localized name: string; }
         "#,
     )]);
-    let dimensions = CftDimensions::new([("language", vec!["zh".to_string()])]);
+    let dimensions = CftDimensionInputs::new([("language", vec!["zh".to_string()])]);
 
-    let diagnostics = build_schema(&modules, &dimensions)
-        .expect_err("internal storage names must share the global symbol table");
-
-    assert!(diagnostics
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == CftErrorCode::DuplicateGlobalName));
+    let schema = build_schema(&modules, &dimensions).expect("no generated type can collide");
+    assert!(schema.resolve_enum("__coflow_dimension_Item_name").is_some());
+    assert_eq!(schema.type_names().count(), 1);
 }
 
 #[test]
@@ -218,7 +223,7 @@ fn typed_check_schedule_borrows_inherited_blocks_in_parent_first_order() {
 
 #[test]
 fn dimension_check_schedule_includes_inherited_dimension_checks() {
-    let schema = compile_one(
+    let schema = compile_one_with_dimensions(
         r#"
             abstract type Base {
                 @localized
@@ -231,6 +236,7 @@ fn dimension_check_schedule_includes_inherited_dimension_checks() {
                 check { child_name != ""; }
             }
         "#,
+        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
     )
     .expect("schema compiles");
     let compiled = &schema;
@@ -243,7 +249,7 @@ fn dimension_check_schedule_includes_inherited_dimension_checks() {
 
 #[test]
 fn dimension_check_analysis_respects_quantifier_binding_shadowing() {
-    let schema = compile_one(
+    let schema = compile_one_with_dimensions(
         r#"
             type Item {
                 @localized
@@ -254,6 +260,7 @@ fn dimension_check_analysis_respects_quantifier_binding_shadowing() {
                 }
             }
         "#,
+        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
     )
     .expect("schema compiles");
     let compiled = &schema;
@@ -262,29 +269,25 @@ fn dimension_check_analysis_respects_quantifier_binding_shadowing() {
 }
 
 #[test]
-fn schema_indexes_dimension_storage_types() {
-    let schema = compile_one(
+fn schema_indexes_dimension_fields() {
+    let modules = parse_modules([CftFile::from_source(
+        ModuleId::from("main"),
         r#"
-            type Item { name: string; }
+            type Item { @localized name: string; }
             type Weapon : Item { damage: int; }
-            @__coflow_dimension_storage("language", "Item", "name")
-            type Item_nameVariants { zh: string?; }
         "#,
+    )]);
+    let schema = build_schema(
+        &modules,
+        &CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
     )
     .expect("schema compiles");
-    let compiled = &schema;
-
+    let dimension = schema.resolve_dimension("language").expect("dimension");
+    assert_eq!(dimension.fields.len(), 1);
+    assert_eq!(dimension.fields[0].declaring_type.as_str(), "Item");
     assert_eq!(
-        compiled.dimension_storage_type("language", "Item", "name"),
-        Some("Item_nameVariants")
-    );
-    assert_eq!(
-        compiled.dimension_storage_type("platform", "Item", "name"),
-        None
-    );
-    assert_eq!(
-        compiled.dimension_storage_type("language", "Weapon", "name"),
-        Some("Item_nameVariants")
+        schema.field("Weapon", "name"),
+        Some(dimension.fields[0].as_ref())
     );
 }
 

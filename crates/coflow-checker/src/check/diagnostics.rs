@@ -72,16 +72,16 @@ pub(super) fn dimension_lookup_error_message(
     err: DimensionFieldLookupError,
 ) -> String {
     match err {
+        DimensionFieldLookupError::UnknownRecord => {
+            format!("维度字段 `{actual_type}.{field_name}` 的所属记录不存在")
+        }
         DimensionFieldLookupError::NotDimensional => {
             format!("字段 `{actual_type}.{field_name}` 不是维度字段")
         }
         DimensionFieldLookupError::DimensionMismatch => {
             format!("字段 `{actual_type}.{field_name}` 不属于当前维度")
         }
-        DimensionFieldLookupError::MissingStorageRecord => {
-            format!("维度字段 `{actual_type}.{field_name}` 缺少变体存储记录")
-        }
-        DimensionFieldLookupError::MissingVariantField => {
+        DimensionFieldLookupError::UnknownVariant => {
             format!("维度字段 `{actual_type}.{field_name}` 缺少 variant `{variant}`")
         }
     }

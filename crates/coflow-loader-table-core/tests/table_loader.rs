@@ -1,6 +1,6 @@
 #![allow(clippy::panic_in_result_fn)]
 
-use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdInputValue, CfdValue, RecordOrigin, SourceLocation, TextSpan,
 };
@@ -223,6 +223,6 @@ fn maps_file_record_diagnostics_to_record_text_span_through_data_model_location(
 
 fn compile_schema(source: &str) -> Result<CftSchema, String> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensions::default())
+    build_schema(&modules, &CftDimensionInputs::default())
         .map_err(|err| format!("schema should compile: {err:?}"))
 }

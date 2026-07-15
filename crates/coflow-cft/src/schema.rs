@@ -42,12 +42,13 @@ pub struct CftType {
     pub parent: Option<TypeName>,
     pub is_abstract: bool,
     pub is_sealed: bool,
+    pub is_struct: bool,
     pub is_singleton: bool,
+    pub id_as_enum: Option<EnumName>,
     pub own_fields: Vec<Arc<CftField>>,
     pub all_fields: Vec<Arc<CftField>>,
     pub(crate) field_by_name: BTreeMap<FieldName, usize>,
     pub check: Option<CftSchemaCheckBlock>,
-    pub annotations: Vec<CftAnnotation>,
     pub(crate) dimension_checks: BTreeMap<DimensionName, CftSchemaCheckBlock>,
     pub span: Span,
 }
@@ -121,7 +122,7 @@ pub struct CftField {
     pub ty_ref: CftSchemaTypeRef,
     pub has_default: bool,
     pub default: Option<CftSchemaDefaultValue>,
-    pub annotations: Vec<CftAnnotation>,
+    pub is_expand: bool,
     pub dimension: Option<CftFieldDimension>,
     pub span: Span,
 }
@@ -270,7 +271,7 @@ pub struct CftEnum {
     pub variants: Vec<CftEnumVariant>,
     pub(crate) variant_by_name: BTreeMap<EnumVariantName, usize>,
     pub(crate) variant_by_value: BTreeMap<i64, usize>,
-    pub annotations: Vec<CftAnnotation>,
+    pub is_flag: bool,
     pub span: Span,
 }
 
@@ -278,24 +279,24 @@ pub struct CftEnum {
 pub struct CftEnumVariant {
     pub name: EnumVariantName,
     pub value: i64,
-    pub annotations: Vec<CftAnnotation>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CftAnnotation {
-    pub name: String,
-    pub args: Vec<CftAnnotationValue>,
+pub struct CftDimension {
+    pub name: DimensionName,
+    pub variants: Vec<crate::VariantName>,
+    pub(crate) variant_by_name: BTreeMap<crate::VariantName, usize>,
+    pub fields: Vec<Arc<CftField>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum CftAnnotationValue {
-    Name(String),
-    String(String),
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Null,
+impl CftDimension {
+    #[must_use]
+    pub fn variant(&self, name: &str) -> Option<&crate::VariantName> {
+        self.variant_by_name
+            .get(name)
+            .and_then(|index| self.variants.get(*index))
+    }
 }
 
 #[derive(Debug, Clone, Default)]

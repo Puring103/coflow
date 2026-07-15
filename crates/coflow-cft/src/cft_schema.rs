@@ -11,11 +11,11 @@ pub use value_dependencies::{
 use crate::module_id::ModuleId;
 use crate::schema::CompiledSchema;
 use crate::{
-    CftConst, CftConstValue, CftDiagnostic, CftDiagnostics, CftEnum, CftErrorCode, CftField,
-    CftFieldDimension, CftSchemaCheckBlock, CftSchemaTypeRef, CftType, ConstName, DimensionName,
-    EnumName, EnumVariantName, FieldName, Span, TypeName,
+    CftConst, CftConstValue, CftDiagnostic, CftDiagnostics, CftDimension, CftDimensionInputs,
+    CftEnum, CftErrorCode, CftField, CftFieldDimension, CftSchemaCheckBlock, CftSchemaTypeRef,
+    CftType, ConstName, DimensionName, EnumName, EnumVariantName, Span, TypeName,
 };
-use coflow_structure::{BudgetExceeded, StructuralBudget, StructuralLimits};
+use coflow_structure::{BudgetExceeded, StructuralBudget};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -44,47 +44,17 @@ pub struct CftSchema {
     pub(crate) types: BTreeMap<TypeName, CftType>,
     enums: BTreeMap<EnumName, CftEnum>,
     children_by_parent: BTreeMap<TypeName, BTreeSet<TypeName>>,
-    dimension_storage_types:
-        BTreeMap<DimensionName, BTreeMap<TypeName, BTreeMap<FieldName, TypeName>>>,
+    dimensions: BTreeMap<DimensionName, CftDimension>,
+    type_by_id_as_enum: BTreeMap<EnumName, TypeName>,
     typed_checks: TypedCheckPlan,
     value_dependencies: ValueDependencyPlan,
-    structural_limits: StructuralLimits,
 }
 
 impl CftSchema {
-    pub(crate) fn with_extension_types(
-        self,
-        types: impl IntoIterator<Item = CftType>,
-    ) -> Result<Self, CftDiagnostics> {
-        let mut compiled = CompiledSchema {
-            consts: self.consts.clone(),
-            types: self.types.clone(),
-            enums: self.enums.clone(),
-        };
-        let sources = self.sources.clone();
-        let structural_limits = self.structural_limits;
-        for ty in types {
-            if compiled.types.contains_key(&ty.name)
-                || compiled.enums.contains_key(ty.name.as_str())
-                || compiled.consts.contains_key(ty.name.as_str())
-            {
-                return Err(CftDiagnostics::one(CftDiagnostic::error(
-                    CftErrorCode::DuplicateGlobalName,
-                    ty.module.clone(),
-                    ty.span,
-                    format!("duplicate global name `{}`", ty.name),
-                )));
-            }
-            compiled.types.insert(ty.name.clone(), ty);
-        }
-        let mut budget = StructuralBudget::new(structural_limits);
-        Self::from_compiled(compiled, sources, structural_limits, &mut budget)
-    }
-
     pub(crate) fn from_compiled(
         compiled: CompiledSchema,
         sources: BTreeMap<ModuleId, String>,
-        structural_limits: StructuralLimits,
+        dimension_inputs: &CftDimensionInputs,
         budget: &mut StructuralBudget,
     ) -> Result<Self, CftDiagnostics> {
         let consts = compiled.consts;
@@ -104,7 +74,15 @@ impl CftSchema {
             },
         );
 
-        let dimension_storage_types = Self::build_dimension_storage_index(&types);
+        let dimensions = crate::dimensions::build_dimensions(&types, dimension_inputs)?;
+        let type_by_id_as_enum = types
+            .values()
+            .filter_map(|ty| {
+                ty.id_as_enum
+                    .as_ref()
+                    .map(|enum_name| (enum_name.clone(), ty.name.clone()))
+            })
+            .collect();
         let typed_checks = TypedCheckPlan::compile(&types, budget)
             .map_err(LocatedBudgetError::into_diagnostics)?;
         let value_dependencies = ValueDependencyPlan::compile(&types, budget)
@@ -115,10 +93,10 @@ impl CftSchema {
             types,
             enums,
             children_by_parent,
-            dimension_storage_types,
+            dimensions,
+            type_by_id_as_enum,
             typed_checks,
             value_dependencies,
-            structural_limits,
         };
         view.populate_dimension_checks();
         Ok(view)
@@ -132,40 +110,11 @@ impl CftSchema {
             types: BTreeMap::new(),
             enums: BTreeMap::new(),
             children_by_parent: BTreeMap::new(),
-            dimension_storage_types: BTreeMap::new(),
+            dimensions: BTreeMap::new(),
+            type_by_id_as_enum: BTreeMap::new(),
             typed_checks: TypedCheckPlan::default(),
             value_dependencies: ValueDependencyPlan::default(),
-            structural_limits: StructuralLimits::default(),
         }
-    }
-
-    fn build_dimension_storage_index(
-        types: &BTreeMap<TypeName, CftType>,
-    ) -> BTreeMap<DimensionName, BTreeMap<TypeName, BTreeMap<FieldName, TypeName>>> {
-        let mut out: BTreeMap<
-            DimensionName,
-            BTreeMap<TypeName, BTreeMap<FieldName, TypeName>>,
-        > = BTreeMap::new();
-        for schema_type in types.values() {
-            for annotation in &schema_type.annotations {
-                if annotation.name != "__coflow_dimension_storage" {
-                    continue;
-                }
-                if let [crate::CftAnnotationValue::String(dimension), crate::CftAnnotationValue::String(source_type), crate::CftAnnotationValue::String(source_field)] =
-                    annotation.args.as_slice()
-                {
-                    out.entry(DimensionName::from_validated(dimension.clone()))
-                        .or_default()
-                        .entry(TypeName::from_validated(source_type.clone()))
-                        .or_default()
-                        .insert(
-                            FieldName::from_validated(source_field.clone()),
-                            schema_type.name.clone(),
-                        );
-                }
-            }
-        }
-        out
     }
 
     #[must_use]
@@ -307,36 +256,17 @@ impl CftSchema {
     }
 
     #[must_use]
-    pub fn dimension_storage_type(
-        &self,
-        dimension: &str,
-        source_type: &str,
-        source_field: &str,
-    ) -> Option<&str> {
-        let by_source_type = self.dimension_storage_types.get(dimension)?;
-        let mut current = Some(source_type);
-        while let Some(type_name) = current {
-            if let Some(storage_type) = by_source_type
-                .get(type_name)
-                .and_then(|by_field| by_field.get(source_field))
-            {
-                return Some(storage_type.as_str());
-            }
-            current = self
-                .types
-                .get(type_name)
-                .and_then(|meta| meta.parent.as_deref());
-        }
-        None
+    pub fn resolve_dimension(&self, name: &str) -> Option<&CftDimension> {
+        self.dimensions.get(name)
+    }
+
+    pub fn all_dimensions(&self) -> impl Iterator<Item = &CftDimension> {
+        self.dimensions.values()
     }
 
     #[must_use]
-    pub fn is_dimension_storage_type(&self, type_name: &str) -> bool {
-        self.types.get(type_name).is_some_and(|meta| {
-            meta.annotations
-                .iter()
-                .any(|annotation| annotation.name == "__coflow_dimension_storage")
-        })
+    pub fn type_for_id_as_enum(&self, enum_name: &str) -> Option<&CftType> {
+        self.types.get(self.type_by_id_as_enum.get(enum_name)?)
     }
 
     #[must_use]

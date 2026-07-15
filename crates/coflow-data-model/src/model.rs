@@ -6,13 +6,16 @@ mod input;
 mod tables;
 mod value;
 
-pub use dimensions::{DimensionFieldLookupError, DimensionFieldValue};
+pub use dimensions::{DimensionFieldLookupError, DimensionValueLookup};
 pub use domain::CfdDomainIndex;
 pub use edges::{RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite};
 pub use ids::{CfdDomainId, CfdRecordId, CfdTypeId};
-pub use input::{CfdInputDictKey, CfdInputRecord, CfdInputValue};
+pub use input::{CfdInputDictKey, CfdInputDimensionValue, CfdInputRecord, CfdInputValue};
 pub use tables::{CfdPolymorphicIndex, CfdTable};
-pub use value::{CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdValue};
+pub use value::{
+    CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdObject, CfdRecord,
+    CfdValue,
+};
 
 use crate::diagnostic::CfdPath;
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
@@ -379,6 +382,7 @@ impl CfdDataModel {
 pub struct CfdModelBuilder<'a> {
     schema: &'a CftSchema,
     records: Vec<CfdInputRecord>,
+    dimension_values: Vec<CfdInputDimensionValue>,
     structural_limits: StructuralLimits,
 }
 
@@ -388,6 +392,7 @@ impl<'a> CfdModelBuilder<'a> {
         Self {
             schema,
             records: Vec::new(),
+            dimension_values: Vec::new(),
             structural_limits: StructuralLimits::default(),
         }
     }
@@ -416,6 +421,19 @@ impl<'a> CfdModelBuilder<'a> {
         self
     }
 
+    pub fn add_input_dimension_value(&mut self, value: CfdInputDimensionValue) -> &mut Self {
+        self.dimension_values.push(value);
+        self
+    }
+
+    pub fn add_input_dimension_values(
+        &mut self,
+        values: impl IntoIterator<Item = CfdInputDimensionValue>,
+    ) -> &mut Self {
+        self.dimension_values.extend(values);
+        self
+    }
+
     /// Builds a validated in-memory data model from source-neutral records.
     ///
     /// # Errors
@@ -423,6 +441,12 @@ impl<'a> CfdModelBuilder<'a> {
     /// Returns data-model diagnostics for schema/type mismatches, missing
     /// fields, duplicate keys, duplicate dict keys, or unresolved references.
     pub fn build(self) -> Result<CfdDataModel, CfdDiagnostics> {
-        ModelCompiler::new(self.schema, self.records, self.structural_limits).build()
+        ModelCompiler::new(
+            self.schema,
+            self.records,
+            self.dimension_values,
+            self.structural_limits,
+        )
+        .build()
     }
 }

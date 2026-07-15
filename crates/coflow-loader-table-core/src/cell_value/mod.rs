@@ -60,7 +60,7 @@ pub fn parse_cell(
     parse_value(schema, &declared_type, text, ValueContext::Root).map(ParsedCell::Value)
 }
 
-pub(crate) fn parse_schema_cell(
+pub fn parse_schema_cell(
     schema: &CftSchema,
     declared_type: &CftSchemaTypeRef,
     text: &str,

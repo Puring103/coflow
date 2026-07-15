@@ -21,6 +21,7 @@ pub(super) fn default_record_for_type(
         key: String::new(),
         object: CfdObject::new(type_name, fields),
         origin: RecordOrigin::None,
+        dimension_fields: Default::default(),
     })
 }
 

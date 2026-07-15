@@ -1,10 +1,16 @@
 use coflow_api::{
-    DecodedSourceOptions, DiagnosticSet, DimensionSourceManager, DimensionSourceManagerDescriptor,
+    DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest,
+    DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
     SourceLocationSpec, TableContext,
 };
-use coflow_data_model::{CfdDictKey, CfdValue};
-use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
+use coflow_cft::{CftSchemaTypeRef, RecordKey};
+use coflow_data_model::{
+    CfdDictKey, CfdInputDimensionValue, CfdValue, RecordOrigin, SourceDocument,
+};
+use coflow_loader_table_core::cell_value::{
+    parse_schema_cell, render_cell_value, CellRenderError, ParsedCell,
+};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -22,6 +28,116 @@ pub(super) static CSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: DimensionSourceManage
 impl DimensionSourceManager for CsvWriter {
     fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor {
         &CSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
+    }
+
+    fn load_dimension_source(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &DimensionSourceLoadRequest<'_>,
+    ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        let text = fs::read_to_string(path).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION",
+                format!("failed to read dimension source `{}`: {err}", path.display()),
+            ))
+        })?;
+        let rows = parse(&text).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION",
+                format!("failed to parse dimension source `{}`: {err}", path.display()),
+            ))
+        })?;
+        let Some(header) = rows.first() else {
+            return Ok(DimensionSourceLoadResult::default());
+        };
+        let Some(id_column) = header.iter().position(|name| name == "id") else {
+            return Err(DiagnosticSet::one(diag(
+                "CSV-DIMENSION",
+                "dimension CSV requires an `id` column",
+            )));
+        };
+        let variant_columns = request
+            .schema
+            .dimension
+            .variants
+            .iter()
+            .filter_map(|variant| {
+                header
+                    .iter()
+                    .position(|name| name == variant.as_str())
+                    .map(|column| (variant, column))
+            })
+            .collect::<Vec<_>>();
+        let nullable_type = CftSchemaTypeRef::Nullable(Box::new(
+            request.schema.source_field.ty_ref.non_nullable().clone(),
+        ));
+        let mut values = Vec::new();
+        let mut diagnostics = DiagnosticSet::empty();
+        for (row_index, row) in rows.iter().enumerate().skip(1) {
+            let Some(raw_key) = row.get(id_column).filter(|key| !key.trim().is_empty()) else {
+                continue;
+            };
+            let source_key = match RecordKey::new(raw_key.clone()) {
+                Ok(key) => key,
+                Err(err) => {
+                    diagnostics.push(Diagnostic::error(
+                        "CSV-DIMENSION",
+                        "CSV",
+                        err.to_string(),
+                    ));
+                    continue;
+                }
+            };
+            for (variant, column) in &variant_columns {
+                let Some(text) = row.get(*column) else {
+                    continue;
+                };
+                let parsed = match parse_schema_cell(request.schema.schema, &nullable_type, text) {
+                    Ok(parsed) => parsed,
+                    Err(err) => {
+                        diagnostics.push(Diagnostic::error(
+                            "CSV-DIMENSION-VALUE",
+                            "CSV",
+                            err.diagnostics
+                                .into_iter()
+                                .map(|item| item.message)
+                                .collect::<Vec<_>>()
+                                .join("; "),
+                        ));
+                        continue;
+                    }
+                };
+                let ParsedCell::Value(value) = parsed else {
+                    continue;
+                };
+                values.push(CfdInputDimensionValue {
+                    source_type: request.schema.source_type.name.clone(),
+                    source_key: source_key.clone(),
+                    field: request.schema.source_field.name.clone(),
+                    dimension: request.schema.dimension.name.clone(),
+                    variant: (*variant).clone(),
+                    value,
+                    origin: RecordOrigin::Table {
+                        document: SourceDocument::Local(path.clone()),
+                        sheet: request.source.display_name.clone(),
+                        row: row_index,
+                        id_column,
+                        field_columns: [(
+                            vec![request.schema.source_field.name.to_string()],
+                            *column,
+                        )]
+                        .into_iter()
+                        .collect(),
+                    },
+                });
+            }
+        }
+        if diagnostics.is_empty() {
+            Ok(DimensionSourceLoadResult { values })
+        } else {
+            Err(diagnostics)
+        }
     }
 
     fn source_options(

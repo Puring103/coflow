@@ -9,7 +9,7 @@ use crate::model::{
     CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpParameter,
     CsharpProperty, CsharpType,
 };
-use crate::names::{camel_case, has_annotation};
+use crate::names::camel_case;
 use crate::CsharpCodegenError;
 use coflow_cft::{CftEnum, CftField, CftSchemaTypeRef, CftType};
 use std::collections::{BTreeSet, HashSet};
@@ -22,7 +22,7 @@ use types::{csharp_field_property_type, csharp_type};
 pub fn build_csharp_enum(schema_enum: &CftEnum) -> CsharpEnum {
     CsharpEnum {
         name: csharp_public_type_name(&schema_enum.name),
-        is_flags: has_annotation(&schema_enum.annotations, "flag"),
+        is_flags: schema_enum.is_flag,
         summary: None,
         obsolete: false,
         variants: schema_enum

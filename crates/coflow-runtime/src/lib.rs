@@ -72,7 +72,7 @@ pub use runtime::{
 };
 pub use project_schema::SchemaTextOverride;
 pub use schema_inspect::{
-    inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,
+    inspect_schema, schema_files, SchemaConstInfo, SchemaDimensionFieldInfo, SchemaDimensionInfo,
     SchemaConstValueInfo, SchemaDefaultValueInfo, SchemaEnumInfo, SchemaEnumVariantInfo,
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,

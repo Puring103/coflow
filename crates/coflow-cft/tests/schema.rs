@@ -17,7 +17,7 @@ fn schema_reports_cross_module_duplicate_with_related_label() {
         CftFile::from_source(ModuleId::from("a"), "type Item { key: string; }"),
         CftFile::from_source(ModuleId::from("b"), "enum Item { A, }"),
     ]);
-    let err = build_schema(&modules, &CftDimensions::default()).unwrap_err();
+    let err = build_schema(&modules, &CftDimensionInputs::default()).unwrap_err();
     assert_has_code(&err, CftErrorCode::DuplicateGlobalName);
     let diag = err
         .diagnostics
@@ -308,7 +308,7 @@ fn schema_rejects_removed_display_and_deprecated_annotations() {
 
 #[test]
 fn schema_compiles_localized_annotation_to_language_dimension() {
-    let schema = compile_one(
+    let schema = compile_one_with_dimensions(
         r#"
             type Item {
                 name: string;
@@ -316,6 +316,7 @@ fn schema_compiles_localized_annotation_to_language_dimension() {
                 description: string;
             }
         "#,
+        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
     )
     .expect("localized fields should compile");
 
@@ -325,20 +326,21 @@ fn schema_compiles_localized_annotation_to_language_dimension() {
         item.own_fields[1].dimension,
         Some(coflow_cft::CftFieldDimension {
             dimension: coflow_cft::DimensionName::new("language").unwrap(),
-            bucket: Some(coflow_cft::BucketName::new("Item").unwrap()),
+            bucket: None,
         })
     );
 }
 
 #[test]
 fn schema_compiles_localized_bucket_to_dimension_spec() {
-    let schema = compile_one(
+    let schema = compile_one_with_dimensions(
         r#"
             type Item {
                 @localized("ui")
                 icon: string;
             }
         "#,
+        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
     )
     .expect("localized bucket should compile");
 
@@ -354,13 +356,14 @@ fn schema_compiles_localized_bucket_to_dimension_spec() {
 
 #[test]
 fn schema_compiles_named_localized_bucket_to_dimension_spec() {
-    let schema = compile_one(
+    let schema = compile_one_with_dimensions(
         r#"
             type Item {
                 @localized(bucket = "ui")
                 icon: string;
             }
         "#,
+        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
     )
     .expect("named localized bucket should compile");
 
@@ -376,13 +379,14 @@ fn schema_compiles_named_localized_bucket_to_dimension_spec() {
 
 #[test]
 fn schema_compiles_custom_dimension_annotation_to_dimension_spec() {
-    let schema = compile_one(
+    let schema = compile_one_with_dimensions(
         r#"
             type Item {
                 @dimension("platform")
                 name: string;
             }
         "#,
+        CftDimensionInputs::new([("platform", vec!["pc".to_string()])]),
     )
     .expect("custom dimension field should compile");
     let item = schema.resolve_type("Item").expect("Item type");
@@ -390,7 +394,7 @@ fn schema_compiles_custom_dimension_annotation_to_dimension_spec() {
         item.own_fields[0].dimension,
         Some(coflow_cft::CftFieldDimension {
             dimension: coflow_cft::DimensionName::new("platform").unwrap(),
-            bucket: Some(coflow_cft::BucketName::new("Item").unwrap()),
+            bucket: None,
         })
     );
 }

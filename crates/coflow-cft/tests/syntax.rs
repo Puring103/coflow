@@ -73,7 +73,7 @@ fn parser_accepts_core_syntax() {
     "#;
 
     let modules = add_source(source).unwrap();
-    let schema = build_schema(&modules, &CftDimensions::default()).unwrap();
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
     assert!(schema.resolve_type("Item").is_some());
     assert!(schema.resolve_enum("Permission").is_some());
 }
@@ -98,7 +98,7 @@ fn parser_accepts_unicode_identifiers_whitespace_and_int_division() {
     "#;
 
     let modules = add_source(source).unwrap();
-    let schema = build_schema(&modules, &CftDimensions::default()).unwrap();
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
     assert!(schema.resolve_type("道具").is_some());
     assert!(schema.resolve_enum("稀有度").is_some());
 }
@@ -117,7 +117,7 @@ fn lexer_accepts_float_suffix_literals() {
     "#,
     )
     .unwrap();
-    let schema = build_schema(&modules, &CftDimensions::default()).unwrap();
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
     assert_eq!(
         schema.resolve_const("A").map(|constant| &constant.value),
         Some(&CftConstValue::Float(1.0))
@@ -202,7 +202,7 @@ fn lexer_recognises_hash_comments_and_keeps_double_slash_as_int_div() {
         "# leading comment\nconst N = 10; # trailing comment\ntype T { x: int; check { N // 2 >= 0; } }",
     )
     .unwrap();
-    let schema = build_schema(&modules, &CftDimensions::default()).unwrap();
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
     assert!(schema.resolve_type("T").is_some());
 }
 
@@ -221,7 +221,7 @@ fn parser_accepts_optional_const_type_annotation() {
         "const A: int = 1; const B: float = 1.5; const C: bool = true; const D: string = \"x\";",
     )
     .unwrap();
-    let schema = build_schema(&modules, &CftDimensions::default()).unwrap();
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
     assert!(schema.resolve_const("A").is_some());
 }
 

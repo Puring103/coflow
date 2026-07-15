@@ -427,11 +427,7 @@ fn expand_field_index(
         return out;
     };
     for field in fields {
-        if !field
-            .annotations
-            .iter()
-            .any(|annotation| annotation.name == "expand")
-        {
+        if !field.is_expand {
             continue;
         }
         let CftSchemaTypeRef::Object(inner_type) = field.ty_ref.non_nullable() else {
@@ -457,11 +453,7 @@ fn expand_field_order_index(
         return out;
     };
     for field in fields {
-        if !field
-            .annotations
-            .iter()
-            .any(|annotation| annotation.name == "expand")
-        {
+        if !field.is_expand {
             continue;
         }
         let CftSchemaTypeRef::Object(inner_type) = field.ty_ref.non_nullable() else {

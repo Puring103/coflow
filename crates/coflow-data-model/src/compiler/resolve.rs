@@ -117,6 +117,25 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         self.resolve_fields(fields, &root, cursor)
     }
 
+    pub(super) fn resolve_dimension_value(
+        &mut self,
+        record: CfdRecordId,
+        value: &CfdValueDraft,
+        path: CfdPath,
+    ) -> Option<CfdValue> {
+        self.budget = StructuralBudget::new(self.structural_limits);
+        self.budget_exhausted = false;
+        self.memo.clear();
+        self.active.clear();
+        self.stack.clear();
+        let node = ValueNode {
+            record,
+            path,
+            branch: Vec::new(),
+        };
+        self.resolve_node(value, node, TraversalCursor::root(), false)
+    }
+
     fn resolve_fields(
         &mut self,
         fields: &BTreeMap<String, CfdValueDraft>,

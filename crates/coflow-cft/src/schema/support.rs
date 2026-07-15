@@ -1,7 +1,7 @@
 use super::{
-    CftAnnotation, CftAnnotationValue, CftConstValue, CftSchemaBinOp, CftSchemaCheckBlock,
-    CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp,
-    CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp,
+    CftConstValue, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr,
+    CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind,
+    CftSchemaTypePredicate, CftSchemaUnaryOp,
 };
 use crate::ast::{
     Annotation, AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, ConstLiteral,
@@ -109,10 +109,6 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::OneString,
             },
-            "__coflow_dimension_storage" => Self {
-                targets: &[AnnotationTarget::Type],
-                args: AnnotationArgs::ThreeStrings,
-            },
             _ => return None,
         })
     }
@@ -130,14 +126,6 @@ impl AnnotationSpec {
             AnnotationArgs::OneString => {
                 matches!(annotation.args.as_slice(), [AnnotationArg::String(_, _)])
             }
-            AnnotationArgs::ThreeStrings => matches!(
-                annotation.args.as_slice(),
-                [
-                    AnnotationArg::String(_, _),
-                    AnnotationArg::String(_, _),
-                    AnnotationArg::String(_, _)
-                ]
-            ),
         }
     }
 }
@@ -148,7 +136,6 @@ enum AnnotationArgs {
     NoneOrOneString,
     OneName,
     OneString,
-    ThreeStrings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -216,27 +203,6 @@ pub(super) fn find_annotation<'a>(
     annotations
         .iter()
         .find(|annotation| annotation.name == name)
-}
-
-pub(super) fn convert_annotations(annotations: &[Annotation]) -> Vec<CftAnnotation> {
-    annotations
-        .iter()
-        .map(|annotation| CftAnnotation {
-            name: annotation.name.clone(),
-            args: annotation
-                .args
-                .iter()
-                .map(|arg| match arg {
-                    AnnotationArg::Name(name) => CftAnnotationValue::Name(name.name.clone()),
-                    AnnotationArg::String(value, _) => CftAnnotationValue::String(value.clone()),
-                    AnnotationArg::Int(value, _) => CftAnnotationValue::Int(*value),
-                    AnnotationArg::Float(value, _) => CftAnnotationValue::Float(*value),
-                    AnnotationArg::Bool(value, _) => CftAnnotationValue::Bool(*value),
-                    AnnotationArg::Null(_) => CftAnnotationValue::Null,
-                })
-                .collect(),
-        })
-        .collect()
 }
 
 pub(super) fn convert_check_block(check: &crate::ast::CheckBlock) -> CftSchemaCheckBlock {

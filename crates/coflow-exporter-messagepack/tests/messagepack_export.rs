@@ -8,7 +8,7 @@
 )]
 
 use coflow_api::{ArtifactContent, DataExporter};
-use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_messagepack::export_messagepack_artifacts;
 use rmpv::Value;
@@ -29,7 +29,7 @@ fn messagepack_exporter_rejects_output_options() {
 
 fn compile_schema(source: &str) -> Result<CftSchema, String> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensions::default())
+    build_schema(&modules, &CftDimensionInputs::default())
         .map_err(|err| format!("schema should compile: {err:?}"))
 }
 

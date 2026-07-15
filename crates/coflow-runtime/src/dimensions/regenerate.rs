@@ -60,7 +60,7 @@ pub(crate) fn plan_dimension_generation(
                 provider_id: provider_id.to_string(),
                 path: path.clone(),
                 sheet: format!("{}_{}", field.bucket, field.source_field),
-                actual_type: field.synthesized_type.clone(),
+                actual_type: field.source_type.clone(),
                 entries: dimension_entries(model, field),
                 variants: config.variants.clone(),
                 bucket: field.bucket.clone(),
@@ -398,7 +398,7 @@ fn dimension_entries(model: &CfdDataModel, field: &DimensionField) -> Vec<Dimens
             .next()
             .map(|(_, record)| DimensionSourceEntry {
                 key: field.source_field.clone(),
-                actual_type: field.synthesized_type.clone(),
+                actual_type: field.source_type.clone(),
                 default: record
                     .fields()
                     .get(&field.source_field)
@@ -412,7 +412,7 @@ fn dimension_entries(model: &CfdDataModel, field: &DimensionField) -> Vec<Dimens
             .records_assignable_to(&field.source_type)
             .map(|(_, record)| DimensionSourceEntry {
                 key: record.key().to_string(),
-                actual_type: field.synthesized_type.clone(),
+                actual_type: field.source_type.clone(),
                 default: record
                     .fields()
                     .get(&field.source_field)

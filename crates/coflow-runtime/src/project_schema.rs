@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_cft::{
-    build_schema, parse_modules, CftDimensions, CftFile, CftModuleSet, CftSchema, ModuleId,
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftModuleSet, CftSchema, ModuleId,
 };
 use coflow_project::{normalize_path, Project};
 use std::path::PathBuf;
@@ -85,7 +85,7 @@ fn collect_project_schema(
         .modules()
         .map(|(id, module)| (id.as_str().to_string(), module.path().display().to_string()))
         .collect();
-    let dimensions = CftDimensions::new(
+    let dimensions = CftDimensionInputs::new(
         project
             .config
             .dimensions

@@ -611,7 +611,14 @@ fn error_code_cases_accept_adjacent_valid_inputs() {
     for case in cases() {
         match case.phase {
             Phase::AddModule | Phase::Compile => {
-                compile_one(case.adjacent_valid_source).unwrap_or_else(|err| {
+                compile_one_with_dimensions(
+                    case.adjacent_valid_source,
+                    CftDimensionInputs::new([
+                        ("language", vec!["zh".to_string()]),
+                        ("platform", vec!["pc".to_string()]),
+                    ]),
+                )
+                .unwrap_or_else(|err| {
                     panic!(
                         "{} adjacent-valid case should compile: {:?}",
                         case.name, err
@@ -623,7 +630,14 @@ fn error_code_cases_accept_adjacent_valid_inputs() {
                     CftFile::from_source(ModuleId::from("main"), case.adjacent_valid_source),
                     CftFile::from_source(ModuleId::from("other"), "type B {}"),
                 ]);
-                build_schema(&modules, &CftDimensions::default()).unwrap_or_else(|err| {
+                build_schema(
+                    &modules,
+                    &CftDimensionInputs::new([
+                        ("language", vec!["zh".to_string()]),
+                        ("platform", vec!["pc".to_string()]),
+                    ]),
+                )
+                .unwrap_or_else(|err| {
                     panic!("{} adjacent-valid modules should compile: {:?}", case.name, err)
                 });
             }

@@ -141,9 +141,6 @@ impl<'a> CheckRunner<'a> {
         record_id: CfdRecordId,
         record: &coflow_data_model::CfdRecord,
     ) {
-        if self.schema.is_dimension_storage_type(record.actual_type()) {
-            return;
-        }
         let location = ValueLocation::root(record_id);
         let mut traversal_budget = Some(StructuralBudget::new(self.structural_limits));
         let Some(root_cursor) =
@@ -284,7 +281,6 @@ impl<'a> CheckRunner<'a> {
             let logical_location = root_location.field(&field);
             match round.materialize(self.model, root_record, &field, &logical_location) {
                 Ok(Some(materialized)) => {
-                    self.note_read_from(root_record, materialized.storage_record);
                     self.run_nested_value_checks(
                         Some(root_record),
                         materialized.value,

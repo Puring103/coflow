@@ -169,19 +169,6 @@ impl ProjectSession {
         dimensions_for_project(&self.project, &fields)
     }
 
-    /// Set of dimension-synthesized runtime type names (e.g.
-    /// `"Item_nameVariants"`). Hosts use this to mark synthesized
-    /// records so their `default` slot renders as read-only in editors,
-    /// without re-deriving the naming convention themselves.
-    #[must_use]
-    pub fn dimension_synthesized_types(&self) -> BTreeSet<String> {
-        let view = self.schema();
-        dimensions::dimension_fields(view)
-            .into_iter()
-            .map(|field| field.synthesized_type)
-            .collect()
-    }
-
     /// Lookup a single dimension by name.
     #[must_use]
     pub fn dimension(&self, name: &str) -> Option<DimensionInfo> {

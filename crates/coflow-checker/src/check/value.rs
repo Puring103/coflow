@@ -60,8 +60,17 @@ impl CheckValue {
             CfdValue::String(value) => Self::String(value.clone()),
             CfdValue::Enum(value) => Self::Enum(value.clone()),
             CfdValue::Object(_) => Self::Record(CheckRecordRef::Resolved(location)),
-            CfdValue::Ref(_) => {
-                let resolved = model.resolve_effective_ref(&location.storage.ref_site());
+            CfdValue::Ref(key) => {
+                let resolved = if location.storage.dimension.is_some() {
+                    ty.and_then(|ty| match ty.non_nullable() {
+                        CftSchemaTypeRef::RecordRef(expected) => {
+                            model.lookup_assignable(expected, key)
+                        }
+                        _ => None,
+                    })
+                } else {
+                    model.resolve_effective_ref(&location.storage.ref_site())
+                };
                 resolved.map_or_else(
                     || Self::Record(CheckRecordRef::Unresolved),
                     |id| {
@@ -283,7 +292,7 @@ impl CheckEntries {
 }
 
 fn model_array<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a [CfdValue]> {
-    match model.record(cursor.record)?.value_at_path(&cursor.path)? {
+    match model_value(model, cursor)? {
         CfdValue::Array(items) => Some(items),
         _ => None,
     }
@@ -293,7 +302,7 @@ fn model_dict<'a>(
     model: &'a CfdDataModel,
     cursor: &ModelCursor,
 ) -> Option<&'a [(CfdDictKey, CfdValue)]> {
-    match model.record(cursor.record)?.value_at_path(&cursor.path)? {
+    match model_value(model, cursor)? {
         CfdValue::Dict(entries) => Some(entries),
         _ => None,
     }
@@ -328,6 +337,13 @@ impl LocatedCheckValue {
 pub(super) struct ModelCursor {
     pub(super) record: CfdRecordId,
     pub(super) path: CfdPath,
+    dimension: Option<DimensionCursor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DimensionCursor {
+    field: String,
+    variant: String,
 }
 
 impl ModelCursor {
@@ -335,6 +351,22 @@ impl ModelCursor {
         Self {
             record,
             path: CfdPath::root(),
+            dimension: None,
+        }
+    }
+
+    pub(super) fn dimension(
+        record: CfdRecordId,
+        field: impl Into<String>,
+        variant: impl Into<String>,
+    ) -> Self {
+        Self {
+            record,
+            path: CfdPath::root(),
+            dimension: Some(DimensionCursor {
+                field: field.into(),
+                variant: variant.into(),
+            }),
         }
     }
 
@@ -342,6 +374,7 @@ impl ModelCursor {
         Self {
             record: self.record,
             path: self.path.clone().field(name),
+            dimension: self.dimension.clone(),
         }
     }
 
@@ -349,6 +382,7 @@ impl ModelCursor {
         Self {
             record: self.record,
             path: self.path.clone().index(index),
+            dimension: self.dimension.clone(),
         }
     }
 
@@ -356,6 +390,7 @@ impl ModelCursor {
         Self {
             record: self.record,
             path: self.path.clone().dict_key_value(key),
+            dimension: self.dimension.clone(),
         }
     }
 
@@ -363,6 +398,7 @@ impl ModelCursor {
         Self {
             record: self.record,
             path: self.path.clone().dict_key(key),
+            dimension: self.dimension.clone(),
         }
     }
 
@@ -470,7 +506,10 @@ impl CheckRecordRef {
 
     pub(super) fn key<'a>(&'a self, model: &'a CfdDataModel) -> Option<&'a str> {
         match self {
-            Self::Resolved(location) if location.storage.path.segments.is_empty() => {
+            Self::Resolved(location)
+                if location.storage.dimension.is_none()
+                    && location.storage.path.segments.is_empty() =>
+            {
                 model.record(location.storage.record).map(CfdRecord::key)
             }
             Self::Resolved(_) => None,
@@ -513,7 +552,10 @@ impl CheckRecordRef {
 
     pub(super) fn top_record_id(&self) -> Option<CfdRecordId> {
         match self {
-            Self::Resolved(location) if location.storage.path.segments.is_empty() => {
+            Self::Resolved(location)
+                if location.storage.dimension.is_none()
+                    && location.storage.path.segments.is_empty() =>
+            {
                 Some(location.storage.record)
             }
             Self::Resolved(_) | Self::Unresolved => None,
@@ -525,24 +567,52 @@ fn resolved_object_fields<'a>(
     model: &'a CfdDataModel,
     cursor: &ModelCursor,
 ) -> Option<&'a BTreeMap<String, CfdValue>> {
-    if cursor.path.segments.is_empty() {
+    if cursor.dimension.is_none() && cursor.path.segments.is_empty() {
         return model.record(cursor.record).map(CfdRecord::fields);
     }
     inline_object(model, cursor).map(CfdObject::fields)
 }
 
 fn resolved_object_type<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a str> {
-    if cursor.path.segments.is_empty() {
+    if cursor.dimension.is_none() && cursor.path.segments.is_empty() {
         return model.record(cursor.record).map(CfdRecord::actual_type);
     }
     inline_object(model, cursor).map(CfdObject::actual_type)
 }
 
 fn inline_object<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a CfdObject> {
-    match model.record(cursor.record)?.value_at_path(&cursor.path)? {
+    match model_value(model, cursor)? {
         CfdValue::Object(object) => Some(object),
         _ => None,
     }
+}
+
+fn model_value<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a CfdValue> {
+    let record = model.record(cursor.record)?;
+    let Some(dimension) = &cursor.dimension else {
+        return record.value_at_path(&cursor.path);
+    };
+    let mut value = &record
+        .dimension_field(&dimension.field)?
+        .variants
+        .get(dimension.variant.as_str())?
+        .value;
+    for segment in &cursor.path.segments {
+        value = match (segment, value) {
+            (coflow_data_model::CfdPathSegment::Field(field), CfdValue::Object(object)) => {
+                object.fields().get(field)?
+            }
+            (coflow_data_model::CfdPathSegment::Index(index), CfdValue::Array(items)) => {
+                items.get(*index)?
+            }
+            (coflow_data_model::CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => entries
+                .iter()
+                .find(|(entry_key, _)| coflow_data_model::format_cfd_dict_key(entry_key) == *key)
+                .map(|(_, value)| value)?,
+            _ => return None,
+        };
+    }
+    Some(value)
 }
 
 fn array_element_type(ty: Option<&CftSchemaTypeRef>) -> Option<&CftSchemaTypeRef> {

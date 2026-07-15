@@ -8,13 +8,19 @@
 )]
 
 use super::*;
-use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use std::collections::BTreeMap;
 
 fn compile_schema(source: &str) -> Result<CftSchema, String> {
+    compile_schema_with_dimensions(source, CftDimensionInputs::default())
+}
+
+fn compile_schema_with_dimensions(
+    source: &str,
+    dimensions: CftDimensionInputs,
+) -> Result<CftSchema, String> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensions::default())
-        .map_err(|err| format!("compile schema: {err:?}"))
+    build_schema(&modules, &dimensions).map_err(|err| format!("compile schema: {err:?}"))
 }
 fn generated_file<'a>(files: &'a [GeneratedFile], name: &str) -> Result<&'a str, String> {
     files
@@ -122,7 +128,7 @@ fn generate_json_with_id_as_enum_variants(
 
 #[test]
 fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), String> {
-    let schema = compile_schema(
+    let schema = compile_schema_with_dimensions(
         r#"
             type Item {
                 @localized
@@ -130,6 +136,10 @@ fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), Strin
                 count: int;
             }
         "#,
+        CftDimensionInputs::new([(
+            "language",
+            vec!["en".to_string(), "zh".to_string()],
+        )]),
     )?;
     let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;

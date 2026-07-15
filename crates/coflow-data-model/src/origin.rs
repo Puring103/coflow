@@ -205,16 +205,20 @@ pub fn map_diagnostics(
         .into_iter()
         .map(|diagnostic| {
             let primary = diagnostic.primary.as_ref().and_then(|label| {
-                let record = label.record?;
-                let origin = resolve(record)?;
+                let origin = match &label.origin {
+                    Some(origin) => origin.clone(),
+                    None => resolve(label.record?)?,
+                };
                 label_to_location(label, &origin)
             });
             let related = diagnostic
                 .related
                 .iter()
                 .filter_map(|label| {
-                    let record = label.record?;
-                    let origin = resolve(record)?;
+                    let origin = match &label.origin {
+                        Some(origin) => origin.clone(),
+                        None => resolve(label.record?)?,
+                    };
                     label_to_location(label, &origin)
                 })
                 .collect();

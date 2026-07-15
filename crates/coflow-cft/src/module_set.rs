@@ -3,6 +3,7 @@ use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::parser::parse_module;
 use crate::span::Span;
+use crate::{DimensionName, VariantName};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -63,26 +64,65 @@ pub struct CftModuleSet {
     pub(crate) diagnostics: CftDiagnostics,
 }
 
-/// Dimension variants that affect the effective CFT schema.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CftDimensions {
-    pub(crate) variants: BTreeMap<String, Vec<String>>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CftDimensionInputs {
+    pub(crate) dimensions: BTreeMap<DimensionName, CftDimensionInput>,
+    pub(crate) diagnostics: CftDiagnostics,
 }
 
-impl CftDimensions {
+impl Default for CftDimensionInputs {
+    fn default() -> Self {
+        Self {
+            dimensions: BTreeMap::new(),
+            diagnostics: CftDiagnostics::new(Vec::new()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CftDimensionInput {
+    pub variants: Vec<VariantName>,
+}
+
+impl CftDimensionInputs {
     #[must_use]
     pub fn new(entries: impl IntoIterator<Item = (impl Into<String>, Vec<String>)>) -> Self {
+        let mut dimensions = BTreeMap::new();
+        let mut diagnostics = Vec::new();
+        for (dimension, variants) in entries {
+            let dimension = dimension.into();
+            let Ok(name) = DimensionName::new(dimension.clone()) else {
+                diagnostics.push(CftDiagnostic::error(
+                    CftErrorCode::InvalidAnnotationArgument,
+                    ModuleId::from("__project__"),
+                    Span::default(),
+                    format!("invalid dimension name `{dimension}`"),
+                ));
+                continue;
+            };
+            let mut typed_variants = Vec::new();
+            for variant in variants {
+                match VariantName::new(variant.clone()) {
+                    Ok(variant) => typed_variants.push(variant),
+                    Err(_) => diagnostics.push(CftDiagnostic::error(
+                        CftErrorCode::InvalidAnnotationArgument,
+                        ModuleId::from("__project__"),
+                        Span::default(),
+                        format!("dimension `{name}` has invalid variant `{variant}`"),
+                    )),
+                }
+            }
+            dimensions.insert(name, CftDimensionInput { variants: typed_variants });
+        }
         Self {
-            variants: entries
-                .into_iter()
-                .map(|(dimension, variants)| (dimension.into(), variants))
-                .collect(),
+            dimensions,
+            diagnostics: CftDiagnostics::new(diagnostics),
         }
     }
 
     #[must_use]
-    pub fn variants(&self, dimension: &str) -> Option<&[String]> {
-        self.variants.get(dimension).map(Vec::as_slice)
+    pub fn dimension(&self, name: &str) -> Option<&CftDimensionInput> {
+        self.dimensions.get(name)
     }
 }
 

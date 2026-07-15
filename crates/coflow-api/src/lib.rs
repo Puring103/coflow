@@ -35,9 +35,10 @@ pub use diagnostics::{
     Label, Severity, SourceLocation, TextPosition, TextRange,
 };
 pub use operations::{
-    CreateTableRequest, DimensionSourceEntry, DimensionSourceManager,
-    DimensionSourceManagerDescriptor, DimensionSourceOptionsRequest, DimensionSourceRequest,
-    DimensionSourceResult, SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions,
+    CreateTableRequest, DimensionSourceEntry, DimensionSourceLoadRequest,
+    DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
+    DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
+    DimensionSourceSchema, SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions,
     TableManager, TableManagerDescriptor, TableOperationResult,
 };
 pub use provider::{

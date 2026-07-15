@@ -68,6 +68,10 @@ impl<'a> DataModelCompilerContext<'a> {
         }
     }
 
+    pub(crate) const fn cft(&self) -> &'a CftSchema {
+        self.cft
+    }
+
     fn build_domain_index(cft_view: &CftSchema) -> CfdDomainIndex {
         let type_names = cft_view
             .type_names()

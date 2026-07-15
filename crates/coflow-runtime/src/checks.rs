@@ -45,6 +45,7 @@ struct StableCheckLabel {
     record: Option<RecordCoordinate>,
     path: CfdPath,
     message: Option<String>,
+    origin: Option<RecordOrigin>,
 }
 
 pub(crate) fn run_full_project_checks(
@@ -218,6 +219,7 @@ fn stabilize_label(model: &CfdDataModel, label: CfdLabel) -> Option<StableCheckL
         },
         path: label.path,
         message: label.message,
+        origin: label.origin,
     })
 }
 
@@ -277,6 +279,7 @@ fn render_label(model: &CfdDataModel, label: StableCheckLabel) -> Option<CfdLabe
         },
         path: label.path,
         message: label.message,
+        origin: label.origin,
     })
 }
 

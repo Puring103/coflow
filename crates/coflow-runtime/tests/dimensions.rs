@@ -5,7 +5,7 @@
 )]
 
 use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
-use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
 use coflow_project::Project;
 use coflow_runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime, WriteProjectSession};
@@ -36,22 +36,27 @@ fn open_read_only_session(
 }
 
 fn compile_schema(source: &str) -> CftSchema {
+    compile_schema_with_dimensions(source, CftDimensionInputs::default())
+}
+
+fn compile_schema_with_dimensions(source: &str, dimensions: CftDimensionInputs) -> CftSchema {
     let modules = parse_modules([CftFile::new(
         ModuleId::from("schema/main.cft"),
         "schema/main.cft".into(),
         source,
     )]);
-    build_schema(&modules, &CftDimensions::default()).expect("compile succeeds")
+    build_schema(&modules, &dimensions).expect("compile succeeds")
 }
 
 fn schema_with_localized_string() -> CftSchema {
-    compile_schema(
+    compile_schema_with_dimensions(
         r#"
             type Item {
               @localized
               name: string;
             }
             "#,
+        CftDimensionInputs::new([("language", vec!["zh".to_string()])]),
     )
 }
 
@@ -122,9 +127,9 @@ fn localized_schema_requires_language_dimension_config() {
             .diagnostics
             .iter()
             .any(|diagnostic| {
-                diagnostic.code == "DIM-CONFIG-001"
-                && diagnostic.message
-                    == "schema contains @localized fields but dimensions.language is not configured"
+                diagnostic.code == "CFT-SCHEMA-024"
+                    && diagnostic.message
+                        == "field `Item.name` uses unconfigured dimension `language`"
             }),
         "diagnostics: {:?}",
         session.queries().diagnostics().as_set()
@@ -171,16 +176,9 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
             .diagnostics
             .iter()
             .any(|diagnostic| {
-                diagnostic.code == "DIM-CONFIG-001"
+                diagnostic.code == "CFT-SCHEMA-024"
                     && diagnostic.message
-                        == "schema contains @dimension(\"platform\") fields but dimensions.platform is not configured"
-                    && diagnostic.primary.as_ref().is_some_and(|label| {
-                        matches!(
-                            &label.location,
-                            coflow_api::SourceLocation::ProjectConfig { key_path, .. }
-                                if key_path.as_slice() == ["dimensions", "platform"]
-                        )
-                    })
+                        == "field `Item.name` uses unconfigured dimension `platform`"
             }),
         "diagnostics: {:?}",
         session.queries().diagnostics().as_set()
@@ -190,7 +188,7 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
 }
 
 #[test]
-fn language_dimension_injects_variant_type_and_implicit_sources() {
+fn language_dimension_publishes_overlay_and_implicit_source() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-dim-synthesis-{}",
         std::process::id()
@@ -238,16 +236,20 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let variants = session
+    let dimension = session.queries().dimension("language").expect("language dimension");
+    assert_eq!(dimension.variants, ["zh", "en"]);
+    assert_eq!(dimension.fields.len(), 1);
+    assert_eq!(dimension.fields[0].source_type, "Item");
+    assert_eq!(dimension.fields[0].source_field, "name");
+    assert!(!session.queries().schema_has_type("__coflow_dimension_Item_name"));
+    let record = session
         .queries()
-        .schema_type_fields("__coflow_dimension_Item_name");
-    assert_eq!(
-        variants
-            .iter()
-            .map(|(name, raw_type)| (name.as_str(), raw_type.as_str()))
-            .collect::<Vec<_>>(),
-        vec![("default", "string?"), ("zh", "string?"), ("en", "string?"),]
-    );
+        .record_view("Item", "potion")
+        .expect("owner record");
+    let overlay = record.record.dimension_field("name").expect("name overlay");
+    assert_eq!(overlay.dimension.as_str(), "language");
+    assert_eq!(overlay.variants["zh"].value, CfdValue::String("药水".to_string()));
+    assert_eq!(overlay.variants["en"].value, CfdValue::String("Potion".to_string()));
     assert!(session
         .queries()
         .has_source_file("data/dimensions/language/Item_name.csv"));
@@ -256,7 +258,7 @@ dimensions:
 }
 
 #[test]
-fn custom_dimension_injects_variant_type_and_implicit_sources() {
+fn custom_dimension_publishes_overlay_and_implicit_source() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-custom-dim-synthesis-{}",
         std::process::id()
@@ -305,29 +307,26 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let variants = session
-        .queries()
-        .schema_type_fields("__coflow_dimension_Item_name");
-    assert_eq!(
-        variants
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .collect::<Vec<_>>(),
-        vec!["default", "pc", "mobile"]
-    );
+    let dimension = session.queries().dimension("platform").expect("platform dimension");
+    assert_eq!(dimension.variants, ["pc", "mobile"]);
+    assert_eq!(dimension.fields.len(), 1);
     assert!(session
         .queries()
         .has_source_file("data/dimensions/platform/Item_name.csv"));
-    assert!(session
-        .queries()
-        .record_view("__coflow_dimension_Item_name", "potion")
-        .is_some());
+    let record = session.queries().record_view("Item", "potion").expect("owner record");
+    let overlay = record.record.dimension_field("name").expect("name overlay");
+    assert_eq!(overlay.dimension.as_str(), "platform");
+    assert_eq!(overlay.variants["pc"].value, CfdValue::String("PC Potion".to_string()));
+    assert_eq!(
+        overlay.variants["mobile"].value,
+        CfdValue::String("Mobile Potion".to_string())
+    );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
 
 #[test]
-fn language_dimension_synthesizes_nullable_source_fields_once() {
+fn language_dimension_keeps_canonical_nullable_field_type() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-dim-nullable-synthesis-{}",
         std::process::id()
@@ -362,11 +361,10 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let variants = session
-        .queries()
-        .schema_type_fields("__coflow_dimension_Item_name");
-    assert_eq!(variants[0].1, "string?");
-    assert_eq!(variants[1].1, "string?");
+    assert_eq!(session.queries().schema_type_fields("Item"), [("name".to_string(), "string?".to_string())]);
+    let dimension = session.queries().dimension("language").expect("language dimension");
+    assert_eq!(dimension.variants, ["zh"]);
+    assert_eq!(dimension.fields.len(), 1);
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
@@ -427,7 +425,7 @@ dimensions:
 }
 
 #[test]
-fn inherited_localized_fields_generate_parent_storage_rows_for_child_records() {
+fn inherited_localized_fields_generate_declaring_type_sources_for_child_records() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-dim-inherited-field-{}",
         std::process::id()
@@ -483,12 +481,16 @@ dimensions:
         session.queries().diagnostics().as_set()
     );
 
-    assert!(session
-        .queries()
-        .schema_has_type("__coflow_dimension_Base_name"));
     assert!(!session
         .queries()
-        .schema_has_type("__coflow_dimension_Child_name"));
+        .schema_has_type("__coflow_dimension_Base_name"));
+    let record = session
+        .queries()
+        .record_view("Child", "child")
+        .expect("child owner record");
+    let overlay = record.record.dimension_field("name").expect("inherited overlay");
+    assert_eq!(overlay.dimension.as_str(), "language");
+    assert_eq!(overlay.variants["zh"].value, CfdValue::Null);
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/Base_name.csv"))
         .expect("read inherited dimension csv");
     assert_eq!(generated, "id,default,zh\nchild,Potion,null\n");
@@ -496,7 +498,7 @@ dimensions:
         !root
             .join("data/dimensions/language/Child_name.csv")
             .exists(),
-        "the declaring type owns inherited dimension storage"
+        "the declaring type owns the managed dimension source"
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -1377,10 +1379,8 @@ dimensions:
 /// `keys_for_file("Item_name.csv")` returned the wrong record's fields.
 ///
 /// After Phase 2, `RecordIndex` is keyed by `(actual_type, key)`. Both
-/// records coexist; `ids_in_file("Item_name.csv")` lists only the synthetic
-/// row and `record.actual_type` resolves to `__coflow_dimension_Item_name` (not `Item`).
 #[test]
-fn synthetic_and_source_records_with_same_key_do_not_collide() {
+fn dimension_sources_do_not_create_dependency_records() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-record-coordinate-collision-{}",
         std::process::id()
@@ -1427,46 +1427,24 @@ dimensions:
         session.queries().diagnostics().as_set()
     );
 
-    // Both records exist in the model, each addressable by (type, key).
     let source = session
         .queries()
         .record_view("Item", "potion")
         .expect("source `Item.potion` should be indexed");
-    let synthetic = session
+    assert_eq!(source.display_path, "data/items.csv");
+    assert_eq!(session.queries().record_count(), 1);
+    assert!(session
         .queries()
         .record_view("__coflow_dimension_Item_name", "potion")
-        .expect("synthetic dimension record should be indexed");
-    assert_eq!(source.display_path, "data/items.csv");
-    assert_eq!(
-        synthetic.display_path,
-        "data/dimensions/language/Item_name.csv"
-    );
-
-    // The synthetic file lists only the synthetic record — the source row's
-    // fields must not bleed through.
+        .is_none());
     let records_in_variants_file = session
         .queries()
         .record_views_in_file("data/dimensions/language/Item_name.csv")
         .collect::<Vec<_>>();
-    assert_eq!(
-        records_in_variants_file.len(),
-        1,
-        "synthetic file index should hold only the variant record"
-    );
-    let coordinate = &records_in_variants_file[0].coordinate;
-    assert_eq!(coordinate.actual_type, "__coflow_dimension_Item_name");
-    assert_eq!(coordinate.key, "potion");
-
-    // `record_view` returns the synthetic record's fields when addressed by
-    // its coordinate — not the source `Item` record's fields.
-    let view = session
-        .queries()
-        .record_view("__coflow_dimension_Item_name", "potion")
-        .expect("record view");
-    assert!(view.record.fields().contains_key("default"));
-    assert!(view.record.fields().contains_key("zh"));
-    assert!(view.record.fields().contains_key("en"));
-    assert!(!view.record.fields().contains_key("name"));
+    assert!(records_in_variants_file.is_empty());
+    let overlay = source.record.dimension_field("name").expect("name overlay");
+    assert_eq!(overlay.variants["zh"].value, CfdValue::Null);
+    assert_eq!(overlay.variants["en"].value, CfdValue::Null);
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }

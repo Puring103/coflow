@@ -59,12 +59,12 @@ pub use names::{
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
 pub use module_set::{
-    parse_modules, CftDimensions, CftFile, CftModule, CftModuleSet,
+    parse_modules, CftDimensionInput, CftDimensionInputs, CftFile, CftModule, CftModuleSet,
 };
 pub use parser::CftParseOptions;
 pub use schema::{
-    format_schema_type_ref, CftAnnotation, CftAnnotationValue, CftConst, CftConstValue, CftEnum,
-    CftEnumVariant, CftField, CftFieldDimension, CftType,
+    format_schema_type_ref, CftConst, CftConstValue, CftDimension, CftEnum, CftEnumVariant,
+    CftField, CftFieldDimension, CftType,
     CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaDefaultValue, CftSchemaQuantifierKind,
     CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp,

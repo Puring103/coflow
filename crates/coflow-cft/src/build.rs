@@ -1,12 +1,12 @@
 use crate::error::CftDiagnostics;
-use crate::module_set::{CftDimensions, CftModuleSet};
+use crate::module_set::{CftDimensionInputs, CftModuleSet};
 use crate::schema::{compile_module_set, CftCompileOptions};
 use crate::CftSchema;
 
 /// Builds an immutable semantic schema from modules that have already been parsed.
 ///
-/// The complete effective schema, including dimension storage declarations and
-/// derived indexes, is published only after every compilation step succeeds.
+/// The complete effective schema is published only after every compilation
+/// step and dimension binding succeeds.
 ///
 /// # Errors
 ///
@@ -14,7 +14,7 @@ use crate::CftSchema;
 /// diagnostics from the semantic compilation pass.
 pub fn build_schema(
     module_set: &CftModuleSet,
-    dimensions: &CftDimensions,
+    dimensions: &CftDimensionInputs,
 ) -> Result<CftSchema, CftDiagnostics> {
     if !module_set.diagnostics().is_empty() {
         return Err(module_set.diagnostics().clone());
@@ -29,8 +29,8 @@ pub fn build_schema(
     let schema = CftSchema::from_compiled(
         compiled,
         sources,
-        options.structural_limits,
+        dimensions,
         &mut budget,
     )?;
-    crate::dimensions::add_dimension_storage(schema, dimensions)
+    Ok(schema)
 }

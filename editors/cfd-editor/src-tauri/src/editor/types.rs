@@ -253,11 +253,7 @@ pub struct FieldAnnotation {
     pub enum_type: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub nullable: bool,
-    /// True when the field's value is derived from another record (currently:
-    /// the synthesized `default` slot on a dimension variant type mirrors the
-    /// source record's field). Writing into it isn't blocked at the engine
-    /// layer, but the editor renders it as read-only to steer edits to the
-    /// source record instead.
+    /// True when this cell is exposed for inspection but cannot be edited.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub read_only: bool,
     /// Template annotation for elements of an array/dict field. Carries the

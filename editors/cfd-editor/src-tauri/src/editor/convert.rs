@@ -18,22 +18,14 @@ use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRo
 pub struct WireContext<'a> {
     pub queries: ProjectQueries<'a>,
     pub diagnostics: &'a Diagnostics,
-    /// Set of dimension-synthesized type names (e.g. `Item_nameVariants`).
-    /// Passed in once per snapshot so the annotator can flag the derived
-    /// `default` slot as read-only without recomputing per record.
-    pub dimension_synth_types: BTreeSet<String>,
 }
 
 impl<'a> WireContext<'a> {
-    /// Build a `WireContext` and eagerly compute the dimension-synthesized
-    /// type set. Callers that build many rows in a row should reuse the
-    /// same context to avoid re-walking the dimension list.
     #[must_use]
     pub fn new(queries: ProjectQueries<'a>, diagnostics: &'a Diagnostics) -> Self {
         Self {
             queries,
             diagnostics,
-            dimension_synth_types: queries.dimension_synthesized_types(),
         }
     }
 }
@@ -177,9 +169,6 @@ fn build_annotation(
     // source record's value. Writing into it isn't blocked at the engine
     // layer, but the editor renders it as read-only to steer users to the
     // source record instead.
-    if field_name == "default" && ctx.dimension_synth_types.contains(host.actual_type()) {
-        annotation.read_only = true;
-    }
     if annotation.is_empty() {
         None
     } else {

@@ -13,7 +13,7 @@ use coflow_api::{
     SourceLocationSpec, SourceProvider, SourceWriter, SyncHeaderRequest, TableContext,
     TableManager, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
-use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdInputRecord, CfdInputValue, CfdObject, CfdValue, RecordOrigin, SourceDocument,
 };
@@ -117,7 +117,7 @@ fn schema_for_items() -> CftSchema {
             }
             ",
     )]);
-    build_schema(&modules, &CftDimensions::default()).expect("schema compile")
+    build_schema(&modules, &CftDimensionInputs::default()).expect("schema compile")
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn schema_for_tagged_items() -> CftSchema {
             }
             ",
     )]);
-    build_schema(&modules, &CftDimensions::default()).expect("schema compile")
+    build_schema(&modules, &CftDimensionInputs::default()).expect("schema compile")
 }
 
 fn write_tagged_workbook(path: &PathBuf) -> Result<(), XlsxError> {
@@ -326,7 +326,7 @@ fn schema_for_terrain() -> CftSchema {
             }
             ",
     )]);
-    build_schema(&modules, &CftDimensions::default()).expect("schema compile")
+    build_schema(&modules, &CftDimensionInputs::default()).expect("schema compile")
 }
 
 fn write_terrain_workbook_with_expand(path: &PathBuf) -> Result<(), XlsxError> {

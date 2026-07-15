@@ -1,13 +1,20 @@
 #![allow(dead_code, unused_imports)]
 #![allow(clippy::redundant_pub_crate)]
 
-pub(crate) use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
+pub(crate) use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 pub(crate) use coflow_checker::CfdCheckExt;
 pub(crate) use coflow_data_model::*;
 
 pub(crate) fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensions::default()).expect("schema should compile")
+    build_schema(
+        &modules,
+        &CftDimensionInputs::new([
+            ("language", vec!["zh".to_string(), "en".to_string()]),
+            ("platform", vec!["pc".to_string(), "mobile".to_string()]),
+        ]),
+    )
+    .expect("schema should compile")
 }
 
 pub(crate) fn assert_has_code(diags: &CfdDiagnostics, code: CfdErrorCode) {

@@ -94,7 +94,7 @@ fn inspect_schema_preserves_id_as_enum_fields_and_enums() {
         .iter()
         .find(|ty| ty.name == "Item")
         .expect("Item type");
-    assert!(item.annotations.iter().any(|a| a.name == "idAsEnum"));
+    assert_eq!(item.id_as_enum.as_deref(), Some("ItemId"));
     assert!(item.fields.iter().any(|field| field.name == "name"));
     assert!(report
         .enums

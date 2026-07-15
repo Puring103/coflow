@@ -110,7 +110,7 @@ fn lower_object_entries(
     })
 }
 
-fn lower_value(
+pub(crate) fn lower_value(
     schema: &CftSchema,
     value: &CfdValue,
     ty: &CftSchemaTypeRef,

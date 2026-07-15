@@ -1,7 +1,7 @@
 use super::ids::CfdRecordId;
 use crate::diagnostic::{format_cfd_dict_key, CfdPath, CfdPathSegment};
 use crate::origin::RecordOrigin;
-use coflow_cft::CftEnumValue;
+use coflow_cft::{CftEnumValue, DimensionName, VariantName};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -26,6 +26,9 @@ pub struct CfdRecord {
     #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
     pub origin: RecordOrigin,
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts-export", ts(skip))]
+    pub dimension_fields: BTreeMap<String, CfdDimensionFieldValues>,
 }
 
 impl CfdRecord {
@@ -54,6 +57,11 @@ impl CfdRecord {
         self.object.field(name)
     }
 
+    #[must_use]
+    pub fn dimension_field(&self, name: &str) -> Option<&CfdDimensionFieldValues> {
+        self.dimension_fields.get(name)
+    }
+
     /// Resolves a value by its absolute path within this record.
     #[must_use]
     pub fn value_at_path(&self, path: &CfdPath) -> Option<&CfdValue> {
@@ -77,6 +85,18 @@ impl CfdRecord {
         }
         Some(current)
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CfdDimensionFieldValues {
+    pub dimension: DimensionName,
+    pub variants: BTreeMap<VariantName, CfdDimensionValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CfdDimensionValue {
+    pub value: CfdValue,
+    pub origin: RecordOrigin,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

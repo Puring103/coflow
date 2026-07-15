@@ -12,14 +12,13 @@ pub struct DimensionField {
     pub source_type: String,
     pub source_field: String,
     pub bucket: String,
-    pub synthesized_type: String,
     pub is_singleton: bool,
 }
 
 pub(crate) fn dimension_sources(
     project: &Project,
     fields: &[DimensionField],
-) -> Vec<ConfiguredSource> {
+) -> Vec<(ConfiguredSource, DimensionField)> {
     let mut sources = Vec::new();
     for (dimension, config) in &project.config.dimensions {
         let Some(out_dir) = config.out_dir.as_ref() else {
@@ -68,16 +67,6 @@ pub fn dimension_fields(schema: &CftSchema) -> Vec<DimensionField> {
                     .bucket
                     .as_ref()
                     .map_or_else(|| schema_type.name.to_string(), ToString::to_string),
-                // Missing dimension config is diagnosed before data loading. The
-                // fallback only preserves enough identity for that diagnostic.
-                synthesized_type: schema
-                    .dimension_storage_type(
-                        &dimension.dimension,
-                        &schema_type.name,
-                        &field.name,
-                    )
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| format!("{}_{}Variants", schema_type.name, field.name)),
                 is_singleton: schema_type.is_singleton,
             });
         }
@@ -90,7 +79,7 @@ fn source_for_dimension_file(
     dir: &Path,
     fields: &[&DimensionField],
     path: PathBuf,
-) -> Option<ConfiguredSource> {
+) -> Option<(ConfiguredSource, DimensionField)> {
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -106,7 +95,7 @@ fn source_for_dimension_file(
         |_| path.display().to_string(),
         coflow_project::path_to_slash,
     );
-    Some(ConfiguredSource {
+    Some((ConfiguredSource {
         provider_id: provider_id.to_string(),
         location: SourceLocationSpec::Path(path),
         options: source_options(field, &extension),
@@ -116,7 +105,7 @@ fn source_for_dimension_file(
             display_name
         },
         source_index: None,
-    })
+    }, field.clone()))
 }
 
 fn field_for_file_stem<'a>(
@@ -138,7 +127,7 @@ fn source_options(field: &DimensionField, extension: &str) -> Value {
         json!({
             "sheets": [{
                 "sheet": format!("{}_{}", field.bucket, field.source_field),
-                "type": field.synthesized_type,
+                "type": field.source_type,
             }]
         })
     } else {

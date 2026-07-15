@@ -4,25 +4,27 @@ use std::sync::Arc;
 use coflow_cft::{CftSchemaTypeRef, CftSchema};
 use coflow_data_model::{
     CfdDataModel, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
+    DimensionValueLookup,
 };
 use coflow_structure::{StructuralBudget, TraversalCursor};
 
 use super::diagnostics::dimension_lookup_error_message;
-use super::value::{CheckRecordRef, CheckValue, LocatedCheckValue, ModelCursor, ValueLocation};
+use super::value::{CheckRecordRef, CheckValue, LocatedCheckValue, ValueLocation};
 use crate::DimensionCheckContext;
 
 #[derive(Debug, Clone)]
 pub(super) struct DimensionRoundView {
+    variant: Arc<str>,
     fields_by_record: Arc<BTreeMap<CfdRecordId, BTreeMap<String, ProjectedDimensionField>>>,
 }
 
 #[derive(Debug, Clone)]
 enum ProjectedDimensionField {
     Value {
-        storage: ModelCursor,
-        field_type: Option<CftSchemaTypeRef>,
+        field_type: CftSchemaTypeRef,
         traverse_nested: bool,
     },
+    ExplicitNull,
     Error {
         message: String,
         traverse_nested: bool,
@@ -33,7 +35,6 @@ pub(super) struct MaterializedDimensionValue<'a> {
     pub(super) value: &'a CfdValue,
     pub(super) field_type: Option<&'a CftSchemaTypeRef>,
     pub(super) location: ValueLocation,
-    pub(super) storage_record: CfdRecordId,
 }
 
 impl DimensionRoundView {
@@ -44,6 +45,7 @@ impl DimensionRoundView {
     ) -> Self {
         let Some(variant) = context.variant.as_deref() else {
             return Self {
+                variant: Arc::from(""),
                 fields_by_record: Arc::new(BTreeMap::new()),
             };
         };
@@ -73,22 +75,26 @@ impl DimensionRoundView {
                         &context.dimension,
                         variant,
                     ) {
-                        Ok(resolved) => resolved.record.map_or_else(
-                            || ProjectedDimensionField::Error {
+                        Ok(DimensionValueLookup::Value { .. }) => {
+                            ProjectedDimensionField::Value {
+                                field_type: field.ty_ref.clone(),
+                                traverse_nested,
+                            }
+                        }
+                        Ok(DimensionValueLookup::ExplicitNull { .. }) => {
+                            ProjectedDimensionField::ExplicitNull
+                        }
+                        Ok(DimensionValueLookup::Missing) => {
+                            ProjectedDimensionField::Error {
                                 message: dimension_lookup_error_message(
                                     record.actual_type(),
                                     &field.name,
                                     variant,
-                                    DimensionFieldLookupError::MissingStorageRecord,
+                                    DimensionFieldLookupError::UnknownVariant,
                                 ),
                                 traverse_nested,
-                            },
-                            |storage_record| ProjectedDimensionField::Value {
-                                storage: ModelCursor::root(storage_record).field(variant),
-                                field_type: resolved.field_type,
-                                traverse_nested,
-                            },
-                        ),
+                            }
+                        }
                         Err(error) => ProjectedDimensionField::Error {
                             message: dimension_lookup_error_message(
                                 record.actual_type(),
@@ -107,6 +113,7 @@ impl DimensionRoundView {
             }
         }
         Self {
+            variant: Arc::from(variant),
             fields_by_record: Arc::new(fields_by_record),
         }
     }
@@ -122,6 +129,7 @@ impl DimensionRoundView {
                     traverse_nested: true,
                 } => Some((field.as_str(), message.as_str())),
                 ProjectedDimensionField::Value { .. }
+                | ProjectedDimensionField::ExplicitNull
                 | ProjectedDimensionField::Error {
                     traverse_nested: false,
                     ..
@@ -147,6 +155,7 @@ impl DimensionRoundView {
                     traverse_nested: false,
                     ..
                 }
+                | ProjectedDimensionField::ExplicitNull
                 | ProjectedDimensionField::Error {
                     traverse_nested: false,
                     ..
@@ -168,12 +177,14 @@ impl DimensionRoundView {
         else {
             return Ok(None);
         };
-        let (storage, field_type) = match projection {
+        let field_type = match projection {
             ProjectedDimensionField::Value {
-                storage,
                 field_type,
                 ..
-            } => (storage, field_type),
+            } => field_type,
+            ProjectedDimensionField::ExplicitNull => {
+                return Err(DimensionVariantAbort::Skipped)
+            }
             ProjectedDimensionField::Error {
                 traverse_nested: true,
                 ..
@@ -190,13 +201,15 @@ impl DimensionRoundView {
             }
         };
         let Some(value) = model
-            .record(storage.record)
-            .and_then(|record| record.value_at_path(&storage.path))
+            .record(source_record)
+            .and_then(|record| record.dimension_field(field_name))
+            .and_then(|values| values.variants.get(self.variant.as_ref()))
+            .map(|value| &value.value)
         else {
             return Err(DimensionVariantAbort::Error {
                 code: CfdErrorCode::CheckEvalTypeError,
                 location: Some(logical_location.clone()),
-                message: "dimension storage value disappeared during check execution".to_string(),
+                message: "dimension overlay value disappeared during check execution".to_string(),
             });
         };
         if matches!(value, CfdValue::Null) {
@@ -204,9 +217,12 @@ impl DimensionRoundView {
         }
         Ok(Some(MaterializedDimensionValue {
             value,
-            field_type: field_type.as_ref(),
-            location: logical_location.backed_by(storage.clone()),
-            storage_record: storage.record,
+            field_type: Some(field_type),
+            location: logical_location.backed_by(super::value::ModelCursor::dimension(
+                source_record,
+                field_name,
+                self.variant.as_ref(),
+            )),
         }))
     }
 }
@@ -256,5 +272,5 @@ pub(super) fn apply_dimension_variant(
         message: exceeded.error.to_string(),
     })?;
     located.location = Some(materialized.location);
-    Ok(Some(materialized.storage_record))
+    Ok(None)
 }

@@ -1,6 +1,6 @@
 #![allow(clippy::panic_in_result_fn)]
 
-use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::RecordOrigin;
 use coflow_loader_table_core::{
     collect_table_input_records, TableSheet, TableSheetConfig, TableSource,
@@ -37,6 +37,6 @@ fn collects_table_rows_as_input_records() -> TestResult {
 
 fn compile_schema(source: &str) -> Result<CftSchema, String> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensions::default())
+    build_schema(&modules, &CftDimensionInputs::default())
         .map_err(|err| format!("schema should compile: {err:?}"))
 }

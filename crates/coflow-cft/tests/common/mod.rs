@@ -2,7 +2,7 @@
 #![allow(clippy::redundant_pub_crate)]
 
 pub(crate) use coflow_cft::{
-    build_schema, parse_modules, CftConstValue, CftDiagnostics, CftDimensions, CftErrorCode,
+    build_schema, parse_modules, CftConstValue, CftDiagnostics, CftDimensionInputs, CftErrorCode,
     CftFile, CftModuleSet, CftSchema, CftSeverity, CftStage, ModuleId,
 };
 
@@ -16,8 +16,15 @@ pub(crate) fn add_source(source: &str) -> Result<CftModuleSet, CftDiagnostics> {
 }
 
 pub(crate) fn compile_one(source: &str) -> Result<CftSchema, CftDiagnostics> {
+    compile_one_with_dimensions(source, CftDimensionInputs::default())
+}
+
+pub(crate) fn compile_one_with_dimensions(
+    source: &str,
+    dimensions: CftDimensionInputs,
+) -> Result<CftSchema, CftDiagnostics> {
     let modules = add_source(source)?;
-    build_schema(&modules, &CftDimensions::default())
+    build_schema(&modules, &dimensions)
 }
 
 pub(crate) fn assert_has_code(diags: &CftDiagnostics, code: CftErrorCode) {

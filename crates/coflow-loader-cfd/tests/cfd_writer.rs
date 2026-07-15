@@ -13,7 +13,7 @@ use coflow_api::{
     SourceLocationSpec, SourceProvider, SourceWriter, SpreadRewriteTarget, WriteCellRequest,
     WriteContext, WriteFieldPathSegment,
 };
-use coflow_cft::{build_schema, parse_modules, CftDimensions, CftFile, CftSchema, ModuleId};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdObject, CfdValue, RecordOrigin, TextSpan};
 use coflow_loader_cfd::{load_cfd_model, parse_cfd_input_records, CfdLoader, CfdWriter};
 use std::fs;
@@ -34,7 +34,7 @@ fn temp_dir(name: &str) -> PathBuf {
 
 fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensions::default()).expect("schema compile")
+    build_schema(&modules, &CftDimensionInputs::default()).expect("schema compile")
 }
 
 fn empty_source(path: &Path) -> ResolvedSource {

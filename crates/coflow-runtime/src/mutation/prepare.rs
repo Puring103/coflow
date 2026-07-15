@@ -114,7 +114,6 @@ pub(super) fn prepare_one(
         } => {
             ensure_source_file(session, &file)?;
             ensure_type_can_insert(session, &actual_type)?;
-            ensure_not_dimension_storage_type(session, &actual_type, "insert")?;
             ensure_record_key_available(
                 session,
                 &actual_type,
@@ -193,7 +192,6 @@ pub(super) fn prepare_one(
             })
         }
         MutationOp::DeleteRecord { record, file } => {
-            ensure_not_dimension_storage_type(session, &record.actual_type, "delete")?;
             ensure_file_guard(session, &record, file.as_deref())?;
             let report_file = file.or_else(|| record_file(session, &record).map(ToOwned::to_owned));
             Ok(PreparedMutationOp::DeleteRecord {
@@ -642,22 +640,6 @@ fn ensure_type_can_insert(
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("singleton type `{actual_type}` cannot be inserted"),
-        ));
-    }
-    Ok(())
-}
-
-fn ensure_not_dimension_storage_type(
-    session: &ProjectSession,
-    actual_type: &str,
-    operation: &str,
-) -> Result<(), DiagnosticSet> {
-    if session.dimension_synthesized_types().contains(actual_type) {
-        return Err(one_mutation_error(
-            "MUTATION-DIMENSION",
-            format!(
-                "dimension variant type `{actual_type}` cannot {operation} records; edit existing variant fields instead"
-            ),
         ));
     }
     Ok(())

@@ -1,8 +1,7 @@
 use super::SchemaCompiler;
 use crate::ast::{AnnotationArg, DefaultExpr, DefaultExprKind, FieldDef};
 use crate::schema::support::{
-    build_schema_type_ref, convert_annotations, convert_check_block, find_annotation,
-    has_annotation,
+    build_schema_type_ref, convert_check_block, find_annotation, has_annotation,
 };
 use crate::schema::{
     CftConst, CftConstValue, CftEnum, CftEnumVariant, CftField, CftFieldDimension,
@@ -43,7 +42,6 @@ impl SchemaCompiler<'_> {
                         .get(&variant.name)
                         .copied()
                         .map_or(0, |value| value),
-                    annotations: convert_annotations(&variant.annotations),
                     span: variant.span,
                 })
                 .collect::<Vec<_>>();
@@ -64,7 +62,7 @@ impl SchemaCompiler<'_> {
                 variants,
                 variant_by_name,
                 variant_by_value,
-                annotations: convert_annotations(&info.def.annotations),
+                is_flag: has_annotation(&info.def.annotations, "flag"),
                 span: info.def.span,
             };
             enums.insert(name, schema);
@@ -95,6 +93,14 @@ impl SchemaCompiler<'_> {
                 .map(|(index, field)| (field.name.clone(), index))
                 .collect();
             let is_singleton = has_annotation(&info.def.annotations, "singleton");
+            let id_as_enum = find_annotation(&info.def.annotations, "idAsEnum")
+                .and_then(|annotation| annotation.args.first())
+                .and_then(|arg| match arg {
+                    AnnotationArg::Name(name) => {
+                        Some(EnumName::from_validated(name.name.clone()))
+                    }
+                    _ => None,
+                });
             let schema = CftType {
                 module: info.module.clone(),
                 name: type_name.clone(),
@@ -105,12 +111,13 @@ impl SchemaCompiler<'_> {
                     .map(|parent| TypeName::from_validated(parent.name.clone())),
                 is_abstract: info.def.is_abstract,
                 is_sealed: info.def.is_sealed,
+                is_struct: has_annotation(&info.def.annotations, "struct"),
                 is_singleton,
+                id_as_enum,
                 own_fields: fields,
                 all_fields,
                 field_by_name,
                 check: info.def.check.as_ref().map(convert_check_block),
-                annotations: convert_annotations(&info.def.annotations),
                 dimension_checks: BTreeMap::new(),
                 span: info.def.span,
             };
@@ -126,8 +133,7 @@ impl SchemaCompiler<'_> {
         let dimension = localized
             .map(|_| CftFieldDimension {
                 dimension: DimensionName::from_validated("language"),
-                bucket: localized_bucket(field)
-                    .or_else(|| Some(BucketName::from_validated(owner_type.to_string()))),
+                bucket: localized_bucket(field),
             })
             .or_else(|| {
                 let annotation = dimension_annotation?;
@@ -136,7 +142,7 @@ impl SchemaCompiler<'_> {
                 };
                 Some(CftFieldDimension {
                     dimension: DimensionName::from_validated(name.clone()),
-                    bucket: Some(BucketName::from_validated(owner_type.to_string())),
+                    bucket: None,
                 })
             });
         CftField {
@@ -148,7 +154,7 @@ impl SchemaCompiler<'_> {
                 .default
                 .as_ref()
                 .and_then(|default| self.schema_default_value(default)),
-            annotations: convert_annotations(&field.annotations),
+            is_expand: has_annotation(&field.annotations, "expand"),
             dimension,
             span: field.span,
         }

@@ -3,7 +3,7 @@ use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
     inspect_schema, schema_files, ProjectRuntime, Runtime, SchemaFilesReport,
-    SchemaInspectReport, SchemaTextOverride,
+    SchemaInspectReport, SchemaTextOverride, SchemaTypeRefInfo,
 };
 use serde::Serialize;
 use std::io::{self, Read, Write};
@@ -255,11 +255,8 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
     let mut stdout = io::stdout().lock();
     for ty in &report.types {
         writeln!(stdout, "type {}", ty.name).map_err(|err| output_error(&err))?;
-        for annotation in &ty.annotations {
-            writeln!(stdout, "  @{}", annotation.name).map_err(|err| output_error(&err))?;
-        }
         for field in &ty.fields {
-            writeln!(stdout, "  {}: {}", field.name, field.raw_type)
+            writeln!(stdout, "  {}: {}", field.name, display_type_ref(&field.ty))
                 .map_err(|err| output_error(&err))?;
         }
     }
@@ -274,6 +271,22 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
         writeln!(stdout, "const {}", schema_const.name).map_err(|err| output_error(&err))?;
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
+}
+
+fn display_type_ref(ty: &SchemaTypeRefInfo) -> String {
+    match ty {
+        SchemaTypeRefInfo::Int => "int".to_string(),
+        SchemaTypeRefInfo::Float => "float".to_string(),
+        SchemaTypeRefInfo::Bool => "bool".to_string(),
+        SchemaTypeRefInfo::String => "string".to_string(),
+        SchemaTypeRefInfo::Named { name, .. } => name.clone(),
+        SchemaTypeRefInfo::Ref { target } => format!("&{target}"),
+        SchemaTypeRefInfo::Array { item } => format!("{}[]", display_type_ref(item)),
+        SchemaTypeRefInfo::Dict { key, value } => {
+            format!("dict<{}, {}>", display_type_ref(key), display_type_ref(value))
+        }
+        SchemaTypeRefInfo::Nullable { inner } => format!("{}?", display_type_ref(inner)),
+    }
 }
 
 fn write_schema_files_human(report: &SchemaFilesReport) -> Result<(), DiagnosticSet> {

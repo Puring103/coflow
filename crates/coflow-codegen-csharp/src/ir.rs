@@ -3,7 +3,7 @@ use crate::lowering::CsharpLoweringPlan;
 use crate::model::{CsharpEnum, CsharpEnumVariant, CsharpProject};
 use crate::names::{
     camel_case, csharp_ident_error, csharp_member_ident_error, csharp_namespace_error,
-    csharp_type_name, has_annotation, index_param_name, pluralize,
+    csharp_type_name, index_param_name, pluralize,
 };
 use crate::CsharpCodegenError;
 use coflow_cft::CftSchema;
@@ -338,7 +338,7 @@ fn build_id_as_enums(
     for name in declared {
         let is_flags = view
             .cft_enum_meta(name)
-            .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
+            .is_some_and(|schema_enum| schema_enum.is_flag);
         let mut enum_variants = Vec::new();
         if is_flags {
             enum_variants.push(CsharpEnumVariant {

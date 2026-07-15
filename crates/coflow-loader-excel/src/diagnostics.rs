@@ -162,6 +162,7 @@ fn label_shifted(label: &CfdLabel, new_index: usize) -> CfdLabel {
         record: Some(CfdRecordId::from_index(new_index)),
         path: label.path.clone(),
         message: label.message.clone(),
+        origin: label.origin.clone(),
     }
 }
 

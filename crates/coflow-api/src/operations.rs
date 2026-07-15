@@ -1,6 +1,6 @@
 use crate::{DecodedSourceOptions, Diagnostic, DiagnosticSet, ResolvedSource};
-use coflow_cft::CftSchema;
-use coflow_data_model::CfdValue;
+use coflow_cft::{CftDimension, CftField, CftSchema, CftType};
+use coflow_data_model::{CfdInputDimensionValue, CfdValue};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -190,6 +190,25 @@ pub struct DimensionSourceRequest<'a> {
     pub variants: &'a [String],
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct DimensionSourceSchema<'a> {
+    pub schema: &'a CftSchema,
+    pub dimension: &'a CftDimension,
+    pub source_type: &'a CftType,
+    pub source_field: &'a CftField,
+}
+
+#[derive(Debug, Clone)]
+pub struct DimensionSourceLoadRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub schema: DimensionSourceSchema<'a>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DimensionSourceLoadResult {
+    pub values: Vec<CfdInputDimensionValue>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DimensionSourceEntry {
     pub key: String,
@@ -204,6 +223,20 @@ pub struct DimensionSourceResult {
 
 pub trait DimensionSourceManager: Send + Sync {
     fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor;
+
+    /// Load managed variant values directly into record-owned overlay inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the source cannot be parsed against the
+    /// canonical field schema.
+    fn load_dimension_source(
+        &self,
+        _ctx: TableContext<'_>,
+        _request: &DimensionSourceLoadRequest<'_>,
+    ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
+        Err(unsupported_table_operation("loading dimension sources"))
+    }
 
     /// Decodes provider options for a generated dimension source.
     ///

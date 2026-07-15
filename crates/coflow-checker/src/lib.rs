@@ -157,7 +157,13 @@ pub fn run_checks_for_dimensions_with_options(
         };
         let runner =
             CheckRunner::with_dimension_context(schema, model, context, options.structural_limits);
-        push_dimension_diagnostics(&mut all, &round.dimension, &round.variant, runner.run());
+        push_dimension_diagnostics(
+            &mut all,
+            model,
+            &round.dimension,
+            &round.variant,
+            runner.run(),
+        );
     }
     diagnostics_result(all)
 }
@@ -203,7 +209,13 @@ pub fn run_checks_for_dimensions_with_deps_and_options(
             CheckRunner::with_dimension_context(schema, model, context, options.structural_limits);
         let (result, variant_graph) = runner.run_with_deps();
         merge_dependency_graph(&mut graph, variant_graph);
-        push_dimension_diagnostics(&mut all, &round.dimension, &round.variant, result);
+        push_dimension_diagnostics(
+            &mut all,
+            model,
+            &round.dimension,
+            &round.variant,
+            result,
+        );
     }
     (diagnostics_result(all), graph)
 }
@@ -246,6 +258,7 @@ pub fn run_checks_for_dimensions_subset_with_deps(
         let (diagnostics, variant_graph) = runner.run_for_with_deps_rooted(targets);
         merge_dependency_graph(&mut graph, variant_graph);
         all.extend(diagnostics.into_iter().map(|(root, mut diagnostic)| {
+            attach_dimension_origins(model, &round.dimension, &round.variant, &mut diagnostic);
             diagnostic.message = format!(
                 "[{}={}] {}",
                 round.dimension, round.variant, diagnostic.message
@@ -352,16 +365,60 @@ pub fn run_checks_with_deps_and_options(
 
 fn push_dimension_diagnostics(
     all: &mut Vec<coflow_data_model::CfdDiagnostic>,
+    model: &CfdDataModel,
     dimension: &str,
     variant: &str,
     result: Result<(), CfdDiagnostics>,
 ) {
     if let Err(diagnostics) = result {
         for mut diagnostic in diagnostics.diagnostics {
+            attach_dimension_origins(model, dimension, variant, &mut diagnostic);
             diagnostic.message = format!("[{dimension}={variant}] {}", diagnostic.message);
             all.push(diagnostic);
         }
     }
+}
+
+fn attach_dimension_origins(
+    model: &CfdDataModel,
+    dimension: &str,
+    variant: &str,
+    diagnostic: &mut coflow_data_model::CfdDiagnostic,
+) {
+    if let Some(primary) = &mut diagnostic.primary {
+        attach_dimension_origin(model, dimension, variant, primary);
+    }
+    for related in &mut diagnostic.related {
+        attach_dimension_origin(model, dimension, variant, related);
+    }
+}
+
+fn attach_dimension_origin(
+    model: &CfdDataModel,
+    dimension: &str,
+    variant: &str,
+    label: &mut coflow_data_model::CfdLabel,
+) {
+    let Some(record) = label.record.and_then(|record| model.record(record)) else {
+        return;
+    };
+    let Some(field) = label.path.segments.iter().find_map(|segment| match segment {
+        coflow_data_model::CfdPathSegment::Field(field) => Some(field.as_str()),
+        coflow_data_model::CfdPathSegment::Index(_)
+        | coflow_data_model::CfdPathSegment::DictKey(_) => None,
+    }) else {
+        return;
+    };
+    let Some(values) = record
+        .dimension_field(field)
+        .filter(|values| values.dimension.as_str() == dimension)
+    else {
+        return;
+    };
+    label.origin = values
+        .variants
+        .get(variant)
+        .map(|value| value.origin.clone());
 }
 
 fn diagnostics_result(

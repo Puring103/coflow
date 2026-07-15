@@ -1,8 +1,11 @@
 use coflow_api::{
-    DecodedSourceOptions, DiagnosticSet, DimensionSourceManager, DimensionSourceManagerDescriptor,
+    byte_range, DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest,
+    DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
     SourceLocationSpec, TableContext,
 };
+use coflow_cft::{CftSchemaTypeRef, RecordKey};
+use coflow_data_model::{CfdInputDimensionValue, RecordOrigin, TextSpan};
 use coflow_cfd::ast::CfdBlockEntry;
 use coflow_cfd::parse_cfd;
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,6 +24,100 @@ pub(super) static CFD_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: DimensionSourceManage
 impl DimensionSourceManager for CfdWriter {
     fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor {
         &CFD_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
+    }
+
+    fn load_dimension_source(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &DimensionSourceLoadRequest<'_>,
+    ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        let text = std::fs::read_to_string(path).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CFD-DIMENSION",
+                format!("failed to read dimension source `{}`: {err}", path.display()),
+            ))
+        })?;
+        let (ast, syntax) = parse_cfd(&text);
+        if !syntax.is_empty() {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-DIMENSION",
+                syntax
+                    .into_iter()
+                    .map(|item| item.message)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            )));
+        }
+        let nullable_type = CftSchemaTypeRef::Nullable(Box::new(
+            request.schema.source_field.ty_ref.non_nullable().clone(),
+        ));
+        let mut values = Vec::new();
+        let mut diagnostics = DiagnosticSet::empty();
+        for record in ast.records {
+            let source_key = match RecordKey::new(record.key.clone()) {
+                Ok(key) => key,
+                Err(err) => {
+                    diagnostics.push(Diagnostic::error(
+                        "CFD-DIMENSION",
+                        "CFD",
+                        err.to_string(),
+                    ));
+                    continue;
+                }
+            };
+            for entry in record.entries {
+                let CfdBlockEntry::Field(field) = entry else {
+                    continue;
+                };
+                let Some(variant) = request.schema.dimension.variant(&field.name) else {
+                    continue;
+                };
+                let value = match crate::lower::lower_value(
+                    request.schema.schema,
+                    &field.value,
+                    &nullable_type,
+                ) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        diagnostics.push(Diagnostic::error(
+                            "CFD-DIMENSION-VALUE",
+                            "CFD",
+                            err.diagnostics
+                                .into_iter()
+                                .map(|item| item.message)
+                                .collect::<Vec<_>>()
+                                .join("; "),
+                        ));
+                        continue;
+                    }
+                };
+                let span = field.value.span();
+                let range = byte_range(&text, span.start, span.end);
+                values.push(CfdInputDimensionValue {
+                    source_type: request.schema.source_type.name.clone(),
+                    source_key: source_key.clone(),
+                    field: request.schema.source_field.name.clone(),
+                    dimension: request.schema.dimension.name.clone(),
+                    variant: variant.clone(),
+                    value,
+                    origin: RecordOrigin::File {
+                        path: path.clone(),
+                        span: Some(TextSpan {
+                            start_line: range.start.line,
+                            start_character: range.start.character,
+                            end_line: range.end.line,
+                            end_character: range.end.character,
+                        }),
+                    },
+                });
+            }
+        }
+        if diagnostics.is_empty() {
+            Ok(DimensionSourceLoadResult { values })
+        } else {
+            Err(diagnostics)
+        }
     }
 
     fn source_options(

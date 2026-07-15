@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use coflow_api::{ProviderRegistry, WriterCapabilities};
-use coflow_cft::{CftAnnotation, CftAnnotationValue, CftSchemaTypeRef, CftSchema};
+use coflow_cft::{CftSchemaTypeRef, CftSchema};
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RefSite};
 
 use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
@@ -163,11 +163,6 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
-    pub fn dimension_synthesized_types(self) -> BTreeSet<String> {
-        self.session.dimension_synthesized_types()
-    }
-
-    #[must_use]
     pub fn dimension(self, name: &str) -> Option<DimensionInfo> {
         self.session.dimension(name)
     }
@@ -259,10 +254,10 @@ impl<'a> ProjectQueries<'a> {
         schema
             .all_types()
             .filter_map(|schema_type| {
-                let enum_name = annotation_name_arg(&schema_type.annotations, "idAsEnum")?;
+                let enum_name = schema_type.id_as_enum.as_ref()?.to_string();
                 let is_flags = schema
                     .resolve_enum(&enum_name)
-                    .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
+                    .is_some_and(|schema_enum| schema_enum.is_flag);
                 let ids = model.polymorphic_index(&schema_type.name).map_or_else(
                     || {
                         model
@@ -368,17 +363,3 @@ fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
     }
 }
 
-fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
-    annotations
-        .iter()
-        .find(|annotation| annotation.name == name)
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|argument| match argument {
-            CftAnnotationValue::Name(value) => Some(value.clone()),
-            _ => None,
-        })
-}
-
-fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
-    annotations.iter().any(|annotation| annotation.name == name)
-}

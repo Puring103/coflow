@@ -1,9 +1,4 @@
-use coflow_cft::CftAnnotation;
 use unicode_ident::{is_xid_continue, is_xid_start};
-
-pub fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
-    annotations.iter().any(|annotation| annotation.name == name)
-}
 
 pub fn csharp_ident_error(value: &str) -> Option<String> {
     if value.is_empty() {
