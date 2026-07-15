@@ -459,29 +459,23 @@ dimensions:
     .expect("write config");
 }
 
-fn check_signatures<'a>(
+fn check_diagnostics<'a>(
     diagnostics: impl IntoIterator<Item = &'a coflow_api::FlatDiagnostic>,
-) -> Vec<(String, String, String)> {
+) -> Vec<coflow_api::FlatDiagnostic> {
     diagnostics
         .into_iter()
         .filter(|diagnostic| diagnostic.stage == "CHECK")
-        .map(|diagnostic| {
-            (
-                diagnostic.code.clone(),
-                diagnostic.stage.clone(),
-                diagnostic.message.clone(),
-            )
-        })
+        .cloned()
         .collect()
 }
 
-fn fresh_check_signatures(root: &std::path::Path) -> Vec<(String, String, String)> {
+fn fresh_check_diagnostics(root: &std::path::Path) -> Vec<coflow_api::FlatDiagnostic> {
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let fresh = Runtime::new(registry())
         .open_read_only_session(project)
         .expect("fresh read-only session");
-    let diagnostics = fresh.queries().diagnostics().as_set().flat_diagnostics();
-    check_signatures(&diagnostics)
+    let diagnostics = fresh.queries().diagnostics().flat_diagnostics();
+    check_diagnostics(&diagnostics)
 }
 
 fn assert_incremental_diagnostics_match_fresh(
@@ -963,14 +957,8 @@ fn checked_dimension_mutations_match_full_diagnostics() {
         "coflow-data-patch-checked-dimension-incremental-{}",
         std::process::id()
     ));
-    let full_root = std::env::temp_dir().join(format!(
-        "coflow-data-patch-checked-dimension-full-{}",
-        std::process::id()
-    ));
     let _ = std::fs::remove_dir_all(&root);
-    let _ = std::fs::remove_dir_all(&full_root);
     write_checked_dimension_project(&root);
-    write_checked_dimension_project(&full_root);
     let mut session = session(&root);
     let dimension_file = root.join("data/dimensions/language/Item_name.csv");
     let selector = PatchDimensionValueSelector {
@@ -995,14 +983,9 @@ fn checked_dimension_mutations_match_full_diagnostics() {
         }],
     });
     assert!(pass.write_ok && pass.check_ok, "diagnostics: {pass:?}");
-    std::fs::write(
-        full_root.join("data/dimensions/language/Item_name.csv"),
-        "id,default,zh\npotion,Potion,BETTER\n",
-    )
-    .expect("write full pass source");
     assert_eq!(
-        check_signatures(&pass.diagnostics),
-        fresh_check_signatures(&full_root)
+        check_diagnostics(&pass.diagnostics),
+        fresh_check_diagnostics(&root)
     );
 
     let explicit_null = session.apply_data_patch(DataPatchRequest {
@@ -1019,14 +1002,9 @@ fn checked_dimension_mutations_match_full_diagnostics() {
         explicit_null.write_ok && explicit_null.check_ok,
         "diagnostics: {explicit_null:?}"
     );
-    std::fs::write(
-        full_root.join("data/dimensions/language/Item_name.csv"),
-        "id,default,zh\npotion,Potion,null\n",
-    )
-    .expect("write full null source");
     assert_eq!(
-        check_signatures(&explicit_null.diagnostics),
-        fresh_check_signatures(&full_root)
+        check_diagnostics(&explicit_null.diagnostics),
+        fresh_check_diagnostics(&root)
     );
 
     let revision_before_missing = session.revision();
@@ -1047,14 +1025,9 @@ fn checked_dimension_mutations_match_full_diagnostics() {
     assert!(std::fs::read_to_string(&dimension_file)
         .expect("read missing source")
         .contains("potion,Potion,\n"));
-    std::fs::write(
-        full_root.join("data/dimensions/language/Item_name.csv"),
-        "id,default,zh\npotion,Potion,\n",
-    )
-    .expect("write full missing source");
     assert_eq!(
-        check_signatures(&missing.diagnostics),
-        fresh_check_signatures(&full_root)
+        check_diagnostics(&missing.diagnostics),
+        fresh_check_diagnostics(&root)
     );
 
     let restore = session.apply_data_patch(DataPatchRequest {
@@ -1082,17 +1055,11 @@ fn checked_dimension_mutations_match_full_diagnostics() {
     assert!(std::fs::read_to_string(&dimension_file)
         .expect("read bad source")
         .contains("potion,Potion,BAD\n"));
-    std::fs::write(
-        full_root.join("data/dimensions/language/Item_name.csv"),
-        "id,default,zh\npotion,Potion,BAD\n",
-    )
-    .expect("write full bad source");
-    let incremental_bad = check_signatures(&bad.diagnostics);
+    let incremental_bad = check_diagnostics(&bad.diagnostics);
     assert!(!incremental_bad.is_empty());
-    assert_eq!(incremental_bad, fresh_check_signatures(&full_root));
+    assert_eq!(incremental_bad, fresh_check_diagnostics(&root));
 
     let _ = std::fs::remove_dir_all(root);
-    let _ = std::fs::remove_dir_all(full_root);
 }
 
 #[test]
@@ -1201,14 +1168,8 @@ fn dimension_reference_checks_match_full_diagnostics() {
         "coflow-data-patch-dimension-ref-check-incremental-{}",
         std::process::id()
     ));
-    let full_root = std::env::temp_dir().join(format!(
-        "coflow-data-patch-dimension-ref-check-full-{}",
-        std::process::id()
-    ));
     let _ = std::fs::remove_dir_all(&root);
-    let _ = std::fs::remove_dir_all(&full_root);
     write_dimension_ref_project(&root);
-    write_dimension_ref_project(&full_root);
     let mut session = session(&root);
 
     let report = session.apply_data_patch(DataPatchRequest {
@@ -1232,17 +1193,11 @@ fn dimension_reference_checks_match_full_diagnostics() {
     });
 
     assert!(report.write_ok && !report.check_ok, "report: {report:?}");
-    std::fs::write(
-        full_root.join("data/dimensions/platform/Offer_item.csv"),
-        "id,default,pc\nstarter,&potion,&bad\n",
-    )
-    .expect("write full reference source");
-    let incremental = check_signatures(&report.diagnostics);
+    let incremental = check_diagnostics(&report.diagnostics);
     assert!(!incremental.is_empty());
-    assert_eq!(incremental, fresh_check_signatures(&full_root));
+    assert_eq!(incremental, fresh_check_diagnostics(&root));
 
     let _ = std::fs::remove_dir_all(root);
-    let _ = std::fs::remove_dir_all(full_root);
 }
 
 #[test]
