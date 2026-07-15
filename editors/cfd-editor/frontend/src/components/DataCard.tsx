@@ -243,6 +243,22 @@ const DiagCtx = createContext<DiagCtxValue | null>(null)
  *  it once the highlight has been consumed. */
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
+const ValueRowSelectionCtx = createContext<{
+  selectedFieldPath?: FieldPathSegment[] | null
+  onSelectValue?: (fieldPath: FieldPathSegment[]) => void
+  onEditingFinished?: () => void
+} | null>(null)
+
+function sameFieldPath(
+  left: FieldPathSegment[] | null | undefined,
+  right: FieldPathSegment[],
+): boolean {
+  return !!left
+    && left.length === right.length
+    && left.every((segment, index) => (
+      segment.kind === right[index].kind && segment.value === right[index].value
+    ))
+}
 
 function severityRank(s: 'error' | 'warning' | 'info'): number {
   return s === 'error' ? 3 : s === 'warning' ? 2 : 1
@@ -310,6 +326,9 @@ export interface ExpandedProps {
    *  jump into a deeply nested field can actually reach its target row.
    *  Cleared via `onHighlightConsumed` alongside `highlightField`. */
   expandAlongPath?: string | null
+  selectedFieldPath?: FieldPathSegment[] | null
+  onSelectValue?: (fieldPath: FieldPathSegment[]) => void
+  onEditingFinished?: () => void
 }
 
 export function DataCardExpanded({
@@ -326,6 +345,9 @@ export function DataCardExpanded({
   onHighlightConsumed,
   onDiagnosticBadgeClick,
   expandAlongPath,
+  selectedFieldPath,
+  onSelectValue,
+  onEditingFinished,
 }: ExpandedProps) {
   const ctx = useMemo(
     () => buildDiagCtx(diagnostics, onDiagnosticBadgeClick),
@@ -431,9 +453,11 @@ export function DataCardExpanded({
     </div>
   )
   const wrapped = (
-    <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
-      <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
-    </ControlledExpansionCtx.Provider>
+    <ValueRowSelectionCtx.Provider value={{ selectedFieldPath, onSelectValue, onEditingFinished }}>
+      <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
+        <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
+      </ControlledExpansionCtx.Provider>
+    </ValueRowSelectionCtx.Provider>
   )
   return ctx ? <DiagCtx.Provider value={ctx}>{wrapped}</DiagCtx.Provider> : wrapped
 }
@@ -555,6 +579,7 @@ function FieldRow({
       enumType={enumType}
       nullable={nullable}
       pathKey={pathKey}
+      fieldPath={fieldPath}
       leading={leading}
       trailing={mergedTrailing}
       dragProps={dragProps}
@@ -742,6 +767,7 @@ function ScalarFieldRow({
   enumType,
   nullable,
   pathKey,
+  fieldPath,
   leading,
   trailing,
   dragProps,
@@ -757,6 +783,7 @@ function ScalarFieldRow({
   enumType?: string
   nullable?: boolean
   pathKey?: string
+  fieldPath: FieldPathSegment[]
   leading?: ReactNode
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
@@ -769,9 +796,11 @@ function ScalarFieldRow({
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
   const rowTitle = spreadHint || (diag.messages.join('\n') || undefined)
+  const rowSelection = useContext(ValueRowSelectionCtx)
+  const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
 
   return (
-    <div className={`dc-row${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={rowTitle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div className={`dc-row${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 12 }}>
         {leading}
         <span className="dc-row-label-text">{label}</span>
@@ -855,6 +884,7 @@ function TextDirectInput({
 }) {
   const initial = plainFieldValueText(value)
   const [text, setText] = useState(initial)
+  const rowSelection = useContext(ValueRowSelectionCtx)
   useEffect(() => { setText(initial) }, [initial])
 
   function commit() {
@@ -876,7 +906,10 @@ function TextDirectInput({
           el.style.height = 'auto'
           el.style.height = el.scrollHeight + 'px'
         }}
-        onBlur={commit}
+        onBlur={() => {
+          commit()
+          requestAnimationFrame(() => rowSelection?.onEditingFinished?.())
+        }}
         onKeyDown={e => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -894,7 +927,10 @@ function TextDirectInput({
       type={value.kind === 'int' || value.kind === 'float' ? 'number' : 'text'}
       value={text}
       onChange={e => setText(e.target.value)}
-      onBlur={commit}
+      onBlur={() => {
+        commit()
+        requestAnimationFrame(() => rowSelection?.onEditingFinished?.())
+      }}
       onKeyDown={e => {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
         if (e.key === 'Escape') { setText(initial); (e.target as HTMLInputElement).blur() }
@@ -1350,6 +1386,8 @@ function ExpandableRow({
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
   const rowTitle = spreadHint || (diag.messages.join('\n') || undefined)
+  const rowSelection = useContext(ValueRowSelectionCtx)
+  const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
 
   function toggle() {
     const next = !expanded
@@ -1359,7 +1397,7 @@ function ExpandableRow({
 
   return (
     <>
-      <div className={`dc-row dc-row-foldout${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={rowTitle} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+      <div className={`dc-row dc-row-foldout${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 4 }}>
           {leading}
           <span className="dc-fold-arrow">

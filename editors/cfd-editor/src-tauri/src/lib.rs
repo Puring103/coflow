@@ -129,6 +129,39 @@ async fn create_record_draft(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn render_cell_text(
+    session_id: u32,
+    coordinate: RecordCoordinate,
+    field_path: Vec<CfdPathSegment>,
+    host: State<'_, EditorHost>,
+) -> Result<String, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .render_cell_text(session_id, &coordinate, &field_path)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn parse_cell_text(
+    session_id: u32,
+    coordinate: RecordCoordinate,
+    field_path: Vec<CfdPathSegment>,
+    text: String,
+    host: State<'_, EditorHost>,
+) -> Result<CfdValue, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .parse_cell_text(session_id, &coordinate, &field_path, &text)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn write_field(
     session_id: u32,
     coordinate: RecordCoordinate,
@@ -271,6 +304,8 @@ pub fn run() -> tauri::Result<()> {
             get_ref_targets,
             make_default_object,
             create_record_draft,
+            render_cell_text,
+            parse_cell_text,
             write_field,
             get_dimension_value,
             write_dimension_value,

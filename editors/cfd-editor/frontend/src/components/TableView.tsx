@@ -22,10 +22,10 @@ import {
   cellRefTargetType,
   diagnosticMatchesCoordinate,
   diagnosticSeverity,
+  errorMessage,
   fieldPathField,
   recordActualType,
   recordKey,
-  sameCoordinate,
   type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
@@ -44,6 +44,11 @@ import {
   selectionMatchesValue,
   type EditorSelection,
 } from '../state/editorSelection'
+import {
+  editIntentForKey,
+  moveTableSelection,
+  type TableDirection,
+} from '../state/tableCellNavigation'
 
 interface Props {
   data: FileRecords
@@ -58,6 +63,8 @@ interface Props {
   onSelectRecord?: (coordinate: RecordCoordinate) => void
   /** Click on a field cell: select that value. */
   onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => void
+  onRenderCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => Promise<string>
+  onParseCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], text: string) => Promise<FieldValue>
   /** Click on blank space inside the table view: deselect / close inspector. */
   onClearSelection?: () => void
   /** Dbl-click / context-menu jump to the dedicated record view. */
@@ -77,9 +84,11 @@ interface Props {
 
 const ROW_H = 30
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
+  const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
+  const [cellNotice, setCellNotice] = useState<string | null>(null)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
   const [globalFilter, setGlobalFilter] = useState(searchQuery ?? '')
@@ -259,6 +268,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   onRenameRecordRef.current = onRenameRecord
   const onDiagnosticBadgeClickRef = useRef(onDiagnosticBadgeClick)
   onDiagnosticBadgeClickRef.current = onDiagnosticBadgeClick
+  const syntaxEditRef = useRef(syntaxEdit)
+  syntaxEditRef.current = syntaxEdit
+  const onParseCellTextRef = useRef(onParseCellText)
+  onParseCellTextRef.current = onParseCellText
   const columns = useMemo(() => {
     const helper = createColumnHelper<RecordRow>()
     return [
@@ -323,6 +336,33 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   <span className="dc-null">—</span>
                   {cellBadge}
                 </span>
+              )
+            }
+            const editKey = tableCellKey(row.original.coordinate, name)
+            const syntaxRequest = syntaxEditRef.current?.key === editKey
+              ? syntaxEditRef.current
+              : null
+            if (syntaxRequest) {
+              return (
+                <CellSyntaxEditor
+                  initialText={syntaxRequest.initialText}
+                  onCancel={() => setSyntaxEdit(current => current?.key === editKey ? null : current)}
+                  onCommit={async text => {
+                    const parse = onParseCellTextRef.current
+                    const write = onWriteFieldRef.current
+                    if (!parse || !write) return
+                    try {
+                      const path = [fieldPathField(name)]
+                      const next = await parse(row.original.coordinate, path, text)
+                      await write(row.original.coordinate, path, next)
+                      setSyntaxEdit(current => current?.key === editKey ? null : current)
+                      setCellNotice(null)
+                      requestAnimationFrame(() => tableScrollRef.current?.focus({ preventScroll: true }))
+                    } catch (error) {
+                      setCellNotice(`输入格式不正确：${errorMessage(error)}`)
+                    }
+                  }}
+                />
               )
             }
             const readOnlyFromSchema = cellReadOnly(f)
@@ -410,7 +450,82 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       }}
     >
       <div className="table-main">
-        <div className="table-scroll" ref={tableScrollRef}>
+        <div
+          className="table-scroll"
+          ref={tableScrollRef}
+          tabIndex={0}
+          onKeyDown={async e => {
+            if (isNativeEditingTarget(e.target)) return
+            if (!selection || selection.filePath !== data.file_path) return
+
+            const visibleCoordinates = rows.map(row => row.original.coordinate)
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+              e.preventDefault()
+              const next = moveTableSelection(
+                selection,
+                e.key as TableDirection,
+                visibleCoordinates,
+                allFieldNames,
+              )
+              if (next !== selection) {
+                setSyntaxEdit(null)
+                if (next.kind === 'record') onSelectRecord?.(next.coordinate)
+                else onSelectValue?.(next.coordinate, next.fieldPath)
+                const index = visibleCoordinates.findIndex(coordinate => coordinateId(coordinate) === coordinateId(next.coordinate))
+                if (index >= 0) rowVirtualizer.scrollToIndex(index, { align: 'auto' })
+              }
+              return
+            }
+
+            if (selection.kind !== 'value') return
+            const field = selectedTopLevelField(selection.fieldPath)
+            if (!field) return
+            const selectedRow = rows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
+            const selectedCell = selectedRow ? fieldCell(selectedRow.original, field) : undefined
+            const editable = !!selectedCell && canEdit && !cellReadOnly(selectedCell)
+            const modified = e.ctrlKey || e.metaKey || e.altKey
+            const lower = e.key.toLowerCase()
+
+            if ((e.ctrlKey || e.metaKey) && lower === 'c' && onRenderCellText) {
+              e.preventDefault()
+              try {
+                const text = await onRenderCellText(selection.coordinate, selection.fieldPath)
+                await navigator.clipboard.writeText(text)
+                setCellNotice(null)
+              } catch (error) {
+                setCellNotice(`复制失败：${errorMessage(error)}`)
+              }
+              return
+            }
+            if ((e.ctrlKey || e.metaKey) && lower === 'v' && editable && onParseCellText && onWriteField) {
+              e.preventDefault()
+              try {
+                const text = await navigator.clipboard.readText()
+                const next = await onParseCellText(selection.coordinate, selection.fieldPath, text)
+                await onWriteField(selection.coordinate, selection.fieldPath, next)
+                setCellNotice(null)
+              } catch (error) {
+                setCellNotice(`粘贴格式不正确：${errorMessage(error)}`)
+              }
+              return
+            }
+
+            const intent = editable ? editIntentForKey(e.key, modified) : null
+            if (!intent) return
+            e.preventDefault()
+            try {
+              const initialText = intent.kind === 'replace'
+                ? intent.text
+                : await onRenderCellText?.(selection.coordinate, selection.fieldPath)
+              if (initialText !== undefined) {
+                setSyntaxEdit({ key: tableCellKey(selection.coordinate, field), initialText })
+                setCellNotice(null)
+              }
+            } catch (error) {
+              setCellNotice(`无法编辑：${errorMessage(error)}`)
+            }
+          }}
+        >
           <table className="data-table" style={{ width: table.getTotalSize() }}>
             <thead>
               {table.getHeaderGroups().map(hg => (
@@ -490,6 +605,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                             // Runs before native selects open, so the inspector
                             // follows the cell even when its editor consumes click.
                             e.stopPropagation()
+                            if (!isNativeEditingTarget(e.target)) {
+                              tableScrollRef.current?.focus({ preventScroll: true })
+                            }
                             if (fieldPath) onSelectValue?.(row.original.coordinate, fieldPath)
                             else onSelectRecord?.(row.original.coordinate)
                           }}
@@ -527,6 +645,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               新建记录
             </button>
           )}
+          {cellNotice && <span className="table-cell-notice" role="status">{cellNotice}</span>}
         </div>
       </div>
 
@@ -570,7 +689,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               const coordinate = contextMenu.row.coordinate
               setContextMenu(null)
               if (!window.confirm(`确认删除记录 ${key}？此操作不可撤销。`)) return
-              if (selection && sameCoordinate(selection.coordinate, coordinate)) onClearSelection?.()
               await onDeleteRecord(coordinate)
             }}>
               <Icon name="close" size={13} aria-hidden />
@@ -682,6 +800,56 @@ function findDiagMessage(
   return msgs.length ? msgs.join('\n') : undefined
 }
 
+function selectedTopLevelField(path: FieldPathSegment[]): string | null {
+  return path.length === 1 && path[0].kind === 'field' ? path[0].value : null
+}
+
+function tableCellKey(coordinate: RecordCoordinate, fieldName: string): string {
+  return `${coordinateId(coordinate)}::${fieldName}`
+}
+
+function isNativeEditingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.isContentEditable
+    || target.tagName === 'INPUT'
+    || target.tagName === 'TEXTAREA'
+    || target.tagName === 'SELECT'
+}
+
+function CellSyntaxEditor({
+  initialText,
+  onCommit,
+  onCancel,
+}: {
+  initialText: string
+  onCommit: (text: string) => Promise<void>
+  onCancel: () => void
+}) {
+  const [text, setText] = useState(initialText)
+  const [busy, setBusy] = useState(false)
+  return (
+    <input
+      className="dc-input dc-input-flat cell-syntax-editor"
+      value={text}
+      autoFocus
+      readOnly={busy}
+      onChange={e => setText(e.target.value)}
+      onBlur={onCancel}
+      onKeyDown={async e => {
+        e.stopPropagation()
+        if (e.key === 'Escape') onCancel()
+        if (e.key === 'Enter' && !busy) {
+          e.preventDefault()
+          setBusy(true)
+          await onCommit(text)
+          setBusy(false)
+        }
+      }}
+      aria-label="单元格语法编辑器"
+    />
+  )
+}
+
 function EditableCell({
   value, editable, refTargetType, enumType, nullable, onCommit,
 }: {
@@ -756,11 +924,11 @@ function EditableCell({
   return (
     <div
       className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}
-      onClick={canEdit ? (e: React.MouseEvent) => {
+      onDoubleClick={canEdit ? (e: React.MouseEvent) => {
         e.stopPropagation()
         setEditing(true)
       } : undefined}
-      title={canEdit ? '点击编辑' : undefined}
+      title={canEdit ? '双击编辑' : undefined}
     >
       <DataCardCompact value={value} />
     </div>

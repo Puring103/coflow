@@ -106,6 +106,23 @@ export async function createRecordDraft(sessionId: number, actualType: string): 
   return invokeCommand<CreateRecordDraft>('create_record_draft', { sessionId, actualType })
 }
 
+export async function renderCellText(
+  sessionId: number,
+  coordinate: RecordCoordinate,
+  fieldPath: FieldPathSegment[],
+): Promise<string> {
+  return invokeCommand<string>('render_cell_text', { sessionId, coordinate, fieldPath })
+}
+
+export async function parseCellText(
+  sessionId: number,
+  coordinate: RecordCoordinate,
+  fieldPath: FieldPathSegment[],
+  text: string,
+): Promise<FieldValue> {
+  return invokeCommand<CfdValue>('parse_cell_text', { sessionId, coordinate, fieldPath, text })
+}
+
 export async function writeField(
   sessionId: number,
   coordinate: RecordCoordinate,

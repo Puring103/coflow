@@ -23,14 +23,14 @@ import {
   buildRecordDiagnosticIndex,
   diagnosticsForRecord,
 } from '../state/recordDiagnostics'
+import type { EditorSelection } from '../state/editorSelection'
 
 interface Props {
   open: boolean
   collapsed: boolean
   onToggleCollapse: () => void
   data: FileRecords | null
-  coordinate: RecordCoordinate | null
-  fieldPath?: FieldPathSegment[] | null
+  selection: EditorSelection | null
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
   width: number
@@ -64,8 +64,7 @@ export function InspectorPanel({
   collapsed,
   onToggleCollapse,
   data,
-  coordinate,
-  fieldPath,
+  selection,
   readOnly,
   diagnostics,
   width,
@@ -80,6 +79,7 @@ export function InspectorPanel({
   const [expandedByRecord, setExpandedByRecord] = useState<ExpandedPathMap>(() => new Map())
   const widthRef = useRef(width)
   widthRef.current = width
+  const coordinate = selection?.coordinate ?? null
 
   const onSplitterDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -126,13 +126,13 @@ export function InspectorPanel({
   const recordSeverity = diagnosticProjection.severity
 
   const canRename = !readOnly && data?.capabilities.can_edit_key && !!onRenameRecord
-  const selectedTopField = fieldPath?.[0]?.kind === 'field'
-    ? fieldPath[0].value
+  const selectedTopField = selection?.kind === 'value' && selection.fieldPath[0]?.kind === 'field'
+    ? selection.fieldPath[0].value
     : null
   const inspectorFields = selectedTopField && record
     ? record.fields.filter(field => field.name === selectedTopField)
     : record?.fields ?? []
-  const inspectingValue = fieldPath !== null && fieldPath !== undefined
+  const inspectingValue = selection?.kind === 'value'
   const expansionOwner = data && coordinate
     ? `${data.file_path}:${coordinateId(coordinate)}`
     : null

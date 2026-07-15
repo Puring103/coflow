@@ -761,6 +761,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .table-scroll {
   flex: 1;
   overflow: auto;
+  outline: none;
 }
 
 .data-table {
@@ -975,6 +976,17 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   height: var(--h-toolbar);
   font-size: var(--fs-sm);
   color: var(--text-mute);
+}
+.table-cell-notice {
+  margin-left: auto;
+  color: var(--red);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cell-syntax-editor {
+  width: 100%;
+  min-width: 0;
 }
 
 .new-record-form {
@@ -1527,6 +1539,13 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+.dc-row.keyboard-selected {
+  background: var(--bg-4);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.rv-main:focus {
+  outline: none;
 }
 .dc-row-value-inner {
   display: flex;

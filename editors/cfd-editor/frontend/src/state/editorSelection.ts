@@ -53,6 +53,31 @@ export function selectionMatchesValue(
     && sameFieldPath(selection.fieldPath, fieldPath)
 }
 
+export function rebindSelection(
+  selection: EditorSelection | null,
+  filePath: string,
+  oldCoordinate: RecordCoordinate,
+  newCoordinate: RecordCoordinate,
+): EditorSelection | null {
+  return selection
+    && selection.filePath === filePath
+    && sameCoordinate(selection.coordinate, oldCoordinate)
+    ? { ...selection, coordinate: newCoordinate }
+    : selection
+}
+
+export function removeSelection(
+  selection: EditorSelection | null,
+  filePath: string,
+  coordinate: RecordCoordinate,
+): EditorSelection | null {
+  return selection
+    && selection.filePath === filePath
+    && sameCoordinate(selection.coordinate, coordinate)
+    ? null
+    : selection
+}
+
 function sameFieldPath(left: FieldPathSegment[], right: FieldPathSegment[]): boolean {
   return left.length === right.length && left.every((segment, index) => {
     const other = right[index]

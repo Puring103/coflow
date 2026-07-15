@@ -72,7 +72,12 @@ export interface EditorMutationPort {
     row: RecordRow,
     revision: number,
   ) => FileRecords | undefined
-  rebindCoordinate: (oldCoordinate: RecordCoordinate, newCoordinate: RecordCoordinate) => void
+  rebindCoordinate: (
+    filePath: string,
+    oldCoordinate: RecordCoordinate,
+    newCoordinate: RecordCoordinate,
+  ) => void
+  removeCoordinate?: (filePath: string, coordinate: RecordCoordinate) => void
   recoverPublication: (request: MutationPublicationRequest, error: unknown) => boolean
   reportError: (
     sessionId: number,
@@ -287,7 +292,7 @@ export class EditorMutationController {
       outcome => this.fileRecordsForRow(filePath, coordinate, outcome.row, outcome.revision),
       outcome => {
         const finalCoordinate = outcome.renamed ?? coordinate
-        this.applyRename(coordinate, outcome.renamed)
+        this.applyRename(filePath, coordinate, outcome.renamed)
         if (outcome.old_value && outcome.new_value) {
           this.history.record({
             kind: 'field',
@@ -315,7 +320,7 @@ export class EditorMutationController {
       sessionId => this.backend.renameRecordKey(sessionId, coordinate, newKey),
       outcome => this.fileRecordsForRow(filePath, coordinate, outcome.row, outcome.revision),
       outcome => {
-        this.applyRename(coordinate, outcome.renamed)
+        this.applyRename(filePath, coordinate, outcome.renamed)
         this.history.record({
           kind: 'field',
           revision: outcome.revision,
@@ -486,7 +491,7 @@ export class EditorMutationController {
       outcome => this.fileRecordsForRow(filePath, coordinate, outcome.row, outcome.revision),
       outcome => {
         const finalCoordinate = outcome.renamed ?? coordinate
-        this.applyRename(coordinate, outcome.renamed)
+        this.applyRename(filePath, coordinate, outcome.renamed)
         if (options.recordHistory) {
           const oldValue = outcome.old_value
           const historyNewValue = outcome.new_value ?? newValue
@@ -580,6 +585,7 @@ export class EditorMutationController {
       sessionId => this.backend.deleteRecord(sessionId, coordinate),
       outcome => outcome.file_records,
       outcome => {
+        this.port.removeCoordinate?.(filePath, coordinate)
         if (options.recordHistory && outcome.deleted_snapshot) {
           this.history.record({
             kind: 'delete',
@@ -648,12 +654,13 @@ export class EditorMutationController {
   }
 
   private applyRename(
+    filePath: string,
     oldCoordinate: RecordCoordinate,
     newCoordinate: RecordCoordinate | null,
   ): void {
     if (!newCoordinate) return
     this.history.rebind(oldCoordinate, newCoordinate)
-    this.port.rebindCoordinate(oldCoordinate, newCoordinate)
+    this.port.rebindCoordinate(filePath, oldCoordinate, newCoordinate)
   }
 
   private fileRecordsForRow(

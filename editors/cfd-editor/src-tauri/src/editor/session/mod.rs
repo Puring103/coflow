@@ -280,6 +280,41 @@ impl SessionStore {
         Ok(wire)
     }
 
+    pub fn render_cell_text(
+        &self,
+        id: u32,
+        coordinate: &RecordCoordinate,
+        field_path: &[coflow_data_model::CfdPathSegment],
+    ) -> Result<String, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        session
+            .engine
+            .render_cell_text(coordinate, field_path)
+            .map_err(api_diagnostics_to_editor_error)
+    }
+
+    pub fn parse_cell_text(
+        &self,
+        id: u32,
+        coordinate: &RecordCoordinate,
+        field_path: &[coflow_data_model::CfdPathSegment],
+        text: &str,
+    ) -> Result<CfdValue, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        session
+            .engine
+            .parse_cell_text(coordinate, field_path, text)
+            .map_err(api_diagnostics_to_editor_error)
+    }
+
     pub fn get_enum_variants(&self, id: u32, enum_name: &str) -> Result<Vec<String>, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;

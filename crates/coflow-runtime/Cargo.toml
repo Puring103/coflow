@@ -23,6 +23,7 @@ coflow-api = { path = "../coflow-api" }
 coflow-cft = { path = "../coflow-cft" }
 coflow-checker = { path = "../coflow-checker" }
 coflow-data-model = { path = "../coflow-data-model" }
+coflow-loader-table-core = { path = "../coflow-loader-table-core" }
 coflow-project = { path = "../coflow-project" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

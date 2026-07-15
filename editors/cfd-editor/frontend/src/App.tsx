@@ -49,6 +49,8 @@ import { historyShortcutFor } from './state/editorShortcuts'
 import { projectFieldValue, projectFieldValueAtRevision } from './state/fieldProjection'
 import {
   recordSelection,
+  rebindSelection,
+  removeSelection,
   valueSelection,
   type EditorSelection,
 } from './state/editorSelection'
@@ -180,6 +182,7 @@ export default function App() {
     coordinate: RecordCoordinate,
     fieldPath: FieldPathSegment[],
   ) => {
+    setInspectorCollapsed(false)
     setInspectorSelection(valueSelection(file, coordinate, fieldPath))
   }, [])
   const closeInspector = useCallback(() => setInspectorSelection(null), [])
@@ -596,22 +599,27 @@ export default function App() {
   )
 
   const rebindCoordinate = useCallback(
-    (oldCoordinate: RecordCoordinate, newCoordinate: RecordCoordinate) => {
+    (filePath: string, oldCoordinate: RecordCoordinate, newCoordinate: RecordCoordinate) => {
       if (sameCoordinate(oldCoordinate, newCoordinate)) return
       if (
         router.current?.view === 'record' &&
+        router.current.file === filePath &&
         sameCoordinate(router.current.coordinate, oldCoordinate)
       ) {
         router.replace({ ...router.current, coordinate: newCoordinate })
       }
-      setInspectorSelection(current => (
-        current && sameCoordinate(current.coordinate, oldCoordinate)
-          ? { ...current, coordinate: newCoordinate }
-          : current
+      setInspectorSelection(current => rebindSelection(
+        current,
+        filePath,
+        oldCoordinate,
+        newCoordinate,
       ))
     },
     [router],
   )
+  const removeCoordinate = useCallback((filePath: string, coordinate: RecordCoordinate) => {
+    setInspectorSelection(current => removeSelection(current, filePath, coordinate))
+  }, [])
 
   const fileRecordsForRow = useCallback(
     (
@@ -709,6 +717,7 @@ export default function App() {
     publish: publishMutation,
     fileRecordsForRow,
     rebindCoordinate,
+    removeCoordinate,
     recoverPublication: (request, error) => {
       if (!commitProjectRevision(request.sessionId, request.revision, request.diagnostics)) {
         return false
@@ -730,7 +739,7 @@ export default function App() {
       reportSessionError(sessionId, prefix, error, true, expectedRevision)
     },
     optimisticWriteField,
-  }), [commitProjectRevision, fileRecordsForRow, generation, optimisticWriteField, publishMutation, rebindCoordinate, reportSessionError])
+  }), [commitProjectRevision, fileRecordsForRow, generation, optimisticWriteField, publishMutation, rebindCoordinate, removeCoordinate, reportSessionError])
   const mutations = useMemo(
     () => new EditorMutationController(api, mutationPort, history),
     [history, mutationPort],
@@ -897,6 +906,22 @@ export default function App() {
       if (currentRoute?.view === 'table') openValueInspector(currentRoute.file, coordinate, fieldPath)
     },
     [currentRoute?.view, currentRoute?.file, openValueInspector],
+  )
+  const tableOnRenderCellText = useCallback(
+    async (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => {
+      const identity = generation.currentIdentity()
+      if (!identity) throw new Error('当前项目会话不可用')
+      return api.renderCellText(identity.sessionId, coordinate, fieldPath)
+    },
+    [generation],
+  )
+  const tableOnParseCellText = useCallback(
+    async (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], text: string) => {
+      const identity = generation.currentIdentity()
+      if (!identity) throw new Error('当前项目会话不可用')
+      return api.parseCellText(identity.sessionId, coordinate, fieldPath, text)
+    },
+    [generation],
   )
   const tableOnOpenRecord = useCallback(
     (coordinate: RecordCoordinate) => {
@@ -1272,6 +1297,8 @@ export default function App() {
                       : null}
                     onSelectRecord={tableOnSelectRecord}
                     onSelectValue={tableOnSelectValue}
+                    onRenderCellText={tableOnRenderCellText}
+                    onParseCellText={tableOnParseCellText}
                     onClearSelection={closeInspector}
                     onOpenRecord={tableOnOpenRecord}
                     onWriteField={tableOnWriteField}
@@ -1293,6 +1320,8 @@ export default function App() {
                     highlightField={highlightField}
                     onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
+                    selection={inspectorSelection}
+                    onSelectValue={(coordinate, path) => openValueInspector(currentRoute.file, coordinate, path)}
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
                     onCollectionEdit={(coordinate, path, edit) => editCollection(currentRoute.file, coordinate, path, edit)}
                     onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
@@ -1356,8 +1385,7 @@ export default function App() {
           collapsed={inspectorCollapsed}
           onToggleCollapse={() => setInspectorCollapsed(v => !v)}
           data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}
-          coordinate={inspectorCoord?.coordinate ?? null}
-          fieldPath={inspectorSelection?.kind === 'value' ? inspectorSelection.fieldPath : null}
+          selection={inspectorSelection}
           readOnly={inspectorCoord ? !isEditableFile(fileDataCache[inspectorCoord.file]) : true}
           diagnostics={project?.diagnostics}
           width={inspectorW}

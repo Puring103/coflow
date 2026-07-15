@@ -164,6 +164,39 @@ describe('EditorMutationController', () => {
     expect(port.publish).not.toHaveBeenCalled()
   })
 
+  it('notifies the selection owner only after a delete is committed', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const removeCoordinate = vi.fn()
+    const mutationBackend = backend(vi.fn())
+    mutationBackend.deleteRecord = vi.fn(async () => ({
+      revision: 2,
+      file_records: { revision: 2, file_path: 'data/items.cfd' } as FileRecords,
+      diagnostics: [],
+      affected_files: ['data/items.cfd'],
+      deleted_snapshot: null,
+    }))
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      removeCoordinate,
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const mutations = new EditorMutationController(
+      mutationBackend,
+      port,
+      new MutationHistoryController(),
+    )
+
+    await mutations.deleteRecord('data/items.cfd', coordinate)
+
+    expect(removeCoordinate).toHaveBeenCalledWith('data/items.cfd', coordinate)
+  })
+
   it('publishes a cached row projection without requiring a full file reload', async () => {
     let generation = { sessionId: 1, revision: 1 }
     const projected = { revision: 2, file_path: 'data/items.cfd' } as FileRecords

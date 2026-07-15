@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use coflow_api::{
     ArtifactSet, CodeGenerator, CodegenContext, DataExporter, DecodedOutputOptions, DiagnosticSet,
-    ExportContext, ProviderRegistry, WriterCapabilities,
+    ExportContext, ProviderRegistry, Severity, WriterCapabilities,
 };
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
@@ -400,6 +400,41 @@ impl WriteProjectSession {
     #[must_use]
     pub const fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Render one effective field value using the table cell grammar.
+    pub fn render_cell_text(
+        &self,
+        coordinate: &RecordCoordinate,
+        path: &[CfdPathSegment],
+    ) -> Result<String, DiagnosticSet> {
+        let value = self
+            .queries()
+            .field_value(&coordinate.actual_type, &coordinate.key, path)
+            .ok_or_else(|| DiagnosticSet::one(coflow_api::Diagnostic {
+                code: "MUTATION-PATH".to_string(),
+                stage: "MUTATION".to_string(),
+                severity: Severity::Error,
+                message: "selected field was not found".to_string(),
+                primary: None,
+                related: Vec::new(),
+            }))?;
+        crate::mutation::render_cell_text_value(value)
+    }
+
+    /// Parse table cell text using the schema type at one field path.
+    pub fn parse_cell_text(
+        &self,
+        coordinate: &RecordCoordinate,
+        path: &[CfdPathSegment],
+        text: &str,
+    ) -> Result<CfdValue, DiagnosticSet> {
+        crate::mutation::parse_cell_text_value(
+            &self.session,
+            &coordinate.actual_type,
+            path,
+            text,
+        )
     }
 
     #[must_use]

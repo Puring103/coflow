@@ -5,6 +5,7 @@ use coflow_data_model::CfdEnumValue;
 use crate::ProjectSession;
 
 mod apply;
+mod cell_text;
 mod coercion;
 mod defaults;
 mod dimension;
@@ -18,6 +19,7 @@ pub use types::{
     MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
 };
 pub(crate) use types::{DimensionSourceCoordinate, PreparedMutationOp};
+pub(crate) use cell_text::{parse_cell_text_value, render_cell_text_value};
 
 pub(super) fn schema_field<'a>(
     schema: &'a CftSchema,

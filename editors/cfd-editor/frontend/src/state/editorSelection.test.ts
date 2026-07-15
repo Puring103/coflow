@@ -3,6 +3,8 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import { fieldPathField } from '../wire'
 import {
   recordSelection,
+  rebindSelection,
+  removeSelection,
   selectionMatchesRecord,
   selectionMatchesValue,
   valueSelection,
@@ -35,5 +37,29 @@ describe('editor selection', () => {
       [fieldPathField('stats'), fieldPathField('mana')],
     )).toBe(false)
     expect(selectionMatchesRecord(selection, 'data/npc.cfd', coordinate)).toBe(false)
+  })
+
+  it('rebinds a selected value only when file and coordinate both match', () => {
+    const selection = valueSelection(
+      'data/npc.cfd',
+      coordinate,
+      [fieldPathField('name')],
+    )
+    const renamed = { ...coordinate, key: 'captain' }
+
+    expect(rebindSelection(selection, 'data/items.cfd', coordinate, renamed)).toBe(selection)
+    expect(rebindSelection(selection, 'data/npc.cfd', coordinate, renamed)).toEqual({
+      ...selection,
+      coordinate: renamed,
+    })
+  })
+
+  it('removes record and value selections only after the owning record matches', () => {
+    const record = recordSelection('data/npc.cfd', coordinate)
+    const value = valueSelection('data/npc.cfd', coordinate, [fieldPathField('name')])
+
+    expect(removeSelection(record, 'data/items.cfd', coordinate)).toBe(record)
+    expect(removeSelection(value, 'data/npc.cfd', coordinate)).toBeNull()
+    expect(removeSelection(record, 'data/npc.cfd', coordinate)).toBeNull()
   })
 })

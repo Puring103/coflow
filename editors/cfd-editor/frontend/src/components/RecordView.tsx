@@ -29,6 +29,12 @@ import {
   buildRecordDiagnosticIndex,
   diagnosticsForRecord,
 } from '../state/recordDiagnostics'
+import type { EditorSelection } from '../state/editorSelection'
+import {
+  moveRecordItem,
+  type RecordItemDirection,
+  type VisibleRecordItem,
+} from '../state/recordItemNavigation'
 
 interface Props {
   data: FileRecords
@@ -41,6 +47,8 @@ interface Props {
   highlightField?: string | null
   onHighlightConsumed?: () => void
   onOpenRecord: (coordinate: RecordCoordinate) => void
+  selection?: EditorSelection | null
+  onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => void
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
   onCollectionEdit?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], edit: CollectionEdit) => Promise<RecordRow | void>
   onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
@@ -52,17 +60,23 @@ interface Props {
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, selection, onSelectValue, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [expandedByRecord, setExpandedByRecord] = useState<ExpandedPathMap>(() => new Map())
   const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
+  const mainRef = useRef<HTMLDivElement>(null)
 
   const activeId = coordinateId(coordinate)
   const expansionOwner = `${data.file_path}:${activeId}`
   const expandedPaths = expandedPathsFor(expandedByRecord, expansionOwner)
+  const selectedFieldPath = selection?.kind === 'value'
+    && selection.filePath === data.file_path
+    && sameCoordinate(selection.coordinate, coordinate)
+    ? selection.fieldPath
+    : null
 
   // Record-level highlight burns off after the header flashes — the child
   // DataCardExpanded only clears the highlight for field-level jumps.
@@ -135,6 +149,57 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     }
   }
 
+  const onMainKeyDown = (e: React.KeyboardEvent) => {
+    if (isNativeEditorTarget(e.target)) return
+    if (
+      e.key !== 'ArrowUp'
+      && e.key !== 'ArrowDown'
+      && e.key !== 'ArrowLeft'
+      && e.key !== 'ArrowRight'
+    ) return
+    const root = mainRef.current
+    if (!root) return
+    const elements = Array.from(root.querySelectorAll<HTMLElement>('.dc-row[data-field-path-wire]'))
+    if (elements.length === 0) return
+    const items: VisibleRecordItem[] = elements.map(element => ({
+      id: element.dataset.fieldPath ?? '',
+      depth: Number(element.dataset.depth ?? 0),
+      expandable: element.classList.contains('dc-row-foldout'),
+    }))
+    const selectedWire = selectedFieldPath ? JSON.stringify(selectedFieldPath) : null
+    let current = selectedWire
+      ? elements.find(element => element.dataset.fieldPathWire === selectedWire)
+      : null
+    if (!current) {
+      e.preventDefault()
+      const firstPath = parseWireFieldPath(elements[0].dataset.fieldPathWire)
+      if (firstPath) onSelectValue?.(record.coordinate, firstPath)
+      return
+    }
+    const result = moveRecordItem(
+      items,
+      current.dataset.fieldPath ?? '',
+      e.key as RecordItemDirection,
+    )
+    if (!result) return
+    e.preventDefault()
+    const target = elements.find(element => element.dataset.fieldPath === result.id)
+    if (!target) return
+    if (result.kind === 'toggle') {
+      setExpandedByRecord(currentMap => updateExpandedPath(
+        currentMap,
+        expansionOwner,
+        result.id,
+        !expandedPaths.has(result.id),
+      ))
+      return
+    }
+    const path = parseWireFieldPath(target.dataset.fieldPathWire)
+    if (!path) return
+    onSelectValue?.(record.coordinate, path)
+    target.scrollIntoView({ block: 'nearest' })
+  }
+
   const newRecordType = typeFilter || recordActualType(record)
   const canCreate = !readOnly
     && data.capabilities.can_insert_record
@@ -193,7 +258,18 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         )}
       </div>
 
-      <div className="rv-main">
+      <div
+        className="rv-main"
+        ref={mainRef}
+        tabIndex={0}
+        onKeyDown={onMainKeyDown}
+        onMouseDownCapture={e => {
+          const target = e.target as HTMLElement
+          if (target.closest('.dc-row[data-field-path-wire]') && !isNativeEditorTarget(target)) {
+            mainRef.current?.focus({ preventScroll: true })
+          }
+        }}
+      >
         <CardHeader
           recordKey={recordKey(record)}
           actualType={recordActualType(record)}
@@ -231,6 +307,9 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           highlightField={highlightField === RECORD_HIGHLIGHT_SENTINEL ? null : highlightField}
           expandAlongPath={highlightField && highlightField !== RECORD_HIGHLIGHT_SENTINEL ? highlightField : null}
           onHighlightConsumed={onHighlightConsumed}
+          selectedFieldPath={selectedFieldPath}
+          onSelectValue={path => onSelectValue?.(record.coordinate, path)}
+          onEditingFinished={() => mainRef.current?.focus({ preventScroll: true })}
           onDiagnosticBadgeClick={onDiagnosticBadgeClick
             ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)
             : undefined}
@@ -252,6 +331,25 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
 function cssEscape(s: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s)
   return s.replace(/["\\]/g, '\\$&')
+}
+
+function parseWireFieldPath(raw: string | undefined): FieldPathSegment[] | null {
+  if (!raw) return null
+  try {
+    const value = JSON.parse(raw)
+    return Array.isArray(value) ? value as FieldPathSegment[] : null
+  } catch {
+    return null
+  }
+}
+
+function isNativeEditorTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.isContentEditable
+    || target.tagName === 'INPUT'
+    || target.tagName === 'TEXTAREA'
+    || target.tagName === 'SELECT'
+    || target.tagName === 'BUTTON'
 }
 
 /** First scalar field's summary — used as the sidebar row subtitle so the
