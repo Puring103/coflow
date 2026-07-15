@@ -6,6 +6,7 @@ use crate::span::Span;
 use crate::{DimensionName, VariantName};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// One collected CFT module before parsing.
 #[derive(Debug, Clone)]
@@ -37,8 +38,8 @@ impl CftFile {
 #[derive(Debug, Clone)]
 pub struct CftModule {
     path: PathBuf,
-    source: String,
-    pub(crate) ast: Option<ModuleAst>,
+    source: Arc<str>,
+    pub(crate) ast: Option<Arc<ModuleAst>>,
 }
 
 impl CftModule {
@@ -52,8 +53,21 @@ impl CftModule {
         &self.source
     }
     #[must_use]
-    pub const fn ast(&self) -> Option<&ModuleAst> {
-        self.ast.as_ref()
+    pub fn ast(&self) -> Option<&ModuleAst> {
+        match self.ast.as_ref() {
+            Some(ast) => Some(ast.as_ref()),
+            None => None,
+        }
+    }
+
+    #[must_use]
+    pub fn shared_source(&self) -> Arc<str> {
+        Arc::clone(&self.source)
+    }
+
+    #[must_use]
+    pub fn shared_ast(&self) -> Option<Arc<ModuleAst>> {
+        self.ast.as_ref().map(Arc::clone)
     }
 }
 
@@ -166,10 +180,10 @@ pub fn parse_modules(files: impl IntoIterator<Item = CftFile>) -> CftModuleSet {
 
         let module = file.module;
         let path = file.path;
-        let source = file.source;
+        let source: Arc<str> = file.source.into();
         let parsed = parse_module(&module, &source);
         let ast = match parsed {
-            Ok(ast) => Some(ast),
+            Ok(ast) => Some(Arc::new(ast)),
             Err(errors) => {
                 diagnostics.extend(errors.diagnostics);
                 None

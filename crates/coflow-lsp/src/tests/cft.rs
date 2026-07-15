@@ -134,12 +134,9 @@ type Item {\n\
         })
         .expect("type");
     let check = type_def.check.as_ref().expect("check");
-    let no_ast_document = LspDocument {
-        module_id: document.module_id.clone(),
-        uri: document.uri.clone(),
-        source: document.source.clone(),
-        ast: None,
-    };
+    let (_invalid_cleanup, invalid_build) =
+        test_lsp_build("lsp-completion-scope-invalid", "type Broken { $");
+    let no_ast_document = first_document(&invalid_build);
 
     assert_eq!(
         completion_scope(document, enum_def.span.start),
@@ -166,7 +163,7 @@ type Item {\n\
         CompletionScope::TopLevel
     );
     assert_eq!(
-        completion_scope(&no_ast_document, check.span.start),
+        completion_scope(no_ast_document, check.span.start),
         CompletionScope::TopLevel
     );
 }
@@ -323,15 +320,12 @@ type Item {\n\
 
     let method_source = source.replacen("value > LIMIT", "xs.", 1);
     let method_offset = method_source.find("xs.").expect("method receiver") + "xs.".len();
-    let method_document = LspDocument {
-        module_id: document.module_id.clone(),
-        uri: document.uri.clone(),
-        source: method_source,
-        ast: document.ast.clone(),
-    };
+    let (_method_cleanup, method_build) =
+        test_lsp_build("lsp-cft-context-completion-method", &method_source);
+    let method_document = first_document(&method_build);
     let method_labels = completion_labels(check_expression_completion_items(
-        &build,
-        &method_document,
+        &method_build,
+        method_document,
         method_offset,
     ));
     assert!(method_labels.contains(&"len".to_string()));

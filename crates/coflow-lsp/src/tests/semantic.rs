@@ -172,19 +172,16 @@ elite: Monster { target: &base }\n";
 
 #[test]
 fn semantic_tokens_and_protocol_helpers_cover_malformed_boundaries() {
-    let (_cleanup, build) = test_lsp_build(
+    let (_cleanup, _build) = test_lsp_build(
         "lsp-semantic-helper-boundaries",
         "type Item { key: string; }\n",
     );
-    let invalid_document = LspDocument {
-        module_id: "broken".to_string(),
-        uri: "file:///broken.cft".to_string(),
-        source: "type Broken { $".to_string(),
-        ast: None,
-    };
+    let (_invalid_cleanup, invalid_build) =
+        test_lsp_build("lsp-semantic-helper-invalid", "type Broken { $");
+    let invalid_document = first_document(&invalid_build);
 
-    assert!(document_symbols(&invalid_document).is_empty());
-    assert!(semantic_token_data(&build, &invalid_document).is_empty());
+    assert!(document_symbols(invalid_document).is_empty());
+    assert!(semantic_token_data(&invalid_build, invalid_document).is_empty());
     assert_eq!(comment_start_in_line("\"#\" # real"), Some(4));
     assert_eq!(comment_start_in_line("\"unterminated # still string"), None);
     assert!(is_inside_string(

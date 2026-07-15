@@ -581,7 +581,7 @@ impl<W: Write> LspServer<W> {
                 return self.write_response(id, &json!([]));
             };
             let formatted = format_cft(&document.source);
-            if formatted == document.source {
+            if formatted == document.source() {
                 json!([])
             } else {
                 json!([{

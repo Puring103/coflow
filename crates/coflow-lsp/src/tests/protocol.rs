@@ -244,7 +244,7 @@ fn validation_snapshot_rejects_stale_revision_commit() {
         .build()
         .and_then(|build| build.document_by_uri(&uri))
         .expect("current build document");
-    assert_eq!(document.source, "type Second {}\n");
+    assert_eq!(document.source(), "type Second {}\n");
 }
 
 #[test]

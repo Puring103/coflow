@@ -4,6 +4,7 @@ use coflow_project::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::definition;
 use crate::uri::{path_from_file_uri, path_to_file_uri};
@@ -19,8 +20,18 @@ pub(crate) struct LspBuild {
 pub(crate) struct LspDocument {
     pub(crate) module_id: String,
     pub(crate) uri: String,
-    pub(crate) source: String,
-    pub(crate) ast: Option<coflow_cft::ast::ModuleAst>,
+    pub(crate) source: Arc<str>,
+    pub(crate) ast: Option<Arc<coflow_cft::ast::ModuleAst>>,
+}
+
+impl LspDocument {
+    pub(crate) fn source(&self) -> &str {
+        &self.source
+    }
+
+    pub(crate) fn ast(&self) -> Option<&coflow_cft::ast::ModuleAst> {
+        self.ast.as_deref()
+    }
 }
 
 impl LspBuild {
@@ -31,19 +42,17 @@ impl LspBuild {
 
         for (module_id, module) in schema.modules().modules() {
             let module_id = module_id.as_str().to_string();
-            let source = module.source();
             let path = module.path().to_path_buf();
             let uri = path_to_file_uri(&path);
-            let ast = module.ast().cloned();
             module_by_uri.insert(uri.clone(), module_id.clone());
             module_by_path.insert(normalize_path(&path), module_id.clone());
             documents.insert(
                 module_id.clone(),
                 LspDocument {
-                    module_id: module_id.clone(),
+                    module_id,
                     uri,
-                    source: source.to_string(),
-                    ast,
+                    source: module.shared_source(),
+                    ast: module.shared_ast(),
                 },
             );
         }
@@ -89,7 +98,9 @@ pub(crate) fn current_type_at<'a>(
     offset: usize,
 ) -> Option<&'a CftType> {
     build.schema()?.all_types().find(|ty| {
-        ty.module.as_str() == document.module_id && ty.span.start <= offset && offset <= ty.span.end
+        ty.module.as_str() == document.module_id
+            && ty.span.start <= offset
+            && offset <= ty.span.end
     })
 }
 
@@ -97,7 +108,7 @@ pub(crate) fn current_field_at(
     document: &LspDocument,
     offset: usize,
 ) -> Option<&coflow_cft::ast::FieldDef> {
-    let ast = document.ast.as_ref()?;
+    let ast = document.ast()?;
     for item in &ast.items {
         if let Item::Type(ty) = item {
             if ty.span.start <= offset && offset <= ty.span.end {
@@ -217,7 +228,7 @@ pub(crate) fn enum_variant_exists(build: &LspBuild, enum_name: &str, variant_nam
 
 fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
     build.documents.values().any(|document| {
-        document.ast.as_ref().is_some_and(|ast| {
+        document.ast().is_some_and(|ast| {
             ast.items
                 .iter()
                 .any(|item| matches!(item, Item::Enum(enum_def) if enum_def.name == enum_name))
@@ -227,7 +238,7 @@ fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
 
 pub(crate) fn quantifier_bindings_at(document: &LspDocument, offset: usize) -> Vec<String> {
     let mut bindings = Vec::new();
-    let Some(ast) = &document.ast else {
+    let Some(ast) = document.ast() else {
         return bindings;
     };
     for item in &ast.items {
