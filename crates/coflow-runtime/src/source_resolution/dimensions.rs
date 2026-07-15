@@ -1,9 +1,10 @@
 use super::{project_diagnostic, ConfiguredSource, ResolvedLoaderSource, SourceResolver};
 use crate::dimensions::DimensionField;
-use coflow_api::{DiagnosticSet, SourceLocationSpec};
+use coflow_api::{Diagnostic, DiagnosticSet, SourceLocationSpec};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 pub(super) fn resolve_dimension_sources(
     resolver: &SourceResolver<'_>,
@@ -57,15 +58,24 @@ pub(super) fn resolve_dimension_sources(
         paths.sort();
 
         for path in paths {
-            let Some((configured, field)) =
-                configured_dimension_source(resolver, &directory, &dimension_fields, path)
-            else {
-                continue;
-            };
+            let (configured, matched_fields) =
+                match configured_dimension_source(resolver, &directory, &dimension_fields, path) {
+                    Ok(Some(source)) => source,
+                    Ok(None) => continue,
+                    Err(error) => {
+                        diagnostics.extend(error);
+                        continue;
+                    }
+                };
             match resolver.resolve_implicit(&configured) {
                 Ok(resolved_sources) => {
                     for resolved in resolved_sources {
-                        sources.push((resolved, field.clone()));
+                        for field in &matched_fields {
+                            sources.push((
+                                (Arc::clone(&resolved.0), resolved.1.clone()),
+                                field.clone(),
+                            ));
+                        }
                     }
                 }
                 Err(error) => diagnostics.extend(error),
@@ -99,22 +109,44 @@ fn configured_dimension_source(
     directory: &Path,
     fields: &[&DimensionField],
     path: PathBuf,
-) -> Option<(ConfiguredSource, DimensionField)> {
-    let extension = path.extension().and_then(|ext| ext.to_str())?.to_string();
+) -> Result<Option<(ConfiguredSource, Vec<DimensionField>)>, DiagnosticSet> {
+    let Some(extension) = path.extension().and_then(|ext| ext.to_str()) else {
+        return Ok(None);
+    };
+    let extension = extension.to_string();
     if !matches!(extension.as_str(), "csv" | "cfd") {
-        return None;
+        return Ok(None);
     }
-    let stem = path.file_stem().and_then(|stem| stem.to_str())?;
-    let field = field_for_file_stem(fields, stem, &extension)?;
+    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return Ok(None);
+    };
+    let matched_fields = fields_for_file_stem(fields, stem, &extension);
+    if matched_fields.is_empty() {
+        return Ok(None);
+    }
+    let singleton_group = matched_fields.iter().all(|field| field.is_singleton)
+        && matched_fields
+            .iter()
+            .all(|field| field.source_type == matched_fields[0].source_type);
+    if matched_fields.len() > 1 && !singleton_group {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "DIM-SOURCE-PATH-CONFLICT",
+            "PROJECT",
+            format!(
+                "multiple dimension fields map to managed source `{}`",
+                path.display()
+            ),
+        )));
+    }
     let display_name = path.strip_prefix(&resolver.project.root_dir).map_or_else(
         |_| path.display().to_string(),
         coflow_project::path_to_slash,
     );
-    Some((
+    Ok(Some((
         ConfiguredSource {
             provider_id: String::new(),
             location: SourceLocationSpec::Path(path),
-            options: source_options(field, &extension),
+            options: source_options(matched_fields[0], &extension),
             display_name: if display_name.is_empty() {
                 directory.display().to_string()
             } else {
@@ -122,22 +154,26 @@ fn configured_dimension_source(
             },
             source_index: None,
         },
-        field.clone(),
-    ))
+        matched_fields.into_iter().cloned().collect(),
+    )))
 }
 
-fn field_for_file_stem<'a>(
+fn fields_for_file_stem<'a>(
     fields: &'a [&DimensionField],
     stem: &str,
     extension: &str,
-) -> Option<&'a DimensionField> {
-    fields.iter().copied().find(|field| {
-        if extension == "cfd" && field.is_singleton {
-            stem == field.source_type.as_str()
-        } else {
-            stem == format!("{}_{}", field.bucket, field.source_field)
-        }
-    })
+) -> Vec<&'a DimensionField> {
+    fields
+        .iter()
+        .copied()
+        .filter(|field| {
+            if extension == "cfd" && field.is_singleton {
+                stem == field.source_type.as_str()
+            } else {
+                stem == format!("{}_{}", field.bucket, field.source_field)
+            }
+        })
+        .collect()
 }
 
 fn source_options(field: &DimensionField, extension: &str) -> Value {

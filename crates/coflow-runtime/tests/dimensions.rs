@@ -684,6 +684,58 @@ dimensions:
 }
 
 #[test]
+fn directory_source_excludes_nested_managed_dimension_directory() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-directory-source-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { @localized name: string; }",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n")
+        .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let registry = csv_dimension_registry();
+    let session = build_session(project, &registry).expect("build session");
+    assert!(
+        !session.queries().has_diagnostics(),
+        "diagnostics: {:?}",
+        session.queries().diagnostics().as_set()
+    );
+    assert!(session
+        .queries()
+        .has_source_file("data/dimensions/language/Item_name.csv"));
+    assert!(session
+        .queries()
+        .record_view("Item", "potion")
+        .is_some());
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
 fn custom_dimension_publishes_overlay_and_implicit_source() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-custom-dim-synthesis-{}",
@@ -1669,6 +1721,56 @@ dimensions:
 }
 
 #[test]
+fn dimension_fields_cannot_share_a_non_singleton_physical_source() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-source-path-conflict-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"type Item { @localized(bucket = "ui") name: string; }
+type Monster { @localized(bucket = "ui") name: string; }
+"#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/main.cfd"),
+        "item: Item { name: \"Item\" }\nmonster: Monster { name: \"Monster\" }\n",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/main.cfd
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let registry = coflow_builtins::default_provider_registry().expect("default registry");
+    let session = build_session(project, &registry).expect("publish diagnostics");
+    assert!(session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "DIM-SOURCE-PATH-CONFLICT"));
+    assert!(!root.join("data/dimensions/language/ui_name.csv").exists());
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
 fn language_dimension_regenerates_csv_defaults_with_cell_value_syntax() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-dim-regenerate-cell-values-{}",
@@ -1812,6 +1914,97 @@ dimensions:
     assert!(session
         .queries()
         .has_source_file("data/dimensions/language/UiText.cfd"));
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn singleton_dimension_source_preserves_loads_and_writes_multiple_fields() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-singleton-multiple-fields-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("data/dimensions/language"))
+        .expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"@singleton
+type UiText {
+  @localized welcome: string;
+  @localized farewell: string;
+}
+"#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/ui.cfd"),
+        "UiText: UiText { welcome: \"Welcome\", farewell: \"Bye\" }\n",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("data/dimensions/language/UiText.cfd"),
+        r#"welcome: UiText { default: "Old welcome", zh: "欢迎" }
+farewell: UiText { default: "Old farewell", zh: "再见旧值" }
+"#,
+    )
+    .expect("write dimension source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/ui.cfd
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let registry = coflow_builtins::default_provider_registry().expect("default registry");
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let session = build_session(project, &registry).expect("build session");
+    let record = session
+        .queries()
+        .record_view("UiText", "UiText")
+        .expect("singleton owner");
+    assert_eq!(
+        record.record.dimension_field("welcome").unwrap().variants["zh"].value,
+        CfdValue::String("欢迎".to_string())
+    );
+    assert_eq!(
+        record.record.dimension_field("farewell").unwrap().variants["zh"].value,
+        CfdValue::String("再见旧值".to_string())
+    );
+    drop(session);
+
+    let project = Project::open_schema_only(Some(&root)).expect("reopen project");
+    let mut write_session = Runtime::new(registry)
+        .open_write_session(project)
+        .expect("open write session");
+    write_session
+        .write_dimension_value(
+            DimensionValueCoordinate {
+                actual_type: TypeName::new("UiText").unwrap(),
+                record_key: RecordKey::new("UiText").unwrap(),
+                field: FieldName::new("farewell").unwrap(),
+                dimension: DimensionName::new("language").unwrap(),
+                variant: VariantName::new("zh").unwrap(),
+                path: Vec::new(),
+            },
+            &CfdValue::String("再见".to_string()),
+        )
+        .expect("write second singleton dimension field");
+
+    let generated = std::fs::read_to_string(root.join("data/dimensions/language/UiText.cfd"))
+        .expect("read generated dimension source");
+    assert!(generated.contains("welcome: UiText"), "{generated}");
+    assert!(generated.contains("farewell: UiText"), "{generated}");
+    assert!(generated.contains("zh: \"欢迎\""), "{generated}");
+    assert!(generated.contains("zh: \"再见\""), "{generated}");
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }

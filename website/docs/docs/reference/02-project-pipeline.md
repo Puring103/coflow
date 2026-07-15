@@ -213,7 +213,7 @@ CLI、编辑器和自动化命令复用这些 capability，而不是导入 ownin
 
 1. 扫描 schema 中的 `@localized` 字段。
 2. 注入合成 type。
-3. 在 `dimensions.language.out_dir` 下维护维度数据文件。
+3. 在各自的 `dimensions.<name>.out_dir` 独占目录下维护维度数据文件。
 4. 把维度文件注册为隐式 source。
 5. 按默认值轮和语言变体轮执行相关 check。
 

@@ -65,6 +65,14 @@ fn validate_variants(
     dimension: &DimensionName,
     variants: &[VariantName],
 ) -> Result<(), CftDiagnostics> {
+    if variants.is_empty() {
+        return Err(CftDiagnostics::one(CftDiagnostic::error(
+            CftErrorCode::InvalidAnnotationArgument,
+            ModuleId::from("__project__"),
+            Span::default(),
+            format!("dimension `{dimension}` must declare at least one variant"),
+        )));
+    }
     let mut seen = BTreeSet::new();
     for variant in variants {
         if !seen.insert(variant) {

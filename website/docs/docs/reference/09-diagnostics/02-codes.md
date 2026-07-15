@@ -40,12 +40,14 @@
 | `MUTATION-DIMENSION-STALE` | `MUTATION` | 维度值与调用方提供的 expected state 不一致；managed source 未修改 |
 | `PATCH-DIMENSION-COORDINATE` | `PATCH` | patch 中的 type、record key、field、dimension 或 variant 名称不合法 |
 | `RUNTIME-INTERNAL` | `RUNTIME` | runtime 构造空模型等不可恢复内部错误 |
-| `DIM-CONFIG-001` | `PROJECT` | schema 中存在 `@localized` 字段，但未配置 `dimensions.language` |
-| `DIM-CONFIG-002` | `PROJECT` | `dimensions.language.variants` 为空、包含 `default`、包含重复项或不是合法 CFT 标识符 |
-| `DIM-CONFIG-003` | `PROJECT` | `dimensions.language.out_dir` 缺失 |
+| `DIM-CONFIG-002` | `PROJECT` | `dimensions.<name>` 名称或 variants 非法、为空、包含 `default` 或重复项 |
+| `DIM-CONFIG-003` | `PROJECT` | `dimensions.<name>.out_dir` 缺失 |
 | `DIM-SOURCE-001` | `PROJECT` / engine | 维度文件生成或隐式 source 注册失败，例如无法创建目录、读取或写入维度文件失败 |
 | `DIM-SOURCE-003` | `PROJECT` | 显式 source 位于 `dimensions.*.out_dir` 下；维度文件由 Coflow 管理，不能加入 `sources` |
-| `DIM-SOURCE-004` | `PROJECT` | `dimensions.*.out_dir` 下存在当前 schema 不再管理的旧维度文件 |
+| `DIM-SOURCE-005` | `PROJECT` | 维度字段重命名后的物理 source 迁移失败 |
+| `DIM-SOURCE-006` | `PROJECT` | 删除不再由当前 schema 管理的旧维度 source 失败 |
+| `DIM-SOURCE-007` | `PROJECT` | 两个维度的托管目录相同或互相包含，无法建立唯一目录所有权 |
+| `DIM-SOURCE-PATH-CONFLICT` | `PROJECT` | 多个非 singleton 维度字段映射到同一物理 source 路径 |
 | `CFT-LSP` | `LSP` | Language Server 无法解析当前文档或项目上下文时返回的编辑器诊断 |
 
 `PROJECT-001` 是项目配置聚合诊断，会尽量一次报告多个独立配置问题。

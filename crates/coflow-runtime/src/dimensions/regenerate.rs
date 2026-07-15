@@ -38,6 +38,39 @@ pub(crate) fn plan_dimension_generation(
     fields: &[DimensionField],
 ) -> DimensionGenerationPlanResult {
     let mut diagnostics = DiagnosticSet::empty();
+    let owned_dirs = project
+        .config
+        .dimensions
+        .iter()
+        .filter_map(|(dimension, config)| {
+            config
+                .out_dir
+                .as_ref()
+                .map(|out_dir| (dimension.as_str(), project.resolve_path(out_dir)))
+        })
+        .collect::<Vec<_>>();
+    for (index, (dimension, path)) in owned_dirs.iter().enumerate() {
+        for (other_dimension, other_path) in owned_dirs.iter().skip(index + 1) {
+            if coflow_project::path_is_same_or_descendant(path, other_path)
+                || coflow_project::path_is_same_or_descendant(other_path, path)
+            {
+                diagnostics.push(dimension_diagnostic(
+                    &project.config_path,
+                    other_dimension,
+                    "DIM-SOURCE-007",
+                    format!(
+                        "dimensions.{other_dimension}.out_dir overlaps dimensions.{dimension}.out_dir; every dimension requires an exclusive managed directory"
+                    ),
+                ));
+            }
+        }
+    }
+    if !diagnostics.is_empty() {
+        return DimensionGenerationPlanResult {
+            plan: DimensionGenerationPlan::default(),
+            diagnostics,
+        };
+    }
     let mut operations = Vec::new();
     for (dimension, config) in &project.config.dimensions {
         let dimension_fields = fields
@@ -55,13 +88,14 @@ pub(crate) fn plan_dimension_generation(
         };
         let out_dir = project.resolve_path(out_dir);
         let mut expected_paths = BTreeSet::new();
-        let mut dimension_operations = Vec::new();
+        let mut dimension_operations = BTreeMap::<String, DimensionGenerationOperation>::new();
 
         for field in dimension_fields {
             let provider_id = if field.is_singleton { "cfd" } else { "csv" };
             let path = dimension_source_path(&out_dir, field);
-            expected_paths.insert(path.clone());
-            dimension_operations.push(DimensionGenerationOperation {
+            let path_identity = coflow_project::normalized_path_identity(&path);
+            expected_paths.insert(path_identity.clone());
+            let operation = DimensionGenerationOperation {
                 dimension: dimension.clone(),
                 provider_id: provider_id.to_string(),
                 path: path.clone(),
@@ -71,8 +105,32 @@ pub(crate) fn plan_dimension_generation(
                 variants: config.variants.clone(),
                 bucket: field.bucket.to_string(),
                 is_singleton: field.is_singleton,
-            });
+            };
+            match dimension_operations.entry(path_identity) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(operation);
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry)
+                    if field.is_singleton
+                        && entry.get().is_singleton
+                        && entry.get().actual_type == field.source_type.as_str() =>
+                {
+                    entry.get_mut().entries.extend(operation.entries);
+                }
+                std::collections::btree_map::Entry::Occupied(entry) => {
+                    diagnostics.push(dimension_diagnostic(
+                        &project.config_path,
+                        dimension,
+                        "DIM-SOURCE-PATH-CONFLICT",
+                        format!(
+                            "dimension fields map to the same managed source `{}`",
+                            entry.get().path.display()
+                        ),
+                    ));
+                }
+            }
         }
+        let dimension_operations = dimension_operations.into_values().collect::<Vec<_>>();
         let reconciliations = match reconcile_dimension_sources(
             &project.config_path,
             dimension,
@@ -104,7 +162,7 @@ fn reconcile_dimension_sources(
     config_path: &Path,
     dimension: &str,
     out_dir: &Path,
-    expected_paths: &BTreeSet<PathBuf>,
+    expected_paths: &BTreeSet<String>,
     operations: &[DimensionGenerationOperation],
 ) -> Result<Vec<DimensionGenerationPlanOp>, DiagnosticSet> {
     let entries = match fs::read_dir(out_dir) {
@@ -144,7 +202,7 @@ fn reconcile_dimension_sources(
             path.extension()
                 .and_then(|extension| extension.to_str())
                 .is_some_and(|extension| matches!(extension, "csv" | "cfd"))
-                && !expected_paths.contains(path)
+                && !expected_paths.contains(&coflow_project::normalized_path_identity(path))
         })
         .collect::<Vec<_>>();
 

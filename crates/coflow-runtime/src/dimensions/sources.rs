@@ -1,6 +1,6 @@
 use coflow_cft::{BucketName, CftSchema, DimensionName, FieldName, TypeName};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DimensionField {
     pub dimension: DimensionName,
     pub source_type: TypeName,

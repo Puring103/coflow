@@ -3,8 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use coflow_api::{ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet};
-use coflow_cft::CftSchema;
-use coflow_cft::{parse_modules, CftFile, CftModuleSet};
+use coflow_cft::{CftModuleSet, CftSchema};
 use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
 use coflow_project::{path_to_slash, Project};
 use serde::{Deserialize, Serialize};
@@ -45,6 +44,7 @@ impl RecordCoordinate {
 #[derive(Debug)]
 pub(crate) struct ProjectSession {
     pub(crate) project: Project,
+    pub(crate) modules: Arc<CftModuleSet>,
     pub(crate) schema: Arc<CftSchema>,
     pub(crate) model: CfdDataModel,
     pub(crate) diagnostics: DiagnosticsStore,
@@ -96,7 +96,7 @@ impl ProjectSession {
     pub fn into_schema_session(self) -> ProjectSchemaSession {
         ProjectSchemaSession {
             project: self.project,
-            modules: Arc::new(parse_modules(std::iter::empty::<CftFile>())),
+            modules: self.modules,
             schema: Some(self.schema),
             diagnostics: self.diagnostics,
         }

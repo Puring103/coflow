@@ -58,6 +58,11 @@ impl DimensionSourceManager for CfdWriter {
         let mut values = Vec::new();
         let mut diagnostics = DiagnosticSet::empty();
         for record in ast.records {
+            if request.schema.source_type.is_singleton
+                && record.key != request.schema.source_field.name.as_str()
+            {
+                continue;
+            }
             let source_key = match RecordKey::new(record.key.clone()) {
                 Ok(key) => key,
                 Err(err) => {
@@ -140,10 +145,15 @@ impl DimensionSourceManager for CfdWriter {
             .map(ToString::to_string)
             .collect::<Vec<_>>();
         let mut rows = read_existing_dimension_cfd(path, &variants, None)?;
-        let row = rows.get_mut(request.source_key.as_str()).ok_or_else(|| {
+        let physical_key = if request.schema.source_type.is_singleton {
+            request.schema.source_field.name.as_str()
+        } else {
+            request.source_key.as_str()
+        };
+        let row = rows.get_mut(physical_key).ok_or_else(|| {
             DiagnosticSet::one(diag(
                 "CFD-DIMENSION-WRITE",
-                format!("dimension source has no record `{}`", request.source_key),
+                format!("dimension source has no record `{physical_key}`"),
             ))
         })?;
         match request.new_value {
@@ -164,6 +174,9 @@ impl DimensionSourceManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &RewriteDimensionRecordRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        if request.schema.source_type.is_singleton {
+            return Ok(DimensionSourceResult::default());
+        }
         let SourceLocationSpec::Path(path) = &request.source.location;
         let variants = request
             .schema

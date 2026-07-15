@@ -11,8 +11,9 @@
 
 use coflow_api::{path_to_slash as canonical_path_to_slash, SourceLocation};
 use coflow_project::{
-    discover_directory_files, init_project, normalize_path, path_to_slash, resolve_config_path,
-    OutputConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
+    discover_directory_files, init_project, normalize_path, normalized_path_identity,
+    path_is_same_or_descendant, path_to_slash, resolve_config_path, OutputConfig, OutputsConfig,
+    Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -327,7 +328,7 @@ outputs:
 }
 
 #[test]
-fn project_config_accepts_new_path_url_sources_and_provider_options() -> TestResult {
+fn project_config_accepts_path_sources_and_provider_options() -> TestResult {
     let root = temp_project_dir("coflow-project-new-config-model");
     std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
     std::fs::write(root.join("schema/main.cft"), "type Item { value: string; }")
@@ -663,6 +664,66 @@ dimensions:
 }
 
 #[test]
+fn project_config_validates_every_dimension_without_language_special_cases() -> TestResult {
+    let root = temp_project_dir("coflow-project-custom-dimension-validation");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Item { name: string; }")
+        .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+dimensions:
+  platform:
+    variants: []
+"#,
+    )
+    .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    let diagnostics = project.schema_diagnostic_set();
+    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "DIM-CONFIG-002"
+            && diagnostic.message == "dimensions.platform.variants must not be empty"
+    }));
+    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "DIM-CONFIG-003"
+            && diagnostic.message == "dimensions.platform.out_dir is required"
+    }));
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn project_config_rejects_overlapping_dimension_output_directories() -> TestResult {
+    let root = temp_project_dir("coflow-project-dimension-directory-ownership");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Item { name: string; }")
+        .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions
+  platform:
+    variants: [pc]
+    out_dir: data/dimensions/platform
+"#,
+    )
+    .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    let diagnostics = project.schema_diagnostic_set();
+    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "DIM-SOURCE-007"
+            && diagnostic.message.contains("every dimension requires an exclusive managed directory")
+    }));
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
 fn project_config_rejects_sources_inside_dimension_out_dir() -> TestResult {
     let root = temp_project_dir("coflow-project-dimension-source-overlap");
     std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
@@ -942,6 +1003,20 @@ fn path_helpers_normalize_nonexistent_paths_and_slash_components() {
         path_to_slash(Path::new("schema").join("nested").join("a.cft").as_path()),
         "schema/nested/a.cft"
     );
+    assert!(path_is_same_or_descendant(
+        Path::new("data/dimensions/language/Item_name.csv"),
+        Path::new("data/dimensions/language")
+    ));
+    assert!(!path_is_same_or_descendant(
+        Path::new("data/dimensions/platform"),
+        Path::new("data/dimensions/language")
+    ));
+    if cfg!(windows) {
+        assert_eq!(
+            normalized_path_identity(Path::new("DATA/Dimensions")),
+            normalized_path_identity(Path::new("data/dimensions"))
+        );
+    }
     let project_formatter: fn(&Path) -> String = path_to_slash;
     let canonical_formatter: fn(&Path) -> String = canonical_path_to_slash;
     assert!(std::ptr::fn_addr_eq(project_formatter, canonical_formatter));

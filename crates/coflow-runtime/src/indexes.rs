@@ -202,6 +202,18 @@ impl SourceIndex {
         self.entries.push(entry);
     }
 
+    pub(crate) fn get_or_insert_dimension(&mut self, entry: ResolvedSourceEntry) -> SourceId {
+        if let Some(index) = self.entries.iter().position(|candidate| {
+            candidate.provider_id == entry.provider_id
+                && candidate.source.location == entry.source.location
+        }) {
+            return SourceId(index);
+        }
+        let id = SourceId(self.entries.len());
+        self.entries.push(entry);
+        id
+    }
+
     #[must_use]
     pub(crate) fn get(&self, id: SourceId) -> Option<&ResolvedSourceEntry> {
         self.entries.get(id.index())
@@ -454,10 +466,13 @@ impl FileIndex {
 
     pub(crate) fn add_source_file(&mut self, display_path: String, source_id: SourceId) {
         self.source_files.insert(display_path.clone());
-        self.display_to_sources
+        let sources = self
+            .display_to_sources
             .entry(display_path)
-            .or_default()
-            .push(source_id);
+            .or_default();
+        if !sources.contains(&source_id) {
+            sources.push(source_id);
+        }
     }
 }
 
@@ -476,5 +491,21 @@ mod tests {
             &[SourceId(0), SourceId(1)]
         );
         assert_eq!(files.source_for_display("data/items.cfd"), None);
+    }
+
+    #[test]
+    fn repeated_bindings_to_one_physical_source_remain_unique() {
+        let mut files = FileIndex::default();
+        files.add_source_file("data/dimensions/UiText.cfd".to_string(), SourceId(0));
+        files.add_source_file("data/dimensions/UiText.cfd".to_string(), SourceId(0));
+
+        assert_eq!(
+            files.sources_for_display("data/dimensions/UiText.cfd"),
+            &[SourceId(0)]
+        );
+        assert_eq!(
+            files.source_for_display("data/dimensions/UiText.cfd"),
+            Some(SourceId(0))
+        );
     }
 }

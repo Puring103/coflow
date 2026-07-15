@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use coflow_api::{DiagnosticSet, ProviderRegistry};
-use coflow_cft::CftSchema;
+use coflow_cft::{CftModuleSet, CftSchema};
 use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 
@@ -106,6 +106,7 @@ pub(crate) fn rebuild_project_session_from_generation(
     let dimension_fields = dimensions::dimension_fields(session.schema());
     let ctx = SessionBuildContext {
         project: session.project.clone(),
+        modules: Arc::clone(&session.modules),
         schema: session.schema.clone(),
         registry,
         dimension_mode: DimensionBuildMode::Generate,
@@ -132,7 +133,7 @@ fn finish_project_session(
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
     let ProjectSchemaSession {
         project,
-        modules: _,
+        modules,
         schema,
         mut diagnostics,
     } = schema_session;
@@ -144,6 +145,7 @@ fn finish_project_session(
     let dimension_fields = dimensions::dimension_fields(&schema);
     let ctx = SessionBuildContext {
         project,
+        modules,
         schema,
         registry,
         dimension_mode: options.dimension_mode(),
@@ -176,6 +178,7 @@ fn open_schema_session(project: Project) -> Result<ProjectSchemaSession, Diagnos
 
 struct SessionBuildContext<'a> {
     project: Project,
+    modules: Arc<CftModuleSet>,
     schema: Arc<CftSchema>,
     registry: &'a ProviderRegistry,
     dimension_mode: DimensionBuildMode,
@@ -536,6 +539,7 @@ fn assemble_session(
 ) -> ProjectSession {
     ProjectSession {
         project: ctx.project,
+        modules: ctx.modules,
         schema: ctx.schema,
         model,
         diagnostics,

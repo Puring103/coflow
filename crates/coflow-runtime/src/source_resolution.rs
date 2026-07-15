@@ -7,7 +7,7 @@ use coflow_api::{
     SourceLocation, SourceLocationSpec, SourceProvider, SourceProviderSelectionError,
     SourceResolveContext,
 };
-use coflow_project::{discover_directory_files, Project, SourceConfig};
+use coflow_project::{discover_directory_files, path_is_same_or_descendant, Project, SourceConfig};
 use serde_json::Value;
 
 mod dimensions;
@@ -140,8 +140,20 @@ impl<'a> SourceResolver<'a> {
                 error.to_string(),
             ))
         })?;
+        let managed_dimension_dirs = self
+            .project
+            .config
+            .dimensions
+            .values()
+            .filter_map(|config| config.out_dir.as_ref())
+            .map(|out_dir| self.project.resolve_path(out_dir))
+            .collect::<Vec<_>>();
         let mut selected = Vec::new();
-        for path in files {
+        for path in files.into_iter().filter(|path| {
+            !managed_dimension_dirs
+                .iter()
+                .any(|out_dir| path_is_same_or_descendant(path, out_dir))
+        }) {
             let file_source = ConfiguredSource {
                 provider_id: String::new(),
                 display_name: path.display().to_string(),

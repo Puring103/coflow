@@ -40,6 +40,24 @@ fn parsed_module_set_preserves_module_source_and_ast() {
 }
 
 #[test]
+fn every_configured_dimension_requires_at_least_one_variant() {
+    let modules = parse_modules([CftFile::new(
+        ModuleId::new("schema/main.cft"),
+        PathBuf::from("schema/main.cft"),
+        "type Item { @dimension(\"platform\") name: string; }",
+    )]);
+    let diagnostics = build_schema(
+        &modules,
+        &CftDimensionInputs::new([("platform", Vec::<String>::new())]),
+    )
+    .expect_err("empty custom dimension must fail");
+
+    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
+        diagnostic.message == "dimension `platform` must declare at least one variant"
+    }));
+}
+
+#[test]
 fn build_schema_compiles_a_parsed_module_set() {
     let modules = parse_modules([CftFile::new(
         ModuleId::new("schema/items.cft"),

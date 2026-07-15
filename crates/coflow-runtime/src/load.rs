@@ -259,7 +259,7 @@ pub(crate) fn reload_project_data_from_cache(
         .enumerate()
         .filter_map(|(index, batch)| {
             (reload_paths.contains(&batch.entry.display_path)
-                || !previous.contains_source(&batch.entry, batch.dimension_field.is_some()))
+                || !previous.contains_source(&batch.entry, batch.dimension_field.as_ref()))
             .then_some(index)
         })
         .collect::<Vec<_>>();
@@ -417,14 +417,13 @@ fn load_resolved_dimension_sources(
     let mut diagnostics = DiagnosticSet::empty();
     for (_, source) in resolved_sources {
         let display_path = display_path_for(project, &source);
-        let source_id = SourceId(sources.entries.len());
-        files.add_source_file(display_path.clone(), source_id);
         let entry = ResolvedSourceEntry {
             provider_id: source.provider_id.clone(),
             source: source.clone(),
             display_path,
         };
-        sources.push(entry.clone());
+        let source_id = sources.get_or_insert_dimension(entry.clone());
+        files.add_source_file(entry.display_path.clone(), source_id);
         match load_dimension_batch(project, schema, registry, &source, field, records) {
             Ok(values) => source_data.batches.push(CachedSourceBatch {
                 entry,
@@ -528,9 +527,13 @@ fn push_loaded_records(
 }
 
 impl SourceDataCache {
-    fn contains_source(&self, entry: &ResolvedSourceEntry, dimension: bool) -> bool {
+    fn contains_source(
+        &self,
+        entry: &ResolvedSourceEntry,
+        dimension_field: Option<&dimensions::DimensionField>,
+    ) -> bool {
         self.batches.iter().any(|batch| {
-            batch.dimension_field.is_some() == dimension
+            batch.dimension_field.as_ref() == dimension_field
                 && batch.entry.provider_id == entry.provider_id
                 && batch.entry.source.location == entry.source.location
         })
@@ -563,7 +566,7 @@ fn refresh_dimension_source_plans(
                     .batches
                     .iter()
                     .find(|batch| {
-                        batch.dimension_field.is_some()
+                        batch.dimension_field.as_ref() == Some(&field)
                             && batch.entry.provider_id == entry.provider_id
                             && batch.entry.source.location == entry.source.location
                     })
@@ -600,11 +603,16 @@ fn build_output_from_cache(
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records = Vec::new();
     for batch in &source_data.batches {
-        let source_id = SourceId(indexes.sources.entries.len());
+        let source_id = if batch.dimension_field.is_some() {
+            indexes.sources.get_or_insert_dimension(batch.entry.clone())
+        } else {
+            let source_id = SourceId(indexes.sources.entries.len());
+            indexes.sources.push(batch.entry.clone());
+            source_id
+        };
         indexes
             .files
             .add_source_file(batch.entry.display_path.clone(), source_id);
-        indexes.sources.push(batch.entry.clone());
         if batch.dimension_field.is_none() {
             push_loaded_records(
                 &mut records,

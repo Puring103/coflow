@@ -97,3 +97,35 @@ pub fn normalize_path(path: &Path) -> PathBuf {
         out
     })
 }
+
+/// Returns a stable identity for ownership comparisons.
+///
+/// Existing paths are canonicalized first. Windows identities are folded to
+/// lowercase because distinct CFT identifiers can otherwise target the same
+/// case-insensitive filesystem entry.
+#[must_use]
+pub fn normalized_path_identity(path: &Path) -> String {
+    let normalized = normalize_path(path);
+    let identity = coflow_api::path_to_slash(&normalized);
+    if cfg!(windows) {
+        identity.to_lowercase()
+    } else {
+        identity
+    }
+}
+
+#[must_use]
+pub fn path_is_same_or_descendant(path: &Path, root: &Path) -> bool {
+    let path = normalized_path_identity(path);
+    let mut root = normalized_path_identity(root);
+    while root.ends_with('/') && root.len() > 1 {
+        root.pop();
+    }
+    if root == "/" {
+        return path.starts_with('/');
+    }
+    path == root
+        || path
+            .strip_prefix(&root)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}

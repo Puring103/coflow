@@ -206,3 +206,27 @@ fn schema_files_returns_compiled_module_sources() {
 
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn data_session_conversion_preserves_compiled_module_sources() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-session-schema-files-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let registry = coflow_builtins::default_provider_registry().expect("registry");
+    let session = Runtime::new(registry)
+        .open_read_only_session(project)
+        .expect("data session")
+        .into_schema_session();
+    let files = schema_files(&session);
+
+    assert_eq!(files.files.len(), 1);
+    assert!(files.files[0].module.contains("schema/main.cft"));
+    assert!(files.files[0].source.contains("type Item"));
+
+    let _ = std::fs::remove_dir_all(root);
+}

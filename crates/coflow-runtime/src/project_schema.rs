@@ -1,6 +1,4 @@
-use std::collections::BTreeSet;
-
-use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_api::{Diagnostic, DiagnosticSet};
 use coflow_cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftModuleSet, CftSchema, ModuleId,
 };
@@ -8,7 +6,6 @@ use coflow_project::{normalize_path, Project};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::dimensions;
 use crate::indexes::DiagnosticsStore;
 use crate::schema_diagnostics::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
 use crate::session::ProjectSchemaSession;
@@ -130,7 +127,6 @@ pub(crate) fn open_project_schema_attempt(
         diagnostics.extend(build.diagnostics);
         match build.schema {
             Some(schema) => {
-                diagnostics.extend(validate_dimension_schema_config(&project, &schema));
                 (build.modules, Some(schema))
             }
             None => (build.modules, None),
@@ -144,38 +140,4 @@ pub(crate) fn open_project_schema_attempt(
         schema: schema.map(Arc::new),
         diagnostics,
     })
-}
-
-fn validate_dimension_schema_config(project: &Project, schema: &CftSchema) -> DiagnosticSet {
-    let mut diagnostics = DiagnosticSet::empty();
-    let mut required = BTreeSet::new();
-    for field in dimensions::dimension_fields(schema) {
-        required.insert(field.dimension.to_string());
-    }
-    for dimension in required {
-        if project.config.dimensions.contains_key(&dimension) {
-            continue;
-        }
-        let message = if dimension == "language" {
-            "schema contains @localized fields but dimensions.language is not configured"
-                .to_string()
-        } else {
-            format!("schema contains @dimension(\"{dimension}\") fields but dimensions.{dimension} is not configured")
-        };
-        diagnostics.push(Diagnostic {
-            code: "DIM-CONFIG-001".to_string(),
-            stage: "PROJECT".to_string(),
-            severity: Severity::Error,
-            message,
-            primary: Some(Label {
-                location: SourceLocation::ProjectConfig {
-                    path: project.config_path.clone(),
-                    key_path: vec!["dimensions".to_string(), dimension],
-                },
-                message: None,
-            }),
-            related: Vec::new(),
-        });
-    }
-    diagnostics
 }

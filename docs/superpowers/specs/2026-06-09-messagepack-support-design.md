@@ -46,7 +46,7 @@ crates/
 
 ## Exporter 架构
 
-`coflow-exporter-core` 负责复用已经验证过的 `CfdDataModel` 和编译后的 `CftContainer`，提供格式无关的 schema-aware 导出遍历。这样 JSON exporter 和 MessagePack exporter 不会重复实现 schema 遍历、表选择、字段顺序、多态 `$type`、`@ref` ID 保留和字典 key 处理。
+`coflow-exporter-core` 负责复用已经验证过的 `CfdDataModel` 和编译后的 `CftSchema`，提供格式无关的 schema-aware 导出遍历。这样 JSON exporter 和 MessagePack exporter 不会重复实现 schema 遍历、表选择、字段顺序、多态 `$type`、`@ref` ID 保留和字典 key 处理。
 
 不新增一套公共 `ExportValue` 数据模型。`CfdDataModel` 已经是 source-neutral 的验证后数据模型，里面有 `CfdValue`、`CfdRecord`、`CfdTable`、`CfdDictKey`、`CfdIdValue` 等结构。再引入一个公共 `ExportValue` 会让项目出现第二套“数据模型”，增加同步和命名成本。
 

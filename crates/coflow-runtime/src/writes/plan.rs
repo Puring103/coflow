@@ -334,6 +334,9 @@ fn dimension_record_actions(
     let schema = session.schema();
     let mut actions = Vec::new();
     for (entry, field) in session.source_data.dimension_sources() {
+        if field.is_singleton {
+            continue;
+        }
         let applies = schema
             .field(actual_type, &field.source_field)
             .is_some_and(|schema_field| {

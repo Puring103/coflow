@@ -27,7 +27,9 @@ pub use config::{
 };
 pub use file_discovery::{discover_directory_files, DirectoryDiscoveryError};
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
-pub use paths::{normalize_path, resolve_config_path};
+pub use paths::{
+    normalize_path, normalized_path_identity, path_is_same_or_descendant, resolve_config_path,
+};
 pub use schema_path_policy::SchemaFile;
 pub use schema_sources::{SchemaSource, SchemaSourceSet};
 
