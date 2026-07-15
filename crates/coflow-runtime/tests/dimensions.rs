@@ -181,6 +181,63 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
 }
 
 #[test]
+fn read_only_session_reports_unreadable_dimension_source_directory() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-runtime-dim-source-discovery-error-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/dimensions")).expect("create data dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        "type Item { @localized name: string; }",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n")
+        .expect("write records");
+    std::fs::write(root.join("data/dimensions/language"), "not a directory")
+        .expect("write invalid dimension directory");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let invalid_directory = std::fs::canonicalize(root.join("data/dimensions/language"))
+        .expect("canonicalize invalid dimension directory");
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let session = open_read_only_session(project, &csv_dimension_registry())
+        .expect("read-only sessions publish load diagnostics");
+    let diagnostics = session.queries().diagnostics().as_set();
+    assert!(
+        diagnostics.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "PROJECT-001"
+                && diagnostic
+                    .message
+                    .contains(&invalid_directory.display().to_string())
+        }),
+        "diagnostics: {diagnostics:?}",
+    );
+    assert_eq!(session.queries().record_count(), 0);
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
 fn language_dimension_publishes_overlay_and_implicit_source() {
     let root = std::env::temp_dir().join(format!(
         "coflow-runtime-dim-synthesis-{}",

@@ -151,25 +151,23 @@ pub(crate) fn load_project_data(
 
     if options.include_implicit_dimension_sources {
         let dimension_fields = dimensions::dimension_fields(schema);
-        for (configured, field) in dimensions::dimension_sources(project, &dimension_fields) {
-            let resolved_sources = match resolver.resolve_implicit(&configured) {
-                Ok(resolved_sources) => resolved_sources,
-                Err(err) => {
-                    diagnostics.extend(err);
-                    continue;
+        match resolver.resolve_dimension_sources(&dimension_fields) {
+            Ok(resolved_sources) => {
+                for (resolved_source, field) in resolved_sources {
+                    diagnostics.extend(load_resolved_dimension_sources(
+                        project,
+                        schema,
+                        registry,
+                        &mut indexes.sources,
+                        &mut indexes.files,
+                        &records,
+                        &mut source_data,
+                        vec![resolved_source],
+                        &field,
+                    ));
                 }
-            };
-            diagnostics.extend(load_resolved_dimension_sources(
-                project,
-                schema,
-                registry,
-                &mut indexes.sources,
-                &mut indexes.files,
-                &records,
-                &mut source_data,
-                resolved_sources,
-                &field,
-            ));
+            }
+            Err(err) => diagnostics.extend(err),
         }
     }
 
@@ -558,15 +556,9 @@ fn refresh_dimension_source_plans(
     let resolver = SourceResolver::new(project, registry);
     let dimension_fields = dimensions::dimension_fields(schema);
     let mut diagnostics = DiagnosticSet::empty();
-    for (configured, field) in dimensions::dimension_sources(project, &dimension_fields) {
-        let resolved_sources = match resolver.resolve_implicit(&configured) {
-            Ok(resolved_sources) => resolved_sources,
-            Err(err) => {
-                diagnostics.extend(err);
-                continue;
-            }
-        };
-        for (_, source) in resolved_sources {
+    match resolver.resolve_dimension_sources(&dimension_fields) {
+        Ok(resolved_sources) => {
+            for ((_, source), field) in resolved_sources {
             let display_path = display_path_for(project, &source);
             let entry = ResolvedSourceEntry {
                 provider_id: source.provider_id.clone(),
@@ -586,9 +578,11 @@ fn refresh_dimension_source_plans(
                 entry,
                 records: Arc::default(),
                 dimension_values,
-                dimension_field: Some(field.clone()),
+                dimension_field: Some(field),
             });
         }
+        }
+        Err(err) => diagnostics.extend(err),
     }
     if diagnostics.is_empty() {
         Ok(())

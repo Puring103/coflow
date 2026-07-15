@@ -10,6 +10,8 @@ use coflow_api::{
 use coflow_project::{discover_directory_files, Project, SourceConfig};
 use serde_json::Value;
 
+mod dimensions;
+
 pub(crate) type ResolvedLoaderSource = (Arc<dyn SourceProvider>, ResolvedSource);
 
 #[derive(Clone)]
@@ -61,6 +63,13 @@ impl<'a> SourceResolver<'a> {
             (!configured.provider_id.is_empty()).then_some(configured.provider_id.as_str());
         let provider = self.select(configured, source_type)?;
         self.decode_and_expand(&provider, configured)
+    }
+
+    pub(crate) fn resolve_dimension_sources(
+        &self,
+        fields: &[crate::dimensions::DimensionField],
+    ) -> Result<Vec<(ResolvedLoaderSource, crate::dimensions::DimensionField)>, DiagnosticSet> {
+        dimensions::resolve_dimension_sources(self, fields)
     }
 
     pub(crate) fn resolve_exact_at(
