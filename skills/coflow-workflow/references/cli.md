@@ -584,8 +584,30 @@ patch JSON 示例：
 | --- | --- |
 | `insert_record` | 新增顶层记录，必须指定 `file` |
 | `set_field` | 修改字段路径，`file` 可作为来源 guard |
+| `set_dimension_value` | 按 owner record、field、dimension 和 variant 写入维度值 |
+| `clear_dimension_value` | 清除维度值，使该 variant 回到 missing 状态 |
 | `rename_record` | 重命名记录 key，并同步引用 |
 | `delete_record` | 删除记录，`file` 可作为来源 guard |
+
+维度操作保持 record selector 形态，不使用 generated type 或 storage record 地址：
+
+```json
+{
+  "op": "set_dimension_value",
+  "coordinate": {
+    "record": { "type": "Item", "key": "potion" },
+    "field": "name",
+    "dimension": "language",
+    "variant": "zh",
+    "path": []
+  },
+  "value": "治疗药水"
+}
+```
+
+`path` 是相对于整个维度字段值的可选嵌套路径。省略 `expected` 时保持既有无条件写入行为；提供 expected state 的宿主可在值已变化时得到 `MUTATION-DIMENSION-STALE`，stale write 不修改 managed file。missing 和 explicit `null` 是不同状态，`clear_dimension_value` 产生 missing，写入 JSON `null` 产生 explicit null。
+
+重命名或删除 owner record 时，runtime 会在同一 transaction 内同步 managed dimension 行；重命名保留已有 variant 值。
 
 `set_field.path` 使用和编辑器相同的路径段：
 

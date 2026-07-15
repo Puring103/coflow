@@ -2,7 +2,7 @@
 
 ## 文档状态
 
-- 状态：讨论结论已收敛，等待按阶段实施。
+- 状态：迁移、文档同步、完整 release gate 和最终独立审查均已完成；等待提交与 PR 更新。
 - 范围：`coflow-cft` 整个 crate、canonical schema、维度 schema、DataModel overlay，以及直接依赖这些结构的 runtime/provider/checker/export/codegen/editor/LSP。
 - 迁移策略：允许破坏内部 Rust API，旧 reflection/meta、synthetic dimension type/record 和兼容别名最终全部删除。
 - 语言语义：不修改 CFT 语法、annotation 可用范围、继承、多态、默认值、check、记录引用、维度文件格式和导出格式。
@@ -26,6 +26,30 @@
 12. dimension 是 schema 中的一等对象，不生成 synthetic storage type。
 13. variant value 直接存入 owner `CfdRecord`，不生成 synthetic record，也不建立独立长期 dimension store。
 14. 普通 source field 是 default 的唯一语义值；物理 dimension 文件中的 `default` 只是 provider 管理的镜像。
+
+## 实施结果
+
+截至 2026-07-15，核心代码已按本计划完成迁移：
+
+- `CftModuleSet` 单独持有 source/path/AST/parse diagnostics，`CftSchema` 不再复制 module source。
+- 删除 `CftContainer`、`CftSchemaModule`、`SchemaReflection`、全部 `*Meta`、public empty schema 和重复 field/name 查询。
+- canonical type/field/enum/const/dimension 使用 validated typed names；wire 反序列化重新执行名称校验。
+- 成功 check IR 中已解析的字段访问和类型谓词使用 `FieldName` / `TypeName`；局部 binding、内建方法名和多命名空间语法标识符继续使用 `String`。
+- 继承字段共享同一 `Arc<CftField>`；type 内只保留一个 `field_by_name` 位置表。
+- `children_by_parent` 使用有序 `Vec<TypeName>`；schema 只保留 children 和 idAsEnum owner 两个跨对象反向索引。
+- annotation 仅保留在 AST，成功 schema 只公开 `is_struct/is_singleton/id_as_enum/is_flag/is_expand/dimension` 等明确语义。
+- dimension-sensitive check blocks 已从 `CftType` 移入 `TypedCheckPlan`，声明对象不保存执行期派生副本。
+- 删除 synthetic dimension storage type/record/runtime module 和独立 dimension store；variant value 直接附着 owner record overlay。
+- CSV/CFD Provider 直接加载和写入维度值，并保留 CSV cell/CFD span origin。
+- dimension refs 进入预构建正反向索引、rename rewrite、checker、增量影响和 transaction publication。
+- owner record rename/delete 会在同一 transaction 内更新 managed dimension 行并保留 rename 前的 variant 值。
+- mutation/editor 使用强类型稳定坐标和 expected-state stale-write 防护；undo/redo/coalescing/rollback 共用同一坐标。
+- `data patch` 继续使用 `coordinate.record.{type,key}` 既有 JSON 形态，只在命令边界转换为内部强类型坐标。
+- `dimensions/synthesize.rs` 已改为只负责 source discovery 的 `dimensions/sources.rs`。
+
+实施提交按 module、typed names、canonical schema、record overlay、mutation/index、crate 边界和最终清理分批完成。用户工作区中的 `examples/**` 改动不属于本迁移提交。
+
+最终独立审查确认旧 container/module/reflection/meta、schema ID/handle、synthetic dimension storage 和独立 dimension store 均无残留。完整 release gate 已通过：skill reference 同步与校验、workspace check、fmt check、全目标 clippy 和 workspace tests。
 
 ## 目标架构
 
@@ -380,17 +404,17 @@ type_by_id_as_enum: BTreeMap<EnumName, TypeName>,
 ### 查询 API
 
 ```rust
-pub fn resolve_type(&self, name: &TypeName) -> Option<&CftType>;
-pub fn resolve_enum(&self, name: &EnumName) -> Option<&CftEnum>;
-pub fn resolve_const(&self, name: &ConstName) -> Option<&CftConst>;
-pub fn resolve_dimension(&self, name: &DimensionName) -> Option<&CftDimension>;
+pub fn resolve_type(&self, name: &str) -> Option<&CftType>;
+pub fn resolve_enum(&self, name: &str) -> Option<&CftEnum>;
+pub fn resolve_const(&self, name: &str) -> Option<&CftConst>;
+pub fn resolve_dimension(&self, name: &str) -> Option<&CftDimension>;
 
 pub fn all_types(&self) -> impl Iterator<Item = &CftType>;
 pub fn all_enums(&self) -> impl Iterator<Item = &CftEnum>;
 pub fn all_consts(&self) -> impl Iterator<Item = &CftConst>;
 pub fn all_dimensions(&self) -> impl Iterator<Item = &CftDimension>;
 
-pub fn is_assignable(&self, actual: &TypeName, expected: &TypeName) -> bool;
+pub fn is_assignable(&self, actual: &str, expected: &str) -> bool;
 pub fn children(&self, parent: &TypeName) -> &[TypeName];
 pub fn id_as_enum_owner(&self, enum_name: &EnumName) -> Option<&CftType>;
 ```
@@ -399,11 +423,11 @@ pub fn id_as_enum_owner(&self, enum_name: &EnumName) -> Option<&CftType>;
 impl CftType {
     pub fn own_fields(&self) -> impl Iterator<Item = &CftField>;
     pub fn all_fields(&self) -> impl Iterator<Item = &CftField>;
-    pub fn field(&self, name: &FieldName) -> Option<&CftField>;
+    pub fn field(&self, name: &str) -> Option<&CftField>;
 }
 ```
 
-host boundary 可以提供接受 `&str` 的薄 adapter，但 adapter 必须先构造对应 typed name，再调用唯一对象 API。不得保留 reflection/meta 两组同义查询。
+这些 `&str` 参数只是无所有权的查找 adapter：底层 map key 和返回声明仍是 typed name，不保存裸字符串身份；无效名称只会查找失败。稳定坐标和 wire 反序列化仍必须构造并验证 typed name。不得为同一查询再保留 reflection/meta 或 typed/string 两组同义 API。
 
 ### 执行计划
 

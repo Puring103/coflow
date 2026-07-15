@@ -1,130 +1,111 @@
 # Schema API
 
-Schema API 是 `coflow-cft` 编译后的公开反射模型。它面向 codegen、loader、LSP、编辑器和其他宿主集成，不面向普通数据填写者。
+Schema API 是 `coflow-cft` 编译后的公开语义模型，面向 loader、checker、codegen、LSP、编辑器和 Provider 集成。它不加载数据源，也不构建 DataModel。
 
-如果只是编写 `.cft`，请看 [CFT 语法参考](./03-language/01-cft.md)。如果要在 Provider 或工具中读取编译后的 schema，本页说明应依赖哪些稳定概念。
+## 编译边界
 
-## 范围
+源码与编译结果分开持有：
 
-Schema API 只描述完成解析和编译后的 CFT 结构：
-
-- 不负责发现 `coflow.yaml`。
-- 不负责解析项目相对路径。
-- 不重新暴露原始 AST。
-- 不加载数据源。
-- 不构建 DataModel。
-- 不运行 `check {}` 的运行期求值。
-
-项目级宿主通过 `coflow-runtime::ProjectRuntime` 获取已编译 schema；低层工具收集 `CftFile` 后调用 `parse_modules` 和 `build_schema`。
-
-## 核心入口
-
-`CftModuleSet` 是不可变的解析结果，`CftSchema` 是唯一的编译后语义 schema：
+- `CftModuleSet` 是 module path、source、AST 和 parse diagnostics 的唯一所有者。
+- `CftSchema` 是唯一成功发布的编译后语义模型。
+- schema 编译失败时不返回空 schema 或部分 schema。
+- 保留上一份成功 schema 是 runtime generation 的职责，不属于 `coflow-cft`。
 
 ```rust
-let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-let schema = build_schema(&modules, &CftDimensions::default())?;
+let modules = parse_modules([
+    CftFile::from_source(ModuleId::from("schema/main.cft"), source),
+]);
+let dimensions = CftDimensionInputs::default();
+let schema = build_schema(&modules, &dimensions)?;
 ```
 
-常用读取能力包括：
+`CftModuleSet` 只提供 `module()`、`modules()` 和 `diagnostics()`。语言工具从这里读取原始 annotation、源码和 AST；语义消费者读取 `CftSchema`。
+
+## Canonical 对象
+
+`CftSchema` 直接拥有唯一一套声明对象：
+
+| 对象 | 主要信息 |
+| --- | --- |
+| `CftType` | module、name、parent、字段、check、abstract/sealed/struct/singleton/idAsEnum 语义 |
+| `CftField` | declaring type、name、已解析类型、默认值、expand、dimension、span |
+| `CftEnum` | module、name、按声明顺序排列的 variants、flag 语义、span |
+| `CftConst` | module、name、编译期值、span |
+| `CftDimension` | name、按配置顺序排列的 variants、绑定字段 |
+
+不存在公开 schema ID、field handle、generation token、reflection/meta 副本或 synthetic dimension type。
+
+名称身份使用 `TypeName`、`FieldName`、`EnumName`、`EnumVariantName`、`ConstName`、`DimensionName`、`VariantName`、`BucketName` 和 `RecordKey`。这些类型在构造和反序列化时都会验证名称。
+
+## 查询
+
+常用查询直接返回 canonical 对象：
 
 | API | 用途 |
 | --- | --- |
-| `CftModuleSet::files()` | 遍历模块和源文本 |
-| `CftModuleSet::module(module)` | 读取已解析的 module AST |
-| `all_types()` | 遍历所有 type |
-| `all_enums()` | 遍历所有 enum |
-| `resolve_type(name)` | 按名称查找 type |
-| `resolve_enum(name)` | 按名称查找 enum |
-| `resolve_const(name)` | 按名称查找 const |
-| `has_type(name)` / `has_enum(name)` | 快速判断名称存在性 |
-| `is_assignable(actual, expected)` | 判断类型可赋值关系 |
-| `enum_variant_value(enum, variant)` | 查找 enum variant 底层值 |
+| `resolve_type(name)` | 查找 `CftType` |
+| `resolve_enum(name)` | 查找 `CftEnum` |
+| `resolve_const(name)` | 查找 `CftConst` |
+| `resolve_dimension(name)` | 查找 `CftDimension` |
+| `all_types()` / `all_enums()` / `all_consts()` / `all_dimensions()` | 按稳定名称顺序遍历声明 |
+| `is_assignable(actual, expected)` | 沿 parent chain 判断可赋值关系 |
+| `children(parent)` | 读取编译时建立的直接子类反向索引 |
+| `type_for_id_as_enum(enum)` | 从 idAsEnum enum 反查 owner type |
 
-## Type 反射
+主声明 map 本身就是名称索引。schema 不再维护重复的 names、metas、has/resolve 或 field projection 集合。
 
-编译后的 type 同时保留自身字段和继承展开字段：
+## Type 与 Field
 
-| 字段 | 说明 |
+`CftType::own_fields()` 保持当前 type 的声明顺序；`CftType::all_fields()` 保持根类型到当前类型的字段顺序。继承字段通过共享的 immutable `CftField` 保存，不复制完整字段对象。
+
+`CftType::field(name)` 使用 type 内部预构建的位置表查询有效字段。消费者拿到 `CftType` 后应直接读取 `is_struct`、`is_singleton`、`id_as_enum` 等字段，不再调用同义 schema convenience API。
+
+字段类型已经完成名称解析：
+
+```text
+Int / Float / Bool / String
+Object(TypeName)
+Enum(EnumName)
+RecordRef(TypeName)
+Array / Dict / Nullable
+```
+
+只有 `RecordRef(TypeName)` 表示 `&Type` 顶层记录引用；`Object(TypeName)` 表示内联对象。消费者不应重新解析类型字符串。
+
+`default: Option<CftSchemaDefaultValue>` 同时表达“是否有默认值”和默认值内容；不存在重复的 `has_default` schema 字段。
+
+## Annotation
+
+原始 annotation 只存在于 AST。成功 schema 不公开通用 annotation bag，而是保存已经验证的明确语义：
+
+| Annotation | 编译后语义 |
 | --- | --- |
-| `name` | type 名 |
-| `fields` | 当前 type 自己声明的字段 |
-| `all_fields` | 继承展开后的有效字段，父类字段在前 |
-| `annotations` | type 上的注解 |
-| `is_abstract` | 是否为 abstract type |
-| `is_sealed` | 是否为 sealed type |
-| `is_singleton` | 是否标记 `@singleton` |
-| `check` | 编译后的 check block |
+| `@struct` | `CftType.is_struct` |
+| `@singleton` | `CftType.is_singleton` |
+| `@idAsEnum` | `CftType.id_as_enum` |
+| `@flag` | `CftEnum.is_flag` |
+| `@expand` | `CftField.is_expand` |
+| `@localized` / `@dimension` | `CftField.dimension` |
 
-Loader、codegen 和编辑器应优先使用 `all_fields`。这样继承字段顺序稳定，不需要每个消费者重新展开继承链。
+Provider 不应扫描 annotation 字符串，也不应重复执行 annotation 语法校验。
 
-## Field 反射
+## Dimension
 
-字段反射提供名称、类型、默认值、注解和源位置。
+项目配置被规范化为 `CftDimensionInputs` 后参与 schema 编译。`CftField.dimension` 是字段到维度的正向绑定；`CftDimension.fields` 是编译时建立、共享同一字段对象的反向只读视图。
 
-| 信息 | 用途 |
-| --- | --- |
-| 字段名 | 表头映射、代码成员名、编辑器列名 |
-| `ty` / `ty_ref` | 类型映射和 schema-guided 解析 |
-| `default` | 缺省值应用和代码生成 |
-| `annotations` | `@expand`、`@localized` 等字段行为 |
-| `span` / `module` | 诊断、跳转、hover 定位 |
+Dimension schema 不包含 `out_dir`、display name 或 Provider 选项，这些仍属于 project/runtime。它也不生成 storage type、storage field 或 runtime module。
 
-消费者不应从字段类型字符串重新解析类型；应使用已解析的类型引用。消费者也不应从源文本重新解释默认值。
+## 执行计划
 
-## Enum 与 Const
+`CftSchema` 内部保留两个预编译执行计划：
 
-Enum 反射包含：
+- `TypedCheckPlan`：继承 check 顺序、维度相关语句和可到达嵌套 check 的字段。
+- `ValueDependencyPlan`：默认值、嵌套对象和物化依赖顺序。
 
-- enum 名。
-- variant 名。
-- variant 底层整数值。
-- enum / variant 注解。
-- 是否为 `@flag` 枚举。
+执行计划只引用 canonical typed names 和 check 节点，不复制声明对象，也不出现在 schema inspect 或 wire 数据中。结构预算只作用于本次编译，不存入 schema。
 
-`@flag` 枚举允许运算得到没有显式 variant 名的组合值。运行时 enum value 因此会携带底层整数值，并且 variant 名可能为空。
+## Runtime 关系
 
-Const 反射包含编译期常量值。常量可以用于默认值和 `check {}` 表达式，但不能表示运行期字段值。
+完整项目运行时继续负责：读取 `coflow.yaml`、发现 schema 文件、构造 `CftDimensionInputs`、加载普通 source 和维度 source、构建 record-owned overlay、解析引用并运行 checker。
 
-## 注解消费约定
-
-Schema API 会保留编译后的注解。常见消费方式：
-
-| 注解 | 主要消费者 |
-| --- | --- |
-| `@idAsEnum` | codegen、导出和 enum lock |
-| `@singleton` | DataModel、codegen |
-| `@localized` | engine 维度注入、codegen |
-| `@expand` | 表格 loader / writer |
-| `@flag` | CFT type check、DataModel、codegen |
-
-记录引用不是注解语义。消费者应读取字段类型中的 `Ref` / `&Type` 结构：DataModel、cell parser、CFD loader、writer 和 codegen 都应按 schema type 决定引用或内联对象行为。
-
-注解目标、参数数量和参数类型由 schema 编译阶段检查。Provider 不应重复做注解语法校验。
-
-## 消费者约定
-
-工具和 Provider 应遵守这些规则：
-
-- 使用 runtime generation 中的已编译 `CftSchema`，不重新读取或解析 AST。
-- 使用 `all_fields` 处理继承字段顺序。
-- 使用类型反射处理字段类型，不从字符串手写解析。
-- 使用 schema 中的 `span` 和 `module` 生成定位。
-- 使用编译后的默认值，不从源文本重新解释。
-- 使用 `is_assignable` 判断多态可赋值关系。
-- 不在 Provider 内执行业务 check；check 由 engine / checker 统一运行。
-
-## 与项目运行时的关系
-
-Schema API 是低层能力。完整项目运行时还会继续做：
-
-1. 读取 `coflow.yaml`。
-2. 发现并排序 schema 文件。
-3. 收集 CFT files。
-4. 解析 modules 并编译 schema。
-5. 构建维度合成 type。
-6. 解析和加载 sources。
-7. 构建 DataModel。
-8. 运行 check。
-
-这些项目级步骤由 `coflow-project` 和 `coflow-runtime` 负责。Provider 和 codegen 通常只消费已经准备好的 schema。
+宿主应使用当前 runtime generation 中的 `CftSchema`。失败的候选 generation 不替换上一份成功 generation。

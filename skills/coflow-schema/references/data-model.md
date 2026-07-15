@@ -1,6 +1,6 @@
 # 数据模型
 
-Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Excel、CSV、CFD 和维度隐式 source 都会先被 Provider 转换成来源无关的 input records，再由 DataModel 统一处理默认值、类型检查、引用解析、继承索引和业务校验。
+Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Excel、CSV 和 CFD 会被 Provider 转换成来源无关的 input records；维度文件会转换成直接关联 owner record 的 dimension value batches。DataModel 统一处理默认值、类型检查、引用解析、继承索引和业务校验。
 
 数据模型不保留数据源格式差异。导出、代码生成、编辑器视图和 `check {}` 都基于同一个模型工作。
 
@@ -28,6 +28,7 @@ CfdRecord
 CfdObject
   actual_type          # 运行时实际类型
   fields               # FieldName -> CfdValue
+  dimension_fields     # FieldName -> DimensionName -> VariantName -> value/origin
 ```
 
 `records` 是集中存储。table 和继承索引只保存 `CfdRecordId`，消费者通过 model 查询记录，而不是复制记录内容。
@@ -150,9 +151,20 @@ DataModel 同时维护：
 
 ## 维度字段
 
-`@localized` 字段会被 engine 作为 `language` 维度字段处理。DataModel 看到的是已经注入的合成 type 和隐式 source，因此维度数据仍走普通记录、字段、引用和 check 流程。
+`@localized` 和 `@dimension` 字段在编译后直接带有 dimension binding。每个顶层 record 自己持有这些字段的 variant overlay：
 
-维度 record key 仍遵守通用 record key 规则。当前没有单独的本地化 key 规则。
+```text
+record.fields[name]                         # default，唯一语义值
+record.dimension_fields[name].variants[zh] # zh overlay value + physical origin
+```
+
+普通 source field 是 default 的唯一权威。维度文件中的 `default` 列只是 Provider 管理的物理镜像，不会再次加载进 DataModel。
+
+variant map 中没有 key 表示 missing；存在且值为 `Null` 表示 explicit null。missing 不回退 default，explicit null 保持 checker 的 skip 语义。
+
+维度值和 owner record 同生命周期：clone、publication、rename 和 delete 不需要维护独立 dimension store。维度值中的 `&Type` 引用进入与普通字段相同的 ref edge、反向引用、rename rewrite、结构预算和 checker 流程。
+
+每个 variant value 保留自己的 CSV cell 或 CFD span origin，因此诊断和编辑器跳转仍定位到实际维度文件。
 
 ## 与 Provider 的边界
 
@@ -160,7 +172,7 @@ Provider 只负责把来源格式转成 input records，并提供来源定位：
 
 - Excel / CSV 负责表头、行、单元格文本读取。
 - CFD 负责文本记录解析。
-- 维度生成负责维护隐式 source 文件。
+- 维度 source manager 负责维护物理镜像并直接输出 dimension values。
 
 以下规则由 DataModel 统一处理：
 

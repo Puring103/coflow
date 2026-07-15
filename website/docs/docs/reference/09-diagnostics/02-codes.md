@@ -36,7 +36,9 @@
 | `MUTATION-FILE-GUARD` | `MUTATION` | `data patch` 的 file guard 与记录实际来源不匹配 |
 | `MUTATION-INSERT` | `MUTATION` | `data patch` 插入记录时 record key 不合法或插入前置校验失败 |
 | `MUTATION-INSERT-CONFLICT` | `MUTATION` | `data patch` 插入记录时 key 已存在 |
-| `MUTATION-DIMENSION` | `MUTATION` | `data patch` 尝试对维度变体表新增或删除记录；变体表只能修改已有记录的变体字段 |
+| `MUTATION-DIMENSION` | `MUTATION` | 维度坐标引用未知 record、field、dimension、variant、nested path 或 managed source |
+| `MUTATION-DIMENSION-STALE` | `MUTATION` | 维度值与调用方提供的 expected state 不一致；managed source 未修改 |
+| `PATCH-DIMENSION-COORDINATE` | `PATCH` | patch 中的 type、record key、field、dimension 或 variant 名称不合法 |
 | `RUNTIME-INTERNAL` | `RUNTIME` | runtime 构造空模型等不可恢复内部错误 |
 | `DIM-CONFIG-001` | `PROJECT` | schema 中存在 `@localized` 字段，但未配置 `dimensions.language` |
 | `DIM-CONFIG-002` | `PROJECT` | `dimensions.language.variants` 为空、包含 `default`、包含重复项或不是合法 CFT 标识符 |
