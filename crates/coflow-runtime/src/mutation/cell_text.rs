@@ -111,6 +111,8 @@ fn input_dict_key_to_json(key: CfdInputDictKey) -> Value {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::input_value_to_json;
     use coflow_data_model::{CfdInputDictKey, CfdInputValue};
     use serde_json::json;

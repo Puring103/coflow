@@ -53,10 +53,7 @@ impl CftModule {
     }
     #[must_use]
     pub fn ast(&self) -> Option<&ModuleAst> {
-        match self.ast.as_ref() {
-            Some(ast) => Some(ast.as_ref()),
-            None => None,
-        }
+        self.ast.as_deref()
     }
 
     #[must_use]

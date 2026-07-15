@@ -9,6 +9,7 @@
 - Replaced synthetic dimension types and records with record-owned dimension overlays, typed coordinates, precomputed indexes, and canonical check plans.
 - Kept schema construction as the fixed two-argument `build_schema(modules, dimensions)` API. Structural protection remains internal and is not user-configurable.
 - Schema generations are now runtime-owned and reused for data-only mutations; schema inputs are reparsed only when they change.
+- Split dimension generation, commit, and mutation preparation into bounded planning, validation, and execution helpers during the final release review.
 
 ### Runtime Reliability
 

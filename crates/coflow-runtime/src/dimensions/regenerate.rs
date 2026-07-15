@@ -37,6 +37,28 @@ pub(crate) fn plan_dimension_generation(
     model: &CfdDataModel,
     fields: &[DimensionField],
 ) -> DimensionGenerationPlanResult {
+    let mut diagnostics = validate_dimension_directories(project);
+    if !diagnostics.is_empty() {
+        return DimensionGenerationPlanResult {
+            plan: DimensionGenerationPlan::default(),
+            diagnostics,
+        };
+    }
+
+    let mut operations = Vec::new();
+    for (dimension, config) in &project.config.dimensions {
+        let result = plan_configured_dimension(project, model, fields, dimension, config);
+        operations.extend(result.plan.operations);
+        diagnostics.extend(result.diagnostics);
+    }
+
+    DimensionGenerationPlanResult {
+        plan: DimensionGenerationPlan { operations },
+        diagnostics,
+    }
+}
+
+fn validate_dimension_directories(project: &Project) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
     let owned_dirs = project
         .config
@@ -65,92 +87,101 @@ pub(crate) fn plan_dimension_generation(
             }
         }
     }
-    if !diagnostics.is_empty() {
+    diagnostics
+}
+
+fn plan_configured_dimension(
+    project: &Project,
+    model: &CfdDataModel,
+    fields: &[DimensionField],
+    dimension: &str,
+    config: &coflow_project::DimensionConfig,
+) -> DimensionGenerationPlanResult {
+    let mut diagnostics = DiagnosticSet::empty();
+    let Some(out_dir) = config.out_dir.as_ref() else {
+        diagnostics.push(dimension_diagnostic(
+            &project.config_path,
+            dimension,
+            "DIM-CONFIG-003",
+            format!("dimensions.{dimension}.out_dir is required"),
+        ));
         return DimensionGenerationPlanResult {
             plan: DimensionGenerationPlan::default(),
             diagnostics,
         };
-    }
-    let mut operations = Vec::new();
-    for (dimension, config) in &project.config.dimensions {
-        let dimension_fields = fields
-            .iter()
-            .filter(|field| field.dimension.as_str() == dimension)
-            .collect::<Vec<_>>();
-        let Some(out_dir) = config.out_dir.as_ref() else {
-            diagnostics.push(dimension_diagnostic(
-                &project.config_path,
-                dimension,
-                "DIM-CONFIG-003",
-                format!("dimensions.{dimension}.out_dir is required"),
-            ));
-            continue;
-        };
-        let out_dir = project.resolve_path(out_dir);
-        let mut expected_paths = BTreeSet::new();
-        let mut dimension_operations = BTreeMap::<String, DimensionGenerationOperation>::new();
+    };
+    let out_dir = project.resolve_path(out_dir);
+    let mut expected_paths = BTreeSet::new();
+    let mut dimension_operations = BTreeMap::<String, DimensionGenerationOperation>::new();
 
-        for field in dimension_fields {
-            let provider_id = if field.is_singleton { "cfd" } else { "csv" };
-            let path = dimension_source_path(&out_dir, field);
-            let path_identity = coflow_project::normalized_path_identity(&path);
-            expected_paths.insert(path_identity.clone());
-            let operation = DimensionGenerationOperation {
-                dimension: dimension.clone(),
-                provider_id: provider_id.to_string(),
-                path: path.clone(),
-                sheet: format!("{}_{}", field.bucket, field.source_field),
-                actual_type: field.source_type.to_string(),
-                entries: dimension_entries(model, field),
-                variants: config.variants.clone(),
-                bucket: field.bucket.to_string(),
-                is_singleton: field.is_singleton,
-            };
-            match dimension_operations.entry(path_identity) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(operation);
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry)
-                    if field.is_singleton
-                        && entry.get().is_singleton
-                        && entry.get().actual_type == field.source_type.as_str() =>
-                {
-                    entry.get_mut().entries.extend(operation.entries);
-                }
-                std::collections::btree_map::Entry::Occupied(entry) => {
-                    diagnostics.push(dimension_diagnostic(
-                        &project.config_path,
-                        dimension,
-                        "DIM-SOURCE-PATH-CONFLICT",
-                        format!(
-                            "dimension fields map to the same managed source `{}`",
-                            entry.get().path.display()
-                        ),
-                    ));
-                }
+    for field in fields
+        .iter()
+        .filter(|field| field.dimension.as_str() == dimension)
+    {
+        let provider_id = if field.is_singleton { "cfd" } else { "csv" };
+        let path = dimension_source_path(&out_dir, field);
+        let path_identity = coflow_project::normalized_path_identity(&path);
+        expected_paths.insert(path_identity.clone());
+        let operation = DimensionGenerationOperation {
+            dimension: dimension.to_string(),
+            provider_id: provider_id.to_string(),
+            path: path.clone(),
+            sheet: format!("{}_{}", field.bucket, field.source_field),
+            actual_type: field.source_type.to_string(),
+            entries: dimension_entries(model, field),
+            variants: config.variants.clone(),
+            bucket: field.bucket.to_string(),
+            is_singleton: field.is_singleton,
+        };
+        match dimension_operations.entry(path_identity) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(operation);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry)
+                if field.is_singleton
+                    && entry.get().is_singleton
+                    && entry.get().actual_type == field.source_type.as_str() =>
+            {
+                entry.get_mut().entries.extend(operation.entries);
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                diagnostics.push(dimension_diagnostic(
+                    &project.config_path,
+                    dimension,
+                    "DIM-SOURCE-PATH-CONFLICT",
+                    format!(
+                        "dimension fields map to the same managed source `{}`",
+                        entry.get().path.display()
+                    ),
+                ));
             }
         }
-        let dimension_operations = dimension_operations.into_values().collect::<Vec<_>>();
-        let reconciliations = match reconcile_dimension_sources(
-            &project.config_path,
-            dimension,
-            &out_dir,
-            &expected_paths,
-            &dimension_operations,
-        ) {
-            Ok(operations) => operations,
-            Err(error) => {
-                diagnostics.extend(error);
-                continue;
-            }
-        };
-        operations.extend(reconciliations);
-        operations.extend(
+    }
+    let dimension_operations = dimension_operations.into_values().collect::<Vec<_>>();
+    let reconciliations = match reconcile_dimension_sources(
+        &project.config_path,
+        dimension,
+        &out_dir,
+        &expected_paths,
+        &dimension_operations,
+    ) {
+        Ok(operations) => operations,
+        Err(error) => {
+            diagnostics.extend(error);
+            return DimensionGenerationPlanResult {
+                plan: DimensionGenerationPlan::default(),
+                diagnostics,
+            };
+        }
+    };
+    let operations = reconciliations
+        .into_iter()
+        .chain(
             dimension_operations
                 .into_iter()
                 .map(DimensionGenerationPlanOp::Sync),
-        );
-    }
+        )
+        .collect();
 
     DimensionGenerationPlanResult {
         plan: DimensionGenerationPlan { operations },
@@ -260,97 +291,34 @@ pub(crate) fn commit_dimension_generation(
     let mut changed_paths = BTreeSet::new();
 
     for operation in plan.operations {
-        let operation = match operation {
+        match operation {
             DimensionGenerationPlanOp::Move { from, to } => {
-                if let Err(error) = transaction.move_file(&from, &to, &project.config_path) {
-                    diagnostics.extend(error);
-                    continue;
-                }
-                if let Err(err) = fs::rename(&from, &to) {
-                    diagnostics.push(Diagnostic::error(
-                        "DIM-SOURCE-005",
-                        "PROJECT",
-                        format!(
-                            "failed to migrate dimension source `{}` to `{}`: {err}",
-                            from.display(),
-                            to.display()
-                        ),
-                    ));
-                } else {
-                    changed_paths.insert(from);
-                    changed_paths.insert(to);
-                }
-                continue;
+                commit_dimension_move(
+                    &mut transaction,
+                    &project.config_path,
+                    from,
+                    to,
+                    &mut diagnostics,
+                    &mut changed_paths,
+                );
             }
             DimensionGenerationPlanOp::Remove(path) => {
-                if let Err(error) = transaction.remove_file(&path, &project.config_path) {
-                    diagnostics.extend(error);
-                    continue;
-                }
-                if let Err(err) = fs::remove_file(&path) {
-                    diagnostics.push(Diagnostic::error(
-                        "DIM-SOURCE-006",
-                        "PROJECT",
-                        format!(
-                            "failed to remove obsolete dimension source `{}`: {err}",
-                            path.display()
-                        ),
-                    ));
-                } else {
-                    changed_paths.insert(path);
-                }
-                continue;
+                commit_dimension_remove(
+                    &mut transaction,
+                    &project.config_path,
+                    path,
+                    &mut diagnostics,
+                    &mut changed_paths,
+                );
             }
-            DimensionGenerationPlanOp::Sync(operation) => operation,
-        };
-        let Some(manager) = registry.dimension_source_manager(&operation.provider_id) else {
-            diagnostics.push(dimension_diagnostic(
-                &project.config_path,
-                &operation.dimension,
-                "DIM-SOURCE-002",
-                format!(
-                    "dimension source provider `{}` is not registered",
-                    operation.provider_id
-                ),
-            ));
-            continue;
-        };
-
-        let options = match manager.source_options(&DimensionSourceOptionsRequest {
-            sheet: &operation.sheet,
-            actual_type: &operation.actual_type,
-        }) {
-            Ok(options) => options,
-            Err(err) => {
-                diagnostics.extend(err);
-                continue;
-            }
-        };
-        let source =
-            dimension_resolved_source(project, &operation.path, &operation.provider_id, options);
-        if let Err(error) =
-            transaction.snapshot_file(&operation.path, &operation.dimension, &project.config_path)
-        {
-            diagnostics.extend(error);
-            continue;
-        }
-        let result = manager.sync_dimension_source(
-            TableContext {
-                project_root: &project.root_dir,
-            },
-            &DimensionSourceRequest {
-                source: &source,
-                entries: &operation.entries,
-                variants: &operation.variants,
-            },
-        );
-        match result {
-            Ok(result) => {
-                if result.changed {
-                    changed_paths.insert(operation.path);
-                }
-            }
-            Err(err) => diagnostics.extend(err),
+            DimensionGenerationPlanOp::Sync(operation) => commit_dimension_sync(
+                project,
+                registry,
+                &mut transaction,
+                operation,
+                &mut diagnostics,
+                &mut changed_paths,
+            ),
         }
     }
 
@@ -358,6 +326,116 @@ pub(crate) fn commit_dimension_generation(
         transaction,
         diagnostics,
         changed_paths: changed_paths.into_iter().collect(),
+    }
+}
+
+fn commit_dimension_move(
+    transaction: &mut DimensionGenerationTransaction,
+    config_path: &Path,
+    from: PathBuf,
+    to: PathBuf,
+    diagnostics: &mut DiagnosticSet,
+    changed_paths: &mut BTreeSet<PathBuf>,
+) {
+    if let Err(error) = transaction.move_file(&from, &to, config_path) {
+        diagnostics.extend(error);
+        return;
+    }
+    if let Err(error) = fs::rename(&from, &to) {
+        diagnostics.push(Diagnostic::error(
+            "DIM-SOURCE-005",
+            "PROJECT",
+            format!(
+                "failed to migrate dimension source `{}` to `{}`: {error}",
+                from.display(),
+                to.display()
+            ),
+        ));
+    } else {
+        changed_paths.insert(from);
+        changed_paths.insert(to);
+    }
+}
+
+fn commit_dimension_remove(
+    transaction: &mut DimensionGenerationTransaction,
+    config_path: &Path,
+    path: PathBuf,
+    diagnostics: &mut DiagnosticSet,
+    changed_paths: &mut BTreeSet<PathBuf>,
+) {
+    if let Err(error) = transaction.remove_file(&path, config_path) {
+        diagnostics.extend(error);
+        return;
+    }
+    if let Err(error) = fs::remove_file(&path) {
+        diagnostics.push(Diagnostic::error(
+            "DIM-SOURCE-006",
+            "PROJECT",
+            format!(
+                "failed to remove obsolete dimension source `{}`: {error}",
+                path.display()
+            ),
+        ));
+    } else {
+        changed_paths.insert(path);
+    }
+}
+
+fn commit_dimension_sync(
+    project: &Project,
+    registry: &ProviderRegistry,
+    transaction: &mut DimensionGenerationTransaction,
+    operation: DimensionGenerationOperation,
+    diagnostics: &mut DiagnosticSet,
+    changed_paths: &mut BTreeSet<PathBuf>,
+) {
+    let Some(manager) = registry.dimension_source_manager(&operation.provider_id) else {
+        diagnostics.push(dimension_diagnostic(
+            &project.config_path,
+            &operation.dimension,
+            "DIM-SOURCE-002",
+            format!(
+                "dimension source provider `{}` is not registered",
+                operation.provider_id
+            ),
+        ));
+        return;
+    };
+    let options = match manager.source_options(&DimensionSourceOptionsRequest {
+        sheet: &operation.sheet,
+        actual_type: &operation.actual_type,
+    }) {
+        Ok(options) => options,
+        Err(error) => {
+            diagnostics.extend(error);
+            return;
+        }
+    };
+    let source =
+        dimension_resolved_source(project, &operation.path, &operation.provider_id, options);
+    if let Err(error) =
+        transaction.snapshot_file(&operation.path, &operation.dimension, &project.config_path)
+    {
+        diagnostics.extend(error);
+        return;
+    }
+    let result = manager.sync_dimension_source(
+        TableContext {
+            project_root: &project.root_dir,
+        },
+        &DimensionSourceRequest {
+            source: &source,
+            entries: &operation.entries,
+            variants: &operation.variants,
+        },
+    );
+    match result {
+        Ok(result) if result.changed => {
+            changed_paths.insert(operation.path);
+        }
+        Ok(_) => {}
+        Err(error) => diagnostics.extend(error),
     }
 }
 
@@ -591,6 +669,8 @@ fn dimension_diagnostic(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::{
         commit_dimension_generation, DimensionGenerationOperation, DimensionGenerationPlan,
         DimensionGenerationPlanOp, DimensionGenerationTransaction,

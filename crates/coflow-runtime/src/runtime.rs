@@ -403,6 +403,11 @@ impl WriteProjectSession {
     }
 
     /// Render one effective field value using the table cell grammar.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the field path does not exist or its value
+    /// cannot be represented by the table cell grammar.
     pub fn render_cell_text(
         &self,
         coordinate: &RecordCoordinate,
@@ -425,6 +430,11 @@ impl WriteProjectSession {
     }
 
     /// Parse table cell text using the schema type at one field path.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the field path is invalid or `text` does not
+    /// conform to the field's schema type.
     pub fn parse_cell_text(
         &self,
         coordinate: &RecordCoordinate,

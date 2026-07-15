@@ -7,15 +7,27 @@ use crate::{DiagnosticSet, ResolvedSource};
 /// two phase so every provider remains compensatable until all prepare.
 pub trait SourceTransactionCompensation: Send {
     /// Release transaction state before source mutation starts.
+    ///
+    /// # Errors
+    ///
+    /// Returns provider diagnostics when transaction state cannot be released.
     fn abort(&mut self) -> Result<(), DiagnosticSet>;
 
     /// Restore the source after a staged mutation.
+    ///
+    /// # Errors
+    ///
+    /// Returns provider diagnostics when the source cannot be restored completely.
     fn compensate(&mut self) -> Result<(), DiagnosticSet>;
 
     /// Publish staged writes while retaining enough state to compensate them.
     ///
     /// The runtime calls this for every provider before finalizing any provider.
     /// A successful implementation must remain compensatable until `commit`.
+    ///
+    /// # Errors
+    ///
+    /// Returns provider diagnostics when staged writes cannot be published.
     fn prepare_commit(&mut self) -> Result<(), DiagnosticSet>;
 
     /// Release compensation state after every provider published successfully.

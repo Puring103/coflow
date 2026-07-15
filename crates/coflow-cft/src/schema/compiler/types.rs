@@ -8,7 +8,7 @@ use crate::syntax::ast::{TypeRef, TypeRefKind};
 use crate::syntax::Span;
 use std::collections::BTreeMap;
 
-impl<'a> SchemaCompiler<'a> {
+impl SchemaCompiler<'_> {
     pub(super) fn validate_type_headers(&mut self) {
         self.each_type(|this, info| {
             if info.def.is_abstract && info.def.is_sealed {
