@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 use crate::write_rules;
 use crate::ProjectSession;
 
-use super::{enum_value, is_schema_enum, one_value_error, schema_field, MutationValue};
+use super::{enum_value, one_value_error, schema_field, MutationValue};
 
 pub(super) fn coerce_mutation_value(
     session: &ProjectSession,
@@ -75,16 +75,16 @@ fn coerce_json_value(
                 .map(CfdValue::Array)
         }
         CftSchemaTypeRef::Dict(key, item) => coerce_json_dict_value(session, key, item, value),
-        CftSchemaTypeRef::Ref(target_type) => json_ref_key(value)
+        CftSchemaTypeRef::RecordRef(target_type) => json_ref_key(value)
             .map(|key| CfdValue::Ref(key.to_string()))
             .ok_or_else(|| one_value_error(format!("expected record key for `&{target_type}`"))),
-        CftSchemaTypeRef::Named(name) if is_schema_enum(session, name) => {
+        CftSchemaTypeRef::Enum(name) => {
             let variant = value
                 .as_str()
                 .ok_or_else(|| one_value_error(format!("expected enum variant for `{name}`")))?;
             enum_value(session, name, variant).map(CfdValue::Enum)
         }
-        CftSchemaTypeRef::Named(name) => coerce_json_named_value(session, name, value),
+        CftSchemaTypeRef::Object(name) => coerce_json_named_value(session, name, value),
     }
 }
 
@@ -131,12 +131,10 @@ fn coerce_cfd_value(
             })
             .collect::<Result<Vec<_>, DiagnosticSet>>()
             .map(CfdValue::Dict),
-        (CftSchemaTypeRef::Named(name), CfdValue::Enum(enum_value))
-            if is_schema_enum(session, name) =>
-        {
+        (CftSchemaTypeRef::Enum(name), CfdValue::Enum(enum_value)) => {
             coerce_cfd_enum_value(session, name, enum_value).map(CfdValue::Enum)
         }
-        (CftSchemaTypeRef::Named(expected_type), CfdValue::Object(record)) => {
+        (CftSchemaTypeRef::Object(expected_type), CfdValue::Object(record)) => {
             ensure_object_type_assignable(session, expected_type, record.actual_type())?;
             let mut record = *record;
             let actual_type = record.actual_type().to_string();
@@ -147,13 +145,13 @@ fn coerce_cfd_value(
             )?;
             Ok(CfdValue::Object(Box::new(record)))
         }
-        (CftSchemaTypeRef::Ref(_expected_type), CfdValue::Ref(target_key)) => {
+        (CftSchemaTypeRef::RecordRef(_expected_type), CfdValue::Ref(target_key)) => {
             if target_key.is_empty() {
                 return Err(one_value_error("reference key must not be empty"));
             }
             Ok(CfdValue::Ref(target_key))
         }
-        (CftSchemaTypeRef::Named(_), CfdValue::Ref(_)) => Err(one_value_error(
+        (CftSchemaTypeRef::Object(_), CfdValue::Ref(_)) => Err(one_value_error(
             "inline object fields do not accept record refs",
         )),
         _ => Err(one_value_error("value does not match expected schema type")),
@@ -202,9 +200,7 @@ fn coerce_cfd_dict_key(
         (CftSchemaTypeRef::Nullable(inner), key) => coerce_cfd_dict_key(session, inner, key),
         (CftSchemaTypeRef::String, key @ CfdDictKey::String(_))
         | (CftSchemaTypeRef::Int, key @ CfdDictKey::Int(_)) => Ok(key),
-        (CftSchemaTypeRef::Named(enum_name), CfdDictKey::Enum(value))
-            if is_schema_enum(session, enum_name) =>
-        {
+        (CftSchemaTypeRef::Enum(enum_name), CfdDictKey::Enum(value)) => {
             coerce_cfd_enum_value(session, enum_name, value).map(CfdDictKey::Enum)
         }
         _ => Err(one_value_error(
@@ -308,7 +304,7 @@ fn coerce_dict_key(
             .map(|text| CfdDictKey::String(text.to_string()))
             .ok_or_else(|| one_value_error("expected string dict key")),
         CftSchemaTypeRef::Int => coerce_int_dict_key(value),
-        CftSchemaTypeRef::Named(enum_name) if is_schema_enum(session, enum_name) => {
+        CftSchemaTypeRef::Enum(enum_name) => {
             let variant = value.as_str().ok_or_else(|| {
                 one_value_error(format!("expected enum dict key for `{enum_name}`"))
             })?;

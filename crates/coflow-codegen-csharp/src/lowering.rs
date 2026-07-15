@@ -1,16 +1,17 @@
 use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnumMeta, CftFieldMeta, CftSchemaTypeRef, CftTypeMeta, CftSchema};
+use coflow_cft::{CftEnum, CftField, CftSchema, CftSchemaTypeRef, CftType};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct CsharpLoweringPlan<'a> {
     pub int_32: bool,
     pub float_32: bool,
     schema: &'a CftSchema,
-    types: Vec<&'a CftTypeMeta>,
-    enums: Vec<&'a CftEnumMeta>,
-    fields: BTreeMap<&'a str, &'a [CftFieldMeta]>,
+    types: Vec<&'a CftType>,
+    enums: Vec<&'a CftEnum>,
+    fields: BTreeMap<&'a str, &'a [Arc<CftField>]>,
     csharp_types: BTreeMap<String, String>,
     csharp_enums: BTreeMap<String, String>,
     declared_tables: Vec<String>,
@@ -20,7 +21,6 @@ pub struct CsharpLoweringPlan<'a> {
     polymorphic_types: Vec<String>,
     polymorphic_type_set: BTreeSet<String>,
     ref_targets: Vec<String>,
-    schema_enums: BTreeSet<String>,
     id_as_enum_names: BTreeSet<String>,
     type_id_as_enum: BTreeMap<String, String>,
     assignable_types: BTreeMap<String, Vec<String>>,
@@ -36,22 +36,18 @@ impl<'a> CsharpLoweringPlan<'a> {
         float_32: bool,
         non_empty_tables: Option<&BTreeSet<String>>,
     ) -> Result<Self, CsharpCodegenError> {
-        let enums = schema.enum_metas().collect::<Vec<_>>();
-        let schema_enums = enums
-            .iter()
-            .map(|schema_enum| schema_enum.name.clone())
-            .collect::<BTreeSet<_>>();
+        let enums = schema.all_enums().collect::<Vec<_>>();
         let csharp_enums = enums
             .iter()
             .map(|schema_enum| {
                 (
-                    schema_enum.name.clone(),
+                    schema_enum.name.to_string(),
                     csharp_type_name(&schema_enum.name),
                 )
             })
             .collect::<BTreeMap<_, _>>();
 
-        let types = schema.type_metas().collect::<Vec<_>>();
+        let types = schema.all_types().collect::<Vec<_>>();
         let mut fields = BTreeMap::new();
         let mut csharp_types = BTreeMap::new();
         let mut declared_tables = Vec::new();
@@ -71,31 +67,34 @@ impl<'a> CsharpLoweringPlan<'a> {
                 CsharpCodegenError::new(format!("unknown CFT type `{}`", ty.name))
             })?;
             fields.insert(ty.name.as_str(), type_fields);
-            csharp_types.insert(ty.name.clone(), csharp_type_name(&ty.name));
+            csharp_types.insert(ty.name.to_string(), csharp_type_name(&ty.name));
             if !ty.is_abstract && !ty.is_singleton {
-                declared_tables.push(ty.name.clone());
+                declared_tables.push(ty.name.to_string());
             }
             if ty.is_singleton {
-                singleton_types.push(ty.name.clone());
+                singleton_types.push(ty.name.to_string());
             }
             if schema.range_is_polymorphic(&ty.name) {
-                polymorphic_types.push(ty.name.clone());
-                polymorphic_type_set.insert(ty.name.clone());
+                polymorphic_types.push(ty.name.to_string());
+                polymorphic_type_set.insert(ty.name.to_string());
             }
             if schema.type_is_struct(&ty.name) {
-                struct_types.insert(ty.name.clone());
+                struct_types.insert(ty.name.to_string());
             }
             if let Some(parent) = &ty.parent {
-                types_with_descendants.insert(parent.clone());
+                types_with_descendants.insert(parent.to_string());
             }
             if let Some(enum_name) = schema.inherited_id_as_enum(&ty.name) {
-                id_as_enum_names.insert(enum_name.clone());
-                type_id_as_enum.insert(ty.name.clone(), enum_name);
+                id_as_enum_names.insert(enum_name.to_string());
+                type_id_as_enum.insert(ty.name.to_string(), enum_name.to_string());
             }
             let assignable = schema.concrete_assignable_types(&ty.name).ok_or_else(|| {
                 CsharpCodegenError::new(format!("unknown CFT type `{}`", ty.name))
             })?;
-            assignable_types.insert(ty.name.clone(), assignable);
+            assignable_types.insert(
+                ty.name.to_string(),
+                assignable.into_iter().map(|name| name.to_string()).collect(),
+            );
             for field in &ty.own_fields {
                 uses_localization |= field.dimension.is_some();
                 collect_ref_targets(&field.ty_ref, &mut ref_targets);
@@ -125,7 +124,6 @@ impl<'a> CsharpLoweringPlan<'a> {
             polymorphic_types,
             polymorphic_type_set,
             ref_targets,
-            schema_enums,
             id_as_enum_names,
             type_id_as_enum,
             assignable_types,
@@ -135,24 +133,20 @@ impl<'a> CsharpLoweringPlan<'a> {
         })
     }
 
-    pub fn cft_enum_meta(&self, name: &str) -> Option<&CftEnumMeta> {
-        self.schema.enum_meta(name)
+    pub fn cft_enum_meta(&self, name: &str) -> Option<&CftEnum> {
+        self.schema.resolve_enum(name)
     }
 
-    pub fn enum_names(&self) -> impl Iterator<Item = &String> {
-        self.enums.iter().map(|schema_enum| &schema_enum.name)
+    pub fn enum_names(&self) -> impl Iterator<Item = &str> {
+        self.enums.iter().map(|schema_enum| schema_enum.name.as_str())
     }
 
-    pub fn cft_enum_metas(&self) -> impl Iterator<Item = &CftEnumMeta> {
+    pub fn cft_enum_metas(&self) -> impl Iterator<Item = &CftEnum> {
         self.enums.iter().copied()
     }
 
-    pub fn type_metas(&self) -> impl Iterator<Item = &CftTypeMeta> {
+    pub fn all_types(&self) -> impl Iterator<Item = &CftType> {
         self.types.iter().copied()
-    }
-
-    pub fn is_schema_enum(&self, name: &str) -> bool {
-        self.schema_enums.contains(name)
     }
 
     pub const fn uses_localization(&self) -> bool {
@@ -171,25 +165,25 @@ impl<'a> CsharpLoweringPlan<'a> {
                 .is_some_and(|types| types.iter().any(|ty| self.loadable_table_set.contains(ty)))
     }
 
-    pub fn type_meta(&self, name: &str) -> Result<&CftTypeMeta, CsharpCodegenError> {
+    pub fn resolve_type(&self, name: &str) -> Result<&CftType, CsharpCodegenError> {
         self.schema
-            .type_meta(name)
+            .resolve_type(name)
             .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{name}`")))
     }
 
     pub fn fields(
         &self,
         name: &str,
-    ) -> Result<impl Iterator<Item = &CftFieldMeta>, CsharpCodegenError> {
+    ) -> Result<impl Iterator<Item = &CftField>, CsharpCodegenError> {
         self.fields
             .get(name)
             .copied()
-            .map(<[CftFieldMeta]>::iter)
+            .map(|fields| fields.iter().map(AsRef::as_ref))
             .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{name}`")))
     }
 
-    pub fn all_type_names(&self) -> impl Iterator<Item = &String> {
-        self.types.iter().map(|ty| &ty.name)
+    pub fn all_type_names(&self) -> impl Iterator<Item = &str> {
+        self.types.iter().map(|ty| ty.name.as_str())
     }
 
     pub fn declared_table_names(&self) -> &[String] {
@@ -226,14 +220,6 @@ impl<'a> CsharpLoweringPlan<'a> {
             .unwrap_or_else(|| csharp_type_name(enum_name))
     }
 
-    pub fn csharp_named_type(&self, name: &str) -> String {
-        if self.is_schema_enum(name) {
-            self.csharp_enum_name(name)
-        } else {
-            self.csharp_type_name(name)
-        }
-    }
-
     pub fn id_as_enum(&self, type_name: &str) -> Option<String> {
         self.type_id_as_enum.get(type_name).cloned()
     }
@@ -244,7 +230,11 @@ impl<'a> CsharpLoweringPlan<'a> {
 
     pub fn key_field_type(&self, type_name: &str) -> CftSchemaTypeRef {
         self.id_as_enum(type_name)
-            .map_or_else(|| CftSchemaTypeRef::String, CftSchemaTypeRef::Named)
+            .and_then(|name| self.schema.resolve_enum(&name))
+            .map_or_else(
+                || CftSchemaTypeRef::String,
+                |schema_enum| CftSchemaTypeRef::Enum(schema_enum.name.clone()),
+            )
     }
 
     pub fn type_has_descendants(&self, type_name: &str) -> bool {
@@ -265,15 +255,15 @@ impl<'a> CsharpLoweringPlan<'a> {
         &self.ref_targets
     }
 
-    pub fn type_is_struct(&self, ty: &CftTypeMeta) -> bool {
-        self.struct_types.contains(&ty.name)
+    pub fn type_is_struct(&self, ty: &CftType) -> bool {
+        self.struct_types.contains(ty.name.as_str())
     }
 }
 
 fn collect_ref_targets(ty: &CftSchemaTypeRef, out: &mut BTreeSet<String>) {
     match ty {
-        CftSchemaTypeRef::Ref(name) => {
-            out.insert(name.clone());
+        CftSchemaTypeRef::RecordRef(name) => {
+            out.insert(name.to_string());
         }
         CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
             collect_ref_targets(inner, out);
@@ -286,6 +276,7 @@ fn collect_ref_targets(ty: &CftSchemaTypeRef, out: &mut BTreeSet<String>) {
         | CftSchemaTypeRef::Float
         | CftSchemaTypeRef::Bool
         | CftSchemaTypeRef::String
-        | CftSchemaTypeRef::Named(_) => {}
+        | CftSchemaTypeRef::Object(_)
+        | CftSchemaTypeRef::Enum(_) => {}
     }
 }

@@ -98,11 +98,14 @@ pub(crate) fn expected_type_for_cfd_path(
     if path.is_empty() {
         return Err(one_error(code, stage, "field path must not be empty"));
     }
-    let mut current = CftSchemaTypeRef::Named(actual_type.to_string());
+    let Some(root_type) = schema.resolve_type(actual_type) else {
+        return Err(one_error(code, stage, format!("unknown type `{actual_type}`")));
+    };
+    let mut current = CftSchemaTypeRef::Object(root_type.name.clone());
     for segment in path {
         current = match segment {
             CfdPathSegment::Field(field) => {
-                let CftSchemaTypeRef::Named(type_name) = non_nullable(&current) else {
+                let CftSchemaTypeRef::Object(type_name) = non_nullable(&current) else {
                     return Err(one_error(
                         code,
                         stage,

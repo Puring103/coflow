@@ -6,7 +6,7 @@ pub(super) fn type_after_field_segment(
     field_name: &str,
 ) -> Option<CftSchemaTypeRef> {
     schema
-        .field_meta(actual_type, field_name)
+        .field(actual_type, field_name)
         .map(|field| field.ty_ref.clone())
 }
 
@@ -16,7 +16,7 @@ pub(super) fn type_after_field_segment_for_ref(
     field_name: &str,
 ) -> Option<CftSchemaTypeRef> {
     match non_nullable(current_type) {
-        CftSchemaTypeRef::Named(type_name) if schema.has_type(type_name) => {
+        CftSchemaTypeRef::Object(type_name) => {
             type_after_field_segment(schema, type_name, field_name)
         }
         _ => None,
@@ -31,14 +31,16 @@ pub(super) fn concrete_type_for_block(
     let Some(type_marker) = type_marker else {
         return expected_type.clone();
     };
-    let CftSchemaTypeRef::Named(expected_name) = non_nullable(expected_type) else {
+    let CftSchemaTypeRef::Object(expected_name) = non_nullable(expected_type) else {
         return expected_type.clone();
     };
-    if schema.is_assignable(type_marker, expected_name) {
-        CftSchemaTypeRef::Named(type_marker.to_string())
-    } else {
-        expected_type.clone()
-    }
+    schema
+        .resolve_type(type_marker)
+        .filter(|_| schema.is_assignable(type_marker, expected_name))
+        .map_or_else(
+            || expected_type.clone(),
+            |schema_type| CftSchemaTypeRef::Object(schema_type.name.clone()),
+        )
 }
 
 pub(super) fn object_type_name<'a>(
@@ -46,8 +48,8 @@ pub(super) fn object_type_name<'a>(
     actual_type: &'a str,
 ) -> Option<&'a str> {
     match expected.map(non_nullable) {
-        Some(CftSchemaTypeRef::Named(type_name)) => Some(type_name.as_str()),
-        Some(CftSchemaTypeRef::Ref(_)) => None,
+        Some(CftSchemaTypeRef::Object(type_name)) => Some(type_name.as_str()),
+        Some(CftSchemaTypeRef::RecordRef(_)) => None,
         Some(_) | None => Some(actual_type),
     }
 }
@@ -83,8 +85,8 @@ pub(super) fn dict_key_path_matches(
         CftSchemaTypeRef::String if path_key.starts_with('"') => {
             serde_json::from_str::<String>(path_key).is_ok_and(|decoded| decoded == source_key)
         }
-        CftSchemaTypeRef::Named(enum_name) if schema.is_schema_enum(enum_name) => path_key
-            .strip_prefix(enum_name)
+        CftSchemaTypeRef::Enum(enum_name) => path_key
+            .strip_prefix(enum_name.as_str())
             .and_then(|rest| rest.strip_prefix('.'))
             .is_some_and(|variant| variant == source_key),
         CftSchemaTypeRef::Nullable(inner) => {

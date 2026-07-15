@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-use crate::{CftAnnotation, CftAnnotationValue, CftSchemaTypeRef, CftTypeMeta, CftSchema};
+use crate::{
+    CftAnnotation, CftAnnotationValue, CftSchema, CftSchemaTypeRef, CftType, EnumName, TypeName,
+};
 
 impl CftSchema {
     #[must_use]
@@ -11,17 +13,18 @@ impl CftSchema {
     }
 
     #[must_use]
-    pub fn type_id_as_enum(&self, type_name: &str) -> Option<String> {
+    pub fn type_id_as_enum(&self, type_name: &str) -> Option<EnumName> {
         annotation_name_arg(&self.types.get(type_name)?.annotations, "idAsEnum")
+            .map(EnumName::from_validated)
     }
 
     #[must_use]
-    pub fn inherited_id_as_enum(&self, type_name: &str) -> Option<String> {
+    pub fn inherited_id_as_enum(&self, type_name: &str) -> Option<EnumName> {
         let mut current = Some(type_name);
         while let Some(name) = current {
             let meta = self.types.get(name)?;
             if let Some(enum_name) = annotation_name_arg(&meta.annotations, "idAsEnum") {
-                return Some(enum_name);
+                return Some(EnumName::from_validated(enum_name));
             }
             current = meta.parent.as_deref();
         }
@@ -36,15 +39,18 @@ impl CftSchema {
     }
 
     #[must_use]
-    pub fn id_as_enum_names(&self) -> BTreeSet<String> {
+    pub fn id_as_enum_names(&self) -> BTreeSet<EnumName> {
         self.types
             .values()
-            .filter_map(|ty| annotation_name_arg(&ty.annotations, "idAsEnum"))
+            .filter_map(|ty| {
+                annotation_name_arg(&ty.annotations, "idAsEnum")
+                    .map(EnumName::from_validated)
+            })
             .collect()
     }
 
     #[must_use]
-    pub fn ref_target_names(&self) -> Vec<String> {
+    pub fn ref_target_names(&self) -> Vec<TypeName> {
         let mut out = BTreeSet::new();
         for ty in self.types.values() {
             let mut visited = BTreeSet::new();
@@ -55,9 +61,9 @@ impl CftSchema {
 
     fn collect_ref_targets_for_type(
         &self,
-        ty: &CftTypeMeta,
-        out: &mut BTreeSet<String>,
-        visited: &mut BTreeSet<String>,
+        ty: &CftType,
+        out: &mut BTreeSet<TypeName>,
+        visited: &mut BTreeSet<TypeName>,
     ) {
         if !visited.insert(ty.name.clone()) {
             return;
@@ -70,17 +76,17 @@ impl CftSchema {
     fn collect_ref_targets_in_type(
         &self,
         ty: &CftSchemaTypeRef,
-        out: &mut BTreeSet<String>,
-        visited: &mut BTreeSet<String>,
+        out: &mut BTreeSet<TypeName>,
+        visited: &mut BTreeSet<TypeName>,
     ) {
         match ty {
-            CftSchemaTypeRef::Named(name) if self.is_schema_enum(name) => {}
-            CftSchemaTypeRef::Named(name) => {
+            CftSchemaTypeRef::Enum(_) => {}
+            CftSchemaTypeRef::Object(name) => {
                 if let Some(meta) = self.types.get(name) {
                     self.collect_ref_targets_for_type(meta, out, visited);
                 }
             }
-            CftSchemaTypeRef::Ref(name) => {
+            CftSchemaTypeRef::RecordRef(name) => {
                 out.insert(name.clone());
             }
             CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {

@@ -1,18 +1,21 @@
 use super::CftSchema;
-use crate::{CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt};
+use crate::{
+    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
+    DimensionName,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn dimension_checks_for_type(
     schema: &CftSchema,
     type_name: &str,
-) -> BTreeMap<String, CftSchemaCheckBlock> {
+) -> BTreeMap<DimensionName, CftSchemaCheckBlock> {
     let Some(check) = schema
-        .type_meta(type_name)
+        .resolve_type(type_name)
         .and_then(|meta| meta.check.as_ref())
     else {
         return BTreeMap::new();
     };
-    let mut by_dimension: BTreeMap<String, Vec<CftSchemaCheckStmt>> = BTreeMap::new();
+    let mut by_dimension: BTreeMap<DimensionName, Vec<CftSchemaCheckStmt>> = BTreeMap::new();
     let mut analyzer = DimensionCheckAnalyzer::new(schema, type_name);
     for stmt in &check.stmts {
         for dimension in analyzer.stmt_dimensions(stmt) {
@@ -51,7 +54,7 @@ impl<'a> DimensionCheckAnalyzer<'a> {
         }
     }
 
-    fn stmt_dimensions(&mut self, stmt: &CftSchemaCheckStmt) -> BTreeSet<String> {
+    fn stmt_dimensions(&mut self, stmt: &CftSchemaCheckStmt) -> BTreeSet<DimensionName> {
         match stmt {
             CftSchemaCheckStmt::Expr(expr) => self.expr_dimensions(expr),
             CftSchemaCheckStmt::Quantifier {
@@ -80,7 +83,7 @@ impl<'a> DimensionCheckAnalyzer<'a> {
         }
     }
 
-    fn expr_dimensions(&mut self, expr: &CftSchemaCheckExpr) -> BTreeSet<String> {
+    fn expr_dimensions(&mut self, expr: &CftSchemaCheckExpr) -> BTreeSet<DimensionName> {
         match &expr.kind {
             CftSchemaCheckExprKind::Int(_)
             | CftSchemaCheckExprKind::Float(_)
@@ -117,7 +120,7 @@ impl<'a> DimensionCheckAnalyzer<'a> {
         }
     }
 
-    fn name_dimensions(&self, name: &str) -> BTreeSet<String> {
+    fn name_dimensions(&self, name: &str) -> BTreeSet<DimensionName> {
         if self.scopes.iter().rev().any(|scope| scope.contains(name)) {
             return BTreeSet::new();
         }
@@ -127,7 +130,7 @@ impl<'a> DimensionCheckAnalyzer<'a> {
             .unwrap_or_default()
     }
 
-    fn args_dimensions(&mut self, args: &[CftSchemaCheckExpr]) -> BTreeSet<String> {
+    fn args_dimensions(&mut self, args: &[CftSchemaCheckExpr]) -> BTreeSet<DimensionName> {
         let mut out = BTreeSet::new();
         for arg in args {
             out.extend(self.expr_dimensions(arg));

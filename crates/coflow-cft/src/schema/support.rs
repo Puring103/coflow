@@ -373,43 +373,37 @@ fn convert_cmp_op(op: CmpOp) -> CftSchemaCmpOp {
     }
 }
 
-pub(super) fn format_type_ref(ty: &TypeRef) -> String {
-    match &ty.kind {
-        TypeRefKind::Int => "int".to_string(),
-        TypeRefKind::Float => "float".to_string(),
-        TypeRefKind::Bool => "bool".to_string(),
-        TypeRefKind::String => "string".to_string(),
-        TypeRefKind::Named(name) => name.clone(),
-        TypeRefKind::Ref(inner) => format!("&{}", format_type_ref(inner)),
-        TypeRefKind::Array(inner) => format!("[{}]", format_type_ref(inner)),
-        TypeRefKind::Dict(key, value) => {
-            format!("{{{}: {}}}", format_type_ref(key), format_type_ref(value))
-        }
-        TypeRefKind::Nullable(inner) => format!("{}?", format_type_ref(inner)),
-    }
-}
-
-pub(super) fn build_schema_type_ref(ty: &TypeRef) -> super::CftSchemaTypeRef {
+pub(super) fn build_schema_type_ref(
+    ty: &TypeRef,
+    is_enum: &impl Fn(&str) -> bool,
+) -> super::CftSchemaTypeRef {
     use super::CftSchemaTypeRef;
     match &ty.kind {
         TypeRefKind::Int => CftSchemaTypeRef::Int,
         TypeRefKind::Float => CftSchemaTypeRef::Float,
         TypeRefKind::Bool => CftSchemaTypeRef::Bool,
         TypeRefKind::String => CftSchemaTypeRef::String,
-        TypeRefKind::Named(name) => CftSchemaTypeRef::Named(name.clone()),
+        TypeRefKind::Named(name) if is_enum(name) => {
+            CftSchemaTypeRef::Enum(crate::EnumName::from_validated(name.clone()))
+        }
+        TypeRefKind::Named(name) => {
+            CftSchemaTypeRef::Object(crate::TypeName::from_validated(name.clone()))
+        }
         TypeRefKind::Ref(inner) => match &inner.kind {
-            TypeRefKind::Named(name) => CftSchemaTypeRef::Ref(name.clone()),
-            _ => build_schema_type_ref(inner),
+            TypeRefKind::Named(name) => {
+                CftSchemaTypeRef::RecordRef(crate::TypeName::from_validated(name.clone()))
+            }
+            _ => build_schema_type_ref(inner, is_enum),
         },
         TypeRefKind::Array(inner) => {
-            CftSchemaTypeRef::Array(Box::new(build_schema_type_ref(inner)))
+            CftSchemaTypeRef::Array(Box::new(build_schema_type_ref(inner, is_enum)))
         }
         TypeRefKind::Dict(key, value) => CftSchemaTypeRef::Dict(
-            Box::new(build_schema_type_ref(key)),
-            Box::new(build_schema_type_ref(value)),
+            Box::new(build_schema_type_ref(key, is_enum)),
+            Box::new(build_schema_type_ref(value, is_enum)),
         ),
         TypeRefKind::Nullable(inner) => {
-            CftSchemaTypeRef::Nullable(Box::new(build_schema_type_ref(inner)))
+            CftSchemaTypeRef::Nullable(Box::new(build_schema_type_ref(inner, is_enum)))
         }
     }
 }

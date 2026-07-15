@@ -1,7 +1,7 @@
 use super::ids::CfdRecordId;
 use crate::diagnostic::{format_cfd_dict_key, CfdPath, CfdPathSegment};
 use crate::origin::RecordOrigin;
-use coflow_cft::CftEnumValueMeta;
+use coflow_cft::CftEnumValue;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -213,11 +213,11 @@ impl Hash for CfdEnumValue {
     }
 }
 
-impl From<CftEnumValueMeta> for CfdEnumValue {
-    fn from(meta: CftEnumValueMeta) -> Self {
+impl From<CftEnumValue> for CfdEnumValue {
+    fn from(meta: CftEnumValue) -> Self {
         Self {
-            enum_name: meta.enum_name,
-            variant: meta.variant,
+            enum_name: meta.enum_name.to_string(),
+            variant: meta.variant.map(|variant| variant.to_string()),
             value: meta.value,
         }
     }

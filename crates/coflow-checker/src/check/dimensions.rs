@@ -49,7 +49,7 @@ impl DimensionRoundView {
         };
         let mut fields_by_record = BTreeMap::new();
         for (record_id, record) in model.records() {
-            let Some(type_meta) = schema.type_meta(record.actual_type()) else {
+            let Some(type_meta) = schema.resolve_type(record.actual_type()) else {
                 continue;
             };
             let fields = type_meta
@@ -59,7 +59,9 @@ impl DimensionRoundView {
                     field
                         .dimension
                         .as_ref()
-                        .is_some_and(|dimension| dimension.dimension == context.dimension)
+                        .is_some_and(|dimension| {
+                            dimension.dimension.as_str() == context.dimension
+                        })
                 })
                 .map(|field| {
                     let traverse_nested =
@@ -97,7 +99,7 @@ impl DimensionRoundView {
                             traverse_nested,
                         },
                     };
-                    (field.name.clone(), projection)
+                    (field.name.to_string(), projection)
                 })
                 .collect::<BTreeMap<_, _>>();
             if !fields.is_empty() {

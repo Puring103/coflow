@@ -54,14 +54,15 @@ fn lower_object_entries(
     type_name: &str,
     entries: &[CfdBlockEntry],
 ) -> Result<ObjectFields, CfdTextDiagnostics> {
-    let fields = schema.fields(type_name).ok_or_else(|| {
+    let schema_type = schema.resolve_type(type_name).ok_or_else(|| {
         error(
             CfdTextErrorCode::UnknownType,
             format!("unknown type `{type_name}`"),
             Span::default(),
         )
     })?;
-    let fields_by_name = fields
+    let fields_by_name = schema_type
+        .fields()
         .map(|field| (field.name.as_str(), field))
         .collect::<BTreeMap<_, _>>();
     let mut spreads = Vec::new();
@@ -72,7 +73,7 @@ fn lower_object_entries(
             CfdBlockEntry::Spread(value, _) => spreads.push(lower_spread(
                 schema,
                 value,
-                &CftSchemaTypeRef::Named(type_name.to_string()),
+                &CftSchemaTypeRef::Object(schema_type.name.clone()),
             )?),
             CfdBlockEntry::Field(field) => {
                 if field.name == "id" {
@@ -132,11 +133,9 @@ fn lower_value(
         CftSchemaTypeRef::Float => lower_float(value),
         CftSchemaTypeRef::Bool => lower_bool(value),
         CftSchemaTypeRef::String => lower_string(value),
-        CftSchemaTypeRef::Named(name) if schema.is_schema_enum(name) => {
-            lower_enum(schema, value, name)
-        }
-        CftSchemaTypeRef::Named(name) => lower_object(schema, value, name),
-        CftSchemaTypeRef::Ref(name) => lower_ref(value, name),
+        CftSchemaTypeRef::Enum(name) => lower_enum(schema, value, name),
+        CftSchemaTypeRef::Object(name) => lower_object(schema, value, name),
+        CftSchemaTypeRef::RecordRef(name) => lower_ref(value, name),
         CftSchemaTypeRef::Array(inner) => lower_array(schema, value, inner),
         CftSchemaTypeRef::Dict(key, item) => lower_dict(schema, value, key, item),
         CftSchemaTypeRef::Nullable(inner) => lower_value(schema, value, inner),
@@ -208,11 +207,11 @@ fn lower_enum(
         .strip_prefix(enum_name)
         .and_then(|rest| rest.strip_prefix('.'))
         .unwrap_or(raw);
-    let valid = schema.enum_meta(enum_name).is_some_and(|schema_enum| {
+    let valid = schema.resolve_enum(enum_name).is_some_and(|schema_enum| {
         schema_enum
-            .all_variants
+            .variants
             .iter()
-            .any(|candidate| candidate.name == variant)
+            .any(|candidate| candidate.name.as_str() == variant)
     });
     if !valid {
         return Err(error(
@@ -365,19 +364,19 @@ fn lower_dict_key(
                 span,
             )
         }),
-        CftSchemaTypeRef::Named(enum_name) if schema.is_schema_enum(enum_name) => {
+        CftSchemaTypeRef::Enum(enum_name) => {
             let variant = raw
-                .strip_prefix(enum_name)
+                .strip_prefix(enum_name.as_str())
                 .and_then(|rest| rest.strip_prefix('.'))
                 .unwrap_or(raw);
-            let valid = schema.enum_meta(enum_name).is_some_and(|schema_enum| {
+            let valid = schema.resolve_enum(enum_name).is_some_and(|schema_enum| {
                 schema_enum
-                    .all_variants
+                    .variants
                     .iter()
-                    .any(|candidate| candidate.name == variant)
+                    .any(|candidate| candidate.name.as_str() == variant)
             });
             if valid {
-                Ok(CfdInputDictKey::enum_variant(enum_name, variant))
+                Ok(CfdInputDictKey::enum_variant(enum_name.as_str(), variant))
             } else {
                 Err(error(
                     CfdTextErrorCode::InvalidEnumVariant,
@@ -437,7 +436,7 @@ fn validate_record_type(
     actual_type: &str,
     span: Span,
 ) -> Result<(), CfdTextDiagnostics> {
-    let Some(schema_type) = schema.type_meta(actual_type) else {
+    let Some(schema_type) = schema.resolve_type(actual_type) else {
         return Err(error(
             CfdTextErrorCode::UnknownType,
             format!("unknown type `{actual_type}`"),

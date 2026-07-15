@@ -1,4 +1,4 @@
-use coflow_cft::CftSchema;
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -26,7 +26,7 @@ pub(super) struct ResolvedColumn {
     pub(super) index: usize,
     pub(super) excel_column: usize,
     pub(super) field: String,
-    pub(super) field_type: String,
+    pub(super) field_type: CftSchemaTypeRef,
     pub(super) expand: Option<Vec<ExpandedSubColumn>>,
 }
 
@@ -35,7 +35,7 @@ pub(super) struct ExpandedSubColumn {
     pub(super) index: usize,
     pub(super) excel_column: usize,
     pub(super) field: String,
-    pub(super) field_type: String,
+    pub(super) field_type: CftSchemaTypeRef,
 }
 
 pub(super) fn field_columns_from_resolved(
@@ -62,7 +62,7 @@ pub(super) fn resolve_columns(
     source_name: &Path,
     sheet: &TableSheetConfig,
     type_name: &str,
-    fields: &BTreeMap<String, String>,
+    fields: &BTreeMap<String, CftSchemaTypeRef>,
     header_row: &[String],
     header_excel_row: usize,
     header_excel_col: usize,
@@ -85,10 +85,10 @@ struct ColumnResolution<'a> {
     source_name: &'a Path,
     sheet: &'a TableSheetConfig,
     type_name: &'a str,
-    fields: &'a BTreeMap<String, String>,
+    fields: &'a BTreeMap<String, CftSchemaTypeRef>,
     header_excel_row: usize,
     header: Vec<(usize, usize, String)>,
-    expand_fields: BTreeMap<String, BTreeMap<String, String>>,
+    expand_fields: BTreeMap<String, BTreeMap<String, CftSchemaTypeRef>>,
     expand_inner_order: BTreeMap<String, Vec<String>>,
     columns: Vec<ResolvedColumn>,
     id_column: Option<IdColumn>,
@@ -107,7 +107,7 @@ impl<'a> ColumnResolution<'a> {
         source_name: &'a Path,
         sheet: &'a TableSheetConfig,
         type_name: &'a str,
-        fields: &'a BTreeMap<String, String>,
+        fields: &'a BTreeMap<String, CftSchemaTypeRef>,
         header_row: &[String],
         header_excel_row: usize,
         header_excel_col: usize,
@@ -297,11 +297,9 @@ impl<'a> ColumnResolution<'a> {
     ) -> Vec<ExpandedSubColumn> {
         let mut consumed = Vec::with_capacity(request.inner_order.len());
         if let Some(first_inner) = request.inner_order.first() {
-            let inner_ty = request
-                .child_fields
-                .get(first_inner)
-                .cloned()
-                .unwrap_or_default();
+            let Some(inner_ty) = request.child_fields.get(first_inner).cloned() else {
+                return consumed;
+            };
             consumed.push(ExpandedSubColumn {
                 index: request.parent_index,
                 excel_column: request.parent_excel_column,
@@ -340,11 +338,9 @@ impl<'a> ColumnResolution<'a> {
                     },
                 ));
             }
-            let inner_ty = request
-                .child_fields
-                .get(inner_field)
-                .cloned()
-                .unwrap_or_default();
+            let Some(inner_ty) = request.child_fields.get(inner_field).cloned() else {
+                continue;
+            };
             consumed.push(ExpandedSubColumn {
                 index: *next_index,
                 excel_column: *next_excel_col,
@@ -409,7 +405,7 @@ struct ExpandedColumnRequest<'a> {
     parent_excel_column: usize,
     parent_header: &'a str,
     parent_field: &'a str,
-    child_fields: &'a BTreeMap<String, String>,
+    child_fields: &'a BTreeMap<String, CftSchemaTypeRef>,
     inner_order: &'a [String],
 }
 
@@ -425,7 +421,7 @@ fn is_key_column(column_text: &str, field: &str, key_column: &str, has_explicit_
 fn expand_field_index(
     schema: &CftSchema,
     type_name: &str,
-) -> BTreeMap<String, BTreeMap<String, String>> {
+) -> BTreeMap<String, BTreeMap<String, CftSchemaTypeRef>> {
     let mut out = BTreeMap::new();
     let Some(fields) = schema.fields(type_name) else {
         return out;
@@ -438,13 +434,16 @@ fn expand_field_index(
         {
             continue;
         }
-        let Some(inner_fields) = schema.fields(&field.raw_type) else {
+        let CftSchemaTypeRef::Object(inner_type) = field.ty_ref.non_nullable() else {
+            continue;
+        };
+        let Some(inner_fields) = schema.fields(inner_type) else {
             continue;
         };
         let inner_fields = inner_fields
-            .map(|inner| (inner.name.clone(), inner.raw_type.clone()))
+            .map(|inner| (inner.name.to_string(), inner.ty_ref.clone()))
             .collect();
-        out.insert(field.name.clone(), inner_fields);
+        out.insert(field.name.to_string(), inner_fields);
     }
     out
 }
@@ -465,11 +464,14 @@ fn expand_field_order_index(
         {
             continue;
         }
-        let Some(inner_fields) = schema.fields(&field.raw_type) else {
+        let CftSchemaTypeRef::Object(inner_type) = field.ty_ref.non_nullable() else {
             continue;
         };
-        let order = inner_fields.map(|inner| inner.name.clone()).collect();
-        out.insert(field.name.clone(), order);
+        let Some(inner_fields) = schema.fields(inner_type) else {
+            continue;
+        };
+        let order = inner_fields.map(|inner| inner.name.to_string()).collect();
+        out.insert(field.name.to_string(), order);
     }
     out
 }

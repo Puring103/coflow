@@ -8,7 +8,7 @@ mod columns;
 mod diagnostics;
 mod types;
 
-use coflow_cft::{record_key_ident_error, CftSchema};
+use coflow_cft::{record_key_ident_error, CftSchema, CftSchemaTypeRef};
 use coflow_data_model::{
     CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath, CfdPathSegment, RecordOrigin,
     SourceDocument,
@@ -16,7 +16,7 @@ use coflow_data_model::{
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::cell_value::{parse_cell, ParsedCell};
+use crate::cell_value::{parse_schema_cell, ParsedCell};
 use columns::{
     field_columns_from_resolved, resolve_columns, ExpandedSubColumn, IdColumn, ResolvedColumn,
 };
@@ -168,7 +168,7 @@ pub fn collect_table_input_records(
                         .sheet(sheet.sheet.clone())
                         .cell(excel_row, column.excel_column);
                     let text = table_cell_text(row.get(column.index));
-                    let parsed = match parse_cell(schema, &column.field_type, &text) {
+                    let parsed = match parse_schema_cell(schema, &column.field_type, &text) {
                         Ok(parsed) => parsed,
                         Err(err) => {
                             diagnostics.extend(table_load_error_diagnostics(
@@ -353,7 +353,7 @@ fn build_expanded_object(
             .sheet(sheet.sheet.clone())
             .cell(excel_row, child.excel_column);
         let text = table_cell_text(row.get(child.index));
-        let parsed = match parse_cell(schema, &child.field_type, &text) {
+        let parsed = match parse_schema_cell(schema, &child.field_type, &text) {
             Ok(parsed) => parsed,
             Err(err) => {
                 diagnostics.extend(table_load_error_diagnostics(TableLoadError::CellParse {
@@ -379,10 +379,13 @@ fn build_expanded_object(
     }
 }
 
-fn full_field_types(schema: &CftSchema, type_name: &str) -> Option<BTreeMap<String, String>> {
+fn full_field_types(
+    schema: &CftSchema,
+    type_name: &str,
+) -> Option<BTreeMap<String, CftSchemaTypeRef>> {
     let fields = schema
         .fields(type_name)?
-        .map(|field| (field.name.clone(), field.raw_type.clone()))
+        .map(|field| (field.name.to_string(), field.ty_ref.clone()))
         .collect();
     Some(fields)
 }

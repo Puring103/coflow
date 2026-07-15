@@ -151,11 +151,11 @@ impl ProjectSession {
     #[must_use]
     pub fn enum_variants(&self, enum_name: &str) -> Vec<String> {
         self.schema()
-            .enum_meta(enum_name)
+            .resolve_enum(enum_name)
             .map(|meta| {
-                meta.all_variants
+                meta.variants
                     .iter()
-                    .map(|variant| variant.name.clone())
+                    .map(|variant| variant.name.to_string())
                     .collect()
             })
             .unwrap_or_default()

@@ -51,6 +51,11 @@ macro_rules! cft_name {
                 &self.0
             }
 
+            #[allow(dead_code)]
+            pub(crate) fn from_validated(value: impl Into<String>) -> Self {
+                Self(value.into())
+            }
+
         }
 
         impl AsRef<str> for $name {
@@ -130,6 +135,11 @@ impl VariantName {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn from_validated(value: impl Into<String>) -> Self {
+        Self(value.into())
     }
 
 }

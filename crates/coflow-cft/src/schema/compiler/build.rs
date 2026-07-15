@@ -2,46 +2,30 @@ use super::SchemaCompiler;
 use crate::ast::{AnnotationArg, DefaultExpr, DefaultExprKind, FieldDef};
 use crate::schema::support::{
     build_schema_type_ref, convert_annotations, convert_check_block, find_annotation,
-    format_type_ref, has_annotation,
+    has_annotation,
 };
 use crate::schema::{
-    CftConstValue, CftSchemaDefaultValue, CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField,
-    CftSchemaModule, CftSchemaType, Dimension, DimensionSpec, SchemaReflection,
+    CftConst, CftConstValue, CftEnum, CftEnumVariant, CftField, CftFieldDimension,
+    CftSchemaDefaultValue, CftType, CompiledSchema,
 };
+use crate::{BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 impl SchemaCompiler<'_> {
-    pub(super) fn build_schema(&self) -> SchemaReflection {
-        let mut modules = self
-            .modules
-            .modules
-            .keys()
-            .map(|id| {
-                (
-                    id.clone(),
-                    CftSchemaModule {
-                        consts: Vec::new(),
-                        types: Vec::new(),
-                        enums: Vec::new(),
-                    },
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
+    pub(super) fn build_schema(&self) -> CompiledSchema {
         let mut consts = BTreeMap::new();
-        let mut types = BTreeMap::new();
         let mut enums = BTreeMap::new();
 
         for (name, info) in &self.consts {
-            let schema = crate::schema::CftSchemaConst {
+            let name = ConstName::from_validated(name.clone());
+            let schema = CftConst {
                 module: info.module.clone(),
                 name: name.clone(),
                 value: info.value.clone(),
                 span: info.def.span,
             };
-            if let Some(module) = modules.get_mut(&info.module) {
-                module.consts.push(schema.clone());
-            }
-            consts.insert(name.clone(), schema);
+            consts.insert(name, schema);
         }
 
         for (name, info) in &self.enums {
@@ -52,8 +36,8 @@ impl SchemaCompiler<'_> {
                 .def
                 .variants
                 .iter()
-                .map(|variant| CftSchemaEnumVariant {
-                    name: variant.name.clone(),
+                .map(|variant| CftEnumVariant {
+                    name: EnumVariantName::from_validated(variant.name.clone()),
                     value: info
                         .values_by_name
                         .get(&variant.name)
@@ -63,77 +47,102 @@ impl SchemaCompiler<'_> {
                     span: variant.span,
                 })
                 .collect::<Vec<_>>();
-            let schema = CftSchemaEnum {
+            let variant_by_name = variants
+                .iter()
+                .enumerate()
+                .map(|(index, variant)| (variant.name.clone(), index))
+                .collect();
+            let variant_by_value = variants
+                .iter()
+                .enumerate()
+                .map(|(index, variant)| (variant.value, index))
+                .collect();
+            let name = EnumName::from_validated(name.clone());
+            let schema = CftEnum {
                 module: info.module.clone(),
                 name: name.clone(),
                 variants,
+                variant_by_name,
+                variant_by_value,
                 annotations: convert_annotations(&info.def.annotations),
                 span: info.def.span,
             };
-            if let Some(module) = modules.get_mut(&info.module) {
-                module.enums.push(schema.clone());
-            }
-            enums.insert(name.clone(), schema);
+            enums.insert(name, schema);
         }
 
+        let own_fields = self
+            .types
+            .iter()
+            .map(|(name, info)| {
+                let type_name = TypeName::from_validated(name.clone());
+                let fields = info
+                    .def
+                    .fields
+                    .iter()
+                    .map(|field| Arc::new(self.build_schema_field(field, &type_name)))
+                    .collect::<Vec<_>>();
+                (type_name, fields)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut types = BTreeMap::new();
         for (name, info) in &self.types {
-            let fields = info
-                .def
-                .fields
+            let type_name = TypeName::from_validated(name.clone());
+            let fields = own_fields.get(&type_name).cloned().unwrap_or_default();
+            let all_fields = self.collect_all_schema_fields(name, &own_fields);
+            let field_by_name = all_fields
                 .iter()
-                .map(|field| self.build_schema_field(field, name))
+                .enumerate()
+                .map(|(index, field)| (field.name.clone(), index))
                 .collect();
-            let all_fields = self.collect_all_schema_fields(name);
             let is_singleton = has_annotation(&info.def.annotations, "singleton");
-            let schema = CftSchemaType {
+            let schema = CftType {
                 module: info.module.clone(),
-                name: name.clone(),
-                parent: info.def.parent.as_ref().map(|parent| parent.name.clone()),
+                name: type_name.clone(),
+                parent: info
+                    .def
+                    .parent
+                    .as_ref()
+                    .map(|parent| TypeName::from_validated(parent.name.clone())),
                 is_abstract: info.def.is_abstract,
                 is_sealed: info.def.is_sealed,
                 is_singleton,
-                fields,
+                own_fields: fields,
                 all_fields,
+                field_by_name,
                 check: info.def.check.as_ref().map(convert_check_block),
                 annotations: convert_annotations(&info.def.annotations),
+                dimension_checks: BTreeMap::new(),
                 span: info.def.span,
             };
-            if let Some(module) = modules.get_mut(&info.module) {
-                module.types.push(schema.clone());
-            }
-            types.insert(name.clone(), schema);
+            types.insert(type_name, schema);
         }
 
-        SchemaReflection {
-            modules,
-            consts,
-            types,
-            enums,
-        }
+        CompiledSchema { consts, types, enums }
     }
 
-    fn build_schema_field(&self, field: &FieldDef, owner_type: &str) -> CftSchemaField {
+    fn build_schema_field(&self, field: &FieldDef, owner_type: &TypeName) -> CftField {
         let localized = find_annotation(&field.annotations, "localized");
         let dimension_annotation = find_annotation(&field.annotations, "dimension");
         let dimension = localized
-            .map(|_| DimensionSpec {
-                kind: Dimension::Localized,
-                bucket: localized_bucket(field).or_else(|| Some(owner_type.to_string())),
+            .map(|_| CftFieldDimension {
+                dimension: DimensionName::from_validated("language"),
+                bucket: localized_bucket(field)
+                    .or_else(|| Some(BucketName::from_validated(owner_type.to_string()))),
             })
             .or_else(|| {
                 let annotation = dimension_annotation?;
                 let Some(AnnotationArg::String(name, _)) = annotation.args.first() else {
                     return None;
                 };
-                Some(DimensionSpec {
-                    kind: Dimension::Custom(name.clone()),
-                    bucket: Some(owner_type.to_string()),
+                Some(CftFieldDimension {
+                    dimension: DimensionName::from_validated(name.clone()),
+                    bucket: Some(BucketName::from_validated(owner_type.to_string())),
                 })
             });
-        CftSchemaField {
-            name: field.name.clone(),
-            ty: format_type_ref(&field.ty),
-            ty_ref: build_schema_type_ref(&field.ty),
+        CftField {
+            declaring_type: owner_type.clone(),
+            name: FieldName::from_validated(field.name.clone()),
+            ty_ref: build_schema_type_ref(&field.ty, &|name| self.enums.contains_key(name)),
             has_default: field.default.is_some(),
             default: field
                 .default
@@ -145,16 +154,18 @@ impl SchemaCompiler<'_> {
         }
     }
 
-    fn collect_all_schema_fields(&self, type_name: &str) -> Vec<CftSchemaField> {
+    fn collect_all_schema_fields(
+        &self,
+        type_name: &str,
+        own_fields: &BTreeMap<TypeName, Vec<Arc<CftField>>>,
+    ) -> Vec<Arc<CftField>> {
         self.ancestry_chain(type_name)
             .into_iter()
             .flat_map(|info| {
-                let owner = info.def.name.clone();
-                info.def
-                    .fields
-                    .iter()
-                    .map(|field| self.build_schema_field(field, &owner))
-                    .collect::<Vec<_>>()
+                own_fields
+                    .get(info.def.name.as_str())
+                    .cloned()
+                    .unwrap_or_default()
             })
             .collect()
     }
@@ -177,8 +188,8 @@ impl SchemaCompiler<'_> {
                 CftConstValue::String(value) => CftSchemaDefaultValue::String(value),
             },
             DefaultExprKind::EnumVariant { enum_name, variant } => CftSchemaDefaultValue::Enum {
-                enum_name: enum_name.name.clone(),
-                variant: variant.name.clone(),
+                enum_name: EnumName::from_validated(enum_name.name.clone()),
+                variant: EnumVariantName::from_validated(variant.name.clone()),
                 value: self.enum_variant_value(&enum_name.name, &variant.name)?,
             },
             DefaultExprKind::Array(_) | DefaultExprKind::Object(_) => return None,
@@ -194,10 +205,12 @@ impl SchemaCompiler<'_> {
     }
 }
 
-fn localized_bucket(field: &FieldDef) -> Option<String> {
+fn localized_bucket(field: &FieldDef) -> Option<BucketName> {
     let annotation = find_annotation(&field.annotations, "localized")?;
     match annotation.args.first() {
-        Some(AnnotationArg::String(bucket, _)) => Some(bucket.clone()),
+        Some(AnnotationArg::String(bucket, _)) => {
+            Some(BucketName::from_validated(bucket.clone()))
+        }
         _ => None,
     }
 }

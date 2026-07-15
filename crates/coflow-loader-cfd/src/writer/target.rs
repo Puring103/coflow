@@ -236,7 +236,13 @@ pub(super) fn spread_entries_at_path<'a>(
     if path.is_empty() {
         return Ok(record.entries.as_slice());
     }
-    let root_type = CftSchemaTypeRef::Named(actual_type.to_string());
+    let Some(schema_type) = schema.resolve_type(actual_type) else {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!("unknown CFT type `{actual_type}`"),
+        )));
+    };
+    let root_type = CftSchemaTypeRef::Object(schema_type.name.clone());
     let Some((value, value_type)) =
         value_at_spread_path_segment(schema, record.entries.as_slice(), &root_type, &path[0])?
     else {

@@ -37,10 +37,10 @@ impl CfdDataModel {
             .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
         let actual_type = record.actual_type();
         let source_type = schema
-            .type_meta(actual_type)
+            .resolve_type(actual_type)
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
         let field = schema
-            .field_meta(actual_type, field_name)
+            .field(actual_type, field_name)
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
         let Some(field_dimension) = field
             .dimension
@@ -70,7 +70,7 @@ impl CfdDataModel {
             .field(variant)
             .ok_or(DimensionFieldLookupError::MissingVariantField)?;
         let field_type = schema
-            .field_meta(storage_type, variant)
+            .field(storage_type, variant)
             .map(|field| field.ty_ref.clone());
         Ok(DimensionFieldValue {
             value,

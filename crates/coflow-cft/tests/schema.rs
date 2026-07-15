@@ -183,15 +183,15 @@ fn schema_accepts_empty_array_and_object_defaults_only_for_matching_composites()
 
     let item = schema.resolve_type("Item").expect("Item type");
     assert_eq!(
-        item.fields[0].default,
+        item.own_fields[0].default,
         Some(coflow_cft::CftSchemaDefaultValue::EmptyArray)
     );
     assert_eq!(
-        item.fields[1].default,
+        item.own_fields[1].default,
         Some(coflow_cft::CftSchemaDefaultValue::EmptyObject)
     );
     assert_eq!(
-        item.fields[2].default,
+        item.own_fields[2].default,
         Some(coflow_cft::CftSchemaDefaultValue::EmptyObject)
     );
 
@@ -320,12 +320,12 @@ fn schema_compiles_localized_annotation_to_language_dimension() {
     .expect("localized fields should compile");
 
     let item = schema.resolve_type("Item").expect("Item type");
-    assert_eq!(item.fields[0].dimension, None);
+    assert_eq!(item.own_fields[0].dimension, None);
     assert_eq!(
-        item.fields[1].dimension,
-        Some(coflow_cft::DimensionSpec {
-            kind: coflow_cft::Dimension::Localized,
-            bucket: Some("Item".to_string()),
+        item.own_fields[1].dimension,
+        Some(coflow_cft::CftFieldDimension {
+            dimension: coflow_cft::DimensionName::new("language").unwrap(),
+            bucket: Some(coflow_cft::BucketName::new("Item").unwrap()),
         })
     );
 }
@@ -344,10 +344,10 @@ fn schema_compiles_localized_bucket_to_dimension_spec() {
 
     let item = schema.resolve_type("Item").expect("Item type");
     assert_eq!(
-        item.fields[0].dimension,
-        Some(coflow_cft::DimensionSpec {
-            kind: coflow_cft::Dimension::Localized,
-            bucket: Some("ui".to_string()),
+        item.own_fields[0].dimension,
+        Some(coflow_cft::CftFieldDimension {
+            dimension: coflow_cft::DimensionName::new("language").unwrap(),
+            bucket: Some(coflow_cft::BucketName::new("ui").unwrap()),
         })
     );
 }
@@ -366,10 +366,10 @@ fn schema_compiles_named_localized_bucket_to_dimension_spec() {
 
     let item = schema.resolve_type("Item").expect("Item type");
     assert_eq!(
-        item.fields[0].dimension,
-        Some(coflow_cft::DimensionSpec {
-            kind: coflow_cft::Dimension::Localized,
-            bucket: Some("ui".to_string()),
+        item.own_fields[0].dimension,
+        Some(coflow_cft::CftFieldDimension {
+            dimension: coflow_cft::DimensionName::new("language").unwrap(),
+            bucket: Some(coflow_cft::BucketName::new("ui").unwrap()),
         })
     );
 }
@@ -387,10 +387,10 @@ fn schema_compiles_custom_dimension_annotation_to_dimension_spec() {
     .expect("custom dimension field should compile");
     let item = schema.resolve_type("Item").expect("Item type");
     assert_eq!(
-        item.fields[0].dimension,
-        Some(coflow_cft::DimensionSpec {
-            kind: coflow_cft::Dimension::Custom("platform".to_string()),
-            bucket: Some("Item".to_string()),
+        item.own_fields[0].dimension,
+        Some(coflow_cft::CftFieldDimension {
+            dimension: coflow_cft::DimensionName::new("platform").unwrap(),
+            bucket: Some(coflow_cft::BucketName::new("Item").unwrap()),
         })
     );
 }

@@ -70,17 +70,17 @@ fn build_simple_model() -> (CftSchema, CfdDataModel) {
 #[test]
 fn schema_publishes_localized_field_metadata() {
     let (schema, _) = build_simple_model();
-    let field = schema.field_meta("Item", "name").unwrap();
+    let field = schema.field("Item", "name").unwrap();
     assert!(field
         .dimension
         .as_ref()
-        .is_some_and(|dimension| dimension.dimension == "language"));
+        .is_some_and(|dimension| dimension.dimension.as_str() == "language"));
 }
 
 #[test]
 fn singleton_schema_publishes_is_singleton() {
     let schema = compile_schema("@singleton type Cfg { value: int; }");
-    let cfg = schema.type_meta("Cfg").unwrap();
+    let cfg = schema.resolve_type("Cfg").unwrap();
     assert!(cfg.is_singleton);
 }
 

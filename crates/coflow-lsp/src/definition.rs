@@ -49,10 +49,10 @@ impl CfdDefinitionIndex {
         schema
             .concrete_assignable_types(expected_type)?
             .into_iter()
-            .filter(|actual_type| actual_type != expected_type)
+            .filter(|actual_type| actual_type.as_str() != expected_type)
             .find_map(|actual_type| {
                 self.records
-                    .get(&actual_type)
+                    .get(actual_type.as_str())
                     .and_then(|records| records.get(key))
                     .and_then(|locations| locations.first())
                     .cloned()

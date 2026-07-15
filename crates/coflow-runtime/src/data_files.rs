@@ -368,7 +368,7 @@ pub fn table_header_layout(
             })?,
     };
     let schema = session.schema();
-    let schema_type = schema.type_meta(&actual_type).ok_or_else(|| {
+    let schema_type = schema.resolve_type(&actual_type).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-TYPE",
             format!("unknown CFT type `{actual_type}`"),
@@ -396,9 +396,9 @@ pub fn table_header_layout(
             .iter()
             .map(|field| {
                 field_headers
-                    .get(&field.name)
+                    .get(field.name.as_str())
                     .cloned()
-                    .unwrap_or_else(|| field.name.clone())
+                    .unwrap_or_else(|| field.name.to_string())
             }),
     );
     Ok(TableHeaderLayout {

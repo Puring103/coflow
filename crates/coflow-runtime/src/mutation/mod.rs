@@ -1,5 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity};
-use coflow_cft::{CftFieldMeta, CftSchemaTypeRef, CftSchema};
+use coflow_cft::{CftField, CftSchema, CftSchemaTypeRef};
 use coflow_data_model::CfdEnumValue;
 
 use crate::ProjectSession;
@@ -22,14 +22,14 @@ pub(super) fn schema_field<'a>(
     schema: &'a CftSchema,
     actual_type: &str,
     field_name: &str,
-) -> Result<&'a CftFieldMeta, DiagnosticSet> {
+) -> Result<&'a CftField, DiagnosticSet> {
     if !schema.has_type(actual_type) {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown type `{actual_type}`"),
         ));
     }
-    schema.field_meta(actual_type, field_name).ok_or_else(|| {
+    schema.field(actual_type, field_name).ok_or_else(|| {
         one_path_error(format!(
             "unknown field `{field_name}` on type `{actual_type}`"
         ))
@@ -54,10 +54,6 @@ pub(super) fn enum_value(
         variant: Some(variant.to_string()),
         value: int_value,
     })
-}
-
-pub(super) fn is_schema_enum(session: &ProjectSession, name: &str) -> bool {
-    session.schema().is_schema_enum(name)
 }
 
 fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {

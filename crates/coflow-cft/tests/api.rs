@@ -203,14 +203,14 @@ fn typed_check_schedule_borrows_inherited_blocks_in_parent_first_order() {
     assert!(std::ptr::eq(
         checks[0],
         compiled
-            .type_meta("Base")
+            .resolve_type("Base")
             .and_then(|meta| meta.check.as_ref())
             .expect("base check")
     ));
     assert!(std::ptr::eq(
         checks[1],
         compiled
-            .type_meta("Child")
+            .resolve_type("Child")
             .and_then(|meta| meta.check.as_ref())
             .expect("child check")
     ));

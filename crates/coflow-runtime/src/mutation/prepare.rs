@@ -76,7 +76,7 @@ impl ProjectSession {
             }
         };
         match item_ty.non_nullable() {
-            CftSchemaTypeRef::Ref(target_type) => self
+            CftSchemaTypeRef::RecordRef(target_type) => self
                 .ref_targets(target_type)
                 .into_iter()
                 .next()
@@ -353,7 +353,7 @@ fn rename_pending_value_references(
             old_key,
             new_key,
         ),
-        (CftSchemaTypeRef::Ref(target_type), CfdValue::Ref(key))
+        (CftSchemaTypeRef::RecordRef(target_type), CfdValue::Ref(key))
             if key == old_key && schema.is_assignable(target_actual_type, target_type) =>
         {
             *key = new_key.to_string();
@@ -382,7 +382,7 @@ fn rename_pending_value_references(
                 );
             }
         }
-        (CftSchemaTypeRef::Named(_), CfdValue::Object(object)) => {
+        (CftSchemaTypeRef::Object(_), CfdValue::Object(object)) => {
             let actual_type = object.actual_type().to_string();
             for (name, field_value) in object.fields_mut() {
                 let Some(field_type) = schema.field_type(&actual_type, name) else {
@@ -626,7 +626,7 @@ fn ensure_type_can_insert(
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
     let schema = session.schema();
-    let Some(schema_type) = schema.type_meta(actual_type) else {
+    let Some(schema_type) = schema.resolve_type(actual_type) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown insert type `{actual_type}`"),

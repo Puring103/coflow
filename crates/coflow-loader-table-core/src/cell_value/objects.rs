@@ -87,7 +87,7 @@ fn validate_actual_type(
     expected_type: &str,
     actual_type: &str,
 ) -> Result<(), CellValueDiagnostics> {
-    let Some(actual_schema_type) = schema.type_meta(actual_type) else {
+    let Some(actual_schema_type) = schema.resolve_type(actual_type) else {
         return Err(CellValueDiagnostics {
             diagnostics: vec![CellValueDiagnostic {
                 code: CellValueErrorCode::UnknownType,

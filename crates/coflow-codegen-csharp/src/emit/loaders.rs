@@ -15,14 +15,14 @@ use crate::lowering::CsharpLoweringPlan;
 use crate::model::{CsharpLoadField, CsharpLoader, CsharpPolymorphicCase};
 use crate::names::escape_csharp_string;
 use crate::CsharpCodegenError;
-use coflow_cft::CftFieldMeta;
+use coflow_cft::CftField;
 use coflow_cft::CftSchemaTypeRef;
 
 pub(super) fn loader_method(
     type_name: &str,
     view: &CsharpLoweringPlan<'_>,
 ) -> Result<CsharpLoader, CsharpCodegenError> {
-    let ty = view.type_meta(type_name)?;
+    let ty = view.resolve_type(type_name)?;
     let schema_fields = view.fields(type_name)?.collect::<Vec<_>>();
     let mut used_local_names = loader_reserved_local_names(schema_fields.iter().copied());
     let key_ty = view.key_field_type(type_name);
@@ -82,7 +82,7 @@ pub(super) fn polymorphic_loader(
     view: &CsharpLoweringPlan<'_>,
 ) -> Result<CsharpLoader, CsharpCodegenError> {
     let is_table = type_is_table(type_name, view);
-    let is_singleton = view.type_meta(type_name)?.is_singleton;
+    let is_singleton = view.resolve_type(type_name)?.is_singleton;
     Ok(CsharpLoader {
         type_name: view.csharp_type_name(type_name),
         source_name: type_name.to_string(),
@@ -93,7 +93,7 @@ pub(super) fn polymorphic_loader(
         key_messagepack_read_expr: String::new(),
         is_table,
         is_disk_loadable: is_table || is_singleton,
-        is_struct: view.type_is_struct(view.type_meta(type_name)?),
+        is_struct: view.type_is_struct(view.resolve_type(type_name)?),
         requires_hydration: false,
         fields: Vec::new(),
         polymorphic_cases: polymorphic_cases(type_name, view)?,
@@ -117,7 +117,7 @@ fn polymorphic_cases(
 }
 
 fn load_field(
-    field: &CftFieldMeta,
+    field: &CftField,
     owner_type_name: &str,
     owner_is_singleton: bool,
     used_local_names: &mut HashSet<String>,
@@ -171,7 +171,7 @@ fn load_field(
         };
     Ok(CsharpLoadField {
         property: csharp_public_member_name(&field.name),
-        source_name: field.name.clone(),
+        source_name: field.name.to_string(),
         local_name,
         type_name: property_type,
         assignment_target: backing_field_name(
@@ -206,10 +206,10 @@ fn field_type_requires_context_inner(
     visited: &mut BTreeSet<String>,
 ) -> Result<bool, CsharpCodegenError> {
     match ty {
-        CftSchemaTypeRef::Ref(name) => Ok(view.is_ref_target_loadable(name)),
-        CftSchemaTypeRef::Named(name) if view.is_schema_enum(name) => Ok(false),
-        CftSchemaTypeRef::Named(name) => {
-            if !visited.insert(name.clone()) {
+        CftSchemaTypeRef::RecordRef(name) => Ok(view.is_ref_target_loadable(name)),
+        CftSchemaTypeRef::Enum(_) => Ok(false),
+        CftSchemaTypeRef::Object(name) => {
+            if !visited.insert(name.to_string()) {
                 return Ok(false);
             }
             for concrete in view.concrete_assignable_types(name)? {

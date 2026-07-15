@@ -1,5 +1,8 @@
-use super::{CftTypeMeta, LocatedBudgetError};
-use crate::{CftSchemaDefaultValue, CftSchemaTypeRef, ModuleId, Span};
+use super::LocatedBudgetError;
+use crate::{
+    CftField, CftSchemaDefaultValue, CftSchemaTypeRef, CftType, FieldName, ModuleId, Span,
+    TypeName,
+};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -13,9 +16,9 @@ pub enum ValueDependencyMode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValueDependencyStep {
-    pub owner_type: String,
-    pub field: String,
-    pub target_type: String,
+    pub owner_type: TypeName,
+    pub field: FieldName,
+    pub target_type: TypeName,
     module: ModuleId,
     span: Span,
 }
@@ -56,7 +59,9 @@ impl fmt::Display for ValueDependencyCycle {
         write!(
             f,
             " -> {}",
-            self.steps.last().map_or("?", |step| &step.target_type)
+            self.steps
+                .last()
+                .map_or("?", |step| step.target_type.as_str())
         )
     }
 }
@@ -64,12 +69,12 @@ impl fmt::Display for ValueDependencyCycle {
 #[derive(Debug, Clone, Default)]
 pub struct ValueDependencyPlan {
     roots:
-        BTreeMap<ValueDependencyMode, BTreeMap<String, Result<Vec<String>, ValueDependencyCycle>>>,
+        BTreeMap<ValueDependencyMode, BTreeMap<TypeName, Result<Vec<TypeName>, ValueDependencyCycle>>>,
 }
 
 impl ValueDependencyPlan {
     pub(super) fn compile(
-        types: &BTreeMap<String, CftTypeMeta>,
+        types: &BTreeMap<TypeName, CftType>,
         budget: &mut StructuralBudget,
     ) -> Result<Self, LocatedBudgetError> {
         let mut roots = BTreeMap::new();
@@ -84,7 +89,7 @@ impl ValueDependencyPlan {
                 .map(|root| {
                     compile_root(root, &graph, budget).map(|result| {
                         let result = result
-                            .map(|order| order.into_iter().map(str::to_string).collect::<Vec<_>>());
+                            .map(|order| order.into_iter().cloned().collect::<Vec<_>>());
                         (root.clone(), result)
                     })
                 })
@@ -102,17 +107,17 @@ impl ValueDependencyPlan {
     ) -> Option<Result<Vec<&'a str>, ValueDependencyCycle>> {
         let result = self.roots.get(&mode)?.get(type_name)?;
         Some(match result {
-            Ok(order) => Ok(order.iter().map(String::as_str).collect()),
+            Ok(order) => Ok(order.iter().map(TypeName::as_str).collect()),
             Err(cycle) => Err(cycle.clone()),
         })
     }
 }
 
 fn dependency_graph(
-    types: &BTreeMap<String, CftTypeMeta>,
+    types: &BTreeMap<TypeName, CftType>,
     mode: ValueDependencyMode,
     budget: &mut StructuralBudget,
-) -> Result<BTreeMap<String, Vec<ValueDependencyStep>>, LocatedBudgetError> {
+) -> Result<BTreeMap<TypeName, Vec<ValueDependencyStep>>, LocatedBudgetError> {
     let mut graph = BTreeMap::new();
     for (type_name, meta) in types {
         let mut dependencies = Vec::new();
@@ -121,7 +126,9 @@ fn dependency_graph(
                 .charge_work(StructureKind::SchemaDependency, 1)
                 .map_err(|error| LocatedBudgetError {
                     error,
-                    module: ModuleId::new(field.module.clone()),
+                    module: types
+                        .get(&field.declaring_type)
+                        .map_or_else(|| meta.module.clone(), |owner| owner.module.clone()),
                     span: field.span,
                 })?;
             let Some(target_type) = dependency_target(field, mode, types) else {
@@ -130,8 +137,10 @@ fn dependency_graph(
             dependencies.push(ValueDependencyStep {
                 owner_type: type_name.clone(),
                 field: field.name.clone(),
-                target_type: target_type.to_string(),
-                module: ModuleId::new(field.module.clone()),
+                target_type: target_type.clone(),
+                module: types
+                    .get(&field.declaring_type)
+                    .map_or_else(|| meta.module.clone(), |owner| owner.module.clone()),
                 span: field.span,
             });
         }
@@ -141,10 +150,10 @@ fn dependency_graph(
 }
 
 fn dependency_target<'a>(
-    field: &'a super::CftFieldMeta,
+    field: &'a CftField,
     mode: ValueDependencyMode,
-    types: &BTreeMap<String, CftTypeMeta>,
-) -> Option<&'a str> {
+    types: &BTreeMap<TypeName, CftType>,
+) -> Option<&'a TypeName> {
     let ty = match mode {
         ValueDependencyMode::SchemaDefaults => {
             matches!(field.default, Some(CftSchemaDefaultValue::EmptyObject))
@@ -162,7 +171,7 @@ fn dependency_target<'a>(
             None => &field.ty_ref,
         },
     };
-    let CftSchemaTypeRef::Named(target_type) = ty else {
+    let CftSchemaTypeRef::Object(target_type) = ty else {
         return None;
     };
     types.contains_key(target_type).then_some(target_type)
@@ -176,11 +185,11 @@ fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
 }
 
 fn compile_root<'a>(
-    root: &'a str,
-    graph: &'a BTreeMap<String, Vec<ValueDependencyStep>>,
+    root: &'a TypeName,
+    graph: &'a BTreeMap<TypeName, Vec<ValueDependencyStep>>,
     budget: &mut StructuralBudget,
-) -> Result<Result<Vec<&'a str>, ValueDependencyCycle>, LocatedBudgetError> {
-    let mut states = BTreeMap::<&str, VisitState>::new();
+) -> Result<Result<Vec<&'a TypeName>, ValueDependencyCycle>, LocatedBudgetError> {
+    let mut states = BTreeMap::<&TypeName, VisitState>::new();
     let mut nodes = Vec::new();
     let mut incoming = Vec::new();
     let mut order = Vec::new();
@@ -195,11 +204,11 @@ fn compile_root<'a>(
         let edges = graph.get(frame.type_name).map_or(&[][..], Vec::as_slice);
         if let Some(edge) = edges.get(frame.next_edge) {
             frame.next_edge += 1;
-            match states.get(edge.target_type.as_str()) {
+            match states.get(&edge.target_type) {
                 Some(VisitState::Visiting) => {
                     let cycle_start = nodes
                         .iter()
-                        .position(|node| *node == edge.target_type)
+                        .position(|node| **node == edge.target_type)
                         .unwrap_or(0);
                     let mut steps = incoming[cycle_start..].to_vec();
                     steps.push(edge.clone());
@@ -225,8 +234,8 @@ fn compile_root<'a>(
                             span: edge.span,
                         })?;
                     let target = graph
-                        .get_key_value(edge.target_type.as_str())
-                        .map_or(edge.target_type.as_str(), |(name, _)| name.as_str());
+                        .get_key_value(&edge.target_type)
+                        .map_or(&edge.target_type, |(name, _)| name);
                     incoming.push(edge.clone());
                     states.insert(target, VisitState::Visiting);
                     nodes.push(target);
@@ -271,7 +280,7 @@ enum VisitState {
 }
 
 struct VisitFrame<'a> {
-    type_name: &'a str,
+    type_name: &'a TypeName,
     next_edge: usize,
 }
 
@@ -286,12 +295,12 @@ mod tests {
         const NODE_COUNT: usize = 10_000;
         let mut graph = BTreeMap::new();
         for index in 0..NODE_COUNT {
-            let owner = format!("T{index}");
+            let owner = TypeName::from_validated(format!("T{index}"));
             let edges = if index + 1 < NODE_COUNT {
                 vec![ValueDependencyStep {
                     owner_type: owner.clone(),
-                    field: "next".to_string(),
-                    target_type: format!("T{}", index + 1),
+                    field: FieldName::from_validated("next"),
+                    target_type: TypeName::from_validated(format!("T{}", index + 1)),
                     module: ModuleId::from("test"),
                     span: Span::new(index, index + 1),
                 }]
@@ -306,11 +315,12 @@ mod tests {
             1,
             NODE_COUNT as u64,
         ));
-        let order = compile_root("T0", &graph, &mut budget)
+        let root = TypeName::from_validated("T0");
+        let order = compile_root(&root, &graph, &mut budget)
             .expect("within budget")
             .expect("acyclic chain");
         assert_eq!(order.len(), NODE_COUNT);
-        assert_eq!(order.first().copied(), Some("T9999"));
-        assert_eq!(order.last().copied(), Some("T0"));
+        assert_eq!(order.first().map(|name| name.as_str()), Some("T9999"));
+        assert_eq!(order.last().map(|name| name.as_str()), Some("T0"));
     }
 }

@@ -1,23 +1,23 @@
-use super::{CftTypeMeta, CftSchema, LocatedBudgetError};
-use crate::{CftSchemaCheckBlock, CftSchemaTypeRef, ModuleId};
+use super::{CftSchema, LocatedBudgetError};
+use crate::{CftSchemaCheckBlock, CftSchemaTypeRef, CftType, FieldName, TypeName};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Debug, Clone, Default)]
 pub struct TypedCheckPlan {
-    owners_by_actual: BTreeMap<String, Vec<String>>,
-    nested_fields_by_actual: BTreeMap<String, BTreeSet<String>>,
+    owners_by_actual: BTreeMap<TypeName, Vec<TypeName>>,
+    nested_fields_by_actual: BTreeMap<TypeName, BTreeSet<FieldName>>,
 }
 
 impl TypedCheckPlan {
     pub(super) fn compile(
-        types: &BTreeMap<String, CftTypeMeta>,
+        types: &BTreeMap<TypeName, CftType>,
         budget: &mut StructuralBudget,
     ) -> Result<Self, LocatedBudgetError> {
         let mut owners_by_actual = BTreeMap::new();
         for actual_type in types.keys() {
             let mut owners = Vec::new();
-            let mut current = Some(actual_type.as_str());
+            let mut current = Some(actual_type);
             while let Some(type_name) = current {
                 let Some(meta) = types.get(type_name) else {
                     break;
@@ -34,11 +34,11 @@ impl TypedCheckPlan {
                     .and_then(|()| budget.charge_work(StructureKind::SchemaDependency, 1))
                     .map_err(|error| LocatedBudgetError {
                         error,
-                        module: ModuleId::new(meta.module.clone()),
+                        module: meta.module.clone(),
                         span: meta.span,
                     })?;
                 owners.push(meta.name.clone());
-                current = meta.parent.as_deref();
+                current = meta.parent.as_ref();
             }
             owners.reverse();
             owners_by_actual.insert(actual_type.clone(), owners);
@@ -50,7 +50,7 @@ impl TypedCheckPlan {
         })
     }
 
-    pub(super) fn owners(&self, actual_type: &str) -> &[String] {
+    pub(super) fn owners(&self, actual_type: &str) -> &[TypeName] {
         self.owners_by_actual
             .get(actual_type)
             .map_or(&[], Vec::as_slice)
@@ -64,24 +64,24 @@ impl TypedCheckPlan {
 }
 
 fn compile_nested_fields(
-    types: &BTreeMap<String, CftTypeMeta>,
-    owners_by_actual: &BTreeMap<String, Vec<String>>,
+    types: &BTreeMap<TypeName, CftType>,
+    owners_by_actual: &BTreeMap<TypeName, Vec<TypeName>>,
     budget: &mut StructuralBudget,
-) -> Result<BTreeMap<String, BTreeSet<String>>, LocatedBudgetError> {
-    let mut assignable_by_target = BTreeMap::<String, BTreeSet<String>>::new();
+) -> Result<BTreeMap<TypeName, BTreeSet<FieldName>>, LocatedBudgetError> {
+    let mut assignable_by_target = BTreeMap::<TypeName, BTreeSet<TypeName>>::new();
     for (candidate, meta) in types {
-        let mut current = Some(candidate.as_str());
+        let mut current = Some(candidate);
         while let Some(target) = current {
             charge_plan_work(budget, meta)?;
             assignable_by_target
-                .entry(target.to_string())
+                .entry(target.clone())
                 .or_default()
                 .insert(candidate.clone());
-            current = types.get(target).and_then(|ty| ty.parent.as_deref());
+            current = types.get(target).and_then(|ty| ty.parent.as_ref());
         }
     }
 
-    let mut reverse_dependencies = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut reverse_dependencies = BTreeMap::<TypeName, BTreeSet<TypeName>>::new();
     for (owner_name, owner) in types {
         for field in &owner.all_fields {
             let Some(target) = nested_type_target(&field.ty_ref) else {
@@ -138,9 +138,9 @@ fn compile_nested_fields(
     Ok(fields_by_actual)
 }
 
-fn nested_type_target(ty: &CftSchemaTypeRef) -> Option<&str> {
+fn nested_type_target(ty: &CftSchemaTypeRef) -> Option<&TypeName> {
     match ty {
-        CftSchemaTypeRef::Named(name) => Some(name),
+        CftSchemaTypeRef::Object(name) => Some(name),
         CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
             nested_type_target(inner)
         }
@@ -149,19 +149,20 @@ fn nested_type_target(ty: &CftSchemaTypeRef) -> Option<&str> {
         | CftSchemaTypeRef::Float
         | CftSchemaTypeRef::Bool
         | CftSchemaTypeRef::String
-        | CftSchemaTypeRef::Ref(_) => None,
+        | CftSchemaTypeRef::Enum(_)
+        | CftSchemaTypeRef::RecordRef(_) => None,
     }
 }
 
 fn charge_plan_work(
     budget: &mut StructuralBudget,
-    owner: &CftTypeMeta,
+    owner: &CftType,
 ) -> Result<(), LocatedBudgetError> {
     budget
         .charge_work(StructureKind::SchemaDependency, 1)
         .map_err(|error| LocatedBudgetError {
             error,
-            module: ModuleId::new(owner.module.clone()),
+            module: owner.module.clone(),
             span: owner.span,
         })
 }
@@ -169,7 +170,7 @@ fn charge_plan_work(
 #[derive(Debug)]
 pub struct TypedCheckSchedule<'schema, 'dimension> {
     schema: &'schema CftSchema,
-    owners: std::slice::Iter<'schema, String>,
+    owners: std::slice::Iter<'schema, TypeName>,
     dimension: Option<&'dimension str>,
 }
 

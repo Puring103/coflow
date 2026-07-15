@@ -1,6 +1,6 @@
 use coflow_cft::ast::{CheckStmt, Item};
 use coflow_cft::{
-    CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaType, CftSchemaTypeRef, ModuleId,
+    CftEnum, CftEnumVariant, CftField, CftSchemaTypeRef, CftType, ModuleId,
 };
 use coflow_project::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
@@ -89,7 +89,7 @@ pub(crate) fn current_type_at<'a>(
     build: &'a LspBuild,
     document: &LspDocument,
     offset: usize,
-) -> Option<&'a CftSchemaType> {
+) -> Option<&'a CftType> {
     build.schema()?.all_types().find(|ty| {
         ty.module.as_str() == document.module_id && ty.span.start <= offset && offset <= ty.span.end
     })
@@ -140,7 +140,7 @@ fn type_of_name(
     let field = current_type
         .all_fields
         .iter()
-        .find(|field| field.name == name)?;
+        .find(|field| field.name.as_str() == name)?;
     Some(field_receiver_type(field))
 }
 
@@ -148,11 +148,15 @@ pub(crate) fn field_by_type<'a>(
     build: &'a LspBuild,
     type_name: &str,
     field_name: &str,
-) -> Option<(&'a CftSchemaType, &'a CftSchemaField)> {
+) -> Option<(&'a CftType, &'a CftField)> {
     let schema = build.schema()?;
     let mut current = schema.resolve_type(type_name);
     while let Some(ty) = current {
-        if let Some(field) = ty.fields.iter().find(|field| field.name == field_name) {
+        if let Some(field) = ty
+            .own_fields
+            .iter()
+            .find(|field| field.name.as_str() == field_name)
+        {
             return Some((ty, field));
         }
         current = ty
@@ -163,13 +167,13 @@ pub(crate) fn field_by_type<'a>(
     None
 }
 
-fn field_receiver_type(field: &CftSchemaField) -> CftSchemaTypeRef {
+fn field_receiver_type(field: &CftField) -> CftSchemaTypeRef {
     field.ty_ref.clone()
 }
 
 pub(crate) fn type_name_of_schema_ref(ty: &CftSchemaTypeRef) -> Option<&str> {
     match ty {
-        CftSchemaTypeRef::Named(name) => Some(name),
+        CftSchemaTypeRef::Object(name) => Some(name),
         CftSchemaTypeRef::Nullable(inner) => type_name_of_schema_ref(inner),
         _ => None,
     }
@@ -180,7 +184,7 @@ pub(crate) fn field_by_chain<'a>(
     document: &LspDocument,
     offset: usize,
     chain: &[String],
-) -> Option<(String, &'a CftSchemaField)> {
+) -> Option<(String, &'a CftField)> {
     let (field_name, receiver) = chain.split_last()?;
     let receiver_type = type_of_chain(build, document, offset, receiver)?;
     let type_name = type_name_of_schema_ref(&receiver_type)?;
@@ -191,7 +195,7 @@ pub(crate) fn field_by_chain<'a>(
 pub(crate) fn enum_variant_by_chain<'a>(
     build: &'a LspBuild,
     chain: &[String],
-) -> Option<(&'a CftSchemaEnum, &'a CftSchemaEnumVariant)> {
+) -> Option<(&'a CftEnum, &'a CftEnumVariant)> {
     if chain.len() != 2 {
         return None;
     }
@@ -199,7 +203,7 @@ pub(crate) fn enum_variant_by_chain<'a>(
     let variant = enum_def
         .variants
         .iter()
-        .find(|variant| variant.name == chain[1])?;
+        .find(|variant| variant.name.as_str() == chain[1])?;
     Some((enum_def, variant))
 }
 

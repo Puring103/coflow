@@ -1,5 +1,5 @@
 use coflow_cft::ast::{Annotation, Item};
-use coflow_cft::{CftConstValue, CftSchemaType};
+use coflow_cft::{CftConstValue, CftType};
 use serde_json::{json, Value};
 use std::fmt::Write as _;
 
@@ -52,7 +52,9 @@ pub(crate) fn hover_at(
             return Some(hover_response(
                 &format!(
                     "CFT field `{}`.`{}`: `{}`.",
-                    type_name, field.name, field.ty
+                    type_name,
+                    field.name,
+                    field.ty_ref.display_label()
                 ),
                 &byte_range(&document.source, word.start, word.end),
             ));
@@ -90,12 +92,14 @@ pub(crate) fn hover_at(
             if let Some(field) = current_type
                 .all_fields
                 .iter()
-                .find(|field| field.name == word.text)
+                .find(|field| field.name.as_str() == word.text)
             {
                 return Some(hover_response(
                     &format!(
                         "CFT field `{}`.`{}`: `{}`.",
-                        current_type.name, field.name, field.ty
+                        current_type.name,
+                        field.name,
+                        field.ty_ref.display_label()
                     ),
                     &byte_range(&document.source, word.start, word.end),
                 ));
@@ -106,7 +110,7 @@ pub(crate) fn hover_at(
     None
 }
 
-fn type_hover_text(ty: &CftSchemaType) -> String {
+fn type_hover_text(ty: &CftType) -> String {
     let mut flags = Vec::new();
     if ty.is_abstract {
         flags.push("abstract");

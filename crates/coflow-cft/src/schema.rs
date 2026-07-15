@@ -7,8 +7,12 @@ use crate::module_id::ModuleId;
 use crate::module_set::CftModuleSet;
 use crate::error::CftDiagnostics;
 use crate::span::Span;
+use crate::{
+    BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName,
+};
 use coflow_structure::{StructuralBudget, StructuralLimits};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct CftCompileOptions {
@@ -16,16 +20,9 @@ pub(crate) struct CftCompileOptions {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaModule {
-    pub consts: Vec<CftSchemaConst>,
-    pub types: Vec<CftSchemaType>,
-    pub enums: Vec<CftSchemaEnum>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaConst {
+pub struct CftConst {
     pub module: ModuleId,
-    pub name: String,
+    pub name: ConstName,
     pub value: CftConstValue,
     pub span: Span,
 }
@@ -39,17 +36,19 @@ pub enum CftConstValue {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaType {
+pub struct CftType {
     pub module: ModuleId,
-    pub name: String,
-    pub parent: Option<String>,
+    pub name: TypeName,
+    pub parent: Option<TypeName>,
     pub is_abstract: bool,
     pub is_sealed: bool,
     pub is_singleton: bool,
-    pub fields: Vec<CftSchemaField>,     // 自身字段（不含继承）
-    pub all_fields: Vec<CftSchemaField>, // 含继承的完整字段列表
+    pub own_fields: Vec<Arc<CftField>>,
+    pub all_fields: Vec<Arc<CftField>>,
+    pub(crate) field_by_name: BTreeMap<FieldName, usize>,
     pub check: Option<CftSchemaCheckBlock>,
     pub annotations: Vec<CftAnnotation>,
+    pub(crate) dimension_checks: BTreeMap<DimensionName, CftSchemaCheckBlock>,
     pub span: Span,
 }
 
@@ -59,8 +58,9 @@ pub enum CftSchemaTypeRef {
     Float,
     Bool,
     String,
-    Named(String),
-    Ref(String),
+    Object(TypeName),
+    Enum(EnumName),
+    RecordRef(TypeName),
     Array(Box<CftSchemaTypeRef>),
     Dict(Box<CftSchemaTypeRef>, Box<CftSchemaTypeRef>),
     Nullable(Box<CftSchemaTypeRef>),
@@ -93,8 +93,9 @@ pub fn format_schema_type_ref(ty: &CftSchemaTypeRef) -> String {
         CftSchemaTypeRef::Float => "float".to_string(),
         CftSchemaTypeRef::Bool => "bool".to_string(),
         CftSchemaTypeRef::String => "string".to_string(),
-        CftSchemaTypeRef::Named(name) => name.clone(),
-        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
+        CftSchemaTypeRef::Object(name) => name.to_string(),
+        CftSchemaTypeRef::Enum(name) => name.to_string(),
+        CftSchemaTypeRef::RecordRef(name) => format!("&{name}"),
         CftSchemaTypeRef::Array(inner) => format!("[{}]", format_schema_type_ref(inner)),
         CftSchemaTypeRef::Dict(key, value) => {
             format!(
@@ -108,38 +109,20 @@ pub fn format_schema_type_ref(ty: &CftSchemaTypeRef) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Dimension {
-    Localized,
-    Custom(String),
-}
-
-impl Dimension {
-    /// Returns the canonical dimension name used as a key in variant maps and
-    /// synthesized type names.
-    #[must_use]
-    pub fn name(&self) -> &str {
-        match self {
-            Self::Localized => "language",
-            Self::Custom(name) => name.as_str(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DimensionSpec {
-    pub kind: Dimension,
-    pub bucket: Option<String>,
+pub struct CftFieldDimension {
+    pub dimension: DimensionName,
+    pub bucket: Option<BucketName>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaField {
-    pub name: String,
-    pub ty: String,
+pub struct CftField {
+    pub declaring_type: TypeName,
+    pub name: FieldName,
     pub ty_ref: CftSchemaTypeRef,
     pub has_default: bool,
     pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
-    pub dimension: Option<DimensionSpec>,
+    pub dimension: Option<CftFieldDimension>,
     pub span: Span,
 }
 
@@ -151,8 +134,8 @@ pub enum CftSchemaDefaultValue {
     Bool(bool),
     String(String),
     Enum {
-        enum_name: String,
-        variant: String,
+        enum_name: EnumName,
+        variant: EnumVariantName,
         value: i64,
     },
     EmptyArray,
@@ -281,17 +264,19 @@ pub enum CftSchemaCmpOp {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaEnum {
+pub struct CftEnum {
     pub module: ModuleId,
-    pub name: String,
-    pub variants: Vec<CftSchemaEnumVariant>,
+    pub name: EnumName,
+    pub variants: Vec<CftEnumVariant>,
+    pub(crate) variant_by_name: BTreeMap<EnumVariantName, usize>,
+    pub(crate) variant_by_value: BTreeMap<i64, usize>,
     pub annotations: Vec<CftAnnotation>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CftSchemaEnumVariant {
-    pub name: String,
+pub struct CftEnumVariant {
+    pub name: EnumVariantName,
     pub value: i64,
     pub annotations: Vec<CftAnnotation>,
     pub span: Span,
@@ -314,17 +299,16 @@ pub enum CftAnnotationValue {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct SchemaReflection {
-    pub(crate) modules: BTreeMap<ModuleId, CftSchemaModule>,
-    pub(crate) consts: BTreeMap<String, CftSchemaConst>,
-    pub(crate) types: BTreeMap<String, CftSchemaType>,
-    pub(crate) enums: BTreeMap<String, CftSchemaEnum>,
+pub(crate) struct CompiledSchema {
+    pub(crate) consts: BTreeMap<ConstName, CftConst>,
+    pub(crate) types: BTreeMap<TypeName, CftType>,
+    pub(crate) enums: BTreeMap<EnumName, CftEnum>,
 }
 
 pub(crate) fn compile_module_set(
     modules: &CftModuleSet,
     options: CftCompileOptions,
-) -> Result<(SchemaReflection, StructuralBudget), CftDiagnostics> {
+) -> Result<(CompiledSchema, StructuralBudget), CftDiagnostics> {
     let mut compiler = SchemaCompiler::new(modules, options);
     let reflection = compiler.compile()?;
     Ok((reflection, compiler.budget))

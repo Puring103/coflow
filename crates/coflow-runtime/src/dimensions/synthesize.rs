@@ -55,19 +55,19 @@ pub(crate) fn dimension_sources(
 
 pub fn dimension_fields(schema: &CftSchema) -> Vec<DimensionField> {
     let mut fields = Vec::new();
-    for schema_type in schema.type_metas() {
+    for schema_type in schema.all_types() {
         for field in &schema_type.own_fields {
             let Some(dimension) = field.dimension.as_ref() else {
                 continue;
             };
             fields.push(DimensionField {
-                dimension: dimension.dimension.clone(),
-                source_type: schema_type.name.clone(),
-                source_field: field.name.clone(),
+                dimension: dimension.dimension.to_string(),
+                source_type: schema_type.name.to_string(),
+                source_field: field.name.to_string(),
                 bucket: dimension
                     .bucket
-                    .clone()
-                    .unwrap_or_else(|| schema_type.name.clone()),
+                    .as_ref()
+                    .map_or_else(|| schema_type.name.to_string(), ToString::to_string),
                 // Missing dimension config is diagnosed before data loading. The
                 // fallback only preserves enough identity for that diagnostic.
                 synthesized_type: schema

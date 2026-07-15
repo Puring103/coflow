@@ -1,8 +1,7 @@
 use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
-    CftFieldMeta, CftSchema, CftSchemaTypeRef, CftTypeMeta, ValueDependencyCycle,
-    ValueDependencyMode,
+    CftField, CftSchema, CftSchemaTypeRef, CftType, ValueDependencyCycle, ValueDependencyMode,
 };
 use std::collections::BTreeMap;
 
@@ -70,7 +69,10 @@ impl<'a> DataModelCompilerContext<'a> {
     }
 
     fn build_domain_index(cft_view: &CftSchema) -> CfdDomainIndex {
-        let type_names = cft_view.type_names().cloned().collect::<Vec<_>>();
+        let type_names = cft_view
+            .type_names()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
         let type_id_by_name = type_names
             .iter()
             .enumerate()
@@ -108,7 +110,7 @@ impl<'a> DataModelCompilerContext<'a> {
     fn domain_root_name(cft_view: &CftSchema, type_name: &str) -> String {
         let mut current = type_name;
         while let Some(parent) = cft_view
-            .type_meta(current)
+            .resolve_type(current)
             .and_then(|meta| meta.parent.as_deref())
         {
             current = parent;
@@ -124,7 +126,7 @@ impl<'a> DataModelCompilerContext<'a> {
         let mut out = Vec::new();
         let mut current = type_name;
         while let Some(parent) = cft_view
-            .type_meta(current)
+            .resolve_type(current)
             .and_then(|meta| meta.parent.as_deref())
         {
             if let Some(type_id) = type_id_by_name.get(parent).copied() {
@@ -135,12 +137,16 @@ impl<'a> DataModelCompilerContext<'a> {
         out
     }
 
-    pub(crate) fn type_meta(&self, type_name: &str) -> Option<&CftTypeMeta> {
-        self.cft.type_meta(type_name)
+    pub(crate) fn resolve_type(&self, type_name: &str) -> Option<&CftType> {
+        self.cft.resolve_type(type_name)
     }
 
-    pub(crate) fn full_fields(&self, type_name: &str) -> impl Iterator<Item = &CftFieldMeta> {
-        self.cft.full_fields(type_name).unwrap_or(&[]).iter()
+    pub(crate) fn full_fields(&self, type_name: &str) -> impl Iterator<Item = &CftField> {
+        self.cft
+            .full_fields(type_name)
+            .unwrap_or(&[])
+            .iter()
+            .map(AsRef::as_ref)
     }
 
     pub(crate) fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
@@ -152,18 +158,18 @@ impl<'a> DataModelCompilerContext<'a> {
     }
 
     pub(crate) fn assignable_target_names(&self, actual_type: &str) -> Vec<String> {
-        self.cft.assignable_target_names(actual_type)
+        self.cft
+            .assignable_target_names(actual_type)
+            .into_iter()
+            .map(|name| name.to_string())
+            .collect()
     }
 
     pub(crate) fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
         self.cft.enum_variant_value(enum_name, variant)
     }
 
-    pub(crate) fn is_schema_enum(&self, name: &str) -> bool {
-        self.cft.is_schema_enum(name)
-    }
-
-    pub(crate) fn singleton_types(&self) -> impl Iterator<Item = &CftTypeMeta> {
+    pub(crate) fn singleton_types(&self) -> impl Iterator<Item = &CftType> {
         self.cft.singleton_types()
     }
 
@@ -195,19 +201,7 @@ pub(crate) fn type_accepts_default(expected: &CftSchemaTypeRef, actual: &CftSche
 }
 
 pub(crate) fn display_type_ref(ty: &CftSchemaTypeRef) -> String {
-    match ty {
-        CftSchemaTypeRef::Int => "int".to_string(),
-        CftSchemaTypeRef::Float => "float".to_string(),
-        CftSchemaTypeRef::Bool => "bool".to_string(),
-        CftSchemaTypeRef::String => "string".to_string(),
-        CftSchemaTypeRef::Named(name) => name.clone(),
-        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
-        CftSchemaTypeRef::Array(inner) => format!("[{}]", display_type_ref(inner)),
-        CftSchemaTypeRef::Dict(key, value) => {
-            format!("{{{}: {}}}", display_type_ref(key), display_type_ref(value))
-        }
-        CftSchemaTypeRef::Nullable(inner) => format!("{}?", display_type_ref(inner)),
-    }
+    ty.display_label()
 }
 
 pub(crate) fn input_value_kind(value: &CfdInputValue) -> &'static str {

@@ -1,4 +1,4 @@
-use coflow_cft::{CftFieldMeta, CftSchema};
+use coflow_cft::{CftField, CftSchema, CftSchemaTypeRef};
 
 use super::diagnostics::{
     invalid_declared_type, CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode,
@@ -19,6 +19,28 @@ pub(super) enum CellType {
 }
 
 impl CellType {
+    pub(super) fn from_schema_type(ty: &CftSchemaTypeRef) -> Self {
+        match ty {
+            CftSchemaTypeRef::Int => Self::Int,
+            CftSchemaTypeRef::Float => Self::Float,
+            CftSchemaTypeRef::Bool => Self::Bool,
+            CftSchemaTypeRef::String => Self::String,
+            CftSchemaTypeRef::Object(name) => Self::Type(name.to_string()),
+            CftSchemaTypeRef::Enum(name) => Self::Enum(name.to_string()),
+            CftSchemaTypeRef::RecordRef(name) => Self::Ref(name.to_string()),
+            CftSchemaTypeRef::Array(inner) => {
+                Self::Array(Box::new(Self::from_schema_type(inner)))
+            }
+            CftSchemaTypeRef::Dict(key, value) => Self::Dict(
+                Box::new(Self::from_schema_type(key)),
+                Box::new(Self::from_schema_type(value)),
+            ),
+            CftSchemaTypeRef::Nullable(inner) => {
+                Self::Nullable(Box::new(Self::from_schema_type(inner)))
+            }
+        }
+    }
+
     pub(super) fn parse(schema: &CftSchema, text: &str) -> Result<Self, CellValueDiagnostics> {
         let mut parser = TypeParser::new(schema, text);
         let ty = parser.parse_type()?;
@@ -187,12 +209,9 @@ pub(super) fn full_fields(
     fields.map(|field| field_meta(schema, field)).collect()
 }
 
-fn field_meta(
-    schema: &CftSchema,
-    field: &CftFieldMeta,
-) -> Result<FieldMeta, CellValueDiagnostics> {
+fn field_meta(_: &CftSchema, field: &CftField) -> Result<FieldMeta, CellValueDiagnostics> {
     Ok(FieldMeta {
-        name: field.name.clone(),
-        ty: CellType::parse(schema, &field.raw_type)?,
+        name: field.name.to_string(),
+        ty: CellType::from_schema_type(&field.ty_ref),
     })
 }

@@ -216,7 +216,11 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usi
             if span_contains(field.name_span, offset) {
                 let detail = schema
                     .and_then(|s| s.resolve_type(&record.type_name))
-                    .and_then(|t| t.all_fields.iter().find(|f| f.name == field.name))
+                    .and_then(|t| {
+                        t.all_fields
+                            .iter()
+                            .find(|f| f.name.as_str() == field.name)
+                    })
                     .map_or_else(
                         || format!("`{}`", field.name),
                         |f| format!("```\n{}: {}\n```", f.name, fmt_type_ref(&f.ty_ref)),
@@ -257,7 +261,7 @@ pub fn completion(
             .filter(|f| !existing.contains(f.name.as_str()))
             .map(|f| {
                 json!({
-                    "label": f.name,
+                    "label": f.name.as_str(),
                     "kind": 5,  // Field
                     "detail": fmt_type_ref(&f.ty_ref),
                 })
@@ -270,7 +274,7 @@ pub fn completion(
     let types: Vec<Value> = schema
         .all_types()
         .filter(|t| !t.is_abstract)
-        .map(|t| json!({ "label": t.name, "kind": 7 }))
+        .map(|t| json!({ "label": t.name.as_str(), "kind": 7 }))
         .collect();
     json!(types)
 }
@@ -375,7 +379,7 @@ fn field_name_in_fields<'a>(
             .and_then(|ty| {
                 ty.all_fields
                     .iter()
-                    .find(|schema_field| schema_field.name == field.name)
+                    .find(|schema_field| schema_field.name.as_str() == field.name)
             })
             .and_then(|schema_field| named_type_name(&schema_field.ty_ref))
             .map(str::to_string);
@@ -434,7 +438,7 @@ fn field_name_in_value<'a>(
 
 fn named_type_name(ty: &CftSchemaTypeRef) -> Option<&str> {
     match ty {
-        CftSchemaTypeRef::Named(name) => Some(name),
+        CftSchemaTypeRef::Object(name) => Some(name),
         CftSchemaTypeRef::Nullable(inner) => named_type_name(inner),
         _ => None,
     }
@@ -469,16 +473,19 @@ fn ref_target_in_entry(
             let field_type = &owner
                 .all_fields
                 .iter()
-                .find(|candidate| candidate.name == field.name)?
+                .find(|candidate| candidate.name.as_str() == field.name)?
                 .ty_ref;
             ref_target_in_value(&field.value, schema, field_type, offset)
         }
-        CfdBlockEntry::Spread(value, _) => ref_target_in_value(
-            value,
-            schema,
-            &CftSchemaTypeRef::Ref(owner_type.to_string()),
-            offset,
-        ),
+        CfdBlockEntry::Spread(value, _) => {
+            let owner = schema.resolve_type(owner_type)?;
+            ref_target_in_value(
+                value,
+                schema,
+                &CftSchemaTypeRef::RecordRef(owner.name.clone()),
+                offset,
+            )
+        }
     }
 }
 
@@ -548,7 +555,7 @@ fn strip_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
 
 fn reference_target_type(ty: &CftSchemaTypeRef) -> Option<&str> {
     match strip_nullable(ty) {
-        CftSchemaTypeRef::Named(name) | CftSchemaTypeRef::Ref(name) => Some(name),
+        CftSchemaTypeRef::Object(name) | CftSchemaTypeRef::RecordRef(name) => Some(name),
         _ => None,
     }
 }
@@ -560,19 +567,7 @@ fn span_contains(span: Span, offset: usize) -> bool {
 }
 
 fn fmt_type_ref(ty: &CftSchemaTypeRef) -> String {
-    match ty {
-        CftSchemaTypeRef::Int => "int".to_string(),
-        CftSchemaTypeRef::Float => "float".to_string(),
-        CftSchemaTypeRef::Bool => "bool".to_string(),
-        CftSchemaTypeRef::String => "string".to_string(),
-        CftSchemaTypeRef::Named(name) => name.clone(),
-        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
-        CftSchemaTypeRef::Array(inner) => format!("[{}]", fmt_type_ref(inner)),
-        CftSchemaTypeRef::Dict(k, v) => {
-            format!("{{{}: {}}}", fmt_type_ref(k), fmt_type_ref(v))
-        }
-        CftSchemaTypeRef::Nullable(inner) => format!("{}?", fmt_type_ref(inner)),
-    }
+    ty.display_label()
 }
 
 pub fn byte_range(source: &str, start: usize, end: usize) -> Value {

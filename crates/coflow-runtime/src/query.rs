@@ -78,11 +78,11 @@ impl<'a> ProjectQueries<'a> {
     pub fn schema_type_fields(self, type_name: &str) -> Vec<(String, String)> {
         self.session
             .schema()
-            .type_meta(type_name)
+            .resolve_type(type_name)
             .map(|meta| {
                 meta.all_fields
                     .iter()
-                    .map(|field| (field.name.clone(), field.raw_type.clone()))
+                    .map(|field| (field.name.to_string(), field.ty_ref.display_label()))
                     .collect()
             })
             .unwrap_or_default()
@@ -257,11 +257,11 @@ impl<'a> ProjectQueries<'a> {
         let schema = self.session.schema();
         let model = self.session.model();
         schema
-            .type_metas()
+            .all_types()
             .filter_map(|schema_type| {
                 let enum_name = annotation_name_arg(&schema_type.annotations, "idAsEnum")?;
                 let is_flags = schema
-                    .enum_meta(&enum_name)
+                    .resolve_enum(&enum_name)
                     .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
                 let ids = model.polymorphic_index(&schema_type.name).map_or_else(
                     || {
@@ -325,23 +325,26 @@ impl<'a> ProjectQueries<'a> {
 
 fn field_shape(schema: &CftSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
     let non_nullable = non_nullable(ty);
-    let named = match non_nullable {
-        CftSchemaTypeRef::Named(name) => Some(name.as_str()),
-        _ => None,
-    };
     let ref_target_type = match non_nullable {
-        CftSchemaTypeRef::Ref(name) => Some(name.clone()),
+        CftSchemaTypeRef::RecordRef(name) => Some(name.to_string()),
         _ => None,
     };
-    let enum_type = named
-        .filter(|name| schema.is_schema_enum(name))
-        .map(str::to_string);
-    let polymorphic_types = named
-        .and_then(|name| schema.type_meta(name).map(|meta| (name, meta)))
+    let enum_type = match non_nullable {
+        CftSchemaTypeRef::Enum(name) => Some(name.to_string()),
+        _ => None,
+    };
+    let polymorphic_types = match non_nullable {
+        CftSchemaTypeRef::Object(name) => Some(name.as_str()),
+        _ => None,
+    }
+        .and_then(|name| schema.resolve_type(name).map(|meta| (name, meta)))
         .filter(|(_, meta)| meta.is_abstract)
         .and_then(|(name, _)| schema.concrete_assignable_types(name))
         .filter(|types| types.len() >= 2)
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .map(|name| name.to_string())
+        .collect();
     let collection_item = match non_nullable {
         CftSchemaTypeRef::Array(item) | CftSchemaTypeRef::Dict(_, item) => {
             Some(Box::new(field_shape(schema, item)))

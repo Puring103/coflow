@@ -5,8 +5,8 @@
 //! collect source files with [`CftFile`], parse them once with
 //! [`parse_modules`], and build the immutable effective schema with
 //! [`build_schema`]. Loaders, code generators, and editors consume the
-//! resulting [`CftSchemaModule`] / [`CftSchemaType`] / [`CftSchemaEnum`]
-//! reflection types.
+//! resulting [`CftSchema`] and its canonical [`CftType`], [`CftField`], and
+//! [`CftEnum`] declarations.
 //!
 //! Diagnostics are stable across releases: every error carries an immutable
 //! code (see [`CftErrorCode`]) and a stage tag (lex / syn / schema / type),
@@ -47,8 +47,7 @@ mod span;
 
 pub use coflow_structure::StructuralLimits;
 pub use cft_schema::{
-    CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftEnumVariantMeta, CftFieldMeta,
-    CftTypeMeta, CftSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
+    CftEnumValue, CftSchema, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
     ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
 pub use build::build_schema;
@@ -64,10 +63,10 @@ pub use module_set::{
 };
 pub use parser::CftParseOptions;
 pub use schema::{
-    format_schema_type_ref, CftAnnotation, CftAnnotationValue, CftConstValue,
+    format_schema_type_ref, CftAnnotation, CftAnnotationValue, CftConst, CftConstValue, CftEnum,
+    CftEnumVariant, CftField, CftFieldDimension, CftType,
     CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
-    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaConst, CftSchemaDefaultValue, CftSchemaEnum,
-    CftSchemaEnumVariant, CftSchemaField, CftSchemaModule, CftSchemaQuantifierKind, CftSchemaType,
-    CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp, Dimension, DimensionSpec,
+    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaDefaultValue, CftSchemaQuantifierKind,
+    CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp,
 };
 pub use span::Span;

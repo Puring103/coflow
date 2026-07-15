@@ -3,21 +3,21 @@ use super::Validator;
 use crate::compiler_context::{type_accepts_default, CfdValueDraft, RecordDraft};
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
-use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef};
+use coflow_cft::{CftField, CftSchemaDefaultValue, CftSchemaTypeRef};
 use coflow_structure::TraversalCursor;
 use std::collections::BTreeMap;
 
 impl Validator<'_, '_> {
     pub(super) fn default_field_value(
         &mut self,
-        field: &CftFieldMeta,
+        field: &CftField,
         value: &CftSchemaDefaultValue,
         record: Option<CfdRecordId>,
         path: CfdPath,
         parent: TraversalCursor,
     ) -> Option<CfdValueDraft> {
         if matches!(value, CftSchemaDefaultValue::EmptyObject) {
-            if let CftSchemaTypeRef::Named(type_name) = non_nullable_type(&field.ty_ref) {
+            if let CftSchemaTypeRef::Object(type_name) = non_nullable_type(&field.ty_ref) {
                 if let Some(cycle) = self.schema.schema_default_cycle(type_name) {
                     self.push(
                         CfdDiagnostic::error(
@@ -47,7 +47,7 @@ impl Validator<'_, '_> {
                 CftSchemaTypeRef::Dict(_, _) => {
                     Some(CfdValueDraft::Value(CfdValue::Dict(Vec::new())))
                 }
-                CftSchemaTypeRef::Named(type_name) if !self.schema.is_schema_enum(type_name) => {
+                CftSchemaTypeRef::Object(type_name) => {
                     self.default_object_value(type_name, record, path, cursor)
                 }
                 _ => {
@@ -93,10 +93,10 @@ impl Validator<'_, '_> {
                 enum_name,
                 variant,
                 value,
-            } if matches!(non_nullable_type(ty), CftSchemaTypeRef::Named(name) if name == enum_name && self.schema.is_schema_enum(name)) => {
+            } if matches!(non_nullable_type(ty), CftSchemaTypeRef::Enum(name) if name == enum_name) => {
                 CfdValue::Enum(CfdEnumValue {
-                    enum_name: enum_name.clone(),
-                    variant: Some(variant.clone()),
+                    enum_name: enum_name.to_string(),
+                    variant: Some(variant.to_string()),
                     value: *value,
                 })
             }

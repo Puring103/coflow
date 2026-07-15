@@ -9,13 +9,15 @@ pub use value_dependencies::{
 };
 
 use crate::module_id::ModuleId;
-use crate::schema::SchemaReflection;
+use crate::schema::CompiledSchema;
 use crate::{
-    CftAnnotation, CftConstValue, CftDiagnostic, CftDiagnostics, CftErrorCode, CftSchemaCheckBlock,
-    CftSchemaConst, CftSchemaEnum, CftSchemaType, CftSchemaTypeRef, Span,
+    CftConst, CftConstValue, CftDiagnostic, CftDiagnostics, CftEnum, CftErrorCode, CftField,
+    CftFieldDimension, CftSchemaCheckBlock, CftSchemaTypeRef, CftType, ConstName, DimensionName,
+    EnumName, EnumVariantName, FieldName, Span, TypeName,
 };
 use coflow_structure::{BudgetExceeded, StructuralBudget, StructuralLimits};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub(super) struct LocatedBudgetError {
@@ -37,13 +39,13 @@ impl LocatedBudgetError {
 
 #[derive(Debug, Clone)]
 pub struct CftSchema {
-    reflection: SchemaReflection,
     sources: BTreeMap<ModuleId, String>,
-    consts: BTreeMap<String, CftConstValue>,
-    types: BTreeMap<String, CftTypeMeta>,
-    enums: BTreeMap<String, CftEnumMeta>,
-    children_by_parent: BTreeMap<String, BTreeSet<String>>,
-    dimension_storage_types: BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>,
+    consts: BTreeMap<ConstName, CftConst>,
+    pub(crate) types: BTreeMap<TypeName, CftType>,
+    enums: BTreeMap<EnumName, CftEnum>,
+    children_by_parent: BTreeMap<TypeName, BTreeSet<TypeName>>,
+    dimension_storage_types:
+        BTreeMap<DimensionName, BTreeMap<TypeName, BTreeMap<FieldName, TypeName>>>,
     typed_checks: TypedCheckPlan,
     value_dependencies: ValueDependencyPlan,
     structural_limits: StructuralLimits,
@@ -52,76 +54,45 @@ pub struct CftSchema {
 impl CftSchema {
     pub(crate) fn with_extension_types(
         self,
-        types: impl IntoIterator<Item = CftSchemaType>,
+        types: impl IntoIterator<Item = CftType>,
     ) -> Result<Self, CftDiagnostics> {
-        let mut reflection = self.reflection.clone();
+        let mut compiled = CompiledSchema {
+            consts: self.consts.clone(),
+            types: self.types.clone(),
+            enums: self.enums.clone(),
+        };
         let sources = self.sources.clone();
         let structural_limits = self.structural_limits;
-        let runtime_module = ModuleId::from("__runtime__");
-        for mut ty in types {
-            if reflection.types.contains_key(&ty.name)
-                || reflection.enums.contains_key(&ty.name)
-                || reflection.consts.contains_key(&ty.name)
+        for ty in types {
+            if compiled.types.contains_key(&ty.name)
+                || compiled.enums.contains_key(ty.name.as_str())
+                || compiled.consts.contains_key(ty.name.as_str())
             {
                 return Err(CftDiagnostics::one(CftDiagnostic::error(
                     CftErrorCode::DuplicateGlobalName,
-                    ty.module,
+                    ty.module.clone(),
                     ty.span,
                     format!("duplicate global name `{}`", ty.name),
                 )));
             }
-            ty.module = runtime_module.clone();
-            reflection
-                .modules
-                .entry(runtime_module.clone())
-                .or_insert_with(|| crate::CftSchemaModule {
-                    consts: Vec::new(),
-                    types: Vec::new(),
-                    enums: Vec::new(),
-                })
-                .types
-                .push(ty.clone());
-            reflection.types.insert(ty.name.clone(), ty);
+            compiled.types.insert(ty.name.clone(), ty);
         }
         let mut budget = StructuralBudget::new(structural_limits);
-        Self::from_reflection(reflection, sources, structural_limits, &mut budget)
+        Self::from_compiled(compiled, sources, structural_limits, &mut budget)
     }
 
-    pub(crate) fn from_reflection(
-        reflection: SchemaReflection,
+    pub(crate) fn from_compiled(
+        compiled: CompiledSchema,
         sources: BTreeMap<ModuleId, String>,
         structural_limits: StructuralLimits,
         budget: &mut StructuralBudget,
     ) -> Result<Self, CftDiagnostics> {
-        let consts = reflection
-            .modules
-            .values()
-            .flat_map(|module| module.consts.iter())
-            .map(|schema_const| (schema_const.name.clone(), schema_const.value.clone()))
-            .collect::<BTreeMap<_, _>>();
-
-        let enums = reflection
-            .enums
-            .values()
-            .map(|schema_enum| {
-                (
-                    schema_enum.name.clone(),
-                    CftEnumMeta::from_schema(schema_enum),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-
-        let types = reflection
-            .types
-            .values()
-            .map(|schema_type| {
-                let meta = CftTypeMeta::from_schema(schema_type);
-                (meta.name.clone(), meta)
-            })
-            .collect::<BTreeMap<_, _>>();
+        let consts = compiled.consts;
+        let enums = compiled.enums;
+        let types = compiled.types;
 
         let children_by_parent = types.values().fold(
-            BTreeMap::<String, BTreeSet<String>>::new(),
+            BTreeMap::<TypeName, BTreeSet<TypeName>>::new(),
             |mut children, ty| {
                 if let Some(parent) = &ty.parent {
                     children
@@ -139,7 +110,6 @@ impl CftSchema {
         let value_dependencies = ValueDependencyPlan::compile(&types, budget)
             .map_err(LocatedBudgetError::into_diagnostics)?;
         let mut view = Self {
-            reflection,
             sources,
             consts,
             types,
@@ -157,7 +127,6 @@ impl CftSchema {
     #[must_use]
     pub fn empty() -> Self {
         Self {
-            reflection: SchemaReflection::default(),
             sources: BTreeMap::new(),
             consts: BTreeMap::new(),
             types: BTreeMap::new(),
@@ -171,9 +140,12 @@ impl CftSchema {
     }
 
     fn build_dimension_storage_index(
-        types: &BTreeMap<String, CftTypeMeta>,
-    ) -> BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>> {
-        let mut out = BTreeMap::<String, BTreeMap<String, BTreeMap<String, String>>>::new();
+        types: &BTreeMap<TypeName, CftType>,
+    ) -> BTreeMap<DimensionName, BTreeMap<TypeName, BTreeMap<FieldName, TypeName>>> {
+        let mut out: BTreeMap<
+            DimensionName,
+            BTreeMap<TypeName, BTreeMap<FieldName, TypeName>>,
+        > = BTreeMap::new();
         for schema_type in types.values() {
             for annotation in &schema_type.annotations {
                 if annotation.name != "__coflow_dimension_storage" {
@@ -182,11 +154,14 @@ impl CftSchema {
                 if let [crate::CftAnnotationValue::String(dimension), crate::CftAnnotationValue::String(source_type), crate::CftAnnotationValue::String(source_field)] =
                     annotation.args.as_slice()
                 {
-                    out.entry(dimension.clone())
+                    out.entry(DimensionName::from_validated(dimension.clone()))
                         .or_default()
-                        .entry(source_type.clone())
+                        .entry(TypeName::from_validated(source_type.clone()))
                         .or_default()
-                        .insert(source_field.clone(), schema_type.name.clone());
+                        .insert(
+                            FieldName::from_validated(source_field.clone()),
+                            schema_type.name.clone(),
+                        );
                 }
             }
         }
@@ -208,56 +183,49 @@ impl CftSchema {
         }
     }
 
-    fn dimension_checks_for_type(&self, type_name: &str) -> BTreeMap<String, CftSchemaCheckBlock> {
+    fn dimension_checks_for_type(
+        &self,
+        type_name: &str,
+    ) -> BTreeMap<DimensionName, CftSchemaCheckBlock> {
         dimension_checks::dimension_checks_for_type(self, type_name)
     }
 
-    #[must_use]
-    pub fn type_meta(&self, type_name: &str) -> Option<&CftTypeMeta> {
-        self.types.get(type_name)
-    }
-
-    pub fn type_names(&self) -> impl Iterator<Item = &String> {
+    pub fn type_names(&self) -> impl Iterator<Item = &TypeName> {
         self.types.keys()
-    }
-
-    pub fn type_metas(&self) -> impl Iterator<Item = &CftTypeMeta> {
-        self.types.values()
     }
 
     /// Returns the semantic declaration retained for language tooling.
     #[must_use]
-    pub fn resolve_type(&self, name: &str) -> Option<&CftSchemaType> {
-        self.reflection.types.get(name)
+    pub fn resolve_type(&self, name: &str) -> Option<&CftType> {
+        self.types.get(name)
     }
 
     /// Returns the semantic enum declaration retained for language tooling.
     #[must_use]
-    pub fn resolve_enum(&self, name: &str) -> Option<&CftSchemaEnum> {
-        self.reflection.enums.get(name)
+    pub fn resolve_enum(&self, name: &str) -> Option<&CftEnum> {
+        self.enums.get(name)
     }
 
     /// Returns the semantic const declaration retained for language tooling.
     #[must_use]
-    pub fn resolve_const(&self, name: &str) -> Option<&CftSchemaConst> {
-        self.reflection.consts.get(name)
+    pub fn resolve_const(&self, name: &str) -> Option<&CftConst> {
+        self.consts.get(name)
     }
 
-    pub fn all_types(&self) -> impl Iterator<Item = &CftSchemaType> {
-        self.reflection.types.values()
+    pub fn all_types(&self) -> impl Iterator<Item = &CftType> {
+        self.types.values()
     }
 
-    pub fn all_enums(&self) -> impl Iterator<Item = &CftSchemaEnum> {
-        self.reflection.enums.values()
+    pub fn all_enums(&self) -> impl Iterator<Item = &CftEnum> {
+        self.enums.values()
+    }
+
+    pub fn all_consts(&self) -> impl Iterator<Item = &CftConst> {
+        self.consts.values()
     }
 
     pub fn module_ids(&self) -> impl Iterator<Item = &ModuleId> {
-        self.reflection.modules.keys()
-    }
-
-    #[must_use]
-    pub fn module_schema(&self, module: &ModuleId) -> Option<&crate::CftSchemaModule> {
-        self.reflection.modules.get(module)
+        self.sources.keys()
     }
 
     #[must_use]
@@ -265,30 +233,21 @@ impl CftSchema {
         self.sources.get(module).map(String::as_str)
     }
 
-    pub fn const_names(&self) -> impl Iterator<Item = &String> {
+    pub fn const_names(&self) -> impl Iterator<Item = &ConstName> {
         self.consts.keys()
     }
 
     pub fn const_values(&self) -> impl Iterator<Item = &CftConstValue> {
-        self.consts.values()
+        self.consts.values().map(|value| &value.value)
     }
 
     #[must_use]
     pub fn const_value(&self, const_name: &str) -> Option<&CftConstValue> {
-        self.consts.get(const_name)
+        self.consts.get(const_name).map(|value| &value.value)
     }
 
-    pub fn enum_names(&self) -> impl Iterator<Item = &String> {
+    pub fn enum_names(&self) -> impl Iterator<Item = &EnumName> {
         self.enums.keys()
-    }
-
-    pub fn enum_metas(&self) -> impl Iterator<Item = &CftEnumMeta> {
-        self.enums.values()
-    }
-
-    #[must_use]
-    pub fn enum_meta(&self, enum_name: &str) -> Option<&CftEnumMeta> {
-        self.enums.get(enum_name)
     }
 
     #[must_use]
@@ -315,23 +274,21 @@ impl CftSchema {
 
     #[must_use]
     pub fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
-        self.enums
-            .get(enum_name)
-            .and_then(|meta| meta.variants.get(variant))
-            .copied()
+        let meta = self.enums.get(enum_name)?;
+        let index = *meta.variant_by_name.get(variant)?;
+        meta.variants.get(index).map(|variant| variant.value)
     }
 
     #[must_use]
-    pub fn enum_value_from_int(&self, enum_name: &str, value: i64) -> Option<CftEnumValueMeta> {
+    pub fn enum_value_from_int(&self, enum_name: &str, value: i64) -> Option<CftEnumValue> {
         let meta = self.enums.get(enum_name)?;
-        meta.variants
-            .iter()
-            .find(|(_, variant_value)| **variant_value == value)
-            .map(|(variant, variant_value)| CftEnumValueMeta {
-                enum_name: enum_name.to_string(),
-                variant: Some(variant.clone()),
-                value: *variant_value,
-            })
+        let index = *meta.variant_by_value.get(&value)?;
+        let variant = meta.variants.get(index)?;
+        Some(CftEnumValue {
+            enum_name: meta.name.clone(),
+            variant: Some(variant.name.clone()),
+            value,
+        })
     }
 
     #[must_use]
@@ -363,7 +320,7 @@ impl CftSchema {
                 .get(type_name)
                 .and_then(|by_field| by_field.get(source_field))
             {
-                return Some(storage_type);
+                return Some(storage_type.as_str());
             }
             current = self
                 .types
@@ -386,30 +343,31 @@ impl CftSchema {
     pub fn field_type(&self, actual_type: &str, field_name: &str) -> Option<&CftSchemaTypeRef> {
         self.types
             .get(actual_type)
-            .and_then(|meta| meta.fields.get(field_name))
+            .and_then(|ty| ty.field(field_name))
+            .map(|field| &field.ty_ref)
     }
 
     #[must_use]
-    pub fn field_meta(&self, actual_type: &str, field_name: &str) -> Option<&CftFieldMeta> {
-        self.fields(actual_type)?
-            .find(|field| field.name == field_name)
+    pub fn field(&self, actual_type: &str, field_name: &str) -> Option<&CftField> {
+        self.types.get(actual_type)?.field(field_name)
     }
 
     #[must_use]
-    pub fn full_fields(&self, type_name: &str) -> Option<&[CftFieldMeta]> {
+    pub fn full_fields(&self, type_name: &str) -> Option<&[Arc<CftField>]> {
         self.fields_slice(type_name)
     }
 
     #[must_use]
-    pub fn fields_slice(&self, type_name: &str) -> Option<&[CftFieldMeta]> {
+    pub fn fields_slice(&self, type_name: &str) -> Option<&[Arc<CftField>]> {
         self.types
             .get(type_name)
             .map(|meta| meta.all_fields.as_slice())
     }
 
     #[must_use]
-    pub fn fields(&self, type_name: &str) -> Option<impl Iterator<Item = &CftFieldMeta>> {
-        self.fields_slice(type_name).map(|fields| fields.iter())
+    pub fn fields(&self, type_name: &str) -> Option<impl Iterator<Item = &CftField>> {
+        self.fields_slice(type_name)
+            .map(|fields| fields.iter().map(AsRef::as_ref))
     }
 
     #[must_use]
@@ -419,7 +377,7 @@ impl CftSchema {
 
     #[must_use]
     pub fn has_dimension_fields(&self) -> bool {
-        self.type_metas()
+        self.all_types()
             .any(|ty| ty.all_fields.iter().any(|field| field.dimension.is_some()))
     }
 
@@ -430,7 +388,7 @@ impl CftSchema {
             .is_some_and(|children| !children.is_empty())
     }
 
-    pub fn descendant_names(&self, type_name: &str) -> impl Iterator<Item = &String> {
+    pub fn descendant_names(&self, type_name: &str) -> impl Iterator<Item = &TypeName> {
         self.children_by_parent.get(type_name).into_iter().flatten()
     }
 
@@ -442,32 +400,32 @@ impl CftSchema {
     }
 
     #[must_use]
-    pub fn assignable_target_names(&self, actual_type: &str) -> Vec<String> {
+    pub fn assignable_target_names(&self, actual_type: &str) -> Vec<TypeName> {
         let mut out = Vec::new();
         let mut current = Some(actual_type);
         while let Some(name) = current {
-            out.push(name.to_string());
+            out.push(TypeName::from_validated(name.to_string()));
             current = self.types.get(name).and_then(|meta| meta.parent.as_deref());
         }
         out
     }
 
-    pub fn singleton_types(&self) -> impl Iterator<Item = &CftTypeMeta> {
+    pub fn singleton_types(&self) -> impl Iterator<Item = &CftType> {
         self.types.values().filter(|meta| meta.is_singleton)
     }
 
     #[must_use]
-    pub fn concrete_assignable_types(&self, type_name: &str) -> Option<Vec<String>> {
+    pub fn concrete_assignable_types(&self, type_name: &str) -> Option<Vec<TypeName>> {
         let mut out = Vec::new();
         let meta = self.types.get(type_name)?;
         if !meta.is_abstract {
-            out.push(type_name.to_string());
+            out.push(TypeName::from_validated(type_name.to_string()));
         }
         self.collect_concrete_descendants(type_name, &mut out);
         Some(out)
     }
 
-    fn collect_concrete_descendants(&self, type_name: &str, out: &mut Vec<String>) {
+    fn collect_concrete_descendants(&self, type_name: &str, out: &mut Vec<TypeName>) {
         for child in self.descendant_names(type_name) {
             let Some(child_meta) = self.types.get(child) else {
                 continue;
@@ -484,162 +442,30 @@ impl CftSchema {
         &self,
         actual_type: &str,
         field_name: &str,
-    ) -> Option<&CftDimensionFieldMeta> {
-        self.types
-            .get(actual_type)
-            .and_then(|meta| meta.dimension_fields.get(field_name))
+    ) -> Option<&CftFieldDimension> {
+        self.types.get(actual_type)?.field(field_name)?.dimension.as_ref()
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct CftTypeMeta {
-    pub module: String,
-    pub name: String,
-    pub parent: Option<String>,
-    pub is_abstract: bool,
-    pub is_sealed: bool,
-    pub is_singleton: bool,
-    pub span: Span,
-    pub annotations: Vec<CftAnnotation>,
-    pub check: Option<CftSchemaCheckBlock>,
-    pub dimension_checks: BTreeMap<String, CftSchemaCheckBlock>,
-    pub own_fields: Vec<CftFieldMeta>,
-    pub all_fields: Vec<CftFieldMeta>,
-    fields: BTreeMap<String, CftSchemaTypeRef>,
-    dimension_fields: BTreeMap<String, CftDimensionFieldMeta>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CftFieldMeta {
-    pub module: String,
-    pub name: String,
-    pub raw_type: String,
-    pub ty_ref: CftSchemaTypeRef,
-    pub has_default: bool,
-    pub default: Option<crate::CftSchemaDefaultValue>,
-    pub annotations: Vec<CftAnnotation>,
-    pub dimension: Option<CftDimensionFieldMeta>,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CftDimensionFieldMeta {
-    pub dimension: String,
-    pub bucket: Option<String>,
-}
-
-impl CftTypeMeta {
-    fn from_schema(schema_type: &CftSchemaType) -> Self {
-        let dimension_fields = schema_type
-            .all_fields
-            .iter()
-            .filter_map(|field| {
-                let dimension = field.dimension.as_ref().map(|d| d.kind.name())?;
-                Some((
-                    field.name.clone(),
-                    CftDimensionFieldMeta {
-                        dimension: dimension.to_string(),
-                        bucket: field.dimension.as_ref().and_then(|d| d.bucket.clone()),
-                    },
-                ))
-            })
-            .collect();
-        Self {
-            module: schema_type.module.to_string(),
-            name: schema_type.name.clone(),
-            parent: schema_type.parent.clone(),
-            is_abstract: schema_type.is_abstract,
-            is_sealed: schema_type.is_sealed,
-            is_singleton: schema_type.is_singleton,
-            span: schema_type.span,
-            annotations: schema_type.annotations.clone(),
-            check: schema_type.check.clone(),
-            dimension_checks: BTreeMap::new(),
-            own_fields: schema_type
-                .fields
-                .iter()
-                .map(|field| CftFieldMeta::from_schema(field, &schema_type.module))
-                .collect(),
-            all_fields: schema_type
-                .all_fields
-                .iter()
-                .map(|field| CftFieldMeta::from_schema(field, &schema_type.module))
-                .collect(),
-            fields: schema_type
-                .all_fields
-                .iter()
-                .map(|field| (field.name.clone(), field.ty_ref.clone()))
-                .collect(),
-            dimension_fields,
-        }
+impl CftType {
+    #[must_use]
+    pub fn field(&self, name: &str) -> Option<&CftField> {
+        let index = *self.field_by_name.get(name)?;
+        self.all_fields.get(index).map(AsRef::as_ref)
     }
-}
 
-impl CftFieldMeta {
-    fn from_schema(field: &crate::CftSchemaField, module: &ModuleId) -> Self {
-        Self {
-            module: module.to_string(),
-            name: field.name.clone(),
-            raw_type: field.ty.clone(),
-            ty_ref: field.ty_ref.clone(),
-            has_default: field.has_default,
-            default: field.default.clone(),
-            annotations: field.annotations.clone(),
-            dimension: field
-                .dimension
-                .as_ref()
-                .map(|dimension| CftDimensionFieldMeta {
-                    dimension: dimension.kind.name().to_string(),
-                    bucket: dimension.bucket.clone(),
-                }),
-            span: field.span,
-        }
+    pub fn own_fields(&self) -> impl Iterator<Item = &CftField> {
+        self.own_fields.iter().map(AsRef::as_ref)
+    }
+
+    pub fn fields(&self) -> impl Iterator<Item = &CftField> {
+        self.all_fields.iter().map(AsRef::as_ref)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CftEnumValueMeta {
-    pub enum_name: String,
-    pub variant: Option<String>,
+pub struct CftEnumValue {
+    pub enum_name: EnumName,
+    pub variant: Option<EnumVariantName>,
     pub value: i64,
-}
-
-#[derive(Debug, Clone)]
-pub struct CftEnumMeta {
-    pub module: String,
-    pub name: String,
-    pub annotations: Vec<CftAnnotation>,
-    pub all_variants: Vec<CftEnumVariantMeta>,
-    variants: BTreeMap<String, i64>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CftEnumVariantMeta {
-    pub name: String,
-    pub value: i64,
-    pub annotations: Vec<CftAnnotation>,
-}
-
-impl CftEnumMeta {
-    fn from_schema(schema_enum: &CftSchemaEnum) -> Self {
-        Self {
-            module: schema_enum.module.to_string(),
-            name: schema_enum.name.clone(),
-            annotations: schema_enum.annotations.clone(),
-            all_variants: schema_enum
-                .variants
-                .iter()
-                .map(|variant| CftEnumVariantMeta {
-                    name: variant.name.clone(),
-                    value: variant.value,
-                    annotations: variant.annotations.clone(),
-                })
-                .collect(),
-            variants: schema_enum
-                .variants
-                .iter()
-                .map(|variant| (variant.name.clone(), variant.value))
-                .collect(),
-        }
-    }
 }

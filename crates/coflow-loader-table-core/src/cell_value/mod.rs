@@ -25,7 +25,7 @@ mod scan;
 mod strings;
 mod types;
 
-use coflow_cft::CftSchema;
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 use coflow_data_model::CfdInputValue;
 use collections::{parse_array, parse_dict};
 use diagnostics::type_mismatch;
@@ -53,6 +53,19 @@ pub fn parse_cell(
     text: &str,
 ) -> Result<ParsedCell, CellValueDiagnostics> {
     let declared_type = CellType::parse(schema, declared_type)?;
+    let text = text.trim();
+    if text.is_empty() || text == "_" {
+        return Ok(ParsedCell::Omitted);
+    }
+    parse_value(schema, &declared_type, text, ValueContext::Root).map(ParsedCell::Value)
+}
+
+pub(crate) fn parse_schema_cell(
+    schema: &CftSchema,
+    declared_type: &CftSchemaTypeRef,
+    text: &str,
+) -> Result<ParsedCell, CellValueDiagnostics> {
+    let declared_type = CellType::from_schema_type(declared_type);
     let text = text.trim();
     if text.is_empty() || text == "_" {
         return Ok(ParsedCell::Omitted);
@@ -125,13 +138,13 @@ pub(super) fn parse_enum(
         .strip_prefix(enum_name)
         .and_then(|rest| rest.strip_prefix('.'))
         .map_or(text, |variant| variant);
-    let Some(schema_enum) = schema.enum_meta(enum_name) else {
+    let Some(schema_enum) = schema.resolve_enum(enum_name) else {
         return Err(type_mismatch(enum_name));
     };
     if schema_enum
-        .all_variants
+        .variants
         .iter()
-        .any(|schema_variant| schema_variant.name == variant)
+        .any(|schema_variant| schema_variant.name.as_str() == variant)
     {
         Ok(CfdInputValue::enum_variant(enum_name, variant))
     } else {

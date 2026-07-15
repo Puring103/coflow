@@ -1,10 +1,10 @@
 use crate::lowering::CsharpLoweringPlan;
 use crate::CsharpCodegenError;
-use coflow_cft::CftFieldMeta;
+use coflow_cft::CftField;
 use coflow_cft::CftSchemaTypeRef;
 
 pub(super) fn read_field_expr(
-    field: &CftFieldMeta,
+    field: &CftField,
     obj: &str,
     context: &str,
     view: &CsharpLoweringPlan<'_>,
@@ -40,20 +40,20 @@ pub(super) fn read_token_expr(
         CftSchemaTypeRef::Float => Ok(format!("CoflowJson.ReadFloat({token})")),
         CftSchemaTypeRef::Bool => Ok(format!("CoflowJson.ReadBool({token})")),
         CftSchemaTypeRef::String => Ok(format!("CoflowJson.ReadString({token})")),
-        CftSchemaTypeRef::Named(name) if view.is_id_as_enum(name) => Ok(format!(
+        CftSchemaTypeRef::Enum(name) if view.is_id_as_enum(name) => Ok(format!(
             "CoflowJson.ReadStringEnum<{}>({token})",
             view.csharp_enum_name(name)
         )),
-        CftSchemaTypeRef::Named(name) if view.is_schema_enum(name) => Ok(format!(
+        CftSchemaTypeRef::Enum(name) => Ok(format!(
             "CoflowJson.ReadEnum<{}>({token})",
             view.csharp_enum_name(name)
         )),
-        CftSchemaTypeRef::Ref(name) => {
+        CftSchemaTypeRef::RecordRef(name) => {
             let csharp_name = view.csharp_type_name(name);
             let key_reader = read_token_expr(&view.key_field_type(name), token, context, view)?;
             Ok(format!("{context}.Get{csharp_name}({key_reader})"))
         }
-        CftSchemaTypeRef::Named(name) => {
+        CftSchemaTypeRef::Object(name) => {
             let csharp_name = view.csharp_type_name(name);
             let inline_reader = if view.range_is_polymorphic(name) {
                 format!("{csharp_name}.LoadPolymorphic({token}, {context})")
@@ -86,7 +86,7 @@ fn read_dict_key_expr(
     match ty.non_nullable() {
         CftSchemaTypeRef::String => Ok(key.to_string()),
         CftSchemaTypeRef::Int => Ok(format!("CoflowJson.ReadIntKey({key})")),
-        CftSchemaTypeRef::Named(name) if view.is_schema_enum(name) || view.is_id_as_enum(name) => {
+        CftSchemaTypeRef::Enum(name) => {
             Ok(format!(
                 "CoflowJson.ReadEnumKey<{}>({key})",
                 view.csharp_enum_name(name)
@@ -99,7 +99,7 @@ fn read_dict_key_expr(
 }
 
 pub(super) fn read_messagepack_field_expr(
-    field: &CftFieldMeta,
+    field: &CftField,
     reader: &str,
     context: &str,
     view: &CsharpLoweringPlan<'_>,
@@ -118,21 +118,21 @@ pub(super) fn read_messagepack_expr(
         CftSchemaTypeRef::Float => Ok(format!("CoflowMessagePack.ReadFloat(ref {reader})")),
         CftSchemaTypeRef::Bool => Ok(format!("CoflowMessagePack.ReadBool(ref {reader})")),
         CftSchemaTypeRef::String => Ok(format!("CoflowMessagePack.ReadString(ref {reader})")),
-        CftSchemaTypeRef::Named(name) if view.is_id_as_enum(name) => Ok(format!(
+        CftSchemaTypeRef::Enum(name) if view.is_id_as_enum(name) => Ok(format!(
             "CoflowMessagePack.ReadStringEnum<{}>(ref {reader})",
             view.csharp_enum_name(name)
         )),
-        CftSchemaTypeRef::Named(name) if view.is_schema_enum(name) => Ok(format!(
+        CftSchemaTypeRef::Enum(name) => Ok(format!(
             "CoflowMessagePack.ReadEnum<{}>(ref {reader})",
             view.csharp_enum_name(name)
         )),
-        CftSchemaTypeRef::Ref(name) => {
+        CftSchemaTypeRef::RecordRef(name) => {
             let csharp_name = view.csharp_type_name(name);
             let key_reader =
                 read_messagepack_expr(&view.key_field_type(name), reader, context, view)?;
             Ok(format!("{context}.Get{csharp_name}({key_reader})"))
         }
-        CftSchemaTypeRef::Named(name) => {
+        CftSchemaTypeRef::Object(name) => {
             let csharp_name = view.csharp_type_name(name);
             let inline_reader = if view.range_is_polymorphic(name) {
                 format!("{csharp_name}.LoadPolymorphic(ref {reader}, {context})")
@@ -165,7 +165,7 @@ fn read_messagepack_dict_key_expr(
     match ty.non_nullable() {
         CftSchemaTypeRef::String => Ok(key.to_string()),
         CftSchemaTypeRef::Int => Ok(format!("CoflowMessagePack.ReadIntKey({key})")),
-        CftSchemaTypeRef::Named(name) if view.is_schema_enum(name) || view.is_id_as_enum(name) => {
+        CftSchemaTypeRef::Enum(name) => {
             Ok(format!(
                 "CoflowMessagePack.ReadEnumKey<{}>({key})",
                 view.csharp_enum_name(name)

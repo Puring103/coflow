@@ -404,11 +404,7 @@ fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
 fn const_completion_items(build: &LspBuild) -> Vec<Value> {
     let mut items = Vec::new();
     if let Some(container) = build.schema() {
-        for constant in container
-            .module_ids()
-            .filter_map(|module_id| container.module_schema(module_id))
-            .flat_map(|module| &module.consts)
-        {
+        for constant in container.all_consts() {
             items.push(completion_item(
                 &constant.name,
                 COMPLETION_KIND_CONSTANT,
@@ -426,9 +422,7 @@ fn const_completion_items_for_type(build: &LspBuild, ty: &TypeRef) -> Vec<Value>
         return items;
     };
     for constant in container
-        .module_ids()
-        .filter_map(|module_id| container.module_schema(module_id))
-        .flat_map(|module| &module.consts)
+        .all_consts()
         .filter(|constant| const_value_assignable_to_type(&constant.value, ty))
     {
         items.push(completion_item(

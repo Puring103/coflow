@@ -212,7 +212,7 @@ pub(crate) fn build_ref_indexes(
             let Some(field) = context
                 .schema
                 .full_fields(record.actual_type())
-                .find(|field| field.name == *name)
+                .find(|field| field.name.as_str() == name)
             else {
                 continue;
             };
@@ -256,7 +256,7 @@ fn collect_ref_edges(
         return;
     }
     match (value, ty.non_nullable()) {
-        (CfdValue::Ref(key), CftSchemaTypeRef::Ref(expected_type)) => {
+        (CfdValue::Ref(key), CftSchemaTypeRef::RecordRef(expected_type)) => {
             let Some(expected_type_id) = context.schema.type_id(expected_type) else {
                 return;
             };
@@ -294,12 +294,12 @@ fn collect_ref_edges(
             out.by_host.entry(host).or_default().push(id);
             out.by_target.entry(target).or_default().push(id);
         }
-        (CfdValue::Object(boxed), CftSchemaTypeRef::Named(_)) => {
+        (CfdValue::Object(boxed), CftSchemaTypeRef::Object(_)) => {
             for (name, inner) in &boxed.fields {
                 let Some(field) = context
                     .schema
                     .full_fields(&boxed.actual_type)
-                    .find(|field| field.name == *name)
+                    .find(|field| field.name.as_str() == name)
                 else {
                     continue;
                 };

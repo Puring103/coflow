@@ -1,6 +1,6 @@
 use coflow_api::DiagnosticSet;
 use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord};
-use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchema};
+use coflow_cft::{CftField, CftSchema, CftSchemaDefaultValue, CftSchemaTypeRef};
 use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,7 +35,7 @@ pub(super) fn rewrite_cfd_records(
         ))
     })?;
     let fields = schema_fields
-        .map(|field| (field.name.clone(), field))
+        .map(|field| (field.name.to_string(), field))
         .collect::<BTreeMap<_, _>>();
     let mut replacements = Vec::new();
     for record in records
@@ -54,7 +54,7 @@ fn render_cfd_record(
     source: &str,
     record: &AstRecord,
     schema: &CftSchema,
-    fields: &BTreeMap<String, &CftFieldMeta>,
+    fields: &BTreeMap<String, &CftField>,
 ) -> String {
     let existing = record
         .fields
@@ -97,7 +97,7 @@ fn format_record_key(key: &str) -> String {
     }
 }
 
-fn default_cfd_value(schema: &CftSchema, field: &CftFieldMeta) -> String {
+fn default_cfd_value(schema: &CftSchema, field: &CftField) -> String {
     let value = field.default.as_ref().map_or_else(
         || value_from_type_default(schema, &field.ty_ref),
         |default| value_from_schema_default(schema, &field.ty_ref, default),
@@ -121,8 +121,8 @@ fn value_from_schema_default(
             variant,
             value,
         } => CfdValue::Enum(CfdEnumValue {
-            enum_name: enum_name.clone(),
-            variant: Some(variant.clone()),
+            enum_name: enum_name.to_string(),
+            variant: Some(variant.to_string()),
             value: *value,
         }),
         CftSchemaDefaultValue::EmptyArray => CfdValue::Array(Vec::new()),
@@ -136,43 +136,43 @@ fn value_from_type_default(schema: &CftSchema, ty: &CftSchemaTypeRef) -> CfdValu
         CftSchemaTypeRef::Float => CfdValue::Float(0.0),
         CftSchemaTypeRef::Bool => CfdValue::Bool(false),
         CftSchemaTypeRef::String => CfdValue::String(String::new()),
-        CftSchemaTypeRef::Ref(_) | CftSchemaTypeRef::Nullable(_) => CfdValue::Null,
+        CftSchemaTypeRef::RecordRef(_) | CftSchemaTypeRef::Nullable(_) => CfdValue::Null,
         CftSchemaTypeRef::Array(_) => CfdValue::Array(Vec::new()),
         CftSchemaTypeRef::Dict(_, _) => CfdValue::Dict(Vec::new()),
-        CftSchemaTypeRef::Named(name) if schema.is_schema_enum(name) => schema
-            .enum_meta(name)
-            .and_then(|enm| enm.all_variants.first())
+        CftSchemaTypeRef::Enum(name) => schema
+            .resolve_enum(name)
+            .and_then(|enm| enm.variants.first())
             .map_or_else(
                 || {
                     CfdValue::Enum(CfdEnumValue {
-                        enum_name: name.clone(),
+                        enum_name: name.to_string(),
                         variant: None,
                         value: 0,
                     })
                 },
                 |variant| {
                     CfdValue::Enum(CfdEnumValue {
-                        enum_name: name.clone(),
-                        variant: Some(variant.name.clone()),
+                        enum_name: name.to_string(),
+                        variant: Some(variant.name.to_string()),
                         value: variant.value,
                     })
                 },
             ),
-        CftSchemaTypeRef::Named(name) => {
+        CftSchemaTypeRef::Object(name) => {
             let fields = schema
                 .fields(name)
                 .map(|fields| {
                     fields
                         .map(|field| {
                             (
-                                field.name.clone(),
+                                field.name.to_string(),
                                 value_from_type_default(schema, &field.ty_ref),
                             )
                         })
                         .collect()
                 })
                 .unwrap_or_default();
-            CfdValue::Object(Box::new(CfdObject::new(name.clone(), fields)))
+            CfdValue::Object(Box::new(CfdObject::new(name.to_string(), fields)))
         }
     }
 }
@@ -231,7 +231,7 @@ pub(super) fn serialize_value_for_type(
             .clone()
             .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
         CfdValue::Ref(target_key)
-            if matches!(expected.map(non_nullable), Some(CftSchemaTypeRef::Ref(_))) =>
+            if matches!(expected.map(non_nullable), Some(CftSchemaTypeRef::RecordRef(_))) =>
         {
             format!("&{target_key}")
         }
