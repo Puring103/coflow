@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use coflow_api::FlatDiagnostic;
+use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use coflow_data_model::CfdPathSegment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -42,11 +43,15 @@ pub enum DataPatchOp {
         value: Value,
     },
     SetDimensionValue {
-        coordinate: crate::DimensionValueSelector,
+        coordinate: PatchDimensionValueSelector,
+        #[serde(default)]
+        expected: crate::DimensionValueExpectation,
         value: Value,
     },
     ClearDimensionValue {
-        coordinate: crate::DimensionValueSelector,
+        coordinate: PatchDimensionValueSelector,
+        #[serde(default)]
+        expected: crate::DimensionValueExpectation,
     },
     RenameRecord {
         record: PatchRecordSelector,
@@ -66,6 +71,29 @@ pub struct PatchRecordSelector {
     #[serde(rename = "type")]
     pub actual_type: String,
     pub key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatchDimensionValueSelector {
+    pub record: PatchRecordSelector,
+    pub field: FieldName,
+    pub dimension: DimensionName,
+    pub variant: VariantName,
+    #[serde(default)]
+    pub path: Vec<CfdPathSegment>,
+}
+
+impl PatchDimensionValueSelector {
+    fn into_coordinate(self) -> Result<crate::DimensionValueCoordinate, coflow_cft::CftNameError> {
+        Ok(crate::DimensionValueCoordinate {
+            actual_type: TypeName::new(self.record.actual_type)?,
+            record_key: RecordKey::new(self.record.key)?,
+            field: self.field,
+            dimension: self.dimension,
+            variant: self.variant,
+            path: self.path,
+        })
+    }
 }
 
 pub type PatchPathSegment = CfdPathSegment;
@@ -110,7 +138,24 @@ impl WriteProjectSession {
     ///
     pub fn apply_data_patch(&mut self, request: DataPatchRequest) -> DataPatchReport {
         let original_ops = request.ops.clone();
-        let mutation_request = request.into_mutation_request();
+        let mutation_request = match request.into_mutation_request() {
+            Ok(request) => request,
+            Err((index, op, diagnostics)) => {
+                return DataPatchReport {
+                    write_ok: false,
+                    check_ok: false,
+                    applied: Vec::new(),
+                    failed: vec![DataPatchFailedOp {
+                        index,
+                        op,
+                        diagnostics: diagnostics.flat_diagnostics(),
+                    }],
+                    affected_files: Vec::new(),
+                    remaining_ops: original_ops,
+                    diagnostics: Vec::new(),
+                };
+            }
+        };
         let mutation_report = self.apply_mutation(mutation_request);
         let remaining_ops =
             DataPatchRequest::remaining_after_failure(&original_ops, &mutation_report);
@@ -119,15 +164,29 @@ impl WriteProjectSession {
 }
 
 impl DataPatchRequest {
-    fn into_mutation_request(self) -> MutationRequest {
-        MutationRequest {
-            stop_on_write_error: self.stop_on_write_error,
-            ops: self
-                .ops
-                .into_iter()
-                .map(DataPatchOp::into_mutation_op)
-                .collect(),
+    fn into_mutation_request(
+        self,
+    ) -> Result<MutationRequest, (usize, String, coflow_api::DiagnosticSet)> {
+        let mut ops = Vec::with_capacity(self.ops.len());
+        for (index, op) in self.ops.into_iter().enumerate() {
+            let op_name = op.name().to_string();
+            let mutation = op.into_mutation_op().map_err(|error| {
+                (
+                    index,
+                    op_name,
+                    coflow_api::DiagnosticSet::one(coflow_api::Diagnostic::error(
+                        "PATCH-DIMENSION-COORDINATE",
+                        "PATCH",
+                        error.to_string(),
+                    )),
+                )
+            })?;
+            ops.push(mutation);
         }
+        Ok(MutationRequest {
+            stop_on_write_error: self.stop_on_write_error,
+            ops,
+        })
     }
 
     fn remaining_after_failure(ops: &[DataPatchOp], report: &MutationReport) -> Vec<DataPatchOp> {
@@ -143,8 +202,19 @@ impl DataPatchRequest {
 }
 
 impl DataPatchOp {
-    fn into_mutation_op(self) -> MutationOp {
+    const fn name(&self) -> &'static str {
         match self {
+            Self::InsertRecord { .. } => "insert_record",
+            Self::SetField { .. } => "set_field",
+            Self::SetDimensionValue { .. } => "set_dimension_value",
+            Self::ClearDimensionValue { .. } => "clear_dimension_value",
+            Self::RenameRecord { .. } => "rename_record",
+            Self::DeleteRecord { .. } => "delete_record",
+        }
+    }
+
+    fn into_mutation_op(self) -> Result<MutationOp, coflow_cft::CftNameError> {
+        Ok(match self {
             Self::InsertRecord {
                 file,
                 sheet,
@@ -171,13 +241,22 @@ impl DataPatchOp {
                 path,
                 value: MutationValue::Json(value),
             },
-            Self::SetDimensionValue { coordinate, value } => MutationOp::SetDimensionValue {
+            Self::SetDimensionValue {
                 coordinate,
+                expected,
+                value,
+            } => MutationOp::SetDimensionValue {
+                coordinate: coordinate.into_coordinate()?,
+                expected,
                 value: MutationValue::Json(value),
             },
-            Self::ClearDimensionValue { coordinate } => {
-                MutationOp::ClearDimensionValue { coordinate }
-            }
+            Self::ClearDimensionValue {
+                coordinate,
+                expected,
+            } => MutationOp::ClearDimensionValue {
+                coordinate: coordinate.into_coordinate()?,
+                expected,
+            },
             Self::RenameRecord {
                 record,
                 file,
@@ -191,7 +270,7 @@ impl DataPatchOp {
                 record: record.into_coordinate(),
                 file,
             },
-        }
+        })
     }
 }
 

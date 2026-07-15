@@ -4,16 +4,6 @@ use crate::{CftSchema, CftSchemaTypeRef, CftType, EnumName, TypeName};
 
 impl CftSchema {
     #[must_use]
-    pub fn type_is_struct(&self, type_name: &str) -> bool {
-        self.types.get(type_name).is_some_and(|ty| ty.is_struct)
-    }
-
-    #[must_use]
-    pub fn type_id_as_enum(&self, type_name: &str) -> Option<EnumName> {
-        self.types.get(type_name)?.id_as_enum.clone()
-    }
-
-    #[must_use]
     pub fn inherited_id_as_enum(&self, type_name: &str) -> Option<EnumName> {
         let mut current = Some(type_name);
         while let Some(name) = current {

@@ -3,7 +3,7 @@
 use coflow_project::Project;
 use coflow_runtime::{
     CreateFieldSource, CreateRequiredInput, DataPatchOp, DataPatchRequest, DefaultMaterialization,
-    DimensionValueSelector, MutationOp, MutationRequest, MutationValue, PatchPathSegment,
+    MutationOp, MutationRequest, MutationValue, PatchDimensionValueSelector, PatchPathSegment,
     PatchRecordSelector, RecordCoordinate, Runtime,
 };
 use serde_json::json;
@@ -368,6 +368,32 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
 }
 
 #[test]
+fn dimension_patch_preserves_record_selector_json_shape() {
+    let json = json!({
+        "stop_on_write_error": true,
+        "ops": [{
+            "op": "set_dimension_value",
+            "coordinate": {
+                "record": { "type": "Item", "key": "potion" },
+                "field": "name",
+                "dimension": "language",
+                "variant": "zh",
+                "path": []
+            },
+            "value": "治疗药水"
+        }]
+    });
+
+    let request: DataPatchRequest =
+        serde_json::from_value(json.clone()).expect("deserialize existing patch shape");
+    let serialized = serde_json::to_value(request).expect("serialize patch");
+    assert_eq!(
+        serialized["ops"][0]["coordinate"],
+        json["ops"][0]["coordinate"]
+    );
+}
+
+#[test]
 fn patch_writes_and_clears_record_owned_dimension_values() {
     let root = std::env::temp_dir().join(format!(
         "coflow-data-patch-dimension-value-{}",
@@ -376,11 +402,14 @@ fn patch_writes_and_clears_record_owned_dimension_values() {
     let _ = std::fs::remove_dir_all(&root);
     write_dimension_project(&root);
     let mut session = session(&root);
-    let selector = DimensionValueSelector {
-        record: RecordCoordinate::new("Item", "potion"),
-        field: "name".to_string(),
-        dimension: "language".to_string(),
-        variant: "zh".to_string(),
+    let selector = PatchDimensionValueSelector {
+        record: PatchRecordSelector {
+            actual_type: "Item".to_string(),
+            key: "potion".to_string(),
+        },
+        field: coflow_cft::FieldName::new("name").unwrap(),
+        dimension: coflow_cft::DimensionName::new("language").unwrap(),
+        variant: coflow_cft::VariantName::new("zh").unwrap(),
         path: Vec::new(),
     };
 
@@ -388,6 +417,9 @@ fn patch_writes_and_clears_record_owned_dimension_values() {
         stop_on_write_error: true,
         ops: vec![DataPatchOp::SetDimensionValue {
             coordinate: selector.clone(),
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                coflow_data_model::CfdValue::String("药水".to_string()),
+            )),
             value: json!("治疗药水"),
         }],
     });
@@ -397,10 +429,35 @@ fn patch_writes_and_clears_record_owned_dimension_values() {
         .unwrap()
         .contains("治疗药水"));
 
+    let dimension_file = root.join("data/dimensions/language/Item_name.csv");
+    let before_stale_write = std::fs::read_to_string(&dimension_file).unwrap();
+    let stale = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: selector.clone(),
+            expected: coflow_runtime::DimensionValueExpectation::Missing,
+            value: json!("过期写入"),
+        }],
+    });
+    assert!(!stale.write_ok);
+    assert!(stale
+        .failed
+        .iter()
+        .flat_map(|failure| &failure.diagnostics)
+        .any(|diagnostic| diagnostic.code == "MUTATION-DIMENSION-STALE"));
+    assert_eq!(
+        std::fs::read_to_string(&dimension_file).unwrap(),
+        before_stale_write,
+        "stale dimension writes must not touch the managed source",
+    );
+
     let explicit_null = session.apply_data_patch(DataPatchRequest {
         stop_on_write_error: true,
         ops: vec![DataPatchOp::SetDimensionValue {
             coordinate: selector.clone(),
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                coflow_data_model::CfdValue::String("治疗药水".to_string()),
+            )),
             value: serde_json::Value::Null,
         }],
     });
@@ -412,13 +469,30 @@ fn patch_writes_and_clears_record_owned_dimension_values() {
     let clear = session.apply_data_patch(DataPatchRequest {
         stop_on_write_error: true,
         ops: vec![DataPatchOp::ClearDimensionValue {
-            coordinate: selector,
+            coordinate: selector.clone(),
+            expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
+                coflow_data_model::CfdValue::Null,
+            )),
         }],
     });
     assert!(clear.write_ok, "diagnostics: {:?}", clear.diagnostics);
     assert!(std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
         .unwrap()
         .contains("potion,Potion,\n"));
+
+    let restore_from_missing = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: selector,
+            expected: coflow_runtime::DimensionValueExpectation::Missing,
+            value: json!("恢复值"),
+        }],
+    });
+    assert!(
+        restore_from_missing.write_ok,
+        "diagnostics: {:?}",
+        restore_from_missing.diagnostics
+    );
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -451,6 +525,54 @@ fn rename_record_rewrites_refs_in_dimension_overlays() {
     )
     .expect("read dimension source");
     assert!(dimension.contains("starter,&elixir,&elixir"), "{dimension}");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn rename_and_delete_owner_record_rewrite_dimension_rows() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-owner-lifecycle-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_dimension_project(&root);
+    let mut session = session(&root);
+    let dimension_file = root.join("data/dimensions/language/Item_name.csv");
+
+    let renamed = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::RenameRecord {
+            record: PatchRecordSelector {
+                actual_type: "Item".to_string(),
+                key: "potion".to_string(),
+            },
+            file: None,
+            new_key: "elixir".to_string(),
+        }],
+    });
+    assert!(renamed.write_ok, "diagnostics: {:?}", renamed.diagnostics);
+    assert!(renamed
+        .affected_files
+        .iter()
+        .any(|path| path == "data/dimensions/language/Item_name.csv"));
+    let after_rename = std::fs::read_to_string(&dimension_file).expect("read renamed dimension");
+    assert!(after_rename.contains("elixir,Potion,药水"), "{after_rename}");
+    assert!(!after_rename.contains("potion,"), "{after_rename}");
+
+    let deleted = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::DeleteRecord {
+            record: PatchRecordSelector {
+                actual_type: "Item".to_string(),
+                key: "elixir".to_string(),
+            },
+            file: None,
+        }],
+    });
+    assert!(deleted.write_ok, "diagnostics: {:?}", deleted.diagnostics);
+    let after_delete = std::fs::read_to_string(&dimension_file).expect("read deleted dimension");
+    assert!(!after_delete.contains("elixir,"), "{after_delete}");
+
     let _ = std::fs::remove_dir_all(root);
 }
 

@@ -55,8 +55,7 @@ impl DimensionRoundView {
                 continue;
             };
             let fields = type_meta
-                .all_fields
-                .iter()
+                .all_fields()
                 .filter(|field| {
                     field
                         .dimension

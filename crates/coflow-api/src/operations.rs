@@ -218,6 +218,14 @@ pub struct WriteDimensionValueRequest<'a> {
     pub new_value: Option<&'a CfdValue>,
 }
 
+#[derive(Debug, Clone)]
+pub struct RewriteDimensionRecordRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub schema: DimensionSourceSchema<'a>,
+    pub old_key: &'a RecordKey,
+    pub new_key: Option<&'a RecordKey>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DimensionSourceEntry {
     pub key: String,
@@ -261,6 +269,16 @@ pub trait DimensionSourceManager: Send + Sync {
         _request: &WriteDimensionValueRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
         Err(unsupported_table_operation("writing dimension values"))
+    }
+
+    /// Rename or delete one owner-record row while preserving its variants.
+    /// `None` deletes the row; `Some` replaces its record key.
+    fn rewrite_dimension_record(
+        &self,
+        _ctx: TableContext<'_>,
+        _request: &RewriteDimensionRecordRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        Err(unsupported_table_operation("rewriting dimension records"))
     }
 
     /// Decodes provider options for a generated dimension source.

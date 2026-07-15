@@ -74,8 +74,8 @@ impl<'a> DataModelCompilerContext<'a> {
 
     fn build_domain_index(cft_view: &CftSchema) -> CfdDomainIndex {
         let type_names = cft_view
-            .type_names()
-            .map(ToString::to_string)
+            .all_types()
+            .map(|ty| ty.name.to_string())
             .collect::<Vec<_>>();
         let type_id_by_name = type_names
             .iter()
@@ -147,10 +147,9 @@ impl<'a> DataModelCompilerContext<'a> {
 
     pub(crate) fn full_fields(&self, type_name: &str) -> impl Iterator<Item = &CftField> {
         self.cft
-            .full_fields(type_name)
-            .unwrap_or(&[])
-            .iter()
-            .map(AsRef::as_ref)
+            .resolve_type(type_name)
+            .into_iter()
+            .flat_map(CftType::all_fields)
     }
 
     pub(crate) fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {

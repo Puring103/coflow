@@ -243,7 +243,7 @@ fn root_field(path: &CfdPath) -> Option<&str> {
 
 fn path_column(path: &CfdPath, field_columns: &BTreeMap<Vec<String>, usize>) -> Option<usize> {
     let mut prefix = Vec::new();
-    let mut column = None;
+    let mut column = field_columns.get(&prefix).copied();
     for segment in &path.segments {
         let CfdPathSegment::Field(field) = segment else {
             break;

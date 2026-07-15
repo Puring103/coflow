@@ -2,7 +2,6 @@ use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
 use coflow_cft::{CftEnum, CftField, CftSchema, CftSchemaTypeRef, CftType};
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct CsharpLoweringPlan<'a> {
@@ -11,7 +10,6 @@ pub struct CsharpLoweringPlan<'a> {
     schema: &'a CftSchema,
     types: Vec<&'a CftType>,
     enums: Vec<&'a CftEnum>,
-    fields: BTreeMap<&'a str, &'a [Arc<CftField>]>,
     csharp_types: BTreeMap<String, String>,
     csharp_enums: BTreeMap<String, String>,
     declared_tables: Vec<String>,
@@ -24,7 +22,6 @@ pub struct CsharpLoweringPlan<'a> {
     id_as_enum_names: BTreeSet<String>,
     type_id_as_enum: BTreeMap<String, String>,
     assignable_types: BTreeMap<String, Vec<String>>,
-    struct_types: BTreeSet<String>,
     types_with_descendants: BTreeSet<String>,
     uses_localization: bool,
 }
@@ -48,7 +45,6 @@ impl<'a> CsharpLoweringPlan<'a> {
             .collect::<BTreeMap<_, _>>();
 
         let types = schema.all_types().collect::<Vec<_>>();
-        let mut fields = BTreeMap::new();
         let mut csharp_types = BTreeMap::new();
         let mut declared_tables = Vec::new();
         let mut singleton_types = Vec::new();
@@ -58,15 +54,10 @@ impl<'a> CsharpLoweringPlan<'a> {
         let mut id_as_enum_names = BTreeSet::new();
         let mut type_id_as_enum = BTreeMap::new();
         let mut assignable_types = BTreeMap::new();
-        let mut struct_types = BTreeSet::new();
         let mut types_with_descendants = BTreeSet::new();
         let mut uses_localization = false;
 
         for ty in &types {
-            let type_fields = schema.fields_slice(&ty.name).ok_or_else(|| {
-                CsharpCodegenError::new(format!("unknown CFT type `{}`", ty.name))
-            })?;
-            fields.insert(ty.name.as_str(), type_fields);
             csharp_types.insert(ty.name.to_string(), csharp_type_name(&ty.name));
             if !ty.is_abstract && !ty.is_singleton {
                 declared_tables.push(ty.name.to_string());
@@ -77,9 +68,6 @@ impl<'a> CsharpLoweringPlan<'a> {
             if schema.range_is_polymorphic(&ty.name) {
                 polymorphic_types.push(ty.name.to_string());
                 polymorphic_type_set.insert(ty.name.to_string());
-            }
-            if schema.type_is_struct(&ty.name) {
-                struct_types.insert(ty.name.to_string());
             }
             if let Some(parent) = &ty.parent {
                 types_with_descendants.insert(parent.to_string());
@@ -95,7 +83,7 @@ impl<'a> CsharpLoweringPlan<'a> {
                 ty.name.to_string(),
                 assignable.into_iter().map(|name| name.to_string()).collect(),
             );
-            for field in &ty.own_fields {
+            for field in ty.own_fields() {
                 uses_localization |= field.dimension.is_some();
                 collect_ref_targets(&field.ty_ref, &mut ref_targets);
             }
@@ -114,7 +102,6 @@ impl<'a> CsharpLoweringPlan<'a> {
             schema,
             types,
             enums,
-            fields,
             csharp_types,
             csharp_enums,
             declared_tables,
@@ -127,7 +114,6 @@ impl<'a> CsharpLoweringPlan<'a> {
             id_as_enum_names,
             type_id_as_enum,
             assignable_types,
-            struct_types,
             types_with_descendants,
             uses_localization,
         })
@@ -175,10 +161,9 @@ impl<'a> CsharpLoweringPlan<'a> {
         &self,
         name: &str,
     ) -> Result<impl Iterator<Item = &CftField>, CsharpCodegenError> {
-        self.fields
-            .get(name)
-            .copied()
-            .map(|fields| fields.iter().map(AsRef::as_ref))
+        self.schema
+            .resolve_type(name)
+            .map(CftType::all_fields)
             .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{name}`")))
     }
 
@@ -256,7 +241,7 @@ impl<'a> CsharpLoweringPlan<'a> {
     }
 
     pub fn type_is_struct(&self, ty: &CftType) -> bool {
-        self.struct_types.contains(ty.name.as_str())
+        ty.is_struct
     }
 }
 

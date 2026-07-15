@@ -102,7 +102,7 @@ impl<'a> TypeParser<'a> {
                     "reference type is missing target type",
                 ));
             }
-            if !self.schema.has_type(&name) {
+            if self.schema.resolve_type(&name).is_none() {
                 return Err(invalid_declared_type(format!(
                     "reference target `{name}` is not an object type"
                 )));
@@ -140,7 +140,7 @@ impl<'a> TypeParser<'a> {
             "float" => CellType::Float,
             "bool" => CellType::Bool,
             "string" => CellType::String,
-            other if self.schema.is_schema_enum(other) => CellType::Enum(other.to_string()),
+            other if self.schema.resolve_enum(other).is_some() => CellType::Enum(other.to_string()),
             other => CellType::Type(other.to_string()),
         })
     }
@@ -198,7 +198,7 @@ pub(super) fn full_fields(
     schema: &CftSchema,
     type_name: &str,
 ) -> Result<Vec<FieldMeta>, CellValueDiagnostics> {
-    let Some(fields) = schema.fields(type_name) else {
+    let Some(schema_type) = schema.resolve_type(type_name) else {
         return Err(CellValueDiagnostics {
             diagnostics: vec![CellValueDiagnostic {
                 code: CellValueErrorCode::UnknownType,
@@ -206,7 +206,10 @@ pub(super) fn full_fields(
             }],
         });
     };
-    fields.map(|field| field_meta(schema, field)).collect()
+    schema_type
+        .all_fields()
+        .map(|field| field_meta(schema, field))
+        .collect()
 }
 
 fn field_meta(_: &CftSchema, field: &CftField) -> Result<FieldMeta, CellValueDiagnostics> {

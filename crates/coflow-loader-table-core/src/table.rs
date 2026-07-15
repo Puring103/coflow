@@ -384,7 +384,8 @@ fn full_field_types(
     type_name: &str,
 ) -> Option<BTreeMap<String, CftSchemaTypeRef>> {
     let fields = schema
-        .fields(type_name)?
+        .resolve_type(type_name)?
+        .all_fields()
         .map(|field| (field.name.to_string(), field.ty_ref.clone()))
         .collect();
     Some(fields)

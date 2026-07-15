@@ -19,6 +19,9 @@ fn export_bindings() {
     coflow_api::WriterCapabilities::export_all().expect("export WriterCapabilities");
     coflow_runtime::FileTreeNode::export_all().expect("export FileTreeNode");
     coflow_runtime::DimensionInfo::export_all().expect("export DimensionInfo");
+    coflow_runtime::DimensionValueCoordinate::export_all()
+        .expect("export DimensionValueCoordinate");
+    coflow_runtime::DimensionValueView::export_all().expect("export DimensionValueView");
     coflow_runtime::WriteOutcome::export_all().expect("export WriteOutcome");
     coflow_project::DimensionConfig::export_all().expect("export DimensionConfig");
     // Editor composition views
@@ -30,6 +33,7 @@ fn export_bindings() {
     t::FieldAnnotation::export_all().expect("export FieldAnnotation");
     t::SpreadInfo::export_all().expect("export SpreadInfo");
     t::WriteFieldOutcome::export_all().expect("export WriteFieldOutcome");
+    t::WriteDimensionValueOutcome::export_all().expect("export WriteDimensionValueOutcome");
     t::CollectionEdit::export_all().expect("export CollectionEdit");
     t::RenameRecordOutcome::export_all().expect("export RenameRecordOutcome");
     t::InsertRecordOutcome::export_all().expect("export InsertRecordOutcome");

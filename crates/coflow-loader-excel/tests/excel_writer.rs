@@ -25,6 +25,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
+fn empty_schema() -> CftSchema {
+    let modules = parse_modules(std::iter::empty::<CftFile>());
+    build_schema(
+        &modules,
+        &CftDimensionInputs::new(std::iter::empty::<(String, Vec<String>)>()),
+    )
+    .expect("compile empty test schema")
+}
+
 fn temp_xlsx(name: &str) -> PathBuf {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join("coflow-excel-writer");
@@ -196,7 +205,7 @@ fn writer_capabilities_are_derived_from_workbook_format() {
 fn writer_rejects_xlsm_and_xls_before_mutating_workbook_bytes() {
     let seed = temp_xlsx("read-only-format-seed");
     write_seed_workbook(&seed).expect("seed workbook");
-    let schema = CftSchema::empty();
+    let schema = empty_schema();
     let schema = &schema;
     let new_value = CfdValue::String("Changed".to_string());
     let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
@@ -359,7 +368,7 @@ fn writes_string_cell_and_preserves_neighbors() {
     let path = temp_xlsx("scalar");
     write_seed_workbook(&path).expect("seed");
 
-    let schema = CftSchema::empty();
+    let schema = empty_schema();
 
     let schema = &schema;
     let source = empty_source(&path);
@@ -400,7 +409,7 @@ fn writes_numeric_cell_as_text() {
     let path = temp_xlsx("number");
     write_seed_workbook(&path).expect("seed");
 
-    let schema = CftSchema::empty();
+    let schema = empty_schema();
 
     let schema = &schema;
     let source = empty_source(&path);
@@ -438,7 +447,7 @@ fn writes_record_key_cell() {
     let path = temp_xlsx("key");
     write_seed_workbook(&path).expect("seed");
 
-    let schema = CftSchema::empty();
+    let schema = empty_schema();
 
     let schema = &schema;
     let source = empty_source(&path);
@@ -581,7 +590,7 @@ fn rejects_missing_file_with_friendly_error() {
     if path.exists() {
         std::fs::remove_file(&path).expect("rm pre-existing");
     }
-    let schema = CftSchema::empty();
+    let schema = empty_schema();
     let schema = &schema;
     let source = empty_source(&path);
     let origin = origin_for_sword(&path);
@@ -621,7 +630,7 @@ fn refuses_field_write_when_row_key_changed() {
         .set_value("other");
     umya_spreadsheet::writer::xlsx::write(&workbook, &path).expect("save workbook");
 
-    let schema = CftSchema::empty();
+    let schema = empty_schema();
 
     let schema = &schema;
     let source = empty_source(&path);
@@ -754,7 +763,7 @@ fn deletes_record_row() {
     let path = temp_xlsx("delete");
     write_seed_workbook(&path).expect("seed");
 
-    let schema = CftSchema::empty();
+    let schema = empty_schema();
 
     let schema = &schema;
     let source = empty_source(&path);
@@ -785,7 +794,7 @@ fn refuses_delete_when_row_key_changed() {
     let path = temp_xlsx("delete-key-guard");
     write_seed_workbook(&path).expect("seed");
 
-    let schema = CftSchema::empty();
+    let schema = empty_schema();
 
     let schema = &schema;
     let source = empty_source(&path);

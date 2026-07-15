@@ -218,7 +218,7 @@ fn validate_schema_names(
             validate_ident("parent type", parent, diagnostics);
             validate_ident("parent type", &csharp_type_name(parent), diagnostics);
         }
-        for field in &schema_type.own_fields {
+        for field in schema_type.own_fields() {
             let property_name = csharp_type_name(&field.name);
             validate_ident("field property", &property_name, diagnostics);
         }

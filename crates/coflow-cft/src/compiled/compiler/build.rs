@@ -118,7 +118,6 @@ impl SchemaCompiler<'_> {
                 all_fields,
                 field_by_name,
                 check: info.def.check.as_ref().map(convert_check_block),
-                dimension_checks: BTreeMap::new(),
                 span: info.def.span,
             };
             types.insert(type_name, schema);
@@ -149,7 +148,6 @@ impl SchemaCompiler<'_> {
             declaring_type: owner_type.clone(),
             name: FieldName::from_validated(field.name.clone()),
             ty_ref: build_schema_type_ref(&field.ty, &|name| self.enums.contains_key(name)),
-            has_default: field.default.is_some(),
             default: field
                 .default
                 .as_ref()

@@ -1,5 +1,7 @@
-use super::{CftSchema, LocatedBudgetError};
-use crate::{CftSchemaCheckBlock, CftSchemaTypeRef, CftType, FieldName, TypeName};
+use super::{dimension_checks, CftSchema, LocatedBudgetError};
+use crate::{
+    CftSchemaCheckBlock, CftSchemaTypeRef, CftType, DimensionName, FieldName, TypeName,
+};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -7,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 pub struct TypedCheckPlan {
     owners_by_actual: BTreeMap<TypeName, Vec<TypeName>>,
     nested_fields_by_actual: BTreeMap<TypeName, BTreeSet<FieldName>>,
+    dimension_checks_by_owner: BTreeMap<TypeName, BTreeMap<DimensionName, CftSchemaCheckBlock>>,
 }
 
 impl TypedCheckPlan {
@@ -44,9 +47,19 @@ impl TypedCheckPlan {
             owners_by_actual.insert(actual_type.clone(), owners);
         }
         let nested_fields_by_actual = compile_nested_fields(types, &owners_by_actual, budget)?;
+        let dimension_checks_by_owner = types
+            .keys()
+            .map(|name| {
+                (
+                    name.clone(),
+                    dimension_checks::dimension_checks_for_type(types, name),
+                )
+            })
+            .collect();
         Ok(Self {
             owners_by_actual,
             nested_fields_by_actual,
+            dimension_checks_by_owner,
         })
     }
 
@@ -60,6 +73,14 @@ impl TypedCheckPlan {
         self.nested_fields_by_actual
             .get(actual_type)
             .is_some_and(|fields| fields.contains(field_name))
+    }
+
+    fn dimension_check(
+        &self,
+        owner: &TypeName,
+        dimension: &str,
+    ) -> Option<&CftSchemaCheckBlock> {
+        self.dimension_checks_by_owner.get(owner)?.get(dimension)
     }
 }
 
@@ -195,7 +216,7 @@ impl<'schema> Iterator for TypedCheckSchedule<'schema, '_> {
         for owner in self.owners.by_ref() {
             let meta = self.schema.types.get(owner)?;
             if let Some(dimension) = self.dimension {
-                if let Some(check) = meta.dimension_checks.get(dimension) {
+                if let Some(check) = self.schema.typed_checks.dimension_check(owner, dimension) {
                     return Some(check);
                 }
             } else if let Some(check) = meta.check.as_ref() {

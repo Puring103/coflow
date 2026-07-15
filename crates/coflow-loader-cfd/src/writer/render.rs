@@ -28,13 +28,14 @@ pub(super) fn rewrite_cfd_records(
     actual_type: &str,
     schema: &CftSchema,
 ) -> Result<String, DiagnosticSet> {
-    let schema_fields = schema.fields(actual_type).ok_or_else(|| {
+    let schema_type = schema.resolve_type(actual_type).ok_or_else(|| {
         DiagnosticSet::one(diag(
             "CFD-TABLE",
             format!("unknown CFT type `{actual_type}`"),
         ))
     })?;
-    let fields = schema_fields
+    let fields = schema_type
+        .all_fields()
         .map(|field| (field.name.to_string(), field))
         .collect::<BTreeMap<_, _>>();
     let mut replacements = Vec::new();
@@ -160,9 +161,10 @@ fn value_from_type_default(schema: &CftSchema, ty: &CftSchemaTypeRef) -> CfdValu
             ),
         CftSchemaTypeRef::Object(name) => {
             let fields = schema
-                .fields(name)
-                .map(|fields| {
-                    fields
+                .resolve_type(name)
+                .map(|schema_type| {
+                    schema_type
+                        .all_fields()
                         .map(|field| {
                             (
                                 field.name.to_string(),

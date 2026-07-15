@@ -1,11 +1,14 @@
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import type { DeleteRecordOutcome } from '../bindings/DeleteRecordOutcome'
+import type { DimensionValueCoordinate } from '../bindings/DimensionValueCoordinate'
+import type { DimensionValueState } from '../bindings/DimensionValueState'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { InsertRecordOutcome } from '../bindings/InsertRecordOutcome'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { RenameRecordOutcome } from '../bindings/RenameRecordOutcome'
 import type { WriteFieldOutcome } from '../bindings/WriteFieldOutcome'
+import type { WriteDimensionValueOutcome } from '../bindings/WriteDimensionValueOutcome'
 import {
   cloneValue,
   deletedSnapshotValue,
@@ -30,6 +33,12 @@ export interface EditorMutationBackend {
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
   ) => Promise<WriteFieldOutcome>
+  writeDimensionValue: (
+    sessionId: number,
+    coordinate: DimensionValueCoordinate,
+    expectedValue: DimensionValueState,
+    newValue: DimensionValueState,
+  ) => Promise<WriteDimensionValueOutcome>
   editCollection: (
     sessionId: number,
     coordinate: RecordCoordinate,
@@ -77,11 +86,21 @@ export interface EditorMutationPort {
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
   ) => OptimisticFieldWrite
+  optimisticWriteDimension?: (
+    coordinate: DimensionValueCoordinate,
+    newValue: DimensionValueState,
+  ) => OptimisticDimensionWrite
 }
 
 export interface OptimisticFieldWrite {
   changed: boolean
   row?: RecordRow
+  reapply: () => void
+  rollback: () => void
+}
+
+export interface OptimisticDimensionWrite {
+  changed: boolean
   reapply: () => void
   rollback: () => void
 }
@@ -98,6 +117,7 @@ interface MutationOptions {
 
 export class EditorMutationController {
   private readonly pendingFieldWrites = new Map<string, PendingFieldWrite>()
+  private readonly pendingDimensionWrites = new Map<string, PendingDimensionWrite>()
 
   constructor(
     private readonly backend: EditorMutationBackend,
@@ -148,6 +168,44 @@ export class EditorMutationController {
     return result
   }
 
+  writeDimensionValue(
+    filePath: string,
+    coordinate: DimensionValueCoordinate,
+    expectedValue: DimensionValueState,
+    newValue: DimensionValueState,
+  ): Promise<DimensionValueState | undefined> {
+    const optimistic = this.port.optimisticWriteDimension?.(coordinate, newValue)
+    if (optimistic && !optimistic.changed) return Promise.resolve(newValue)
+    const key = dimensionWriteKey(coordinate)
+    const queuedGeneration = this.port.currentGeneration()
+    const queuedHistoryEpoch = this.history.currentEpoch()
+    const existing = this.pendingDimensionWrites.get(key)
+    if (
+      existing
+      && sameGeneration(existing.queuedGeneration, queuedGeneration)
+      && existing.queuedHistoryEpoch === queuedHistoryEpoch
+    ) {
+      existing.newValue = cloneDimensionState(newValue)
+      if (optimistic) existing.optimistic.push(optimistic)
+      return new Promise(resolve => existing.resolve.push(resolve))
+    }
+    const pending: PendingDimensionWrite = {
+      key,
+      filePath,
+      coordinate,
+      expectedValue: cloneDimensionState(expectedValue),
+      newValue: cloneDimensionState(newValue),
+      optimistic: optimistic ? [optimistic] : [],
+      resolve: [],
+      queuedGeneration,
+      queuedHistoryEpoch,
+    }
+    this.pendingDimensionWrites.set(key, pending)
+    const result = new Promise<DimensionValueState | undefined>(resolve => pending.resolve.push(resolve))
+    queueMicrotask(() => this.flushDimensionWrite(pending))
+    return result
+  }
+
   private async flushFieldWrite(pending: PendingFieldWrite): Promise<void> {
     const result = await this.enqueueMutationFor(
       pending.queuedGeneration,
@@ -174,8 +232,40 @@ export class EditorMutationController {
     for (const resolve of pending.resolve) resolve(row)
   }
 
+  private async flushDimensionWrite(pending: PendingDimensionWrite): Promise<void> {
+    const result = await this.enqueueMutationFor(
+      pending.queuedGeneration,
+      pending.queuedHistoryEpoch,
+      superseded(),
+      async () => {
+        if (this.pendingDimensionWrites.get(pending.key) === pending) {
+          this.pendingDimensionWrites.delete(pending.key)
+        }
+        return this.writeDimensionValueInternal(
+          pending.filePath,
+          pending.coordinate,
+          pending.expectedValue,
+          pending.newValue,
+          { recordHistory: true },
+        )
+      },
+    )
+    if (result.status !== 'committed') {
+      for (const projection of [...pending.optimistic].reverse()) projection.rollback()
+    }
+    const value = committedValue(result)
+    for (const resolve of pending.resolve) resolve(value)
+  }
+
   private reapplyPendingFieldWrites(): void {
     for (const pending of this.pendingFieldWrites.values()) {
+      if (!this.queuedMutationIsCurrent(
+        pending.queuedGeneration,
+        pending.queuedHistoryEpoch,
+      )) continue
+      for (const projection of pending.optimistic) projection.reapply()
+    }
+    for (const pending of this.pendingDimensionWrites.values()) {
       if (!this.queuedMutationIsCurrent(
         pending.queuedGeneration,
         pending.queuedHistoryEpoch,
@@ -264,6 +354,15 @@ export class EditorMutationController {
   async undo(): Promise<void> {
     await this.history.undo(entry => this.executeWithPendingFieldReplay<MutationResult<unknown>>(
       () => {
+        if (entry.kind === 'dimension') {
+          return this.writeDimensionValueInternal(
+            entry.filePath,
+            entry.coordinate,
+            entry.newValue,
+            entry.oldValue,
+            { recordHistory: false },
+          )
+        }
         if (entry.kind === 'field') {
           return this.writeFieldInternal(
             entry.filePath,
@@ -294,6 +393,15 @@ export class EditorMutationController {
   async redo(): Promise<void> {
     await this.history.redo(entry => this.executeWithPendingFieldReplay<MutationResult<unknown>>(
       () => {
+        if (entry.kind === 'dimension') {
+          return this.writeDimensionValueInternal(
+            entry.filePath,
+            entry.coordinate,
+            entry.oldValue,
+            entry.newValue,
+            { recordHistory: false },
+          )
+        }
         if (entry.kind === 'field') {
           return this.writeFieldInternal(
             entry.filePath,
@@ -397,6 +505,41 @@ export class EditorMutationController {
         return outcome.row
       },
       fieldWriteChangesTopology,
+    )
+  }
+
+  private writeDimensionValueInternal(
+    filePath: string,
+    coordinate: DimensionValueCoordinate,
+    expectedValue: DimensionValueState,
+    newValue: DimensionValueState,
+    options: MutationOptions,
+  ): Promise<MutationResult<DimensionValueState>> {
+    return this.execute(
+      '维度值写入失败',
+      filePath,
+      sessionId => this.backend.writeDimensionValue(
+        sessionId,
+        coordinate,
+        expectedValue,
+        newValue,
+      ),
+      undefined,
+      outcome => {
+        if (options.recordHistory) {
+          this.history.record({
+            kind: 'dimension',
+            revision: outcome.revision,
+            filePath,
+            coordinate: outcome.coordinate,
+            oldValue: cloneDimensionState(outcome.old_value),
+            newValue: cloneDimensionState(outcome.new_value),
+          })
+        }
+        return outcome.new_value
+      },
+      outcome => containsDimensionReference(outcome.old_value)
+        || containsDimensionReference(outcome.new_value),
     )
   }
 
@@ -535,6 +678,18 @@ interface PendingFieldWrite {
   queuedHistoryEpoch: number
 }
 
+interface PendingDimensionWrite {
+  key: string
+  filePath: string
+  coordinate: DimensionValueCoordinate
+  expectedValue: DimensionValueState
+  newValue: DimensionValueState
+  optimistic: OptimisticDimensionWrite[]
+  resolve: Array<(value: DimensionValueState | undefined) => void>
+  queuedGeneration: EditorGenerationIdentity | null
+  queuedHistoryEpoch: number
+}
+
 function fieldWriteKey(
   filePath: string,
   coordinate: RecordCoordinate,
@@ -543,6 +698,23 @@ function fieldWriteKey(
   return `${filePath}\u001f${coordinate.actual_type}\u001f${coordinate.key}\u001f${fieldPath
     .map(segment => `${segment.kind}:${segment.value}`)
     .join('/')}`
+}
+
+function dimensionWriteKey(coordinate: DimensionValueCoordinate): string {
+  return [
+    coordinate.actual_type,
+    coordinate.record_key,
+    coordinate.field,
+    coordinate.dimension,
+    coordinate.variant,
+    ...coordinate.path.map(segment => `${segment.kind}:${segment.value}`),
+  ].join('\u001f')
+}
+
+function cloneDimensionState(state: DimensionValueState): DimensionValueState {
+  return state.kind === 'missing'
+    ? { kind: 'missing' }
+    : { kind: 'value', value: cloneValue(state.value) }
 }
 
 function sameGeneration(
@@ -571,4 +743,8 @@ function containsReference(value: FieldValue | null): boolean {
   if (value.kind === 'array') return value.value.some(containsReference)
   if (value.kind === 'dict') return value.value.some(([, item]) => containsReference(item))
   return false
+}
+
+function containsDimensionReference(state: DimensionValueState): boolean {
+  return state.kind === 'value' && containsReference(state.value)
 }

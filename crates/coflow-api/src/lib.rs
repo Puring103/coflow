@@ -38,8 +38,9 @@ pub use operations::{
     CreateTableRequest, DimensionSourceEntry, DimensionSourceLoadRequest,
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    DimensionSourceSchema, SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions,
-    TableManager, TableManagerDescriptor, TableOperationResult, WriteDimensionValueRequest,
+    DimensionSourceSchema, RewriteDimensionRecordRequest, SyncHeaderRequest, TableAddressing,
+    TableContext, TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
+    WriteDimensionValueRequest,
 };
 pub use provider::{
     DecodedOutputOptions, DecodedSourceOptions, LoadedSource, ProbeConfidence, ProbeResult,

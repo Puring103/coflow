@@ -47,6 +47,17 @@ struct CachedSourceBatch {
 }
 
 impl SourceDataCache {
+    pub(crate) fn dimension_sources(
+        &self,
+    ) -> impl Iterator<Item = (&ResolvedSourceEntry, &dimensions::DimensionField)> {
+        self.batches.iter().filter_map(|batch| {
+            batch
+                .dimension_field
+                .as_ref()
+                .map(|field| (&batch.entry, field))
+        })
+    }
+
     pub(crate) fn base_with_previous_dimensions(&self, previous: &Self) -> Self {
         let mut batches = self.batches.clone();
         batches.extend(
@@ -95,9 +106,9 @@ pub(crate) struct LoadProjectDataOptions {
     pub(crate) run_checks: bool,
 }
 
-pub(crate) fn empty_load_output() -> Result<ProjectLoadOutput, DiagnosticSet> {
+pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput, DiagnosticSet> {
     Ok(ProjectLoadOutput {
-        model: empty_model()?,
+        model: empty_model(schema)?,
         diagnostics: DiagnosticSet::empty(),
         logical_locations: BTreeMap::new(),
         source_data: SourceDataCache::default(),
@@ -743,8 +754,8 @@ pub fn format_cfd_path(path: &CfdPath) -> String {
     out
 }
 
-pub(crate) fn empty_model() -> Result<CfdDataModel, DiagnosticSet> {
-    CfdDataModel::builder(&CftSchema::empty())
+pub(crate) fn empty_model(schema: &CftSchema) -> Result<CfdDataModel, DiagnosticSet> {
+    CfdDataModel::builder(schema)
         .build()
         .map_err(|_| {
             DiagnosticSet::one(Diagnostic::error(

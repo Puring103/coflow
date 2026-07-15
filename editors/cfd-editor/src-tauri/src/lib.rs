@@ -7,11 +7,11 @@ mod host;
 mod watcher;
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
-use coflow_runtime::RecordCoordinate;
+use coflow_runtime::{DimensionValueCoordinate, DimensionValueView, RecordCoordinate};
 use editor::{
     CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, EditorError, FileRecords, GraphData,
     GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome,
-    WriteFieldOutcome,
+    WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use host::EditorHost;
 use tauri::{AppHandle, Manager, State};
@@ -146,6 +146,38 @@ async fn write_field(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn get_dimension_value(
+    session_id: u32,
+    coordinate: DimensionValueCoordinate,
+    host: State<'_, EditorHost>,
+) -> Result<DimensionValueView, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .get_dimension_value(session_id, &coordinate)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn write_dimension_value(
+    session_id: u32,
+    coordinate: DimensionValueCoordinate,
+    expected_value: coflow_runtime::DimensionValueState,
+    new_value: coflow_runtime::DimensionValueState,
+    host: State<'_, EditorHost>,
+) -> Result<WriteDimensionValueOutcome, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .write_dimension_value(session_id, &coordinate, &expected_value, &new_value)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn edit_collection(
     session_id: u32,
     coordinate: RecordCoordinate,
@@ -242,6 +274,8 @@ pub fn run() -> tauri::Result<()> {
             make_default_object,
             create_record_draft,
             write_field,
+            get_dimension_value,
+            write_dimension_value,
             edit_collection,
             insert_record,
             rename_record_key,

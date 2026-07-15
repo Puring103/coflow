@@ -62,7 +62,7 @@ fn lower_object_entries(
         )
     })?;
     let fields_by_name = schema_type
-        .fields()
+        .all_fields()
         .map(|field| (field.name.as_str(), field))
         .collect::<BTreeMap<_, _>>();
     let mut spreads = Vec::new();
@@ -420,7 +420,7 @@ fn validate_group_type(
     type_name: &str,
     span: Span,
 ) -> Result<(), CfdTextDiagnostics> {
-    if schema.has_type(type_name) {
+    if schema.resolve_type(type_name).is_some() {
         Ok(())
     } else {
         Err(error(

@@ -90,8 +90,7 @@ pub(crate) fn hover_at(
         }
         if let Some(current_type) = current_type_at(build, document, offset) {
             if let Some(field) = current_type
-                .all_fields
-                .iter()
+                .all_fields()
                 .find(|field| field.name.as_str() == word.text)
             {
                 return Some(hover_response(
@@ -126,7 +125,7 @@ fn type_hover_text(ty: &CftType) -> String {
     if let Some(parent) = &ty.parent {
         let _ = write!(text, " extends `{parent}`");
     }
-    let _ = write!(text, " with {} field(s).", ty.all_fields.len());
+    let _ = write!(text, " with {} field(s).", ty.all_fields().count());
     text
 }
 

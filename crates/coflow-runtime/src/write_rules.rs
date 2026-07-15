@@ -113,10 +113,10 @@ pub(crate) fn expected_type_for_cfd_path(
                     ));
                 };
                 schema
-                    .field_type(type_name, field)
-                    .cloned()
+                    .field(type_name, field)
+                    .map(|field| field.ty_ref.clone())
                     .ok_or_else(|| {
-                        if !schema.has_type(type_name) {
+                        if schema.resolve_type(type_name).is_none() {
                             return one_error(code, stage, format!("unknown type `{type_name}`"));
                         }
                         one_error(

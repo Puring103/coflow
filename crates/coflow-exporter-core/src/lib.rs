@@ -209,7 +209,7 @@ where
         declared_type,
         &record.object,
         TypeTagMode::Never,
-        fields,
+        &fields,
         location,
     )?;
     sink_event(location, sink.end_map())
@@ -238,7 +238,7 @@ where
         declared_type,
         object,
         tag_mode,
-        fields,
+        &fields,
         location,
     )?;
     sink_event(location, sink.end_map())
@@ -248,8 +248,8 @@ fn object_fields<'a>(
     schema: &'a CftSchema,
     object: &CfdObject,
     location: &ExportLocation<'_>,
-) -> Result<&'a [std::sync::Arc<CftField>], ExportError> {
-    schema.fields_slice(object.actual_type()).ok_or_else(|| {
+) -> Result<Vec<&'a CftField>, ExportError> {
+    schema.resolve_type(object.actual_type()).map(|ty| ty.all_fields().collect()).ok_or_else(|| {
         ExportError::at(
             location,
             format!("unknown CFT type `{}` during export", object.actual_type()),
@@ -263,7 +263,7 @@ fn encode_object_members<S>(
     declared_type: &str,
     object: &CfdObject,
     tag_mode: TypeTagMode,
-    fields: &[std::sync::Arc<CftField>],
+    fields: &[&CftField],
     location: &mut ExportLocation<'_>,
 ) -> Result<(), ExportError>
 where

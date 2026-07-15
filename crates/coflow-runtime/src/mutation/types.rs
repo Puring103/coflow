@@ -39,11 +39,15 @@ pub enum MutationOp {
         value: MutationValue,
     },
     SetDimensionValue {
-        coordinate: DimensionValueSelector,
+        coordinate: DimensionValueCoordinate,
+        #[serde(default)]
+        expected: DimensionValueExpectation,
         value: MutationValue,
     },
     ClearDimensionValue {
-        coordinate: DimensionValueSelector,
+        coordinate: DimensionValueCoordinate,
+        #[serde(default)]
+        expected: DimensionValueExpectation,
     },
     RenameRecord {
         record: RecordCoordinate,
@@ -59,23 +63,43 @@ pub enum MutationOp {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DimensionValueSelector {
-    pub record: RecordCoordinate,
-    pub field: String,
-    pub dimension: String,
-    pub variant: String,
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct DimensionValueCoordinate {
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub actual_type: TypeName,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub record_key: RecordKey,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub field: FieldName,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub dimension: DimensionName,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub variant: VariantName,
     #[serde(default)]
     pub path: Vec<CfdPathSegment>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DimensionValueCoordinate {
+pub(crate) struct DimensionSourceCoordinate {
     pub source_type: TypeName,
     pub source_key: RecordKey,
     pub field: FieldName,
     pub dimension: DimensionName,
     pub variant: VariantName,
     pub path: CfdPath,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum DimensionValueExpectation {
+    #[default]
+    Any,
+    Missing,
+    Value(MutationValue),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,7 +186,7 @@ pub(crate) enum PreparedMutationOp {
     },
     WriteDimensionValue {
         record: RecordCoordinate,
-        coordinate: DimensionValueCoordinate,
+        coordinate: DimensionSourceCoordinate,
         new_value: Option<CfdValue>,
         write_file: String,
     },

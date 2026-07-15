@@ -62,8 +62,7 @@ pub fn build_csharp_type(
     }
 
     let own_field_names = schema_type
-        .own_fields
-        .iter()
+        .own_fields()
         .map(|field| field.name.clone())
         .collect::<BTreeSet<_>>();
 

@@ -2,7 +2,7 @@ use coflow_api::{
     byte_range, DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest,
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    SourceLocationSpec, TableContext, WriteDimensionValueRequest,
+    RewriteDimensionRecordRequest, SourceLocationSpec, TableContext, WriteDimensionValueRequest,
 };
 use coflow_cft::{CftSchemaTypeRef, RecordKey};
 use coflow_data_model::{CfdInputDimensionValue, RecordOrigin, TextSpan};
@@ -158,18 +158,39 @@ impl DimensionSourceManager for CfdWriter {
                 row.variants.remove(request.variant.as_str());
             }
         }
-        let mut out = String::new();
-        for (key, row) in rows {
-            let actual_type = request.schema.source_type.name.as_str();
-            let _ = writeln!(out, "{key}: {actual_type} {{");
-            let _ = writeln!(out, "    default: {},", render_cfd_cell(&row.default));
-            for variant in &variants {
-                if let Some(value) = row.variants.get(variant) {
-                    let _ = writeln!(out, "    {variant}: {},", render_cfd_cell(value));
-                }
+        let out = render_dimension_cfd(&rows, request.schema.source_type.name.as_str(), &variants);
+        write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
+    }
+
+    fn rewrite_dimension_record(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &RewriteDimensionRecordRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        let variants = request
+            .schema
+            .dimension
+            .variants
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let mut rows = read_existing_dimension_cfd(path, &variants, None)?;
+        let row = rows.remove(request.old_key.as_str()).ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CFD-DIMENSION-WRITE",
+                format!("dimension source has no record `{}`", request.old_key),
+            ))
+        })?;
+        if let Some(new_key) = request.new_key {
+            if rows.insert(new_key.to_string(), row).is_some() {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-DIMENSION-WRITE",
+                    format!("dimension source already has record `{new_key}`"),
+                )));
             }
-            out.push_str("}\n\n");
         }
+        let out = render_dimension_cfd(&rows, request.schema.source_type.name.as_str(), &variants);
         write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
     }
 
@@ -213,6 +234,25 @@ impl DimensionSourceManager for CfdWriter {
 struct DimensionCfdRow {
     default: String,
     variants: BTreeMap<String, String>,
+}
+
+fn render_dimension_cfd(
+    rows: &BTreeMap<String, DimensionCfdRow>,
+    actual_type: &str,
+    variants: &[String],
+) -> String {
+    let mut out = String::new();
+    for (key, row) in rows {
+        let _ = writeln!(out, "{key}: {actual_type} {{");
+        let _ = writeln!(out, "    default: {},", render_cfd_cell(&row.default));
+        for variant in variants {
+            if let Some(value) = row.variants.get(variant) {
+                let _ = writeln!(out, "    {variant}: {},", render_cfd_cell(value));
+            }
+        }
+        out.push_str("}\n\n");
+    }
+    out
 }
 
 fn read_existing_dimension_cfd(

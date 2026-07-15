@@ -71,6 +71,11 @@ pub fn check_project(
     project: &Project,
     registry: &ProviderRegistry,
 ) -> Result<CommandOutcome<CheckReport>, DiagnosticSet> {
+    let mut diagnostics = project.schema_diagnostic_set();
+    diagnostics.extend(project.data_diagnostic_set());
+    if !diagnostics.is_empty() {
+        return Ok(CommandOutcome::Diagnostics(diagnostics));
+    }
     let runtime = Runtime::new(registry.clone());
     let session = runtime.build_project_session(project.clone())?;
     if session.queries().has_diagnostics() {

@@ -382,7 +382,7 @@ fn coerce_json_object_fields(
     object: &Map<String, Value>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
     let schema = session.schema();
-    if !schema.has_type(actual_type) {
+    if schema.resolve_type(actual_type).is_none() {
         return Err(one_value_error(format!(
             "unknown object type `{actual_type}`"
         )));

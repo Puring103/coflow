@@ -5,10 +5,16 @@
 )]
 
 use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
-use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
+use coflow_cft::{
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, DimensionName, FieldName,
+    ModuleId, RecordKey, TypeName, VariantName,
+};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
 use coflow_project::Project;
-use coflow_runtime::{BuildProjectSession, ReadOnlyProjectSession, Runtime, WriteProjectSession};
+use coflow_runtime::{
+    BuildProjectSession, DimensionValueCoordinate, DimensionValueOrigin, ReadOnlyProjectSession,
+    Runtime, WriteProjectSession,
+};
 
 fn csv_dimension_registry() -> ProviderRegistry {
     let mut registry = ProviderRegistry::default();
@@ -117,13 +123,10 @@ fn localized_schema_requires_language_dimension_config() {
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = ProviderRegistry::default();
-    let session = build_session(project, &registry).expect("build session");
+    let diagnostics = build_session(project, &registry).expect_err("schema build must fail");
 
     assert!(
-        session
-            .queries()
-            .diagnostics()
-            .as_set()
+        diagnostics
             .diagnostics
             .iter()
             .any(|diagnostic| {
@@ -131,8 +134,7 @@ fn localized_schema_requires_language_dimension_config() {
                     && diagnostic.message
                         == "field `Item.name` uses unconfigured dimension `language`"
             }),
-        "diagnostics: {:?}",
-        session.queries().diagnostics().as_set()
+        "diagnostics: {diagnostics:?}",
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -166,13 +168,10 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = ProviderRegistry::default();
-    let session = build_session(project, &registry).expect("build session");
+    let diagnostics = build_session(project, &registry).expect_err("schema build must fail");
 
     assert!(
-        session
-            .queries()
-            .diagnostics()
-            .as_set()
+        diagnostics
             .diagnostics
             .iter()
             .any(|diagnostic| {
@@ -180,8 +179,7 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
                     && diagnostic.message
                         == "field `Item.name` uses unconfigured dimension `platform`"
             }),
-        "diagnostics: {:?}",
-        session.queries().diagnostics().as_set()
+        "diagnostics: {diagnostics:?}",
     );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
@@ -253,6 +251,22 @@ dimensions:
     assert!(session
         .queries()
         .has_source_file("data/dimensions/language/Item_name.csv"));
+    let value = session
+        .queries()
+        .dimension_value(&DimensionValueCoordinate {
+            actual_type: TypeName::new("Item").unwrap(),
+            record_key: RecordKey::new("potion").unwrap(),
+            field: FieldName::new("name").unwrap(),
+            dimension: DimensionName::new("language").unwrap(),
+            variant: VariantName::new("zh").unwrap(),
+            path: Vec::new(),
+        })
+        .expect("dimension value query");
+    let Some(DimensionValueOrigin::TableCell { path, row, column, .. }) = value.origin else {
+        panic!("dimension value should retain its CSV cell origin");
+    };
+    assert!(path.ends_with("Item_name.csv"), "path: {path}");
+    assert_eq!((row, column), (1, 2));
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }

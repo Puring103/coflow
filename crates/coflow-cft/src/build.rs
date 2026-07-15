@@ -21,16 +21,6 @@ pub fn build_schema(
     }
     let options = CftCompileOptions::default();
     let (compiled, mut budget) = compile_module_set(module_set, options)?;
-    let sources = module_set
-        .modules
-        .iter()
-        .map(|(id, module)| (id.clone(), module.source().to_string()))
-        .collect();
-    let schema = CftSchema::from_compiled(
-        compiled,
-        sources,
-        dimensions,
-        &mut budget,
-    )?;
+    let schema = CftSchema::from_compiled(compiled, dimensions, &mut budget)?;
     Ok(schema)
 }

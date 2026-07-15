@@ -137,6 +137,10 @@ fn finish_project_session(
         mut diagnostics,
     } = schema_session;
 
+    let Some(schema) = schema else {
+        return Err(diagnostics.into_set());
+    };
+
     let dimension_fields = dimensions::dimension_fields(&schema);
     let ctx = SessionBuildContext {
         project,
@@ -155,7 +159,7 @@ fn finish_project_session(
     } = if diagnostics.is_empty() {
         build_data_pipeline(&ctx, &mut diagnostics)?
     } else {
-        LoadedSessionData::empty()?
+        LoadedSessionData::empty(&ctx.schema)?
     };
 
     Ok(SessionBuildOutput {
@@ -198,9 +202,9 @@ struct LoadedSessionData {
 }
 
 impl LoadedSessionData {
-    fn empty() -> Result<Self, DiagnosticSet> {
+    fn empty(schema: &CftSchema) -> Result<Self, DiagnosticSet> {
         Ok(Self {
-            model: empty_model()?,
+            model: empty_model(schema)?,
             indexes: SessionIndexes::default(),
             source_data: SourceDataCache::default(),
             check_state: CheckState::default(),
@@ -224,7 +228,7 @@ fn build_data_pipeline(
                 load_failure.diagnostics.logical_locations,
             );
             return Ok(LoadedSessionData {
-                model: empty_model()?,
+                model: empty_model(&ctx.schema)?,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
@@ -277,7 +281,7 @@ fn rebuild_data_pipeline(
                 load_failure.diagnostics.logical_locations,
             );
             return Ok(LoadedSessionData {
-                model: empty_model()?,
+                model: empty_model(&ctx.schema)?,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
@@ -319,7 +323,7 @@ fn rebuild_data_pipeline(
                     load_failure.diagnostics.diagnostics,
                     load_failure.diagnostics.logical_locations,
                 );
-                output = empty_load_output()?;
+                output = empty_load_output(&ctx.schema)?;
                 indexes = load_failure.indexes;
             }
         }
@@ -357,7 +361,7 @@ fn reload_with_dimensions(
                 load_failure.diagnostics.diagnostics,
                 load_failure.diagnostics.logical_locations,
             );
-            Ok((empty_load_output()?, load_failure.indexes))
+            Ok((empty_load_output(&ctx.schema)?, load_failure.indexes))
         }
     }
 }
@@ -457,7 +461,7 @@ fn build_read_only_data(
                 load_failure.diagnostics.logical_locations,
             );
             return Ok(LoadedSessionData {
-                model: empty_model()?,
+                model: empty_model(&ctx.schema)?,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),

@@ -68,7 +68,7 @@ impl LspBuild {
     }
 
     pub(crate) fn schema(&self) -> Option<&coflow_cft::CftSchema> {
-        Some(self.schema.schema())
+        self.schema.schema()
     }
 
     pub(crate) fn document_by_uri(&self, uri: &str) -> Option<&LspDocument> {
@@ -138,8 +138,7 @@ fn type_of_name(
 ) -> Option<CftSchemaTypeRef> {
     let current_type = current_type_at(build, document, offset)?;
     let field = current_type
-        .all_fields
-        .iter()
+        .all_fields()
         .find(|field| field.name.as_str() == name)?;
     Some(field_receiver_type(field))
 }
@@ -153,8 +152,7 @@ pub(crate) fn field_by_type<'a>(
     let mut current = schema.resolve_type(type_name);
     while let Some(ty) = current {
         if let Some(field) = ty
-            .own_fields
-            .iter()
+            .own_fields()
             .find(|field| field.name.as_str() == field_name)
         {
             return Some((ty, field));

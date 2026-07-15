@@ -141,7 +141,9 @@ pub fn sync_data_header(
         Some(options.actual_type),
         options.sheet,
     )?;
-    let schema = session.schema();
+    let schema = session
+        .schema()
+        .ok_or_else(|| session.diagnostics().clone().into_set())?;
     let result = manager.sync_header(
         table_context(session),
         &SyncHeaderRequest {
@@ -367,7 +369,9 @@ pub fn table_header_layout(
                 )
             })?,
     };
-    let schema = session.schema();
+    let schema = session
+        .schema()
+        .ok_or_else(|| session.diagnostics().clone().into_set())?;
     let schema_type = schema.resolve_type(&actual_type).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-TYPE",
@@ -391,9 +395,9 @@ pub fn table_header_layout(
     let field_headers = header_options.field_headers();
     headers.extend(
         schema
-            .full_fields(&actual_type)
-            .unwrap_or(&[])
-            .iter()
+            .resolve_type(&actual_type)
+            .into_iter()
+            .flat_map(coflow_cft::CftType::all_fields)
             .map(|field| {
                 field_headers
                     .get(field.name.as_str())

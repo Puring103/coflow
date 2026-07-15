@@ -2,7 +2,7 @@ use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest,
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    SourceLocationSpec, TableContext, WriteDimensionValueRequest,
+    RewriteDimensionRecordRequest, SourceLocationSpec, TableContext, WriteDimensionValueRequest,
 };
 use coflow_cft::{CftSchemaTypeRef, RecordKey};
 use coflow_data_model::{
@@ -123,10 +123,7 @@ impl DimensionSourceManager for CsvWriter {
                         sheet: request.source.display_name.clone(),
                         row: row_index,
                         id_column,
-                        field_columns: [(
-                            vec![request.schema.source_field.name.to_string()],
-                            *column,
-                        )]
+                        field_columns: [(Vec::new(), *column)]
                         .into_iter()
                         .collect(),
                     },
@@ -221,6 +218,66 @@ impl DimensionSourceManager for CsvWriter {
         };
         let body = write(&rows);
         write_if_changed(path, &body, "CSV-DIMENSION-WRITE")
+    }
+
+    fn rewrite_dimension_record(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &RewriteDimensionRecordRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        let text = fs::read_to_string(path).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                format!("failed to read dimension source `{}`: {err}", path.display()),
+            ))
+        })?;
+        let mut rows = parse(&text).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                format!("failed to parse dimension source `{}`: {err}", path.display()),
+            ))
+        })?;
+        let Some(header) = rows.first() else {
+            return Err(DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                "dimension CSV is empty",
+            )));
+        };
+        let id_column = header.iter().position(|name| name == "id").ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                "dimension CSV requires an `id` column",
+            ))
+        })?;
+        let header_len = header.len();
+        let matching_rows = rows
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter(|(_, row)| {
+                row.get(id_column)
+                    .is_some_and(|key| key == request.old_key.as_str())
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let [row_index] = matching_rows.as_slice() else {
+            return Err(DiagnosticSet::one(diag(
+                "CSV-DIMENSION-WRITE",
+                format!(
+                    "dimension source requires exactly one row for `{}`, found {}",
+                    request.old_key,
+                    matching_rows.len()
+                ),
+            )));
+        };
+        if let Some(new_key) = request.new_key {
+            rows[*row_index].resize(header_len, String::new());
+            rows[*row_index][id_column] = new_key.to_string();
+        } else {
+            rows.remove(*row_index);
+        }
+        write_if_changed(path, &write(&rows), "CSV-DIMENSION-WRITE")
     }
 
     fn sync_dimension_source(

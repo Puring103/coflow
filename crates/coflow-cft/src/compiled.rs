@@ -45,11 +45,10 @@ pub struct CftType {
     pub is_struct: bool,
     pub is_singleton: bool,
     pub id_as_enum: Option<EnumName>,
-    pub own_fields: Vec<Arc<CftField>>,
-    pub all_fields: Vec<Arc<CftField>>,
+    pub(crate) own_fields: Vec<Arc<CftField>>,
+    pub(crate) all_fields: Vec<Arc<CftField>>,
     pub(crate) field_by_name: BTreeMap<FieldName, usize>,
     pub check: Option<CftSchemaCheckBlock>,
-    pub(crate) dimension_checks: BTreeMap<DimensionName, CftSchemaCheckBlock>,
     pub span: Span,
 }
 
@@ -120,7 +119,6 @@ pub struct CftField {
     pub declaring_type: TypeName,
     pub name: FieldName,
     pub ty_ref: CftSchemaTypeRef,
-    pub has_default: bool,
     pub default: Option<CftSchemaDefaultValue>,
     pub is_expand: bool,
     pub dimension: Option<CftFieldDimension>,
@@ -311,6 +309,6 @@ pub(crate) fn compile_module_set(
     options: CftCompileOptions,
 ) -> Result<(CompiledSchema, StructuralBudget), CftDiagnostics> {
     let mut compiler = SchemaCompiler::new(modules, options);
-    let reflection = compiler.compile()?;
-    Ok((reflection, compiler.budget))
+    let compiled = compiler.compile()?;
+    Ok((compiled, compiler.budget))
 }

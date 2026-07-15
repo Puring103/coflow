@@ -136,8 +136,16 @@ pub fn inspect_schema(
     type_filter: Option<&str>,
     include_derived: bool,
 ) -> SchemaInspectReport {
-    let view = session.schema();
-    let mut type_names = view.type_names().cloned().collect::<Vec<_>>();
+    let Some(view) = session.schema() else {
+        return SchemaInspectReport {
+            types: Vec::new(),
+            enums: Vec::new(),
+            consts: Vec::new(),
+            dimensions: Vec::new(),
+            diagnostics: session.diagnostics.flat_diagnostics(),
+        };
+    };
+    let mut type_names = view.all_types().map(|ty| ty.name.clone()).collect::<Vec<_>>();
     type_names.sort();
     if let Some(filter) = type_filter {
         type_names
@@ -160,13 +168,13 @@ pub fn inspect_schema(
             is_singleton: ty.is_singleton,
             id_as_enum: ty.id_as_enum.as_ref().map(ToString::to_string),
             fields: view
-                .fields(&ty.name)
+                .resolve_type(&ty.name)
                 .into_iter()
-                .flatten()
+                .flat_map(coflow_cft::CftType::all_fields)
                 .map(|field| SchemaFieldInfo {
                     name: field.name.to_string(),
                     ty: type_ref_info(view, &field.ty_ref),
-                    has_default: field.has_default,
+                    has_default: field.default.is_some(),
                     default: field.default.as_ref().map(default_value_info),
                     is_expand: field.is_expand,
                     dimension: field
@@ -202,7 +210,7 @@ pub fn inspect_schema(
     SchemaInspectReport {
         types,
         enums,
-        consts: consts(&session.schema),
+        consts: consts(view),
         dimensions: view
             .all_dimensions()
             .map(|dimension| SchemaDimensionInfo {

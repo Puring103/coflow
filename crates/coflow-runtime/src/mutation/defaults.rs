@@ -58,10 +58,8 @@ pub(super) fn create_record_draft_for_type(
         ));
     };
     let mut materializer = DefaultValueMaterializer::new(schema);
-    let fields = schema
-        .full_fields(&schema_type.name)
-        .unwrap_or(&[])
-        .iter()
+    let fields = schema_type
+        .all_fields()
         .map(|field| materializer.create_field_draft(field))
         .collect();
     Ok(CreateRecordDraft {
@@ -106,7 +104,7 @@ impl<'a> DefaultValueMaterializer<'a> {
             ));
         };
         let mut fields = BTreeMap::new();
-        for field in self.schema.full_fields(&schema_type.name).unwrap_or(&[]) {
+        for field in schema_type.all_fields() {
             if skip_fields.is_some_and(|skip| skip.contains(field.name.as_str())) {
                 continue;
             }

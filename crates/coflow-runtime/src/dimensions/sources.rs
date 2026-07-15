@@ -55,7 +55,7 @@ pub(crate) fn dimension_sources(
 pub fn dimension_fields(schema: &CftSchema) -> Vec<DimensionField> {
     let mut fields = Vec::new();
     for schema_type in schema.all_types() {
-        for field in &schema_type.own_fields {
+        for field in schema_type.own_fields() {
             let Some(dimension) = field.dimension.as_ref() else {
                 continue;
             };

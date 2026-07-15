@@ -29,8 +29,9 @@ use std::sync::{Arc, RwLock};
 use coflow_api::ProviderRegistry;
 use coflow_data_model::CfdValue;
 use coflow_runtime::{
-    DefaultMaterialization, MutationFields, MutationOp, MutationRequest, MutationValue,
-    ProjectQueries, RecordCoordinate, WriteProjectSession,
+    DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation,
+    DimensionValueState, DimensionValueView, MutationFields, MutationOp, MutationRequest,
+    MutationValue, ProjectQueries, RecordCoordinate, WriteProjectSession,
 };
 
 use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
@@ -38,7 +39,7 @@ use crate::editor::types::{
     CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
     CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords,
     GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget,
-    RenameRecordOutcome, WriteFieldOutcome,
+    RenameRecordOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -345,6 +346,71 @@ impl SessionStore {
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
         write_field_in_session(&mut session, coordinate, field_path, new_value)
+    }
+
+    pub fn get_dimension_value(
+        &self,
+        id: u32,
+        coordinate: &DimensionValueCoordinate,
+    ) -> Result<DimensionValueView, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        session
+            .queries()
+            .dimension_value(coordinate)
+            .ok_or_else(|| EditorError::not_found("dimension value not found"))
+    }
+
+    pub fn write_dimension_value(
+        &self,
+        id: u32,
+        coordinate: &DimensionValueCoordinate,
+        expected_value: &DimensionValueState,
+        new_value: &DimensionValueState,
+    ) -> Result<WriteDimensionValueOutcome, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let expected = match expected_value {
+            DimensionValueState::Missing => DimensionValueExpectation::Missing,
+            DimensionValueState::Value(value) => {
+                DimensionValueExpectation::Value(MutationValue::Cfd(value.clone()))
+            }
+        };
+        let op = match new_value {
+            DimensionValueState::Missing => MutationOp::ClearDimensionValue {
+                coordinate: coordinate.clone(),
+                expected,
+            },
+            DimensionValueState::Value(value) => MutationOp::SetDimensionValue {
+                coordinate: coordinate.clone(),
+                expected,
+                value: MutationValue::Cfd(value.clone()),
+            },
+        };
+        let report = session.engine.apply_mutation(MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![op],
+        });
+        let report = finalize_mutation(&mut session, report, "write dimension value failed")?;
+        let new_value = session
+            .queries()
+            .dimension_value(coordinate)
+            .ok_or_else(|| EditorError::not_found("dimension value not found after write"))?
+            .state;
+        Ok(WriteDimensionValueOutcome {
+            revision: session.revisions.current(),
+            coordinate: coordinate.clone(),
+            old_value: expected_value.clone(),
+            new_value,
+            diagnostics: report.diagnostics,
+            affected_files: report.affected_files,
+        })
     }
 
     pub fn edit_collection(
@@ -890,7 +956,10 @@ mod revision_tests {
     use std::time::Duration;
 
     use coflow_data_model::{CfdPathSegment, CfdValue};
-    use coflow_runtime::RecordCoordinate;
+    use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+    use coflow_runtime::{
+        DimensionValueCoordinate, DimensionValueState, RecordCoordinate,
+    };
     use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
     use rust_xlsxwriter::Workbook;
 
@@ -943,6 +1012,63 @@ mod revision_tests {
             records.records[0].fields[0].value,
             CfdValue::String("Internal write".to_string())
         );
+        std::fs::remove_dir_all(root).expect("remove temp project");
+    }
+
+    #[test]
+    fn dimension_writes_use_authoritative_expected_state() {
+        let root = temp_project_dir("dimension-write");
+        write_dimension_project(&root);
+        let store = SessionStore::new().expect("create session store");
+        let snapshot = store
+            .load_project(&root.join("coflow.yaml"))
+            .expect("load project");
+        let coordinate = DimensionValueCoordinate {
+            actual_type: TypeName::new("Item").expect("type name"),
+            record_key: RecordKey::new("potion").expect("record key"),
+            field: FieldName::new("name").expect("field name"),
+            dimension: DimensionName::new("language").expect("dimension name"),
+            variant: VariantName::new("zh").expect("variant name"),
+            path: Vec::new(),
+        };
+        let initial = DimensionValueState::Value(CfdValue::String("药水".to_string()));
+        assert_eq!(
+            store
+                .get_dimension_value(snapshot.session_id, &coordinate)
+                .expect("read dimension value")
+                .state,
+            initial
+        );
+
+        let updated = DimensionValueState::Value(CfdValue::String("治疗药水".to_string()));
+        let outcome = store
+            .write_dimension_value(snapshot.session_id, &coordinate, &initial, &updated)
+            .expect("write dimension value");
+        assert_eq!(outcome.old_value, initial);
+        assert_eq!(outcome.new_value, updated);
+
+        let stale = store
+            .write_dimension_value(
+                snapshot.session_id,
+                &coordinate,
+                &DimensionValueState::Missing,
+                &DimensionValueState::Value(CfdValue::String("stale".to_string())),
+            )
+            .expect_err("stale expected state must fail");
+        assert!(stale
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "MUTATION-DIMENSION-STALE"));
+
+        let cleared = store
+            .write_dimension_value(
+                snapshot.session_id,
+                &coordinate,
+                &outcome.new_value,
+                &DimensionValueState::Missing,
+            )
+            .expect("clear dimension value");
+        assert_eq!(cleared.new_value, DimensionValueState::Missing);
         std::fs::remove_dir_all(root).expect("remove temp project");
     }
 
@@ -1107,6 +1233,28 @@ mod revision_tests {
         std::fs::write(
             root.join("coflow.yaml"),
             "schema: schema.cft\nsources:\n  - path: data\n",
+        )
+        .expect("write project configuration");
+    }
+
+    fn write_dimension_project(root: &std::path::Path) {
+        std::fs::create_dir_all(root.join("data/dimensions/language"))
+            .expect("create dimension directory");
+        std::fs::write(
+            root.join("schema.cft"),
+            "type Item { @localized name: string; }",
+        )
+        .expect("write schema");
+        std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n")
+            .expect("write records");
+        std::fs::write(
+            root.join("data/dimensions/language/Item_name.csv"),
+            "id,default,zh\npotion,Potion,药水\n",
+        )
+        .expect("write dimension values");
+        std::fs::write(
+            root.join("coflow.yaml"),
+            "schema: schema.cft\nsources:\n  - path: data/items.csv\n    type: csv\n    sheets:\n      - sheet: items\n        type: Item\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\n",
         )
         .expect("write project configuration");
     }

@@ -134,17 +134,17 @@ pub(crate) fn open_project_schema_attempt(
         match build.schema {
             Some(schema) => {
                 diagnostics.extend(validate_dimension_schema_config(&project, &schema));
-                (build.modules, schema)
+                (build.modules, Some(schema))
             }
-            None => (build.modules, CftSchema::empty()),
+            None => (build.modules, None),
         }
     } else {
-        (parse_modules(std::iter::empty::<CftFile>()), CftSchema::empty())
+        (parse_modules(std::iter::empty::<CftFile>()), None)
     };
     Ok(ProjectSchemaSession {
         project,
         modules: Arc::new(modules),
-        schema: Arc::new(schema),
+        schema: schema.map(Arc::new),
         diagnostics,
     })
 }

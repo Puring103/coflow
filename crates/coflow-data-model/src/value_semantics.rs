@@ -268,7 +268,7 @@ fn validate_object_value<C: CfdValueSemanticContext>(
         CfdValue::Object(record) => {
             validate_object_type_assignable_in_view(schema, expected_type, record.actual_type())?;
             for (name, value) in record.fields() {
-                let Some(field_ty) = schema.field_type(record.actual_type(), name) else {
+                let Some(field) = schema.field(record.actual_type(), name) else {
                     return Err(CfdValueSemanticError::new(format!(
                         "unknown field `{name}` on type `{}`",
                         record.actual_type()
@@ -277,14 +277,20 @@ fn validate_object_value<C: CfdValueSemanticContext>(
                 validate_value_inner(
                     schema,
                     context,
-                    field_ty,
+                    &field.ty_ref,
                     value,
                     pending_insert,
                     completeness,
                 )?;
             }
             if completeness == ValueCompleteness::Complete {
-                for field in schema.full_fields(record.actual_type()).unwrap_or(&[]) {
+                let schema_type = schema.resolve_type(record.actual_type()).ok_or_else(|| {
+                    CfdValueSemanticError::new(format!(
+                        "unknown object type `{}`",
+                        record.actual_type()
+                    ))
+                })?;
+                for field in schema_type.all_fields() {
                     if field.default.is_none()
                         && !record.fields().contains_key(field.name.as_str())
                     {

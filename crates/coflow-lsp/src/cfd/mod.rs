@@ -217,8 +217,7 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usi
                 let detail = schema
                     .and_then(|s| s.resolve_type(&record.type_name))
                     .and_then(|t| {
-                        t.all_fields
-                            .iter()
+                        t.all_fields()
                             .find(|f| f.name.as_str() == field.name)
                     })
                     .map_or_else(
@@ -256,8 +255,7 @@ pub fn completion(
         let existing: std::collections::BTreeSet<&str> =
             record.fields.iter().map(|f| f.name.as_str()).collect();
         let items: Vec<Value> = schema_type
-            .all_fields
-            .iter()
+            .all_fields()
             .filter(|f| !existing.contains(f.name.as_str()))
             .map(|f| {
                 json!({
@@ -377,8 +375,7 @@ fn field_name_in_fields<'a>(
         let next_owner = schema
             .and_then(|schema| schema.resolve_type(&owner_type))
             .and_then(|ty| {
-                ty.all_fields
-                    .iter()
+                ty.all_fields()
                     .find(|schema_field| schema_field.name.as_str() == field.name)
             })
             .and_then(|schema_field| named_type_name(&schema_field.ty_ref))
@@ -471,8 +468,7 @@ fn ref_target_in_entry(
         CfdBlockEntry::Field(field) => {
             let owner = schema.resolve_type(owner_type)?;
             let field_type = &owner
-                .all_fields
-                .iter()
+                .all_fields()
                 .find(|candidate| candidate.name.as_str() == field.name)?
                 .ty_ref;
             ref_target_in_value(&field.value, schema, field_type, offset)

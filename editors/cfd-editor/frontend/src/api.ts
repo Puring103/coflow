@@ -5,6 +5,9 @@ import type { CfdValue } from './bindings/CfdValue'
 import type { CollectionEdit } from './bindings/CollectionEdit'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { DeleteRecordOutcome } from './bindings/DeleteRecordOutcome'
+import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordinate'
+import type { DimensionValueState } from './bindings/DimensionValueState'
+import type { DimensionValueView } from './bindings/DimensionValueView'
 import type { FileRecords } from './bindings/FileRecords'
 import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
@@ -12,6 +15,7 @@ import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
 import type { RefTarget } from './bindings/RefTarget'
 import type { RenameRecordOutcome } from './bindings/RenameRecordOutcome'
 import type { WriteFieldOutcome } from './bindings/WriteFieldOutcome'
+import type { WriteDimensionValueOutcome } from './bindings/WriteDimensionValueOutcome'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
 
@@ -112,6 +116,27 @@ export async function writeField(
     sessionId,
     coordinate,
     fieldPath,
+    newValue,
+  })
+}
+
+export async function getDimensionValue(
+  sessionId: number,
+  coordinate: DimensionValueCoordinate,
+): Promise<DimensionValueView> {
+  return invokeCommand<DimensionValueView>('get_dimension_value', { sessionId, coordinate })
+}
+
+export async function writeDimensionValue(
+  sessionId: number,
+  coordinate: DimensionValueCoordinate,
+  expectedValue: DimensionValueState,
+  newValue: DimensionValueState,
+): Promise<WriteDimensionValueOutcome> {
+  return invokeCommand<WriteDimensionValueOutcome>('write_dimension_value', {
+    sessionId,
+    coordinate,
+    expectedValue,
     newValue,
   })
 }

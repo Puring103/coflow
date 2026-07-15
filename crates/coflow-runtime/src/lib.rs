@@ -42,7 +42,7 @@ pub use data_files::{
 };
 pub use data_patch::{
     DataPatchAppliedOp, DataPatchFailedOp, DataPatchOp, DataPatchReport, DataPatchRequest,
-    PatchPathSegment, PatchRecordSelector,
+    PatchDimensionValueSelector, PatchPathSegment, PatchRecordSelector,
 };
 pub use data_read::{
     data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery, DataListReport,
@@ -60,13 +60,15 @@ pub use load::format_cfd_path as format_field_path;
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
-    DimensionValueCoordinate, DimensionValueSelector, MutationReport, MutationRequest,
-    MutationValue,
+    DimensionValueCoordinate, DimensionValueExpectation, MutationReport,
+    MutationRequest, MutationValue,
 };
 pub use query::ProjectQueries;
 pub use records::{
-    dict_key_path_text, value_summary, EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo,
-    RecordReferenceInfo, RecordTarget, RecordView, RefTargetInfo, WriteOutcome,
+    dict_key_path_text, value_summary, DimensionValueOrigin, DimensionValueState,
+    DimensionValueView,
+    EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo, RecordReferenceInfo, RecordTarget,
+    RecordView, RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{
     BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,

@@ -6,6 +6,7 @@ use coflow_api::{
 };
 use coflow_data_model::{CfdValue, RecordOrigin};
 
+use crate::dimensions::DimensionField;
 use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate};
 
@@ -43,6 +44,12 @@ pub(crate) struct DimensionWritePlan {
     pub(super) manager: Arc<dyn DimensionSourceManager>,
 }
 
+pub(crate) struct DimensionRecordAction {
+    pub(super) source: ResolvedSource,
+    pub(super) manager: Arc<dyn DimensionSourceManager>,
+    pub(super) field: DimensionField,
+}
+
 pub(crate) enum RenamePlan {
     Noop { coordinate: RecordCoordinate },
     Write(Box<RenameWritePlan>),
@@ -56,6 +63,7 @@ pub(crate) struct RenameWritePlan {
     pub(super) writer: Arc<dyn SourceWriter>,
     pub(super) reference_actions: Vec<ReferenceUpdateAction>,
     pub(super) rewrite_actions: Vec<SourceRewriteAction>,
+    pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
 
 pub(crate) struct DeletePlan {
@@ -64,6 +72,7 @@ pub(crate) struct DeletePlan {
     pub(super) display_path: String,
     pub(super) source: ResolvedSource,
     pub(super) writer: Arc<dyn SourceWriter>,
+    pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
 
 impl MutationExecutionPlan {
@@ -94,8 +103,16 @@ impl MutationExecutionPlan {
                 for action in &plan.rewrite_actions {
                     visit(action.source(), Some(&action.writer))?;
                 }
+                for action in &plan.dimension_actions {
+                    visit(&action.source, None)?;
+                }
             }
-            Self::Delete(plan) => visit(&plan.source, Some(&plan.writer))?,
+            Self::Delete(plan) => {
+                visit(&plan.source, Some(&plan.writer))?;
+                for action in &plan.dimension_actions {
+                    visit(&action.source, None)?;
+                }
+            }
         }
         Ok(())
     }
@@ -270,6 +287,7 @@ fn prepare_rename(
     let reference_actions = reference_update_actions(session, registry, target_ref.id, new_key)?;
     let rewrite_actions =
         source_rewrite_actions(session, registry, target_ref.id, &record.key, new_key)?;
+    let dimension_actions = dimension_record_actions(session, registry, &record.actual_type)?;
     Ok(RenamePlan::Write(Box::new(RenameWritePlan {
         old_coordinate: target_ref.coordinate.clone(),
         origin: target_ref.origin.clone(),
@@ -278,6 +296,7 @@ fn prepare_rename(
         writer,
         reference_actions,
         rewrite_actions,
+        dimension_actions,
     })))
 }
 
@@ -303,13 +322,56 @@ fn prepare_delete(
     };
     let source = source_for_id(session, record_ref.source_id)?;
     let writer = lookup_source_writer(registry, &source)?;
+    let dimension_actions = dimension_record_actions(session, registry, &record.actual_type)?;
     Ok(DeletePlan {
         coordinate: record_ref.coordinate.clone(),
         origin: model_record.origin.clone(),
         display_path: record_ref.display_path.clone(),
         source,
         writer,
+        dimension_actions,
     })
+}
+
+fn dimension_record_actions(
+    session: &ProjectSession,
+    registry: &ProviderRegistry,
+    actual_type: &str,
+) -> Result<Vec<DimensionRecordAction>, DiagnosticSet> {
+    let schema = session.schema();
+    let mut actions = Vec::new();
+    for (entry, field) in session.source_data.dimension_sources() {
+        let applies = schema
+            .field(actual_type, &field.source_field)
+            .is_some_and(|schema_field| {
+                schema_field.declaring_type == field.source_type
+                    && schema_field
+                        .dimension
+                        .as_ref()
+                        .is_some_and(|binding| binding.dimension == field.dimension)
+            });
+        if !applies {
+            continue;
+        }
+        let manager = registry
+            .dimension_source_manager(&entry.source.provider_id)
+            .ok_or_else(|| {
+                DiagnosticSet::one(Diagnostic::error(
+                    "WRITE-DIMENSION-PROVIDER",
+                    "WRITE",
+                    format!(
+                        "dimension source provider `{}` is not registered",
+                        entry.source.provider_id
+                    ),
+                ))
+            })?;
+        actions.push(DimensionRecordAction {
+            source: entry.source.clone(),
+            manager,
+            field: field.clone(),
+        });
+    }
+    Ok(actions)
 }
 
 fn sheet_for_file_type(session: &ProjectSession, file: &str, actual_type: &str) -> Option<String> {

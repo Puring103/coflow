@@ -644,6 +644,7 @@ version = "0.6.1"
 dependencies = [
  "coflow-structure",
  "regex",
+ "serde",
  "unicode-ident",
 ]
 

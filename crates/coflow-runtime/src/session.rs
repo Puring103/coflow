@@ -97,7 +97,7 @@ impl ProjectSession {
         ProjectSchemaSession {
             project: self.project,
             modules: Arc::new(parse_modules(std::iter::empty::<CftFile>())),
-            schema: self.schema,
+            schema: Some(self.schema),
             diagnostics: self.diagnostics,
         }
     }
@@ -369,7 +369,7 @@ impl ProjectSession {
 pub struct ProjectSchemaSession {
     pub(crate) project: Project,
     pub(crate) modules: Arc<CftModuleSet>,
-    pub(crate) schema: Arc<CftSchema>,
+    pub(crate) schema: Option<Arc<CftSchema>>,
     pub(crate) diagnostics: DiagnosticsStore,
 }
 
@@ -380,8 +380,8 @@ impl ProjectSchemaSession {
     }
 
     #[must_use]
-    pub fn schema(&self) -> &CftSchema {
-        &self.schema
+    pub fn schema(&self) -> Option<&CftSchema> {
+        self.schema.as_deref()
     }
 
     /// Parsed CFT modules paired with this schema attempt for language hosts.
@@ -417,9 +417,10 @@ impl ProjectSchemaSession {
         data_format: &str,
         id_as_enum_variants: &serde_json::Value,
     ) -> Result<ArtifactSet, DiagnosticSet> {
+        let schema = self.schema().ok_or_else(|| self.diagnostics.clone().into_set())?;
         codegen.generate(
             CodegenContext {
-                schema: self.schema(),
+                schema,
                 model: None,
                 data_format,
                 id_as_enum_variants,

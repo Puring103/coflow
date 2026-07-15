@@ -50,9 +50,9 @@ fn build_schema_compiles_a_parsed_module_set() {
     let schema = build_schema(&modules, &CftDimensionInputs::default())
         .expect("parsed module set compiles");
 
-    assert!(schema.has_type("Item"));
+    assert!(schema.resolve_type("Item").is_some());
     assert_eq!(
-        schema.field_type("Item", "value"),
+        schema.field("Item", "value").map(|field| &field.ty_ref),
         Some(&CftSchemaTypeRef::Int)
     );
 }
@@ -81,7 +81,7 @@ fn build_schema_models_configured_dimension_directly() {
     );
     assert_eq!(dimension.fields.len(), 1);
     assert_eq!(dimension.fields[0].declaring_type.as_str(), "Item");
-    assert_eq!(schema.type_names().count(), 1);
+    assert_eq!(schema.all_types().count(), 1);
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn dimension_schema_does_not_reserve_generated_type_names() {
 
     let schema = build_schema(&modules, &dimensions).expect("no generated type can collide");
     assert!(schema.resolve_enum("__coflow_dimension_Item_name").is_some());
-    assert_eq!(schema.type_names().count(), 1);
+    assert_eq!(schema.all_types().count(), 1);
 }
 
 #[test]
@@ -440,7 +440,7 @@ fn spec_comprehensive_example_compiles() {
     "#;
 
     let container = compile_one(source).unwrap();
-    assert!(container.has_type("Monster"));
+    assert!(container.resolve_type("Monster").is_some());
     assert_eq!(container.all_enums().count(), 5);
 }
 

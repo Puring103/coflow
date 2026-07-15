@@ -129,7 +129,7 @@ pub(crate) fn check_expression_completion_items(
             &format!("{} record key", current_type.name),
             None,
         ));
-        for field in &current_type.all_fields {
+        for field in current_type.all_fields() {
             items.push(completion_item(
                 &field.name,
                 COMPLETION_KIND_FIELD,
@@ -320,8 +320,7 @@ pub(crate) fn dot_completion_items(
         return Vec::new();
     };
 
-    ty.all_fields
-        .iter()
+    ty.all_fields()
         .map(|field| {
             completion_item(
                 &field.name,

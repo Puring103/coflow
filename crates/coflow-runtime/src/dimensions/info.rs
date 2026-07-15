@@ -7,7 +7,7 @@ use coflow_project::{DimensionConfig, Project};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::synthesize::DimensionField;
+use super::sources::DimensionField;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]

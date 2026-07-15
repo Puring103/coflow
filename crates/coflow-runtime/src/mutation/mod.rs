@@ -11,11 +11,12 @@ mod plan;
 mod prepare;
 mod types;
 
-pub(crate) use types::PreparedMutationOp;
+pub(crate) use types::{DimensionSourceCoordinate, PreparedMutationOp};
 pub use types::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
-    DefaultMaterialization, DimensionValueCoordinate, DimensionValueSelector, MutationAppliedOp,
-    MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
+    DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation,
+    MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
+    MutationReport, MutationRequest, MutationValue,
 };
 
 pub(super) fn schema_field<'a>(
@@ -23,7 +24,7 @@ pub(super) fn schema_field<'a>(
     actual_type: &str,
     field_name: &str,
 ) -> Result<&'a CftField, DiagnosticSet> {
-    if !schema.has_type(actual_type) {
+    if schema.resolve_type(actual_type).is_none() {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown type `{actual_type}`"),

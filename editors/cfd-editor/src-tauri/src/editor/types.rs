@@ -332,6 +332,21 @@ pub struct WriteFieldOutcome {
     pub renamed: Option<RecordCoordinate>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct WriteDimensionValueOutcome {
+    pub revision: u32,
+    pub coordinate: coflow_runtime::DimensionValueCoordinate,
+    pub old_value: coflow_runtime::DimensionValueState,
+    pub new_value: coflow_runtime::DimensionValueState,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    pub affected_files: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(

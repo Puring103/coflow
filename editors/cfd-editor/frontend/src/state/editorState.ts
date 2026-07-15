@@ -1,6 +1,8 @@
 import type { ProjectSnapshot } from '../bindings/ProjectSnapshot'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { FileRecords } from '../bindings/FileRecords'
+import type { DimensionValueCoordinate } from '../bindings/DimensionValueCoordinate'
+import type { DimensionValueState } from '../bindings/DimensionValueState'
 import { sameCoordinate, type FieldPathSegment, type FieldValue } from '../wire'
 
 export type MutationResult<T = void> =
@@ -144,7 +146,7 @@ export async function publishMutationGeneration(
   return committed(undefined)
 }
 
-export type EditEntry = FieldEditEntry | InsertEditEntry | DeleteEditEntry
+export type EditEntry = FieldEditEntry | DimensionEditEntry | InsertEditEntry | DeleteEditEntry
 
 export interface FieldEditEntry {
   kind: 'field'
@@ -154,6 +156,15 @@ export interface FieldEditEntry {
   fieldPath: FieldPathSegment[]
   oldValue: FieldValue
   newValue: FieldValue
+}
+
+export interface DimensionEditEntry {
+  kind: 'dimension'
+  revision: number
+  filePath: string
+  coordinate: DimensionValueCoordinate
+  oldValue: DimensionValueState
+  newValue: DimensionValueState
 }
 
 export interface InsertEditEntry {
@@ -280,6 +291,20 @@ function rebindEntry(
   oldCoordinate: RecordCoordinate,
   newCoordinate: RecordCoordinate,
 ): EditEntry {
+  if (entry.kind === 'dimension') {
+    if (
+      entry.coordinate.actual_type !== oldCoordinate.actual_type
+      || entry.coordinate.record_key !== oldCoordinate.key
+    ) return entry
+    return {
+      ...entry,
+      coordinate: {
+        ...entry.coordinate,
+        actual_type: newCoordinate.actual_type,
+        record_key: newCoordinate.key,
+      },
+    }
+  }
   if (!sameCoordinate(entry.coordinate, oldCoordinate)) return entry
   return { ...entry, coordinate: newCoordinate }
 }

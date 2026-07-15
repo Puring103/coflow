@@ -153,11 +153,19 @@ fn project_runtime_reuses_schema_until_schema_inputs_change() {
     let mut runtime = ProjectRuntime::new(fixture.open());
 
     assert!(runtime.refresh().expect("initial schema refresh"));
-    let first = runtime.schema().expect("published schema").schema() as *const _;
+    let first = runtime
+        .schema()
+        .expect("published schema session")
+        .schema()
+        .expect("published schema") as *const _;
     assert!(!runtime.refresh().expect("unchanged schema refresh"));
     assert!(std::ptr::eq(
         first,
-        runtime.schema().expect("reused schema").schema()
+        runtime
+            .schema()
+            .expect("reused schema session")
+            .schema()
+            .expect("reused schema")
     ));
 
     std::fs::write(
@@ -168,6 +176,10 @@ fn project_runtime_reuses_schema_until_schema_inputs_change() {
     assert!(runtime.refresh().expect("changed schema refresh"));
     assert!(!std::ptr::eq(
         first,
-        runtime.schema().expect("rebuilt schema").schema()
+        runtime
+            .schema()
+            .expect("rebuilt schema session")
+            .schema()
+            .expect("rebuilt schema")
     ));
 }

@@ -16,7 +16,8 @@ pub(super) fn field_type_for_record<'a>(
 ) -> Option<&'a CftSchemaTypeRef> {
     record
         .actual_type(model)
-        .and_then(|actual_type| schema.field_type(actual_type, name))
+        .and_then(|actual_type| schema.field(actual_type, name))
+        .map(|field| &field.ty_ref)
 }
 
 pub(super) fn current_field(

@@ -423,20 +423,21 @@ fn expand_field_index(
     type_name: &str,
 ) -> BTreeMap<String, BTreeMap<String, CftSchemaTypeRef>> {
     let mut out = BTreeMap::new();
-    let Some(fields) = schema.fields(type_name) else {
+    let Some(schema_type) = schema.resolve_type(type_name) else {
         return out;
     };
-    for field in fields {
+    for field in schema_type.all_fields() {
         if !field.is_expand {
             continue;
         }
         let CftSchemaTypeRef::Object(inner_type) = field.ty_ref.non_nullable() else {
             continue;
         };
-        let Some(inner_fields) = schema.fields(inner_type) else {
+        let Some(inner_type) = schema.resolve_type(inner_type) else {
             continue;
         };
-        let inner_fields = inner_fields
+        let inner_fields = inner_type
+            .all_fields()
             .map(|inner| (inner.name.to_string(), inner.ty_ref.clone()))
             .collect();
         out.insert(field.name.to_string(), inner_fields);
@@ -449,20 +450,23 @@ fn expand_field_order_index(
     type_name: &str,
 ) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();
-    let Some(fields) = schema.fields(type_name) else {
+    let Some(schema_type) = schema.resolve_type(type_name) else {
         return out;
     };
-    for field in fields {
+    for field in schema_type.all_fields() {
         if !field.is_expand {
             continue;
         }
         let CftSchemaTypeRef::Object(inner_type) = field.ty_ref.non_nullable() else {
             continue;
         };
-        let Some(inner_fields) = schema.fields(inner_type) else {
+        let Some(inner_type) = schema.resolve_type(inner_type) else {
             continue;
         };
-        let order = inner_fields.map(|inner| inner.name.to_string()).collect();
+        let order = inner_type
+            .all_fields()
+            .map(|inner| inner.name.to_string())
+            .collect();
         out.insert(field.name.to_string(), order);
     }
     out

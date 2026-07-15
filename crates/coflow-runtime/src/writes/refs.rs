@@ -229,7 +229,16 @@ pub(super) fn reference_update_actions(
             let field = session
                 .schema()
                 .field(host_record.actual_type(), &dimension.field)
-                .ok_or_else(|| DiagnosticSet::empty())?;
+                .ok_or_else(|| {
+                    dimension_ref_error(
+                        "WRITE-DIMENSION-SCHEMA",
+                        format!(
+                            "unknown dimension host field `{}.{}`",
+                            host_record.actual_type(),
+                            dimension.field
+                        ),
+                    )
+                })?;
             let source_entry = session
                 .source_data
                 .dimension_source(
@@ -237,10 +246,26 @@ pub(super) fn reference_update_actions(
                     field.name.as_str(),
                     dimension.dimension.as_str(),
                 )
-                .ok_or_else(DiagnosticSet::empty)?;
+                .ok_or_else(|| {
+                    dimension_ref_error(
+                        "WRITE-DIMENSION-SOURCE",
+                        format!(
+                            "dimension field `{}.{}` has no managed source",
+                            field.declaring_type, field.name
+                        ),
+                    )
+                })?;
             let manager = registry
                 .dimension_source_manager(&source_entry.provider_id)
-                .ok_or_else(DiagnosticSet::empty)?;
+                .ok_or_else(|| {
+                    dimension_ref_error(
+                        "WRITE-DIMENSION-PROVIDER",
+                        format!(
+                            "dimension source provider `{}` is not registered",
+                            source_entry.provider_id
+                        ),
+                    )
+                })?;
             actions.push(ReferenceUpdateAction::Dimension {
                 manager,
                 display_path: source_entry.display_path.clone(),
@@ -251,7 +276,9 @@ pub(super) fn reference_update_actions(
                     dimension: dimension.dimension.clone(),
                     variant: dimension.variant.clone(),
                     source_key: RecordKey::new(host_record.key().to_string())
-                        .map_err(|_| DiagnosticSet::empty())?,
+                        .map_err(|error| {
+                            dimension_ref_error("WRITE-DIMENSION-KEY", error.to_string())
+                        })?,
                     new_value: root,
                 },
             });
@@ -279,6 +306,10 @@ pub(super) fn reference_update_actions(
         }
     }
     Ok(actions)
+}
+
+fn dimension_ref_error(code: &'static str, message: impl Into<String>) -> DiagnosticSet {
+    DiagnosticSet::one(coflow_api::Diagnostic::error(code, "WRITE", message))
 }
 
 fn replace_ref_value(current: &mut CfdValue, path: &[CfdPathSegment], new_key: &str) -> bool {

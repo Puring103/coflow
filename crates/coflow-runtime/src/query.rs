@@ -2,13 +2,15 @@ use std::collections::BTreeSet;
 
 use coflow_api::{ProviderRegistry, WriterCapabilities};
 use coflow_cft::{CftSchemaTypeRef, CftSchema};
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RefSite};
+use coflow_data_model::{
+    CfdPath, CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup, RefSite,
+};
 
 use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
 use crate::{
-    DiagnosticsStore, DimensionInfo, EffectiveFieldWrite, FieldShapeInfo, FileTreeNode,
-    FileTreeOptions, IdAsEnumInfo, ProjectSession, RecordCoordinate, RecordReferenceInfo,
-    RecordView, RefTargetInfo,
+    DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState,
+    DimensionValueView, EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, FileTreeOptions,
+    IdAsEnumInfo, ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
 };
 
 /// Read-only capability over one immutable project generation.
@@ -71,7 +73,7 @@ impl<'a> ProjectQueries<'a> {
 
     #[must_use]
     pub fn schema_has_type(self, type_name: &str) -> bool {
-        self.session.schema().has_type(type_name)
+        self.session.schema().resolve_type(type_name).is_some()
     }
 
     #[must_use]
@@ -80,8 +82,7 @@ impl<'a> ProjectQueries<'a> {
             .schema()
             .resolve_type(type_name)
             .map(|meta| {
-                meta.all_fields
-                    .iter()
+                meta.all_fields()
                     .map(|field| (field.name.to_string(), field.ty_ref.display_label()))
                     .collect()
             })
@@ -168,6 +169,46 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
+    pub fn dimension_value(
+        self,
+        coordinate: &crate::DimensionValueCoordinate,
+    ) -> Option<DimensionValueView> {
+        let record_id = self.id_for_coordinate(
+            coordinate.actual_type.as_str(),
+            coordinate.record_key.as_str(),
+        )?;
+        match self
+            .session
+            .model()
+            .dimension_field_value(
+                self.session.schema(),
+                record_id,
+                coordinate.field.as_str(),
+                coordinate.dimension.as_str(),
+                coordinate.variant.as_str(),
+            )
+            .ok()?
+        {
+            DimensionValueLookup::Value { value, origin } => Some(DimensionValueView {
+                state: DimensionValueState::Value(
+                    dimension_value_at_path(value, &coordinate.path)?.clone(),
+                ),
+                origin: DimensionValueOrigin::from_record_origin(origin),
+            }),
+            DimensionValueLookup::ExplicitNull { origin } => coordinate.path.is_empty().then(|| {
+                DimensionValueView {
+                    state: DimensionValueState::Value(CfdValue::Null),
+                    origin: DimensionValueOrigin::from_record_origin(origin),
+                }
+            }),
+            DimensionValueLookup::Missing => Some(DimensionValueView {
+                state: DimensionValueState::Missing,
+                origin: None,
+            }),
+        }
+    }
+
+    #[must_use]
     pub fn record_view(self, actual_type: &str, key: &str) -> Option<RecordView<'a>> {
         self.session.record_view(actual_type, key)
     }
@@ -198,11 +239,8 @@ impl<'a> ProjectQueries<'a> {
 
     #[must_use]
     pub fn field_shape(self, actual_type: &str, field_name: &str) -> Option<FieldShapeInfo> {
-        let ty = self
-            .session
-            .schema()
-            .field_type(actual_type, field_name)?;
-        Some(field_shape(self.session.schema(), ty))
+        let field = self.session.schema().field(actual_type, field_name)?;
+        Some(field_shape(self.session.schema(), &field.ty_ref))
     }
 
     #[must_use]
@@ -317,6 +355,27 @@ impl<'a> ProjectQueries<'a> {
             },
         )
     }
+}
+
+fn dimension_value_at_path<'a>(
+    mut value: &'a CfdValue,
+    path: &[CfdPathSegment],
+) -> Option<&'a CfdValue> {
+    for segment in path {
+        value = match (segment, value) {
+            (CfdPathSegment::Field(field), CfdValue::Object(object)) => {
+                object.fields().get(field)?
+            }
+            (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
+            (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => entries
+                .iter()
+                .find_map(|(candidate, value)| {
+                    (coflow_data_model::format_cfd_dict_key(candidate) == *key).then_some(value)
+                })?,
+            _ => return None,
+        };
+    }
+    Some(value)
 }
 
 fn field_shape(schema: &CftSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {

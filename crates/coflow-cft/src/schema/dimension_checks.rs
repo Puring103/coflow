@@ -1,22 +1,19 @@
-use super::CftSchema;
 use crate::{
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
-    DimensionName,
+    CftType, DimensionName, TypeName,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn dimension_checks_for_type(
-    schema: &CftSchema,
-    type_name: &str,
+    types: &BTreeMap<TypeName, CftType>,
+    type_name: &TypeName,
 ) -> BTreeMap<DimensionName, CftSchemaCheckBlock> {
-    let Some(check) = schema
-        .resolve_type(type_name)
-        .and_then(|meta| meta.check.as_ref())
+    let Some(check) = types.get(type_name).and_then(|ty| ty.check.as_ref())
     else {
         return BTreeMap::new();
     };
     let mut by_dimension: BTreeMap<DimensionName, Vec<CftSchemaCheckStmt>> = BTreeMap::new();
-    let mut analyzer = DimensionCheckAnalyzer::new(schema, type_name);
+    let mut analyzer = DimensionCheckAnalyzer::new(types, type_name);
     for stmt in &check.stmts {
         for dimension in analyzer.stmt_dimensions(stmt) {
             by_dimension
@@ -40,15 +37,15 @@ pub(super) fn dimension_checks_for_type(
 }
 
 struct DimensionCheckAnalyzer<'a> {
-    schema: &'a CftSchema,
-    current_type: &'a str,
+    types: &'a BTreeMap<TypeName, CftType>,
+    current_type: &'a TypeName,
     scopes: Vec<BTreeSet<String>>,
 }
 
 impl<'a> DimensionCheckAnalyzer<'a> {
-    fn new(schema: &'a CftSchema, current_type: &'a str) -> Self {
+    fn new(types: &'a BTreeMap<TypeName, CftType>, current_type: &'a TypeName) -> Self {
         Self {
-            schema,
+            types,
             current_type,
             scopes: Vec::new(),
         }
@@ -124,9 +121,11 @@ impl<'a> DimensionCheckAnalyzer<'a> {
         if self.scopes.iter().rev().any(|scope| scope.contains(name)) {
             return BTreeSet::new();
         }
-        self.schema
-            .dimension_field(self.current_type, name)
-            .map(|field| BTreeSet::from([field.dimension.clone()]))
+        self.types
+            .get(self.current_type)
+            .and_then(|ty| ty.field(name))
+            .and_then(|field| field.dimension.as_ref())
+            .map(|binding| BTreeSet::from([binding.dimension.clone()]))
             .unwrap_or_default()
     }
 
