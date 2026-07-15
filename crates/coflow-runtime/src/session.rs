@@ -20,8 +20,7 @@ use crate::writes::record_value_at_path;
 /// Stable, wire-friendly coordinate of a top-level record.
 ///
 /// Top-level records always have an `(actual_type, key)` pair that uniquely
-/// identifies them inside a model build, even when synthetic dimension
-/// records share keys with their source records.
+/// identifies them inside a model build.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(

@@ -241,7 +241,8 @@ impl<'a> ProjectQueries<'a> {
             .filter_map(|edge| {
                 Some(RecordReferenceInfo {
                     target: self.coordinate_of(edge.target)?,
-                    path: edge.path.clone(),
+                    path: edge.site.path.clone(),
+                    dimension: edge.site.dimension.clone(),
                 })
             })
             .collect()

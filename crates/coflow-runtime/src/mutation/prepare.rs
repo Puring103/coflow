@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::DiagnosticSet;
 use coflow_api::WriteFieldPathSegment;
-use coflow_cft::CftSchemaTypeRef;
-use coflow_data_model::{CfdPathSegment, CfdValue, PendingInsertRef};
+use coflow_cft::{CftSchemaTypeRef, DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue, DimensionValueLookup, PendingInsertRef};
 
 use crate::write_rules;
 use crate::writes;
@@ -14,7 +14,7 @@ use super::defaults::{
     create_record_draft_for_type, default_missing_fields_for_type, default_record_for_type,
     default_value_for_type_ref,
 };
-use super::types::PreparedMutationOp;
+use super::types::{DimensionValueCoordinate, DimensionValueSelector, PreparedMutationOp};
 use super::{one_mutation_error, one_path_error, schema_field};
 use super::{CreateRecordDraft, DefaultMaterialization, MutationFields, MutationOp};
 
@@ -158,6 +158,15 @@ pub(super) fn prepare_one(
                 value,
             })
         }
+        MutationOp::SetDimensionValue { coordinate, value } => prepare_dimension_value(
+            session,
+            coordinate,
+            Some(value),
+            pending_records,
+        ),
+        MutationOp::ClearDimensionValue { coordinate } => {
+            prepare_dimension_value(session, coordinate, None, pending_records)
+        }
         MutationOp::RenameRecord {
             record,
             file,
@@ -200,6 +209,147 @@ pub(super) fn prepare_one(
             })
         }
     }
+}
+
+fn prepare_dimension_value(
+    session: &ProjectSession,
+    selector: DimensionValueSelector,
+    value: Option<super::MutationValue>,
+    pending_records: &BTreeMap<RecordCoordinate, usize>,
+) -> Result<PreparedMutationOp, DiagnosticSet> {
+    let DimensionValueSelector {
+        record,
+        field,
+        dimension,
+        variant,
+        path,
+    } = selector;
+    let record_id = session
+        .records
+        .id_for_coordinate(&record.actual_type, &record.key)
+        .ok_or_else(|| {
+            one_mutation_error(
+                "MUTATION-DIMENSION",
+                format!("record `{}.{}` was not found", record.actual_type, record.key),
+            )
+        })?;
+    let schema_field = schema_field(session.schema(), &record.actual_type, &field)?;
+    let binding = schema_field.dimension.as_ref().ok_or_else(|| {
+        one_mutation_error(
+            "MUTATION-DIMENSION",
+            format!("field `{}.{field}` is not dimensional", record.actual_type),
+        )
+    })?;
+    if binding.dimension.as_str() != dimension {
+        return Err(one_mutation_error(
+            "MUTATION-DIMENSION",
+            format!(
+                "field `{}.{field}` belongs to dimension `{}`, not `{dimension}`",
+                record.actual_type, binding.dimension
+            ),
+        ));
+    }
+    let schema_dimension = session.schema().resolve_dimension(&dimension).ok_or_else(|| {
+        one_mutation_error(
+            "MUTATION-DIMENSION",
+            format!("unknown dimension `{dimension}`"),
+        )
+    })?;
+    let schema_variant = schema_dimension.variant(&variant).ok_or_else(|| {
+        one_mutation_error(
+            "MUTATION-DIMENSION",
+            format!("unknown variant `{dimension}.{variant}`"),
+        )
+    })?;
+    if value.is_none() && !path.is_empty() {
+        return Err(one_path_error(
+            "only a complete dimension variant value can be cleared",
+        ));
+    }
+
+    let new_value = if let Some(value) = value {
+        let mut full_path = vec![CfdPathSegment::Field(field.clone())];
+        full_path.extend(path.iter().cloned());
+        let mut expected = write_rules::expected_type_for_cfd_path(
+            session.schema(),
+            &record.actual_type,
+            &full_path,
+            "MUTATION-DIMENSION-PATH",
+            "MUTATION",
+        )?;
+        if path.is_empty() && !matches!(expected, CftSchemaTypeRef::Nullable(_)) {
+            expected = CftSchemaTypeRef::Nullable(Box::new(expected));
+        }
+        let value = coerce_mutation_value(session, &expected, value, pending_records)?;
+        if path.is_empty() {
+            Some(value)
+        } else {
+            let mut root = match session.model.dimension_field_value(
+                session.schema(),
+                record_id,
+                &field,
+                &dimension,
+                &variant,
+            ) {
+                Ok(DimensionValueLookup::Value { value, .. }) => value.clone(),
+                Ok(DimensionValueLookup::ExplicitNull { .. } | DimensionValueLookup::Missing) => {
+                    return Err(one_path_error(
+                        "nested dimension writes require a materialized variant value",
+                    ));
+                }
+                Err(_) => {
+                    return Err(one_mutation_error(
+                        "MUTATION-DIMENSION",
+                        "dimension value coordinate does not match the schema",
+                    ));
+                }
+            };
+            set_nested_value(&mut root, &path, value)?;
+            Some(root)
+        }
+    } else {
+        None
+    };
+
+    let entry = session
+        .source_data
+        .dimension_source(
+            schema_field.declaring_type.as_str(),
+            schema_field.name.as_str(),
+            binding.dimension.as_str(),
+        )
+        .ok_or_else(|| {
+            one_mutation_error(
+                "MUTATION-DIMENSION",
+                format!(
+                    "dimension field `{}.{}` has no managed source",
+                    schema_field.declaring_type, schema_field.name
+                ),
+            )
+        })?;
+    Ok(PreparedMutationOp::WriteDimensionValue {
+        record: record.clone(),
+        coordinate: DimensionValueCoordinate {
+            source_type: TypeName::new(schema_field.declaring_type.to_string()).map_err(|err| {
+                one_mutation_error("MUTATION-DIMENSION", err.to_string())
+            })?,
+            source_key: RecordKey::new(record.key.clone()).map_err(|err| {
+                one_mutation_error("MUTATION-DIMENSION", err.to_string())
+            })?,
+            field: FieldName::new(schema_field.name.to_string()).map_err(|err| {
+                one_mutation_error("MUTATION-DIMENSION", err.to_string())
+            })?,
+            dimension: DimensionName::new(binding.dimension.to_string()).map_err(|err| {
+                one_mutation_error("MUTATION-DIMENSION", err.to_string())
+            })?,
+            variant: VariantName::new(schema_variant.to_string()).map_err(|err| {
+                one_mutation_error("MUTATION-DIMENSION", err.to_string())
+            })?,
+            path: CfdPath { segments: path },
+        },
+        new_value,
+        write_file: entry.display_path.clone(),
+    })
 }
 
 pub(super) struct PendingInsertSetRequest<'a> {

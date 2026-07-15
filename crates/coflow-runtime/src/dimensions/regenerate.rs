@@ -36,7 +36,7 @@ pub(crate) fn plan_dimension_generation(
     for (dimension, config) in &project.config.dimensions {
         let dimension_fields = fields
             .iter()
-            .filter(|field| field.dimension == *dimension)
+            .filter(|field| field.dimension.as_str() == dimension)
             .collect::<Vec<_>>();
         let Some(out_dir) = config.out_dir.as_ref() else {
             diagnostics.push(dimension_diagnostic(
@@ -60,10 +60,10 @@ pub(crate) fn plan_dimension_generation(
                 provider_id: provider_id.to_string(),
                 path: path.clone(),
                 sheet: format!("{}_{}", field.bucket, field.source_field),
-                actual_type: field.source_type.clone(),
+                actual_type: field.source_type.to_string(),
                 entries: dimension_entries(model, field),
                 variants: config.variants.clone(),
-                bucket: field.bucket.clone(),
+                bucket: field.bucket.to_string(),
                 is_singleton: field.is_singleton,
             });
         }
@@ -397,11 +397,11 @@ fn dimension_entries(model: &CfdDataModel, field: &DimensionField) -> Vec<Dimens
             .records_assignable_to(&field.source_type)
             .next()
             .map(|(_, record)| DimensionSourceEntry {
-                key: field.source_field.clone(),
-                actual_type: field.source_type.clone(),
+                key: field.source_field.to_string(),
+                actual_type: field.source_type.to_string(),
                 default: record
                     .fields()
-                    .get(&field.source_field)
+                    .get(field.source_field.as_str())
                     .cloned()
                     .unwrap_or(CfdValue::Null),
             })
@@ -412,10 +412,10 @@ fn dimension_entries(model: &CfdDataModel, field: &DimensionField) -> Vec<Dimens
             .records_assignable_to(&field.source_type)
             .map(|(_, record)| DimensionSourceEntry {
                 key: record.key().to_string(),
-                actual_type: field.source_type.clone(),
+                actual_type: field.source_type.to_string(),
                 default: record
                     .fields()
-                    .get(&field.source_field)
+                    .get(field.source_field.as_str())
                     .cloned()
                     .unwrap_or(CfdValue::Null),
             })

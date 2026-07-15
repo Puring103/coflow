@@ -119,6 +119,12 @@ cft_name!(DimensionName, "dimension name");
 cft_name!(BucketName, "dimension bucket");
 cft_name!(RecordKey, "record key");
 
+impl From<TypeName> for BucketName {
+    fn from(value: TypeName) -> Self {
+        Self(value.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariantName(String);
 

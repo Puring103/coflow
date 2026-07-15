@@ -1,6 +1,6 @@
 use crate::source_resolution::ConfiguredSource;
 use coflow_api::SourceLocationSpec;
-use coflow_cft::CftSchema;
+use coflow_cft::{BucketName, CftSchema, DimensionName, FieldName, TypeName};
 use coflow_project::Project;
 use serde_json::{json, Value};
 use std::fs;
@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DimensionField {
-    pub dimension: String,
-    pub source_type: String,
-    pub source_field: String,
-    pub bucket: String,
+    pub dimension: DimensionName,
+    pub source_type: TypeName,
+    pub source_field: FieldName,
+    pub bucket: BucketName,
     pub is_singleton: bool,
 }
 
@@ -26,7 +26,7 @@ pub(crate) fn dimension_sources(
         };
         let fields = fields
             .iter()
-            .filter(|field| field.dimension == *dimension)
+            .filter(|field| field.dimension.as_str() == dimension)
             .collect::<Vec<_>>();
         if fields.is_empty() {
             continue;
@@ -60,13 +60,14 @@ pub fn dimension_fields(schema: &CftSchema) -> Vec<DimensionField> {
                 continue;
             };
             fields.push(DimensionField {
-                dimension: dimension.dimension.to_string(),
-                source_type: schema_type.name.to_string(),
-                source_field: field.name.to_string(),
+                dimension: dimension.dimension.clone(),
+                source_type: schema_type.name.clone(),
+                source_field: field.name.clone(),
                 bucket: dimension
                     .bucket
                     .as_ref()
-                    .map_or_else(|| schema_type.name.to_string(), ToString::to_string),
+                    .cloned()
+                    .unwrap_or_else(|| BucketName::from(schema_type.name.clone())),
                 is_singleton: schema_type.is_singleton,
             });
         }
@@ -115,7 +116,7 @@ fn field_for_file_stem<'a>(
 ) -> Option<&'a DimensionField> {
     fields.iter().copied().find(|field| {
         if extension == "cfd" && field.is_singleton {
-            stem == field.source_type
+            stem == field.source_type.as_str()
         } else {
             stem == format!("{}_{}", field.bucket, field.source_field)
         }
@@ -127,7 +128,7 @@ fn source_options(field: &DimensionField, extension: &str) -> Value {
         json!({
             "sheets": [{
                 "sheet": format!("{}_{}", field.bucket, field.source_field),
-                "type": field.source_type,
+                "type": field.source_type.as_str(),
             }]
         })
     } else {

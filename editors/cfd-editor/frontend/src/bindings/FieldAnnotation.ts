@@ -24,11 +24,7 @@ import type { SpreadInfo } from "./SpreadInfo";
  */
 export type FieldAnnotation = { spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, nullable: boolean, 
 /**
- * True when the field's value is derived from another record (currently:
- * the synthesized `default` slot on a dimension variant type mirrors the
- * source record's field). Writing into it isn't blocked at the engine
- * layer, but the editor renders it as read-only to steer edits to the
- * source record instead.
+ * True when this cell is exposed for inspection but cannot be edited.
  */
 read_only: boolean, 
 /**

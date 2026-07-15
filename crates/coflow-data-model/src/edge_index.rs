@@ -1,8 +1,8 @@
 use crate::compiler_context::{CfdValueDraft, DataModelCompilerContext, RecordDraft};
 use crate::diagnostic::CfdPath;
 use crate::model::{
-    CfdDomainId, CfdRecord, CfdRecordId, CfdValue, RefEdge, RefEdgeId, RefSite, SpreadEdge,
-    SpreadEdgeId, SpreadSite,
+    CfdDomainId, CfdRecord, CfdRecordId, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId,
+    RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
 };
 use coflow_cft::CftSchemaTypeRef;
 use std::collections::{BTreeMap, BTreeSet};
@@ -221,9 +221,35 @@ pub(crate) fn build_ref_indexes(
                 &field.ty_ref,
                 host,
                 root.clone().field(name.clone()),
+                None,
                 &context,
                 &mut out,
             );
+        }
+        for (field_name, values) in &record.dimension_fields {
+            let Some(field) = context
+                .schema
+                .full_fields(record.actual_type())
+                .find(|field| field.name.as_str() == field_name)
+            else {
+                continue;
+            };
+            for (variant, value) in &values.variants {
+                let coordinate = DimensionRefCoordinate {
+                    field: field.name.clone(),
+                    dimension: values.dimension.clone(),
+                    variant: variant.clone(),
+                };
+                collect_ref_edges(
+                    &value.value,
+                    &field.ty_ref,
+                    host,
+                    root.clone().field(field_name.clone()),
+                    Some(&coordinate),
+                    &context,
+                    &mut out,
+                );
+            }
         }
     }
     out
@@ -249,10 +275,11 @@ fn collect_ref_edges(
     ty: &CftSchemaTypeRef,
     host: CfdRecordId,
     path: CfdPath,
+    dimension: Option<&DimensionRefCoordinate>,
     context: &RefEdgeBuildContext<'_, '_>,
     out: &mut RefIndexes,
 ) {
-    if context.is_spread_inherited_path(host, &path) {
+    if dimension.is_none() && context.is_spread_inherited_path(host, &path) {
         return;
     }
     match (value, ty.non_nullable()) {
@@ -277,13 +304,14 @@ fn collect_ref_edges(
             let Some(target_type) = context.schema.type_id(target_record.actual_type()) else {
                 return;
             };
-            let site = RefSite::new(host, path.clone());
+            let site = dimension.map_or_else(
+                || RefSite::new(host, path.clone()),
+                |dimension| RefSite::in_dimension(host, path.clone(), dimension.clone()),
+            );
             let id = RefEdgeId::new(out.edges.len());
             out.edges.push(RefEdge {
                 id,
                 site: site.clone(),
-                host,
-                path,
                 expected_type: expected_type_id,
                 domain,
                 key: key.clone(),
@@ -308,6 +336,7 @@ fn collect_ref_edges(
                     &field.ty_ref,
                     host,
                     path.clone().field(name.clone()),
+                    dimension,
                     context,
                     out,
                 );
@@ -320,6 +349,7 @@ fn collect_ref_edges(
                     inner_ty,
                     host,
                     path.clone().index(index),
+                    dimension,
                     context,
                     out,
                 );
@@ -332,6 +362,7 @@ fn collect_ref_edges(
                     value_ty,
                     host,
                     path.clone().dict_key_value(key),
+                    dimension,
                     context,
                     out,
                 );

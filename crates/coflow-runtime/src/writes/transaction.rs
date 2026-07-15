@@ -24,7 +24,10 @@ impl MutationTransaction {
                 if !seen.insert(key) {
                     return Ok(());
                 }
-                let declared = writer.begin_transaction(ctx, source)?;
+                let declared = writer.map_or_else(
+                    || Ok(SourceTransaction::RuntimeSnapshot),
+                    |writer| writer.begin_transaction(ctx, source),
+                )?;
                 transaction.enlist(source, declared)
             });
             if let Err(mut diagnostics) = enlisted {

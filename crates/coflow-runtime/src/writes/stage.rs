@@ -1,6 +1,6 @@
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    WriteCellRequest, WriteContext,
+    DimensionSourceSchema, WriteCellRequest, WriteContext, WriteDimensionValueRequest,
 };
 use coflow_data_model::CfdValue;
 use std::collections::BTreeSet;
@@ -9,7 +9,8 @@ use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate, WriteOutcome};
 
 use super::plan::{
-    DeletePlan, InsertPlan, MutationExecutionPlan, RenamePlan, RenameWritePlan, WriteFieldPlan,
+    DeletePlan, DimensionWritePlan, InsertPlan, MutationExecutionPlan, RenamePlan,
+    RenameWritePlan, WriteFieldPlan,
 };
 
 pub(crate) fn preflight_mutation_op(
@@ -67,6 +68,22 @@ pub(crate) fn stage_mutation_op(
             PreparedMutationOp::SetField { record, value, .. },
             MutationExecutionPlan::WriteField(plan),
         ) => stage_write_field(session, plan, record, value),
+        (
+            PreparedMutationOp::WriteDimensionValue {
+                record,
+                coordinate,
+                new_value,
+                write_file,
+            },
+            MutationExecutionPlan::WriteDimension(plan),
+        ) => stage_write_dimension_value(
+            session,
+            plan,
+            record,
+            coordinate,
+            new_value.as_ref(),
+            write_file,
+        ),
         (
             PreparedMutationOp::SetField { record, value, .. },
             MutationExecutionPlan::Rename(plan),
@@ -238,6 +255,51 @@ fn stage_write_field(
     Ok(field_write_outcome(plan, host_record, provider_outcome))
 }
 
+fn stage_write_dimension_value(
+    session: &ProjectSession,
+    plan: &DimensionWritePlan,
+    record: &RecordCoordinate,
+    coordinate: &crate::DimensionValueCoordinate,
+    new_value: Option<&CfdValue>,
+    write_file: &str,
+) -> Result<WriteOutcome, DiagnosticSet> {
+    let schema = session.schema();
+    let source_type = schema
+        .resolve_type(&coordinate.source_type)
+        .ok_or_else(|| plan_mismatch("dimension source type disappeared before staging"))?;
+    let source_field = schema
+        .field(&coordinate.source_type, &coordinate.field)
+        .ok_or_else(|| plan_mismatch("dimension source field disappeared before staging"))?;
+    let dimension = schema
+        .resolve_dimension(&coordinate.dimension)
+        .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
+    let result = plan.manager.write_dimension_value(
+        coflow_api::TableContext {
+            project_root: &session.project.root_dir,
+        },
+        &WriteDimensionValueRequest {
+            source: &plan.source,
+            schema: DimensionSourceSchema {
+                schema,
+                dimension,
+                source_type,
+                source_field,
+            },
+            source_key: &coordinate.source_key,
+            variant: &coordinate.variant,
+            new_value,
+        },
+    )?;
+    Ok(WriteOutcome {
+        touched: vec![record.clone()],
+        inserted: None,
+        deleted: None,
+        renamed: None,
+        affected_files: result.changed.then(|| write_file.to_string()).into_iter().collect(),
+        diagnostics: DiagnosticSet::empty(),
+    })
+}
+
 fn field_write_outcome(
     plan: &WriteFieldPlan,
     host_record: &RecordCoordinate,
@@ -291,10 +353,7 @@ fn stage_rename_record_key(
     let mut diagnostics = plan.writer.rename_record(ctx, &target_request)?.diagnostics;
     let mut affected_files = BTreeSet::from([plan.display_path.clone()]);
     for action in &plan.reference_actions {
-        let outcome = action
-            .writer
-            .write_field(ctx, &action.request.as_request(schema))?;
-        diagnostics.extend(outcome.diagnostics);
+        diagnostics.extend(action.execute(&session.project.root_dir, schema, &session.model)?);
         affected_files.insert(action.display_path().to_string());
     }
     for action in &plan.rewrite_actions {

@@ -8,7 +8,9 @@ mod value;
 
 pub use dimensions::{DimensionFieldLookupError, DimensionValueLookup};
 pub use domain::CfdDomainIndex;
-pub use edges::{RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite};
+pub use edges::{
+    DimensionRefCoordinate, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
+};
 pub use ids::{CfdDomainId, CfdRecordId, CfdTypeId};
 pub use input::{CfdInputDictKey, CfdInputDimensionValue, CfdInputRecord, CfdInputValue};
 pub use tables::{CfdPolymorphicIndex, CfdTable};

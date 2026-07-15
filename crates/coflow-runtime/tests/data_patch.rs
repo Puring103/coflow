@@ -3,8 +3,8 @@
 use coflow_project::Project;
 use coflow_runtime::{
     CreateFieldSource, CreateRequiredInput, DataPatchOp, DataPatchRequest, DefaultMaterialization,
-    MutationOp, MutationRequest, MutationValue, PatchPathSegment, PatchRecordSelector,
-    RecordCoordinate, Runtime,
+    DimensionValueSelector, MutationOp, MutationRequest, MutationValue, PatchPathSegment,
+    PatchRecordSelector, RecordCoordinate, Runtime,
 };
 use serde_json::json;
 
@@ -225,6 +225,74 @@ fn registry() -> coflow_api::ProviderRegistry {
     coflow_builtins::default_provider_registry().expect("default provider registry")
 }
 
+fn write_dimension_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { @localized name: string; }",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write items");
+    std::fs::write(
+        root.join("data/dimensions/language/Item_name.csv"),
+        "id,default,zh\npotion,Potion,药水\n",
+    )
+    .expect("write dimension values");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+}
+
+fn write_dimension_ref_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data/dimensions/platform")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"
+            type Item { name: string; }
+            type Offer {
+                @dimension("platform")
+                item: &Item;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/main.cfd"),
+        "potion: Item { name: \"Potion\" }\nstarter: Offer { item: &potion }\n",
+    )
+    .expect("write records");
+    std::fs::write(
+        root.join("data/dimensions/platform/Offer_item.csv"),
+        "id,default,pc\nstarter,&potion,&potion\n",
+    )
+    .expect("write dimension refs");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/main.cfd
+dimensions:
+  platform:
+    variants: [pc]
+    out_dir: data/dimensions/platform
+"#,
+    )
+    .expect("write config");
+}
+
 fn session(root: &std::path::Path) -> coflow_runtime::WriteProjectSession {
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
@@ -296,6 +364,93 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     assert!(text.contains("bad_sword"));
     assert!(text.contains("Rare"));
 
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn patch_writes_and_clears_record_owned_dimension_values() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-value-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_dimension_project(&root);
+    let mut session = session(&root);
+    let selector = DimensionValueSelector {
+        record: RecordCoordinate::new("Item", "potion"),
+        field: "name".to_string(),
+        dimension: "language".to_string(),
+        variant: "zh".to_string(),
+        path: Vec::new(),
+    };
+
+    let set = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: selector.clone(),
+            value: json!("治疗药水"),
+        }],
+    });
+    assert!(set.write_ok, "diagnostics: {:?}", set.diagnostics);
+    assert_eq!(set.affected_files, ["data/dimensions/language/Item_name.csv"]);
+    assert!(std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+        .unwrap()
+        .contains("治疗药水"));
+
+    let explicit_null = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetDimensionValue {
+            coordinate: selector.clone(),
+            value: serde_json::Value::Null,
+        }],
+    });
+    assert!(explicit_null.write_ok, "diagnostics: {:?}", explicit_null.diagnostics);
+    assert!(std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+        .unwrap()
+        .contains(",null\n"));
+
+    let clear = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::ClearDimensionValue {
+            coordinate: selector,
+        }],
+    });
+    assert!(clear.write_ok, "diagnostics: {:?}", clear.diagnostics);
+    assert!(std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+        .unwrap()
+        .contains("potion,Potion,\n"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn rename_record_rewrites_refs_in_dimension_overlays() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-ref-rename-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_dimension_ref_project(&root);
+    let mut session = session(&root);
+
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::RenameRecord {
+            record: PatchRecordSelector {
+                actual_type: "Item".to_string(),
+                key: "potion".to_string(),
+            },
+            file: None,
+            new_key: "elixir".to_string(),
+        }],
+    });
+
+    assert!(report.write_ok, "diagnostics: {:?}", report.diagnostics);
+    let dimension = std::fs::read_to_string(
+        root.join("data/dimensions/platform/Offer_item.csv"),
+    )
+    .expect("read dimension source");
+    assert!(dimension.contains("starter,&elixir,&elixir"), "{dimension}");
     let _ = std::fs::remove_dir_all(root);
 }
 

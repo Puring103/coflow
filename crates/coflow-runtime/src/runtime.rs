@@ -12,8 +12,9 @@ use crate::project_schema::{open_project_schema_session, open_project_schema_att
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::session_build::{open_project_session, open_project_session_from_schema, SessionOpenOptions};
 use crate::{
-    CreateRecordDraft, DefaultMaterialization, MutationFields, MutationOp, MutationReport,
-    MutationRequest, MutationValue, ProjectQueries, RecordCoordinate, WriteOutcome,
+    CreateRecordDraft, DefaultMaterialization, DimensionValueSelector, MutationFields, MutationOp,
+    MutationReport, MutationRequest, MutationValue, ProjectQueries, RecordCoordinate,
+    WriteOutcome,
 };
 
 #[derive(Debug, Clone)]
@@ -458,6 +459,36 @@ impl WriteProjectSession {
             path: path.to_vec(),
             value: MutationValue::Cfd(new_value.clone()),
         })
+    }
+
+    /// Writes one record-owned dimension variant value.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the coordinate is invalid or the managed
+    /// dimension source cannot be written.
+    pub fn write_dimension_value(
+        &mut self,
+        coordinate: DimensionValueSelector,
+        new_value: &CfdValue,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::SetDimensionValue {
+            coordinate,
+            value: MutationValue::Cfd(new_value.clone()),
+        })
+    }
+
+    /// Clears one record-owned dimension variant so it becomes missing.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the coordinate is invalid or the managed
+    /// dimension source cannot be written.
+    pub fn clear_dimension_value(
+        &mut self,
+        coordinate: DimensionValueSelector,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::ClearDimensionValue { coordinate })
     }
 
     /// Renames one record key and its references.

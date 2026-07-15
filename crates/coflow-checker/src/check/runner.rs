@@ -306,15 +306,6 @@ impl<'a> CheckRunner<'a> {
         }
     }
 
-    fn note_read_from(&mut self, root: CfdRecordId, target: CfdRecordId) {
-        let Some(deps) = self.deps.as_mut() else {
-            return;
-        };
-        let mut collector = deps.collector_for(Some(root));
-        collector.note_read_from(target);
-        deps.extend_root(Some(root), collector);
-    }
-
     fn enter_data_value(
         &mut self,
         budget: &mut Option<StructuralBudget>,

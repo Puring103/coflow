@@ -66,6 +66,21 @@ impl SourceDataCache {
             .map(|batch| batch.entry.display_path.clone())
             .collect()
     }
+
+    pub(crate) fn dimension_source(
+        &self,
+        declaring_type: &str,
+        field: &str,
+        dimension: &str,
+    ) -> Option<&ResolvedSourceEntry> {
+        self.batches.iter().find_map(|batch| {
+            let binding = batch.dimension_field.as_ref()?;
+            (binding.source_type.as_str() == declaring_type
+                && binding.source_field.as_str() == field
+                && binding.dimension.as_str() == dimension)
+                .then_some(&batch.entry)
+        })
+    }
 }
 
 #[derive(Debug)]

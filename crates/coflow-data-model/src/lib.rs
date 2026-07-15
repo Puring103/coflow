@@ -45,8 +45,8 @@ pub use model::{
     CfdDataModel, CfdDictKey, CfdDomainId, CfdDomainIndex, CfdEnumValue, CfdInputDictKey,
     CfdDimensionFieldValues, CfdDimensionValue, CfdInputDimensionValue, CfdInputRecord,
     CfdInputValue, CfdModelBuilder, CfdObject, CfdPolymorphicIndex, CfdRecord, CfdRecordId,
-    CfdTable, CfdTypeId, CfdValue, DimensionFieldLookupError, DimensionValueLookup, RefEdge,
-    RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
+    CfdTable, CfdTypeId, CfdValue, DimensionFieldLookupError, DimensionRefCoordinate,
+    DimensionValueLookup, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
 };
 pub use origin::{
     label_to_location, map_diagnostics, MappedDiagnostic, MappedLabel, RecordOrigin,

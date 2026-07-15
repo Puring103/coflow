@@ -12,13 +12,12 @@ name: string,
  */
 display_name: string, variants: Array<string>, 
 /**
- * Output directory (project-relative path string) for synthesized
- * dimension records, or `None` when no `out_dir` is configured.
+ * Output directory (project-relative path string) for managed dimension
+ * sources, or `None` when no `out_dir` is configured.
  */
 out_dir: string | null, 
 /**
  * Schema fields belonging to this dimension. Wire only the source
- * type/field/synthesized type — the schema view itself is not part of
- * the editor's surface.
+ * type and field; the schema view itself is not part of the editor surface.
  */
 fields: Array<DimensionFieldInfo>, };

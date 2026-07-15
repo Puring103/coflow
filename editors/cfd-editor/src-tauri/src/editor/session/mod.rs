@@ -330,9 +330,7 @@ impl SessionStore {
         Ok(graph::build_graph(&session, query))
     }
 
-    /// Persist a single field edit. Coordinate carries the host record's
-    /// `(actual_type, key)` so the engine can address synthetic-vs-source
-    /// rows that share a key.
+    /// Persist a single field edit addressed by its owner record coordinate.
     #[allow(clippy::too_many_lines)]
     pub fn write_field(
         &self,

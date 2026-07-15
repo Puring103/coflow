@@ -79,6 +79,7 @@ pub struct RefTargetInfo {
 pub struct RecordReferenceInfo {
     pub target: RecordCoordinate,
     pub path: CfdPath,
+    pub dimension: Option<coflow_data_model::DimensionRefCoordinate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

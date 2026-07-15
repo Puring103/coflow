@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
-use coflow_data_model::{CfdPathSegment, CfdValue};
+use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -37,6 +38,13 @@ pub enum MutationOp {
         path: Vec<CfdPathSegment>,
         value: MutationValue,
     },
+    SetDimensionValue {
+        coordinate: DimensionValueSelector,
+        value: MutationValue,
+    },
+    ClearDimensionValue {
+        coordinate: DimensionValueSelector,
+    },
     RenameRecord {
         record: RecordCoordinate,
         #[serde(default)]
@@ -48,6 +56,26 @@ pub enum MutationOp {
         #[serde(default)]
         file: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DimensionValueSelector {
+    pub record: RecordCoordinate,
+    pub field: String,
+    pub dimension: String,
+    pub variant: String,
+    #[serde(default)]
+    pub path: Vec<CfdPathSegment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DimensionValueCoordinate {
+    pub source_type: TypeName,
+    pub source_key: RecordKey,
+    pub field: FieldName,
+    pub dimension: DimensionName,
+    pub variant: VariantName,
+    pub path: CfdPath,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +159,12 @@ pub(crate) enum PreparedMutationOp {
         write_file: String,
         path: Vec<coflow_api::WriteFieldPathSegment>,
         value: CfdValue,
+    },
+    WriteDimensionValue {
+        record: RecordCoordinate,
+        coordinate: DimensionValueCoordinate,
+        new_value: Option<CfdValue>,
+        write_file: String,
     },
     RenameRecord {
         record: RecordCoordinate,

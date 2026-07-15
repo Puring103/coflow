@@ -39,7 +39,7 @@ pub use operations::{
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
     DimensionSourceSchema, SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions,
-    TableManager, TableManagerDescriptor, TableOperationResult,
+    TableManager, TableManagerDescriptor, TableOperationResult, WriteDimensionValueRequest,
 };
 pub use provider::{
     DecodedOutputOptions, DecodedSourceOptions, LoadedSource, ProbeConfidence, ProbeResult,

@@ -1,5 +1,5 @@
 use crate::{DecodedSourceOptions, Diagnostic, DiagnosticSet, ResolvedSource};
-use coflow_cft::{CftDimension, CftField, CftSchema, CftType};
+use coflow_cft::{CftDimension, CftField, CftSchema, CftType, RecordKey, VariantName};
 use coflow_data_model::{CfdInputDimensionValue, CfdValue};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -209,6 +209,15 @@ pub struct DimensionSourceLoadResult {
     pub values: Vec<CfdInputDimensionValue>,
 }
 
+#[derive(Debug, Clone)]
+pub struct WriteDimensionValueRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub schema: DimensionSourceSchema<'a>,
+    pub source_key: &'a RecordKey,
+    pub variant: &'a VariantName,
+    pub new_value: Option<&'a CfdValue>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DimensionSourceEntry {
     pub key: String,
@@ -236,6 +245,22 @@ pub trait DimensionSourceManager: Send + Sync {
         _request: &DimensionSourceLoadRequest<'_>,
     ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
         Err(unsupported_table_operation("loading dimension sources"))
+    }
+
+    /// Write or clear one variant value in a managed dimension source.
+    ///
+    /// `None` clears the physical value so the overlay becomes missing;
+    /// `Some(CfdValue::Null)` stores an explicit null.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the coordinate is stale or cannot be written.
+    fn write_dimension_value(
+        &self,
+        _ctx: TableContext<'_>,
+        _request: &WriteDimensionValueRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        Err(unsupported_table_operation("writing dimension values"))
     }
 
     /// Decodes provider options for a generated dimension source.

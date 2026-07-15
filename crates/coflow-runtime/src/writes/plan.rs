@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use coflow_api::{
-    Diagnostic, DiagnosticSet, ProviderRegistry, ResolvedSource, SourceWriter,
+    Diagnostic, DiagnosticSet, DimensionSourceManager, ProviderRegistry, ResolvedSource, SourceWriter,
     WriteFieldPathSegment,
 };
 use coflow_data_model::{CfdValue, RecordOrigin};
@@ -19,6 +19,7 @@ use crate::write_rules;
 pub(crate) enum MutationExecutionPlan {
     Insert(InsertPlan),
     WriteField(WriteFieldPlan),
+    WriteDimension(DimensionWritePlan),
     Rename(RenamePlan),
     Delete(DeletePlan),
     Noop { coordinate: RecordCoordinate },
@@ -35,6 +36,11 @@ pub(crate) struct WriteFieldPlan {
     pub(super) target: WriteTarget,
     pub(super) source: ResolvedSource,
     pub(super) writer: Arc<dyn SourceWriter>,
+}
+
+pub(crate) struct DimensionWritePlan {
+    pub(super) source: ResolvedSource,
+    pub(super) manager: Arc<dyn DimensionSourceManager>,
 }
 
 pub(crate) enum RenamePlan {
@@ -70,22 +76,26 @@ impl MutationExecutionPlan {
 
     pub(crate) fn visit_sources<E>(
         &self,
-        mut visit: impl FnMut(&ResolvedSource, &Arc<dyn SourceWriter>) -> Result<(), E>,
+        mut visit: impl FnMut(
+            &ResolvedSource,
+            Option<&Arc<dyn SourceWriter>>,
+        ) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::Insert(plan) => visit(&plan.source, &plan.writer)?,
-            Self::WriteField(plan) => visit(&plan.source, &plan.writer)?,
+            Self::Insert(plan) => visit(&plan.source, Some(&plan.writer))?,
+            Self::WriteField(plan) => visit(&plan.source, Some(&plan.writer))?,
+            Self::WriteDimension(plan) => visit(&plan.source, None)?,
             Self::Rename(RenamePlan::Noop { .. }) | Self::Folded | Self::Noop { .. } => {}
             Self::Rename(RenamePlan::Write(plan)) => {
-                visit(&plan.source, &plan.writer)?;
+                visit(&plan.source, Some(&plan.writer))?;
                 for action in &plan.reference_actions {
-                    visit(action.source(), &action.writer)?;
+                    visit(action.source(), action.writer())?;
                 }
                 for action in &plan.rewrite_actions {
-                    visit(action.source(), &action.writer)?;
+                    visit(action.source(), Some(&action.writer))?;
                 }
             }
-            Self::Delete(plan) => visit(&plan.source, &plan.writer)?,
+            Self::Delete(plan) => visit(&plan.source, Some(&plan.writer))?,
         }
         Ok(())
     }
@@ -161,6 +171,25 @@ pub(crate) fn prepare_mutation_execution(
                 MutationExecutionPlan::WriteField,
             )
         }),
+        PreparedMutationOp::WriteDimensionValue { write_file, .. } => {
+            let source = source_for_file(session, write_file)?;
+            let manager = registry
+                .dimension_source_manager(&source.provider_id)
+                .ok_or_else(|| {
+                    DiagnosticSet::one(Diagnostic::error(
+                        "WRITE-DIMENSION-PROVIDER",
+                        "WRITE",
+                        format!(
+                            "dimension source provider `{}` is not registered",
+                            source.provider_id
+                        ),
+                    ))
+                })?;
+            Ok(MutationExecutionPlan::WriteDimension(DimensionWritePlan {
+                source,
+                manager,
+            }))
+        }
         PreparedMutationOp::RenameRecord {
             record, new_key, ..
         } => prepare_rename(session, registry, record, new_key).map(MutationExecutionPlan::Rename),

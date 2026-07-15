@@ -41,6 +41,13 @@ pub enum DataPatchOp {
         path: Vec<CfdPathSegment>,
         value: Value,
     },
+    SetDimensionValue {
+        coordinate: crate::DimensionValueSelector,
+        value: Value,
+    },
+    ClearDimensionValue {
+        coordinate: crate::DimensionValueSelector,
+    },
     RenameRecord {
         record: PatchRecordSelector,
         #[serde(default)]
@@ -164,6 +171,13 @@ impl DataPatchOp {
                 path,
                 value: MutationValue::Json(value),
             },
+            Self::SetDimensionValue { coordinate, value } => MutationOp::SetDimensionValue {
+                coordinate,
+                value: MutationValue::Json(value),
+            },
+            Self::ClearDimensionValue { coordinate } => {
+                MutationOp::ClearDimensionValue { coordinate }
+            }
             Self::RenameRecord {
                 record,
                 file,

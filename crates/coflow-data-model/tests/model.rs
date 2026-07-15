@@ -240,6 +240,56 @@ fn dimension_field_lookup_reads_record_owned_overlay() {
 }
 
 #[test]
+fn dimension_refs_are_precomputed_with_typed_coordinates() {
+    let schema = compile_schema_with_dimensions(
+        r#"
+            type Item { name: string; }
+            type Offer {
+                @dimension("platform")
+                item: &Item;
+            }
+        "#,
+        CftDimensionInputs::new([("platform", vec!["pc".to_string()])]),
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
+    builder.add_record(
+        "starter",
+        "Offer",
+        [("item", CfdInputValue::record_ref("potion"))],
+    );
+    builder.add_input_dimension_value(CfdInputDimensionValue {
+        source_type: coflow_cft::TypeName::new("Offer").unwrap(),
+        source_key: coflow_cft::RecordKey::new("starter").unwrap(),
+        field: coflow_cft::FieldName::new("item").unwrap(),
+        dimension: coflow_cft::DimensionName::new("platform").unwrap(),
+        variant: coflow_cft::VariantName::new("pc").unwrap(),
+        value: CfdInputValue::record_ref("potion"),
+        origin: RecordOrigin::None,
+    });
+
+    let model = builder.build().expect("data model should build");
+    let offer = model.lookup_assignable("Offer", "starter").expect("offer");
+    let item = model.lookup_assignable("Item", "potion").expect("item");
+    let edges = model
+        .direct_ref_edges_from_host(offer)
+        .collect::<Vec<_>>();
+
+    assert_eq!(edges.len(), 2);
+    assert!(edges.iter().any(|edge| edge.site.dimension.is_none()));
+    let overlay = edges
+        .iter()
+        .find(|edge| edge.site.dimension.is_some())
+        .expect("overlay ref edge");
+    let coordinate = overlay.site.dimension.as_ref().unwrap();
+    assert_eq!(coordinate.field.as_str(), "item");
+    assert_eq!(coordinate.dimension.as_str(), "platform");
+    assert_eq!(coordinate.variant.as_str(), "pc");
+    assert_eq!(overlay.target, item);
+    assert_eq!(model.direct_ref_edges_to_target(item).count(), 2);
+}
+
+#[test]
 fn dimension_field_lookup_uses_singleton_owner_record() {
     let schema = compile_schema_with_dimensions(
         r#"

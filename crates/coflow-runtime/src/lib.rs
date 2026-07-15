@@ -60,7 +60,8 @@ pub use load::format_cfd_path as format_field_path;
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
-    MutationReport, MutationRequest, MutationValue,
+    DimensionValueCoordinate, DimensionValueSelector, MutationReport, MutationRequest,
+    MutationValue,
 };
 pub use query::ProjectQueries;
 pub use records::{

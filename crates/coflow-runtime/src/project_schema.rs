@@ -153,7 +153,7 @@ fn validate_dimension_schema_config(project: &Project, schema: &CftSchema) -> Di
     let mut diagnostics = DiagnosticSet::empty();
     let mut required = BTreeSet::new();
     for field in dimensions::dimension_fields(schema) {
-        required.insert(field.dimension);
+        required.insert(field.dimension.to_string());
     }
     for dimension in required {
         if project.config.dimensions.contains_key(&dimension) {

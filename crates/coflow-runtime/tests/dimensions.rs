@@ -559,7 +559,7 @@ dimensions:
 
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
         .expect("read generated dimension csv");
-    assert_eq!(generated, "id,default,zh,en\npotion,Potion,药水,null\n");
+    assert_eq!(generated, "id,default,zh,en\npotion,Potion,药水,\n");
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
@@ -1329,7 +1329,7 @@ fn language_dimension_regenerates_singleton_cfd_with_defaults_and_preserved_vari
     .expect("write singleton source");
     std::fs::write(
         root.join("data/dimensions/language/UiText.cfd"),
-        r#"welcome: __coflow_dimension_UiText_welcome {
+        r#"welcome: UiText {
     default: "Old",
     zh: "欢迎",
     en: null,
@@ -1363,7 +1363,7 @@ dimensions:
         .expect("read generated dimension cfd");
     assert_eq!(
         generated,
-        "welcome: __coflow_dimension_UiText_welcome {\n    default: \"Welcome\",\n    zh: \"欢迎\",\n    en: null,\n}\n\n"
+        "welcome: UiText {\n    default: \"Welcome\",\n    zh: \"欢迎\",\n    en: null,\n}\n\n"
     );
     assert!(session
         .queries()
@@ -1372,13 +1372,6 @@ dimensions:
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
 
-/// Regression: spec 17 §1.1 — source record `Item.potion` and synthetic
-/// dimension record `__coflow_dimension_Item_name.potion` share the record key `potion`
-/// but live in different types. The pre-refactor `RecordIndex` keyed records
-/// by bare `key`, so the second `add(potion)` clobbered the first and
-/// `keys_for_file("Item_name.csv")` returned the wrong record's fields.
-///
-/// After Phase 2, `RecordIndex` is keyed by `(actual_type, key)`. Both
 #[test]
 fn dimension_sources_do_not_create_dependency_records() {
     let root = std::env::temp_dir().join(format!(

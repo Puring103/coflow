@@ -70,8 +70,8 @@ pub fn dimensions_for_project(project: &Project, fields: &[DimensionField]) -> V
             .unwrap_or_default()
             .iter()
             .map(|field| DimensionFieldInfo {
-                source_type: field.source_type.clone(),
-                source_field: field.source_field.clone(),
+                source_type: field.source_type.to_string(),
+                source_field: field.source_field.to_string(),
                 is_singleton: field.is_singleton,
             })
             .collect();
