@@ -48,7 +48,7 @@ pub fn build_csharp_type(
     let mut assignments = Vec::new();
     let mut properties = Vec::new();
 
-    let is_struct = view.type_is_struct(schema_type);
+    let is_struct = schema_type.is_struct;
     let is_table = !schema_type.is_abstract && type_is_table(&schema_type.name, view);
     if is_table {
         add_id_constructor_member(
@@ -220,7 +220,7 @@ pub(super) fn backing_field_name(
 fn type_declaration(schema_type: &CftType, view: &CsharpLoweringPlan<'_>) -> String {
     let prefix = if schema_type.is_abstract {
         "public abstract partial class"
-    } else if view.type_is_struct(schema_type) {
+    } else if schema_type.is_struct {
         "public partial struct"
     } else if schema_type.is_sealed || !view.type_has_descendants(&schema_type.name) {
         "public sealed partial class"
@@ -232,7 +232,7 @@ fn type_declaration(schema_type: &CftType, view: &CsharpLoweringPlan<'_>) -> Str
     if let Some(parent) = schema_type
         .parent
         .as_ref()
-        .filter(|_| !view.type_is_struct(schema_type))
+        .filter(|_| !schema_type.is_struct)
     {
         interfaces.push(view.csharp_type_name(parent));
     }

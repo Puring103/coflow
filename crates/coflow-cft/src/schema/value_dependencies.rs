@@ -1,7 +1,6 @@
 use super::LocatedBudgetError;
 use crate::{
-    CftField, CftSchemaDefaultValue, CftSchemaTypeRef, CftType, FieldName, ModuleId, Span,
-    TypeName,
+    CftField, CftSchemaDefaultValue, CftSchemaTypeRef, CftType, FieldName, ModuleId, Span, TypeName,
 };
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
@@ -68,8 +67,10 @@ impl fmt::Display for ValueDependencyCycle {
 
 #[derive(Debug, Clone, Default)]
 pub struct ValueDependencyPlan {
-    roots:
-        BTreeMap<ValueDependencyMode, BTreeMap<TypeName, Result<Vec<TypeName>, ValueDependencyCycle>>>,
+    roots: BTreeMap<
+        ValueDependencyMode,
+        BTreeMap<TypeName, Result<Vec<TypeName>, ValueDependencyCycle>>,
+    >,
 }
 
 impl ValueDependencyPlan {
@@ -88,8 +89,8 @@ impl ValueDependencyPlan {
                 .keys()
                 .map(|root| {
                     compile_root(root, &graph, budget).map(|result| {
-                        let result = result
-                            .map(|order| order.into_iter().cloned().collect::<Vec<_>>());
+                        let result =
+                            result.map(|order| order.into_iter().cloned().collect::<Vec<_>>());
                         (root.clone(), result)
                     })
                 })

@@ -9,8 +9,8 @@
 
 mod common;
 use coflow_cft::{
-    build_schema, is_cft_identifier, parse_modules, record_key_ident_error, CftDimensionInputs, CftFile,
-    CftSchemaTypeRef, ModuleId, ValueDependencyMode,
+    build_schema, is_cft_identifier, parse_modules, record_key_ident_error, CftDimensionInputs,
+    CftFile, CftSchemaTypeRef, ModuleId, ValueDependencyMode,
 };
 use common::*;
 use std::path::PathBuf;
@@ -47,8 +47,8 @@ fn build_schema_compiles_a_parsed_module_set() {
         "type Item { value: int; }",
     )]);
 
-    let schema = build_schema(&modules, &CftDimensionInputs::default())
-        .expect("parsed module set compiles");
+    let schema =
+        build_schema(&modules, &CftDimensionInputs::default()).expect("parsed module set compiles");
 
     assert!(schema.resolve_type("Item").is_some());
     assert_eq!(
@@ -75,7 +75,7 @@ fn build_schema_models_configured_dimension_directly() {
         dimension
             .variants
             .iter()
-            .map(|variant| variant.as_str())
+            .map(coflow_cft::VariantName::as_str)
             .collect::<Vec<_>>(),
         ["zh"]
     );
@@ -97,7 +97,9 @@ fn dimension_schema_does_not_reserve_generated_type_names() {
     let dimensions = CftDimensionInputs::new([("language", vec!["zh".to_string()])]);
 
     let schema = build_schema(&modules, &dimensions).expect("no generated type can collide");
-    assert!(schema.resolve_enum("__coflow_dimension_Item_name").is_some());
+    assert!(schema
+        .resolve_enum("__coflow_dimension_Item_name")
+        .is_some());
     assert_eq!(schema.all_types().count(), 1);
 }
 

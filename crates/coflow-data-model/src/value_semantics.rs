@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchemaTypeRef, CftSchema};
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 
 use crate::model::{CfdDictKey, CfdDomainId, CfdEnumValue, CfdRecordId, CfdValue};
 
@@ -177,14 +177,9 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
         CftSchemaTypeRef::RecordRef(expected_type) => {
             validate_ref_value(schema, context, expected_type, value, pending_insert)
         }
-        CftSchemaTypeRef::Object(name) => validate_object_value(
-            schema,
-            context,
-            name,
-            value,
-            pending_insert,
-            completeness,
-        ),
+        CftSchemaTypeRef::Object(name) => {
+            validate_object_value(schema, context, name, value, pending_insert, completeness)
+        }
         CftSchemaTypeRef::Enum(name) => match value {
             CfdValue::Enum(enum_value) => validate_enum(schema, name, enum_value),
             _ => Err(type_mismatch(&format!("enum `{name}`"), value)),
@@ -291,8 +286,7 @@ fn validate_object_value<C: CfdValueSemanticContext>(
                     ))
                 })?;
                 for field in schema_type.all_fields() {
-                    if field.default.is_none()
-                        && !record.fields().contains_key(field.name.as_str())
+                    if field.default.is_none() && !record.fields().contains_key(field.name.as_str())
                     {
                         return Err(CfdValueSemanticError::new(format!(
                             "missing required field `{}` on object type `{}`",

@@ -143,8 +143,7 @@ impl ProjectSession {
     /// Returns `None` for unknown enum names or variants.
     #[must_use]
     pub fn enum_int_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
-        self.schema()
-            .enum_variant_value(enum_name, variant)
+        self.schema().enum_variant_value(enum_name, variant)
     }
 
     #[must_use]
@@ -417,7 +416,9 @@ impl ProjectSchemaSession {
         data_format: &str,
         id_as_enum_variants: &serde_json::Value,
     ) -> Result<ArtifactSet, DiagnosticSet> {
-        let schema = self.schema().ok_or_else(|| self.diagnostics.clone().into_set())?;
+        let schema = self
+            .schema()
+            .ok_or_else(|| self.diagnostics.clone().into_set())?;
         codegen.generate(
             CodegenContext {
                 schema,

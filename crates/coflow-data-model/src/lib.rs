@@ -42,8 +42,8 @@ pub use diagnostic::{
     CfdPathSegment, CfdSeverity, CfdStage,
 };
 pub use model::{
-    CfdDataModel, CfdDictKey, CfdDomainId, CfdDomainIndex, CfdEnumValue, CfdInputDictKey,
-    CfdDimensionFieldValues, CfdDimensionValue, CfdInputDimensionValue, CfdInputRecord,
+    CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdDomainId,
+    CfdDomainIndex, CfdEnumValue, CfdInputDictKey, CfdInputDimensionValue, CfdInputRecord,
     CfdInputValue, CfdModelBuilder, CfdObject, CfdPolymorphicIndex, CfdRecord, CfdRecordId,
     CfdTable, CfdTypeId, CfdValue, DimensionFieldLookupError, DimensionRefCoordinate,
     DimensionValueLookup, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,

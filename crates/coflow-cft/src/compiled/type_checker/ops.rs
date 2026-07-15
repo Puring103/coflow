@@ -1,7 +1,7 @@
 use super::TypeChecker;
 use crate::ast::{BinOp, CmpOp, UnaryOp};
-use crate::error::CftErrorCode;
 use crate::compiled::support::{ordered_comparable, types_comparable, unwrap_nullable, Ty};
+use crate::error::CftErrorCode;
 use crate::span::Span;
 
 impl TypeChecker<'_, '_> {

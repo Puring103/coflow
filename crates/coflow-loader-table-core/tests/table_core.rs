@@ -23,8 +23,8 @@ fn collects_table_rows_as_input_records() -> TestResult {
         vec![TableSheetConfig::new("Item")],
     );
 
-    let loaded = collect_table_input_records(&schema, &[source])
-        .map_err(|err| format!("{err:?}"))?;
+    let loaded =
+        collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
 
     assert_eq!(loaded.records.len(), 1);
     assert_eq!(loaded.records[0].key, "sword");

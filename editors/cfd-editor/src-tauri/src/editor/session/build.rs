@@ -41,9 +41,11 @@ pub(super) fn build_session(
     let schema_session = schema_runtime
         .into_latest_attempt()
         .ok_or_else(|| EditorError::project("failed to build project schema".to_string()))?;
-    let engine = runtime.open_write_session_from_schema(schema_session).map_err(|err| {
-        EditorError::project(prefixed_diagnostics("failed to build project", &err))
-    })?;
+    let engine = runtime
+        .open_write_session_from_schema(schema_session)
+        .map_err(|err| {
+            EditorError::project(prefixed_diagnostics("failed to build project", &err))
+        })?;
     let file_tree = engine.queries().file_tree();
     let diagnostics = diagnostics_from_store(engine.queries().diagnostics(), &project_root);
 

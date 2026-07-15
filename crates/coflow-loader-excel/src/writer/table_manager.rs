@@ -64,12 +64,7 @@ impl TableManager for ExcelWriter {
         _ctx: TableContext<'_>,
         request: &CreateTableRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                EXCEL_TABLE,
-                "excel table manager requires a local path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         ensure_writable_excel_path(path, "create tables")?;
         if path.exists() {
             append_excel_sheet(path, request.sheet, request.headers)?;
@@ -97,12 +92,7 @@ impl TableManager for ExcelWriter {
         _ctx: TableContext<'_>,
         request: &SyncHeaderRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                EXCEL_TABLE,
-                "excel table manager requires a local path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         ensure_writable_excel_path(path, "sync headers")?;
         let sheet = request.sheet.unwrap_or(request.actual_type);
         let mut created_sheet = false;

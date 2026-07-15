@@ -69,10 +69,7 @@ impl ReferenceUpdateAction {
             Self::Dimension {
                 manager, request, ..
             } => manager
-                .write_dimension_value(
-                    TableContext { project_root },
-                    &request.as_request(schema)?,
-                )
+                .write_dimension_value(TableContext { project_root }, &request.as_request(schema)?)
                 .map(|_| DiagnosticSet::empty()),
         }
     }
@@ -195,6 +192,7 @@ impl OwnedRewriteRecordReferencesRequest {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn reference_update_actions(
     session: &ProjectSession,
     registry: &ProviderRegistry,
@@ -275,10 +273,9 @@ pub(super) fn reference_update_actions(
                     source_field: field.name.clone(),
                     dimension: dimension.dimension.clone(),
                     variant: dimension.variant.clone(),
-                    source_key: RecordKey::new(host_record.key().to_string())
-                        .map_err(|error| {
-                            dimension_ref_error("WRITE-DIMENSION-KEY", error.to_string())
-                        })?,
+                    source_key: RecordKey::new(host_record.key().to_string()).map_err(|error| {
+                        dimension_ref_error("WRITE-DIMENSION-KEY", error.to_string())
+                    })?,
                     new_value: root,
                 },
             });

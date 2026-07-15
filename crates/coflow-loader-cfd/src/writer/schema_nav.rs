@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchemaTypeRef, CftSchema};
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 
 pub(super) fn type_after_field_segment(
     schema: &CftSchema,
@@ -73,7 +73,6 @@ pub(super) fn type_after_dict_key_segment(
 }
 
 pub(super) fn dict_key_path_matches(
-    schema: &CftSchema,
     key_type: &CftSchemaTypeRef,
     source_key: &str,
     path_key: &str,
@@ -89,9 +88,7 @@ pub(super) fn dict_key_path_matches(
             .strip_prefix(enum_name.as_str())
             .and_then(|rest| rest.strip_prefix('.'))
             .is_some_and(|variant| variant == source_key),
-        CftSchemaTypeRef::Nullable(inner) => {
-            dict_key_path_matches(schema, inner, source_key, path_key)
-        }
+        CftSchemaTypeRef::Nullable(inner) => dict_key_path_matches(inner, source_key, path_key),
         _ => false,
     }
 }

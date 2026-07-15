@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 use coflow_cft::{
     BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, RecordKey,
     TypeName, VariantName,

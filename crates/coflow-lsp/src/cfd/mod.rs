@@ -216,10 +216,7 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usi
             if span_contains(field.name_span, offset) {
                 let detail = schema
                     .and_then(|s| s.resolve_type(&record.type_name))
-                    .and_then(|t| {
-                        t.all_fields()
-                            .find(|f| f.name.as_str() == field.name)
-                    })
+                    .and_then(|t| t.all_fields().find(|f| f.name.as_str() == field.name))
                     .map_or_else(
                         || format!("`{}`", field.name),
                         |f| format!("```\n{}: {}\n```", f.name, fmt_type_ref(&f.ty_ref)),
@@ -235,12 +232,7 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usi
 }
 
 /// Completion: field names when cursor is inside a record body.
-pub fn completion(
-    _source: &str,
-    ast: &CfdAst,
-    schema: Option<&CftSchema>,
-    offset: usize,
-) -> Value {
+pub fn completion(_source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usize) -> Value {
     let Some(schema) = schema else {
         return json!([]);
     };

@@ -96,11 +96,8 @@ fn collect_project_schema(
         Ok(schema) => (Some(schema), Vec::new()),
         Err(errors) => (None, errors.diagnostics),
     };
-    let diagnostics = diagnostic_set_from_cft(
-        dedupe_cft_diagnostics(cft_diagnostics),
-        &sources,
-        &paths,
-    );
+    let diagnostics =
+        diagnostic_set_from_cft(dedupe_cft_diagnostics(cft_diagnostics), &sources, &paths);
     Ok(ProjectSchemaAttempt {
         schema,
         modules,

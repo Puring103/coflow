@@ -5,8 +5,8 @@ use coflow_api::{
 };
 use coflow_cft::{CftSchema, RecordKey};
 use coflow_data_model::{
-    CfdDataModel, CfdDiagnostics, CfdInputDimensionValue, CfdInputRecord, CfdPath,
-    CfdPathSegment, CfdRecordId, RecordOrigin,
+    CfdDataModel, CfdDiagnostics, CfdInputDimensionValue, CfdInputRecord, CfdPath, CfdPathSegment,
+    CfdRecordId, RecordOrigin,
 };
 use coflow_project::{path_to_slash, Project};
 use std::collections::{BTreeMap, BTreeSet};
@@ -246,13 +246,7 @@ pub(crate) fn reload_project_data_from_cache(
             .collect(),
     };
     if options.include_implicit_dimension_sources && refresh_implicit_dimension_sources {
-        refresh_dimension_source_plans(
-            project,
-            schema,
-            registry,
-            previous,
-            &mut source_data,
-        )?;
+        refresh_dimension_source_plans(project, schema, registry, previous, &mut source_data)?;
     }
 
     let mut diagnostics = DiagnosticSet::empty();
@@ -284,7 +278,7 @@ pub(crate) fn reload_project_data_from_cache(
         diagnostics.extend(loader.preflight(
             SourceLoadContext {
                 project_root: &project.root_dir,
-                schema: schema,
+                schema,
             },
             &batch.entry.source,
         ));
@@ -319,7 +313,7 @@ pub(crate) fn reload_project_data_from_cache(
         match loader.load(
             SourceLoadContext {
                 project_root: &project.root_dir,
-                schema: schema,
+                schema,
             },
             &batch.entry.source,
         ) {
@@ -755,13 +749,11 @@ pub fn format_cfd_path(path: &CfdPath) -> String {
 }
 
 pub(crate) fn empty_model(schema: &CftSchema) -> Result<CfdDataModel, DiagnosticSet> {
-    CfdDataModel::builder(schema)
-        .build()
-        .map_err(|_| {
-            DiagnosticSet::one(Diagnostic::error(
-                "RUNTIME-INTERNAL",
-                "RUNTIME",
-                "empty model build failed",
-            ))
-        })
+    CfdDataModel::builder(schema).build().map_err(|_| {
+        DiagnosticSet::one(Diagnostic::error(
+            "RUNTIME-INTERNAL",
+            "RUNTIME",
+            "empty model build failed",
+        ))
+    })
 }

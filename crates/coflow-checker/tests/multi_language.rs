@@ -3,11 +3,11 @@
 mod common;
 use common::*;
 
+use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use coflow_checker::{
     run_checks, run_checks_for_dimensions, run_checks_for_dimensions_with_deps, DimensionCheckPlan,
     DimensionCheckRound,
 };
-use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 
 fn language_plan() -> DimensionCheckPlan {
     DimensionCheckPlan::from_variants("language", ["zh", "en"])
@@ -242,21 +242,24 @@ fn nested_object_array_and_dict_checks_use_overlay_subtrees() {
 #[test]
 fn overlay_record_refs_resolve_without_storage_records() {
     let schema = compile_schema(
-        r#"
+        r"
             type Target { value: int; }
             type Copy {
                 target: &Target;
                 check { target.value > 0; }
             }
             type Item { @localized copy: Copy; }
-        "#,
+        ",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("target", "Target", [("value", CfdInputValue::from(0_i64))]);
     builder.add_record(
         "item",
         "Item",
-        [("copy", CfdInputValue::object("Copy", [("target", CfdInputValue::record_ref("target"))]))],
+        [(
+            "copy",
+            CfdInputValue::object("Copy", [("target", CfdInputValue::record_ref("target"))]),
+        )],
     );
     add_overlay(
         &mut builder,
@@ -335,12 +338,10 @@ fn dependency_graph_has_no_synthetic_record_edges() {
         Some(CfdInputValue::from("药水")),
         Some(CfdInputValue::from("Potion")),
     );
-    let (result, graph) =
-        run_checks_for_dimensions_with_deps(&schema, &model, &language_plan());
+    let (result, graph) = run_checks_for_dimensions_with_deps(&schema, &model, &language_plan());
     result.expect("checks pass");
     assert_eq!(model.record_count(), 1);
-    assert!(graph
-        .reads_from
-        .values()
-        .all(|targets| targets.iter().all(|target| target.index() < model.record_count())));
+    assert!(graph.reads_from.values().all(|targets| targets
+        .iter()
+        .all(|target| target.index() < model.record_count())));
 }

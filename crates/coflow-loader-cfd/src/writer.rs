@@ -137,12 +137,7 @@ impl SourceWriter for CfdWriter {
         _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-WRITE",
-                "cfd writer requires a path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         validate_record_key(request.record_key)?;
         validate_values(request.fields.values())?;
 
@@ -229,9 +224,7 @@ impl SourceWriter for CfdWriter {
         _ctx: WriteContext<'_>,
         request: &RewriteRecordReferencesRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Ok(WriteOutcome::default());
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         let (source, ast) = Self::read_or_parse(path)?;
         let mut spans = Vec::new();
         for target in request.targets {
@@ -290,12 +283,7 @@ impl TableManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &CreateTableRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-TABLE",
-                "cfd table manager requires a path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         if path.exists() {
             return Err(DiagnosticSet::one(diag(
                 "CFD-TABLE",
@@ -324,12 +312,7 @@ impl TableManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &SyncHeaderRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-TABLE",
-                "cfd table manager requires a path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         let (source, ast) = Self::read_or_parse(path)?;
         let old_fields = cfd_top_level_fields(&ast.records, request.actual_type);
         let added = added_columns(request.headers, &old_fields);

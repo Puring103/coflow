@@ -1,5 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
-use coflow_cft::{CftSchemaTypeRef, CftSchema};
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 use coflow_data_model::{
     CfdDomainId, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext,
     PendingInsertRef,
@@ -99,7 +99,11 @@ pub(crate) fn expected_type_for_cfd_path(
         return Err(one_error(code, stage, "field path must not be empty"));
     }
     let Some(root_type) = schema.resolve_type(actual_type) else {
-        return Err(one_error(code, stage, format!("unknown type `{actual_type}`")));
+        return Err(one_error(
+            code,
+            stage,
+            format!("unknown type `{actual_type}`"),
+        ));
     };
     let mut current = CftSchemaTypeRef::Object(root_type.name.clone());
     for segment in path {

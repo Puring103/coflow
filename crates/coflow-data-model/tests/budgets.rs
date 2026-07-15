@@ -80,10 +80,7 @@ fn structural_budget_is_independent_for_each_top_level_record() {
     assert_eq!(model.record_count(), 2);
 }
 
-fn spread_chain_model(
-    schema: &CftSchema,
-    max_work: u64,
-) -> Result<CfdDataModel, CfdDiagnostics> {
+fn spread_chain_model(schema: &CftSchema, max_work: u64) -> Result<CfdDataModel, CfdDiagnostics> {
     let mut builder =
         CfdDataModel::builder(schema).with_structural_limits(limits(100, 100, max_work));
     builder.add_record("base", "Stats", [("hp", CfdInputValue::from(1_i64))]);

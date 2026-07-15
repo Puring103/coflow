@@ -493,9 +493,7 @@ fn build_schema_default_dependency_cycle(
     model_from_records(schema, [one_record("root", "Node", [])])
 }
 
-fn build_data_structure_limit_exceeded(
-    schema: &CftSchema,
-) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_data_structure_limit_exceeded(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     let mut builder =
         CfdDataModel::builder(schema).with_structural_limits(StructuralLimits::new(3, 100, 100));
     builder.add_record(

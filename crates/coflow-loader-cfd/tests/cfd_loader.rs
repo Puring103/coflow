@@ -1,21 +1,21 @@
 #![allow(
     clippy::expect_used,
+    clippy::needless_borrow,
     clippy::needless_raw_string_hashes,
     clippy::panic,
     clippy::panic_in_result_fn,
+    clippy::redundant_field_names,
     clippy::unwrap_used
 )]
 
 use coflow_api::{
     ResolvedSource, SourceLoadContext, SourceLocation, SourceLocationSpec, SourceProvider,
-    SourceResolveContext,
 };
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::CfdDataModel;
 use coflow_data_model::{CfdInputValue, CfdValue};
 use coflow_loader_cfd::{
     load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextErrorCode, CfdTextLoadError,
-    CFD_LOADER_DESCRIPTOR,
 };
 use std::fs;
 use std::path::{Path, PathBuf};

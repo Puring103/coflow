@@ -1,5 +1,5 @@
 use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdValue};
-use coflow_cft::{record_key_ident_error, CftSchemaTypeRef, CftSchema, Span};
+use coflow_cft::{record_key_ident_error, CftSchema, CftSchemaTypeRef, Span};
 use coflow_data_model::{CfdInputDictKey, CfdInputRecord, CfdInputValue};
 use std::collections::{BTreeMap, BTreeSet};
 

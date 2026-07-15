@@ -66,7 +66,7 @@ fn execute_generation_mutation(
     let schema = session.schema();
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: schema,
+        schema,
         model: Some(&session.model),
     };
     let transaction =
@@ -148,12 +148,7 @@ fn execute_generation_mutation(
         return report_without_publish(session, false, failed);
     }
 
-    if let Err(diagnostics) = transaction.commit() {
-        if let Some(last) = executable.last() {
-            failed.push(failed_op(&last.planned, diagnostics));
-        }
-        return report_without_publish(session, false, failed);
-    }
+    drop(transaction);
 
     let affected_files = impact
         .affected_files

@@ -413,15 +413,17 @@ fn project_config_rejects_old_source_fields() -> TestResult {
             .err()
             .map(|diagnostics| diagnostics.to_string())
             .or_else(|| {
-                Project::open_schema_only(Some(&config)).ok().map(|project| {
-                    project
-                        .schema_diagnostic_set()
-                        .diagnostics
-                        .into_iter()
-                        .map(|diagnostic| diagnostic.message)
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
+                Project::open_schema_only(Some(&config))
+                    .ok()
+                    .map(|project| {
+                        project
+                            .schema_diagnostic_set()
+                            .diagnostics
+                            .into_iter()
+                            .map(|diagnostic| diagnostic.message)
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
             })
             .unwrap_or_default();
         assert!(

@@ -3,13 +3,11 @@ mod support;
 mod type_checker;
 
 use self::compiler::SchemaCompiler;
+use crate::error::CftDiagnostics;
 use crate::module_id::ModuleId;
 use crate::module_set::CftModuleSet;
-use crate::error::CftDiagnostics;
 use crate::span::Span;
-use crate::{
-    BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName,
-};
+use crate::{BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
 use coflow_structure::{StructuralBudget, StructuralLimits};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -36,6 +34,7 @@ pub enum CftConstValue {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::struct_excessive_bools)] // CFT modifiers and annotation semantics are orthogonal.
 pub struct CftType {
     pub module: ModuleId,
     pub name: TypeName,
@@ -180,7 +179,7 @@ pub enum CftSchemaCheckExprKind {
     Name(String),
     Field {
         expr: Box<CftSchemaCheckExpr>,
-        name: String,
+        name: FieldName,
     },
     Index {
         expr: Box<CftSchemaCheckExpr>,
@@ -216,7 +215,7 @@ pub enum CftSchemaCheckExprKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CftSchemaTypePredicate {
-    Type(String),
+    Type(TypeName),
     Null,
 }
 
@@ -262,7 +261,7 @@ pub enum CftSchemaCmpOp {
     Ge,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CftEnum {
     pub module: ModuleId,
     pub name: EnumName,
@@ -273,7 +272,7 @@ pub struct CftEnum {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CftEnumVariant {
     pub name: EnumVariantName,
     pub value: i64,
@@ -309,6 +308,6 @@ pub(crate) fn compile_module_set(
     options: CftCompileOptions,
 ) -> Result<(CompiledSchema, StructuralBudget), CftDiagnostics> {
     let mut compiler = SchemaCompiler::new(modules, options);
-    let compiled = compiler.compile()?;
-    Ok((compiled, compiler.budget))
+    let schema = compiler.compile()?;
+    Ok((schema, compiler.budget))
 }

@@ -638,7 +638,10 @@ fn error_code_cases_accept_adjacent_valid_inputs() {
                     ]),
                 )
                 .unwrap_or_else(|err| {
-                    panic!("{} adjacent-valid modules should compile: {:?}", case.name, err)
+                    panic!(
+                        "{} adjacent-valid modules should compile: {:?}",
+                        case.name, err
+                    )
                 });
             }
             Phase::StrictParse => {

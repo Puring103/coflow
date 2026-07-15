@@ -78,8 +78,7 @@ fn prepare_planned_op(
                 value,
             },
         ),
-        op @ (MutationOp::SetDimensionValue { .. }
-        | MutationOp::ClearDimensionValue { .. }) => {
+        op @ (MutationOp::SetDimensionValue { .. } | MutationOp::ClearDimensionValue { .. }) => {
             prepare_one(session, op, pending_inserts)
         }
         MutationOp::InsertRecord {

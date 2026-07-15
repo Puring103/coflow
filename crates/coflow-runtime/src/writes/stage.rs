@@ -1,6 +1,6 @@
 use coflow_api::{
-    DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    DimensionSourceSchema, RewriteDimensionRecordRequest, WriteCellRequest, WriteContext,
+    DeleteRecordRequest, Diagnostic, DiagnosticSet, DimensionSourceSchema, InsertRecordRequest,
+    RenameRecordRequest, RewriteDimensionRecordRequest, WriteCellRequest, WriteContext,
     WriteDimensionValueRequest,
 };
 use coflow_cft::RecordKey;
@@ -32,13 +32,13 @@ pub(crate) fn preflight_mutation_op(
         actual_type: &plan.target.coordinate.actual_type,
         field_path: &plan.target.field_path,
         new_value: value,
-        schema: schema,
+        schema,
         source: &plan.source,
     };
     let diagnostics = plan.writer.preflight(
         WriteContext {
             project_root: &session.project.root_dir,
-            schema: schema,
+            schema,
             model: Some(&session.model),
         },
         &request,
@@ -245,12 +245,12 @@ fn stage_write_field(
         actual_type: &plan.target.coordinate.actual_type,
         field_path: &plan.target.field_path,
         new_value,
-        schema: schema,
+        schema,
         source: &plan.source,
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: schema,
+        schema,
         model: Some(&session.model),
     };
     let provider_outcome = plan.writer.write_field(ctx, &request)?;
@@ -297,7 +297,11 @@ fn stage_write_dimension_value(
         inserted: None,
         deleted: None,
         renamed: None,
-        affected_files: result.changed.then(|| write_file.to_string()).into_iter().collect(),
+        affected_files: result
+            .changed
+            .then(|| write_file.to_string())
+            .into_iter()
+            .collect(),
         diagnostics: DiagnosticSet::empty(),
     })
 }
@@ -341,7 +345,7 @@ fn stage_rename_record_key(
     let schema = session.schema();
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: schema,
+        schema,
         model: Some(&session.model),
     };
     let target_request = RenameRecordRequest {
@@ -350,7 +354,7 @@ fn stage_rename_record_key(
         new_key,
         actual_type: &plan.old_coordinate.actual_type,
         source: &plan.source,
-        schema: schema,
+        schema,
     };
     let mut diagnostics = plan.writer.rename_record(ctx, &target_request)?.diagnostics;
     let mut affected_files = BTreeSet::from([plan.display_path.clone()]);
@@ -407,11 +411,11 @@ fn stage_insert_record(
         record_key,
         actual_type,
         fields,
-        schema: schema,
+        schema,
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: schema,
+        schema,
         model: Some(&session.model),
     };
     let provider_outcome = plan.writer.insert_record(ctx, &request)?;
@@ -440,7 +444,7 @@ fn stage_delete_record(
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
-        schema: schema,
+        schema,
         model: Some(&session.model),
     };
     let provider_outcome = plan.writer.delete_record(ctx, &request)?;

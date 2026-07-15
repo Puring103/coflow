@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchemaTypePredicate, CftSchema};
+use coflow_cft::{CftSchema, CftSchemaTypePredicate};
 use coflow_data_model::CfdDataModel;
 
 use super::value::CheckValue;

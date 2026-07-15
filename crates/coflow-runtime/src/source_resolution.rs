@@ -124,9 +124,7 @@ impl<'a> SourceResolver<'a> {
         &self,
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(directory) = &configured.location else {
-            return Ok(Vec::new());
-        };
+        let SourceLocationSpec::Path(directory) = &configured.location;
         let files = discover_directory_files(directory).map_err(|error| {
             DiagnosticSet::one(project_diagnostic(
                 &self.project.config_path,

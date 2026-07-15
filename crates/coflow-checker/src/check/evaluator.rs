@@ -11,9 +11,7 @@ use super::fields;
 use super::ops::{self, OpsResult};
 use super::quantifiers;
 use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
-use coflow_cft::{
-    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp, CftSchema,
-};
+use coflow_cft::{CftSchema, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp};
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
@@ -123,7 +121,7 @@ impl<'a> CheckEvaluator<'a> {
                 location,
                 message,
             }) => {
-                self.diag_at(code, location, message);
+                self.diag_at(code, *location, message);
                 Err(EvalAbort::Error)
             }
         }
@@ -231,7 +229,9 @@ impl<'a> CheckEvaluator<'a> {
             return Ok(value);
         }
         if let Some(value) = self.schema.resolve_const(name) {
-            return Ok(LocatedCheckValue::value(CheckValue::from_const(&value.value)));
+            return Ok(LocatedCheckValue::value(CheckValue::from_const(
+                &value.value,
+            )));
         }
         if self.schema.resolve_enum(name).is_some() {
             return Ok(LocatedCheckValue::value(CheckValue::EnumNamespace(

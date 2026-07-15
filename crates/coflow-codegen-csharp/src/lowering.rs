@@ -81,7 +81,10 @@ impl<'a> CsharpLoweringPlan<'a> {
             })?;
             assignable_types.insert(
                 ty.name.to_string(),
-                assignable.into_iter().map(|name| name.to_string()).collect(),
+                assignable
+                    .into_iter()
+                    .map(|name| name.to_string())
+                    .collect(),
             );
             for field in ty.own_fields() {
                 uses_localization |= field.dimension.is_some();
@@ -124,7 +127,9 @@ impl<'a> CsharpLoweringPlan<'a> {
     }
 
     pub fn enum_names(&self) -> impl Iterator<Item = &str> {
-        self.enums.iter().map(|schema_enum| schema_enum.name.as_str())
+        self.enums
+            .iter()
+            .map(|schema_enum| schema_enum.name.as_str())
     }
 
     pub fn cft_enum_metas(&self) -> impl Iterator<Item = &CftEnum> {
@@ -238,10 +243,6 @@ impl<'a> CsharpLoweringPlan<'a> {
 
     pub fn ref_target_names(&self) -> &[String] {
         &self.ref_targets
-    }
-
-    pub fn type_is_struct(&self, ty: &CftType) -> bool {
-        ty.is_struct
     }
 }
 

@@ -152,11 +152,7 @@ async fn get_dimension_value(
     host: State<'_, EditorHost>,
 ) -> Result<DimensionValueView, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || {
-        host.sessions()
-            .get_dimension_value(session_id, &coordinate)
-    })
-    .await
+    run_blocking(move || host.sessions().get_dimension_value(session_id, &coordinate)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]

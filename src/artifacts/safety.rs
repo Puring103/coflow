@@ -190,8 +190,8 @@ fn configured_source_paths(project: &Project) -> Vec<PathBuf> {
         .config
         .sources
         .iter()
-        .filter_map(|source| match source.location() {
-            SourceLocationSpec::Path(path) => Some(path),
+        .map(|source| match source.location() {
+            SourceLocationSpec::Path(path) => path,
         })
         .flat_map(|path| source_overlap_paths(&project.resolve_path(path)))
         .collect()

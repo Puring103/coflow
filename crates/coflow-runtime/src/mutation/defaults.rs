@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::DiagnosticSet;
-use coflow_cft::{CftField, CftSchema, CftSchemaDefaultValue, CftSchemaTypeRef, ValueDependencyMode};
+use coflow_cft::{
+    CftField, CftSchema, CftSchemaDefaultValue, CftSchemaTypeRef, ValueDependencyMode,
+};
 use coflow_data_model::{CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordOrigin};
 
 use super::{
@@ -21,7 +23,7 @@ pub(super) fn default_record_for_type(
         key: String::new(),
         object: CfdObject::new(type_name, fields),
         origin: RecordOrigin::None,
-        dimension_fields: Default::default(),
+        dimension_fields: BTreeMap::default(),
     })
 }
 
@@ -151,10 +153,7 @@ impl<'a> DefaultValueMaterializer<'a> {
         }
     }
 
-    fn minimal_for_field(
-        &mut self,
-        field: &CftField,
-    ) -> Result<Option<CfdValue>, DiagnosticSet> {
+    fn minimal_for_field(&mut self, field: &CftField) -> Result<Option<CfdValue>, DiagnosticSet> {
         if field.default.is_some() {
             return Ok(None);
         }
@@ -174,9 +173,6 @@ impl<'a> DefaultValueMaterializer<'a> {
                     fields,
                 )))))
             }
-            CftSchemaTypeRef::Enum(_) => self
-                .zero_for_ty(&field.ty_ref, DefaultMaterialization::Minimal)
-                .map(Some),
             _ => self
                 .zero_for_ty(&field.ty_ref, DefaultMaterialization::Minimal)
                 .map(Some),
@@ -388,10 +384,7 @@ fn required_input_for_field(
     }
 }
 
-fn ensure_type_can_materialize(
-    schema: &CftSchema,
-    type_name: &str,
-) -> Result<(), DiagnosticSet> {
+fn ensure_type_can_materialize(schema: &CftSchema, type_name: &str) -> Result<(), DiagnosticSet> {
     let Some(schema_type) = schema.resolve_type(type_name) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",

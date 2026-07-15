@@ -57,7 +57,6 @@ impl CftSchema {
         visited: &mut BTreeSet<TypeName>,
     ) {
         match ty {
-            CftSchemaTypeRef::Enum(_) => {}
             CftSchemaTypeRef::Object(name) => {
                 if let Some(meta) = self.types.get(name) {
                     self.collect_ref_targets_for_type(meta, out, visited);
@@ -72,7 +71,8 @@ impl CftSchema {
             CftSchemaTypeRef::Dict(_, value) => {
                 self.collect_ref_targets_in_type(value, out, visited);
             }
-            CftSchemaTypeRef::Int
+            CftSchemaTypeRef::Enum(_)
+            | CftSchemaTypeRef::Int
             | CftSchemaTypeRef::Float
             | CftSchemaTypeRef::Bool
             | CftSchemaTypeRef::String => {}

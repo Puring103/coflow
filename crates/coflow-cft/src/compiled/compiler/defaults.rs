@@ -1,8 +1,8 @@
 use super::SchemaCompiler;
 use crate::ast::{DefaultExpr, DefaultExprKind};
-use crate::module_id::ModuleId;
-use crate::error::{CftDiagnostic, CftErrorCode};
 use crate::compiled::support::{types_assignable, SymbolKind, Ty};
+use crate::error::{CftDiagnostic, CftErrorCode};
+use crate::module_id::ModuleId;
 use std::collections::BTreeSet;
 
 impl SchemaCompiler<'_> {

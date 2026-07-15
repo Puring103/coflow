@@ -87,7 +87,6 @@ impl TableSource {
             configs,
         }
     }
-
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

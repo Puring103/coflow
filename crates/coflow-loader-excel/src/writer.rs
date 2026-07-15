@@ -65,12 +65,7 @@ impl SourceWriter for ExcelWriter {
     }
 
     fn preflight(&self, _ctx: WriteContext<'_>, request: &WriteCellRequest<'_>) -> DiagnosticSet {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return DiagnosticSet::one(diag(
-                "EXCEL-WRITE",
-                "excel writer requires a local path source",
-            ));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         ensure_writable_excel_path(path, "edit fields")
             .err()
             .unwrap_or_default()
@@ -81,12 +76,7 @@ impl SourceWriter for ExcelWriter {
         ctx: WriteContext<'_>,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "EXCEL-WRITE",
-                "excel writer requires a local path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         ensure_writable_excel_path(path, "edit fields")?;
         let plan = plan_field_write(&TableFieldWrite {
             origin: request.origin,
@@ -108,15 +98,7 @@ impl SourceWriter for ExcelWriter {
     ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
         let mut plans = Vec::with_capacity(requests.len());
         for (index, request) in requests.iter().enumerate() {
-            let SourceLocationSpec::Path(path) = &request.source.location else {
-                return Err(WriteBatchFailure {
-                    index,
-                    diagnostics: DiagnosticSet::one(diag(
-                        "EXCEL-WRITE",
-                        "excel writer requires a local path source",
-                    )),
-                });
-            };
+            let SourceLocationSpec::Path(path) = &request.source.location;
             ensure_writable_excel_path(path, "edit fields")
                 .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
             let plan = plan_field_write(&TableFieldWrite {
@@ -141,12 +123,7 @@ impl SourceWriter for ExcelWriter {
         _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "EXCEL-WRITE",
-                "excel writer requires a local path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         ensure_writable_excel_path(path, "insert records")?;
         let sheet = match request.sheet {
             Some(sheet) => sheet.to_string(),
@@ -203,12 +180,7 @@ impl SourceWriter for ExcelWriter {
         _ctx: WriteContext<'_>,
         request: &DeleteRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "EXCEL-WRITE",
-                "excel writer requires a local path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         ensure_writable_excel_path(path, "delete records")?;
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
@@ -233,9 +205,9 @@ fn apply_plans(plans: &[TableWritePlan]) -> Result<(), (usize, DiagnosticSet)> {
     let Some(first) = plans.first() else {
         return Ok(());
     };
-    let path = local_plan_path(first).map_err(|diagnostics| (0, diagnostics))?;
+    let path = local_plan_path(first);
     for (index, plan) in plans.iter().enumerate().skip(1) {
-        let candidate = local_plan_path(plan).map_err(|diagnostics| (index, diagnostics))?;
+        let candidate = local_plan_path(plan);
         if candidate != path {
             return Err((
                 index,
@@ -257,13 +229,14 @@ fn apply_plans(plans: &[TableWritePlan]) -> Result<(), (usize, DiagnosticSet)> {
     .map_err(|diagnostics| (failed_index, diagnostics))
 }
 
-fn local_plan_path(plan: &TableWritePlan) -> Result<&Path, DiagnosticSet> {
+fn local_plan_path(plan: &TableWritePlan) -> &Path {
     match plan {
         TableWritePlan::SetCells { document, .. }
         | TableWritePlan::AppendRow(TableAppendRow { document, .. })
-        | TableWritePlan::DeleteRow(TableDeleteRow { document, .. }) => match document {
-            SourceDocument::Local(path) => Ok(path),
-        },
+        | TableWritePlan::DeleteRow(TableDeleteRow { document, .. }) => {
+            let SourceDocument::Local(path) = document;
+            path
+        }
     }
 }
 

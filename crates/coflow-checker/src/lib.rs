@@ -209,13 +209,7 @@ pub fn run_checks_for_dimensions_with_deps_and_options(
             CheckRunner::with_dimension_context(schema, model, context, options.structural_limits);
         let (result, variant_graph) = runner.run_with_deps();
         merge_dependency_graph(&mut graph, variant_graph);
-        push_dimension_diagnostics(
-            &mut all,
-            model,
-            &round.dimension,
-            &round.variant,
-            result,
-        );
+        push_dimension_diagnostics(&mut all, model, &round.dimension, &round.variant, result);
     }
     (diagnostics_result(all), graph)
 }
@@ -402,11 +396,16 @@ fn attach_dimension_origin(
     let Some(record) = label.record.and_then(|record| model.record(record)) else {
         return;
     };
-    let Some(field) = label.path.segments.iter().find_map(|segment| match segment {
-        coflow_data_model::CfdPathSegment::Field(field) => Some(field.as_str()),
-        coflow_data_model::CfdPathSegment::Index(_)
-        | coflow_data_model::CfdPathSegment::DictKey(_) => None,
-    }) else {
+    let Some(field) = label
+        .path
+        .segments
+        .iter()
+        .find_map(|segment| match segment {
+            coflow_data_model::CfdPathSegment::Field(field) => Some(field.as_str()),
+            coflow_data_model::CfdPathSegment::Index(_)
+            | coflow_data_model::CfdPathSegment::DictKey(_) => None,
+        })
+    else {
         return;
     };
     let Some(values) = record

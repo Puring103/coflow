@@ -91,10 +91,7 @@ fn parse_cfd_input_records_with_spans(
 ///
 /// Returns text diagnostics for CFD syntax/conversion errors or data-model
 /// diagnostics for schema/data/reference errors.
-pub fn load_cfd_model(
-    schema: &CftSchema,
-    source: &str,
-) -> Result<CfdDataModel, CfdTextLoadError> {
+pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdTextLoadError> {
     let records = parse_cfd_input_records_with_spans(schema, source)?;
     let mut builder = CfdDataModel::builder(schema);
     let mut origins = Vec::with_capacity(records.len());
@@ -156,16 +153,7 @@ impl SourceProvider for CfdLoader {
         _ctx: SourceResolveContext<'_>,
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &source.location else {
-            if source.provider_id == CFD_LOADER_DESCRIPTOR.id {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "CFD-SOURCE",
-                    "CFD",
-                    "cfd source requires `path`",
-                )));
-            }
-            return Ok(Vec::new());
-        };
+        let SourceLocationSpec::Path(path) = &source.location;
         if path.is_dir() {
             return collect_cfd_sources(path, source);
         }
@@ -187,13 +175,7 @@ impl SourceProvider for CfdLoader {
         ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let SourceLocationSpec::Path(file) = &source.location else {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "CFD-SOURCE",
-                "CFD",
-                "cfd source requires `path`",
-            )));
-        };
+        let SourceLocationSpec::Path(file) = &source.location;
         let contents = fs::read_to_string(file).map_err(|err| {
             DiagnosticSet::one(Diagnostic::error(
                 "CFD-READ",

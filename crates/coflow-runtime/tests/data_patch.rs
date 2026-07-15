@@ -1,4 +1,10 @@
-#![allow(clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::expect_used,
+    clippy::needless_raw_string_hashes,
+    clippy::panic,
+    clippy::too_many_lines,
+    clippy::unwrap_used
+)]
 
 use coflow_project::Project;
 use coflow_runtime::{
@@ -424,10 +430,15 @@ fn patch_writes_and_clears_record_owned_dimension_values() {
         }],
     });
     assert!(set.write_ok, "diagnostics: {:?}", set.diagnostics);
-    assert_eq!(set.affected_files, ["data/dimensions/language/Item_name.csv"]);
-    assert!(std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
-        .unwrap()
-        .contains("治疗药水"));
+    assert_eq!(
+        set.affected_files,
+        ["data/dimensions/language/Item_name.csv"]
+    );
+    assert!(
+        std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+            .unwrap()
+            .contains("治疗药水")
+    );
 
     let dimension_file = root.join("data/dimensions/language/Item_name.csv");
     let before_stale_write = std::fs::read_to_string(&dimension_file).unwrap();
@@ -461,10 +472,16 @@ fn patch_writes_and_clears_record_owned_dimension_values() {
             value: serde_json::Value::Null,
         }],
     });
-    assert!(explicit_null.write_ok, "diagnostics: {:?}", explicit_null.diagnostics);
-    assert!(std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
-        .unwrap()
-        .contains(",null\n"));
+    assert!(
+        explicit_null.write_ok,
+        "diagnostics: {:?}",
+        explicit_null.diagnostics
+    );
+    assert!(
+        std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+            .unwrap()
+            .contains(",null\n")
+    );
 
     let clear = session.apply_data_patch(DataPatchRequest {
         stop_on_write_error: true,
@@ -476,9 +493,11 @@ fn patch_writes_and_clears_record_owned_dimension_values() {
         }],
     });
     assert!(clear.write_ok, "diagnostics: {:?}", clear.diagnostics);
-    assert!(std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
-        .unwrap()
-        .contains("potion,Potion,\n"));
+    assert!(
+        std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+            .unwrap()
+            .contains("potion,Potion,\n")
+    );
 
     let restore_from_missing = session.apply_data_patch(DataPatchRequest {
         stop_on_write_error: true,
@@ -520,10 +539,8 @@ fn rename_record_rewrites_refs_in_dimension_overlays() {
     });
 
     assert!(report.write_ok, "diagnostics: {:?}", report.diagnostics);
-    let dimension = std::fs::read_to_string(
-        root.join("data/dimensions/platform/Offer_item.csv"),
-    )
-    .expect("read dimension source");
+    let dimension = std::fs::read_to_string(root.join("data/dimensions/platform/Offer_item.csv"))
+        .expect("read dimension source");
     assert!(dimension.contains("starter,&elixir,&elixir"), "{dimension}");
     let _ = std::fs::remove_dir_all(root);
 }
@@ -556,7 +573,10 @@ fn rename_and_delete_owner_record_rewrite_dimension_rows() {
         .iter()
         .any(|path| path == "data/dimensions/language/Item_name.csv"));
     let after_rename = std::fs::read_to_string(&dimension_file).expect("read renamed dimension");
-    assert!(after_rename.contains("elixir,Potion,药水"), "{after_rename}");
+    assert!(
+        after_rename.contains("elixir,Potion,药水"),
+        "{after_rename}"
+    );
     assert!(!after_rename.contains("potion,"), "{after_rename}");
 
     let deleted = session.apply_data_patch(DataPatchRequest {

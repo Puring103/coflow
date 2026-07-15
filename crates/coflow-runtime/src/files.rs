@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 
 use coflow_project::path_to_slash;
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -282,10 +281,4 @@ fn first_source_descendant(nodes: &[FileTreeNode]) -> Option<String> {
     nodes
         .iter()
         .find_map(|node| node.first_source_descendant.clone())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
 }

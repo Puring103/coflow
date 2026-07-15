@@ -11,13 +11,12 @@ mod plan;
 mod prepare;
 mod types;
 
-pub(crate) use types::{DimensionSourceCoordinate, PreparedMutationOp};
 pub use types::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
-    DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation,
-    MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
-    MutationReport, MutationRequest, MutationValue,
+    DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,
+    MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
 };
+pub(crate) use types::{DimensionSourceCoordinate, PreparedMutationOp};
 
 pub(super) fn schema_field<'a>(
     schema: &'a CftSchema,

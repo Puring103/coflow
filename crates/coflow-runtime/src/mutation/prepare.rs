@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use coflow_api::DiagnosticSet;
 use coflow_api::WriteFieldPathSegment;
 use coflow_cft::CftSchemaTypeRef;
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue, DimensionValueLookup, PendingInsertRef};
+use coflow_data_model::{
+    CfdPath, CfdPathSegment, CfdValue, DimensionValueLookup, PendingInsertRef,
+};
 
 use crate::write_rules;
 use crate::writes;
@@ -101,6 +103,7 @@ impl ProjectSession {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn prepare_one(
     session: &ProjectSession,
     op: MutationOp,
@@ -165,13 +168,7 @@ pub(super) fn prepare_one(
             coordinate,
             expected,
             value,
-        } => prepare_dimension_value(
-            session,
-            coordinate,
-            expected,
-            Some(value),
-            pending_records,
-        ),
+        } => prepare_dimension_value(session, coordinate, expected, Some(value), pending_records),
         MutationOp::ClearDimensionValue {
             coordinate,
             expected,
@@ -220,6 +217,7 @@ pub(super) fn prepare_one(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn prepare_dimension_value(
     session: &ProjectSession,
     coordinate: DimensionValueCoordinate,
@@ -242,7 +240,10 @@ fn prepare_dimension_value(
         .ok_or_else(|| {
             one_mutation_error(
                 "MUTATION-DIMENSION",
-                format!("record `{}.{}` was not found", record.actual_type, record.key),
+                format!(
+                    "record `{}.{}` was not found",
+                    record.actual_type, record.key
+                ),
             )
         })?;
     let schema_field = schema_field(session.schema(), actual_type.as_str(), field.as_str())?;
@@ -261,12 +262,15 @@ fn prepare_dimension_value(
             ),
         ));
     }
-    let schema_dimension = session.schema().resolve_dimension(&dimension).ok_or_else(|| {
-        one_mutation_error(
-            "MUTATION-DIMENSION",
-            format!("unknown dimension `{dimension}`"),
-        )
-    })?;
+    let schema_dimension = session
+        .schema()
+        .resolve_dimension(&dimension)
+        .ok_or_else(|| {
+            one_mutation_error(
+                "MUTATION-DIMENSION",
+                format!("unknown dimension `{dimension}`"),
+            )
+        })?;
     let schema_variant = schema_dimension.variant(&variant).ok_or_else(|| {
         one_mutation_error(
             "MUTATION-DIMENSION",

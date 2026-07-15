@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use coflow_api::{Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec, SourceTransaction, WriteContext};
+use coflow_api::{
+    Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec, SourceTransaction, WriteContext,
+};
 
 use super::plan::MutationExecutionPlan;
 
@@ -28,11 +30,9 @@ impl MutationTransaction {
                     || Ok(SourceTransaction::RuntimeSnapshot),
                     |writer| writer.begin_transaction(ctx, source),
                 )?;
-                transaction.enlist(source, declared)
+                transaction.enlist(source, &declared)
             });
-            if let Err(mut diagnostics) = enlisted {
-                return Err(diagnostics);
-            }
+            enlisted?;
         }
         Ok(transaction)
     }
@@ -40,7 +40,7 @@ impl MutationTransaction {
     fn enlist(
         &mut self,
         source: &ResolvedSource,
-        declared: SourceTransaction,
+        declared: &SourceTransaction,
     ) -> Result<(), DiagnosticSet> {
         match declared {
             SourceTransaction::RuntimeSnapshot => {
@@ -50,11 +50,6 @@ impl MutationTransaction {
         }
         Ok(())
     }
-
-    pub(crate) fn commit(self) -> Result<(), DiagnosticSet> {
-        Ok(())
-    }
-
     pub(crate) fn compensate_into(self, diagnostics: &mut DiagnosticSet) {
         self.local.rollback_into(diagnostics);
     }

@@ -1,7 +1,7 @@
 use coflow_api::{DiagnosticSet, WriteFieldPathSegment};
 use coflow_cfd::ast::{CfdBlock, CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
 use coflow_cft::Span;
-use coflow_cft::{CftSchemaTypeRef, CftSchema};
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 
 use super::diag;
 use super::schema_nav::{
@@ -205,9 +205,7 @@ fn locate_dict_target(
         )));
     };
     let Some(field) = block.entries.iter().find_map(|entry| match entry {
-        CfdBlockEntry::Field(field)
-            if dict_key_path_matches(schema, &key_type, &field.name, key) =>
-        {
+        CfdBlockEntry::Field(field) if dict_key_path_matches(&key_type, &field.name, key) => {
             Some(field)
         }
         _ => None,
@@ -353,7 +351,7 @@ fn value_at_spread_path_segment<'a>(
                 .iter()
                 .find_map(|entry| match entry {
                     CfdBlockEntry::Field(field)
-                        if dict_key_path_matches(schema, &key_type, &field.name, key) =>
+                        if dict_key_path_matches(&key_type, &field.name, key) =>
                     {
                         Some(&field.value)
                     }

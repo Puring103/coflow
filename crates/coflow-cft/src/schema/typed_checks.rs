@@ -1,7 +1,5 @@
 use super::{dimension_checks, CftSchema, LocatedBudgetError};
-use crate::{
-    CftSchemaCheckBlock, CftSchemaTypeRef, CftType, DimensionName, FieldName, TypeName,
-};
+use crate::{CftSchemaCheckBlock, CftSchemaTypeRef, CftType, DimensionName, FieldName, TypeName};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -75,11 +73,7 @@ impl TypedCheckPlan {
             .is_some_and(|fields| fields.contains(field_name))
     }
 
-    fn dimension_check(
-        &self,
-        owner: &TypeName,
-        dimension: &str,
-    ) -> Option<&CftSchemaCheckBlock> {
+    fn dimension_check(&self, owner: &TypeName, dimension: &str) -> Option<&CftSchemaCheckBlock> {
         self.dimension_checks_by_owner.get(owner)?.get(dimension)
     }
 }

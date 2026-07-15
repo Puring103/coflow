@@ -445,10 +445,7 @@ fn expand_field_index(
     out
 }
 
-fn expand_field_order_index(
-    schema: &CftSchema,
-    type_name: &str,
-) -> BTreeMap<String, Vec<String>> {
+fn expand_field_order_index(schema: &CftSchema, type_name: &str) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();
     let Some(schema_type) = schema.resolve_type(type_name) else {
         return out;

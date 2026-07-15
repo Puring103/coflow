@@ -72,7 +72,7 @@ impl RecordOrigin {
         match self {
             Self::File { path, .. } => Some(path),
             Self::Table { document, .. } => Some(document.path()),
-            _ => None,
+            Self::None => None,
         }
     }
 

@@ -39,13 +39,19 @@ impl DimensionSourceManager for CsvWriter {
         let text = fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION",
-                format!("failed to read dimension source `{}`: {err}", path.display()),
+                format!(
+                    "failed to read dimension source `{}`: {err}",
+                    path.display()
+                ),
             ))
         })?;
         let rows = parse(&text).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION",
-                format!("failed to parse dimension source `{}`: {err}", path.display()),
+                format!(
+                    "failed to parse dimension source `{}`: {err}",
+                    path.display()
+                ),
             ))
         })?;
         let Some(header) = rows.first() else {
@@ -81,11 +87,7 @@ impl DimensionSourceManager for CsvWriter {
             let source_key = match RecordKey::new(raw_key.clone()) {
                 Ok(key) => key,
                 Err(err) => {
-                    diagnostics.push(Diagnostic::error(
-                        "CSV-DIMENSION",
-                        "CSV",
-                        err.to_string(),
-                    ));
+                    diagnostics.push(Diagnostic::error("CSV-DIMENSION", "CSV", err.to_string()));
                     continue;
                 }
             };
@@ -123,9 +125,7 @@ impl DimensionSourceManager for CsvWriter {
                         sheet: request.source.display_name.clone(),
                         row: row_index,
                         id_column,
-                        field_columns: [(Vec::new(), *column)]
-                        .into_iter()
-                        .collect(),
+                        field_columns: std::iter::once((Vec::new(), *column)).collect(),
                     },
                 });
             }
@@ -158,13 +158,19 @@ impl DimensionSourceManager for CsvWriter {
         let text = fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION-WRITE",
-                format!("failed to read dimension source `{}`: {err}", path.display()),
+                format!(
+                    "failed to read dimension source `{}`: {err}",
+                    path.display()
+                ),
             ))
         })?;
         let mut rows = parse(&text).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION-WRITE",
-                format!("failed to parse dimension source `{}`: {err}", path.display()),
+                format!(
+                    "failed to parse dimension source `{}`: {err}",
+                    path.display()
+                ),
             ))
         })?;
         let Some(header) = rows.first() else {
@@ -229,13 +235,19 @@ impl DimensionSourceManager for CsvWriter {
         let text = fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION-WRITE",
-                format!("failed to read dimension source `{}`: {err}", path.display()),
+                format!(
+                    "failed to read dimension source `{}`: {err}",
+                    path.display()
+                ),
             ))
         })?;
         let mut rows = parse(&text).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION-WRITE",
-                format!("failed to parse dimension source `{}`: {err}", path.display()),
+                format!(
+                    "failed to parse dimension source `{}`: {err}",
+                    path.display()
+                ),
             ))
         })?;
         let Some(header) = rows.first() else {
@@ -285,12 +297,7 @@ impl DimensionSourceManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &DimensionSourceRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CSV-DIMENSION",
-                "csv dimension source requires a local path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         let expected_keys = request
             .entries
             .iter()

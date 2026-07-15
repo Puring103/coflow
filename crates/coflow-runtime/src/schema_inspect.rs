@@ -20,6 +20,7 @@ pub struct SchemaFilesReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct SchemaTypeInfo {
     pub module: String,
     pub name: String,
@@ -145,14 +146,15 @@ pub fn inspect_schema(
             diagnostics: session.diagnostics.flat_diagnostics(),
         };
     };
-    let mut type_names = view.all_types().map(|ty| ty.name.clone()).collect::<Vec<_>>();
+    let mut type_names = view
+        .all_types()
+        .map(|ty| ty.name.clone())
+        .collect::<Vec<_>>();
     type_names.sort();
     if let Some(filter) = type_filter {
-        type_names
-            .retain(|name| {
-                name.as_str() == filter
-                    || (include_derived && view.is_assignable(name, filter))
-            });
+        type_names.retain(|name| {
+            name.as_str() == filter || (include_derived && view.is_assignable(name, filter))
+        });
     }
 
     let types = type_names
@@ -173,7 +175,7 @@ pub fn inspect_schema(
                 .flat_map(coflow_cft::CftType::all_fields)
                 .map(|field| SchemaFieldInfo {
                     name: field.name.to_string(),
-                    ty: type_ref_info(view, &field.ty_ref),
+                    ty: type_ref_info(&field.ty_ref),
                     has_default: field.default.is_some(),
                     default: field.default.as_ref().map(default_value_info),
                     is_expand: field.is_expand,
@@ -235,11 +237,9 @@ pub fn schema_files(session: &ProjectSchemaSession) -> SchemaFilesReport {
     let files = session
         .modules()
         .modules()
-        .map(|(module_id, module)| {
-            SchemaFileInfo {
-                module: module_id.to_string(),
-                source: module.source().to_string(),
-            }
+        .map(|(module_id, module)| SchemaFileInfo {
+            module: module_id.to_string(),
+            source: module.source().to_string(),
         })
         .collect();
     SchemaFilesReport {
@@ -261,18 +261,16 @@ fn consts(schema: &CftSchema) -> Vec<SchemaConstInfo> {
     consts
 }
 
-fn type_ref_info(schema: &CftSchema, ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
+fn type_ref_info(ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
     match ty {
         CftSchemaTypeRef::Int => SchemaTypeRefInfo::Int,
         CftSchemaTypeRef::Float => SchemaTypeRefInfo::Float,
         CftSchemaTypeRef::Bool => SchemaTypeRefInfo::Bool,
         CftSchemaTypeRef::String => SchemaTypeRefInfo::String,
-        CftSchemaTypeRef::Object(name) => {
-            SchemaTypeRefInfo::Named {
-                name: name.to_string(),
-                target_kind: "type".to_string(),
-            }
-        }
+        CftSchemaTypeRef::Object(name) => SchemaTypeRefInfo::Named {
+            name: name.to_string(),
+            target_kind: "type".to_string(),
+        },
         CftSchemaTypeRef::Enum(name) => SchemaTypeRefInfo::Named {
             name: name.to_string(),
             target_kind: "enum".to_string(),
@@ -281,14 +279,14 @@ fn type_ref_info(schema: &CftSchema, ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo
             target: target.to_string(),
         },
         CftSchemaTypeRef::Array(inner) => SchemaTypeRefInfo::Array {
-            item: Box::new(type_ref_info(schema, inner)),
+            item: Box::new(type_ref_info(inner)),
         },
         CftSchemaTypeRef::Dict(key, value) => SchemaTypeRefInfo::Dict {
-            key: Box::new(type_ref_info(schema, key)),
-            value: Box::new(type_ref_info(schema, value)),
+            key: Box::new(type_ref_info(key)),
+            value: Box::new(type_ref_info(value)),
         },
         CftSchemaTypeRef::Nullable(inner) => SchemaTypeRefInfo::Nullable {
-            inner: Box::new(type_ref_info(schema, inner)),
+            inner: Box::new(type_ref_info(inner)),
         },
     }
 }

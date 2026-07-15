@@ -1,6 +1,6 @@
+use crate::compiled::{compile_module_set, CftCompileOptions};
 use crate::error::CftDiagnostics;
 use crate::module_set::{CftDimensionInputs, CftModuleSet};
-use crate::compiled::{compile_module_set, CftCompileOptions};
 use crate::CftSchema;
 
 /// Builds an immutable semantic schema from modules that have already been parsed.

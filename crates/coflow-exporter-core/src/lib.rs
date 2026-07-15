@@ -249,12 +249,15 @@ fn object_fields<'a>(
     object: &CfdObject,
     location: &ExportLocation<'_>,
 ) -> Result<Vec<&'a CftField>, ExportError> {
-    schema.resolve_type(object.actual_type()).map(|ty| ty.all_fields().collect()).ok_or_else(|| {
-        ExportError::at(
-            location,
-            format!("unknown CFT type `{}` during export", object.actual_type()),
-        )
-    })
+    schema
+        .resolve_type(object.actual_type())
+        .map(|ty| ty.all_fields().collect())
+        .ok_or_else(|| {
+            ExportError::at(
+                location,
+                format!("unknown CFT type `{}` during export", object.actual_type()),
+            )
+        })
 }
 
 fn encode_object_members<S>(

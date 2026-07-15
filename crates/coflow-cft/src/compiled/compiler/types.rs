@@ -1,10 +1,10 @@
 use super::SchemaCompiler;
 use crate::ast::{TypeRef, TypeRefKind};
-use crate::module_id::ModuleId;
-use crate::error::{CftDiagnostic, CftErrorCode};
 use crate::compiled::support::{
     has_annotation, is_valid_dict_key, FieldInfo, FieldOrigin, SymbolKind, Ty, TypeInfo,
 };
+use crate::error::{CftDiagnostic, CftErrorCode};
+use crate::module_id::ModuleId;
 use crate::span::Span;
 use coflow_structure::{StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};

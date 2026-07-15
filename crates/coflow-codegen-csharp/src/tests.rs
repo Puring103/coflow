@@ -1,8 +1,10 @@
 #![allow(
     clippy::expect_used,
+    clippy::needless_pass_by_value,
     clippy::needless_raw_string_hashes,
     clippy::panic,
     clippy::panic_in_result_fn,
+    clippy::redundant_field_names,
     clippy::too_many_lines,
     clippy::unwrap_used
 )]
@@ -136,10 +138,7 @@ fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), Strin
                 count: int;
             }
         "#,
-        CftDimensionInputs::new([(
-            "language",
-            vec!["en".to_string(), "zh".to_string()],
-        )]),
+        CftDimensionInputs::new([("language", vec!["en".to_string(), "zh".to_string()])]),
     )?;
     let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;

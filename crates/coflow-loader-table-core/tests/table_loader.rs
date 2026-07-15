@@ -45,8 +45,8 @@ fn loads_table_source_with_excel_style_sheet_config() -> TestResult {
             .with_columns([("名称", "name"), ("稀有度", "rarity")])],
     );
 
-    let loaded = collect_table_input_records(&schema, &[source])
-        .map_err(|err| format!("{err:?}"))?;
+    let loaded =
+        collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
     assert_eq!(loaded.records.len(), 1);
     assert!(matches!(
         loaded.records[0].origin,
@@ -117,8 +117,8 @@ fn recognizes_default_id_header_aliases_as_record_key_columns() -> TestResult {
             vec![TableSheetConfig::new("Item")],
         );
 
-        let loaded = collect_table_input_records(&schema, &[source])
-            .map_err(|err| format!("{err:?}"))?;
+        let loaded =
+            collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
 
         assert_eq!(loaded.records.len(), 1, "{header}");
         assert_eq!(loaded.records[0].key, key, "{header}");
@@ -146,8 +146,8 @@ fn maps_local_table_data_model_diagnostics_to_cells() -> TestResult {
             .with_columns([("名称", "name")])],
     );
 
-    let loaded = collect_table_input_records(&schema, &[source])
-        .map_err(|err| format!("{err:?}"))?;
+    let loaded =
+        collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
     let origins = loaded
         .records
         .iter()

@@ -70,9 +70,7 @@ fn validate_dimension_source_overlap_collecting(
 
     let mut diagnostics = Vec::new();
     for (index, source) in sources.iter().enumerate() {
-        let SourceLocationSpec::Path(path) = source.location() else {
-            continue;
-        };
+        let SourceLocationSpec::Path(path) = source.location();
         let source_path = normalize_path(&resolve_project_relative(root_dir, path));
         for (dimension, out_dir) in &dimension_dirs {
             if source_path == *out_dir || source_path.starts_with(out_dir) {

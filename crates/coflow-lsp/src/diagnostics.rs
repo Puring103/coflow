@@ -80,7 +80,6 @@ enum LspLabelDocument {
     #[default]
     Unknown,
     Path(PathBuf),
-    Uri(String),
 }
 
 pub fn lsp_label_location(location: &coflow_api::SourceLocation) -> LspLabelLocation {
@@ -122,7 +121,6 @@ pub fn label_uri(
 ) -> String {
     match &location.document {
         LspLabelDocument::Path(path) => preferred_diagnostic_uri(preferred_uris, path),
-        LspLabelDocument::Uri(uri) => uri.clone(),
         LspLabelDocument::Unknown => preferred_diagnostic_uri(preferred_uris, Path::new("")),
     }
 }

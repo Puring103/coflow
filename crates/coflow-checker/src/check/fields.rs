@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchemaTypeRef, CftSchema};
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 use coflow_data_model::{CfdDataModel, CfdErrorCode};
 use coflow_structure::StructuralBudget;
 
@@ -107,7 +107,7 @@ pub(super) fn virtual_id(
 fn budget_error(exceeded: LocatedBudgetExceeded) -> OpsError {
     OpsError::new(
         CfdErrorCode::CheckBudgetExceeded,
-        exceeded.location,
+        *exceeded.location,
         exceeded.error.to_string(),
     )
 }

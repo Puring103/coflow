@@ -65,8 +65,7 @@ pub fn dimension_fields(schema: &CftSchema) -> Vec<DimensionField> {
                 source_field: field.name.clone(),
                 bucket: dimension
                     .bucket
-                    .as_ref()
-                    .cloned()
+                    .clone()
                     .unwrap_or_else(|| BucketName::from(schema_type.name.clone())),
                 is_singleton: schema_type.is_singleton,
             });
@@ -96,17 +95,20 @@ fn source_for_dimension_file(
         |_| path.display().to_string(),
         coflow_project::path_to_slash,
     );
-    Some((ConfiguredSource {
-        provider_id: provider_id.to_string(),
-        location: SourceLocationSpec::Path(path),
-        options: source_options(field, &extension),
-        display_name: if display_name.is_empty() {
-            dir.display().to_string()
-        } else {
-            display_name
+    Some((
+        ConfiguredSource {
+            provider_id: provider_id.to_string(),
+            location: SourceLocationSpec::Path(path),
+            options: source_options(field, &extension),
+            display_name: if display_name.is_empty() {
+                dir.display().to_string()
+            } else {
+                display_name
+            },
+            source_index: None,
         },
-        source_index: None,
-    }, field.clone()))
+        field.clone(),
+    ))
 }
 
 fn field_for_file_stem<'a>(

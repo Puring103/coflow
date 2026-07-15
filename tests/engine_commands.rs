@@ -3,15 +3,14 @@
 use coflow::commands::{check_project, CommandOutcome};
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    ProviderRegistry, RenameRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
-    SourceLoadContext, SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceWriter,
-    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    ProviderRegistry, ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
+    SourceProviderDescriptor, SourceWriter, WriteCellRequest, WriteContext, WriteOutcome,
+    WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdInputRecord, CfdInputValue, RecordOrigin, SourceDocument};
 use coflow_project::Project;
 use coflow_runtime::{RecordCoordinate, Runtime, WriteProjectSession};
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
 
 mod common;
 
@@ -343,13 +342,7 @@ impl SourceProvider for FakeLocalFailLoader {
         _ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &source.location else {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "FAKE-LOCAL-LOAD",
-                "TEST",
-                "fake local source expects a path",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &source.location;
         let mut field_columns = BTreeMap::new();
         field_columns.insert(vec!["item".to_string()], 2);
         Ok(LoadedSource {

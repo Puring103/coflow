@@ -8,13 +8,16 @@ use coflow_api::{
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
 
-use crate::project_schema::{open_project_schema_session, open_project_schema_attempt, SchemaTextOverride};
+use crate::project_schema::{
+    open_project_schema_attempt, open_project_schema_session, SchemaTextOverride,
+};
 use crate::session::{ProjectSchemaSession, ProjectSession};
-use crate::session_build::{open_project_session, open_project_session_from_schema, SessionOpenOptions};
+use crate::session_build::{
+    open_project_session, open_project_session_from_schema, SessionOpenOptions,
+};
 use crate::{
-    CreateRecordDraft, DefaultMaterialization, DimensionValueCoordinate,
-    DimensionValueExpectation, MutationFields, MutationOp, MutationReport, MutationRequest,
-    MutationValue, ProjectQueries,
+    CreateRecordDraft, DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation,
+    MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue, ProjectQueries,
     RecordCoordinate, WriteOutcome,
 };
 
@@ -61,7 +64,9 @@ impl ProjectRuntime {
 
     #[must_use]
     pub fn schema(&self) -> Option<&ProjectSchemaSession> {
-        self.published.as_ref().map(|generation| &generation.session)
+        self.published
+            .as_ref()
+            .map(|generation| &generation.session)
     }
 
     /// Returns the latest build attempt, including an invalid CFT module set.
@@ -87,6 +92,10 @@ impl ProjectRuntime {
     /// A failed rebuild leaves the last successful generation available for
     /// language tooling, while the returned diagnostics still prevent callers
     /// from treating the failed refresh as a valid project build.
+    ///
+    /// # Errors
+    ///
+    /// Returns project, schema, or source diagnostics when the candidate cannot be built.
     pub fn refresh(&mut self) -> Result<bool, DiagnosticSet> {
         self.refresh_with_overrides(&[])
     }
@@ -95,6 +104,10 @@ impl ProjectRuntime {
     ///
     /// A failed candidate is retained only as `latest_attempt` for diagnostics;
     /// it never replaces the published generation used by semantic consumers.
+    ///
+    /// # Errors
+    ///
+    /// Returns project, schema, or source diagnostics when the candidate cannot be built.
     pub fn refresh_with_overrides(
         &mut self,
         overrides: &[SchemaTextOverride],
@@ -116,11 +129,7 @@ impl ProjectRuntime {
         }
 
         let diagnostics = self.project.schema_diagnostic_set();
-        let session = open_project_schema_attempt(
-            self.project.clone(),
-            diagnostics,
-            overrides,
-        )?;
+        let session = open_project_schema_attempt(self.project.clone(), diagnostics, overrides)?;
         let generation = SchemaGeneration {
             fingerprint,
             session,
@@ -174,7 +183,9 @@ fn schema_input_fingerprint(
                     || coflow_project::normalize_path(&module.canonical_path)
                         == source_override.normalized_path
             })
-            .map_or(&module.source, |(_, source_override)| &source_override.source);
+            .map_or(&module.source, |(_, source_override)| {
+                &source_override.source
+            });
         source.hash(&mut hasher);
     }
     for source_override in overrides {
@@ -252,6 +263,10 @@ impl Runtime {
     }
 
     /// Opens a write-capable data session from a runtime-built schema generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when project sources cannot be opened against the schema.
     pub fn open_write_session_from_schema(
         &self,
         schema: ProjectSchemaSession,

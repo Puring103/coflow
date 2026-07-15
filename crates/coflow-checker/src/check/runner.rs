@@ -296,7 +296,7 @@ impl<'a> CheckRunner<'a> {
                     location,
                     message,
                 }) => {
-                    let location = location.unwrap_or_else(|| logical_location.clone());
+                    let location = (*location).unwrap_or_else(|| logical_location.clone());
                     self.diagnostics.push(
                         CfdDiagnostic::error(code, message)
                             .with_primary(Some(location.blame.record), location.blame.path),

@@ -67,7 +67,7 @@ pub(super) fn quantifier_item(
 fn budget_error(exceeded: LocatedBudgetExceeded) -> OpsError {
     OpsError::new(
         CfdErrorCode::CheckBudgetExceeded,
-        exceeded.location,
+        *exceeded.location,
         exceeded.error.to_string(),
     )
 }

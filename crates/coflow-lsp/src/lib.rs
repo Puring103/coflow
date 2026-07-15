@@ -44,7 +44,7 @@ use definition::{
     cft_type_definition_location, definitions_at,
 };
 #[cfg(test)]
-use diagnostics::{label_uri, lsp_diagnostic, lsp_label_location};
+use diagnostics::lsp_diagnostic;
 use document_symbols::document_symbols;
 pub(crate) use documentation::is_builtin_name;
 use formatting::format_cft;
@@ -63,8 +63,6 @@ pub(crate) use state::{
     enum_variant_exists, field_by_chain, field_by_type, quantifier_bindings_at,
     type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
-#[cfg(test)]
-use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::io::{self, BufReader, Write};
 #[cfg(test)]

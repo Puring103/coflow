@@ -1,5 +1,5 @@
 #![allow(dead_code, unused_imports)]
-#![allow(clippy::redundant_pub_crate)]
+#![allow(clippy::needless_pass_by_value, clippy::redundant_pub_crate)]
 
 pub(crate) use coflow_cft::{
     build_schema, parse_modules, CftConstValue, CftDiagnostics, CftDimensionInputs, CftErrorCode,

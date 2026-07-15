@@ -1,6 +1,7 @@
 #![allow(dead_code, unused_imports)]
 #![allow(
     clippy::expect_used,
+    clippy::needless_pass_by_value,
     clippy::panic,
     clippy::redundant_pub_crate,
     clippy::unwrap_used

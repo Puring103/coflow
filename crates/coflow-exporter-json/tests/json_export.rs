@@ -3,6 +3,7 @@
     clippy::needless_raw_string_hashes,
     clippy::panic,
     clippy::panic_in_result_fn,
+    clippy::redundant_field_names,
     clippy::too_many_lines,
     clippy::unwrap_used
 )]
@@ -33,8 +34,8 @@ fn export_tables(
     schema: &CftSchema,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, Value>, String> {
-    let artifacts = export_json_artifacts(schema, model)
-        .map_err(|err| format!("export json: {err:?}"))?;
+    let artifacts =
+        export_json_artifacts(schema, model).map_err(|err| format!("export json: {err:?}"))?;
     artifacts
         .files()
         .iter()

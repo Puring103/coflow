@@ -233,7 +233,10 @@ pub(super) fn serialize_value_for_type(
             .clone()
             .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
         CfdValue::Ref(target_key)
-            if matches!(expected.map(non_nullable), Some(CftSchemaTypeRef::RecordRef(_))) =>
+            if matches!(
+                expected.map(non_nullable),
+                Some(CftSchemaTypeRef::RecordRef(_))
+            ) =>
         {
             format!("&{target_key}")
         }

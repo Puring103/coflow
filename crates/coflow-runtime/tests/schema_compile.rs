@@ -41,13 +41,13 @@ fn schema_overrides_match_by_module_or_path_and_reject_unmatched() -> TestResult
         .module(&ModuleId::from("schema/main.cft"))
         .is_some_and(|module| module.source().contains("PathReplacement")));
 
-    let err = ProjectRuntime::new(project.clone())
+    let err = ProjectRuntime::new(project)
         .refresh_with_overrides(&[SchemaTextOverride {
             requested_module: Some("schema/missing.cft".to_string()),
             normalized_path: normalize_path(&root.join("schema/missing.cft")),
             source: "type Missing { value: string; }".to_string(),
         }])
-    .expect_err("unmatched override should fail");
+        .expect_err("unmatched override should fail");
     assert!(err.contains("`--stdin-path schema/missing.cft` is not part"));
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
@@ -105,10 +105,7 @@ fn project_schema_publishes_canonical_utf16_diagnostics() -> TestResult {
     let source = "type 表 {\n  名: Missing;\n}\n";
     let (root, project) = test_project("utf16", source)?;
     let build = build_schema_attempt(project, &[])?;
-    let diagnostics = build
-        .diagnostics()
-        .clone()
-        .into_set();
+    let diagnostics = build.diagnostics().clone().into_set();
     let converted = diagnostics
         .diagnostics
         .iter()

@@ -22,7 +22,7 @@ pub struct WireContext<'a> {
 
 impl<'a> WireContext<'a> {
     #[must_use]
-    pub fn new(queries: ProjectQueries<'a>, diagnostics: &'a Diagnostics) -> Self {
+    pub const fn new(queries: ProjectQueries<'a>, diagnostics: &'a Diagnostics) -> Self {
         Self {
             queries,
             diagnostics,

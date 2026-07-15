@@ -271,9 +271,7 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
     let model = builder.build().expect("data model should build");
     let offer = model.lookup_assignable("Offer", "starter").expect("offer");
     let item = model.lookup_assignable("Item", "potion").expect("item");
-    let edges = model
-        .direct_ref_edges_from_host(offer)
-        .collect::<Vec<_>>();
+    let edges = model.direct_ref_edges_from_host(offer).collect::<Vec<_>>();
 
     assert_eq!(edges.len(), 2);
     assert!(edges.iter().any(|edge| edge.site.dimension.is_none()));
@@ -322,13 +320,7 @@ fn dimension_field_lookup_uses_singleton_owner_record() {
         .expect("singleton");
 
     let resolved = model
-        .dimension_field_value(
-            &schema,
-            singleton_id,
-            "welcome",
-            "language",
-            "zh",
-        )
+        .dimension_field_value(&schema, singleton_id, "welcome", "language", "zh")
         .expect("singleton variant lookup should resolve by field name");
 
     assert!(matches!(

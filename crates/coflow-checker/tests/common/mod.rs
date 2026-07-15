@@ -1,7 +1,9 @@
 #![allow(dead_code, unused_imports)]
 #![allow(clippy::redundant_pub_crate)]
 
-pub(crate) use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
+pub(crate) use coflow_cft::{
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
+};
 pub(crate) use coflow_checker::CfdCheckExt;
 pub(crate) use coflow_data_model::*;
 

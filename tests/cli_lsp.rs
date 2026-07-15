@@ -49,7 +49,7 @@ fn cli_lsp_and_runtime_share_the_canonical_schema_diagnostic() {
     assert!(matches!(
         &expected.primary.as_ref().expect("primary").location,
         SourceLocation::FileSpan { path, .. }
-            if coflow_project::normalize_path(&path)
+            if coflow_project::normalize_path(path)
                 == coflow_project::normalize_path(&schema_path)
     ));
 

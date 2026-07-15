@@ -86,12 +86,10 @@ fn read_dict_key_expr(
     match ty.non_nullable() {
         CftSchemaTypeRef::String => Ok(key.to_string()),
         CftSchemaTypeRef::Int => Ok(format!("CoflowJson.ReadIntKey({key})")),
-        CftSchemaTypeRef::Enum(name) => {
-            Ok(format!(
-                "CoflowJson.ReadEnumKey<{}>({key})",
-                view.csharp_enum_name(name)
-            ))
-        }
+        CftSchemaTypeRef::Enum(name) => Ok(format!(
+            "CoflowJson.ReadEnumKey<{}>({key})",
+            view.csharp_enum_name(name)
+        )),
         _ => Err(CsharpCodegenError::new(
             "dictionary key type must be string, int, or enum",
         )),
@@ -165,12 +163,10 @@ fn read_messagepack_dict_key_expr(
     match ty.non_nullable() {
         CftSchemaTypeRef::String => Ok(key.to_string()),
         CftSchemaTypeRef::Int => Ok(format!("CoflowMessagePack.ReadIntKey({key})")),
-        CftSchemaTypeRef::Enum(name) => {
-            Ok(format!(
-                "CoflowMessagePack.ReadEnumKey<{}>({key})",
-                view.csharp_enum_name(name)
-            ))
-        }
+        CftSchemaTypeRef::Enum(name) => Ok(format!(
+            "CoflowMessagePack.ReadEnumKey<{}>({key})",
+            view.csharp_enum_name(name)
+        )),
         _ => Err(CsharpCodegenError::new(
             "dictionary key type must be string, int, or enum",
         )),

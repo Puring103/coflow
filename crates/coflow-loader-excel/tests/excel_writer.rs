@@ -2,8 +2,10 @@
 //! calamine, assert the new value plus that adjacent cells are unchanged.
 #![allow(
     clippy::expect_used,
+    clippy::needless_borrow,
     clippy::panic,
     clippy::panic_in_result_fn,
+    clippy::redundant_field_names,
     clippy::unwrap_used
 )]
 
@@ -119,7 +121,7 @@ fn read_cell(path: &Path, sheet_name: &str, row: usize, col: usize) -> String {
 fn schema_for_items() -> CftSchema {
     let modules = parse_modules([CftFile::from_source(
         ModuleId::from("main"),
-            r"
+        r"
             type Item {
               name: string;
               value: int;
@@ -299,7 +301,7 @@ fn table_manager_rejects_unsafe_formats_before_create_or_sync() {
 fn schema_for_tagged_items() -> CftSchema {
     let modules = parse_modules([CftFile::from_source(
         ModuleId::from("main"),
-            r"
+        r"
             type Item {
               tags: [string];
             }
@@ -321,7 +323,7 @@ fn write_tagged_workbook(path: &PathBuf) -> Result<(), XlsxError> {
 fn schema_for_terrain() -> CftSchema {
     let modules = parse_modules([CftFile::from_source(
         ModuleId::from("main"),
-            r"
+        r"
             @struct sealed type EnvCfg {
               shc: float;
               temperature: float;
@@ -551,8 +553,8 @@ fn writes_expanded_object_fields_to_child_columns() {
         &path,
         vec![coflow_loader_excel::ExcelSheet::new("Terrain")],
     );
-    let loaded = coflow_loader_excel::collect_input_records(schema, &[source_def])
-        .expect("load records");
+    let loaded =
+        coflow_loader_excel::collect_input_records(schema, &[source_def]).expect("load records");
     let origin = loaded.records[0].origin.clone();
     let new_value = expanded_env_value(6.0, 21.5, 0.75);
     let segments = vec![WriteFieldPathSegment::Field("env".to_string())];
@@ -707,8 +709,8 @@ fn inserts_record_row_and_loader_can_read_it() {
         vec![coflow_loader_excel::ExcelSheet::new("Items").with_type("Item")],
     );
     let schema = &schema;
-    let loaded = coflow_loader_excel::collect_input_records(schema, &[source_def])
-        .expect("reload records");
+    let loaded =
+        coflow_loader_excel::collect_input_records(schema, &[source_def]).expect("reload records");
     assert!(loaded.records.iter().any(|record| record.key == "potion"));
 }
 

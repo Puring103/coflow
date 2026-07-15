@@ -28,9 +28,7 @@ impl CellType {
             CftSchemaTypeRef::Object(name) => Self::Type(name.to_string()),
             CftSchemaTypeRef::Enum(name) => Self::Enum(name.to_string()),
             CftSchemaTypeRef::RecordRef(name) => Self::Ref(name.to_string()),
-            CftSchemaTypeRef::Array(inner) => {
-                Self::Array(Box::new(Self::from_schema_type(inner)))
-            }
+            CftSchemaTypeRef::Array(inner) => Self::Array(Box::new(Self::from_schema_type(inner))),
             CftSchemaTypeRef::Dict(key, value) => Self::Dict(
                 Box::new(Self::from_schema_type(key)),
                 Box::new(Self::from_schema_type(value)),
@@ -206,15 +204,12 @@ pub(super) fn full_fields(
             }],
         });
     };
-    schema_type
-        .all_fields()
-        .map(|field| field_meta(schema, field))
-        .collect()
+    Ok(schema_type.all_fields().map(field_meta).collect())
 }
 
-fn field_meta(_: &CftSchema, field: &CftField) -> Result<FieldMeta, CellValueDiagnostics> {
-    Ok(FieldMeta {
+fn field_meta(field: &CftField) -> FieldMeta {
+    FieldMeta {
         name: field.name.to_string(),
         ty: CellType::from_schema_type(&field.ty_ref),
-    })
+    }
 }

@@ -4,10 +4,10 @@ use coflow_api::{
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
     RewriteDimensionRecordRequest, SourceLocationSpec, TableContext, WriteDimensionValueRequest,
 };
-use coflow_cft::{CftSchemaTypeRef, RecordKey};
-use coflow_data_model::{CfdInputDimensionValue, RecordOrigin, TextSpan};
 use coflow_cfd::ast::CfdBlockEntry;
 use coflow_cfd::parse_cfd;
+use coflow_cft::{CftSchemaTypeRef, RecordKey};
+use coflow_data_model::{CfdInputDimensionValue, RecordOrigin, TextSpan};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::path::Path;
@@ -35,7 +35,10 @@ impl DimensionSourceManager for CfdWriter {
         let text = std::fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CFD-DIMENSION",
-                format!("failed to read dimension source `{}`: {err}", path.display()),
+                format!(
+                    "failed to read dimension source `{}`: {err}",
+                    path.display()
+                ),
             ))
         })?;
         let (ast, syntax) = parse_cfd(&text);
@@ -58,11 +61,7 @@ impl DimensionSourceManager for CfdWriter {
             let source_key = match RecordKey::new(record.key.clone()) {
                 Ok(key) => key,
                 Err(err) => {
-                    diagnostics.push(Diagnostic::error(
-                        "CFD-DIMENSION",
-                        "CFD",
-                        err.to_string(),
-                    ));
+                    diagnostics.push(Diagnostic::error("CFD-DIMENSION", "CFD", err.to_string()));
                     continue;
                 }
             };
@@ -149,10 +148,8 @@ impl DimensionSourceManager for CfdWriter {
         })?;
         match request.new_value {
             Some(value) => {
-                row.variants.insert(
-                    request.variant.to_string(),
-                    serialize_value(value, 2),
-                );
+                row.variants
+                    .insert(request.variant.to_string(), serialize_value(value, 2));
             }
             None => {
                 row.variants.remove(request.variant.as_str());
@@ -199,12 +196,7 @@ impl DimensionSourceManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &DimensionSourceRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-DIMENSION",
-                "cfd dimension source requires a path source",
-            )));
-        };
+        let SourceLocationSpec::Path(path) = &request.source.location;
         let expected_keys = request
             .entries
             .iter()

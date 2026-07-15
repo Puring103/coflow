@@ -220,7 +220,7 @@ pub(crate) fn build_ref_indexes(
                 value,
                 &field.ty_ref,
                 host,
-                root.clone().field(name.clone()),
+                &root.clone().field(name.clone()),
                 None,
                 &context,
                 &mut out,
@@ -244,7 +244,7 @@ pub(crate) fn build_ref_indexes(
                     &value.value,
                     &field.ty_ref,
                     host,
-                    root.clone().field(field_name.clone()),
+                    &root.clone().field(field_name.clone()),
                     Some(&coordinate),
                     &context,
                     &mut out,
@@ -274,12 +274,12 @@ fn collect_ref_edges(
     value: &CfdValue,
     ty: &CftSchemaTypeRef,
     host: CfdRecordId,
-    path: CfdPath,
+    path: &CfdPath,
     dimension: Option<&DimensionRefCoordinate>,
     context: &RefEdgeBuildContext<'_, '_>,
     out: &mut RefIndexes,
 ) {
-    if dimension.is_none() && context.is_spread_inherited_path(host, &path) {
+    if dimension.is_none() && context.is_spread_inherited_path(host, path) {
         return;
     }
     match (value, ty.non_nullable()) {
@@ -335,7 +335,7 @@ fn collect_ref_edges(
                     inner,
                     &field.ty_ref,
                     host,
-                    path.clone().field(name.clone()),
+                    &path.clone().field(name.clone()),
                     dimension,
                     context,
                     out,
@@ -348,7 +348,7 @@ fn collect_ref_edges(
                     item,
                     inner_ty,
                     host,
-                    path.clone().index(index),
+                    &path.clone().index(index),
                     dimension,
                     context,
                     out,
@@ -361,7 +361,7 @@ fn collect_ref_edges(
                     item,
                     value_ty,
                     host,
-                    path.clone().dict_key_value(key),
+                    &path.clone().dict_key_value(key),
                     dimension,
                     context,
                     out,

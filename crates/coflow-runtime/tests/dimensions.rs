@@ -1,7 +1,10 @@
 #![allow(
     clippy::expect_used,
-    clippy::unwrap_used,
-    clippy::needless_raw_string_hashes
+    clippy::needless_collect,
+    clippy::needless_pass_by_value,
+    clippy::needless_raw_string_hashes,
+    clippy::panic,
+    clippy::unwrap_used
 )]
 
 use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
@@ -126,14 +129,10 @@ fn localized_schema_requires_language_dimension_config() {
     let diagnostics = build_session(project, &registry).expect_err("schema build must fail");
 
     assert!(
-        diagnostics
-            .diagnostics
-            .iter()
-            .any(|diagnostic| {
-                diagnostic.code == "CFT-SCHEMA-024"
-                    && diagnostic.message
-                        == "field `Item.name` uses unconfigured dimension `language`"
-            }),
+        diagnostics.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "CFT-SCHEMA-024"
+                && diagnostic.message == "field `Item.name` uses unconfigured dimension `language`"
+        }),
         "diagnostics: {diagnostics:?}",
     );
 
@@ -171,14 +170,10 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
     let diagnostics = build_session(project, &registry).expect_err("schema build must fail");
 
     assert!(
-        diagnostics
-            .diagnostics
-            .iter()
-            .any(|diagnostic| {
-                diagnostic.code == "CFT-SCHEMA-024"
-                    && diagnostic.message
-                        == "field `Item.name` uses unconfigured dimension `platform`"
-            }),
+        diagnostics.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "CFT-SCHEMA-024"
+                && diagnostic.message == "field `Item.name` uses unconfigured dimension `platform`"
+        }),
         "diagnostics: {diagnostics:?}",
     );
 
@@ -234,20 +229,31 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let dimension = session.queries().dimension("language").expect("language dimension");
+    let dimension = session
+        .queries()
+        .dimension("language")
+        .expect("language dimension");
     assert_eq!(dimension.variants, ["zh", "en"]);
     assert_eq!(dimension.fields.len(), 1);
     assert_eq!(dimension.fields[0].source_type, "Item");
     assert_eq!(dimension.fields[0].source_field, "name");
-    assert!(!session.queries().schema_has_type("__coflow_dimension_Item_name"));
+    assert!(!session
+        .queries()
+        .schema_has_type("__coflow_dimension_Item_name"));
     let record = session
         .queries()
         .record_view("Item", "potion")
         .expect("owner record");
     let overlay = record.record.dimension_field("name").expect("name overlay");
     assert_eq!(overlay.dimension.as_str(), "language");
-    assert_eq!(overlay.variants["zh"].value, CfdValue::String("药水".to_string()));
-    assert_eq!(overlay.variants["en"].value, CfdValue::String("Potion".to_string()));
+    assert_eq!(
+        overlay.variants["zh"].value,
+        CfdValue::String("药水".to_string())
+    );
+    assert_eq!(
+        overlay.variants["en"].value,
+        CfdValue::String("Potion".to_string())
+    );
     assert!(session
         .queries()
         .has_source_file("data/dimensions/language/Item_name.csv"));
@@ -262,7 +268,10 @@ dimensions:
             path: Vec::new(),
         })
         .expect("dimension value query");
-    let Some(DimensionValueOrigin::TableCell { path, row, column, .. }) = value.origin else {
+    let Some(DimensionValueOrigin::TableCell {
+        path, row, column, ..
+    }) = value.origin
+    else {
         panic!("dimension value should retain its CSV cell origin");
     };
     assert!(path.ends_with("Item_name.csv"), "path: {path}");
@@ -321,16 +330,25 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    let dimension = session.queries().dimension("platform").expect("platform dimension");
+    let dimension = session
+        .queries()
+        .dimension("platform")
+        .expect("platform dimension");
     assert_eq!(dimension.variants, ["pc", "mobile"]);
     assert_eq!(dimension.fields.len(), 1);
     assert!(session
         .queries()
         .has_source_file("data/dimensions/platform/Item_name.csv"));
-    let record = session.queries().record_view("Item", "potion").expect("owner record");
+    let record = session
+        .queries()
+        .record_view("Item", "potion")
+        .expect("owner record");
     let overlay = record.record.dimension_field("name").expect("name overlay");
     assert_eq!(overlay.dimension.as_str(), "platform");
-    assert_eq!(overlay.variants["pc"].value, CfdValue::String("PC Potion".to_string()));
+    assert_eq!(
+        overlay.variants["pc"].value,
+        CfdValue::String("PC Potion".to_string())
+    );
     assert_eq!(
         overlay.variants["mobile"].value,
         CfdValue::String("Mobile Potion".to_string())
@@ -375,8 +393,14 @@ dimensions:
     let registry = csv_dimension_registry();
     let session = build_session(project, &registry).expect("build session");
 
-    assert_eq!(session.queries().schema_type_fields("Item"), [("name".to_string(), "string?".to_string())]);
-    let dimension = session.queries().dimension("language").expect("language dimension");
+    assert_eq!(
+        session.queries().schema_type_fields("Item"),
+        [("name".to_string(), "string?".to_string())]
+    );
+    let dimension = session
+        .queries()
+        .dimension("language")
+        .expect("language dimension");
     assert_eq!(dimension.variants, ["zh"]);
     assert_eq!(dimension.fields.len(), 1);
 
@@ -502,7 +526,10 @@ dimensions:
         .queries()
         .record_view("Child", "child")
         .expect("child owner record");
-    let overlay = record.record.dimension_field("name").expect("inherited overlay");
+    let overlay = record
+        .record
+        .dimension_field("name")
+        .expect("inherited overlay");
     assert_eq!(overlay.dimension.as_str(), "language");
     assert_eq!(overlay.variants["zh"].value, CfdValue::Null);
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/Base_name.csv"))

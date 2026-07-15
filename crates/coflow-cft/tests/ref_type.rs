@@ -29,10 +29,7 @@ fn ref_type_compiles_object_references_and_nested_shapes() {
     let fields = holder.own_fields().collect::<Vec<_>>();
     let item = TypeName::new("Item").unwrap();
     assert_eq!(fields[0].ty_ref.display_label(), "&Item");
-    assert_eq!(
-        fields[0].ty_ref,
-        CftSchemaTypeRef::RecordRef(item.clone())
-    );
+    assert_eq!(fields[0].ty_ref, CftSchemaTypeRef::RecordRef(item.clone()));
     assert_eq!(fields[1].ty_ref.display_label(), "&Item?");
     assert_eq!(
         fields[1].ty_ref,
@@ -43,10 +40,7 @@ fn ref_type_compiles_object_references_and_nested_shapes() {
         fields[2].ty_ref,
         CftSchemaTypeRef::Array(Box::new(CftSchemaTypeRef::RecordRef(item.clone())))
     );
-    assert_eq!(
-        fields[3].ty_ref.display_label(),
-        "{string: &Item}"
-    );
+    assert_eq!(fields[3].ty_ref.display_label(), "{string: &Item}");
     assert_eq!(
         fields[3].ty_ref,
         CftSchemaTypeRef::Dict(

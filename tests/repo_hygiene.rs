@@ -132,10 +132,7 @@ fn dependency_graph_enforces_internal_crate_boundaries() {
 #[test]
 fn shared_algorithms_have_dedicated_dependency_owners() {
     let graph = WorkspaceGraph::load();
-    for provider in [
-        "coflow-loader-csv",
-        "coflow-loader-excel",
-    ] {
+    for provider in ["coflow-loader-csv", "coflow-loader-excel"] {
         graph.assert_depends_on(provider, "coflow-loader-table-core");
     }
     for exporter in ["coflow-exporter-json", "coflow-exporter-messagepack"] {

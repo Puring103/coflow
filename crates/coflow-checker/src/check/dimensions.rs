@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use coflow_cft::{CftSchemaTypeRef, CftSchema};
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 use coflow_data_model::{
     CfdDataModel, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
     DimensionValueLookup,
@@ -60,9 +60,7 @@ impl DimensionRoundView {
                     field
                         .dimension
                         .as_ref()
-                        .is_some_and(|dimension| {
-                            dimension.dimension.as_str() == context.dimension
-                        })
+                        .is_some_and(|dimension| dimension.dimension.as_str() == context.dimension)
                 })
                 .map(|field| {
                     let traverse_nested =
@@ -74,26 +72,22 @@ impl DimensionRoundView {
                         &context.dimension,
                         variant,
                     ) {
-                        Ok(DimensionValueLookup::Value { .. }) => {
-                            ProjectedDimensionField::Value {
-                                field_type: field.ty_ref.clone(),
-                                traverse_nested,
-                            }
-                        }
+                        Ok(DimensionValueLookup::Value { .. }) => ProjectedDimensionField::Value {
+                            field_type: field.ty_ref.clone(),
+                            traverse_nested,
+                        },
                         Ok(DimensionValueLookup::ExplicitNull { .. }) => {
                             ProjectedDimensionField::ExplicitNull
                         }
-                        Ok(DimensionValueLookup::Missing) => {
-                            ProjectedDimensionField::Error {
-                                message: dimension_lookup_error_message(
-                                    record.actual_type(),
-                                    &field.name,
-                                    variant,
-                                    DimensionFieldLookupError::UnknownVariant,
-                                ),
-                                traverse_nested,
-                            }
-                        }
+                        Ok(DimensionValueLookup::Missing) => ProjectedDimensionField::Error {
+                            message: dimension_lookup_error_message(
+                                record.actual_type(),
+                                &field.name,
+                                variant,
+                                DimensionFieldLookupError::UnknownVariant,
+                            ),
+                            traverse_nested,
+                        },
                         Err(error) => ProjectedDimensionField::Error {
                             message: dimension_lookup_error_message(
                                 record.actual_type(),
@@ -177,13 +171,8 @@ impl DimensionRoundView {
             return Ok(None);
         };
         let field_type = match projection {
-            ProjectedDimensionField::Value {
-                field_type,
-                ..
-            } => field_type,
-            ProjectedDimensionField::ExplicitNull => {
-                return Err(DimensionVariantAbort::Skipped)
-            }
+            ProjectedDimensionField::Value { field_type, .. } => field_type,
+            ProjectedDimensionField::ExplicitNull => return Err(DimensionVariantAbort::Skipped),
             ProjectedDimensionField::Error {
                 traverse_nested: true,
                 ..
@@ -194,7 +183,7 @@ impl DimensionRoundView {
             } => {
                 return Err(DimensionVariantAbort::Error {
                     code: CfdErrorCode::CheckEvalTypeError,
-                    location: Some(logical_location.clone()),
+                    location: Box::new(Some(logical_location.clone())),
                     message: message.clone(),
                 });
             }
@@ -207,7 +196,7 @@ impl DimensionRoundView {
         else {
             return Err(DimensionVariantAbort::Error {
                 code: CfdErrorCode::CheckEvalTypeError,
-                location: Some(logical_location.clone()),
+                location: Box::new(Some(logical_location.clone())),
                 message: "dimension overlay value disappeared during check execution".to_string(),
             });
         };
@@ -230,7 +219,7 @@ pub(super) enum DimensionVariantAbort {
     Skipped,
     Error {
         code: CfdErrorCode,
-        location: Option<ValueLocation>,
+        location: Box<Option<ValueLocation>>,
         message: String,
     },
 }

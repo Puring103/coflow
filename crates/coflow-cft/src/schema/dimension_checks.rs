@@ -1,6 +1,6 @@
 use crate::{
-    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
-    CftType, DimensionName, TypeName,
+    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftType,
+    DimensionName, TypeName,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -8,8 +8,7 @@ pub(super) fn dimension_checks_for_type(
     types: &BTreeMap<TypeName, CftType>,
     type_name: &TypeName,
 ) -> BTreeMap<DimensionName, CftSchemaCheckBlock> {
-    let Some(check) = types.get(type_name).and_then(|ty| ty.check.as_ref())
-    else {
+    let Some(check) = types.get(type_name).and_then(|ty| ty.check.as_ref()) else {
         return BTreeMap::new();
     };
     let mut by_dimension: BTreeMap<DimensionName, Vec<CftSchemaCheckStmt>> = BTreeMap::new();

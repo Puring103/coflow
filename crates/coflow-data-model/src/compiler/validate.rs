@@ -97,7 +97,10 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         let schema = self.schema;
         let diagnostic_start = self.diagnostics.len();
 
-        let Some(is_abstract) = schema.resolve_type(actual_type).map(|meta| meta.is_abstract) else {
+        let Some(is_abstract) = schema
+            .resolve_type(actual_type)
+            .map(|meta| meta.is_abstract)
+        else {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::UnknownType,

@@ -13,9 +13,15 @@ use std::sync::Arc;
 
 impl SchemaCompiler<'_> {
     pub(super) fn build_schema(&self) -> CompiledSchema {
-        let mut consts = BTreeMap::new();
-        let mut enums = BTreeMap::new();
+        CompiledSchema {
+            consts: self.build_consts(),
+            enums: self.build_enums(),
+            types: self.build_types(),
+        }
+    }
 
+    fn build_consts(&self) -> BTreeMap<ConstName, CftConst> {
+        let mut consts = BTreeMap::new();
         for (name, info) in &self.consts {
             let name = ConstName::from_validated(name.clone());
             let schema = CftConst {
@@ -26,7 +32,11 @@ impl SchemaCompiler<'_> {
             };
             consts.insert(name, schema);
         }
+        consts
+    }
 
+    fn build_enums(&self) -> BTreeMap<EnumName, CftEnum> {
+        let mut enums = BTreeMap::new();
         for (name, info) in &self.enums {
             // `validate_enums` already resolved every variant's integer value
             // (auto-numbered or explicit) into `values_by_name`. We just look
@@ -67,7 +77,10 @@ impl SchemaCompiler<'_> {
             };
             enums.insert(name, schema);
         }
+        enums
+    }
 
+    fn build_types(&self) -> BTreeMap<TypeName, CftType> {
         let own_fields = self
             .types
             .iter()
@@ -96,9 +109,7 @@ impl SchemaCompiler<'_> {
             let id_as_enum = find_annotation(&info.def.annotations, "idAsEnum")
                 .and_then(|annotation| annotation.args.first())
                 .and_then(|arg| match arg {
-                    AnnotationArg::Name(name) => {
-                        Some(EnumName::from_validated(name.name.clone()))
-                    }
+                    AnnotationArg::Name(name) => Some(EnumName::from_validated(name.name.clone())),
                     _ => None,
                 });
             let schema = CftType {
@@ -122,8 +133,7 @@ impl SchemaCompiler<'_> {
             };
             types.insert(type_name, schema);
         }
-
-        CompiledSchema { consts, types, enums }
+        types
     }
 
     fn build_schema_field(&self, field: &FieldDef, owner_type: &TypeName) -> CftField {
@@ -212,9 +222,7 @@ impl SchemaCompiler<'_> {
 fn localized_bucket(field: &FieldDef) -> Option<BucketName> {
     let annotation = find_annotation(&field.annotations, "localized")?;
     match annotation.args.first() {
-        Some(AnnotationArg::String(bucket, _)) => {
-            Some(BucketName::from_validated(bucket.clone()))
-        }
+        Some(AnnotationArg::String(bucket, _)) => Some(BucketName::from_validated(bucket.clone())),
         _ => None,
     }
 }

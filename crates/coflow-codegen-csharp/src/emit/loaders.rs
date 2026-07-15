@@ -68,7 +68,7 @@ pub(super) fn loader_method(
         key_messagepack_read_expr: read_messagepack_expr(&key_ty, "reader", "context", view)?,
         is_table,
         is_disk_loadable,
-        is_struct: view.type_is_struct(ty),
+        is_struct: ty.is_struct,
         requires_hydration,
         fields,
         polymorphic_cases,
@@ -93,7 +93,7 @@ pub(super) fn polymorphic_loader(
         key_messagepack_read_expr: String::new(),
         is_table,
         is_disk_loadable: is_table || is_singleton,
-        is_struct: view.type_is_struct(view.resolve_type(type_name)?),
+        is_struct: view.resolve_type(type_name)?.is_struct,
         requires_hydration: false,
         fields: Vec::new(),
         polymorphic_cases: polymorphic_cases(type_name, view)?,
@@ -207,7 +207,6 @@ fn field_type_requires_context_inner(
 ) -> Result<bool, CsharpCodegenError> {
     match ty {
         CftSchemaTypeRef::RecordRef(name) => Ok(view.is_ref_target_loadable(name)),
-        CftSchemaTypeRef::Enum(_) => Ok(false),
         CftSchemaTypeRef::Object(name) => {
             if !visited.insert(name.to_string()) {
                 return Ok(false);
@@ -225,7 +224,8 @@ fn field_type_requires_context_inner(
             field_type_requires_context_inner(inner, view, visited)
         }
         CftSchemaTypeRef::Dict(_, value) => field_type_requires_context_inner(value, view, visited),
-        CftSchemaTypeRef::Int
+        CftSchemaTypeRef::Enum(_)
+        | CftSchemaTypeRef::Int
         | CftSchemaTypeRef::Float
         | CftSchemaTypeRef::Bool
         | CftSchemaTypeRef::String => Ok(false),

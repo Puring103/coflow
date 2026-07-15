@@ -85,8 +85,7 @@ impl LspValidationCore {
     }
 
     pub(crate) fn schema(&self) -> Option<&CftSchema> {
-        self.build()
-            .and_then(LspBuild::schema)
+        self.build().and_then(LspBuild::schema)
     }
 
     pub(crate) fn apply_open_document(
@@ -306,7 +305,8 @@ impl LspValidationCore {
                 Ok(project) => {
                     // A new configuration can select a different schema set,
                     // so its generation cache must not survive this boundary.
-                    self.schema_runtime = Arc::new(Mutex::new(ProjectRuntime::new(project.clone())));
+                    self.schema_runtime =
+                        Arc::new(Mutex::new(ProjectRuntime::new(project.clone())));
                     self.project = project;
                     self.project_diagnostics = None;
                 }

@@ -1,9 +1,9 @@
 use crate::is_cft_identifier;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
 use std::fmt;
 use std::ops::Deref;
 use std::str::FromStr;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CftNameError {
@@ -38,6 +38,11 @@ macro_rules! cft_name {
         pub struct $name(String);
 
         impl $name {
+            /// Creates a validated semantic name.
+            ///
+            /// # Errors
+            ///
+            /// Returns an error when the value is not a valid CFT identifier.
             pub fn new(value: impl Into<String>) -> Result<Self, CftNameError> {
                 let value = value.into();
                 if is_cft_identifier(&value) {
@@ -56,7 +61,6 @@ macro_rules! cft_name {
             pub(crate) fn from_validated(value: impl Into<String>) -> Self {
                 Self(value.into())
             }
-
         }
 
         impl AsRef<str> for $name {
@@ -149,6 +153,11 @@ impl From<TypeName> for BucketName {
 pub struct VariantName(String);
 
 impl VariantName {
+    /// Creates a validated dimension variant name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid identifiers and the reserved `default` variant.
     pub fn new(value: impl Into<String>) -> Result<Self, CftNameError> {
         let value = value.into();
         if value != "default" && is_cft_identifier(&value) {
@@ -167,7 +176,6 @@ impl VariantName {
     pub(crate) fn from_validated(value: impl Into<String>) -> Self {
         Self(value.into())
     }
-
 }
 
 impl AsRef<str> for VariantName {

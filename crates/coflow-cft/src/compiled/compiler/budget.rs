@@ -3,8 +3,8 @@ use crate::ast::{
     Annotation, CheckBlock, CheckExpr, CheckExprKind, CheckStmt, DefaultExpr, DefaultExprKind,
     Item, TypeRef, TypeRefKind,
 };
-use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftErrorCode};
+use crate::module_id::ModuleId;
 use crate::span::Span;
 use coflow_structure::{BudgetExceeded, StructuralBudget, StructureKind, TraversalCursor};
 
@@ -22,12 +22,9 @@ impl SchemaCompiler<'_> {
             let Some(ast) = module.ast.as_ref() else {
                 continue;
             };
-            if let Err(error) = validate_module(
-                budget,
-                module_id,
-                &ast.items,
-                &ast.dangling_annotations,
-            ) {
+            if let Err(error) =
+                validate_module(budget, module_id, &ast.items, &ast.dangling_annotations)
+            {
                 self.diagnostics.push(CftDiagnostic::error(
                     CftErrorCode::SchemaStructureLimitExceeded,
                     error.module,

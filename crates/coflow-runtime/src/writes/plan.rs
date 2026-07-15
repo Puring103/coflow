@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use coflow_api::{
-    Diagnostic, DiagnosticSet, DimensionSourceManager, ProviderRegistry, ResolvedSource, SourceWriter,
-    WriteFieldPathSegment,
+    Diagnostic, DiagnosticSet, DimensionSourceManager, ProviderRegistry, ResolvedSource,
+    SourceWriter, WriteFieldPathSegment,
 };
 use coflow_data_model::{CfdValue, RecordOrigin};
 
@@ -85,10 +85,7 @@ impl MutationExecutionPlan {
 
     pub(crate) fn visit_sources<E>(
         &self,
-        mut visit: impl FnMut(
-            &ResolvedSource,
-            Option<&Arc<dyn SourceWriter>>,
-        ) -> Result<(), E>,
+        mut visit: impl FnMut(&ResolvedSource, Option<&Arc<dyn SourceWriter>>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
             Self::Insert(plan) => visit(&plan.source, Some(&plan.writer))?,

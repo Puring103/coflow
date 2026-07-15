@@ -24,10 +24,10 @@ mod files;
 mod indexes;
 mod load;
 mod mutation;
+mod project_schema;
 mod query;
 mod records;
 mod runtime;
-mod project_schema;
 mod schema_diagnostics;
 mod schema_inspect;
 mod session;
@@ -59,24 +59,22 @@ pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef
 pub use load::format_cfd_path as format_field_path;
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
-    DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
-    DimensionValueCoordinate, DimensionValueExpectation, MutationReport,
-    MutationRequest, MutationValue,
+    DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,
+    MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
 };
+pub use project_schema::SchemaTextOverride;
 pub use query::ProjectQueries;
 pub use records::{
     dict_key_path_text, value_summary, DimensionValueOrigin, DimensionValueState,
-    DimensionValueView,
-    EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo, RecordReferenceInfo, RecordTarget,
-    RecordView, RefTargetInfo, WriteOutcome,
+    DimensionValueView, EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo, RecordReferenceInfo,
+    RecordTarget, RecordView, RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{
     BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
 };
-pub use project_schema::SchemaTextOverride;
 pub use schema_inspect::{
-    inspect_schema, schema_files, SchemaConstInfo, SchemaDimensionFieldInfo, SchemaDimensionInfo,
-    SchemaConstValueInfo, SchemaDefaultValueInfo, SchemaEnumInfo, SchemaEnumVariantInfo,
+    inspect_schema, schema_files, SchemaConstInfo, SchemaConstValueInfo, SchemaDefaultValueInfo,
+    SchemaDimensionFieldInfo, SchemaDimensionInfo, SchemaEnumInfo, SchemaEnumVariantInfo,
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,
 };

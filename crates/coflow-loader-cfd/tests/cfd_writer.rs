@@ -3,8 +3,10 @@
 //! are unchanged.
 #![allow(
     clippy::expect_used,
+    clippy::needless_borrow,
     clippy::panic,
     clippy::panic_in_result_fn,
+    clippy::redundant_field_names,
     clippy::unwrap_used
 )]
 

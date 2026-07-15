@@ -8,8 +8,8 @@ pub use value_dependencies::{
     ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
 
-use crate::module_id::ModuleId;
 use crate::compiled::CompiledSchema;
+use crate::module_id::ModuleId;
 use crate::{
     CftConst, CftDiagnostic, CftDiagnostics, CftDimension, CftDimensionInputs, CftEnum,
     CftErrorCode, CftField, CftType, ConstName, DimensionName, EnumName, EnumVariantName, Span,
@@ -249,7 +249,6 @@ impl CftSchema {
             self.collect_concrete_descendants(child, out);
         }
     }
-
 }
 
 impl CftType {

@@ -644,15 +644,11 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
         }
         let row = record_view_to_row(&view, &ctx);
         for field in &row.fields {
-            let index = match column_index.get(&field.name) {
-                Some(index) => *index,
-                None => {
-                    let index = columns.len();
-                    columns.push((field.name.clone(), ColumnStats::default()));
-                    column_index.insert(field.name.clone(), index);
-                    index
-                }
-            };
+            let index = *column_index.entry(field.name.clone()).or_insert_with(|| {
+                let index = columns.len();
+                columns.push((field.name.clone(), ColumnStats::default()));
+                index
+            });
             let stats = &mut columns[index].1;
             stats.type_names.insert(row.coordinate.actual_type.clone());
             let summary_len = row.field_summaries.get(&field.name).map_or(0, String::len);
@@ -955,11 +951,9 @@ mod revision_tests {
     use std::sync::{mpsc, Arc, Barrier};
     use std::time::Duration;
 
-    use coflow_data_model::{CfdPathSegment, CfdValue};
     use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
-    use coflow_runtime::{
-        DimensionValueCoordinate, DimensionValueState, RecordCoordinate,
-    };
+    use coflow_data_model::{CfdPathSegment, CfdValue};
+    use coflow_runtime::{DimensionValueCoordinate, DimensionValueState, RecordCoordinate};
     use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
     use rust_xlsxwriter::Workbook;
 

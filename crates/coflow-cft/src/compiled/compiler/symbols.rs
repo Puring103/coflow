@@ -1,11 +1,11 @@
 use super::SchemaCompiler;
 use crate::ast::Item;
-use crate::module_id::ModuleId;
-use crate::error::{CftDiagnostic, CftErrorCode};
 use crate::compiled::support::{
     const_value, has_annotation, is_i64_power_of_two, is_reserved_identifier, ConstInfo, EnumInfo,
     Symbol, SymbolKind, TypeInfo,
 };
+use crate::error::{CftDiagnostic, CftErrorCode};
+use crate::module_id::ModuleId;
 use crate::span::Span;
 use std::collections::{BTreeMap, BTreeSet};
 

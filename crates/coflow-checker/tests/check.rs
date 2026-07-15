@@ -158,9 +158,7 @@ fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
         ],
     );
     let model = build_model(&schema, builder);
-    model
-        .run_checks(&schema)
-        .expect("checks should pass");
+    model.run_checks(&schema).expect("checks should pass");
 }
 
 #[test]
@@ -317,9 +315,7 @@ fn check_runner_reports_false_conditions_with_paths() {
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item_1", "Item", [("value", CfdInputValue::from(0_i64))]);
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
-        .expect_err("check should fail");
+    let err = model.run_checks(&schema).expect_err("check should fail");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     assert_eq!(
         err.diagnostics[0]
@@ -403,9 +399,7 @@ fn short_circuit_nullable_guards_and_null_access_are_reported() {
         std::iter::empty::<(&str, CfdInputValue)>(),
     );
     let model = build_model(&unguarded, builder);
-    let err = model
-        .run_checks(&unguarded)
-        .expect_err("null access");
+    let err = model.run_checks(&unguarded).expect_err("null access");
     assert_has_code(&err, CfdErrorCode::CheckNullAccess);
 }
 
@@ -440,9 +434,7 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
         )],
     );
     let model = build_model(&pass, builder);
-    model
-        .run_checks(&pass)
-        .expect("checks should pass");
+    model.run_checks(&pass).expect("checks should pass");
 
     let empty = compile_schema(
         r#"
@@ -590,9 +582,7 @@ fn inherited_checks_and_statement_order_are_stable() {
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
-        .expect_err("child checks fail");
+    let err = model.run_checks(&schema).expect_err("child checks fail");
     let paths = err
         .diagnostics
         .iter()
@@ -634,9 +624,7 @@ fn hard_stop_in_one_check_block_does_not_skip_later_blocks() {
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
-        .expect_err("checks should fail");
+    let err = model.run_checks(&schema).expect_err("checks should fail");
 
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
@@ -734,9 +722,7 @@ fn inline_object_checks_use_nested_paths() {
         )],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
-        .expect_err("nested check fails");
+    let err = model.run_checks(&schema).expect_err("nested check fails");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     let diag = err
         .diagnostics
@@ -780,9 +766,7 @@ fn flag_enum_bitwise_composites_and_int_ops_work() {
         ],
     );
     let model = build_model(&schema, builder);
-    model
-        .run_checks(&schema)
-        .expect("operators should pass");
+    model.run_checks(&schema).expect("operators should pass");
 }
 
 #[test]

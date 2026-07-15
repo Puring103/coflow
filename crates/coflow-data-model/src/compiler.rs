@@ -13,6 +13,7 @@ use crate::model::{
 use coflow_cft::{CftSchema, CftSchemaTypeRef};
 use coflow_structure::StructuralLimits;
 use resolve::ValueResolver;
+use std::collections::BTreeMap;
 use validate::Validator;
 
 pub(crate) struct ModelCompiler<'a> {
@@ -113,7 +114,7 @@ impl<'a> ModelCompiler<'a> {
                         fields,
                     },
                     origin: draft.origin.clone(),
-                    dimension_fields: Default::default(),
+                    dimension_fields: BTreeMap::default(),
                 });
             }
         }
@@ -158,7 +159,8 @@ impl<'a> ModelCompiler<'a> {
                         crate::CfdErrorCode::ObjectTypeMismatch,
                         format!(
                             "dimension owner type `{}` is not assignable to `{}`",
-                            record.actual_type(), input.source_type
+                            record.actual_type(),
+                            input.source_type
                         ),
                     ));
                     continue;
@@ -172,7 +174,8 @@ impl<'a> ModelCompiler<'a> {
                         crate::CfdErrorCode::UnknownField,
                         format!(
                             "unknown dimension field `{}.{}`",
-                            record.actual_type(), input.field
+                            record.actual_type(),
+                            input.field
                         ),
                     ));
                     continue;
@@ -180,7 +183,11 @@ impl<'a> ModelCompiler<'a> {
                 let Some(binding) = &field.dimension else {
                     self.diagnostics.push(CfdDiagnostic::error(
                         crate::CfdErrorCode::TypeMismatch,
-                        format!("field `{}.{}` is not dimensional", record.actual_type(), input.field),
+                        format!(
+                            "field `{}.{}` is not dimensional",
+                            record.actual_type(),
+                            input.field
+                        ),
                     ));
                     continue;
                 };
@@ -189,7 +196,10 @@ impl<'a> ModelCompiler<'a> {
                         crate::CfdErrorCode::TypeMismatch,
                         format!(
                             "field `{}.{}` uses dimension `{}`, not `{}`",
-                            record.actual_type(), input.field, binding.dimension, input.dimension
+                            record.actual_type(),
+                            input.field,
+                            binding.dimension,
+                            input.dimension
                         ),
                     ));
                     continue;
@@ -221,16 +231,12 @@ impl<'a> ModelCompiler<'a> {
                     ));
                     continue;
                 }
-                let nullable_ty = CftSchemaTypeRef::Nullable(Box::new(
-                    field.ty_ref.non_nullable().clone(),
-                ));
+                let nullable_ty =
+                    CftSchemaTypeRef::Nullable(Box::new(field.ty_ref.non_nullable().clone()));
                 let path = CfdPath::root().field(input.field.as_str());
                 let draft = {
-                    let mut validator = Validator::new(
-                        &self.schema,
-                        &mut self.diagnostics,
-                        self.structural_limits,
-                    );
+                    let mut validator =
+                        Validator::new(&self.schema, &mut self.diagnostics, self.structural_limits);
                     validator.validate_value(
                         &nullable_ty,
                         &input.value,
@@ -278,7 +284,7 @@ impl<'a> ModelCompiler<'a> {
                 .entry(input.field.to_string())
                 .or_insert_with(|| CfdDimensionFieldValues {
                     dimension: input.dimension.clone(),
-                    variants: Default::default(),
+                    variants: BTreeMap::default(),
                 });
             field_values.variants.insert(
                 input.variant.clone(),

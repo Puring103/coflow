@@ -32,7 +32,9 @@ fn id_as_enum_compiles_on_type() {
     let skill = schema.resolve_type("Skill").expect("Skill type");
     assert_eq!(skill.id_as_enum.as_deref(), Some("SkillKey"));
     assert_eq!(
-        schema.type_for_id_as_enum("SkillKey").map(|ty| ty.name.as_str()),
+        schema
+            .type_for_id_as_enum("SkillKey")
+            .map(|ty| ty.name.as_str()),
         Some("Skill")
     );
     assert!(schema.resolve_enum("SkillKey").is_some());

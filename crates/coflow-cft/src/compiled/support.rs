@@ -1,7 +1,7 @@
 use super::{
-    CftConstValue, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr,
-    CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind,
-    CftSchemaTypePredicate, CftSchemaUnaryOp,
+    CftConstValue, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
+    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
+    CftSchemaUnaryOp,
 };
 use crate::ast::{
     Annotation, AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, ConstLiteral,
@@ -255,7 +255,7 @@ fn convert_check_expr(expr: &CheckExpr) -> CftSchemaCheckExpr {
             CheckExprKind::Name(name) => CftSchemaCheckExprKind::Name(name.clone()),
             CheckExprKind::Field { expr: inner, name } => CftSchemaCheckExprKind::Field {
                 expr: Box::new(convert_check_expr(inner)),
-                name: name.name.clone(),
+                name: crate::FieldName::from_validated(name.name.clone()),
             },
             CheckExprKind::Index { expr: inner, index } => CftSchemaCheckExprKind::Index {
                 expr: Box::new(convert_check_expr(inner)),
@@ -267,7 +267,9 @@ fn convert_check_expr(expr: &CheckExpr) -> CftSchemaCheckExpr {
             } => CftSchemaCheckExprKind::Is {
                 expr: Box::new(convert_check_expr(inner)),
                 predicate: match predicate {
-                    TypePredicate::Type(name) => CftSchemaTypePredicate::Type(name.name.clone()),
+                    TypePredicate::Type(name) => CftSchemaTypePredicate::Type(
+                        crate::TypeName::from_validated(name.name.clone()),
+                    ),
                     TypePredicate::Null(_) => CftSchemaTypePredicate::Null,
                 },
             },

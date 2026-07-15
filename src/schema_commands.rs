@@ -2,8 +2,8 @@ use crate::diagnostics::{cli_error, cli_file_error};
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
-    inspect_schema, schema_files, ProjectRuntime, Runtime, SchemaFilesReport,
-    SchemaInspectReport, SchemaTextOverride, SchemaTypeRefInfo,
+    inspect_schema, schema_files, ProjectRuntime, Runtime, SchemaFilesReport, SchemaInspectReport,
+    SchemaTextOverride, SchemaTypeRefInfo,
 };
 use serde::Serialize;
 use std::io::{self, Read, Write};
@@ -239,9 +239,9 @@ fn check_schema_source(
     let mut diagnostics = project.schema_diagnostic_set();
     let mut runtime = ProjectRuntime::new(project.clone());
     let refresh = runtime.refresh_with_overrides(&[SchemaTextOverride {
-            requested_module: Some(target.module_id.clone()),
-            normalized_path: target.canonical_path.clone(),
-            source: source.to_string(),
+        requested_module: Some(target.module_id.clone()),
+        normalized_path: target.canonical_path.clone(),
+        source: source.to_string(),
     }]);
     if let Some(attempt) = runtime.latest_attempt() {
         diagnostics.extend(attempt.diagnostics().clone().into_set());
@@ -283,7 +283,11 @@ fn display_type_ref(ty: &SchemaTypeRefInfo) -> String {
         SchemaTypeRefInfo::Ref { target } => format!("&{target}"),
         SchemaTypeRefInfo::Array { item } => format!("{}[]", display_type_ref(item)),
         SchemaTypeRefInfo::Dict { key, value } => {
-            format!("dict<{}, {}>", display_type_ref(key), display_type_ref(value))
+            format!(
+                "dict<{}, {}>",
+                display_type_ref(key),
+                display_type_ref(value)
+            )
         }
         SchemaTypeRefInfo::Nullable { inner } => format!("{}?", display_type_ref(inner)),
     }

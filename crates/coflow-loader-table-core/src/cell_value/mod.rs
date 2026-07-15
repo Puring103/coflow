@@ -60,6 +60,11 @@ pub fn parse_cell(
     parse_value(schema, &declared_type, text, ValueContext::Root).map(ParsedCell::Value)
 }
 
+/// Parses one cell using an already compiled schema type.
+///
+/// # Errors
+///
+/// Returns diagnostics when the cell text does not match the declared type.
 pub fn parse_schema_cell(
     schema: &CftSchema,
     declared_type: &CftSchemaTypeRef,

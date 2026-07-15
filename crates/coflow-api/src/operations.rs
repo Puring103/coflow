@@ -273,6 +273,10 @@ pub trait DimensionSourceManager: Send + Sync {
 
     /// Rename or delete one owner-record row while preserving its variants.
     /// `None` deletes the row; `Some` replaces its record key.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the managed row cannot be rewritten.
     fn rewrite_dimension_record(
         &self,
         _ctx: TableContext<'_>,

@@ -1,6 +1,6 @@
 use crate::ast::ModuleAst;
-use crate::module_id::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
+use crate::module_id::ModuleId;
 use crate::parser::parse_module;
 use crate::span::Span;
 use crate::{DimensionName, VariantName};
@@ -112,7 +112,12 @@ impl CftDimensionInputs {
                     )),
                 }
             }
-            dimensions.insert(name, CftDimensionInput { variants: typed_variants });
+            dimensions.insert(
+                name,
+                CftDimensionInput {
+                    variants: typed_variants,
+                },
+            );
         }
         Self {
             dimensions,

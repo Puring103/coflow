@@ -1,16 +1,16 @@
 use std::collections::BTreeSet;
 
 use coflow_api::{ProviderRegistry, WriterCapabilities};
-use coflow_cft::{CftSchemaTypeRef, CftSchema};
+use coflow_cft::{CftSchema, CftSchemaTypeRef};
 use coflow_data_model::{
     CfdPath, CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup, RefSite,
 };
 
 use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
 use crate::{
-    DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState,
-    DimensionValueView, EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, FileTreeOptions,
-    IdAsEnumInfo, ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
+    DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState, DimensionValueView,
+    EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, FileTreeOptions, IdAsEnumInfo,
+    ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
 };
 
 /// Read-only capability over one immutable project generation.
@@ -195,12 +195,12 @@ impl<'a> ProjectQueries<'a> {
                 ),
                 origin: DimensionValueOrigin::from_record_origin(origin),
             }),
-            DimensionValueLookup::ExplicitNull { origin } => coordinate.path.is_empty().then(|| {
-                DimensionValueView {
+            DimensionValueLookup::ExplicitNull { origin } => {
+                coordinate.path.is_empty().then(|| DimensionValueView {
                     state: DimensionValueState::Value(CfdValue::Null),
                     origin: DimensionValueOrigin::from_record_origin(origin),
-                }
-            }),
+                })
+            }
             DimensionValueLookup::Missing => Some(DimensionValueView {
                 state: DimensionValueState::Missing,
                 origin: None,
@@ -367,11 +367,11 @@ fn dimension_value_at_path<'a>(
                 object.fields().get(field)?
             }
             (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
-            (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => entries
-                .iter()
-                .find_map(|(candidate, value)| {
+            (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => {
+                entries.iter().find_map(|(candidate, value)| {
                     (coflow_data_model::format_cfd_dict_key(candidate) == *key).then_some(value)
-                })?,
+                })?
+            }
             _ => return None,
         };
     }
@@ -392,14 +392,14 @@ fn field_shape(schema: &CftSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
         CftSchemaTypeRef::Object(name) => Some(name.as_str()),
         _ => None,
     }
-        .and_then(|name| schema.resolve_type(name).map(|meta| (name, meta)))
-        .filter(|(_, meta)| meta.is_abstract)
-        .and_then(|(name, _)| schema.concrete_assignable_types(name))
-        .filter(|types| types.len() >= 2)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|name| name.to_string())
-        .collect();
+    .and_then(|name| schema.resolve_type(name).map(|meta| (name, meta)))
+    .filter(|(_, meta)| meta.is_abstract)
+    .and_then(|(name, _)| schema.concrete_assignable_types(name))
+    .filter(|types| types.len() >= 2)
+    .unwrap_or_default()
+    .into_iter()
+    .map(|name| name.to_string())
+    .collect();
     let collection_item = match non_nullable {
         CftSchemaTypeRef::Array(item) | CftSchemaTypeRef::Dict(_, item) => {
             Some(Box::new(field_shape(schema, item)))
@@ -422,4 +422,3 @@ fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
         _ => ty,
     }
 }
-

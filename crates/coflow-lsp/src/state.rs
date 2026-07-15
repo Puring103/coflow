@@ -1,7 +1,5 @@
 use coflow_cft::ast::{CheckStmt, Item};
-use coflow_cft::{
-    CftEnum, CftEnumVariant, CftField, CftSchemaTypeRef, CftType, ModuleId,
-};
+use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftSchemaTypeRef, CftType, ModuleId};
 use coflow_project::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
 use std::collections::BTreeMap;

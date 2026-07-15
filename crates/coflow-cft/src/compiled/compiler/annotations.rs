@@ -1,10 +1,10 @@
 use super::SchemaCompiler;
 use crate::ast::{Annotation, AnnotationArg, FieldDef};
-use crate::module_id::ModuleId;
-use crate::error::{CftDiagnostic, CftErrorCode};
 use crate::compiled::support::{
     find_annotation, has_annotation, AnnotationSpec, AnnotationTarget, SymbolKind, Ty,
 };
+use crate::error::{CftDiagnostic, CftErrorCode};
+use crate::module_id::ModuleId;
 use crate::span::Span;
 use std::collections::BTreeMap;
 

@@ -149,14 +149,10 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
 
     let (cfd_sources, cfd_failures) = add_cfd_documents(&mut snapshot, input);
 
-    let raw_build = input
-        .schema_runtime
-        .lock()
-        .ok()
-        .and_then(|mut runtime| {
-            let _ = runtime.refresh_with_overrides(&overrides);
-            runtime.latest_attempt().cloned()
-        });
+    let raw_build = input.schema_runtime.lock().ok().and_then(|mut runtime| {
+        let _ = runtime.refresh_with_overrides(&overrides);
+        runtime.latest_attempt().cloned()
+    });
     let Some(raw_build) = raw_build else {
         add_diagnostic_set(
             &mut snapshot,
@@ -294,9 +290,7 @@ fn collect_cfd_sources(
     let mut sources = Vec::new();
     let mut failures = Vec::new();
     for source in &project.config.sources {
-        let SourceLocationSpec::Path(path) = source.location() else {
-            continue;
-        };
+        let SourceLocationSpec::Path(path) = source.location();
         let resolved = project.resolve_path(path);
         if resolved.is_dir() {
             match discover_directory_files(&resolved) {

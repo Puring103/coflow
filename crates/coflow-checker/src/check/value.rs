@@ -50,7 +50,7 @@ impl CheckValue {
             .enter(cursor, StructureKind::DataValue, 1)
             .map_err(|error| LocatedBudgetExceeded {
                 error,
-                location: Some(location.clone()),
+                location: Box::new(Some(location.clone())),
             })?;
         Ok(match value {
             CfdValue::Null => Self::Null,
@@ -311,7 +311,7 @@ fn model_dict<'a>(
 #[derive(Debug)]
 pub(super) struct LocatedBudgetExceeded {
     pub(super) error: BudgetExceeded,
-    pub(super) location: Option<ValueLocation>,
+    pub(super) location: Box<Option<ValueLocation>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
