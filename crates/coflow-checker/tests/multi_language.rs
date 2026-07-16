@@ -292,6 +292,7 @@ fn overlay_record_refs_resolve_without_storage_records() {
                 check { target == null || target.value > 0; }
             }
             type Item { @localized copy: Copy; }
+            type Unrelated { value: int; }
         ",
     );
     let mut builder = CfdDataModel::builder(&schema);
@@ -308,6 +309,11 @@ fn overlay_record_refs_resolve_without_storage_records() {
             LoadedValueDraft::object("Copy", [("target", LoadedValueDraft::Null)]),
         )],
     );
+    builder.add_record(
+        "unrelated",
+        "Unrelated",
+        [("value", LoadedValueDraft::from(1_i64))],
+    );
     add_overlay(
         &mut builder,
         "Item",
@@ -322,7 +328,7 @@ fn overlay_record_refs_resolve_without_storage_records() {
     let err = run_checks_for_dimensions(&schema, &model, &rounds)
         .expect_err("nested ref check should fail");
     assert_has_code(&err, CfdErrorCode::CheckOrFailed);
-    assert_eq!(model.record_count(), 2);
+    assert_eq!(model.record_count(), 3);
 
     let output = coflow_checker::run_checks(
         &schema,
@@ -369,6 +375,7 @@ fn overlay_record_refs_resolve_without_storage_records() {
     );
     assert_eq!(incremental.statistics.requested_roots, 2);
     assert_eq!(incremental.statistics.executed_rounds, 3);
+    assert_eq!(incremental.statistics.dimension_projected_records, 2);
 }
 
 #[test]

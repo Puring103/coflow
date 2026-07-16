@@ -10,7 +10,7 @@ use coflow_data_model::{
 use coflow_project::{path_to_slash, Project};
 
 use crate::checks::CheckState;
-use crate::dimensions::{self, dimensions_for_project, DimensionInfo};
+use crate::dimensions::{dimensions_for_project, DimensionInfo, DimensionRuntimePlan};
 use crate::files::{self, DimensionGroup, FileTreeNode, FileTreeOptions};
 use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
 use crate::load::SourceDataCache;
@@ -22,6 +22,7 @@ pub(crate) struct ProjectSession {
     pub(crate) project: Project,
     pub(crate) modules: Arc<CftModuleSet>,
     pub(crate) schema: Arc<CftSchema>,
+    pub(crate) dimension_plan: Arc<DimensionRuntimePlan>,
     pub(crate) model: CfdDataModel,
     pub(crate) diagnostics: DiagnosticsStore,
     pub(crate) sources: SourceIndex,
@@ -138,9 +139,7 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub fn dimensions(&self) -> Vec<DimensionInfo> {
-        let view = self.schema();
-        let fields = dimensions::dimension_fields(view);
-        dimensions_for_project(&self.project, &fields)
+        dimensions_for_project(&self.project, self.dimension_plan.fields())
     }
 
     /// Lookup a single dimension by name.

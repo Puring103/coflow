@@ -1,6 +1,3 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
 use coflow_cft::{CftSchema, CftValueType, DimensionName, VariantName};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
@@ -72,16 +69,13 @@ fn attach_dimension_origin(
 
 #[derive(Debug, Clone)]
 pub(crate) struct DimensionRoundView {
-    variant: Arc<str>,
-    fields_by_record: Arc<BTreeMap<CfdRecordId, BTreeMap<String, ProjectedDimensionField>>>,
+    dimension: DimensionName,
+    variant: VariantName,
+    projected_records: Rc<RefCell<BTreeSet<CfdRecordId>>>,
 }
 
-#[derive(Debug, Clone)]
 enum ProjectedDimensionField {
-    Value {
-        field_type: CftValueType,
-        traverse_nested: bool,
-    },
+    Value(CftValueType),
     ExplicitNull,
     Error {
         message: String,
@@ -96,136 +90,122 @@ pub(crate) struct MaterializedDimensionValue<'a> {
 }
 
 impl DimensionRoundView {
-    pub(crate) fn compile(
+    pub(crate) fn new(context: &DimensionCheckContext) -> Self {
+        Self {
+            dimension: context.dimension.clone(),
+            variant: context.variant.clone(),
+            projected_records: Rc::new(RefCell::new(BTreeSet::new())),
+        }
+    }
+
+    fn project_field(
+        &self,
         schema: &CftSchema,
         model: &CfdDataModel,
-        context: &DimensionCheckContext,
-    ) -> Self {
-        let variant = &context.variant;
-        let mut fields_by_record = BTreeMap::new();
-        for (record_id, record) in model.records() {
-            let Some(type_meta) = schema.resolve_type(record.actual_type()) else {
-                continue;
-            };
-            let fields = type_meta
-                .all_fields()
-                .filter(|field| {
-                    field
-                        .dimension
-                        .as_ref()
-                        .is_some_and(|dimension| dimension.dimension == context.dimension)
-                })
-                .map(|field| {
-                    let traverse_nested =
-                        schema.field_has_nested_checks(record.actual_type(), &field.name);
-                    let projection = match model.dimension_field_value(
-                        schema,
-                        record_id,
+        record_id: CfdRecordId,
+        field_name: &str,
+    ) -> Option<ProjectedDimensionField> {
+        self.projected_records.borrow_mut().insert(record_id);
+        let record = model.record(record_id)?;
+        let field = schema.field(record.actual_type(), field_name)?;
+        if !field
+            .dimension
+            .as_ref()
+            .is_some_and(|dimension| dimension.dimension == self.dimension)
+        {
+            return None;
+        }
+        let traverse_nested = schema.field_has_nested_checks(record.actual_type(), &field.name);
+        Some(
+            match model.dimension_field_value(
+                schema,
+                record_id,
+                &field.name,
+                &self.dimension,
+                &self.variant,
+            ) {
+                Ok(DimensionValueLookup::Value { .. }) => {
+                    ProjectedDimensionField::Value(field.value_type.clone())
+                }
+                Ok(DimensionValueLookup::ExplicitNull { .. }) => {
+                    ProjectedDimensionField::ExplicitNull
+                }
+                Ok(DimensionValueLookup::Missing) => ProjectedDimensionField::Error {
+                    message: dimension_lookup_error_message(
+                        record.actual_type(),
                         &field.name,
-                        &context.dimension,
-                        variant,
-                    ) {
-                        Ok(DimensionValueLookup::Value { .. }) => ProjectedDimensionField::Value {
-                            field_type: field.value_type.clone(),
-                            traverse_nested,
-                        },
-                        Ok(DimensionValueLookup::ExplicitNull { .. }) => {
-                            ProjectedDimensionField::ExplicitNull
-                        }
-                        Ok(DimensionValueLookup::Missing) => ProjectedDimensionField::Error {
-                            message: dimension_lookup_error_message(
-                                record.actual_type(),
-                                &field.name,
-                                variant,
-                                DimensionFieldLookupError::UnknownVariant,
-                            ),
-                            traverse_nested,
-                        },
-                        Err(error) => ProjectedDimensionField::Error {
-                            message: dimension_lookup_error_message(
-                                record.actual_type(),
-                                &field.name,
-                                variant,
-                                error,
-                            ),
-                            traverse_nested,
-                        },
-                    };
-                    (field.name.to_string(), projection)
-                })
-                .collect::<BTreeMap<_, _>>();
-            if !fields.is_empty() {
-                fields_by_record.insert(record_id, fields);
-            }
-        }
-        Self {
-            variant: Arc::from(variant.as_str()),
-            fields_by_record: Arc::new(fields_by_record),
-        }
+                        &self.variant,
+                        DimensionFieldLookupError::UnknownVariant,
+                    ),
+                    traverse_nested,
+                },
+                Err(error) => ProjectedDimensionField::Error {
+                    message: dimension_lookup_error_message(
+                        record.actual_type(),
+                        &field.name,
+                        &self.variant,
+                        error,
+                    ),
+                    traverse_nested,
+                },
+            },
+        )
     }
 
-    pub(crate) fn errors_for(&self, record: CfdRecordId) -> impl Iterator<Item = (&str, &str)> {
-        self.fields_by_record
-            .get(&record)
-            .into_iter()
-            .flat_map(|fields| fields.iter())
-            .filter_map(|(field, projection)| match projection {
-                ProjectedDimensionField::Error {
-                    message,
-                    traverse_nested: true,
-                } => Some((field.as_str(), message.as_str())),
-                ProjectedDimensionField::Value { .. }
-                | ProjectedDimensionField::ExplicitNull
-                | ProjectedDimensionField::Error {
-                    traverse_nested: false,
-                    ..
-                } => None,
+    pub(crate) fn nested_fields(
+        &self,
+        schema: &CftSchema,
+        model: &CfdDataModel,
+        record_id: CfdRecordId,
+    ) -> Vec<(String, Option<String>)> {
+        self.projected_records.borrow_mut().insert(record_id);
+        let Some(record) = model.record(record_id) else {
+            return Vec::new();
+        };
+        let Some(type_meta) = schema.resolve_type(record.actual_type()) else {
+            return Vec::new();
+        };
+        type_meta
+            .all_fields()
+            .filter(|field| schema.field_has_nested_checks(record.actual_type(), &field.name))
+            .filter_map(|field| {
+                let projection = self.project_field(schema, model, record_id, &field.name)?;
+                match projection {
+                    ProjectedDimensionField::Value(_) => Some((field.name.to_string(), None)),
+                    ProjectedDimensionField::Error {
+                        message,
+                        traverse_nested: true,
+                    } => Some((field.name.to_string(), Some(message))),
+                    ProjectedDimensionField::ExplicitNull
+                    | ProjectedDimensionField::Error {
+                        traverse_nested: false,
+                        ..
+                    } => None,
+                }
             })
+            .collect()
     }
 
-    pub(crate) fn field_names(&self, record: CfdRecordId) -> impl Iterator<Item = &str> {
-        self.fields_by_record
-            .get(&record)
-            .into_iter()
-            .flat_map(|fields| fields.iter())
-            .filter_map(|(field, projection)| match projection {
-                ProjectedDimensionField::Value {
-                    traverse_nested: true,
-                    ..
-                }
-                | ProjectedDimensionField::Error {
-                    traverse_nested: true,
-                    ..
-                } => Some(field.as_str()),
-                ProjectedDimensionField::Value {
-                    traverse_nested: false,
-                    ..
-                }
-                | ProjectedDimensionField::ExplicitNull
-                | ProjectedDimensionField::Error {
-                    traverse_nested: false,
-                    ..
-                } => None,
-            })
+    pub(crate) fn projected_record_count(&self) -> usize {
+        self.projected_records.borrow().len()
     }
 
     pub(crate) fn materialize<'model>(
         &self,
+        schema: &CftSchema,
         model: &'model CfdDataModel,
         source_record: CfdRecordId,
         field_name: &str,
         logical_location: &ValueLocation,
     ) -> Result<Option<MaterializedDimensionValue<'model>>, DimensionVariantAbort> {
-        let Some(projection) = self
-            .fields_by_record
-            .get(&source_record)
-            .and_then(|fields| fields.get(field_name))
-        else {
+        let Some(projection) = self.project_field(schema, model, source_record, field_name) else {
             return Ok(None);
         };
         let field_type = match projection {
-            ProjectedDimensionField::Value { field_type, .. } => field_type,
-            ProjectedDimensionField::ExplicitNull => return Err(DimensionVariantAbort::Skipped),
+            ProjectedDimensionField::Value(field_type) => field_type,
+            ProjectedDimensionField::ExplicitNull => {
+                return Err(DimensionVariantAbort::Skipped);
+            }
             ProjectedDimensionField::Error {
                 traverse_nested: true,
                 ..
@@ -237,14 +217,14 @@ impl DimensionRoundView {
                 return Err(DimensionVariantAbort::Error {
                     code: CfdErrorCode::CheckEvalTypeError,
                     location: Box::new(Some(logical_location.clone())),
-                    message: message.clone(),
+                    message,
                 });
             }
         };
         let Some(value) = model
             .record(source_record)
             .and_then(|record| record.dimension_field(field_name))
-            .and_then(|values| values.variants.get(self.variant.as_ref()))
+            .and_then(|values| values.variants.get(&self.variant))
             .map(|value| &value.value)
         else {
             return Err(DimensionVariantAbort::Error {
@@ -258,11 +238,11 @@ impl DimensionRoundView {
         }
         Ok(Some(MaterializedDimensionValue {
             value,
-            field_type: Some(field_type.clone()),
+            field_type: Some(field_type),
             location: logical_location.backed_by(crate::eval::ModelCursor::dimension(
                 source_record,
                 field_name,
-                self.variant.as_ref(),
+                self.variant.as_str(),
             )),
         }))
     }
@@ -278,6 +258,7 @@ pub(crate) enum DimensionVariantAbort {
 }
 
 pub(crate) fn apply_dimension_variant<'model>(
+    schema: &CftSchema,
     model: &'model CfdDataModel,
     round: Option<&DimensionRoundView>,
     record: &EvalRecordRef,
@@ -294,8 +275,13 @@ pub(crate) fn apply_dimension_variant<'model>(
     let Some(logical_location) = located.location.as_ref() else {
         return Ok(None);
     };
-    let Some(materialized) =
-        round.materialize(model, source_record_id, field_name, logical_location)?
+    let Some(materialized) = round.materialize(
+        schema,
+        model,
+        source_record_id,
+        field_name,
+        logical_location,
+    )?
     else {
         return Ok(None);
     };
@@ -315,3 +301,6 @@ pub(crate) fn apply_dimension_variant<'model>(
     located.location = Some(materialized.location);
     Ok(None)
 }
+use std::cell::RefCell;
+use std::collections::BTreeSet;
+use std::rc::Rc;

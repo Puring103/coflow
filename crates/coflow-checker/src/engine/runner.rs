@@ -62,7 +62,7 @@ impl<'a> CheckRunner<'a> {
         dimension_context: DimensionCheckContext,
         structural_limits: StructuralLimits,
     ) -> Self {
-        let dimension_round = DimensionRoundView::compile(schema, model, &dimension_context);
+        let dimension_round = DimensionRoundView::new(&dimension_context);
         Self {
             schema,
             model,
@@ -79,7 +79,7 @@ impl<'a> CheckRunner<'a> {
         mut self,
         targets: &[CfdRecordId],
         collect_dependencies: bool,
-    ) -> (Vec<(CfdRecordId, CfdDiagnostic)>, DependencyGraph) {
+    ) -> (Vec<(CfdRecordId, CfdDiagnostic)>, DependencyGraph, usize) {
         if collect_dependencies {
             self.deps = Some(DependencyGraphBuilder::new());
         }
@@ -97,7 +97,11 @@ impl<'a> CheckRunner<'a> {
             .into_iter()
             .zip(self.diagnostics)
             .collect();
-        (rooted, graph)
+        let projected_records = self
+            .dimension_round
+            .as_ref()
+            .map_or(0, DimensionRoundView::projected_record_count);
+        (rooted, graph, projected_records)
     }
 
     fn run_one_record(&mut self, record_id: CfdRecordId, record: &coflow_data_model::CfdRecord) {
@@ -230,21 +234,24 @@ impl<'a> CheckRunner<'a> {
         let Some(round) = self.dimension_round.clone() else {
             return;
         };
-        for (field, message) in round.errors_for(root_record) {
-            self.diagnostics.push(
-                CfdDiagnostic::error(CfdErrorCode::CheckEvalTypeError, message).with_primary(
-                    Some(root_record),
-                    root_location.clone().field(field).blame.path,
-                ),
-            );
-        }
-        let fields = round
-            .field_names(root_record)
-            .map(str::to_string)
-            .collect::<Vec<_>>();
-        for field in fields {
+        for (field, error) in round.nested_fields(self.schema, self.model, root_record) {
+            if let Some(message) = error {
+                self.diagnostics.push(
+                    CfdDiagnostic::error(CfdErrorCode::CheckEvalTypeError, message).with_primary(
+                        Some(root_record),
+                        root_location.clone().field(&field).blame.path,
+                    ),
+                );
+                continue;
+            }
             let logical_location = root_location.field(&field);
-            match round.materialize(self.model, root_record, &field, &logical_location) {
+            match round.materialize(
+                self.schema,
+                self.model,
+                root_record,
+                &field,
+                &logical_location,
+            ) {
                 Ok(Some(materialized)) => {
                     self.run_nested_value_checks(
                         Some(root_record),

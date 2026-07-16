@@ -1,5 +1,5 @@
 use super::{project_diagnostic, ConfiguredSource, ResolvedLoaderSource, SourceResolver};
-use crate::dimensions::DimensionField;
+use crate::dimensions::{DimensionField, DimensionRuntimePlan};
 use coflow_api::{Diagnostic, DiagnosticSet, SourceLocationSpec};
 use serde_json::{json, Value};
 use std::fs;
@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 pub(super) fn resolve_dimension_sources(
     resolver: &SourceResolver<'_>,
-    fields: &[DimensionField],
+    plan: &DimensionRuntimePlan,
 ) -> Result<Vec<(ResolvedLoaderSource, DimensionField)>, DiagnosticSet> {
     let mut sources = Vec::new();
     let mut diagnostics = DiagnosticSet::empty();
@@ -16,10 +16,7 @@ pub(super) fn resolve_dimension_sources(
         let Some(out_dir) = config.out_dir.as_ref() else {
             continue;
         };
-        let dimension_fields = fields
-            .iter()
-            .filter(|field| field.dimension.as_str() == dimension)
-            .collect::<Vec<_>>();
+        let dimension_fields = plan.fields_for(dimension).collect::<Vec<_>>();
         if dimension_fields.is_empty() {
             continue;
         }

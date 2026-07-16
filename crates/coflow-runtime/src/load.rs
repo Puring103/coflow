@@ -119,6 +119,7 @@ pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput,
 pub(crate) fn load_project_data(
     project: &Project,
     schema: &CftSchema,
+    dimension_plan: &dimensions::DimensionRuntimePlan,
     registry: &ProviderRegistry,
     indexes: &mut SessionIndexBuilder,
     options: LoadProjectDataOptions,
@@ -150,8 +151,7 @@ pub(crate) fn load_project_data(
     }
 
     if options.include_implicit_dimension_sources {
-        let dimension_fields = dimensions::dimension_fields(schema);
-        match resolver.resolve_dimension_sources(&dimension_fields) {
+        match resolver.resolve_dimension_sources(dimension_plan) {
             Ok(resolved_sources) => {
                 for (resolved_source, field) in resolved_sources {
                     diagnostics.extend(load_resolved_dimension_sources(
@@ -225,6 +225,7 @@ pub(crate) fn load_project_data(
 pub(crate) fn reload_project_data_from_cache(
     project: &Project,
     schema: &CftSchema,
+    dimension_plan: &dimensions::DimensionRuntimePlan,
     registry: &ProviderRegistry,
     indexes: &mut SessionIndexBuilder,
     previous: &SourceDataCache,
@@ -245,7 +246,13 @@ pub(crate) fn reload_project_data_from_cache(
             .collect(),
     };
     if options.include_implicit_dimension_sources && refresh_implicit_dimension_sources {
-        refresh_dimension_source_plans(project, schema, registry, previous, &mut source_data)?;
+        refresh_dimension_source_plans(
+            project,
+            dimension_plan,
+            registry,
+            previous,
+            &mut source_data,
+        )?;
     }
 
     let mut diagnostics = DiagnosticSet::empty();
@@ -543,7 +550,7 @@ impl SourceDataCache {
 
 fn refresh_dimension_source_plans(
     project: &Project,
-    schema: &CftSchema,
+    dimension_plan: &dimensions::DimensionRuntimePlan,
     registry: &ProviderRegistry,
     previous: &SourceDataCache,
     source_data: &mut SourceDataCache,
@@ -552,9 +559,8 @@ fn refresh_dimension_source_plans(
         .batches
         .retain(|batch| batch.dimension_field.is_none());
     let resolver = SourceResolver::new(project, registry);
-    let dimension_fields = dimensions::dimension_fields(schema);
     let mut diagnostics = DiagnosticSet::empty();
-    match resolver.resolve_dimension_sources(&dimension_fields) {
+    match resolver.resolve_dimension_sources(dimension_plan) {
         Ok(resolved_sources) => {
             for ((_, source), field) in resolved_sources {
                 let display_path = display_path_for(project, &source);

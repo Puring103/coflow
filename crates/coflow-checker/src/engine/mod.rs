@@ -129,9 +129,10 @@ pub(crate) fn execute(
     let mut replacement = collect_dependencies.then(CheckSnapshot::stable_empty);
     let mut diagnostics = Vec::new();
     let mut dependencies = DependencyGraph::default();
+    let mut dimension_projected_records = 0;
 
     if !default_targets.is_empty() {
-        let (raw_diagnostics, round_dependencies) =
+        let (raw_diagnostics, round_dependencies, _) =
             CheckRunner::new(schema, model, request.structural_limits)
                 .run_rooted(&default_targets, collect_dependencies);
         let rooted = raw_diagnostics
@@ -163,9 +164,10 @@ pub(crate) fn execute(
             dimension: round.dimension.clone(),
             variant: round.variant.clone(),
         };
-        let (round_diagnostics, round_dependencies) =
+        let (round_diagnostics, round_dependencies, projected_records) =
             CheckRunner::with_dimension_context(schema, model, context, request.structural_limits)
                 .run_rooted(targets, collect_dependencies);
+        dimension_projected_records += projected_records;
         let rooted = round_diagnostics
             .into_iter()
             .map(|(root, mut diagnostic)| {
@@ -207,6 +209,7 @@ pub(crate) fn execute(
         statistics: CheckExecutionStats {
             requested_roots,
             executed_rounds,
+            dimension_projected_records,
             dependency_collection: request.dependency_collection,
         },
     }

@@ -12,6 +12,7 @@ pub struct RootedCheckDiagnostic {
 pub struct CheckExecutionStats {
     pub requested_roots: usize,
     pub executed_rounds: usize,
+    pub dimension_projected_records: usize,
     pub dependency_collection: DependencyCollection,
 }
 

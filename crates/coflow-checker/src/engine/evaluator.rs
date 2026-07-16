@@ -99,6 +99,7 @@ impl<'model> CheckEvaluator<'model> {
         located: &mut LocatedEvalValue<'model>,
     ) -> EvalResult<()> {
         match dimensions::apply_dimension_variant(
+            self.schema,
             self.model,
             self.dimension_round.as_ref(),
             record,

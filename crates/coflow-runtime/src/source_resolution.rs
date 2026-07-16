@@ -67,9 +67,9 @@ impl<'a> SourceResolver<'a> {
 
     pub(crate) fn resolve_dimension_sources(
         &self,
-        fields: &[crate::dimensions::DimensionField],
+        plan: &crate::dimensions::DimensionRuntimePlan,
     ) -> Result<Vec<(ResolvedLoaderSource, crate::dimensions::DimensionField)>, DiagnosticSet> {
-        dimensions::resolve_dimension_sources(self, fields)
+        dimensions::resolve_dimension_sources(self, plan)
     }
 
     pub(crate) fn resolve_exact_at(

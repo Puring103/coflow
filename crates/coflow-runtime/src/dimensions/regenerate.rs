@@ -12,14 +12,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[must_use]
-pub fn regenerate_dimension_sources(
+pub(crate) fn regenerate_dimension_sources_scoped(
     project: &Project,
     schema: &CftSchema,
     model: &CfdDataModel,
     fields: &[DimensionField],
+    affected_fields: Option<&BTreeSet<usize>>,
     registry: &ProviderRegistry,
 ) -> DimensionGenerationResult {
-    let plan_result = plan_dimension_generation(project, schema, model, fields);
+    let plan_result =
+        plan_dimension_generation_scoped(project, schema, model, fields, affected_fields);
     if !plan_result.diagnostics.is_empty() {
         return DimensionGenerationResult {
             diagnostics: plan_result.diagnostics,
@@ -34,11 +36,12 @@ pub fn regenerate_dimension_sources(
 }
 
 #[must_use]
-pub(crate) fn plan_dimension_generation(
+fn plan_dimension_generation_scoped(
     project: &Project,
     schema: &CftSchema,
     model: &CfdDataModel,
     fields: &[DimensionField],
+    affected_fields: Option<&BTreeSet<usize>>,
 ) -> DimensionGenerationPlanResult {
     let mut diagnostics = validate_dimension_directories(project);
     if !diagnostics.is_empty() {
@@ -50,7 +53,15 @@ pub(crate) fn plan_dimension_generation(
 
     let mut operations = Vec::new();
     for (dimension, config) in &project.config.dimensions {
-        let result = plan_configured_dimension(project, schema, model, fields, dimension, config);
+        let result = plan_configured_dimension(
+            project,
+            schema,
+            model,
+            fields,
+            affected_fields,
+            dimension,
+            config,
+        );
         operations.extend(result.plan.operations);
         diagnostics.extend(result.diagnostics);
     }
@@ -98,6 +109,7 @@ fn plan_configured_dimension(
     schema: &CftSchema,
     model: &CfdDataModel,
     fields: &[DimensionField],
+    affected_fields: Option<&BTreeSet<usize>>,
     dimension: &str,
     config: &coflow_project::DimensionConfig,
 ) -> DimensionGenerationPlanResult {
@@ -118,14 +130,18 @@ fn plan_configured_dimension(
     let mut expected_paths = BTreeSet::new();
     let mut dimension_operations = BTreeMap::<String, DimensionGenerationOperation>::new();
 
-    for field in fields
+    for (field_index, field) in fields
         .iter()
-        .filter(|field| field.dimension.as_str() == dimension)
+        .enumerate()
+        .filter(|(_, field)| field.dimension.as_str() == dimension)
     {
         let provider_id = if field.is_singleton { "cfd" } else { "csv" };
         let path = dimension_source_path(&out_dir, field);
         let path_identity = coflow_project::normalized_path_identity(&path);
         expected_paths.insert(path_identity.clone());
+        if affected_fields.is_some_and(|affected| !affected.contains(&field_index)) {
+            continue;
+        }
         let operation = DimensionGenerationOperation {
             dimension: dimension.to_string(),
             provider_id: provider_id.to_string(),
@@ -680,11 +696,18 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::{
-        commit_dimension_generation, DimensionGenerationOperation, DimensionGenerationPlan,
-        DimensionGenerationPlanOp, DimensionGenerationTransaction,
+        commit_dimension_generation, plan_dimension_generation_scoped,
+        DimensionGenerationOperation, DimensionGenerationPlan, DimensionGenerationPlanOp,
+        DimensionGenerationTransaction,
     };
     use coflow_api::ProviderRegistry;
+    use coflow_cft::{
+        BucketName, CftDimensionInputs, CftFile, DimensionName, FieldName, ModuleId, TypeName,
+    };
+    use coflow_data_model::{CfdDataModel, LoadedValueDraft};
     use coflow_project::Project;
+
+    use crate::dimensions::DimensionField;
 
     fn test_project(root: &std::path::Path) -> Project {
         std::fs::write(root.join("schema.cft"), "type Item { name: string; }")
@@ -695,6 +718,76 @@ mod tests {
         )
         .expect("write config");
         Project::open_schema_only(Some(root)).expect("open project")
+    }
+
+    #[test]
+    fn scoped_generation_plans_only_affected_fields() {
+        let root = std::env::temp_dir().join(format!(
+            "coflow-runtime-dimension-scoped-plan-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create temp dir");
+        std::fs::write(
+            root.join("schema.cft"),
+            "type Item { name: string; } type Other { label: string; }",
+        )
+        .expect("write schema");
+        std::fs::write(
+            root.join("coflow.yaml"),
+            "schema: schema.cft\nsources: []\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: dimensions/language\n",
+        )
+        .expect("write config");
+        let project = Project::open_schema_only(Some(&root)).expect("open project");
+        let modules = coflow_cft::parse_modules([CftFile::new(
+            ModuleId::from("schema.cft"),
+            "schema.cft".into(),
+            "type Item { name: string; } type Other { label: string; }",
+        )]);
+        let dimensions = CftDimensionInputs::try_new([("language", vec!["zh".to_string()])])
+            .expect("dimensions");
+        let schema = coflow_cft::build_schema(&modules, &dimensions).expect("schema");
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record("item", "Item", [("name", LoadedValueDraft::from("Item"))]);
+        builder.add_record(
+            "other",
+            "Other",
+            [("label", LoadedValueDraft::from("Other"))],
+        );
+        let model = builder.build().expect("model");
+        let language = DimensionName::new("language").expect("dimension");
+        let fields = vec![
+            DimensionField {
+                dimension: language.clone(),
+                source_type: TypeName::new("Item").expect("type"),
+                source_field: FieldName::new("name").expect("field"),
+                bucket: BucketName::new("Item").expect("bucket"),
+                is_singleton: false,
+            },
+            DimensionField {
+                dimension: language,
+                source_type: TypeName::new("Other").expect("type"),
+                source_field: FieldName::new("label").expect("field"),
+                bucket: BucketName::new("Other").expect("bucket"),
+                is_singleton: false,
+            },
+        ];
+
+        let result = plan_dimension_generation_scoped(
+            &project,
+            &schema,
+            &model,
+            &fields,
+            Some(&std::collections::BTreeSet::from([0])),
+        );
+
+        assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+        assert_eq!(result.plan.operations.len(), 1);
+        assert!(matches!(
+            &result.plan.operations[0],
+            DimensionGenerationPlanOp::Sync(operation) if operation.actual_type == "Item"
+        ));
+        std::fs::remove_dir_all(root).expect("remove temp dir");
     }
 
     #[test]

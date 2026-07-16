@@ -9,7 +9,7 @@ use coflow_project::Project;
 
 use crate::checks::CheckState;
 use crate::dimensions;
-use crate::dimensions::{DimensionField, DimensionGenerationTransaction};
+use crate::dimensions::{DimensionGenerationTransaction, DimensionRuntimePlan};
 use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
 use crate::load::{
     empty_load_output, empty_model, load_project_data, reload_project_data_from_cache,
@@ -103,14 +103,13 @@ pub(crate) fn rebuild_project_session_from_generation(
     registry: &ProviderRegistry,
     impact: &MutationImpact,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
-    let dimension_fields = dimensions::dimension_fields(session.schema());
     let ctx = SessionBuildContext {
         project: session.project.clone(),
         modules: Arc::clone(&session.modules),
         schema: session.schema.clone(),
         registry,
         dimension_mode: DimensionBuildMode::Generate,
-        dimension_fields,
+        dimension_plan: Arc::clone(&session.dimension_plan),
     };
     let mut diagnostics = DiagnosticsStore::empty();
     let LoadedSessionData {
@@ -142,14 +141,14 @@ fn finish_project_session(
         return Err(diagnostics.into_set());
     };
 
-    let dimension_fields = dimensions::dimension_fields(&schema);
+    let dimension_plan = Arc::new(DimensionRuntimePlan::compile(&schema, &project));
     let ctx = SessionBuildContext {
         project,
         modules,
         schema,
         registry,
         dimension_mode: options.dimension_mode(),
-        dimension_fields,
+        dimension_plan,
     };
 
     let LoadedSessionData {
@@ -182,12 +181,12 @@ struct SessionBuildContext<'a> {
     schema: Arc<CftSchema>,
     registry: &'a ProviderRegistry,
     dimension_mode: DimensionBuildMode,
-    dimension_fields: Vec<DimensionField>,
+    dimension_plan: Arc<DimensionRuntimePlan>,
 }
 
 impl SessionBuildContext<'_> {
-    const fn has_dimension_fields(&self) -> bool {
-        !self.dimension_fields.is_empty()
+    fn has_dimension_fields(&self) -> bool {
+        !self.dimension_plan.is_empty()
     }
 
     fn should_generate_dimensions(&self) -> bool {
@@ -240,7 +239,7 @@ fn build_data_pipeline(
         }
     };
 
-    let mut dimensions = commit_dimensions_if_needed(ctx, &output, diagnostics);
+    let mut dimensions = commit_dimensions_if_needed(ctx, &output, None, diagnostics);
     if diagnostics.is_empty() && ctx.has_dimension_fields() {
         (output, indexes) = reload_with_dimensions(ctx, diagnostics)?;
     }
@@ -293,7 +292,12 @@ fn rebuild_data_pipeline(
         }
     };
 
-    let mut dimensions = commit_dimensions_if_needed(ctx, &output, diagnostics);
+    let mut dimensions = commit_dimensions_if_needed(
+        ctx,
+        &output,
+        (!impact.structural_change).then_some(&impact.changed_records),
+        diagnostics,
+    );
     if diagnostics.is_empty() && ctx.has_dimension_fields() {
         let cache = output
             .source_data
@@ -305,16 +309,27 @@ fn rebuild_data_pipeline(
             .cloned()
             .collect::<BTreeSet<_>>();
         dimension_reload_paths.extend(
+            impact
+                .affected_files
+                .iter()
+                .filter(|path| {
+                    ctx.dimension_plan
+                        .is_managed_source_path(&ctx.project, path)
+                })
+                .cloned(),
+        );
+        dimension_reload_paths.extend(
             dimensions
                 .changed_paths
                 .iter()
                 .map(|path| project_display_path(&ctx.project, path)),
         );
+        let refresh_dimension_topology = !dimension_reload_paths.is_empty();
         match load_cached_data(
             ctx,
             &cache,
             &dimension_reload_paths,
-            true,
+            refresh_dimension_topology,
             true,
             true,
             (!impact.structural_change).then_some(&previous.check_state),
@@ -388,6 +403,7 @@ fn load_data(
     let output = match load_project_data(
         &ctx.project,
         &ctx.schema,
+        &ctx.dimension_plan,
         ctx.registry,
         &mut indexes,
         LoadProjectDataOptions {
@@ -421,6 +437,7 @@ fn load_cached_data(
     let output = match reload_project_data_from_cache(
         &ctx.project,
         &ctx.schema,
+        &ctx.dimension_plan,
         ctx.registry,
         &mut indexes,
         previous,
@@ -496,17 +513,26 @@ fn build_read_only_data(
 fn commit_dimensions_if_needed(
     ctx: &SessionBuildContext<'_>,
     output: &ProjectLoadOutput,
+    changed_records: Option<&BTreeSet<crate::RecordCoordinate>>,
     diagnostics: &mut DiagnosticsStore,
 ) -> CommittedDimensions {
     if !ctx.should_generate_dimensions() {
         return CommittedDimensions::default();
     }
 
-    let dimension_result = dimensions::regenerate_dimension_sources(
+    let affected_fields = changed_records.map(|changed| {
+        ctx.dimension_plan
+            .affected_field_indices(&ctx.schema, changed)
+    });
+    if affected_fields.as_ref().is_some_and(BTreeSet::is_empty) {
+        return CommittedDimensions::default();
+    }
+    let dimension_result = dimensions::regenerate_dimension_sources_scoped(
         &ctx.project,
         &ctx.schema,
         &output.model,
-        &ctx.dimension_fields,
+        ctx.dimension_plan.fields(),
+        affected_fields.as_ref(),
         ctx.registry,
     );
     diagnostics.extend(dimension_result.diagnostics);
@@ -542,6 +568,7 @@ fn assemble_session(
         project: ctx.project,
         modules: ctx.modules,
         schema: ctx.schema,
+        dimension_plan: ctx.dimension_plan,
         model,
         diagnostics,
         sources: indexes.sources,
