@@ -9,7 +9,6 @@ use super::{EditorError, EditorProjectSettings};
 
 const SETTINGS_PATH: &str = ".coflow/editor.json";
 const MIN_COLUMN_WIDTH: f64 = 48.0;
-const MAX_COLUMN_WIDTH: f64 = 2_000.0;
 
 pub(super) fn read_project_settings(
     project_root: &Path,
@@ -54,7 +53,7 @@ pub(super) fn sanitized_column_widths(
         .filter_map(|(column, width)| {
             width
                 .is_finite()
-                .then(|| (column, width.clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)))
+                .then(|| (column, width.max(MIN_COLUMN_WIDTH)))
         })
         .collect()
 }
@@ -92,18 +91,22 @@ mod tests {
     }
 
     #[test]
-    fn column_widths_are_finite_and_bounded() {
+    fn column_widths_preserve_finite_values_above_the_minimum() {
         let widths = BTreeMap::from([
+            ("zero".to_string(), 0.0),
             ("small".to_string(), 1.0),
             ("large".to_string(), 9_999.0),
+            ("negative".to_string(), -1.0),
             ("invalid".to_string(), f64::NAN),
         ]);
 
         assert_eq!(
             sanitized_column_widths(widths),
             BTreeMap::from([
-                ("large".to_string(), MAX_COLUMN_WIDTH),
+                ("large".to_string(), 9_999.0),
+                ("negative".to_string(), MIN_COLUMN_WIDTH),
                 ("small".to_string(), MIN_COLUMN_WIDTH),
+                ("zero".to_string(), MIN_COLUMN_WIDTH),
             ])
         );
     }

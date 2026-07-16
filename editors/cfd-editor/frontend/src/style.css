@@ -764,7 +764,6 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   border-spacing: 0;
   font-size: var(--fs-ui);
   width: max-content;
-  min-width: 100%;
   /* Fixed layout: <th>/<td> width becomes authoritative, so cells whose
    * intrinsic min-content is larger (native <select> with long options)
    * no longer stretch the column past the size hint. */

@@ -94,6 +94,7 @@ interface Props {
 }
 
 const ROW_H = 30
+const MIN_COLUMN_WIDTH = 48
 
 export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
@@ -106,7 +107,28 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const columnSizingRef = useRef(columnSizing)
+  const columnResizeRef = useRef<{
+    pointerId: number
+    columnId: string
+    startX: number
+    startWidth: number
+  } | null>(null)
   columnSizingRef.current = columnSizing
+
+  const updateColumnResize = (pointerId: number, clientX: number) => {
+    const resize = columnResizeRef.current
+    if (!resize || resize.pointerId !== pointerId) return
+    const width = Math.max(MIN_COLUMN_WIDTH, resize.startWidth + clientX - resize.startX)
+    const next = { ...columnSizingRef.current, [resize.columnId]: width }
+    columnSizingRef.current = next
+    setColumnSizing(next)
+  }
+
+  const finishColumnResize = (pointerId: number) => {
+    if (columnResizeRef.current?.pointerId !== pointerId) return
+    columnResizeRef.current = null
+    onColumnWidthsChange?.(columnSizingRef.current)
+  }
 
   // Reset transient UI state when active file/type changes.
   useEffect(() => {
@@ -321,7 +343,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             </span>
           )
         },
-        size: columnSizeHints.key ?? 140,
+        size: columnWidths?.key ?? columnSizeHints.key ?? 140,
       }),
       ...allFieldNames.map(name => {
         const declared = columnDeclaredTypes[name]
@@ -338,7 +360,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               )}
             </span>
           ),
-          size: columnSizeHints[name] ?? 120,
+          size: columnWidths?.[name] ?? columnSizeHints[name] ?? 120,
           cell: ({ row }) => {
             const filePath = dataForCellsRef.current.file_path
             const f = fieldCell(row.original, name)
@@ -416,7 +438,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     // Only structural changes (column set, active type, computed widths,
     // permission flags) rebuild the column defs. Edit-time state
     // (diagnostics, records, callbacks) is read via refs above.
-  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, canEdit, canRename])
+  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, columnWidths, canEdit, canRename])
 
   // Global filter: match key or any scalar field value (via summaryOf).
   const globalFilterFn = useMemo(
@@ -429,13 +451,16 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const table = useReactTable({
     data: filtered,
     columns,
+    defaultColumn: {
+      minSize: MIN_COLUMN_WIDTH,
+      maxSize: Number.MAX_SAFE_INTEGER,
+    },
     state: { sorting, columnSizing, globalFilter },
     onSortingChange: setSorting,
     onColumnSizingChange: updater => {
       const next = typeof updater === 'function' ? updater(columnSizingRef.current) : updater
       columnSizingRef.current = next
       setColumnSizing(next)
-      onColumnWidthsChange?.(next)
     },
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
@@ -443,7 +468,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     getFilteredRowModel: getFilteredRowModel(),
     getRowId: row => coordinateId(row.coordinate),
     globalFilterFn,
-    columnResizeMode: 'onEnd',
     enableColumnResizing: true,
   })
 
@@ -688,7 +712,37 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                         {h.column.getCanResize() && (
                           <div
                             className="th-resizer"
-                            onMouseDown={h.getResizeHandler()}
+                            onPointerDown={event => {
+                              if (event.button !== 0) return
+                              event.preventDefault()
+                              event.currentTarget.setPointerCapture(event.pointerId)
+                              columnResizeRef.current = {
+                                pointerId: event.pointerId,
+                                columnId: h.column.id,
+                                startX: event.clientX,
+                                startWidth: h.getSize(),
+                              }
+                            }}
+                            onPointerMove={event => {
+                              if (columnResizeRef.current?.pointerId !== event.pointerId) return
+                              if (event.buttons === 0) {
+                                if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                                  event.currentTarget.releasePointerCapture(event.pointerId)
+                                }
+                                finishColumnResize(event.pointerId)
+                                return
+                              }
+                              updateColumnResize(event.pointerId, event.clientX)
+                            }}
+                            onPointerUp={event => {
+                              updateColumnResize(event.pointerId, event.clientX)
+                              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                                event.currentTarget.releasePointerCapture(event.pointerId)
+                              }
+                              finishColumnResize(event.pointerId)
+                            }}
+                            onPointerCancel={event => finishColumnResize(event.pointerId)}
+                            onLostPointerCapture={event => finishColumnResize(event.pointerId)}
                             onClick={e => e.stopPropagation()}
                             aria-hidden
                           />
