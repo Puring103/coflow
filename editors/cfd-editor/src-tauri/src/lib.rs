@@ -1,5 +1,6 @@
 #![allow(clippy::multiple_crate_versions, clippy::unreachable)]
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 pub mod editor;
@@ -10,8 +11,8 @@ use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_runtime::{DimensionValueCoordinate, DimensionValueView, RecordCoordinate};
 use editor::{
     CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, EditorError, FileRecords, GraphData,
-    GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome,
-    WriteDimensionValueOutcome, WriteFieldOutcome,
+    EditorProjectSettings, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget,
+    RenameRecordOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use host::EditorHost;
 use tauri::{AppHandle, Manager, State};
@@ -43,6 +44,33 @@ async fn init_project(
 async fn close_session(session_id: u32, host: State<'_, EditorHost>) -> Result<(), EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.close_session(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn get_project_settings(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<EditorProjectSettings, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().get_project_settings(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn set_table_column_widths(
+    session_id: u32,
+    file_path: String,
+    actual_type: String,
+    widths: BTreeMap<String, f64>,
+    host: State<'_, EditorHost>,
+) -> Result<EditorProjectSettings, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .set_table_column_widths(session_id, file_path, actual_type, widths)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -298,6 +326,8 @@ pub fn run() -> tauri::Result<()> {
             load_project,
             init_project,
             close_session,
+            get_project_settings,
+            set_table_column_widths,
             get_file_records,
             get_graph,
             get_enum_variants,

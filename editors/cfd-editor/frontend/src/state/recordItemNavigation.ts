@@ -2,6 +2,7 @@ export interface VisibleRecordItem {
   id: string
   depth: number
   expandable: boolean
+  expanded?: boolean
 }
 
 export type RecordItemDirection = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight'
@@ -27,7 +28,15 @@ export function moveRecordItem(
         : null
   }
   if (direction === 'ArrowRight') {
-    return items[index].expandable ? { kind: 'toggle', id: currentId } : null
+    if (!items[index].expandable) return null
+    if (!items[index].expanded) return { kind: 'toggle', id: currentId }
+    const child = items[index + 1]
+    return child && child.depth > items[index].depth
+      ? { kind: 'select', id: child.id }
+      : null
+  }
+  if (items[index].expandable && items[index].expanded) {
+    return { kind: 'toggle', id: currentId }
   }
   const depth = items[index].depth
   if (depth <= 0) return { kind: 'boundary', edge: 'parent' }

@@ -456,6 +456,7 @@ dependencies = [
 name = "cfd-editor"
 version = "0.7.0"
 dependencies = [
+ "atomicwrites",
  "coflow-api",
  "coflow-builtins",
  "coflow-cft",

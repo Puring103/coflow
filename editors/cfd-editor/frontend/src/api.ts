@@ -9,6 +9,7 @@ import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordina
 import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { DimensionValueView } from './bindings/DimensionValueView'
 import type { FileRecords } from './bindings/FileRecords'
+import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
@@ -88,6 +89,24 @@ export async function getGraph(
 
 export async function closeSession(sessionId: number): Promise<void> {
   return invokeCommand('close_session', { sessionId })
+}
+
+export async function getProjectSettings(sessionId: number): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('get_project_settings', { sessionId })
+}
+
+export async function setTableColumnWidths(
+  sessionId: number,
+  filePath: string,
+  actualType: string,
+  widths: Record<string, number>,
+): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('set_table_column_widths', {
+    sessionId,
+    filePath,
+    actualType,
+    widths,
+  })
 }
 
 export async function getEnumVariants(sessionId: number, enumName: string): Promise<string[]> {

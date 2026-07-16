@@ -26,4 +26,10 @@ describe('record item navigation', () => {
     expect(moveRecordItem(items, 'stats', 'ArrowRight')).toEqual({ kind: 'toggle', id: 'stats' })
     expect(moveRecordItem(items, 'name', 'ArrowRight')).toBeNull()
   })
+
+  it('enters an expanded item with right and collapses it with left', () => {
+    const expanded = items.map(item => item.id === 'stats' ? { ...item, expanded: true } : item)
+    expect(moveRecordItem(expanded, 'stats', 'ArrowRight')).toEqual({ kind: 'select', id: 'stats.health' })
+    expect(moveRecordItem(expanded, 'stats', 'ArrowLeft')).toEqual({ kind: 'toggle', id: 'stats' })
+  })
 })

@@ -802,7 +802,8 @@ function ScalarFieldRow({
   const canEdit = (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
-  const rowTitle = spreadHint || (diag.messages.join('\n') || undefined)
+  const rowTitle = [spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
+    .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
 
@@ -811,9 +812,6 @@ function ScalarFieldRow({
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 12 }}>
         {leading}
         <span className="dc-row-label-text">{label}</span>
-        {depth === 0 && declaredType && (
-          <span className="dc-row-type" title={`类型：${declaredType}`}>{declaredType}</span>
-        )}
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
@@ -1393,7 +1391,8 @@ function ExpandableRow({
   const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
-  const rowTitle = spreadHint || (diag.messages.join('\n') || undefined)
+  const rowTitle = [spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
+    .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
 
@@ -1412,9 +1411,6 @@ function ExpandableRow({
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
           </span>
           <span className="dc-row-label-text">{label}</span>
-          {depth === 0 && declaredType && (
-            <span className="dc-row-type" title={`类型：${declaredType}`}>{declaredType}</span>
-          )}
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">

@@ -3,6 +3,7 @@ import type { FileRecords } from '../bindings/FileRecords'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
+import type { CfdDictKey } from '../bindings/CfdDictKey'
 import {
   recordActualType,
   recordKey,
@@ -24,6 +25,7 @@ import {
   diagnosticsForRecord,
 } from '../state/recordDiagnostics'
 import type { EditorSelection } from '../state/editorSelection'
+import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
 
 interface Props {
   open: boolean
@@ -42,6 +44,17 @@ interface Props {
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
   ) => Promise<RecordRow | void>
+  onRenderCellText?: (
+    filePath: string,
+    coordinate: RecordCoordinate,
+    fieldPath: FieldPathSegment[],
+  ) => Promise<string>
+  onParseCellText?: (
+    filePath: string,
+    coordinate: RecordCoordinate,
+    fieldPath: FieldPathSegment[],
+    text: string,
+  ) => Promise<FieldValue>
   onCollectionEdit?: (
     filePath: string,
     coordinate: RecordCoordinate,
@@ -54,6 +67,8 @@ interface Props {
     newKey: string,
   ) => Promise<RecordRow | void>
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
+  focusRequest?: number
+  onExitKeyboardNavigation?: () => void
 }
 
 const MIN_W = 280
@@ -71,13 +86,21 @@ export function InspectorPanel({
   onWidthChange,
   onClose,
   onWriteField,
+  onRenderCellText,
+  onParseCellText,
   onCollectionEdit,
   onRenameRecord,
   onDiagnosticBadgeClick,
+  focusRequest,
+  onExitKeyboardNavigation,
 }: Props) {
   const [dragging, setDragging] = useState(false)
   const [expandedByRecord, setExpandedByRecord] = useState<ExpandedPathMap>(() => new Map())
   const widthRef = useRef(width)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const [keyboardFieldPath, setKeyboardFieldPath] = useState<FieldPathSegment[] | null>(null)
+  const [selectedActionPathWire, setSelectedActionPathWire] = useState<string | null>(null)
+  const [keyboardNotice, setKeyboardNotice] = useState<string | null>(null)
   widthRef.current = width
   const coordinate = selection?.coordinate ?? null
 
@@ -139,6 +162,72 @@ export function InspectorPanel({
   const expandedPaths = expansionOwner
     ? expandedPathsFor(expandedByRecord, expansionOwner)
     : undefined
+  const selectionKey = selection?.kind === 'value'
+    ? `${expansionOwner ?? ''}:${JSON.stringify(selection.fieldPath)}`
+    : null
+
+  const recordKeyboard = useRecordItemKeyboard({
+    rootRef: bodyRef,
+    selectedFieldPath: selectedActionPathWire ? null : keyboardFieldPath,
+    selectedActionPathWire,
+    expandedPaths: expandedPaths ?? EMPTY_EXPANDED_PATHS,
+    onSelectValue: path => {
+      setSelectedActionPathWire(null)
+      setKeyboardFieldPath(path)
+    },
+    onSelectAction: setSelectedActionPathWire,
+    onToggleExpansion: (path, expanded) => {
+      if (!expansionOwner) return
+      setExpandedByRecord(current => updateExpandedPath(current, expansionOwner, path, expanded))
+    },
+    onRenderCellText: data && coordinate && onRenderCellText
+      ? path => onRenderCellText(data.file_path, coordinate, path)
+      : undefined,
+    onParseCellText: data && coordinate && onParseCellText
+      ? (path, text) => onParseCellText(data.file_path, coordinate, path, text)
+      : undefined,
+    onWriteField: data && coordinate && onWriteField
+      ? (path, value) => onWriteField(data.file_path, coordinate, path, value)
+      : undefined,
+    onNotice: setKeyboardNotice,
+    onBoundary: edge => {
+      if (edge === 'parent') onExitKeyboardNavigation?.()
+    },
+  })
+
+  useEffect(() => {
+    setSelectedActionPathWire(null)
+    setKeyboardNotice(null)
+    if (!selectionKey || !expansionOwner || selection?.kind !== 'value') {
+      setKeyboardFieldPath(null)
+      return
+    }
+    setKeyboardFieldPath(selection.fieldPath)
+    const paths = recursivelyExpandablePaths(inspectorFields)
+    setExpandedByRecord(current => {
+      let next = current
+      for (const path of paths) next = updateExpandedPath(next, expansionOwner, path, true)
+      return next
+    })
+  }, [selectionKey])
+
+  useEffect(() => {
+    if (!focusRequest || !selection) return
+    bodyRef.current?.focus({ preventScroll: true })
+    requestAnimationFrame(() => {
+      recordKeyboard.selectFirstItem()
+    })
+  }, [focusRequest])
+
+  const onBodyKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      onExitKeyboardNavigation?.()
+      return
+    }
+    recordKeyboard.onKeyDown(event)
+  }
 
   if (!open) return null
 
@@ -182,7 +271,12 @@ export function InspectorPanel({
         )}
       </div>
       {!collapsed && (
-        <div className="inspector-body">
+        <div
+          className="inspector-body"
+          ref={bodyRef}
+          tabIndex={-1}
+          onKeyDown={onBodyKeyDown}
+        >
           {record && data ? (
             <>
               {!inspectingValue && (
@@ -216,6 +310,14 @@ export function InspectorPanel({
                     ? undefined
                     : (path, edit) => { onCollectionEdit(data.file_path, record.coordinate, path, edit) }}
                   diagnostics={fieldDiags}
+                  selectedFieldPath={selectedActionPathWire ? null : keyboardFieldPath}
+                  selectedActionPathWire={selectedActionPathWire}
+                  onSelectValue={path => {
+                    setSelectedActionPathWire(null)
+                    setKeyboardFieldPath(path)
+                  }}
+                  onSelectAction={setSelectedActionPathWire}
+                  onEditingFinished={() => bodyRef.current?.focus({ preventScroll: true })}
                   onDiagnosticBadgeClick={onDiagnosticBadgeClick
                     ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)
                     : undefined}
@@ -223,6 +325,7 @@ export function InspectorPanel({
               ) : (
                 <div className="empty-hint">选中的单元格不存在</div>
               )}
+              {keyboardNotice && <span className="table-cell-notice" role="status">{keyboardNotice}</span>}
             </>
           ) : (
             <div className="empty-hint">未选择记录</div>
@@ -232,3 +335,33 @@ export function InspectorPanel({
     </aside>
   )
 }
+
+function recursivelyExpandablePaths(fields: RecordRow['fields']): Set<string> {
+  const paths = new Set<string>()
+  for (const field of fields) collectExpandablePaths(field.value, field.name, paths)
+  return paths
+}
+
+function collectExpandablePaths(value: FieldValue, path: string, paths: Set<string>) {
+  if (value.kind !== 'object' && value.kind !== 'array' && value.kind !== 'dict') return
+  paths.add(path)
+  if (value.kind === 'object') {
+    for (const [name, child] of Object.entries(value.value.fields)) {
+      if (child) collectExpandablePaths(child, `${path}.${name}`, paths)
+    }
+  } else if (value.kind === 'array') {
+    value.value.forEach((child, index) => collectExpandablePaths(child, `${path}[${index}]`, paths))
+  } else {
+    for (const [key, child] of value.value) {
+      collectExpandablePaths(child, `${path}[${dictKeyText(key)}]`, paths)
+    }
+  }
+}
+
+function dictKeyText(key: CfdDictKey): string {
+  if (key.kind === 'string') return `"${key.value}"`
+  if (key.kind === 'int') return String(key.value)
+  return key.value.variant ?? String(key.value.value)
+}
+
+const EMPTY_EXPANDED_PATHS = new Set<string>()

@@ -130,6 +130,17 @@ pub struct ProjectSnapshot {
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct EditorProjectSettings {
+    #[serde(default)]
+    pub table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(

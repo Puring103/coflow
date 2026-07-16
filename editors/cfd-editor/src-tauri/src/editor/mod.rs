@@ -4,6 +4,7 @@
 
 mod convert;
 mod session;
+mod settings;
 pub mod types;
 
 pub use session::SessionStore;

@@ -82,27 +82,35 @@ interface Props {
   /** Click on a corner badge on a row or cell. `fieldPath` is null for
    *  record-level (the Key column badge), otherwise the column name. */
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
+  columnWidths?: ColumnSizingState
+  onColumnWidthsChange?: (widths: ColumnSizingState) => void
+  onEnterInspector?: () => void
+  focusRequest?: number
 }
 
 const ROW_H = 30
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
   const [cellNotice, setCellNotice] = useState<string | null>(null)
   const [sorting, setSorting] = useState<SortingState>([])
-  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => columnWidths ?? {})
   const [globalFilter, setGlobalFilter] = useState(searchQuery ?? '')
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
+  const columnSizingRef = useRef(columnSizing)
+  columnSizingRef.current = columnSizing
 
   // Reset transient UI state when active file/type changes.
   useEffect(() => {
     setSorting([])
     setGlobalFilter('')
-    setColumnSizing({})
-  }, [data.file_path, activeType])
+    const next = columnWidths ?? {}
+    columnSizingRef.current = next
+    setColumnSizing(next)
+  }, [data.file_path, activeType, columnWidths])
 
   // Sync search from parent global search bar.
   useEffect(() => {
@@ -410,7 +418,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     columns,
     state: { sorting, columnSizing, globalFilter },
     onSortingChange: setSorting,
-    onColumnSizingChange: setColumnSizing,
+    onColumnSizingChange: updater => {
+      const next = typeof updater === 'function' ? updater(columnSizingRef.current) : updater
+      columnSizingRef.current = next
+      setColumnSizing(next)
+      onColumnWidthsChange?.(next)
+    },
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -457,6 +470,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     }
     reveal()
   }
+
+  useEffect(() => {
+    if (!focusRequest || !selection) return
+    tableScrollRef.current?.focus({ preventScroll: true })
+    revealTableSelection(selection)
+  }, [focusRequest])
 
   useEffect(() => {
     if (selection) revealTableSelection(selection)
@@ -509,6 +528,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 else onSelectValue?.(next.coordinate, next.fieldPath)
                 revealTableSelection(next)
               }
+              return
+            }
+
+            if (e.key === 'Enter' && onEnterInspector) {
+              e.preventDefault()
+              onEnterInspector()
               return
             }
 
@@ -596,6 +621,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     return (
                       <th
                         key={h.id}
+                        className={h.column.id === 'key' ? 'sticky-key-column' : undefined}
                         style={{ width: h.getSize() }}
                         aria-sort={sort === 'asc' ? 'ascending' : sort === 'desc' ? 'descending' : 'none'}
                       >
@@ -659,7 +685,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       return (
                         <td
                           key={cell.id}
-                          className={classes || undefined}
+                          className={[classes, cell.column.id === 'key' ? 'sticky-key-column' : ''].filter(Boolean).join(' ') || undefined}
                           data-table-cell-key={tableCellKey(row.original.coordinate, cell.column.id)}
                           style={{ width: cell.column.getSize() }}
                           aria-selected={selected || undefined}

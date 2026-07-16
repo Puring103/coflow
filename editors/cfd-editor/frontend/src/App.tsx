@@ -13,6 +13,7 @@ import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
 import type { FileRecords } from './bindings/FileRecords'
+import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
@@ -58,6 +59,7 @@ import './style.css'
 
 const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
+const LAST_PROJECT_STORAGE_KEY = 'cfd-editor-last-project-yaml'
 
 /** Passed as `highlightField` when a record-level (no field path) jump lands
  *  on a record view — RecordView flashes the CardHeader instead of a row. */
@@ -116,6 +118,7 @@ export default function App() {
   const historySnapshot = useSyncExternalStore(history.subscribe, history.getSnapshot, history.getSnapshot)
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
+  const [projectSettings, setProjectSettings] = useState<EditorProjectSettings | null>(null)
   const fileDataCacheRef = useRef(fileDataCache)
   const graphCacheRef = useRef(graphCache)
   fileDataCacheRef.current = fileDataCache
@@ -137,6 +140,9 @@ export default function App() {
   const [globalSearch, setGlobalSearch] = useState('')
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
+  const [inspectorFocusRequest, setInspectorFocusRequest] = useState(0)
+  const [tableFocusRequest, setTableFocusRequest] = useState(0)
+  const startupProjectRequested = useRef(false)
   // Field path to briefly highlight after a diagnostic jump. Cleared after
   // the RecordView applies the highlight so subsequent navigations don't
   // re-flash it.
@@ -220,12 +226,38 @@ export default function App() {
       })
       setFileDataCache({})
       setGraphCache({})
+      setProjectSettings(null)
       history.clear()
       const firstFile = snapshot.first_source_file ?? collectSourceFiles(snapshot)[0]
       if (firstFile) router.push({ view: 'table', file: firstFile })
+      if (api.isTauri) {
+        api.getProjectSettings(snapshot.session_id).then(settings => {
+          if (generation.currentSession() === snapshot.session_id) setProjectSettings(settings)
+        }).catch(err => {
+          if (generation.currentSession() === snapshot.session_id) {
+            setErrorMsg(`读取编辑器设置失败: ${errorMessage(err)}`)
+          }
+        })
+      }
     },
     [generation, history, lookups, router]
   )
+
+  useEffect(() => {
+    if (!api.isTauri || startupProjectRequested.current) return
+    startupProjectRequested.current = true
+    const yamlPath = readLastProjectPath()
+    if (!yamlPath) return
+    const request = generation.beginProjectRequest()
+    api.loadProject(yamlPath).then(snapshot => {
+      if (!generation.isProjectRequestCurrent(request)) return
+      adoptSnapshot(snapshot)
+    }).catch(err => {
+      if (generation.isProjectRequestCurrent(request)) {
+        setErrorMsg(`自动打开上次项目失败: ${errorMessage(err)}`)
+      }
+    })
+  }, [adoptSnapshot, generation])
 
   const reportSessionError = useCallback((
     sessionId: number,
@@ -265,6 +297,7 @@ export default function App() {
     try {
       const snapshot = await api.loadProject(yamlPath)
       if (!generation.isProjectRequestCurrent(request)) return
+      rememberLastProject(yamlPath)
       adoptSnapshot(snapshot)
     } catch (err) {
       if (!generation.isProjectRequestCurrent(request)) return
@@ -419,6 +452,7 @@ export default function App() {
     try {
       const snapshot = await api.initProject(dir)
       if (!generation.isProjectRequestCurrent(request)) return
+      rememberLastProject(projectYamlPath(dir))
       adoptSnapshot(snapshot)
     } catch (err) {
       if (!generation.isProjectRequestCurrent(request)) return
@@ -907,6 +941,32 @@ export default function App() {
     },
     [currentRoute?.view, currentRoute?.file, openValueInspector],
   )
+  const tableOnEnterInspector = useCallback(() => {
+    setInspectorCollapsed(false)
+    setInspectorFocusRequest(request => request + 1)
+  }, [])
+  const inspectorOnExitKeyboardNavigation = useCallback(() => {
+    setTableFocusRequest(request => request + 1)
+  }, [])
+  const tableColumnWidths = useMemo(() => (
+    currentRoute?.view === 'table' && activeType
+      ? definedColumnWidths(projectSettings?.table_column_widths[currentRoute.file]?.[activeType])
+      : undefined
+  ), [activeType, currentRoute?.file, currentRoute?.view, projectSettings])
+  const tableOnColumnWidthsChange = useCallback((widths: Record<string, number>) => {
+    if (!api.isTauri || currentRoute?.view !== 'table' || !activeType) return
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    api.setTableColumnWidths(identity.sessionId, currentRoute.file, activeType, widths)
+      .then(settings => {
+        if (generation.isCurrent(identity.sessionId, identity.revision)) setProjectSettings(settings)
+      })
+      .catch(err => {
+        if (generation.isCurrent(identity.sessionId, identity.revision)) {
+          setErrorMsg(`保存列宽失败: ${errorMessage(err)}`)
+        }
+      })
+  }, [activeType, currentRoute?.file, currentRoute?.view, generation])
   const tableOnRenderCellText = useCallback(
     async (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => {
       const identity = generation.currentIdentity()
@@ -1307,6 +1367,10 @@ export default function App() {
                     onCreateRecordDraft={tableOnCreateRecordDraft}
                     onDeleteRecord={tableOnDeleteRecord}
                     onDiagnosticBadgeClick={tableOnBadgeClick}
+                    columnWidths={tableColumnWidths}
+                    onColumnWidthsChange={tableOnColumnWidthsChange}
+                    onEnterInspector={tableOnEnterInspector}
+                    focusRequest={tableFocusRequest}
                   />
                 )}
                 {currentRoute.view === 'record' && (
@@ -1397,12 +1461,16 @@ export default function App() {
           onWidthChange={setInspectorW}
           onClose={closeInspector}
           onWriteField={writeField}
+          onRenderCellText={(_filePath, coordinate, path) => tableOnRenderCellText(coordinate, path)}
+          onParseCellText={(_filePath, coordinate, path, text) => tableOnParseCellText(coordinate, path, text)}
           onCollectionEdit={editCollection}
           onRenameRecord={renameRecord}
           onDiagnosticBadgeClick={(coordinate, fieldPath) => {
             if (!inspectorCoord) return
             focusDiagnosticForAnchor(inspectorCoord.file, coordinate.key, coordinate.actual_type, fieldPath)
           }}
+          focusRequest={inspectorFocusRequest}
+          onExitKeyboardNavigation={inspectorOnExitKeyboardNavigation}
         />
         </div>
       </div>
@@ -1456,6 +1524,37 @@ export default function App() {
       )}
     </div>
     </ObjectDraftHost>
+  )
+}
+
+function readLastProjectPath(): string | null {
+  try {
+    return localStorage.getItem(LAST_PROJECT_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function rememberLastProject(yamlPath: string) {
+  try {
+    localStorage.setItem(LAST_PROJECT_STORAGE_KEY, yamlPath)
+  } catch {
+    // The project still opens when WebView storage is unavailable.
+  }
+}
+
+function projectYamlPath(directory: string): string {
+  const trimmed = directory.replace(/[\\/]+$/, '')
+  const separator = trimmed.includes('\\') ? '\\' : '/'
+  return `${trimmed}${separator}coflow.yaml`
+}
+
+function definedColumnWidths(
+  widths: { [column: string]: number | undefined } | undefined,
+): Record<string, number> | undefined {
+  if (!widths) return undefined
+  return Object.fromEntries(
+    Object.entries(widths).filter((entry): entry is [string, number] => entry[1] !== undefined),
   )
 }
 

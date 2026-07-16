@@ -29,6 +29,7 @@ ts-export = [
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+atomicwrites = "0.4.4"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"

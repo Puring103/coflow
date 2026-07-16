@@ -861,6 +861,12 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .th-resizer:hover, .th-resizer.is-resizing { background: var(--accent); }
 .data-table th { position: sticky; top: 0; }
 
+.data-table th.sticky-key-column {
+  left: 0;
+  z-index: 4;
+  box-shadow: 1px 0 0 var(--border-strong);
+}
+
 .data-table td {
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
@@ -877,6 +883,15 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .data-table td:last-child {
   border-right: none;
 }
+.data-table td.sticky-key-column {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-1);
+  box-shadow: 1px 0 0 var(--border-strong);
+}
+.table-row:hover td.sticky-key-column { background: var(--bg-3) !important; }
+.table-row.selected td.sticky-key-column { background: var(--bg-4) !important; }
 .data-table td > .dc-compact,
 .data-table td > .vc {
   display: inline-flex;
@@ -1526,7 +1541,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 
 .dc-row {
   display: grid;
-  grid-template-columns: minmax(130px, 30%) 1fr;
+  grid-template-columns: minmax(180px, 42%) minmax(0, 1fr);
   align-items: stretch;
   min-height: var(--h-row);
   border-bottom: 1px solid var(--border);
@@ -1543,9 +1558,8 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   color: var(--text-dim);
   font-size: var(--fs-sm);
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
   background: transparent;
   /* Vertical separator between label and value */
   border-right: 1px solid var(--border);
@@ -1645,23 +1659,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .dc-row-empty .dc-row-label {
   color: var(--text-mute);
   font-style: italic;
-}
-
-/* Declared-type chip next to a top-level field name. Small mono label
- * that reads as annotation rather than a value. */
-.dc-row-type {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--text-mute);
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--bg-3);
-  border: 1px solid var(--border);
-  line-height: 1.4;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 160px;
 }
 
 /* Trailing controls for nullable / polymorphic fields. Sit right of the
@@ -1778,8 +1775,9 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 /* Drag handle in the row's leading slot. Reserves an 8px gutter on the left
  * of the label so the handle has its own column and doesn't push the label. */
 .dc-row-label-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
   min-width: 0;
 }
 .dc-drag-handle {

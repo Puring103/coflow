@@ -37,9 +37,12 @@ use coflow_runtime::{
 use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
 use crate::editor::types::{
     CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
-    CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords,
-    GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget,
-    RenameRecordOutcome, WriteFieldOutcome,
+    CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError,
+    EditorProjectSettings, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot,
+    RecordColumn, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
+};
+use crate::editor::settings::{
+    read_project_settings, sanitized_column_widths, write_project_settings,
 };
 
 pub use diagnostics::Diagnostics;
@@ -161,6 +164,37 @@ impl SessionStore {
         );
         drop(inner);
         Ok(snapshot)
+    }
+
+    pub fn get_project_settings(&self, id: u32) -> Result<EditorProjectSettings, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned during settings read"))?;
+        read_project_settings(&session.project_root)
+    }
+
+    pub fn set_table_column_widths(
+        &self,
+        id: u32,
+        file_path: String,
+        actual_type: String,
+        widths: BTreeMap<String, f64>,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned during settings write"))?;
+        let mut settings = read_project_settings(&session.project_root)?;
+        settings
+            .table_column_widths
+            .entry(file_path)
+            .or_default()
+            .insert(actual_type, sanitized_column_widths(widths));
+        write_project_settings(&session.project_root, &settings)?;
+        Ok(settings)
     }
 
     pub fn reload_session(&self, id: u32) -> Result<ProjectSnapshot, EditorError> {

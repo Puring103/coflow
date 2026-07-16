@@ -130,6 +130,7 @@ fn is_ignored_path(path: &Path) -> bool {
         matches!(
             name.as_ref(),
             ".git"
+                | ".coflow"
                 | ".idea"
                 | ".vscode"
                 | "node_modules"
@@ -198,4 +199,24 @@ fn emit_watch_error(app: &AppHandle, session_id: u32, message: String) {
             message,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::filter_relevant_paths;
+
+    #[test]
+    fn project_state_directory_does_not_trigger_reload() {
+        let paths = vec![
+            PathBuf::from("project/.coflow/editor.json"),
+            PathBuf::from("project/data/items.cfd"),
+        ];
+
+        assert_eq!(
+            filter_relevant_paths(&paths),
+            vec![PathBuf::from("project/data/items.cfd")]
+        );
+    }
 }
