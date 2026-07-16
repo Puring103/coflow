@@ -256,8 +256,13 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
     for ty in &report.types {
         writeln!(stdout, "type {}", ty.name).map_err(|err| output_error(&err))?;
         for field in &ty.fields {
-            writeln!(stdout, "  {}: {}", field.name, display_value_type(&field.ty))
-                .map_err(|err| output_error(&err))?;
+            writeln!(
+                stdout,
+                "  {}: {}",
+                field.name,
+                display_value_type(&field.ty)
+            )
+            .map_err(|err| output_error(&err))?;
         }
     }
     for schema_enum in &report.enums {

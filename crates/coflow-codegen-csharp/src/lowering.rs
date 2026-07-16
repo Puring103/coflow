@@ -1,6 +1,6 @@
 use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnum, CftField, CftSchema, CftValueType, CftType, FieldName, TypeName};
+use coflow_cft::{CftEnum, CftField, CftSchema, CftType, CftValueType, FieldName, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug)]
@@ -42,15 +42,7 @@ impl<'a> CsharpLoweringPlan<'a> {
         non_empty_tables: Option<&BTreeSet<String>>,
     ) -> Result<Self, CsharpCodegenError> {
         let enums = schema.all_enums().collect::<Vec<_>>();
-        let csharp_enums = enums
-            .iter()
-            .map(|schema_enum| {
-                (
-                    schema_enum.name.to_string(),
-                    csharp_type_name(&schema_enum.name),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
+        let csharp_enums = lower_enum_names(&enums);
 
         let types = schema.all_types().collect::<Vec<_>>();
         let mut csharp_types = BTreeMap::new();
@@ -100,53 +92,9 @@ impl<'a> CsharpLoweringPlan<'a> {
             }
         }
 
-        let mut dimension_tables = BTreeMap::new();
-        for dimension in schema.all_dimensions() {
-            for source_field in &dimension.fields {
-                let source_name = format!(
-                    "{}_{}Variants",
-                    source_field.declaring_type, source_field.name
-                );
-                let declaring_type = TypeName::new(source_name.clone()).map_err(|err| {
-                    CsharpCodegenError::new(format!(
-                        "invalid generated dimension table name `{source_name}`: {err}"
-                    ))
-                })?;
-                let field_type = CftValueType::Nullable(Box::new(
-                    source_field.value_type.non_nullable().clone(),
-                ));
-                let mut fields = Vec::with_capacity(dimension.variants.len() + 1);
-                for name in
-                    std::iter::once("default").chain(dimension.variants.iter().map(AsRef::as_ref))
-                {
-                    fields.push(CftField {
-                        declaring_type: declaring_type.clone(),
-                        name: FieldName::new(name).map_err(|err| {
-                            CsharpCodegenError::new(format!(
-                                "invalid generated dimension field name `{name}`: {err}"
-                            ))
-                        })?,
-                        value_type: field_type.clone(),
-                        default: None,
-                        is_expand: false,
-                        dimension: None,
-                        span: source_field.span,
-                    });
-                }
-                csharp_types.insert(source_name.clone(), csharp_type_name(&source_name));
-                declared_tables.push(source_name.clone());
-                dimension_tables.insert(
-                    source_name.clone(),
-                    CsharpDimensionTable {
-                        source_name,
-                        source_type: source_field.declaring_type.to_string(),
-                        fields,
-                    },
-                );
-            }
-        }
+        let dimension_tables =
+            lower_dimension_tables(schema, &mut csharp_types, &mut declared_tables)?;
         declared_tables.sort();
-        let dimension_tables = dimension_tables.into_values().collect::<Vec<_>>();
         let dimension_source_types = dimension_tables
             .iter()
             .map(|table| (table.source_name.as_str(), table.source_type.as_str()))
@@ -324,6 +272,70 @@ impl<'a> CsharpLoweringPlan<'a> {
     pub fn ref_target_names(&self) -> &[String] {
         &self.ref_targets
     }
+}
+
+fn lower_enum_names(enums: &[&CftEnum]) -> BTreeMap<String, String> {
+    enums
+        .iter()
+        .map(|schema_enum| {
+            (
+                schema_enum.name.to_string(),
+                csharp_type_name(&schema_enum.name),
+            )
+        })
+        .collect()
+}
+
+fn lower_dimension_tables(
+    schema: &CftSchema,
+    csharp_types: &mut BTreeMap<String, String>,
+    declared_tables: &mut Vec<String>,
+) -> Result<Vec<CsharpDimensionTable>, CsharpCodegenError> {
+    let mut tables = BTreeMap::new();
+    for dimension in schema.all_dimensions() {
+        for source_field in &dimension.fields {
+            let source_name = format!(
+                "{}_{}Variants",
+                source_field.declaring_type, source_field.name
+            );
+            let declaring_type = TypeName::new(source_name.clone()).map_err(|err| {
+                CsharpCodegenError::new(format!(
+                    "invalid generated dimension table name `{source_name}`: {err}"
+                ))
+            })?;
+            let field_type =
+                CftValueType::Nullable(Box::new(source_field.value_type.non_nullable().clone()));
+            let mut fields = Vec::with_capacity(dimension.variants.len() + 1);
+            for name in
+                std::iter::once("default").chain(dimension.variants.iter().map(AsRef::as_ref))
+            {
+                fields.push(CftField {
+                    declaring_type: declaring_type.clone(),
+                    name: FieldName::new(name).map_err(|err| {
+                        CsharpCodegenError::new(format!(
+                            "invalid generated dimension field name `{name}`: {err}"
+                        ))
+                    })?,
+                    value_type: field_type.clone(),
+                    default: None,
+                    is_expand: false,
+                    dimension: None,
+                    span: source_field.span,
+                });
+            }
+            csharp_types.insert(source_name.clone(), csharp_type_name(&source_name));
+            declared_tables.push(source_name.clone());
+            tables.insert(
+                source_name.clone(),
+                CsharpDimensionTable {
+                    source_name,
+                    source_type: source_field.declaring_type.to_string(),
+                    fields,
+                },
+            );
+        }
+    }
+    Ok(tables.into_values().collect())
 }
 
 fn collect_ref_targets(ty: &CftValueType, out: &mut BTreeSet<String>) {

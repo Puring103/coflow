@@ -78,7 +78,9 @@ fn render_check_snapshot(
 }
 
 fn coordinate_for_id(model: &CfdDataModel, id: CfdRecordId) -> Option<RecordCoordinate> {
-    model.record(id).map(|record| record.coordinate())
+    model
+        .record(id)
+        .map(coflow_data_model::CfdRecord::coordinate)
 }
 
 fn dimension_check_rounds(schema: &CftSchema) -> Vec<DimensionCheckRound> {

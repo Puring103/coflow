@@ -366,6 +366,11 @@ impl<'a> ProjectQueries<'a> {
 
     /// Return the provider-resolved table/sheet name for a record type in a
     /// source file. Non-table providers and unmapped types return `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns provider diagnostics when the table source options cannot be
+    /// decoded or resolved.
     pub fn table_sheet_for_type(
         self,
         registry: &ProviderRegistry,

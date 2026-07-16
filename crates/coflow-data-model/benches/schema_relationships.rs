@@ -2,6 +2,7 @@
 
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
 use coflow_data_model::{CfdDataModel, LoadedRecordDraft, LoadedValueDraft};
+use std::fmt::Write as _;
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
@@ -62,7 +63,7 @@ fn deep_schema() -> coflow_cft::CftSchema {
         } else {
             format!("Type{}", depth - 1)
         };
-        source.push_str(&format!("type Type{depth} : {parent} {{}}\n"));
+        writeln!(source, "type Type{depth} : {parent} {{}}").expect("write benchmark schema");
     }
     let modules = parse_modules([CftFile::from_source(ModuleId::from("bench"), source)]);
     build_schema(&modules, &CftDimensionInputs::default()).expect("benchmark schema must compile")

@@ -271,7 +271,7 @@ pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
     }
     match value {
         EvalValue::Model(_) | EvalValue::DictKey(_) | EvalValue::Temporary(_) => {
-            unreachable!("scalar values returned above")
+            "<scalar>".to_string()
         }
         EvalValue::EnumNamespace(name) => name.to_string(),
         EvalValue::Record(_) => "<record>".to_string(),

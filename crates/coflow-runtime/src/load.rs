@@ -172,10 +172,7 @@ pub(crate) fn load_project_data(
     }
 
     if !diagnostics.is_empty() {
-        return Err(LoadDiagnostics {
-            diagnostics,
-            logical_locations: BTreeMap::new(),
-        });
+        return Err(load_failure(diagnostics));
     }
 
     let origins: Vec<RecordOrigin> = origins_of(&records);
@@ -290,10 +287,7 @@ pub(crate) fn reload_project_data_from_cache(
         ));
     }
     if !diagnostics.is_empty() {
-        return Err(LoadDiagnostics {
-            diagnostics,
-            logical_locations: BTreeMap::new(),
-        });
+        return Err(load_failure(diagnostics));
     }
 
     for index in reload_indexes {
@@ -342,6 +336,13 @@ pub(crate) fn reload_project_data_from_cache(
         previous_checks,
         changed_records,
     )
+}
+
+const fn load_failure(diagnostics: DiagnosticSet) -> LoadDiagnostics {
+    LoadDiagnostics {
+        diagnostics,
+        logical_locations: BTreeMap::new(),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

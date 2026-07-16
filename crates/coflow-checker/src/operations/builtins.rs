@@ -206,9 +206,7 @@ use super::value::{
     EvalValue, LocatedBudgetExceeded, LocatedEvalValue, ScalarValue,
 };
 
-pub(crate) fn len_value<'model>(
-    value: LocatedEvalValue<'model>,
-) -> OpsResult<LocatedEvalValue<'model>> {
+pub(crate) fn len_value(value: LocatedEvalValue<'_>) -> OpsResult<LocatedEvalValue<'_>> {
     match value.value {
         EvalValue::Array { items, .. } => Ok(LocatedEvalValue::new(
             EvalValue::int(items.len() as i64),
@@ -346,9 +344,7 @@ pub(crate) fn unique_value<'model>(
     })
 }
 
-pub(crate) fn keys_value<'model>(
-    value: LocatedEvalValue<'model>,
-) -> OpsResult<LocatedEvalValue<'model>> {
+pub(crate) fn keys_value(value: LocatedEvalValue<'_>) -> OpsResult<LocatedEvalValue<'_>> {
     let EvalValue::Dict {
         entries, key_type, ..
     } = value.value
@@ -364,9 +360,7 @@ pub(crate) fn keys_value<'model>(
     ))
 }
 
-pub(crate) fn values_value<'model>(
-    value: LocatedEvalValue<'model>,
-) -> OpsResult<LocatedEvalValue<'model>> {
+pub(crate) fn values_value(value: LocatedEvalValue<'_>) -> OpsResult<LocatedEvalValue<'_>> {
     let EvalValue::Dict {
         entries,
         value_type,

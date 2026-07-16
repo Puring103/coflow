@@ -147,7 +147,7 @@ impl<'a> ModelCompiler<'a> {
         }
 
         // Phase 2: build primary / secondary / polymorphic indexes.
-        let indexes = indexes::build_indexes(&self.schema, &drafts, &mut self.diagnostics);
+        let indexes = indexes::build_indexes(self.schema, &drafts, &mut self.diagnostics);
 
         // Phase 2b: singleton validation. We run this even when phase 2 has
         // already collected diagnostics so that singleton-specific codes
@@ -158,12 +158,7 @@ impl<'a> ModelCompiler<'a> {
         // the generic `InvalidRecordKey` path because `record_key_ident_error`
         // and `is_cft_identifier` currently use the same rule set; the spec
         // leaves `LocalizedRecordKeyInvalid` reserved for future divergence.
-        indexes::validate_singletons(
-            &self.schema,
-            &drafts,
-            &indexes.tables,
-            &mut self.diagnostics,
-        );
+        indexes::validate_singletons(self.schema, &drafts, &indexes.tables, &mut self.diagnostics);
         if !self.diagnostics.is_empty() {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
@@ -204,7 +199,7 @@ impl<'a> ModelCompiler<'a> {
         }
 
         validate_resolved_records(
-            &self.schema,
+            self.schema,
             &records,
             &indexes.record_by_domain_key,
             &mut self.diagnostics,
@@ -389,11 +384,11 @@ impl<'a> ModelCompiler<'a> {
         }
 
         let spread_indexes =
-            build_spread_indexes(&drafts, &indexes.record_by_domain_key, &self.schema);
+            build_spread_indexes(&drafts, &indexes.record_by_domain_key, self.schema);
         let ref_indexes = build_ref_indexes(
             &records,
             &indexes.record_by_domain_key,
-            &self.schema,
+            self.schema,
             &spread_indexes.edges,
         );
 
@@ -433,7 +428,7 @@ impl CfdValueSemanticContext for BuildValueSemanticContext<'_> {
 }
 
 fn validate_resolved_records(
-    schema: &BuildSchema<'_>,
+    schema: BuildSchema<'_>,
     records: &[CfdRecord],
     record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     diagnostics: &mut Vec<CfdDiagnostic>,

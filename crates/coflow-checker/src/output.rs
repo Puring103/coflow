@@ -30,6 +30,11 @@ impl CheckOutput {
         self.diagnostics.is_empty()
     }
 
+    /// Converts failed checks into the legacy aggregate diagnostic result.
+    ///
+    /// # Errors
+    ///
+    /// Returns all check diagnostics when any requested root failed.
     pub fn into_result(self) -> Result<(), CfdDiagnostics> {
         if self.diagnostics.is_empty() {
             Ok(())

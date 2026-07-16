@@ -196,10 +196,9 @@ pub(crate) fn execute(
         dependencies.merge(round_dependencies);
     }
 
-    let snapshot = replacement.map(|replacement| {
-        previous.map_or(replacement.clone(), |previous| {
-            CheckSnapshot::merge_replacement(previous, replacement, &replaced)
-        })
+    let snapshot = replacement.map(|replacement| match previous {
+        Some(previous) => CheckSnapshot::merge_replacement(previous, replacement, &replaced),
+        None => replacement,
     });
 
     CheckOutput {

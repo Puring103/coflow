@@ -135,16 +135,21 @@ impl CheckSnapshot {
                 round: CheckRound::Dimension(round),
             }));
         }
-        affected.extend(self.roots.iter().filter_map(|(root, state)| {
-            state
-                .reads_from
+        affected.extend(
+            self.roots
                 .iter()
-                .any(|record| changed.contains(record))
-                .then(|| root.clone())
-        }));
+                .filter(|(_, state)| {
+                    state
+                        .reads_from
+                        .iter()
+                        .any(|record| changed.contains(record))
+                })
+                .map(|(root, _)| root.clone()),
+        );
         Some(affected)
     }
 
+    #[must_use]
     pub fn render_diagnostics(&self, model: &CfdDataModel) -> Option<Vec<CfdDiagnostic>> {
         if !self.reusable {
             return None;
@@ -248,5 +253,7 @@ fn render_label(model: &CfdDataModel, label: LogicalCheckLabel) -> Option<CfdLab
 }
 
 fn coordinate_for_id(model: &CfdDataModel, id: CfdRecordId) -> Option<RecordCoordinate> {
-    model.record(id).map(|record| record.coordinate())
+    model
+        .record(id)
+        .map(coflow_data_model::CfdRecord::coordinate)
 }

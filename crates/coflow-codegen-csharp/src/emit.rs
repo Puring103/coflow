@@ -11,7 +11,7 @@ use crate::model::{
 };
 use crate::names::camel_case;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnum, CftField, CftValueType, CftType};
+use coflow_cft::{CftEnum, CftField, CftType, CftValueType};
 use std::collections::{BTreeSet, HashSet};
 
 pub use database::build_csharp_database;

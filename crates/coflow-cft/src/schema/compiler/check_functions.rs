@@ -215,16 +215,15 @@ impl CheckTypeAnalyzer<'_, '_> {
         let receiver_ty = unwrap_nullable(receiver_ty);
         if let Some(elem) = receiver_ty.array_element() {
             let elem = unwrap_nullable(&elem);
-            match elem.value_type() {
-                Some(CftValueType::Int | CftValueType::Float) => elem,
-                _ => {
-                    self.diag(
-                        CftErrorCode::FunctionArgTypeMismatch,
-                        receiver.span,
-                        "sum expects an int or float array",
-                    );
-                    InferredType::Unknown
-                }
+            if let Some(CftValueType::Int | CftValueType::Float) = elem.value_type() {
+                elem
+            } else {
+                self.diag(
+                    CftErrorCode::FunctionArgTypeMismatch,
+                    receiver.span,
+                    "sum expects an int or float array",
+                );
+                InferredType::Unknown
             }
         } else if receiver_ty.is_unknown() {
             InferredType::Unknown

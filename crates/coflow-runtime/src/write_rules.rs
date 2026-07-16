@@ -174,27 +174,6 @@ pub(crate) fn validate_value_for_write(
     )
 }
 
-pub(crate) fn validate_value_for_write_with_pending(
-    session: &ProjectSession,
-    schema: &CftSchema,
-    expected: &CftValueType,
-    value: &CfdValue,
-    pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
-    value_code: &'static str,
-    reference_code: &'static str,
-    stage: &'static str,
-) -> Result<(), DiagnosticSet> {
-    validate_value_semantics(
-        session,
-        schema,
-        ValueValidationRequest::new(expected, value, ValueValidationMode::Mutation),
-        Some(pending_records),
-        value_code,
-        reference_code,
-        stage,
-    )
-}
-
 pub(crate) fn validate_value_semantics(
     session: &ProjectSession,
     schema: &CftSchema,

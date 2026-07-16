@@ -40,7 +40,6 @@ impl InferredType {
     pub(super) fn record_ref(target: Self) -> Self {
         match target {
             Self::Value(CftValueType::Object(name)) => Self::Value(CftValueType::RecordRef(name)),
-            Self::Unknown => Self::Unknown,
             _ => Self::Unknown,
         }
     }
@@ -48,7 +47,6 @@ impl InferredType {
     pub(super) fn array(element: Self) -> Self {
         match element {
             Self::Value(element) => Self::Value(CftValueType::Array(Box::new(element))),
-            Self::Unknown => Self::Unknown,
             _ => Self::Unknown,
         }
     }
@@ -65,7 +63,6 @@ impl InferredType {
     pub(super) fn nullable(inner: Self) -> Self {
         match inner {
             Self::Value(inner) => Self::Value(CftValueType::Nullable(Box::new(inner))),
-            Self::Unknown => Self::Unknown,
             _ => Self::Unknown,
         }
     }
@@ -160,15 +157,15 @@ pub(super) fn types_assignable(expected: &InferredType, actual: &InferredType) -
         return true;
     }
     match (expected, actual) {
-        (InferredType::Value(CftValueType::Nullable(_)), InferredType::Null) => true,
-        (InferredType::Value(CftValueType::Nullable(inner)), other) => {
-            types_assignable(&InferredType::Value((**inner).clone()), other)
-        }
-        (InferredType::Value(CftValueType::Array(_)), InferredType::EmptyArray)
+        (InferredType::Value(CftValueType::Nullable(_)), InferredType::Null)
+        | (InferredType::Value(CftValueType::Array(_)), InferredType::EmptyArray)
         | (
             InferredType::Value(CftValueType::Dict(_, _) | CftValueType::Object(_)),
             InferredType::EmptyObject,
         ) => true,
+        (InferredType::Value(CftValueType::Nullable(inner)), other) => {
+            types_assignable(&InferredType::Value((**inner).clone()), other)
+        }
         (InferredType::Value(expected), InferredType::Value(actual)) => expected == actual,
         _ => expected == actual,
     }

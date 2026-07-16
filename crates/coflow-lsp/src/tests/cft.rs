@@ -248,7 +248,8 @@ type Item {\n\
         source,
         source.find("target: Target").expect("target") + "target: ".len(),
     );
-    let value_type_labels = completion_labels(completion_items(&build, document, &value_type_position));
+    let value_type_labels =
+        completion_labels(completion_items(&build, document, &value_type_position));
     assert!(value_type_labels.contains(&"Target".to_string()));
     assert!(value_type_labels.contains(&"Kind".to_string()));
     assert!(value_type_labels.contains(&"string".to_string()));

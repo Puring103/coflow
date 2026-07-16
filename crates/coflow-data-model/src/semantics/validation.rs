@@ -104,7 +104,7 @@ pub trait CfdValueSemanticContext {
 
 /// Validates one complete or fragment CFD value against the canonical schema.
 ///
-/// This is the semantic validation entry point shared by DataModel build and
+/// This is the semantic validation entry point shared by `DataModel` build and
 /// runtime mutation preflight. Source decoding, spread application, default
 /// materialization, and mutation expected-state checks stay outside it.
 ///

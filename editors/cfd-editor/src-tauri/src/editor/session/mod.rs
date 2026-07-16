@@ -193,30 +193,32 @@ impl SessionStore {
         widths: BTreeMap<String, f64>,
     ) -> Result<EditorProjectSettings, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
+        let project_root = entry
             .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned during settings write"))?;
-        let mut settings = read_project_settings(&session.project_root)?;
+            .read()
+            .map_err(|_| EditorError::session("session poisoned during settings write"))?
+            .project_root
+            .clone();
+        let mut settings = read_project_settings(&project_root)?;
         settings
             .table_column_widths
             .entry(file_path)
             .or_default()
             .insert(actual_type, sanitized_column_widths(widths));
-        write_project_settings(&session.project_root, &settings)?;
+        write_project_settings(&project_root, &settings)?;
         Ok(settings)
     }
 
     pub fn check_project(&self, id: u32) -> Result<String, EditorError> {
         let (yaml_path, registry) = self.project_action_context(id)?;
         let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
-            .map_err(project_diagnostics_to_editor_error)?;
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
         match coflow::commands::check_project(&project, registry.as_ref())
-            .map_err(project_diagnostics_to_editor_error)?
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow::commands::CommandOutcome::Success(_) => Ok("Check passed".to_string()),
             coflow::commands::CommandOutcome::Diagnostics(diagnostics) => {
-                Err(project_diagnostics_to_editor_error(diagnostics))
+                Err(project_diagnostics_to_editor_error(&diagnostics))
             }
         }
     }
@@ -224,13 +226,13 @@ impl SessionStore {
     pub fn build_project(&self, id: u32) -> Result<String, EditorError> {
         let (yaml_path, registry) = self.project_action_context(id)?;
         let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
-            .map_err(project_diagnostics_to_editor_error)?;
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
         match coflow::commands::build_project(
             &project,
             registry.as_ref(),
             coflow::commands::BuildOptions::default(),
         )
-        .map_err(project_diagnostics_to_editor_error)?
+        .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow::commands::CommandOutcome::Success(report) => {
                 let mut outputs = vec![report.data.dir.display().to_string()];
@@ -240,7 +242,7 @@ impl SessionStore {
                 Ok(format!("Build completed: {}", outputs.join(", ")))
             }
             coflow::commands::CommandOutcome::Diagnostics(diagnostics) => {
-                Err(project_diagnostics_to_editor_error(diagnostics))
+                Err(project_diagnostics_to_editor_error(&diagnostics))
             }
         }
     }
@@ -256,11 +258,12 @@ impl SessionStore {
                 "`{file_path}` is not a source file in the current project"
             )));
         }
-        let root = session.project_root.canonicalize().map_err(|error| {
+        let project_root = session.project_root.clone();
+        drop(session);
+        let root = project_root.canonicalize().map_err(|error| {
             EditorError::project(format!("failed to resolve project root: {error}"))
         })?;
-        let path = session
-            .project_root
+        let path = project_root
             .join(file_path)
             .canonicalize()
             .map_err(|error| {
@@ -1047,7 +1050,7 @@ fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> Ed
     EditorError::write(message).with_diagnostics(flat)
 }
 
-fn project_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> EditorError {
+fn project_diagnostics_to_editor_error(diagnostics: &coflow_api::DiagnosticSet) -> EditorError {
     let message = diagnostics
         .iter()
         .map(|diagnostic| diagnostic.message.as_str())
@@ -1150,7 +1153,7 @@ mod revision_tests {
         store
             .write_field(
                 session_id,
-                &RecordCoordinate::try_new("Item", "sword").unwrap(),
+                &RecordCoordinate::try_new("Item", "sword").expect("valid record coordinate"),
                 &[CfdPathSegment::Field("name".to_string())],
                 &CfdValue::String("Internal write".to_string()),
             )
@@ -1238,7 +1241,7 @@ mod revision_tests {
         store
             .write_field(
                 snapshot.session_id,
-                &RecordCoordinate::try_new("Item", "sword").unwrap(),
+                &RecordCoordinate::try_new("Item", "sword").expect("valid record coordinate"),
                 &[CfdPathSegment::Field("name".to_string())],
                 &CfdValue::String("Internal".to_string()),
             )
@@ -1267,7 +1270,7 @@ mod revision_tests {
             store
                 .write_field(
                     snapshot.session_id,
-                    &RecordCoordinate::try_new("Item", "sword").unwrap(),
+                    &RecordCoordinate::try_new("Item", "sword").expect("valid record coordinate"),
                     &[CfdPathSegment::Field("name".to_string())],
                     &CfdValue::String("Internal".to_string()),
                 )
@@ -1299,7 +1302,7 @@ mod revision_tests {
             store
                 .write_field(
                     snapshot.session_id,
-                    &RecordCoordinate::try_new("Item", "sword").unwrap(),
+                    &RecordCoordinate::try_new("Item", "sword").expect("valid record coordinate"),
                     &[CfdPathSegment::Field("name".to_string())],
                     &CfdValue::String("Internal".to_string()),
                 )

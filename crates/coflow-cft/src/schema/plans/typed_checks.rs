@@ -1,6 +1,6 @@
 use super::dimension_checks;
 use crate::schema::{CftSchema, LocatedBudgetError};
-use crate::{CftSchemaCheckBlock, CftValueType, CftType, DimensionName, FieldName, TypeName};
+use crate::{CftSchemaCheckBlock, CftType, CftValueType, DimensionName, FieldName, TypeName};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -162,9 +162,7 @@ fn compile_nested_fields(
 fn nested_type_target(ty: &CftValueType) -> Option<&TypeName> {
     match ty {
         CftValueType::Object(name) => Some(name),
-        CftValueType::Array(inner) | CftValueType::Nullable(inner) => {
-            nested_type_target(inner)
-        }
+        CftValueType::Array(inner) | CftValueType::Nullable(inner) => nested_type_target(inner),
         CftValueType::Dict(_, value) => nested_type_target(value),
         CftValueType::Int
         | CftValueType::Float

@@ -1,6 +1,6 @@
 use crate::schema::LocatedBudgetError;
 use crate::{
-    CftField, CftSchemaDefaultValue, CftValueType, CftType, FieldName, ModuleId, Span, TypeName,
+    CftField, CftSchemaDefaultValue, CftType, CftValueType, FieldName, ModuleId, Span, TypeName,
 };
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;

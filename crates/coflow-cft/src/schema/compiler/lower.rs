@@ -4,7 +4,7 @@ use crate::schema::{
     CftConst, CftConstValue, CftEnum, CftEnumVariant, CftField, CftFieldDimension, CftSchemaBinOp,
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
     CftSchemaCmpOp, CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate,
-    CftValueType, CftSchemaUnaryOp, CftType,
+    CftSchemaUnaryOp, CftType, CftValueType,
 };
 use crate::syntax::ast::{
     AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, ConstLiteral, DefaultExpr,
@@ -386,9 +386,7 @@ pub(super) fn build_schema_value_type(
         TypeRefKind::Named(name) if is_enum(name) => {
             CftValueType::Enum(EnumName::from_validated(name.clone()))
         }
-        TypeRefKind::Named(name) => {
-            CftValueType::Object(TypeName::from_validated(name.clone()))
-        }
+        TypeRefKind::Named(name) => CftValueType::Object(TypeName::from_validated(name.clone())),
         TypeRefKind::Ref(inner) => match &inner.kind {
             TypeRefKind::Named(name) => {
                 CftValueType::RecordRef(TypeName::from_validated(name.clone()))

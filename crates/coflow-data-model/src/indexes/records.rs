@@ -11,7 +11,7 @@ pub(crate) struct ModelIndexes {
 }
 
 pub(crate) fn build_indexes(
-    schema: &BuildSchema<'_>,
+    schema: BuildSchema<'_>,
     drafts: &[RecordDraft],
     diagnostics: &mut Vec<CfdDiagnostic>,
 ) -> ModelIndexes {
@@ -108,7 +108,7 @@ pub(crate) fn build_indexes(
 }
 
 pub(crate) fn validate_singletons(
-    schema: &BuildSchema<'_>,
+    schema: BuildSchema<'_>,
     drafts: &[RecordDraft],
     tables: &BTreeMap<TypeName, CfdTable>,
     diagnostics: &mut Vec<CfdDiagnostic>,

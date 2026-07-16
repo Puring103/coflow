@@ -406,7 +406,7 @@ fn same_key_rename_does_not_open_a_provider_transaction() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
     let mut session = fixture.open();
     let initial_revision = session.revision();
-    let coordinate = RecordCoordinate::try_new("Item", "one").unwrap();
+    let coordinate = RecordCoordinate::try_new("Item", "one").expect("valid record coordinate");
 
     let report = session.apply_mutation(mutation_request(vec![MutationOp::RenameRecord {
         record: coordinate.clone(),
@@ -844,7 +844,7 @@ const fn mutation_request(ops: Vec<MutationOp>) -> MutationRequest {
 
 fn set_value(key: &str, value: i64) -> MutationOp {
     MutationOp::SetField {
-        record: RecordCoordinate::try_new("Item", key).unwrap(),
+        record: RecordCoordinate::try_new("Item", key).expect("valid record coordinate"),
         file: None,
         path: vec![CfdPathSegment::Field("value".to_string())],
         value: MutationValue::Cfd(CfdValue::Int(value)),

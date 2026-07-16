@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use coflow_api::DiagnosticSet;
 use coflow_cft::{CftValueType, FieldName, RecordKey};
-use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
+use coflow_data_model::{
+    CfdDictKey, CfdEnumValue, CfdObject, CfdValue, ValueValidationMode, ValueValidationRequest,
+};
 use serde_json::{Map, Value};
 
 use crate::write_rules;
@@ -145,12 +147,11 @@ fn validate_value_for_write(
     pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
 ) -> Result<(), DiagnosticSet> {
     let schema = session.schema();
-    write_rules::validate_value_for_write_with_pending(
+    write_rules::validate_value_semantics(
         session,
         schema,
-        expected,
-        value,
-        pending_records,
+        ValueValidationRequest::new(expected, value, ValueValidationMode::Mutation),
+        Some(pending_records),
         "MUTATION-VALUE",
         "MUTATION-SHAPE",
         "MUTATION",

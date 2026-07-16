@@ -108,10 +108,10 @@ impl DimensionRoundView {
         self.projected_records.borrow_mut().insert(record_id);
         let record = model.record(record_id)?;
         let field = schema.field(record.actual_type(), field_name)?;
-        if !field
+        if field
             .dimension
             .as_ref()
-            .is_some_and(|dimension| dimension.dimension == self.dimension)
+            .is_none_or(|dimension| dimension.dimension != self.dimension)
         {
             return None;
         }

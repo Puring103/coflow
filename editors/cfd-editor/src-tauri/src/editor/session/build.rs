@@ -14,6 +14,9 @@ pub(super) struct SessionSnapshotParts {
     pub(super) file_tree: Vec<FileTreeNode>,
 }
 
+type FileTypeNames = BTreeMap<String, Vec<String>>;
+type TypeDisplayNames = BTreeMap<(String, String), String>;
+
 pub(super) fn default_provider_registry() -> Result<ProviderRegistry, EditorError> {
     coflow_builtins::default_provider_registry()
         .map_err(|err| EditorError::project(format!("failed to register default providers: {err}")))
@@ -70,10 +73,7 @@ fn type_navigation(
     queries: ProjectQueries<'_>,
     registry: &ProviderRegistry,
     file_tree: &[FileTreeNode],
-) -> (
-    BTreeMap<String, Vec<String>>,
-    BTreeMap<(String, String), String>,
-) {
+) -> (FileTypeNames, TypeDisplayNames) {
     let mut files = Vec::new();
     collect_source_files(file_tree, &mut files);
     let mut display_names = BTreeMap::new();
@@ -89,7 +89,7 @@ fn type_navigation(
             }
         }
         for type_name in &schema_type_names {
-            let Ok(Some(sheet)) = queries.table_sheet_for_type(registry, &file_path, &type_name)
+            let Ok(Some(sheet)) = queries.table_sheet_for_type(registry, &file_path, type_name)
             else {
                 continue;
             };

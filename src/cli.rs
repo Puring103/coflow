@@ -12,6 +12,8 @@ pub(crate) struct Cli {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::Cli;
     use clap::{error::ErrorKind, Parser};
 
@@ -20,7 +22,10 @@ mod tests {
         for flag in ["--version", "-V"] {
             let error = Cli::try_parse_from(["coflow", flag]).expect_err("version exits early");
             assert_eq!(error.kind(), ErrorKind::DisplayVersion);
-            assert_eq!(error.to_string(), format!("coflow {}\n", env!("CARGO_PKG_VERSION")));
+            assert_eq!(
+                error.to_string(),
+                format!("coflow {}\n", env!("CARGO_PKG_VERSION"))
+            );
         }
     }
 }

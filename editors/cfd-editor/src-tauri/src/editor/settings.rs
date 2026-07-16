@@ -21,9 +21,8 @@ pub(super) fn read_project_settings(
     let bytes = fs::read(&path).map_err(|error| {
         EditorError::other(format!("failed to read {}: {error}", path.display()))
     })?;
-    serde_json::from_slice(&bytes).map_err(|error| {
-        EditorError::other(format!("failed to parse {}: {error}", path.display()))
-    })
+    serde_json::from_slice(&bytes)
+        .map_err(|error| EditorError::other(format!("failed to parse {}: {error}", path.display())))
 }
 
 pub(super) fn write_project_settings(
@@ -37,18 +36,15 @@ pub(super) fn write_project_settings(
     fs::create_dir_all(parent).map_err(|error| {
         EditorError::other(format!("failed to create {}: {error}", parent.display()))
     })?;
-    let bytes = serde_json::to_vec_pretty(settings)
-        .map_err(|error| EditorError::other(format!("failed to encode editor settings: {error}")))?;
+    let bytes = serde_json::to_vec_pretty(settings).map_err(|error| {
+        EditorError::other(format!("failed to encode editor settings: {error}"))
+    })?;
     AtomicFile::new(&path, AllowOverwrite)
         .write(|file| file.write_all(&bytes))
-        .map_err(|error| {
-            EditorError::other(format!("failed to write {}: {error}", path.display()))
-        })
+        .map_err(|error| EditorError::other(format!("failed to write {}: {error}", path.display())))
 }
 
-pub(super) fn sanitized_column_widths(
-    widths: BTreeMap<String, f64>,
-) -> BTreeMap<String, f64> {
+pub(super) fn sanitized_column_widths(widths: BTreeMap<String, f64>) -> BTreeMap<String, f64> {
     widths
         .into_iter()
         .filter_map(|(column, width)| {

@@ -126,6 +126,7 @@ fn complete_validation_allows_omitted_schema_defaults() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
     struct Case {
         name: &'static str,

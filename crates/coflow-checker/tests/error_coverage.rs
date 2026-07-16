@@ -773,7 +773,7 @@ fn build_present_attr_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
 }
 
 fn run_checks(schema: &CftSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
-    run_model_checks(&model, schema)
+    run_model_checks(model, schema)
 }
 
 fn assert_builds(

@@ -287,7 +287,9 @@ fn data_get_supports_selector_and_key_filters() {
     let selected = data_get(
         session.queries(),
         &DataGetQuery {
-            selector: Some(RecordCoordinate::try_new("Item", "sword").unwrap()),
+            selector: Some(
+                RecordCoordinate::try_new("Item", "sword").expect("valid record coordinate"),
+            ),
             actual_type: None,
             file: None,
             keys: Vec::new(),
@@ -336,7 +338,9 @@ fn data_get_applies_file_filter_to_selected_record() {
     let report = data_get(
         session.queries(),
         &DataGetQuery {
-            selector: Some(RecordCoordinate::try_new("Item", "sword").unwrap()),
+            selector: Some(
+                RecordCoordinate::try_new("Item", "sword").expect("valid record coordinate"),
+            ),
             actual_type: None,
             file: Some("data/other.cfd".to_string()),
             keys: Vec::new(),
@@ -364,7 +368,9 @@ fn data_get_returns_diagnostic_for_missing_selector() {
     let diagnostics = data_get(
         session.queries(),
         &DataGetQuery {
-            selector: Some(RecordCoordinate::try_new("Item", "missing").unwrap()),
+            selector: Some(
+                RecordCoordinate::try_new("Item", "missing").expect("valid record coordinate"),
+            ),
             actual_type: None,
             file: None,
             keys: Vec::new(),

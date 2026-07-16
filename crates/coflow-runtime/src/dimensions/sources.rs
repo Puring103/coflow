@@ -74,7 +74,7 @@ impl DimensionRuntimePlan {
             .map(|index| &self.fields[*index])
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.fields.is_empty()
     }
 

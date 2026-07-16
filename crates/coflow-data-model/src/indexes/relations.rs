@@ -26,7 +26,7 @@ pub(crate) struct SpreadIndexes {
 pub(crate) fn build_spread_indexes(
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: &BuildSchema<'_>,
+    schema: BuildSchema<'_>,
 ) -> SpreadIndexes {
     let mut out = SpreadIndexes::default();
     for (index, draft) in drafts.iter().enumerate() {
@@ -49,7 +49,7 @@ fn collect_spread_edges(
     path: &CfdPath,
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: &BuildSchema<'_>,
+    schema: BuildSchema<'_>,
     out: &mut SpreadIndexes,
 ) {
     let mut fields_by_source = draft
@@ -130,7 +130,7 @@ fn collect_nested_spread_edges(
     path: &CfdPath,
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: &BuildSchema<'_>,
+    schema: BuildSchema<'_>,
     out: &mut SpreadIndexes,
 ) {
     match value {
@@ -196,7 +196,7 @@ fn collect_nested_spread_edges(
 pub(crate) fn build_ref_indexes(
     records: &[CfdRecord],
     record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: &BuildSchema<'_>,
+    schema: BuildSchema<'_>,
     spread_edges: &[SpreadEdge],
 ) -> RefIndexes {
     let mut out = RefIndexes::default();
@@ -266,7 +266,7 @@ pub(crate) fn build_ref_indexes(
 struct RefEdgeBuildContext<'a, 'schema> {
     records: &'a [CfdRecord],
     record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: &'a BuildSchema<'schema>,
+    schema: BuildSchema<'schema>,
     spread_edges_by_host: BTreeMap<CfdRecordId, Vec<&'a SpreadEdge>>,
 }
 
@@ -390,7 +390,7 @@ fn collect_ref_edges(
 }
 
 fn lookup_domain_ref(
-    schema: &BuildSchema<'_>,
+    schema: BuildSchema<'_>,
     record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     target_type: &str,
     key: &str,

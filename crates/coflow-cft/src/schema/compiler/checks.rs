@@ -62,19 +62,21 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 }
                 let col_ty = self.check_expr_value(collection);
                 let col_ty = unwrap_nullable(&col_ty);
-                let item_ty = if let Some(inner) = col_ty.array_element() {
-                    inner
-                } else if let Some((key, value)) = col_ty.dict_types() {
-                    InferredType::Entry(Box::new(key), Box::new(value))
-                } else if col_ty.is_unknown() {
-                    InferredType::Unknown
-                } else {
-                    self.diag(
-                        CftErrorCode::QuantifierRequiresCollection,
-                        *span,
-                        "quantifier target must be an array or dict",
-                    );
-                    InferredType::Unknown
+                let item_ty = match col_ty {
+                    InferredType::Value(CftValueType::Array(inner)) => InferredType::Value(*inner),
+                    InferredType::Value(CftValueType::Dict(key, value)) => InferredType::Entry(
+                        Box::new(InferredType::Value(*key)),
+                        Box::new(InferredType::Value(*value)),
+                    ),
+                    InferredType::Unknown => InferredType::Unknown,
+                    _ => {
+                        self.diag(
+                            CftErrorCode::QuantifierRequiresCollection,
+                            *span,
+                            "quantifier target must be an array or dict",
+                        );
+                        InferredType::Unknown
+                    }
                 };
                 self.locals
                     .push(HashMap::from([(binding.name.clone(), item_ty)]));
@@ -231,8 +233,8 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 InferredType::Unknown
             }
             InferredType::Entry(key, value) => match name.name.as_str() {
-                "key" => *key.clone(),
-                "value" => *value.clone(),
+                "key" => *key,
+                "value" => *value,
                 _ => {
                     self.diag(
                         CftErrorCode::UnknownField,

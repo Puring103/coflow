@@ -25,9 +25,7 @@ pub(super) fn csharp_type(ty: &CftValueType, view: &CsharpLoweringPlan<'_>) -> S
         }
         CftValueType::Bool => "bool".to_string(),
         CftValueType::String => "string".to_string(),
-        CftValueType::Object(name) | CftValueType::RecordRef(name) => {
-            view.csharp_type_name(name)
-        }
+        CftValueType::Object(name) | CftValueType::RecordRef(name) => view.csharp_type_name(name),
         CftValueType::Enum(name) => view.csharp_enum_name(name),
         CftValueType::Array(inner) => format!("List<{}>", csharp_type(inner, view)),
         CftValueType::Dict(key, value) => {
@@ -111,11 +109,7 @@ pub(super) fn default_value_expr(
     }))
 }
 
-fn string_default_expr(
-    value: &str,
-    ty: &CftValueType,
-    view: &CsharpLoweringPlan<'_>,
-) -> String {
+fn string_default_expr(value: &str, ty: &CftValueType, view: &CsharpLoweringPlan<'_>) -> String {
     match ty.non_nullable() {
         CftValueType::Enum(name) if view.is_id_as_enum(name) => {
             let enum_name = view.csharp_enum_name(name);

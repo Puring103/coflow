@@ -129,6 +129,7 @@ fn normalize(path: &Path) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -142,7 +143,8 @@ mod tests {
             diagnostic("items.cfd", "sword", Some("Item"), "typed"),
         ]);
 
-        let coordinate = RecordCoordinate::try_new("Item", "sword").unwrap();
+        let coordinate =
+            RecordCoordinate::try_new("Item", "sword").expect("valid record coordinate");
         let messages = diagnostics
             .for_record("items.cfd", &coordinate)
             .map(|diagnostic| diagnostic.message.as_str())
