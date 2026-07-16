@@ -1,5 +1,5 @@
 use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdValue};
-use coflow_cft::{record_key_ident_error, CftSchema, CftSchemaTypeRef, Span};
+use coflow_cft::{record_key_ident_error, CftSchema, CftValueType, Span};
 use coflow_data_model::{CfdInputDictKey, CfdInputRecord, CfdInputValue};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -73,7 +73,7 @@ fn lower_object_entries(
             CfdBlockEntry::Spread(value, _) => spreads.push(lower_spread(
                 schema,
                 value,
-                &CftSchemaTypeRef::Object(schema_type.name.clone()),
+                &CftValueType::Object(schema_type.name.clone()),
             )?),
             CfdBlockEntry::Field(field) => {
                 if field.name == "id" {
@@ -99,7 +99,7 @@ fn lower_object_entries(
                 };
                 values.insert(
                     field.name.clone(),
-                    lower_value(schema, &field.value, &meta.ty_ref)?,
+                    lower_value(schema, &field.value, &meta.value_type)?,
                 );
             }
         }
@@ -113,9 +113,9 @@ fn lower_object_entries(
 pub(crate) fn lower_value(
     schema: &CftSchema,
     value: &CfdValue,
-    ty: &CftSchemaTypeRef,
+    ty: &CftValueType,
 ) -> Result<CfdInputValue, CfdTextDiagnostics> {
-    if let CftSchemaTypeRef::Nullable(inner) = ty {
+    if let CftValueType::Nullable(inner) = ty {
         if matches!(value, CfdValue::Null(_)) {
             return Ok(CfdInputValue::Null);
         }
@@ -129,16 +129,16 @@ pub(crate) fn lower_value(
         ));
     }
     match ty {
-        CftSchemaTypeRef::Int => lower_int(value),
-        CftSchemaTypeRef::Float => lower_float(value),
-        CftSchemaTypeRef::Bool => lower_bool(value),
-        CftSchemaTypeRef::String => lower_string(value),
-        CftSchemaTypeRef::Enum(name) => lower_enum(schema, value, name),
-        CftSchemaTypeRef::Object(name) => lower_object(schema, value, name),
-        CftSchemaTypeRef::RecordRef(name) => lower_ref(value, name),
-        CftSchemaTypeRef::Array(inner) => lower_array(schema, value, inner),
-        CftSchemaTypeRef::Dict(key, item) => lower_dict(schema, value, key, item),
-        CftSchemaTypeRef::Nullable(inner) => lower_value(schema, value, inner),
+        CftValueType::Int => lower_int(value),
+        CftValueType::Float => lower_float(value),
+        CftValueType::Bool => lower_bool(value),
+        CftValueType::String => lower_string(value),
+        CftValueType::Enum(name) => lower_enum(schema, value, name),
+        CftValueType::Object(name) => lower_object(schema, value, name),
+        CftValueType::RecordRef(name) => lower_ref(value, name),
+        CftValueType::Array(inner) => lower_array(schema, value, inner),
+        CftValueType::Dict(key, item) => lower_dict(schema, value, key, item),
+        CftValueType::Nullable(inner) => lower_value(schema, value, inner),
     }
 }
 
@@ -281,7 +281,7 @@ fn lower_ref(value: &CfdValue, _expected_type: &str) -> Result<CfdInputValue, Cf
 fn lower_array(
     schema: &CftSchema,
     value: &CfdValue,
-    inner: &CftSchemaTypeRef,
+    inner: &CftValueType,
 ) -> Result<CfdInputValue, CfdTextDiagnostics> {
     let CfdValue::Array(items, _) = value else {
         return Err(error(
@@ -310,8 +310,8 @@ fn lower_array(
 fn lower_dict(
     schema: &CftSchema,
     value: &CfdValue,
-    key_type: &CftSchemaTypeRef,
-    value_type: &CftSchemaTypeRef,
+    key_type: &CftValueType,
+    value_type: &CftValueType,
 ) -> Result<CfdInputValue, CfdTextDiagnostics> {
     let CfdValue::Block(block) = value else {
         return Err(error(
@@ -328,7 +328,7 @@ fn lower_dict(
         ));
     }
     let dict_type =
-        CftSchemaTypeRef::Dict(Box::new(key_type.clone()), Box::new(value_type.clone()));
+        CftValueType::Dict(Box::new(key_type.clone()), Box::new(value_type.clone()));
     let mut spreads = Vec::new();
     let mut entries = Vec::new();
     for entry in &block.entries {
@@ -353,18 +353,18 @@ fn lower_dict_key(
     schema: &CftSchema,
     raw: &str,
     span: Span,
-    ty: &CftSchemaTypeRef,
+    ty: &CftValueType,
 ) -> Result<CfdInputDictKey, CfdTextDiagnostics> {
     match ty.non_nullable() {
-        CftSchemaTypeRef::String => Ok(CfdInputDictKey::String(raw.to_string())),
-        CftSchemaTypeRef::Int => raw.parse::<i64>().map(CfdInputDictKey::Int).map_err(|_| {
+        CftValueType::String => Ok(CfdInputDictKey::String(raw.to_string())),
+        CftValueType::Int => raw.parse::<i64>().map(CfdInputDictKey::Int).map_err(|_| {
             error(
                 CfdTextErrorCode::TypeMismatch,
                 "expected int dict key",
                 span,
             )
         }),
-        CftSchemaTypeRef::Enum(enum_name) => {
+        CftValueType::Enum(enum_name) => {
             let variant = raw
                 .strip_prefix(enum_name.as_str())
                 .and_then(|rest| rest.strip_prefix('.'))
@@ -396,7 +396,7 @@ fn lower_dict_key(
 fn lower_spread(
     schema: &CftSchema,
     value: &CfdValue,
-    ty: &CftSchemaTypeRef,
+    ty: &CftValueType,
 ) -> Result<CfdInputValue, CfdTextDiagnostics> {
     if matches!(value, CfdValue::Ref(_)) {
         return lower_ref(value, "");

@@ -4,7 +4,7 @@ use crate::model::{
     CfdDomainId, CfdRecord, CfdRecordId, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId,
     RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
 };
-use coflow_cft::CftSchemaTypeRef;
+use coflow_cft::CftValueType;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
@@ -218,7 +218,7 @@ pub(crate) fn build_ref_indexes(
             };
             collect_ref_edges(
                 value,
-                &field.ty_ref,
+                &field.value_type,
                 host,
                 &root.clone().field(name.clone()),
                 None,
@@ -242,7 +242,7 @@ pub(crate) fn build_ref_indexes(
                 };
                 collect_ref_edges(
                     &value.value,
-                    &field.ty_ref,
+                    &field.value_type,
                     host,
                     &root.clone().field(field_name.clone()),
                     Some(&coordinate),
@@ -272,7 +272,7 @@ impl RefEdgeBuildContext<'_, '_> {
 
 fn collect_ref_edges(
     value: &CfdValue,
-    ty: &CftSchemaTypeRef,
+    ty: &CftValueType,
     host: CfdRecordId,
     path: &CfdPath,
     dimension: Option<&DimensionRefCoordinate>,
@@ -283,7 +283,7 @@ fn collect_ref_edges(
         return;
     }
     match (value, ty.non_nullable()) {
-        (CfdValue::Ref(key), CftSchemaTypeRef::RecordRef(expected_type)) => {
+        (CfdValue::Ref(key), CftValueType::RecordRef(expected_type)) => {
             let Some(expected_type_id) = context.schema.type_id(expected_type) else {
                 return;
             };
@@ -322,7 +322,7 @@ fn collect_ref_edges(
             out.by_host.entry(host).or_default().push(id);
             out.by_target.entry(target).or_default().push(id);
         }
-        (CfdValue::Object(boxed), CftSchemaTypeRef::Object(_)) => {
+        (CfdValue::Object(boxed), CftValueType::Object(_)) => {
             for (name, inner) in &boxed.fields {
                 let Some(field) = context
                     .schema
@@ -333,7 +333,7 @@ fn collect_ref_edges(
                 };
                 collect_ref_edges(
                     inner,
-                    &field.ty_ref,
+                    &field.value_type,
                     host,
                     &path.clone().field(name.clone()),
                     dimension,
@@ -342,7 +342,7 @@ fn collect_ref_edges(
                 );
             }
         }
-        (CfdValue::Array(items), CftSchemaTypeRef::Array(inner_ty)) => {
+        (CfdValue::Array(items), CftValueType::Array(inner_ty)) => {
             for (index, item) in items.iter().enumerate() {
                 collect_ref_edges(
                     item,
@@ -355,7 +355,7 @@ fn collect_ref_edges(
                 );
             }
         }
-        (CfdValue::Dict(entries), CftSchemaTypeRef::Dict(_, value_ty)) => {
+        (CfdValue::Dict(entries), CftValueType::Dict(_, value_ty)) => {
             for (key, item) in entries {
                 collect_ref_edges(
                     item,

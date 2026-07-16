@@ -1,5 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity};
-use coflow_cft::{CftField, CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftField, CftSchema, CftValueType};
 use coflow_data_model::CfdEnumValue;
 
 use crate::ProjectSession;
@@ -59,9 +59,9 @@ pub(super) fn enum_value(
     })
 }
 
-fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+fn non_nullable(ty: &CftValueType) -> &CftValueType {
     match ty {
-        CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
+        CftValueType::Nullable(inner) => non_nullable(inner),
         other => other,
     }
 }

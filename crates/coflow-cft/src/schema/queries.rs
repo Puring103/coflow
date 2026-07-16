@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftSchemaTypeRef, CftType, EnumName,
+    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftValueType, CftType, EnumName,
     EnumVariantName, TypeName, TypedCheckSchedule, ValueDependencyPlan,
 };
 
@@ -49,36 +49,36 @@ impl CftSchema {
             return;
         }
         for field in &ty.all_fields {
-            self.collect_ref_targets_in_type(&field.ty_ref, out, visited);
+            self.collect_ref_targets_in_type(&field.value_type, out, visited);
         }
     }
 
     fn collect_ref_targets_in_type(
         &self,
-        ty: &CftSchemaTypeRef,
+        ty: &CftValueType,
         out: &mut BTreeSet<TypeName>,
         visited: &mut BTreeSet<TypeName>,
     ) {
         match ty {
-            CftSchemaTypeRef::Object(name) => {
+            CftValueType::Object(name) => {
                 if let Some(meta) = self.types.get(name) {
                     self.collect_ref_targets_for_type(meta, out, visited);
                 }
             }
-            CftSchemaTypeRef::RecordRef(name) => {
+            CftValueType::RecordRef(name) => {
                 out.insert(name.clone());
             }
-            CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
+            CftValueType::Array(inner) | CftValueType::Nullable(inner) => {
                 self.collect_ref_targets_in_type(inner, out, visited);
             }
-            CftSchemaTypeRef::Dict(_, value) => {
+            CftValueType::Dict(_, value) => {
                 self.collect_ref_targets_in_type(value, out, visited);
             }
-            CftSchemaTypeRef::Enum(_)
-            | CftSchemaTypeRef::Int
-            | CftSchemaTypeRef::Float
-            | CftSchemaTypeRef::Bool
-            | CftSchemaTypeRef::String => {}
+            CftValueType::Enum(_)
+            | CftValueType::Int
+            | CftValueType::Float
+            | CftValueType::Bool
+            | CftValueType::String => {}
         }
     }
     #[must_use]

@@ -39,7 +39,7 @@ fn default_entry_matches_explicit_default_options() {
 }
 
 #[test]
-fn type_ref_and_default_depth_accept_boundary_and_reject_next_wrapper() {
+fn value_type_and_default_depth_accept_boundary_and_reject_next_wrapper() {
     let type_source = "type Item { value: [[[int]]]; }";
     parse(type_source, 4, 100).expect("type ref depth four fits");
     let type_error = structural_error(type_source, 3, 100);

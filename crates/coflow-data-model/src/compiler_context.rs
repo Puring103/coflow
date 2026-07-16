@@ -1,7 +1,7 @@
 use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
-    CftField, CftSchema, CftSchemaTypeRef, CftType, ValueDependencyCycle, ValueDependencyMode,
+    CftField, CftSchema, CftValueType, CftType, ValueDependencyCycle, ValueDependencyMode,
 };
 use std::collections::BTreeMap;
 
@@ -196,14 +196,14 @@ impl<'a> DataModelCompilerContext<'a> {
     }
 }
 
-pub(crate) fn type_accepts_default(expected: &CftSchemaTypeRef, actual: &CftSchemaTypeRef) -> bool {
+pub(crate) fn type_accepts_default(expected: &CftValueType, actual: &CftValueType) -> bool {
     match expected {
-        CftSchemaTypeRef::Nullable(inner) => type_accepts_default(inner, actual),
+        CftValueType::Nullable(inner) => type_accepts_default(inner, actual),
         _ => expected == actual,
     }
 }
 
-pub(crate) fn display_type_ref(ty: &CftSchemaTypeRef) -> String {
+pub(crate) fn display_value_type(ty: &CftValueType) -> String {
     ty.display_label()
 }
 

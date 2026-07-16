@@ -408,7 +408,7 @@ picker: Holder {
 }
 
 #[test]
-fn rejects_empty_ref_key() {
+fn rejects_empvalue_type_key() {
     let dir = temp_dir("empty-ref");
     let file = dir.join("data.cfd");
     fs::write(

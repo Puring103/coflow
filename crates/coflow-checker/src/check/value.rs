@@ -1,4 +1,4 @@
-use coflow_cft::{CftConstValue, CftSchemaTypeRef};
+use coflow_cft::{CftConstValue, CftValueType};
 use coflow_data_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdPath, CfdRecord, CfdRecordId, CfdValue,
     RefSite,
@@ -19,12 +19,12 @@ pub(super) enum CheckValue {
     Entry(Box<CheckEntry>),
     Array {
         items: CheckItems,
-        element_type: Option<CftSchemaTypeRef>,
+        element_type: Option<CftValueType>,
     },
     Dict {
         entries: CheckEntries,
-        key_type: Option<CftSchemaTypeRef>,
-        value_type: Option<CftSchemaTypeRef>,
+        key_type: Option<CftValueType>,
+        value_type: Option<CftValueType>,
     },
 }
 
@@ -40,7 +40,7 @@ impl CheckValue {
 
     pub(super) fn from_cfd_value(
         value: &CfdValue,
-        ty: Option<&CftSchemaTypeRef>,
+        ty: Option<&CftValueType>,
         location: ValueLocation,
         model: &CfdDataModel,
         budget: &mut StructuralBudget,
@@ -63,7 +63,7 @@ impl CheckValue {
             CfdValue::Ref(key) => {
                 let resolved = if location.storage.dimension.is_some() {
                     ty.and_then(|ty| match ty.non_nullable() {
-                        CftSchemaTypeRef::RecordRef(expected) => {
+                        CftValueType::RecordRef(expected) => {
                             model.lookup_assignable(expected, key)
                         }
                         _ => None,
@@ -148,7 +148,7 @@ impl CheckItems {
     pub(super) fn located_at(
         &self,
         index: usize,
-        element_type: Option<&CftSchemaTypeRef>,
+        element_type: Option<&CftValueType>,
         collection_location: Option<&ValueLocation>,
         model: &CfdDataModel,
         budget: &mut StructuralBudget,
@@ -204,8 +204,8 @@ impl CheckEntries {
     pub(super) fn located_entry_at(
         &self,
         index: usize,
-        _key_type: Option<&CftSchemaTypeRef>,
-        value_type: Option<&CftSchemaTypeRef>,
+        _key_type: Option<&CftValueType>,
+        value_type: Option<&CftValueType>,
         collection_location: Option<&ValueLocation>,
         model: &CfdDataModel,
         budget: &mut StructuralBudget,
@@ -248,7 +248,7 @@ impl CheckEntries {
     fn projected_value_at(
         &self,
         index: usize,
-        value_type: Option<&CftSchemaTypeRef>,
+        value_type: Option<&CftValueType>,
         projected_location: Option<ValueLocation>,
         model: &CfdDataModel,
         budget: &mut StructuralBudget,
@@ -520,7 +520,7 @@ impl CheckRecordRef {
     pub(super) fn field(
         &self,
         model: &CfdDataModel,
-        field_type: Option<&CftSchemaTypeRef>,
+        field_type: Option<&CftValueType>,
         name: &str,
         budget: &mut StructuralBudget,
     ) -> Result<Option<LocatedCheckValue>, LocatedBudgetExceeded> {
@@ -615,26 +615,26 @@ fn model_value<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a 
     Some(value)
 }
 
-fn array_element_type(ty: Option<&CftSchemaTypeRef>) -> Option<&CftSchemaTypeRef> {
+fn array_element_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
     match ty {
-        Some(CftSchemaTypeRef::Nullable(inner)) => array_element_type(Some(inner)),
-        Some(CftSchemaTypeRef::Array(inner)) => Some(inner),
+        Some(CftValueType::Nullable(inner)) => array_element_type(Some(inner)),
+        Some(CftValueType::Array(inner)) => Some(inner),
         _ => None,
     }
 }
 
-fn dict_value_type(ty: Option<&CftSchemaTypeRef>) -> Option<&CftSchemaTypeRef> {
+fn dict_value_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
     match ty {
-        Some(CftSchemaTypeRef::Nullable(inner)) => dict_value_type(Some(inner)),
-        Some(CftSchemaTypeRef::Dict(_, value)) => Some(value),
+        Some(CftValueType::Nullable(inner)) => dict_value_type(Some(inner)),
+        Some(CftValueType::Dict(_, value)) => Some(value),
         _ => None,
     }
 }
 
-fn dict_key_type(ty: Option<&CftSchemaTypeRef>) -> Option<&CftSchemaTypeRef> {
+fn dict_key_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
     match ty {
-        Some(CftSchemaTypeRef::Nullable(inner)) => dict_key_type(Some(inner)),
-        Some(CftSchemaTypeRef::Dict(key, _)) => Some(key),
+        Some(CftValueType::Nullable(inner)) => dict_key_type(Some(inner)),
+        Some(CftValueType::Dict(key, _)) => Some(key),
         _ => None,
     }
 }

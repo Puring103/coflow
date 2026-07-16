@@ -25,7 +25,7 @@ mod scan;
 mod strings;
 mod types;
 
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType};
 use coflow_data_model::CfdInputValue;
 use collections::{parse_array, parse_dict};
 use diagnostics::type_mismatch;
@@ -67,7 +67,7 @@ pub fn parse_cell(
 /// Returns diagnostics when the cell text does not match the declared type.
 pub fn parse_schema_cell(
     schema: &CftSchema,
-    declared_type: &CftSchemaTypeRef,
+    declared_type: &CftValueType,
     text: &str,
 ) -> Result<ParsedCell, CellValueDiagnostics> {
     let declared_type = CellType::from_schema_type(declared_type);

@@ -4,7 +4,7 @@
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
 use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdSyntaxDiagnostic, CfdValue};
-use coflow_cft::{CftSchema, CftSchemaTypeRef, Span};
+use coflow_cft::{CftSchema, CftValueType, Span};
 use serde_json::{json, Value};
 
 // ── Semantic token type indices (must match SEMANTIC_TOKEN_TYPES in lib.rs) ──
@@ -219,7 +219,7 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usi
                     .and_then(|t| t.all_fields().find(|f| f.name.as_str() == field.name))
                     .map_or_else(
                         || format!("`{}`", field.name),
-                        |f| format!("```\n{}: {}\n```", f.name, fmt_type_ref(&f.ty_ref)),
+                        |f| format!("```\n{}: {}\n```", f.name, fmt_value_type(&f.value_type)),
                     );
                 return json!({
                     "contents": { "kind": "markdown", "value": detail },
@@ -253,7 +253,7 @@ pub fn completion(_source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offse
                 json!({
                     "label": f.name.as_str(),
                     "kind": 5,  // Field
-                    "detail": fmt_type_ref(&f.ty_ref),
+                    "detail": fmt_value_type(&f.value_type),
                 })
             })
             .collect();
@@ -370,7 +370,7 @@ fn field_name_in_fields<'a>(
                 ty.all_fields()
                     .find(|schema_field| schema_field.name.as_str() == field.name)
             })
-            .and_then(|schema_field| named_type_name(&schema_field.ty_ref))
+            .and_then(|schema_field| named_type_name(&schema_field.value_type))
             .map(str::to_string);
         if let Some(next_owner) = next_owner {
             if let Some(result) = field_name_in_value(&field.value, schema, next_owner, offset) {
@@ -425,10 +425,10 @@ fn field_name_in_value<'a>(
     }
 }
 
-fn named_type_name(ty: &CftSchemaTypeRef) -> Option<&str> {
+fn named_type_name(ty: &CftValueType) -> Option<&str> {
     match ty {
-        CftSchemaTypeRef::Object(name) => Some(name),
-        CftSchemaTypeRef::Nullable(inner) => named_type_name(inner),
+        CftValueType::Object(name) => Some(name),
+        CftValueType::Nullable(inner) => named_type_name(inner),
         _ => None,
     }
 }
@@ -462,7 +462,7 @@ fn ref_target_in_entry(
             let field_type = &owner
                 .all_fields()
                 .find(|candidate| candidate.name.as_str() == field.name)?
-                .ty_ref;
+                .value_type;
             ref_target_in_value(&field.value, schema, field_type, offset)
         }
         CfdBlockEntry::Spread(value, _) => {
@@ -470,7 +470,7 @@ fn ref_target_in_entry(
             ref_target_in_value(
                 value,
                 schema,
-                &CftSchemaTypeRef::RecordRef(owner.name.clone()),
+                &CftValueType::RecordRef(owner.name.clone()),
                 offset,
             )
         }
@@ -480,7 +480,7 @@ fn ref_target_in_entry(
 fn ref_target_in_value(
     value: &CfdValue,
     schema: &CftSchema,
-    expected_type: &CftSchemaTypeRef,
+    expected_type: &CftValueType,
     offset: usize,
 ) -> Option<(String, String)> {
     match value {
@@ -494,7 +494,7 @@ fn ref_target_in_value(
         }
         CfdValue::Block(block) => {
             let expected_type = strip_nullable(expected_type);
-            if let CftSchemaTypeRef::Dict(_, value_type) = expected_type {
+            if let CftValueType::Dict(_, value_type) = expected_type {
                 for entry in &block.entries {
                     let value = match entry {
                         CfdBlockEntry::Field(field) => &field.value,
@@ -519,7 +519,7 @@ fn ref_target_in_value(
             None
         }
         CfdValue::Array(items, _) => {
-            let CftSchemaTypeRef::Array(item_type) = strip_nullable(expected_type) else {
+            let CftValueType::Array(item_type) = strip_nullable(expected_type) else {
                 return None;
             };
             for item in items {
@@ -534,16 +534,16 @@ fn ref_target_in_value(
     }
 }
 
-fn strip_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+fn strip_nullable(ty: &CftValueType) -> &CftValueType {
     match ty {
-        CftSchemaTypeRef::Nullable(inner) => strip_nullable(inner),
+        CftValueType::Nullable(inner) => strip_nullable(inner),
         _ => ty,
     }
 }
 
-fn reference_target_type(ty: &CftSchemaTypeRef) -> Option<&str> {
+fn reference_target_type(ty: &CftValueType) -> Option<&str> {
     match strip_nullable(ty) {
-        CftSchemaTypeRef::Object(name) | CftSchemaTypeRef::RecordRef(name) => Some(name),
+        CftValueType::Object(name) | CftValueType::RecordRef(name) => Some(name),
         _ => None,
     }
 }
@@ -554,7 +554,7 @@ fn span_contains(span: Span, offset: usize) -> bool {
     offset >= span.start && offset < span.end.max(span.start + 1)
 }
 
-fn fmt_type_ref(ty: &CftSchemaTypeRef) -> String {
+fn fmt_value_type(ty: &CftValueType) -> String {
     ty.display_label()
 }
 

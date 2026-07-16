@@ -260,7 +260,7 @@ fn add_ast_semantic_tokens(
                     tokens,
                 );
                 if let Some(ty) = &constant.ty {
-                    add_type_ref_semantic(build, document, ty, tokens);
+                    add_value_type_semantic(build, document, ty, tokens);
                 }
                 add_const_literal_semantic(document, &constant.value, tokens);
             }
@@ -328,7 +328,7 @@ fn add_ast_semantic_tokens(
                         MOD_DECLARATION | MOD_SCHEMA,
                         tokens,
                     );
-                    add_type_ref_semantic(build, document, &field.ty, tokens);
+                    add_value_type_semantic(build, document, &field.ty, tokens);
                     if let Some(default) = &field.default {
                         add_default_expr_semantic(document, default, tokens);
                     }
@@ -372,7 +372,7 @@ fn add_annotation_semantic(
     }
 }
 
-fn add_type_ref_semantic(
+fn add_value_type_semantic(
     build: &LspBuild,
     document: &LspDocument,
     ty: &TypeRef,
@@ -403,12 +403,12 @@ fn add_type_ref_semantic(
             );
         }
         TypeRefKind::Array(inner) | TypeRefKind::Nullable(inner) => {
-            add_type_ref_semantic(build, document, inner, tokens);
+            add_value_type_semantic(build, document, inner, tokens);
         }
-        TypeRefKind::Ref(inner) => add_type_ref_semantic(build, document, inner, tokens),
+        TypeRefKind::Ref(inner) => add_value_type_semantic(build, document, inner, tokens),
         TypeRefKind::Dict(key, value) => {
-            add_type_ref_semantic(build, document, key, tokens);
-            add_type_ref_semantic(build, document, value, tokens);
+            add_value_type_semantic(build, document, key, tokens);
+            add_value_type_semantic(build, document, value, tokens);
         }
     }
 }

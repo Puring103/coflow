@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::DiagnosticSet;
 use coflow_cft::{
-    CftField, CftSchema, CftSchemaDefaultValue, CftSchemaTypeRef, ValueDependencyMode,
+    CftField, CftSchema, CftSchemaDefaultValue, CftValueType, ValueDependencyMode,
 };
 use coflow_data_model::{CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordOrigin};
 
@@ -27,9 +27,9 @@ pub(super) fn default_record_for_type(
     })
 }
 
-pub fn default_value_for_type_ref(
+pub fn default_value_for_value_type(
     schema: &CftSchema,
-    ty: &CftSchemaTypeRef,
+    ty: &CftValueType,
     materialization: DefaultMaterialization,
 ) -> Result<CfdValue, DiagnosticSet> {
     DefaultValueMaterializer::new(schema).zero_for_ty(ty, materialization)
@@ -113,7 +113,7 @@ impl<'a> DefaultValueMaterializer<'a> {
             let value = match materialization {
                 DefaultMaterialization::Minimal => self.minimal_for_field(field)?,
                 DefaultMaterialization::EditableShape => Some(self.value_for_ty(
-                    &field.ty_ref,
+                    &field.value_type,
                     field.default.as_ref(),
                     materialization,
                 )?),
@@ -157,16 +157,16 @@ impl<'a> DefaultValueMaterializer<'a> {
         if field.default.is_some() {
             return Ok(None);
         }
-        match &field.ty_ref {
-            CftSchemaTypeRef::Nullable(_) => Ok(Some(CfdValue::Null)),
-            CftSchemaTypeRef::RecordRef(name) => Err(one_mutation_error(
+        match &field.value_type {
+            CftValueType::Nullable(_) => Ok(Some(CfdValue::Null)),
+            CftValueType::RecordRef(name) => Err(one_mutation_error(
                 "MUTATION-DEFAULT",
                 format!(
                     "field `{}` of type `&{name}` has no schema default; provide an explicit value",
                     field.name
                 ),
             )),
-            CftSchemaTypeRef::Object(name) => {
+            CftValueType::Object(name) => {
                 let fields = self.fields_for_type(name, DefaultMaterialization::Minimal, None)?;
                 Ok(Some(CfdValue::Object(Box::new(CfdObject::new(
                     name.to_string(),
@@ -174,7 +174,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                 )))))
             }
             _ => self
-                .zero_for_ty(&field.ty_ref, DefaultMaterialization::Minimal)
+                .zero_for_ty(&field.value_type, DefaultMaterialization::Minimal)
                 .map(Some),
         }
     }
@@ -182,7 +182,7 @@ impl<'a> DefaultValueMaterializer<'a> {
     fn create_field_draft(&mut self, field: &CftField) -> CreateRecordFieldDraft {
         if let Some(default) = field.default.as_ref() {
             return match self.materialize_schema_default(
-                &field.ty_ref,
+                &field.value_type,
                 default,
                 DefaultMaterialization::EditableShape,
             ) {
@@ -217,7 +217,7 @@ impl<'a> DefaultValueMaterializer<'a> {
 
     fn value_for_ty(
         &mut self,
-        ty: &CftSchemaTypeRef,
+        ty: &CftValueType,
         declared_default: Option<&CftSchemaDefaultValue>,
         materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
@@ -229,7 +229,7 @@ impl<'a> DefaultValueMaterializer<'a> {
 
     fn materialize_schema_default(
         &mut self,
-        ty: &CftSchemaTypeRef,
+        ty: &CftValueType,
         default: &CftSchemaDefaultValue,
         materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
@@ -261,14 +261,14 @@ impl<'a> DefaultValueMaterializer<'a> {
             )),
             CftSchemaDefaultValue::EmptyArray => Ok(CfdValue::Array(Vec::new())),
             CftSchemaDefaultValue::EmptyObject => match non_nullable(ty) {
-                CftSchemaTypeRef::Object(name) => {
+                CftValueType::Object(name) => {
                     let fields = self.fields_for_type(name, materialization, None)?;
                     Ok(CfdValue::Object(Box::new(CfdObject::new(
                         name.to_string(),
                         fields,
                     ))))
                 }
-                CftSchemaTypeRef::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
+                CftValueType::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
                 _ => self.zero_for_ty(ty, materialization),
             },
         }
@@ -276,18 +276,18 @@ impl<'a> DefaultValueMaterializer<'a> {
 
     fn zero_for_ty(
         &mut self,
-        ty: &CftSchemaTypeRef,
+        ty: &CftValueType,
         materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
         match ty {
-            CftSchemaTypeRef::Int => Ok(CfdValue::Int(0)),
-            CftSchemaTypeRef::Float => Ok(CfdValue::Float(0.0)),
-            CftSchemaTypeRef::Bool => Ok(CfdValue::Bool(false)),
-            CftSchemaTypeRef::String => Ok(CfdValue::String(String::new())),
-            CftSchemaTypeRef::RecordRef(_) | CftSchemaTypeRef::Nullable(_) => Ok(CfdValue::Null),
-            CftSchemaTypeRef::Array(_) => Ok(CfdValue::Array(Vec::new())),
-            CftSchemaTypeRef::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
-            CftSchemaTypeRef::Enum(name) => {
+            CftValueType::Int => Ok(CfdValue::Int(0)),
+            CftValueType::Float => Ok(CfdValue::Float(0.0)),
+            CftValueType::Bool => Ok(CfdValue::Bool(false)),
+            CftValueType::String => Ok(CfdValue::String(String::new())),
+            CftValueType::RecordRef(_) | CftValueType::Nullable(_) => Ok(CfdValue::Null),
+            CftValueType::Array(_) => Ok(CfdValue::Array(Vec::new())),
+            CftValueType::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
+            CftValueType::Enum(name) => {
                 let value = self
                     .schema
                     .resolve_enum(name)
@@ -309,7 +309,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                     },
                 ))
             }
-            CftSchemaTypeRef::Object(name) => {
+            CftValueType::Object(name) => {
                 let fields = self.fields_for_type(name, materialization, None)?;
                 Ok(CfdValue::Object(Box::new(CfdObject::new(
                     name.to_string(),
@@ -346,11 +346,11 @@ fn required_input_for_field(
     field: &CftField,
     err: Option<&DiagnosticSet>,
 ) -> CreateRequiredInput {
-    match non_nullable(&field.ty_ref) {
-        CftSchemaTypeRef::RecordRef(target_type) => CreateRequiredInput::Ref {
+    match non_nullable(&field.value_type) {
+        CftValueType::RecordRef(target_type) => CreateRequiredInput::Ref {
             target_type: target_type.to_string(),
         },
-        CftSchemaTypeRef::Object(expected_type)
+        CftValueType::Object(expected_type)
             if schema
                 .resolve_type(expected_type)
                 .is_some_and(|meta| meta.is_abstract) =>
@@ -365,7 +365,7 @@ fn required_input_for_field(
                     .collect(),
             }
         }
-        CftSchemaTypeRef::Object(type_name)
+        CftValueType::Object(type_name)
             if err.is_some_and(|err| {
                 err.iter()
                     .any(|diagnostic| diagnostic.message.contains("dependency cycle"))

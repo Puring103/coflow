@@ -3,7 +3,7 @@
 mod common;
 use common::*;
 
-use coflow_cft::{CftSchemaTypeRef, TypeName};
+use coflow_cft::{CftValueType, TypeName};
 use std::collections::BTreeMap;
 
 struct EmptyContext;
@@ -42,7 +42,7 @@ fn complete_validation_rejects_missing_nested_required_fields() {
     let err = validate_complete_value_for_schema(
         compiled,
         &EmptyContext,
-        &CftSchemaTypeRef::Object(TypeName::new("Parent").unwrap()),
+        &CftValueType::Object(TypeName::new("Parent").unwrap()),
         &value,
         None,
     )
@@ -58,7 +58,7 @@ fn complete_validation_rejects_missing_nested_required_fields() {
 fn fragment_validation_allows_missing_fields_but_checks_provided_values() {
     let schema = compile_schema("type Child { required: int; }");
     let compiled = &schema;
-    let expected = CftSchemaTypeRef::Object(TypeName::new("Child").unwrap());
+    let expected = CftValueType::Object(TypeName::new("Child").unwrap());
     let empty = CfdValue::Object(Box::new(CfdObject::new("Child", BTreeMap::new())));
 
     validate_fragment_value_for_schema(compiled, &EmptyContext, &expected, &empty, None)
@@ -83,7 +83,7 @@ fn complete_validation_allows_omitted_schema_defaults() {
     validate_complete_value_for_schema(
         compiled,
         &EmptyContext,
-        &CftSchemaTypeRef::Object(TypeName::new("Child").unwrap()),
+        &CftValueType::Object(TypeName::new("Child").unwrap()),
         &value,
         None,
     )

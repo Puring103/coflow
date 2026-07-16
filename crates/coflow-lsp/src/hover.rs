@@ -54,7 +54,7 @@ pub(crate) fn hover_at(
                     "CFT field `{}`.`{}`: `{}`.",
                     type_name,
                     field.name,
-                    field.ty_ref.display_label()
+                    field.value_type.display_label()
                 ),
                 &byte_range(&document.source, word.start, word.end),
             ));
@@ -98,7 +98,7 @@ pub(crate) fn hover_at(
                         "CFT field `{}`.`{}`: `{}`.",
                         current_type.name,
                         field.name,
-                        field.ty_ref.display_label()
+                        field.value_type.display_label()
                     ),
                     &byte_range(&document.source, word.start, word.end),
                 ));

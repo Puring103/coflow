@@ -1,6 +1,6 @@
 use crate::schema::LocatedBudgetError;
 use crate::{
-    CftField, CftSchemaDefaultValue, CftSchemaTypeRef, CftType, FieldName, ModuleId, Span, TypeName,
+    CftField, CftSchemaDefaultValue, CftValueType, CftType, FieldName, ModuleId, Span, TypeName,
 };
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
@@ -158,29 +158,29 @@ fn dependency_target<'a>(
     let ty = match mode {
         ValueDependencyMode::SchemaDefaults => {
             matches!(field.default, Some(CftSchemaDefaultValue::EmptyObject))
-                .then_some(non_nullable(&field.ty_ref))?
+                .then_some(non_nullable(&field.value_type))?
         }
         ValueDependencyMode::Minimal => {
             if field.default.is_some() {
                 return None;
             }
-            &field.ty_ref
+            &field.value_type
         }
         ValueDependencyMode::EditableShape => match field.default {
-            Some(CftSchemaDefaultValue::EmptyObject) => non_nullable(&field.ty_ref),
+            Some(CftSchemaDefaultValue::EmptyObject) => non_nullable(&field.value_type),
             Some(_) => return None,
-            None => &field.ty_ref,
+            None => &field.value_type,
         },
     };
-    let CftSchemaTypeRef::Object(target_type) = ty else {
+    let CftValueType::Object(target_type) = ty else {
         return None;
     };
     types.contains_key(target_type).then_some(target_type)
 }
 
-fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+fn non_nullable(ty: &CftValueType) -> &CftValueType {
     match ty {
-        CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
+        CftValueType::Nullable(inner) => non_nullable(inner),
         other => other,
     }
 }

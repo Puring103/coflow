@@ -1,13 +1,13 @@
 mod dicts;
 
 use crate::compiler_context::{
-    display_type_ref, input_value_kind, CfdValueDraft, DataModelCompilerContext, RecordDraft,
+    display_value_type, input_value_kind, CfdValueDraft, DataModelCompilerContext, RecordDraft,
     SpreadFieldSource,
 };
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdEnumValue, CfdInputValue, CfdRecordId, CfdValue};
 use crate::origin::RecordOrigin;
-use coflow_cft::{CftField, CftSchemaTypeRef};
+use coflow_cft::{CftField, CftValueType};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -224,12 +224,12 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         path: CfdPath,
         cursor: TraversalCursor,
     ) -> Option<CfdValueDraft> {
-        self.validate_value(&field.ty_ref, value, record, path, cursor)
+        self.validate_value(&field.value_type, value, record, path, cursor)
     }
 
     pub(super) fn validate_value(
         &mut self,
-        ty: &CftSchemaTypeRef,
+        ty: &CftValueType,
         value: &CfdInputValue,
         record: Option<CfdRecordId>,
         path: CfdPath,
@@ -241,13 +241,13 @@ impl<'s, 'schema> Validator<'s, 'schema> {
 
     fn validate_value_inner(
         &mut self,
-        ty: &CftSchemaTypeRef,
+        ty: &CftValueType,
         value: &CfdInputValue,
         record: Option<CfdRecordId>,
         path: CfdPath,
         cursor: TraversalCursor,
     ) -> Option<CfdValueDraft> {
-        if let CftSchemaTypeRef::Nullable(inner) = ty {
+        if let CftValueType::Nullable(inner) = ty {
             return if matches!(value, CfdInputValue::Null) {
                 Some(CfdValueDraft::Value(CfdValue::Null))
             } else {
@@ -256,10 +256,10 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         }
 
         match (ty, value) {
-            (CftSchemaTypeRef::Int, CfdInputValue::Int(value)) => {
+            (CftValueType::Int, CfdInputValue::Int(value)) => {
                 Some(CfdValueDraft::Value(CfdValue::Int(*value)))
             }
-            (CftSchemaTypeRef::Float, CfdInputValue::Float(value)) => {
+            (CftValueType::Float, CfdInputValue::Float(value)) => {
                 if !value.is_finite() {
                     self.push(
                         CfdDiagnostic::error(
@@ -272,14 +272,14 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 }
                 Some(CfdValueDraft::Value(CfdValue::Float(*value)))
             }
-            (CftSchemaTypeRef::Bool, CfdInputValue::Bool(value)) => {
+            (CftValueType::Bool, CfdInputValue::Bool(value)) => {
                 Some(CfdValueDraft::Value(CfdValue::Bool(*value)))
             }
-            (CftSchemaTypeRef::String, CfdInputValue::String(value)) => {
+            (CftValueType::String, CfdInputValue::String(value)) => {
                 Some(CfdValueDraft::Value(CfdValue::String(value.clone())))
             }
             (
-                CftSchemaTypeRef::Enum(expected),
+                CftValueType::Enum(expected),
                 CfdInputValue::EnumVariant { enum_name, variant },
             ) => {
                 if enum_name.as_str() != expected.as_str() {
@@ -295,14 +295,14 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 let enum_value = self.resolve_enum_value(enum_name, variant, record, path)?;
                 Some(CfdValueDraft::Value(CfdValue::Enum(enum_value)))
             }
-            (CftSchemaTypeRef::RecordRef(expected), CfdInputValue::RecordRef(key)) => {
+            (CftValueType::RecordRef(expected), CfdInputValue::RecordRef(key)) => {
                 Some(CfdValueDraft::PendingRef {
                     expected_type: expected.to_string(),
                     key: key.clone(),
                 })
             }
             (
-                CftSchemaTypeRef::Object(expected),
+                CftValueType::Object(expected),
                 CfdInputValue::Object {
                     actual_type,
                     fields,
@@ -343,7 +343,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 )?;
                 Some(CfdValueDraft::Object(Box::new(draft)))
             }
-            (CftSchemaTypeRef::Array(inner), CfdInputValue::Array(items)) => {
+            (CftValueType::Array(inner), CfdInputValue::Array(items)) => {
                 let mut out = Vec::with_capacity(items.len());
                 for (index, item) in items.iter().enumerate() {
                     let Some(value) =
@@ -355,13 +355,13 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 }
                 Some(CfdValueDraft::Array(out))
             }
-            (CftSchemaTypeRef::Dict(key_ty, value_ty), CfdInputValue::Dict(entries)) => {
+            (CftValueType::Dict(key_ty, value_ty), CfdInputValue::Dict(entries)) => {
                 let out =
                     self.validate_dict_entries(key_ty, value_ty, entries, record, &path, cursor);
                 Some(CfdValueDraft::Dict(out))
             }
             (
-                CftSchemaTypeRef::Dict(key_ty, value_ty),
+                CftValueType::Dict(key_ty, value_ty),
                 CfdInputValue::DictSpread { spreads, entries },
             ) => {
                 let mut out_spreads = Vec::with_capacity(spreads.len());
@@ -381,7 +381,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 })
             }
             _ => {
-                self.type_mismatch(&display_type_ref(ty), value, record, path);
+                self.type_mismatch(&display_value_type(ty), value, record, path);
                 None
             }
         }
@@ -415,7 +415,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. } => {
                 let object_type = self.schema.resolve_type(type_name)?.name.clone();
                 let draft = self.validate_value_inner(
-                    &CftSchemaTypeRef::Object(object_type),
+                    &CftValueType::Object(object_type),
                     spread,
                     record,
                     path,

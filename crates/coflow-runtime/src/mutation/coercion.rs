@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use coflow_api::DiagnosticSet;
-use coflow_cft::CftSchemaTypeRef;
+use coflow_cft::CftValueType;
 use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use serde_json::{Map, Value};
 
@@ -12,7 +12,7 @@ use super::{enum_value, one_value_error, schema_field, MutationValue};
 
 pub(super) fn coerce_mutation_value(
     session: &ProjectSession,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: MutationValue,
     pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
 ) -> Result<CfdValue, DiagnosticSet> {
@@ -26,7 +26,7 @@ pub(super) fn coerce_mutation_value(
 
 pub(super) fn coerce_json_field_value(
     session: &ProjectSession,
-    field_ty: &CftSchemaTypeRef,
+    field_ty: &CftValueType,
     value: &Value,
 ) -> Result<CfdValue, DiagnosticSet> {
     coerce_json_value(session, field_ty, value)
@@ -34,7 +34,7 @@ pub(super) fn coerce_json_field_value(
 
 pub(super) fn coerce_cfd_field_value(
     session: &ProjectSession,
-    field_ty: &CftSchemaTypeRef,
+    field_ty: &CftValueType,
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
     coerce_cfd_value(session, field_ty, value)
@@ -42,29 +42,29 @@ pub(super) fn coerce_cfd_field_value(
 
 fn coerce_json_value(
     session: &ProjectSession,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: &Value,
 ) -> Result<CfdValue, DiagnosticSet> {
     match expected {
-        CftSchemaTypeRef::Int => value
+        CftValueType::Int => value
             .as_i64()
             .map(CfdValue::Int)
             .ok_or_else(|| one_value_error("expected int")),
-        CftSchemaTypeRef::Float => value
+        CftValueType::Float => value
             .as_f64()
             .map(CfdValue::Float)
             .ok_or_else(|| one_value_error("expected float")),
-        CftSchemaTypeRef::Bool => value
+        CftValueType::Bool => value
             .as_bool()
             .map(CfdValue::Bool)
             .ok_or_else(|| one_value_error("expected bool")),
-        CftSchemaTypeRef::String => value
+        CftValueType::String => value
             .as_str()
             .map(|text| CfdValue::String(text.to_string()))
             .ok_or_else(|| one_value_error("expected string")),
-        CftSchemaTypeRef::Nullable(_) if value.is_null() => Ok(CfdValue::Null),
-        CftSchemaTypeRef::Nullable(inner) => coerce_json_value(session, inner, value),
-        CftSchemaTypeRef::Array(inner) => {
+        CftValueType::Nullable(_) if value.is_null() => Ok(CfdValue::Null),
+        CftValueType::Nullable(inner) => coerce_json_value(session, inner, value),
+        CftValueType::Array(inner) => {
             let items = value
                 .as_array()
                 .ok_or_else(|| one_value_error("expected array"))?;
@@ -74,17 +74,17 @@ fn coerce_json_value(
                 .collect::<Result<Vec<_>, _>>()
                 .map(CfdValue::Array)
         }
-        CftSchemaTypeRef::Dict(key, item) => coerce_json_dict_value(session, key, item, value),
-        CftSchemaTypeRef::RecordRef(target_type) => json_ref_key(value)
+        CftValueType::Dict(key, item) => coerce_json_dict_value(session, key, item, value),
+        CftValueType::RecordRef(target_type) => json_ref_key(value)
             .map(|key| CfdValue::Ref(key.to_string()))
             .ok_or_else(|| one_value_error(format!("expected record key for `&{target_type}`"))),
-        CftSchemaTypeRef::Enum(name) => {
+        CftValueType::Enum(name) => {
             let variant = value
                 .as_str()
                 .ok_or_else(|| one_value_error(format!("expected enum variant for `{name}`")))?;
             enum_value(session, name, variant).map(CfdValue::Enum)
         }
-        CftSchemaTypeRef::Object(name) => coerce_json_named_value(session, name, value),
+        CftValueType::Object(name) => coerce_json_named_value(session, name, value),
     }
 }
 
@@ -101,10 +101,10 @@ fn json_ref_key(value: &Value) -> Option<&str> {
 
 fn coerce_cfd_value(
     session: &ProjectSession,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
-    if let CftSchemaTypeRef::Nullable(inner) = expected {
+    if let CftValueType::Nullable(inner) = expected {
         return if matches!(value, CfdValue::Null) {
             Ok(CfdValue::Null)
         } else {
@@ -112,16 +112,16 @@ fn coerce_cfd_value(
         };
     }
     match (expected, value) {
-        (CftSchemaTypeRef::Int, value @ CfdValue::Int(_))
-        | (CftSchemaTypeRef::Float, value @ CfdValue::Float(_))
-        | (CftSchemaTypeRef::Bool, value @ CfdValue::Bool(_))
-        | (CftSchemaTypeRef::String, value @ CfdValue::String(_)) => Ok(value),
-        (CftSchemaTypeRef::Array(inner), CfdValue::Array(items)) => items
+        (CftValueType::Int, value @ CfdValue::Int(_))
+        | (CftValueType::Float, value @ CfdValue::Float(_))
+        | (CftValueType::Bool, value @ CfdValue::Bool(_))
+        | (CftValueType::String, value @ CfdValue::String(_)) => Ok(value),
+        (CftValueType::Array(inner), CfdValue::Array(items)) => items
             .into_iter()
             .map(|item| coerce_cfd_value(session, inner, item))
             .collect::<Result<Vec<_>, DiagnosticSet>>()
             .map(CfdValue::Array),
-        (CftSchemaTypeRef::Dict(key_type, item_type), CfdValue::Dict(entries)) => entries
+        (CftValueType::Dict(key_type, item_type), CfdValue::Dict(entries)) => entries
             .into_iter()
             .map(|(key, item)| {
                 Ok((
@@ -131,10 +131,10 @@ fn coerce_cfd_value(
             })
             .collect::<Result<Vec<_>, DiagnosticSet>>()
             .map(CfdValue::Dict),
-        (CftSchemaTypeRef::Enum(name), CfdValue::Enum(enum_value)) => {
+        (CftValueType::Enum(name), CfdValue::Enum(enum_value)) => {
             coerce_cfd_enum_value(session, name, enum_value).map(CfdValue::Enum)
         }
-        (CftSchemaTypeRef::Object(expected_type), CfdValue::Object(record)) => {
+        (CftValueType::Object(expected_type), CfdValue::Object(record)) => {
             ensure_object_type_assignable(session, expected_type, record.actual_type())?;
             let mut record = *record;
             let actual_type = record.actual_type().to_string();
@@ -145,13 +145,13 @@ fn coerce_cfd_value(
             )?;
             Ok(CfdValue::Object(Box::new(record)))
         }
-        (CftSchemaTypeRef::RecordRef(_expected_type), CfdValue::Ref(target_key)) => {
+        (CftValueType::RecordRef(_expected_type), CfdValue::Ref(target_key)) => {
             if target_key.is_empty() {
                 return Err(one_value_error("reference key must not be empty"));
             }
             Ok(CfdValue::Ref(target_key))
         }
-        (CftSchemaTypeRef::Object(_), CfdValue::Ref(_)) => Err(one_value_error(
+        (CftValueType::Object(_), CfdValue::Ref(_)) => Err(one_value_error(
             "inline object fields do not accept record refs",
         )),
         _ => Err(one_value_error("value does not match expected schema type")),
@@ -168,14 +168,14 @@ fn coerce_cfd_object_fields(
         .into_iter()
         .map(|(name, value)| {
             let field = schema_field(schema, actual_type, &name)?;
-            Ok((name, coerce_cfd_field_value(session, &field.ty_ref, value)?))
+            Ok((name, coerce_cfd_field_value(session, &field.value_type, value)?))
         })
         .collect()
 }
 
 fn validate_value_for_write(
     session: &ProjectSession,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: &CfdValue,
     pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
 ) -> Result<(), DiagnosticSet> {
@@ -193,14 +193,14 @@ fn validate_value_for_write(
 
 fn coerce_cfd_dict_key(
     session: &ProjectSession,
-    key_type: &CftSchemaTypeRef,
+    key_type: &CftValueType,
     key: CfdDictKey,
 ) -> Result<CfdDictKey, DiagnosticSet> {
     match (key_type, key) {
-        (CftSchemaTypeRef::Nullable(inner), key) => coerce_cfd_dict_key(session, inner, key),
-        (CftSchemaTypeRef::String, key @ CfdDictKey::String(_))
-        | (CftSchemaTypeRef::Int, key @ CfdDictKey::Int(_)) => Ok(key),
-        (CftSchemaTypeRef::Enum(enum_name), CfdDictKey::Enum(value)) => {
+        (CftValueType::Nullable(inner), key) => coerce_cfd_dict_key(session, inner, key),
+        (CftValueType::String, key @ CfdDictKey::String(_))
+        | (CftValueType::Int, key @ CfdDictKey::Int(_)) => Ok(key),
+        (CftValueType::Enum(enum_name), CfdDictKey::Enum(value)) => {
             coerce_cfd_enum_value(session, enum_name, value).map(CfdDictKey::Enum)
         }
         _ => Err(one_value_error(
@@ -236,8 +236,8 @@ fn coerce_cfd_enum_value(
 
 fn coerce_json_dict_value(
     session: &ProjectSession,
-    key_type: &CftSchemaTypeRef,
-    item_type: &CftSchemaTypeRef,
+    key_type: &CftValueType,
+    item_type: &CftValueType,
     value: &Value,
 ) -> Result<CfdValue, DiagnosticSet> {
     let Some(object) = value.as_object() else {
@@ -265,8 +265,8 @@ fn coerce_json_dict_value(
 
 fn coerce_json_special_dict(
     session: &ProjectSession,
-    key_type: &CftSchemaTypeRef,
-    item_type: &CftSchemaTypeRef,
+    key_type: &CftValueType,
+    item_type: &CftValueType,
     entries: &Value,
 ) -> Result<CfdValue, DiagnosticSet> {
     let entries = entries
@@ -295,22 +295,22 @@ fn coerce_json_special_dict(
 
 fn coerce_dict_key(
     session: &ProjectSession,
-    key_type: &CftSchemaTypeRef,
+    key_type: &CftValueType,
     value: &Value,
 ) -> Result<CfdDictKey, DiagnosticSet> {
     match key_type {
-        CftSchemaTypeRef::String => value
+        CftValueType::String => value
             .as_str()
             .map(|text| CfdDictKey::String(text.to_string()))
             .ok_or_else(|| one_value_error("expected string dict key")),
-        CftSchemaTypeRef::Int => coerce_int_dict_key(value),
-        CftSchemaTypeRef::Enum(enum_name) => {
+        CftValueType::Int => coerce_int_dict_key(value),
+        CftValueType::Enum(enum_name) => {
             let variant = value.as_str().ok_or_else(|| {
                 one_value_error(format!("expected enum dict key for `{enum_name}`"))
             })?;
             enum_value(session, enum_name, variant).map(CfdDictKey::Enum)
         }
-        CftSchemaTypeRef::Nullable(inner) => coerce_dict_key(session, inner, value),
+        CftValueType::Nullable(inner) => coerce_dict_key(session, inner, value),
         _ => Err(one_value_error(
             "dict keys support only string, int, and enum types",
         )),
@@ -400,7 +400,7 @@ fn coerce_json_object_fields(
         let field = schema_field(schema, actual_type, field_name)?;
         fields.insert(
             field_name.clone(),
-            coerce_json_field_value(session, &field.ty_ref, field_value)?,
+            coerce_json_field_value(session, &field.value_type, field_value)?,
         );
     }
     Ok(fields)

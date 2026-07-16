@@ -1,5 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType};
 use coflow_data_model::{
     CfdDomainId, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext,
     PendingInsertRef,
@@ -70,7 +70,7 @@ pub(crate) fn expected_type_for_write_path(
     path: &[WriteFieldPathSegment],
     code: &'static str,
     stage: &'static str,
-) -> Result<CftSchemaTypeRef, DiagnosticSet> {
+) -> Result<CftValueType, DiagnosticSet> {
     let cfd_path = write_path_to_cfd_path(path, code, stage)?;
     expected_type_for_cfd_path(schema, actual_type, &cfd_path.segments, code, stage)
 }
@@ -94,7 +94,7 @@ pub(crate) fn expected_type_for_cfd_path(
     path: &[CfdPathSegment],
     code: &'static str,
     stage: &'static str,
-) -> Result<CftSchemaTypeRef, DiagnosticSet> {
+) -> Result<CftValueType, DiagnosticSet> {
     if path.is_empty() {
         return Err(one_error(code, stage, "field path must not be empty"));
     }
@@ -105,11 +105,11 @@ pub(crate) fn expected_type_for_cfd_path(
             format!("unknown type `{actual_type}`"),
         ));
     };
-    let mut current = CftSchemaTypeRef::Object(root_type.name.clone());
+    let mut current = CftValueType::Object(root_type.name.clone());
     for segment in path {
         current = match segment {
             CfdPathSegment::Field(field) => {
-                let CftSchemaTypeRef::Object(type_name) = non_nullable(&current) else {
+                let CftValueType::Object(type_name) = non_nullable(&current) else {
                     return Err(one_error(
                         code,
                         stage,
@@ -118,7 +118,7 @@ pub(crate) fn expected_type_for_cfd_path(
                 };
                 schema
                     .field(type_name, field)
-                    .map(|field| field.ty_ref.clone())
+                    .map(|field| field.value_type.clone())
                     .ok_or_else(|| {
                         if schema.resolve_type(type_name).is_none() {
                             return one_error(code, stage, format!("unknown type `{type_name}`"));
@@ -131,7 +131,7 @@ pub(crate) fn expected_type_for_cfd_path(
                     })?
             }
             CfdPathSegment::Index(index) => {
-                let CftSchemaTypeRef::Array(inner) = non_nullable(&current) else {
+                let CftValueType::Array(inner) = non_nullable(&current) else {
                     return Err(one_error(
                         code,
                         stage,
@@ -141,7 +141,7 @@ pub(crate) fn expected_type_for_cfd_path(
                 (**inner).clone()
             }
             CfdPathSegment::DictKey(key) => {
-                let CftSchemaTypeRef::Dict(_, item) = non_nullable(&current) else {
+                let CftValueType::Dict(_, item) = non_nullable(&current) else {
                     return Err(one_error(
                         code,
                         stage,
@@ -158,7 +158,7 @@ pub(crate) fn expected_type_for_cfd_path(
 pub(crate) fn validate_value_for_write(
     session: &ProjectSession,
     schema: &CftSchema,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: &CfdValue,
     code: &'static str,
     stage: &'static str,
@@ -180,7 +180,7 @@ pub(crate) fn validate_value_for_write(
 pub(crate) fn validate_value_for_write_with_pending(
     session: &ProjectSession,
     schema: &CftSchema,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: &CfdValue,
     pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
     code: &'static str,
@@ -201,7 +201,7 @@ pub(crate) fn validate_value_for_write_with_pending(
 }
 
 pub(crate) struct ValueValidationRequest<'a> {
-    pub(crate) expected: &'a CftSchemaTypeRef,
+    pub(crate) expected: &'a CftValueType,
     pub(crate) value: &'a CfdValue,
     pub(crate) pending_records: Option<&'a BTreeMap<crate::RecordCoordinate, usize>>,
     pub(crate) pending_insert: Option<PendingInsertRef<'a>>,
@@ -284,9 +284,9 @@ pub fn write_path_to_cfd_path(
     })
 }
 
-fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+fn non_nullable(ty: &CftValueType) -> &CftValueType {
     match ty {
-        CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
+        CftValueType::Nullable(inner) => non_nullable(inner),
         other => other,
     }
 }

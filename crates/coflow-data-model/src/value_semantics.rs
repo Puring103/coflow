@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType};
 
 use crate::model::{CfdDictKey, CfdDomainId, CfdEnumValue, CfdRecordId, CfdValue};
 
@@ -47,7 +47,7 @@ pub trait CfdValueSemanticContext {
 pub fn validate_complete_value_for_schema<C: CfdValueSemanticContext>(
     schema: &CftSchema,
     context: &C,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
 ) -> Result<(), CfdValueSemanticError> {
@@ -70,7 +70,7 @@ pub fn validate_complete_value_for_schema<C: CfdValueSemanticContext>(
 pub fn validate_fragment_value_for_schema<C: CfdValueSemanticContext>(
     schema: &CftSchema,
     context: &C,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
 ) -> Result<(), CfdValueSemanticError> {
@@ -135,37 +135,37 @@ fn validate_object_type_assignable_in_view(
 fn validate_value_inner<C: CfdValueSemanticContext>(
     schema: &CftSchema,
     context: &C,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
     completeness: ValueCompleteness,
 ) -> Result<(), CfdValueSemanticError> {
     match expected {
-        CftSchemaTypeRef::Nullable(_) if matches!(value, CfdValue::Null) => Ok(()),
-        CftSchemaTypeRef::Nullable(inner) => {
+        CftValueType::Nullable(_) if matches!(value, CfdValue::Null) => Ok(()),
+        CftValueType::Nullable(inner) => {
             validate_value_inner(schema, context, inner, value, pending_insert, completeness)
         }
-        CftSchemaTypeRef::Int => match value {
+        CftValueType::Int => match value {
             CfdValue::Int(_) => Ok(()),
             _ => Err(type_mismatch("int", value)),
         },
-        CftSchemaTypeRef::Float => match value {
+        CftValueType::Float => match value {
             CfdValue::Float(float) if float.is_finite() => Ok(()),
             CfdValue::Float(_) => Err(CfdValueSemanticError::new("float value must be finite")),
             _ => Err(type_mismatch("float", value)),
         },
-        CftSchemaTypeRef::Bool => match value {
+        CftValueType::Bool => match value {
             CfdValue::Bool(_) => Ok(()),
             _ => Err(type_mismatch("bool", value)),
         },
-        CftSchemaTypeRef::String => match value {
+        CftValueType::String => match value {
             CfdValue::String(_) => Ok(()),
             _ => Err(type_mismatch("string", value)),
         },
-        CftSchemaTypeRef::Array(inner) => {
+        CftValueType::Array(inner) => {
             validate_array(schema, context, inner, value, pending_insert, completeness)
         }
-        CftSchemaTypeRef::Dict(key, item) => validate_dict(
+        CftValueType::Dict(key, item) => validate_dict(
             schema,
             context,
             key,
@@ -174,13 +174,13 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             pending_insert,
             completeness,
         ),
-        CftSchemaTypeRef::RecordRef(expected_type) => {
+        CftValueType::RecordRef(expected_type) => {
             validate_ref_value(schema, context, expected_type, value, pending_insert)
         }
-        CftSchemaTypeRef::Object(name) => {
+        CftValueType::Object(name) => {
             validate_object_value(schema, context, name, value, pending_insert, completeness)
         }
-        CftSchemaTypeRef::Enum(name) => match value {
+        CftValueType::Enum(name) => match value {
             CfdValue::Enum(enum_value) => validate_enum(schema, name, enum_value),
             _ => Err(type_mismatch(&format!("enum `{name}`"), value)),
         },
@@ -190,7 +190,7 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
 fn validate_array<C: CfdValueSemanticContext>(
     schema: &CftSchema,
     context: &C,
-    inner: &CftSchemaTypeRef,
+    inner: &CftValueType,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
     completeness: ValueCompleteness,
@@ -207,8 +207,8 @@ fn validate_array<C: CfdValueSemanticContext>(
 fn validate_dict<C: CfdValueSemanticContext>(
     schema: &CftSchema,
     context: &C,
-    key: &CftSchemaTypeRef,
-    item: &CftSchemaTypeRef,
+    key: &CftValueType,
+    item: &CftValueType,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
     completeness: ValueCompleteness,
@@ -272,7 +272,7 @@ fn validate_object_value<C: CfdValueSemanticContext>(
                 validate_value_inner(
                     schema,
                     context,
-                    &field.ty_ref,
+                    &field.value_type,
                     value,
                     pending_insert,
                     completeness,
@@ -307,13 +307,13 @@ fn validate_object_value<C: CfdValueSemanticContext>(
 
 fn validate_dict_key(
     schema: &CftSchema,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: &CfdDictKey,
 ) -> Result<(), CfdValueSemanticError> {
     match (non_nullable(expected), value) {
-        (CftSchemaTypeRef::String, CfdDictKey::String(_))
-        | (CftSchemaTypeRef::Int, CfdDictKey::Int(_)) => Ok(()),
-        (CftSchemaTypeRef::Enum(enum_name), CfdDictKey::Enum(enum_value)) => {
+        (CftValueType::String, CfdDictKey::String(_))
+        | (CftValueType::Int, CfdDictKey::Int(_)) => Ok(()),
+        (CftValueType::Enum(enum_name), CfdDictKey::Enum(enum_value)) => {
             validate_enum(schema, enum_name, enum_value)
         }
         _ => Err(CfdValueSemanticError::new(
@@ -397,9 +397,9 @@ fn validate_ref_target<C: CfdValueSemanticContext>(
     Err(ref_not_found(expected_type, target_key))
 }
 
-fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+fn non_nullable(ty: &CftValueType) -> &CftValueType {
     match ty {
-        CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
+        CftValueType::Nullable(inner) => non_nullable(inner),
         other => other,
     }
 }

@@ -10,7 +10,7 @@ use crate::model::{
     CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdInputDimensionValue,
     CfdInputRecord, CfdObject, CfdRecord, CfdRecordId,
 };
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType};
 use coflow_structure::StructuralLimits;
 use resolve::ValueResolver;
 use std::collections::BTreeMap;
@@ -232,7 +232,7 @@ impl<'a> ModelCompiler<'a> {
                     continue;
                 }
                 let nullable_ty =
-                    CftSchemaTypeRef::Nullable(Box::new(field.ty_ref.non_nullable().clone()));
+                    CftValueType::Nullable(Box::new(field.value_type.non_nullable().clone()));
                 let path = CfdPath::root().field(input.field.as_str());
                 let draft = {
                     let mut validator =

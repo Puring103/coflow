@@ -1,4 +1,4 @@
-use super::CftSchemaTypeRef;
+use super::CftValueType;
 use crate::module::ModuleId;
 use crate::syntax::Span;
 use crate::{BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
@@ -49,7 +49,7 @@ pub struct CftFieldDimension {
 pub struct CftField {
     pub declaring_type: TypeName,
     pub name: FieldName,
-    pub ty_ref: CftSchemaTypeRef,
+    pub value_type: CftValueType,
     pub default: Option<CftSchemaDefaultValue>,
     pub is_expand: bool,
     pub dimension: Option<CftFieldDimension>,

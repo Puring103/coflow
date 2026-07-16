@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType};
 use coflow_data_model::{
     CfdDataModel, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
     DimensionValueLookup,
@@ -21,7 +21,7 @@ pub(super) struct DimensionRoundView {
 #[derive(Debug, Clone)]
 enum ProjectedDimensionField {
     Value {
-        field_type: CftSchemaTypeRef,
+        field_type: CftValueType,
         traverse_nested: bool,
     },
     ExplicitNull,
@@ -33,7 +33,7 @@ enum ProjectedDimensionField {
 
 pub(super) struct MaterializedDimensionValue<'a> {
     pub(super) value: &'a CfdValue,
-    pub(super) field_type: Option<&'a CftSchemaTypeRef>,
+    pub(super) field_type: Option<&'a CftValueType>,
     pub(super) location: ValueLocation,
 }
 
@@ -73,7 +73,7 @@ impl DimensionRoundView {
                         variant,
                     ) {
                         Ok(DimensionValueLookup::Value { .. }) => ProjectedDimensionField::Value {
-                            field_type: field.ty_ref.clone(),
+                            field_type: field.value_type.clone(),
                             traverse_nested,
                         },
                         Ok(DimensionValueLookup::ExplicitNull { .. }) => {

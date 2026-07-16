@@ -1,7 +1,7 @@
 use crate::compiler_context::CfdValueDraft;
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdDictKey, CfdInputDictKey, CfdInputValue, CfdRecordId};
-use coflow_cft::CftSchemaTypeRef;
+use coflow_cft::CftValueType;
 use coflow_structure::TraversalCursor;
 
 use super::Validator;
@@ -9,8 +9,8 @@ use super::Validator;
 impl Validator<'_, '_> {
     pub(super) fn validate_dict_entries(
         &mut self,
-        key_ty: &CftSchemaTypeRef,
-        value_ty: &CftSchemaTypeRef,
+        key_ty: &CftValueType,
+        value_ty: &CftValueType,
         entries: &[(CfdInputDictKey, CfdInputValue)],
         record: Option<CfdRecordId>,
         path: &CfdPath,
@@ -44,18 +44,18 @@ impl Validator<'_, '_> {
 
     fn validate_dict_key(
         &mut self,
-        ty: &CftSchemaTypeRef,
+        ty: &CftValueType,
         key: &CfdInputDictKey,
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdDictKey> {
         match (ty.non_nullable(), key) {
-            (CftSchemaTypeRef::String, CfdInputDictKey::String(value)) => {
+            (CftValueType::String, CfdInputDictKey::String(value)) => {
                 Some(CfdDictKey::String(value.clone()))
             }
-            (CftSchemaTypeRef::Int, CfdInputDictKey::Int(value)) => Some(CfdDictKey::Int(*value)),
+            (CftValueType::Int, CfdInputDictKey::Int(value)) => Some(CfdDictKey::Int(*value)),
             (
-                CftSchemaTypeRef::Enum(expected),
+                CftValueType::Enum(expected),
                 CfdInputDictKey::EnumVariant { enum_name, variant },
             ) => {
                 if enum_name.as_str() != expected.as_str() {

@@ -4,7 +4,7 @@ use coflow_api::{
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
     RewriteDimensionRecordRequest, SourceLocationSpec, TableContext, WriteDimensionValueRequest,
 };
-use coflow_cft::{CftSchemaTypeRef, RecordKey};
+use coflow_cft::{CftValueType, RecordKey};
 use coflow_data_model::{
     CfdDictKey, CfdInputDimensionValue, CfdValue, RecordOrigin, SourceDocument,
 };
@@ -75,8 +75,8 @@ impl DimensionSourceManager for CsvWriter {
                     .map(|column| (variant, column))
             })
             .collect::<Vec<_>>();
-        let nullable_type = CftSchemaTypeRef::Nullable(Box::new(
-            request.schema.source_field.ty_ref.non_nullable().clone(),
+        let nullable_type = CftValueType::Nullable(Box::new(
+            request.schema.source_field.value_type.non_nullable().clone(),
         ));
         let mut values = Vec::new();
         let mut diagnostics = DiagnosticSet::empty();

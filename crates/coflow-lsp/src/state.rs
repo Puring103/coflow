@@ -1,5 +1,5 @@
 use coflow_cft::syntax::ast::{CheckStmt, Item};
-use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftSchemaTypeRef, CftType, ModuleId};
+use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftValueType, CftType, ModuleId};
 use coflow_project::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
 use std::collections::BTreeMap;
@@ -126,15 +126,15 @@ pub(crate) fn type_of_chain(
     document: &LspDocument,
     offset: usize,
     chain: &[String],
-) -> Option<CftSchemaTypeRef> {
+) -> Option<CftValueType> {
     let (first, rest) = chain.split_first()?;
-    let mut ty_ref = type_of_name(build, document, offset, first)?;
+    let mut value_type = type_of_name(build, document, offset, first)?;
     for part in rest {
-        let type_name = type_name_of_schema_ref(&ty_ref)?;
+        let type_name = type_name_of_schema_ref(&value_type)?;
         let (_, field) = field_by_type(build, type_name, part)?;
-        ty_ref = field_receiver_type(field);
+        value_type = field_receiver_type(field);
     }
-    Some(ty_ref)
+    Some(value_type)
 }
 
 fn type_of_name(
@@ -142,7 +142,7 @@ fn type_of_name(
     document: &LspDocument,
     offset: usize,
     name: &str,
-) -> Option<CftSchemaTypeRef> {
+) -> Option<CftValueType> {
     let current_type = current_type_at(build, document, offset)?;
     let field = current_type
         .all_fields()
@@ -172,14 +172,14 @@ pub(crate) fn field_by_type<'a>(
     None
 }
 
-fn field_receiver_type(field: &CftField) -> CftSchemaTypeRef {
-    field.ty_ref.clone()
+fn field_receiver_type(field: &CftField) -> CftValueType {
+    field.value_type.clone()
 }
 
-pub(crate) fn type_name_of_schema_ref(ty: &CftSchemaTypeRef) -> Option<&str> {
+pub(crate) fn type_name_of_schema_ref(ty: &CftValueType) -> Option<&str> {
     match ty {
-        CftSchemaTypeRef::Object(name) => Some(name),
-        CftSchemaTypeRef::Nullable(inner) => type_name_of_schema_ref(inner),
+        CftValueType::Object(name) => Some(name),
+        CftValueType::Nullable(inner) => type_name_of_schema_ref(inner),
         _ => None,
     }
 }

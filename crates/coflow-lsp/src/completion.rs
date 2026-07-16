@@ -85,7 +85,7 @@ pub(crate) fn completion_items(
             if is_field_default_context(line_prefix) {
                 return field_default_completion_items(build, current_field_at(document, offset));
             }
-            if is_type_reference_context(line_prefix) {
+            if is_value_typeerence_context(line_prefix) {
                 return type_completion_items(build);
             }
             type_member_completion_items()
@@ -553,7 +553,7 @@ pub(crate) fn is_type_header_parent_context(line_prefix: &str) -> bool {
     before_colon.contains("type")
 }
 
-pub(crate) fn is_type_reference_context(line_prefix: &str) -> bool {
+pub(crate) fn is_value_typeerence_context(line_prefix: &str) -> bool {
     let trimmed = line_prefix.trim_end();
     let Some(colon) = trimmed.rfind(':') else {
         return false;

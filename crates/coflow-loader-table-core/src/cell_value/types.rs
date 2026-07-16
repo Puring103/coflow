@@ -1,4 +1,4 @@
-use coflow_cft::{CftField, CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftField, CftSchema, CftValueType};
 
 use super::diagnostics::{
     invalid_declared_type, CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode,
@@ -19,21 +19,21 @@ pub(super) enum CellType {
 }
 
 impl CellType {
-    pub(super) fn from_schema_type(ty: &CftSchemaTypeRef) -> Self {
+    pub(super) fn from_schema_type(ty: &CftValueType) -> Self {
         match ty {
-            CftSchemaTypeRef::Int => Self::Int,
-            CftSchemaTypeRef::Float => Self::Float,
-            CftSchemaTypeRef::Bool => Self::Bool,
-            CftSchemaTypeRef::String => Self::String,
-            CftSchemaTypeRef::Object(name) => Self::Type(name.to_string()),
-            CftSchemaTypeRef::Enum(name) => Self::Enum(name.to_string()),
-            CftSchemaTypeRef::RecordRef(name) => Self::Ref(name.to_string()),
-            CftSchemaTypeRef::Array(inner) => Self::Array(Box::new(Self::from_schema_type(inner))),
-            CftSchemaTypeRef::Dict(key, value) => Self::Dict(
+            CftValueType::Int => Self::Int,
+            CftValueType::Float => Self::Float,
+            CftValueType::Bool => Self::Bool,
+            CftValueType::String => Self::String,
+            CftValueType::Object(name) => Self::Type(name.to_string()),
+            CftValueType::Enum(name) => Self::Enum(name.to_string()),
+            CftValueType::RecordRef(name) => Self::Ref(name.to_string()),
+            CftValueType::Array(inner) => Self::Array(Box::new(Self::from_schema_type(inner))),
+            CftValueType::Dict(key, value) => Self::Dict(
                 Box::new(Self::from_schema_type(key)),
                 Box::new(Self::from_schema_type(value)),
             ),
-            CftSchemaTypeRef::Nullable(inner) => {
+            CftValueType::Nullable(inner) => {
                 Self::Nullable(Box::new(Self::from_schema_type(inner)))
             }
         }
@@ -210,6 +210,6 @@ pub(super) fn full_fields(
 fn field_meta(field: &CftField) -> FieldMeta {
     FieldMeta {
         name: field.name.to_string(),
-        ty: CellType::from_schema_type(&field.ty_ref),
+        ty: CellType::from_schema_type(&field.value_type),
     }
 }

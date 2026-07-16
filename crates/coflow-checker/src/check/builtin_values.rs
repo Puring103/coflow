@@ -5,7 +5,7 @@ use coflow_structure::StructuralBudget;
 use regex::Regex;
 
 use super::builtins::Builtin;
-use super::diagnostics::{format_value_for_message, type_ref_is_float};
+use super::diagnostics::{format_value_for_message, value_type_is_float};
 use super::ops::{self, OpsError, OpsResult};
 use super::value::{
     comparable_key, dict_key_from_check_value, dict_key_matches, values_equal, CheckItems,
@@ -350,7 +350,7 @@ pub(super) fn sum_value(
             }
         }
     }
-    if saw_float || (!saw_numeric && type_ref_is_float(element_type.as_ref())) {
+    if saw_float || (!saw_numeric && value_type_is_float(element_type.as_ref())) {
         Ok(LocatedCheckValue::new(
             CheckValue::Float(float_sum),
             location,

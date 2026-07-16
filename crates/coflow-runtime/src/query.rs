@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use coflow_api::{ProviderRegistry, WriterCapabilities};
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType};
 use coflow_data_model::{
     CfdPath, CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup, RefSite,
 };
@@ -92,7 +92,7 @@ impl<'a> ProjectQueries<'a> {
             .resolve_type(type_name)
             .map(|meta| {
                 meta.all_fields()
-                    .map(|field| (field.name.to_string(), field.ty_ref.display_label()))
+                    .map(|field| (field.name.to_string(), field.value_type.display_label()))
                     .collect()
             })
             .unwrap_or_default()
@@ -249,7 +249,7 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub fn field_shape(self, actual_type: &str, field_name: &str) -> Option<FieldShapeInfo> {
         let field = self.session.schema().field(actual_type, field_name)?;
-        Some(field_shape(self.session.schema(), &field.ty_ref))
+        Some(field_shape(self.session.schema(), &field.value_type))
     }
 
     #[must_use]
@@ -408,18 +408,18 @@ fn dimension_value_at_path<'a>(
     Some(value)
 }
 
-fn field_shape(schema: &CftSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
+fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
     let non_nullable = non_nullable(ty);
     let ref_target_type = match non_nullable {
-        CftSchemaTypeRef::RecordRef(name) => Some(name.to_string()),
+        CftValueType::RecordRef(name) => Some(name.to_string()),
         _ => None,
     };
     let enum_type = match non_nullable {
-        CftSchemaTypeRef::Enum(name) => Some(name.to_string()),
+        CftValueType::Enum(name) => Some(name.to_string()),
         _ => None,
     };
     let polymorphic_types = match non_nullable {
-        CftSchemaTypeRef::Object(name) => Some(name.as_str()),
+        CftValueType::Object(name) => Some(name.as_str()),
         _ => None,
     }
     .and_then(|name| schema.resolve_type(name).map(|meta| (name, meta)))
@@ -431,7 +431,7 @@ fn field_shape(schema: &CftSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
     .map(|name| name.to_string())
     .collect();
     let collection_item = match non_nullable {
-        CftSchemaTypeRef::Array(item) | CftSchemaTypeRef::Dict(_, item) => {
+        CftValueType::Array(item) | CftValueType::Dict(_, item) => {
             Some(Box::new(field_shape(schema, item)))
         }
         _ => None,
@@ -440,15 +440,15 @@ fn field_shape(schema: &CftSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
         display_label: ty.display_label(),
         ref_target_type,
         enum_type,
-        nullable: matches!(ty, CftSchemaTypeRef::Nullable(_)),
+        nullable: matches!(ty, CftValueType::Nullable(_)),
         polymorphic_types,
         collection_item,
     }
 }
 
-fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+fn non_nullable(ty: &CftValueType) -> &CftValueType {
     match ty {
-        CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
+        CftValueType::Nullable(inner) => non_nullable(inner),
         _ => ty,
     }
 }

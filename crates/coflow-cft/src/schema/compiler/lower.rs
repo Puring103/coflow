@@ -4,7 +4,7 @@ use crate::schema::{
     CftConst, CftConstValue, CftEnum, CftEnumVariant, CftField, CftFieldDimension, CftSchemaBinOp,
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
     CftSchemaCmpOp, CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate,
-    CftSchemaTypeRef, CftSchemaUnaryOp, CftType,
+    CftValueType, CftSchemaUnaryOp, CftType,
 };
 use crate::syntax::ast::{
     AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, ConstLiteral, DefaultExpr,
@@ -160,7 +160,7 @@ impl SchemaCompiler<'_> {
         CftField {
             declaring_type: owner_type.clone(),
             name: FieldName::from_validated(field.name.clone()),
-            ty_ref: build_schema_type_ref(&field.ty, &|name| self.enums.contains_key(name)),
+            value_type: build_schema_value_type(&field.ty, &|name| self.enums.contains_key(name)),
             default: field
                 .default
                 .as_ref()
@@ -374,36 +374,36 @@ fn convert_cmp_op(op: CmpOp) -> CftSchemaCmpOp {
     }
 }
 
-pub(super) fn build_schema_type_ref(
+pub(super) fn build_schema_value_type(
     ty: &TypeRef,
     is_enum: &impl Fn(&str) -> bool,
-) -> CftSchemaTypeRef {
+) -> CftValueType {
     match &ty.kind {
-        TypeRefKind::Int => CftSchemaTypeRef::Int,
-        TypeRefKind::Float => CftSchemaTypeRef::Float,
-        TypeRefKind::Bool => CftSchemaTypeRef::Bool,
-        TypeRefKind::String => CftSchemaTypeRef::String,
+        TypeRefKind::Int => CftValueType::Int,
+        TypeRefKind::Float => CftValueType::Float,
+        TypeRefKind::Bool => CftValueType::Bool,
+        TypeRefKind::String => CftValueType::String,
         TypeRefKind::Named(name) if is_enum(name) => {
-            CftSchemaTypeRef::Enum(EnumName::from_validated(name.clone()))
+            CftValueType::Enum(EnumName::from_validated(name.clone()))
         }
         TypeRefKind::Named(name) => {
-            CftSchemaTypeRef::Object(TypeName::from_validated(name.clone()))
+            CftValueType::Object(TypeName::from_validated(name.clone()))
         }
         TypeRefKind::Ref(inner) => match &inner.kind {
             TypeRefKind::Named(name) => {
-                CftSchemaTypeRef::RecordRef(TypeName::from_validated(name.clone()))
+                CftValueType::RecordRef(TypeName::from_validated(name.clone()))
             }
-            _ => build_schema_type_ref(inner, is_enum),
+            _ => build_schema_value_type(inner, is_enum),
         },
         TypeRefKind::Array(inner) => {
-            CftSchemaTypeRef::Array(Box::new(build_schema_type_ref(inner, is_enum)))
+            CftValueType::Array(Box::new(build_schema_value_type(inner, is_enum)))
         }
-        TypeRefKind::Dict(key, value) => CftSchemaTypeRef::Dict(
-            Box::new(build_schema_type_ref(key, is_enum)),
-            Box::new(build_schema_type_ref(value, is_enum)),
+        TypeRefKind::Dict(key, value) => CftValueType::Dict(
+            Box::new(build_schema_value_type(key, is_enum)),
+            Box::new(build_schema_value_type(value, is_enum)),
         ),
         TypeRefKind::Nullable(inner) => {
-            CftSchemaTypeRef::Nullable(Box::new(build_schema_type_ref(inner, is_enum)))
+            CftValueType::Nullable(Box::new(build_schema_value_type(inner, is_enum)))
         }
     }
 }

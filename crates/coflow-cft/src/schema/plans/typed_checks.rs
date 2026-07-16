@@ -1,6 +1,6 @@
 use super::dimension_checks;
 use crate::schema::{CftSchema, LocatedBudgetError};
-use crate::{CftSchemaCheckBlock, CftSchemaTypeRef, CftType, DimensionName, FieldName, TypeName};
+use crate::{CftSchemaCheckBlock, CftValueType, CftType, DimensionName, FieldName, TypeName};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -105,7 +105,7 @@ fn compile_nested_fields(
     let mut reverse_dependencies = BTreeMap::<TypeName, BTreeSet<TypeName>>::new();
     for (owner_name, owner) in types {
         for field in &owner.all_fields {
-            let Some(target) = nested_type_target(&field.ty_ref) else {
+            let Some(target) = nested_type_target(&field.value_type) else {
                 continue;
             };
             for candidate in assignable_by_target.get(target).into_iter().flatten() {
@@ -144,7 +144,7 @@ fn compile_nested_fields(
     for (actual_type, meta) in types {
         let mut fields = BTreeSet::new();
         for field in &meta.all_fields {
-            let Some(target) = nested_type_target(&field.ty_ref) else {
+            let Some(target) = nested_type_target(&field.value_type) else {
                 continue;
             };
             let has_nested_checks = assignable_by_target
@@ -159,19 +159,19 @@ fn compile_nested_fields(
     Ok(fields_by_actual)
 }
 
-fn nested_type_target(ty: &CftSchemaTypeRef) -> Option<&TypeName> {
+fn nested_type_target(ty: &CftValueType) -> Option<&TypeName> {
     match ty {
-        CftSchemaTypeRef::Object(name) => Some(name),
-        CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
+        CftValueType::Object(name) => Some(name),
+        CftValueType::Array(inner) | CftValueType::Nullable(inner) => {
             nested_type_target(inner)
         }
-        CftSchemaTypeRef::Dict(_, value) => nested_type_target(value),
-        CftSchemaTypeRef::Int
-        | CftSchemaTypeRef::Float
-        | CftSchemaTypeRef::Bool
-        | CftSchemaTypeRef::String
-        | CftSchemaTypeRef::Enum(_)
-        | CftSchemaTypeRef::RecordRef(_) => None,
+        CftValueType::Dict(_, value) => nested_type_target(value),
+        CftValueType::Int
+        | CftValueType::Float
+        | CftValueType::Bool
+        | CftValueType::String
+        | CftValueType::Enum(_)
+        | CftValueType::RecordRef(_) => None,
     }
 }
 

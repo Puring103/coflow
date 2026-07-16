@@ -2,7 +2,7 @@ use super::common::*;
 use super::*;
 use crate::completion::receiver_chain_before_dot;
 use coflow_cft::syntax::ast::Item;
-use coflow_cft::CftSchemaTypeRef;
+use coflow_cft::CftValueType;
 
 #[test]
 fn hover_and_definition_ignore_comment_and_string_words() {
@@ -244,14 +244,14 @@ type Item {\n\
         vec!["type".to_string()]
     );
 
-    let type_ref_position = position_from_byte(
+    let value_type_position = position_from_byte(
         source,
         source.find("target: Target").expect("target") + "target: ".len(),
     );
-    let type_ref_labels = completion_labels(completion_items(&build, document, &type_ref_position));
-    assert!(type_ref_labels.contains(&"Target".to_string()));
-    assert!(type_ref_labels.contains(&"Kind".to_string()));
-    assert!(type_ref_labels.contains(&"string".to_string()));
+    let value_type_labels = completion_labels(completion_items(&build, document, &value_type_position));
+    assert!(value_type_labels.contains(&"Target".to_string()));
+    assert!(value_type_labels.contains(&"Kind".to_string()));
+    assert!(value_type_labels.contains(&"string".to_string()));
 
     let const_position = position_from_byte(
         source,
@@ -372,7 +372,7 @@ type Holder {\n\
     );
     assert!(matches!(
         type_of_chain(&build, document, offset, &[s("target"), s("value")]),
-        Some(CftSchemaTypeRef::Int)
+        Some(CftValueType::Int)
     ));
     assert!(type_of_chain(&build, document, offset, &[]).is_none());
     assert!(type_of_chain(&build, document, offset, &[s("missing")]).is_none());

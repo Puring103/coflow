@@ -4,7 +4,7 @@ mod dimensions;
 mod names;
 mod plans;
 mod queries;
-mod type_ref;
+mod value_type;
 
 pub use compiler::build_schema;
 pub use declarations::*;
@@ -15,7 +15,7 @@ pub use plans::{
     ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
 };
 pub use queries::CftEnumValue;
-pub use type_ref::CftSchemaTypeRef;
+pub use value_type::CftValueType;
 
 use self::compiler::SchemaDeclarations;
 use crate::module::ModuleId;

@@ -1,6 +1,6 @@
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp,
-    CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp,
+    CftSchemaQuantifierKind, CftSchemaTypePredicate, CftValueType, CftSchemaUnaryOp,
 };
 use coflow_data_model::{CfdErrorCode, CfdPath, CfdPathSegment, DimensionFieldLookupError};
 
@@ -273,10 +273,10 @@ pub(super) fn format_value_for_message(value: &CheckValue) -> String {
     }
 }
 
-pub(super) fn type_ref_is_float(ty: Option<&CftSchemaTypeRef>) -> bool {
+pub(super) fn value_type_is_float(ty: Option<&CftValueType>) -> bool {
     match ty {
-        Some(CftSchemaTypeRef::Float) => true,
-        Some(CftSchemaTypeRef::Nullable(inner)) => type_ref_is_float(Some(inner)),
+        Some(CftValueType::Float) => true,
+        Some(CftValueType::Nullable(inner)) => value_type_is_float(Some(inner)),
         _ => false,
     }
 }

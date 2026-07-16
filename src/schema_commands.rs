@@ -256,7 +256,7 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
     for ty in &report.types {
         writeln!(stdout, "type {}", ty.name).map_err(|err| output_error(&err))?;
         for field in &ty.fields {
-            writeln!(stdout, "  {}: {}", field.name, display_type_ref(&field.ty))
+            writeln!(stdout, "  {}: {}", field.name, display_value_type(&field.ty))
                 .map_err(|err| output_error(&err))?;
         }
     }
@@ -273,7 +273,7 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 
-fn display_type_ref(ty: &SchemaTypeRefInfo) -> String {
+fn display_value_type(ty: &SchemaTypeRefInfo) -> String {
     match ty {
         SchemaTypeRefInfo::Int => "int".to_string(),
         SchemaTypeRefInfo::Float => "float".to_string(),
@@ -281,15 +281,15 @@ fn display_type_ref(ty: &SchemaTypeRefInfo) -> String {
         SchemaTypeRefInfo::String => "string".to_string(),
         SchemaTypeRefInfo::Named { name, .. } => name.clone(),
         SchemaTypeRefInfo::Ref { target } => format!("&{target}"),
-        SchemaTypeRefInfo::Array { item } => format!("{}[]", display_type_ref(item)),
+        SchemaTypeRefInfo::Array { item } => format!("{}[]", display_value_type(item)),
         SchemaTypeRefInfo::Dict { key, value } => {
             format!(
                 "dict<{}, {}>",
-                display_type_ref(key),
-                display_type_ref(value)
+                display_value_type(key),
+                display_value_type(value)
             )
         }
-        SchemaTypeRefInfo::Nullable { inner } => format!("{}?", display_type_ref(inner)),
+        SchemaTypeRefInfo::Nullable { inner } => format!("{}?", display_value_type(inner)),
     }
 }
 

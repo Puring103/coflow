@@ -10,7 +10,7 @@
 mod common;
 use coflow_cft::{
     build_schema, is_cft_identifier, parse_modules, record_key_ident_error, CftDimensionInputs,
-    CftFile, CftSchemaTypeRef, ModuleId, ValueDependencyMode,
+    CftFile, CftValueType, ModuleId, ValueDependencyMode,
 };
 use common::*;
 use std::path::PathBuf;
@@ -100,8 +100,8 @@ fn build_schema_compiles_a_parsed_module_set() {
 
     assert!(schema.resolve_type("Item").is_some());
     assert_eq!(
-        schema.field("Item", "value").map(|field| &field.ty_ref),
-        Some(&CftSchemaTypeRef::Int)
+        schema.field("Item", "value").map(|field| &field.value_type),
+        Some(&CftValueType::Int)
     );
 }
 

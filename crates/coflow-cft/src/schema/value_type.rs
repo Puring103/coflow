@@ -2,7 +2,7 @@ use super::{EnumName, TypeName};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CftSchemaTypeRef {
+pub enum CftValueType {
     Int,
     Float,
     Bool,
@@ -10,12 +10,12 @@ pub enum CftSchemaTypeRef {
     Object(TypeName),
     Enum(EnumName),
     RecordRef(TypeName),
-    Array(Box<CftSchemaTypeRef>),
-    Dict(Box<CftSchemaTypeRef>, Box<CftSchemaTypeRef>),
-    Nullable(Box<CftSchemaTypeRef>),
+    Array(Box<CftValueType>),
+    Dict(Box<CftValueType>, Box<CftValueType>),
+    Nullable(Box<CftValueType>),
 }
 
-impl CftSchemaTypeRef {
+impl CftValueType {
     #[must_use]
     pub const fn is_nullable(&self) -> bool {
         matches!(self, Self::Nullable(_))
@@ -35,7 +35,7 @@ impl CftSchemaTypeRef {
     }
 }
 
-impl fmt::Display for CftSchemaTypeRef {
+impl fmt::Display for CftValueType {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int => formatter.write_str("int"),

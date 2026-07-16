@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType};
 use coflow_data_model::{CfdDataModel, CfdErrorCode};
 use coflow_structure::StructuralBudget;
 
@@ -13,11 +13,11 @@ pub(super) fn field_type_for_record<'a>(
     model: &CfdDataModel,
     record: &CheckRecordRef,
     name: &str,
-) -> Option<&'a CftSchemaTypeRef> {
+) -> Option<&'a CftValueType> {
     record
         .actual_type(model)
         .and_then(|actual_type| schema.field(actual_type, name))
-        .map(|field| &field.ty_ref)
+        .map(|field| &field.value_type)
 }
 
 pub(super) fn current_field(

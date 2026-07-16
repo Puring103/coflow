@@ -1,6 +1,6 @@
 use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnum, CftField, CftSchema, CftSchemaTypeRef, CftType, FieldName, TypeName};
+use coflow_cft::{CftEnum, CftField, CftSchema, CftValueType, CftType, FieldName, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug)]
@@ -96,7 +96,7 @@ impl<'a> CsharpLoweringPlan<'a> {
             );
             for field in ty.own_fields() {
                 uses_localization |= field.dimension.is_some();
-                collect_ref_targets(&field.ty_ref, &mut ref_targets);
+                collect_ref_targets(&field.value_type, &mut ref_targets);
             }
         }
 
@@ -112,8 +112,8 @@ impl<'a> CsharpLoweringPlan<'a> {
                         "invalid generated dimension table name `{source_name}`: {err}"
                     ))
                 })?;
-                let field_type = CftSchemaTypeRef::Nullable(Box::new(
-                    source_field.ty_ref.non_nullable().clone(),
+                let field_type = CftValueType::Nullable(Box::new(
+                    source_field.value_type.non_nullable().clone(),
                 ));
                 let mut fields = Vec::with_capacity(dimension.variants.len() + 1);
                 for name in
@@ -126,7 +126,7 @@ impl<'a> CsharpLoweringPlan<'a> {
                                 "invalid generated dimension field name `{name}`: {err}"
                             ))
                         })?,
-                        ty_ref: field_type.clone(),
+                        value_type: field_type.clone(),
                         default: None,
                         is_expand: false,
                         dimension: None,
@@ -298,12 +298,12 @@ impl<'a> CsharpLoweringPlan<'a> {
         self.id_as_enum_names.contains(enum_name)
     }
 
-    pub fn key_field_type(&self, type_name: &str) -> CftSchemaTypeRef {
+    pub fn key_field_type(&self, type_name: &str) -> CftValueType {
         self.id_as_enum(type_name)
             .and_then(|name| self.schema.resolve_enum(&name))
             .map_or_else(
-                || CftSchemaTypeRef::String,
-                |schema_enum| CftSchemaTypeRef::Enum(schema_enum.name.clone()),
+                || CftValueType::String,
+                |schema_enum| CftValueType::Enum(schema_enum.name.clone()),
             )
     }
 
@@ -326,23 +326,23 @@ impl<'a> CsharpLoweringPlan<'a> {
     }
 }
 
-fn collect_ref_targets(ty: &CftSchemaTypeRef, out: &mut BTreeSet<String>) {
+fn collect_ref_targets(ty: &CftValueType, out: &mut BTreeSet<String>) {
     match ty {
-        CftSchemaTypeRef::RecordRef(name) => {
+        CftValueType::RecordRef(name) => {
             out.insert(name.to_string());
         }
-        CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
+        CftValueType::Array(inner) | CftValueType::Nullable(inner) => {
             collect_ref_targets(inner, out);
         }
-        CftSchemaTypeRef::Dict(key, value) => {
+        CftValueType::Dict(key, value) => {
             collect_ref_targets(key, out);
             collect_ref_targets(value, out);
         }
-        CftSchemaTypeRef::Int
-        | CftSchemaTypeRef::Float
-        | CftSchemaTypeRef::Bool
-        | CftSchemaTypeRef::String
-        | CftSchemaTypeRef::Object(_)
-        | CftSchemaTypeRef::Enum(_) => {}
+        CftValueType::Int
+        | CftValueType::Float
+        | CftValueType::Bool
+        | CftValueType::String
+        | CftValueType::Object(_)
+        | CftValueType::Enum(_) => {}
     }
 }

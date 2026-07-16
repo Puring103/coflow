@@ -392,7 +392,7 @@ fn exports_dict_keys_as_json_object_keys() -> TestResult {
 }
 
 #[test]
-fn exports_nullable_composite_values_using_schema_type_refs() -> TestResult {
+fn exports_nullable_composite_values_using_schema_value_types() -> TestResult {
     let schema = compile_schema(
         r#"
             type Stats {
