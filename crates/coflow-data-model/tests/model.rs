@@ -37,7 +37,10 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
     let table = model.table("Item").expect("item table");
     assert_eq!(table.records, vec![item_id]);
     assert_eq!(table.primary_index.get("item_1"), Some(&item_id));
-    assert_eq!(model.lookup_assignable("Item", "item_1"), Some(item_id));
+    assert_eq!(
+        model.lookup_assignable(&schema, "Item", "item_1"),
+        Some(item_id)
+    );
 
     let record = model.record(item_id).expect("record");
     assert_eq!(record.key(), "item_1");
@@ -195,9 +198,13 @@ fn data_model_resolves_shared_spread_source_for_multiple_consumers() {
     }
 
     let model = builder.build().expect("shared spread source resolves");
-    let base = model.lookup_assignable("Stats", "base").expect("base");
+    let base = model
+        .lookup_assignable(&schema, "Stats", "base")
+        .expect("base");
     for key in ["left", "right"] {
-        let id = model.lookup_assignable("Stats", key).expect("consumer");
+        let id = model
+            .lookup_assignable(&schema, "Stats", key)
+            .expect("consumer");
         let record = model.record(id);
         assert_eq!(
             record.and_then(|record| record.field("hp")),
@@ -242,7 +249,9 @@ fn dimension_field_lookup_reads_record_owned_overlay() {
         origin: RecordOrigin::None,
     });
     let model = builder.build().expect("data model should build");
-    let item_id = model.lookup_assignable("Item", "potion").expect("item");
+    let item_id = model
+        .lookup_assignable(&schema, "Item", "potion")
+        .expect("item");
 
     let resolved = model
         .dimension_field_value(&schema, item_id, "name", "platform", "pc")
@@ -293,8 +302,12 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
     });
 
     let model = builder.build().expect("data model should build");
-    let offer = model.lookup_assignable("Offer", "starter").expect("offer");
-    let item = model.lookup_assignable("Item", "potion").expect("item");
+    let offer = model
+        .lookup_assignable(&schema, "Offer", "starter")
+        .expect("offer");
+    let item = model
+        .lookup_assignable(&schema, "Item", "potion")
+        .expect("item");
     let edges = model.direct_ref_edges_from_host(offer).collect::<Vec<_>>();
 
     assert_eq!(edges.len(), 2);
@@ -341,7 +354,7 @@ fn dimension_field_lookup_uses_singleton_owner_record() {
     });
     let model = builder.build().expect("data model should build");
     let singleton_id = model
-        .lookup_assignable("UiText", "UiText")
+        .lookup_assignable(&schema, "UiText", "UiText")
         .expect("singleton");
 
     let resolved = model
@@ -390,16 +403,15 @@ fn object_typed_record_refs_resolve_by_expected_type() {
     let drop_id = record_id_at(&model, 1);
 
     assert_eq!(
-        model.lookup_assignable("Reward", "reward_1"),
+        model.lookup_assignable(&schema, "Reward", "reward_1"),
         Some(reward_id)
     );
     assert_eq!(
         model
-            .polymorphic_index("Reward")
-            .expect("reward index")
-            .records
-            .get("reward_1"),
-        Some(&reward_id)
+            .records_assignable_to(&schema, "Reward")
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>(),
+        vec![reward_id]
     );
     assert_eq!(
         model

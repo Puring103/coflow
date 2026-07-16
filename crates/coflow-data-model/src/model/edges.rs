@@ -1,6 +1,6 @@
-use super::ids::{CfdDomainId, CfdRecordId, CfdTypeId};
+use super::ids::CfdRecordId;
 use crate::diagnostics::{CfdPath, CfdPathSegment};
-use coflow_cft::{DimensionName, FieldName, RecordKey, VariantName};
+use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -63,11 +63,11 @@ impl RefEdgeId {
 pub struct RefEdge {
     pub id: RefEdgeId,
     pub site: RefSite,
-    pub expected_type: CfdTypeId,
-    pub domain: CfdDomainId,
+    pub expected_type: TypeName,
+    pub inheritance_root: TypeName,
     pub key: RecordKey,
     pub target: CfdRecordId,
-    pub target_type: CfdTypeId,
+    pub target_type: TypeName,
 }
 
 /// Logical address of a field value inherited through object/record spread.
@@ -106,11 +106,11 @@ pub struct SpreadEdge {
     pub host: CfdRecordId,
     pub path: CfdPath,
     pub fields: BTreeSet<FieldName>,
-    pub expected_type: CfdTypeId,
-    pub domain: CfdDomainId,
+    pub expected_type: TypeName,
+    pub inheritance_root: TypeName,
     pub source_key: RecordKey,
     pub source: CfdRecordId,
-    pub source_type: CfdTypeId,
+    pub source_type: TypeName,
 }
 
 impl SpreadEdge {

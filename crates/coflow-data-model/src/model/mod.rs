@@ -1,17 +1,15 @@
 mod dimensions;
-mod domain;
 mod edges;
 mod ids;
 mod tables;
 mod value;
 
 pub use dimensions::{DimensionFieldLookupError, DimensionValueLookup};
-pub use domain::CfdDomainIndex;
 pub use edges::{
     DimensionRefCoordinate, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
 };
-pub use ids::{CfdDomainId, CfdRecordId, CfdTypeId, RecordCoordinate};
-pub use tables::{CfdPolymorphicIndex, CfdTable};
+pub use ids::{CfdRecordId, RecordCoordinate};
+pub use tables::CfdTable;
 pub use value::{
     CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdObject, CfdRecord,
     CfdValue,
@@ -25,10 +23,8 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDataModel {
     pub(crate) tables: BTreeMap<TypeName, CfdTable>,
-    pub(crate) inheritance_index: BTreeMap<TypeName, CfdPolymorphicIndex>,
-    pub(crate) domain_index: CfdDomainIndex,
-    pub(crate) record_by_type_key: BTreeMap<CfdTypeId, BTreeMap<RecordKey, CfdRecordId>>,
-    pub(crate) record_by_domain_key: BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    pub(crate) record_by_type_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+    pub(crate) record_by_domain_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     pub(crate) records: Vec<CfdRecord>,
     pub(crate) ref_edges: Vec<RefEdge>,
     pub(crate) ref_by_site: BTreeMap<RefSite, RefEdgeId>,
@@ -70,11 +66,17 @@ impl CfdDataModel {
     /// assignability. Use [`CfdDataModel::record_by_type_key`] when callers
     /// need the record's actual type to match exactly.
     #[must_use]
-    pub fn lookup_assignable(&self, expected_type: &str, key: &str) -> Option<CfdRecordId> {
-        if let Some(domain_id) = self.type_domain_id(expected_type) {
-            if let Some(record_id) = self.record_by_domain_key(domain_id, key) {
+    pub fn lookup_assignable(
+        &self,
+        schema: &CftSchema,
+        expected_type: &str,
+        key: &str,
+    ) -> Option<CfdRecordId> {
+        if let Some(inheritance_root) = schema.inheritance_root(expected_type) {
+            if let Some(record_id) = self.record_by_domain_key(inheritance_root, key) {
                 if self.record(record_id).is_some_and(|record| {
-                    self.type_is_assignable_by_name(record.actual_type(), expected_type)
+                    inheritance_root.as_str() == expected_type
+                        || schema.is_assignable(record.actual_type(), expected_type)
                 }) {
                     return Some(record_id);
                 }
@@ -86,72 +88,19 @@ impl CfdDataModel {
             .copied()
     }
 
-    /// Returns the polymorphic index for a type, if one exists.
-    #[must_use]
-    pub fn polymorphic_index(&self, type_name: &str) -> Option<&CfdPolymorphicIndex> {
-        self.inheritance_index.get(type_name)
-    }
-
-    /// Returns the stable runtime id for a schema object type name.
-    #[must_use]
-    pub fn type_id(&self, type_name: &str) -> Option<CfdTypeId> {
-        self.domain_index.type_id(type_name)
-    }
-
-    /// Returns the schema object type name for a runtime type id.
-    #[must_use]
-    pub fn type_name(&self, type_id: CfdTypeId) -> Option<&str> {
-        self.domain_index.type_name(type_id)
-    }
-
-    /// Returns the inheritance connected-component domain for a type id.
-    #[must_use]
-    pub fn type_domain(&self, type_id: CfdTypeId) -> Option<CfdDomainId> {
-        self.domain_index.type_domain(type_id)
-    }
-
-    /// Returns ancestors from nearest parent to root for a schema object type.
-    #[must_use]
-    pub fn type_ancestors(&self, type_id: CfdTypeId) -> Option<&[CfdTypeId]> {
-        self.domain_index.type_ancestors(type_id)
-    }
-
-    /// Returns the inheritance connected-component domain for a type name.
-    #[must_use]
-    pub fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId> {
-        self.domain_index.type_domain_by_name(type_name)
-    }
-
-    /// Returns all schema object types in an inheritance connected component.
-    #[must_use]
-    pub fn domain_members(&self, domain_id: CfdDomainId) -> Option<&[CfdTypeId]> {
-        self.domain_index.domain_members(domain_id)
-    }
-
     /// Looks up a record by its actual type and key.
     #[must_use]
     pub fn record_by_type_key(&self, type_name: &str, key: &str) -> Option<CfdRecordId> {
-        let type_id = self.type_id(type_name)?;
-        self.record_by_type_key.get(&type_id)?.get(key).copied()
+        self.record_by_type_key.get(type_name)?.get(key).copied()
     }
 
-    /// Looks up a record by inheritance connected-component domain and key.
+    /// Looks up a record by canonical inheritance root and key.
     #[must_use]
-    pub fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId> {
-        self.record_by_domain_key.get(&domain_id)?.get(key).copied()
-    }
-
-    fn type_is_assignable_by_name(&self, actual_type: &str, expected_type: &str) -> bool {
-        let Some(actual_type_id) = self.type_id(actual_type) else {
-            return false;
-        };
-        let Some(expected_type_id) = self.type_id(expected_type) else {
-            return false;
-        };
-        actual_type_id == expected_type_id
-            || self
-                .type_ancestors(actual_type_id)
-                .is_some_and(|ancestors| ancestors.contains(&expected_type_id))
+    pub fn record_by_domain_key(&self, inheritance_root: &str, key: &str) -> Option<CfdRecordId> {
+        self.record_by_domain_key
+            .get(inheritance_root)?
+            .get(key)
+            .copied()
     }
 
     pub fn tables(&self) -> impl Iterator<Item = (&str, &CfdTable)> {
@@ -189,11 +138,11 @@ impl CfdDataModel {
     /// descendant type and preserves insertion order.
     pub fn records_assignable_to<'a>(
         &'a self,
+        schema: &'a CftSchema,
         type_name: &'a str,
     ) -> impl Iterator<Item = (CfdRecordId, &'a CfdRecord)> + 'a {
-        self.records().filter(move |(_, record)| {
-            self.type_is_assignable_by_name(record.actual_type(), type_name)
-        })
+        self.records()
+            .filter(move |(_, record)| schema.is_assignable(record.actual_type(), type_name))
     }
 
     /// Look up the direct target id for the `CfdValue::Ref` at `site`.

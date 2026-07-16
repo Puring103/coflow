@@ -61,8 +61,12 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
         ],
     );
     let model = builder.build().expect("model builds");
-    let target = model.lookup_assignable("Item", "target").expect("target");
-    let reader = model.lookup_assignable("Item", "reader").expect("reader");
+    let target = model
+        .lookup_assignable(&schema, "Item", "target")
+        .expect("target");
+    let reader = model
+        .lookup_assignable(&schema, "Item", "reader")
+        .expect("reader");
 
     let (diagnostics, graph) = run_checks_for_dimensions_subset_with_deps(
         &schema,

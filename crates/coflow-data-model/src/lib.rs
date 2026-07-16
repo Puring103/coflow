@@ -45,10 +45,10 @@ pub use diagnostics::{
 };
 pub use ingest::{DimensionValueDraft, LoadedDictKeyDraft, LoadedRecordDraft, LoadedValueDraft};
 pub use model::{
-    CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdDomainId,
-    CfdDomainIndex, CfdEnumValue, CfdObject, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdTable,
-    CfdTypeId, CfdValue, DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueLookup,
-    RecordCoordinate, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
+    CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdObject,
+    CfdRecord, CfdRecordId, CfdTable, CfdValue, DimensionFieldLookupError, DimensionRefCoordinate,
+    DimensionValueLookup, RecordCoordinate, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId,
+    SpreadSite,
 };
 pub use semantics::{
     validate_object_type_assignable, validate_value_for_schema, CfdValueSemanticContext,

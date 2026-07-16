@@ -173,10 +173,12 @@ where
                         message: "dimension field has unknown declaring type".to_string(),
                     })?;
             let table_name = format!("{}_{}Variants", field.declaring_type, field.name);
-            let record_count = model.records_assignable_to(&field.declaring_type).count();
+            let record_count = model
+                .records_assignable_to(schema, &field.declaring_type)
+                .count();
             let mut location = ExportLocation::new(&table_name);
             sink_event(&location, sink.begin_table(&table_name, record_count))?;
-            for (_, record) in model.records_assignable_to(&field.declaring_type) {
+            for (_, record) in model.records_assignable_to(schema, &field.declaring_type) {
                 location.record = Some(if source_type.is_singleton {
                     field.name.to_string()
                 } else {

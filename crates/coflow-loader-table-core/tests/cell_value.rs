@@ -1049,7 +1049,7 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     builder.add_record("drop_1", "Drop", [("stats", parsed_stats)]);
     let model = build_model(builder)?;
     let drop = model
-        .lookup_assignable("Drop", "drop_1")
+        .lookup_assignable(&schema, "Drop", "drop_1")
         .and_then(|id| model.record(id))
         .ok_or_else(|| "expected drop record".to_string())?;
     let Some(CfdValue::Object(parsed)) = drop.field("stats") else {

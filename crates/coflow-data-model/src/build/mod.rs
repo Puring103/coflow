@@ -11,13 +11,12 @@ use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdPath};
 use crate::indexes::{self, build_ref_indexes, build_spread_indexes};
 use crate::ingest::{DimensionValueDraft, LoadedRecordDraft, LoadedValueDraft};
 use crate::model::{
-    CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdDomainId, CfdObject, CfdRecord,
-    CfdRecordId,
+    CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdObject, CfdRecord, CfdRecordId,
 };
 use crate::semantics::{
     CfdValueSemanticContext, CfdValueSemanticErrorKind, ValueValidationMode, ValueValidationRequest,
 };
-use coflow_cft::{CftSchema, CftValueType, FieldName, RecordKey};
+use coflow_cft::{CftSchema, CftValueType, FieldName, RecordKey, TypeName};
 use coflow_structure::StructuralLimits;
 use resolve::ValueResolver;
 use std::collections::BTreeMap;
@@ -218,7 +217,9 @@ impl<'a> ModelCompiler<'a> {
         {
             let mut seen = std::collections::BTreeSet::new();
             for input in &self.dimension_values {
-                let Some(domain) = self.schema.type_domain_id(input.source_type.as_str()) else {
+                let Some(inheritance_root) =
+                    self.schema.inheritance_root(input.source_type.as_str())
+                else {
                     self.diagnostics.push(CfdDiagnostic::error(
                         crate::CfdErrorCode::UnknownType,
                         format!("unknown dimension source type `{}`", input.source_type),
@@ -227,7 +228,7 @@ impl<'a> ModelCompiler<'a> {
                 };
                 let Some(record_id) = indexes
                     .record_by_domain_key
-                    .get(&domain)
+                    .get(inheritance_root)
                     .and_then(|records| records.get(input.source_key.as_str()))
                     .copied()
                 else {
@@ -398,8 +399,6 @@ impl<'a> ModelCompiler<'a> {
 
         Ok(CfdDataModel {
             tables: indexes.tables,
-            inheritance_index: indexes.inheritance_index,
-            domain_index: self.schema.domain_index().clone(),
             record_by_type_key: indexes.record_by_type_key,
             record_by_domain_key: indexes.record_by_domain_key,
             records,
@@ -415,19 +414,17 @@ impl<'a> ModelCompiler<'a> {
     }
 }
 
-struct BuildValueSemanticContext<'a, 'schema> {
-    schema: &'a BuildSchema<'schema>,
+struct BuildValueSemanticContext<'a> {
     records: &'a [CfdRecord],
-    record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
 }
 
-impl CfdValueSemanticContext for BuildValueSemanticContext<'_, '_> {
-    fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId> {
-        self.schema.type_domain_id(type_name)
-    }
-
-    fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId> {
-        self.record_by_domain_key.get(&domain_id)?.get(key).copied()
+impl CfdValueSemanticContext for BuildValueSemanticContext<'_> {
+    fn record_by_domain_key(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordId> {
+        self.record_by_domain_key
+            .get(inheritance_root)?
+            .get(key)
+            .copied()
     }
 
     fn record_actual_type(&self, id: CfdRecordId) -> Option<&str> {
@@ -438,11 +435,10 @@ impl CfdValueSemanticContext for BuildValueSemanticContext<'_, '_> {
 fn validate_resolved_records(
     schema: &BuildSchema<'_>,
     records: &[CfdRecord],
-    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     diagnostics: &mut Vec<CfdDiagnostic>,
 ) {
     let context = BuildValueSemanticContext {
-        schema,
         records,
         record_by_domain_key,
     };

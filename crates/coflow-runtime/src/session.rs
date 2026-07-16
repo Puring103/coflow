@@ -222,20 +222,11 @@ impl ProjectSession {
     pub fn ref_targets(&self, expected_type: &str) -> Vec<RefTargetInfo> {
         let mut targets = Vec::new();
         let schema = self.schema();
-        let Some(domain_id) = self.model.type_domain_id(expected_type) else {
+        let Some(assignable_types) = schema.concrete_assignable_types(expected_type) else {
             return targets;
         };
-        let Some(members) = self.model.domain_members(domain_id) else {
-            return targets;
-        };
-        for type_id in members {
-            let Some(type_name) = self.model.type_name(*type_id) else {
-                continue;
-            };
-            if !schema.is_assignable(type_name, expected_type) {
-                continue;
-            }
-            for (_, record) in self.model.records_of_type(type_name) {
+        for type_name in assignable_types {
+            for (_, record) in self.model.records_of_type(&type_name) {
                 let Some(file_path) = self.file_for_record(record.actual_type(), &record.key)
                 else {
                     continue;

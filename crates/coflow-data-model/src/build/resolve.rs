@@ -1,6 +1,6 @@
 use crate::build::{BuildSchema, RecordDraft, ValueDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
-use crate::model::{CfdDictKey, CfdDomainId, CfdObject, CfdRecordId, CfdValue};
+use crate::model::{CfdDictKey, CfdObject, CfdRecordId, CfdValue};
 use coflow_cft::{FieldName, RecordKey, TypeName};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
@@ -64,7 +64,7 @@ impl ValueNode {
 pub(super) struct ValueResolver<'a, 'schema> {
     schema: &'a BuildSchema<'schema>,
     drafts: &'a [RecordDraft],
-    record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     diagnostics: &'a mut Vec<CfdDiagnostic>,
     memo: BTreeMap<ValueNode, ResolvedMemo>,
     active: BTreeMap<ValueNode, usize>,
@@ -79,7 +79,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     pub(super) fn new(
         schema: &'a BuildSchema<'schema>,
         drafts: &'a [RecordDraft],
-        record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+        record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
         diagnostics: &'a mut Vec<CfdDiagnostic>,
         structural_limits: StructuralLimits,
     ) -> Self {
@@ -273,10 +273,10 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     ) -> Option<(CfdRecordId, RecordKey)> {
         let target = self
             .schema
-            .type_domain_id(expected_type.as_str())
-            .and_then(|domain_id| {
+            .inheritance_root(expected_type.as_str())
+            .and_then(|inheritance_root| {
                 self.record_by_domain_key
-                    .get(&domain_id)?
+                    .get(inheritance_root)?
                     .get_key_value(key)
                     .map(|(key, id)| (*id, key.clone()))
             });

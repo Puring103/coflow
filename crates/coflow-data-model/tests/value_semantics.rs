@@ -9,11 +9,11 @@ use std::collections::BTreeMap;
 struct EmptyContext;
 
 impl CfdValueSemanticContext for EmptyContext {
-    fn type_domain_id(&self, _type_name: &str) -> Option<CfdDomainId> {
-        None
-    }
-
-    fn record_by_domain_key(&self, _domain_id: CfdDomainId, _key: &str) -> Option<CfdRecordId> {
+    fn record_by_domain_key(
+        &self,
+        _inheritance_root: &TypeName,
+        _key: &str,
+    ) -> Option<CfdRecordId> {
         None
     }
 
@@ -25,12 +25,8 @@ impl CfdValueSemanticContext for EmptyContext {
 struct ModelContext<'a>(&'a CfdDataModel);
 
 impl CfdValueSemanticContext for ModelContext<'_> {
-    fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId> {
-        self.0.type_domain_id(type_name)
-    }
-
-    fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId> {
-        self.0.record_by_domain_key(domain_id, key)
+    fn record_by_domain_key(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordId> {
+        self.0.record_by_domain_key(inheritance_root, key)
     }
 
     fn record_actual_type(&self, id: CfdRecordId) -> Option<&str> {

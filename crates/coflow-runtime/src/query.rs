@@ -306,15 +306,14 @@ impl<'a> ProjectQueries<'a> {
                 let is_flags = schema
                     .resolve_enum(&enum_name)
                     .is_some_and(|schema_enum| schema_enum.is_flag);
-                let ids = model.polymorphic_index(&schema_type.name).map_or_else(
-                    || {
-                        model
-                            .records_of_type(&schema_type.name)
-                            .map(|(_, record)| record.key().to_string())
-                            .collect()
-                    },
-                    |index| index.records.keys().map(ToString::to_string).collect(),
-                );
+                let mut ids = model
+                    .records_assignable_to(schema, &schema_type.name)
+                    .map(|(_, record)| record.key().to_string())
+                    .collect::<Vec<_>>();
+                if schema.range_is_polymorphic(&schema_type.name) {
+                    ids.sort();
+                    ids.dedup();
+                }
                 Some(IdAsEnumInfo {
                     enum_name,
                     ids,

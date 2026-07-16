@@ -1,14 +1,13 @@
 use crate::build::{BuildSchema, RecordDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
-use crate::model::{CfdDomainId, CfdPolymorphicIndex, CfdRecordId, CfdTable, CfdTypeId};
+use crate::model::{CfdRecordId, CfdTable};
 use coflow_cft::{is_cft_identifier, record_key_ident_error, RecordKey, TypeName};
 use std::collections::BTreeMap;
 
 pub(crate) struct ModelIndexes {
     pub(crate) tables: BTreeMap<TypeName, CfdTable>,
-    pub(crate) inheritance_index: BTreeMap<TypeName, CfdPolymorphicIndex>,
-    pub(crate) record_by_type_key: BTreeMap<CfdTypeId, BTreeMap<RecordKey, CfdRecordId>>,
-    pub(crate) record_by_domain_key: BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    pub(crate) record_by_type_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+    pub(crate) record_by_domain_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
 }
 
 pub(crate) fn build_indexes(
@@ -17,16 +16,12 @@ pub(crate) fn build_indexes(
     diagnostics: &mut Vec<CfdDiagnostic>,
 ) -> ModelIndexes {
     let mut tables = BTreeMap::<TypeName, CfdTable>::new();
-    let mut inheritance_index = BTreeMap::<TypeName, CfdPolymorphicIndex>::new();
-    let mut record_by_type_key = BTreeMap::<CfdTypeId, BTreeMap<RecordKey, CfdRecordId>>::new();
-    let mut record_by_domain_key = BTreeMap::<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>::new();
+    let mut record_by_type_key = BTreeMap::<TypeName, BTreeMap<RecordKey, CfdRecordId>>::new();
+    let mut record_by_domain_key = BTreeMap::<TypeName, BTreeMap<RecordKey, CfdRecordId>>::new();
 
     for (index, draft) in drafts.iter().enumerate() {
         let record_id = CfdRecordId::new(index);
-        let Some(type_id) = schema.type_id(draft.actual_type.as_str()) else {
-            continue;
-        };
-        let Some(domain_id) = schema.type_domain_id(draft.actual_type.as_str()) else {
+        let Some(inheritance_root) = schema.inheritance_root(draft.actual_type.as_str()) else {
             continue;
         };
         let table = tables
@@ -77,11 +72,11 @@ pub(crate) fn build_indexes(
             );
         }
         record_by_type_key
-            .entry(type_id)
+            .entry(draft.actual_type.clone())
             .or_default()
             .insert(key.clone(), record_id);
         if let Some(first) = record_by_domain_key
-            .entry(domain_id)
+            .entry(inheritance_root.clone())
             .or_default()
             .insert(key.clone(), record_id)
         {
@@ -103,40 +98,12 @@ pub(crate) fn build_indexes(
                 );
             }
         }
-        add_polymorphic_ids(
-            schema,
-            &mut inheritance_index,
-            &draft.actual_type,
-            &key,
-            record_id,
-        );
     }
 
     ModelIndexes {
         tables,
-        inheritance_index,
         record_by_type_key,
         record_by_domain_key,
-    }
-}
-
-fn add_polymorphic_ids(
-    schema: &BuildSchema<'_>,
-    inheritance_index: &mut BTreeMap<TypeName, CfdPolymorphicIndex>,
-    actual_type: &TypeName,
-    key: &RecordKey,
-    record_id: CfdRecordId,
-) {
-    for target_type in schema.assignable_target_names(actual_type.as_str()) {
-        if !schema.range_is_polymorphic(target_type.as_str()) {
-            continue;
-        }
-        let index = inheritance_index
-            .entry(target_type.clone())
-            .or_insert_with(|| CfdPolymorphicIndex {
-                records: BTreeMap::new(),
-            });
-        index.records.entry(key.clone()).or_insert(record_id);
     }
 }
 

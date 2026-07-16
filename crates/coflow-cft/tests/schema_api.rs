@@ -10,7 +10,7 @@
 mod common;
 use coflow_cft::{
     build_schema, is_cft_identifier, parse_modules, record_key_ident_error, CftDimensionInputs,
-    CftFile, CftValueType, ModuleId, ValueDependencyMode,
+    CftFile, CftValueType, ModuleId, TypeName, ValueDependencyMode,
 };
 use common::*;
 use std::path::PathBuf;
@@ -308,6 +308,33 @@ fn unknown_assignable_type_does_not_create_an_unvalidated_name() {
         .assignable_target_names("not a valid type")
         .is_empty());
     assert!(schema.assignable_target_names("Missing").is_empty());
+}
+
+#[test]
+fn schema_exposes_canonical_inheritance_relationships() {
+    let schema = compile_one(
+        r#"
+            type Entity {}
+            abstract type Reward : Entity {}
+            type ItemReward : Reward {}
+            type Unrelated {}
+        "#,
+    )
+    .expect("schema compiles");
+
+    let entity = TypeName::new("Entity").expect("type name");
+    let reward = TypeName::new("Reward").expect("type name");
+
+    assert_eq!(schema.inheritance_root("Entity"), Some(&entity));
+    assert_eq!(schema.inheritance_root("Reward"), Some(&entity));
+    assert_eq!(schema.inheritance_root("ItemReward"), Some(&entity));
+    assert_eq!(schema.inheritance_root("Missing"), None);
+    assert_eq!(schema.ancestor_type_names("Entity"), Some(&[][..]));
+    assert_eq!(
+        schema.ancestor_type_names("ItemReward"),
+        Some(&[reward, entity][..])
+    );
+    assert_eq!(schema.ancestor_type_names("Missing"), None);
 }
 
 #[test]

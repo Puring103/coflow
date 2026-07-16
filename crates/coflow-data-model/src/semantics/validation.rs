@@ -1,7 +1,8 @@
 use coflow_cft::{CftSchema, CftValueType};
 
 use crate::diagnostics::CfdPath;
-use crate::model::{CfdDictKey, CfdDomainId, CfdEnumValue, CfdRecordId, CfdValue};
+use crate::model::{CfdDictKey, CfdEnumValue, CfdRecordId, CfdValue};
+use coflow_cft::TypeName;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueValidationMode {
@@ -93,11 +94,10 @@ pub struct PendingInsertRef<'a> {
 }
 
 pub trait CfdValueSemanticContext {
-    fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId>;
-    fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId>;
+    fn record_by_domain_key(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordId>;
     fn record_actual_type(&self, id: CfdRecordId) -> Option<&str>;
 
-    fn pending_record_actual_type(&self, _domain_id: CfdDomainId, _key: &str) -> Option<&str> {
+    fn pending_record_actual_type(&self, _inheritance_root: &TypeName, _key: &str) -> Option<&str> {
         None
     }
 }
@@ -485,14 +485,14 @@ fn validate_ref_target<C: CfdValueSemanticContext>(
     pending_insert: Option<PendingInsertRef<'_>>,
     path: CfdPath,
 ) -> Result<(), CfdValueSemanticError> {
-    let Some(domain) = context.type_domain_id(expected_type) else {
+    let Some(inheritance_root) = schema.inheritance_root(expected_type) else {
         return Err(CfdValueSemanticError::new(
             CfdValueSemanticErrorKind::UnknownType,
             path,
             format!("unknown reference target type `{expected_type}`"),
         ));
     };
-    if let Some(target_id) = context.record_by_domain_key(domain, target_key) {
+    if let Some(target_id) = context.record_by_domain_key(inheritance_root, target_key) {
         let Some(actual_type) = context.record_actual_type(target_id) else {
             return Err(ref_not_found(expected_type, target_key, path));
         };
@@ -507,7 +507,7 @@ fn validate_ref_target<C: CfdValueSemanticContext>(
         }
         return Ok(());
     }
-    if let Some(actual_type) = context.pending_record_actual_type(domain, target_key) {
+    if let Some(actual_type) = context.pending_record_actual_type(inheritance_root, target_key) {
         if !schema.is_assignable(actual_type, expected_type) {
             return Err(CfdValueSemanticError::new(
                 CfdValueSemanticErrorKind::RefTargetTypeMismatch,

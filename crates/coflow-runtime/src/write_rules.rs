@@ -1,8 +1,8 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
-use coflow_cft::{CftSchema, CftValueType};
+use coflow_cft::{CftSchema, CftValueType, TypeName};
 use coflow_data_model::{
-    CfdDomainId, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext,
-    ValueValidationMode, ValueValidationRequest,
+    CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext, ValueValidationMode,
+    ValueValidationRequest,
 };
 use std::collections::BTreeMap;
 
@@ -33,14 +33,14 @@ pub fn ensure_record_key_available_with_conflict_code(
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
     validate_record_key_for_stage(key, code, stage)?;
-    let Some(domain) = session.model.type_domain_id(actual_type) else {
+    let Some(inheritance_root) = session.schema.inheritance_root(actual_type) else {
         return Err(one_error(
             code,
             stage,
             format!("unknown type `{actual_type}`"),
         ));
     };
-    let Some(existing_id) = session.model.record_by_domain_key(domain, key) else {
+    let Some(existing_id) = session.model.record_by_domain_key(inheritance_root, key) else {
         return Ok(());
     };
     if current_record == Some(existing_id) {
@@ -251,12 +251,10 @@ struct ProjectValueSemanticContext<'a> {
 }
 
 impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
-    fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId> {
-        self.session.model.type_domain_id(type_name)
-    }
-
-    fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId> {
-        self.session.model.record_by_domain_key(domain_id, key)
+    fn record_by_domain_key(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordId> {
+        self.session
+            .model
+            .record_by_domain_key(inheritance_root, key)
     }
 
     fn record_actual_type(&self, id: CfdRecordId) -> Option<&str> {
@@ -266,12 +264,13 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
             .map(coflow_data_model::CfdRecord::actual_type)
     }
 
-    fn pending_record_actual_type(&self, domain_id: CfdDomainId, key: &str) -> Option<&str> {
+    fn pending_record_actual_type(&self, inheritance_root: &TypeName, key: &str) -> Option<&str> {
         self.pending_records?
             .keys()
             .find(|record| {
                 record.key() == key
-                    && self.session.model.type_domain_id(&record.actual_type) == Some(domain_id)
+                    && self.session.schema.inheritance_root(&record.actual_type)
+                        == Some(inheritance_root)
             })
             .map(|record| record.actual_type.as_str())
     }

@@ -21,7 +21,7 @@ use self::compiler::SchemaDeclarations;
 use crate::module::ModuleId;
 use crate::{CftDiagnostic, CftDiagnostics, CftErrorCode, Span};
 use coflow_structure::{BudgetExceeded, StructuralBudget};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug)]
 pub(super) struct LocatedBudgetError {
@@ -45,6 +45,9 @@ impl LocatedBudgetError {
 pub struct CftSchema {
     consts: BTreeMap<ConstName, CftConst>,
     pub(crate) types: BTreeMap<TypeName, CftType>,
+    inheritance_root_by_type: BTreeMap<TypeName, TypeName>,
+    ancestors_by_type: BTreeMap<TypeName, Vec<TypeName>>,
+    ancestor_membership_by_type: BTreeMap<TypeName, BTreeSet<TypeName>>,
     enums: BTreeMap<EnumName, CftEnum>,
     children_by_parent: BTreeMap<TypeName, Vec<TypeName>>,
     dimensions: BTreeMap<DimensionName, CftDimension>,
@@ -62,6 +65,25 @@ impl CftSchema {
         let consts = declarations.consts;
         let enums = declarations.enums;
         let types = declarations.types;
+
+        let mut inheritance_root_by_type = BTreeMap::new();
+        let mut ancestors_by_type = BTreeMap::new();
+        let mut ancestor_membership_by_type = BTreeMap::new();
+        for ty in types.values() {
+            let mut ancestors = Vec::new();
+            let mut current = ty.parent.as_ref();
+            while let Some(parent) = current {
+                ancestors.push(parent.clone());
+                current = types.get(parent).and_then(|meta| meta.parent.as_ref());
+            }
+            inheritance_root_by_type.insert(
+                ty.name.clone(),
+                ancestors.last().cloned().unwrap_or_else(|| ty.name.clone()),
+            );
+            ancestor_membership_by_type
+                .insert(ty.name.clone(), ancestors.iter().cloned().collect());
+            ancestors_by_type.insert(ty.name.clone(), ancestors);
+        }
 
         let children_by_parent = types.values().fold(
             BTreeMap::<TypeName, Vec<TypeName>>::new(),
@@ -92,6 +114,9 @@ impl CftSchema {
         Ok(Self {
             consts,
             types,
+            inheritance_root_by_type,
+            ancestors_by_type,
+            ancestor_membership_by_type,
             enums,
             children_by_parent,
             dimensions,

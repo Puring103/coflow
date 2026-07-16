@@ -6,6 +6,7 @@
 )]
 
 mod common;
+use coflow_cft::TypeName;
 use coflow_data_model::CfdRecord;
 use common::*;
 
@@ -35,11 +36,11 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
     let drop_id = record_id_at(&model, 1);
 
     assert_eq!(
-        model.lookup_assignable("Reward", "reward_1"),
+        model.lookup_assignable(&schema, "Reward", "reward_1"),
         Some(reward_id)
     );
     assert_eq!(
-        model.lookup_assignable("ItemReward", "reward_1"),
+        model.lookup_assignable(&schema, "ItemReward", "reward_1"),
         Some(reward_id)
     );
     assert_eq!(
@@ -163,8 +164,8 @@ fn unrelated_types_can_reuse_record_keys_in_separate_domains() {
         .expect("unrelated types should keep separate key domains");
     let item_id = record_id_at(&model, 0);
     let skill_id = record_id_at(&model, 1);
-    let item_domain = model.type_domain_id("Item").expect("item domain");
-    let skill_domain = model.type_domain_id("Skill").expect("skill domain");
+    let item_domain = schema.inheritance_root("Item").expect("item domain");
+    let skill_domain = schema.inheritance_root("Skill").expect("skill domain");
 
     assert_ne!(item_domain, skill_domain);
     assert_eq!(model.record_by_type_key("Item", "sword"), Some(item_id));
@@ -302,18 +303,18 @@ fn domain_lookup_finds_any_member_record_but_type_lookup_uses_actual_type() {
     let base_id = record_id_at(&model, 0);
     let item_id = record_id_at(&model, 1);
     let currency_id = record_id_at(&model, 2);
-    let domain = model.type_domain_id("Reward").expect("reward domain");
-    let members = model.domain_members(domain).expect("domain members");
+    let domain = schema.inheritance_root("Reward").expect("reward domain");
 
-    assert_eq!(model.type_domain_id("ItemReward"), Some(domain));
-    assert_eq!(model.type_domain_id("CurrencyReward"), Some(domain));
-    assert!(members.contains(&model.type_id("Reward").expect("Reward type id")));
-    assert!(members.contains(&model.type_id("ItemReward").expect("ItemReward type id")));
-    assert!(members.contains(
-        &model
-            .type_id("CurrencyReward")
-            .expect("CurrencyReward type id")
-    ));
+    assert_eq!(schema.inheritance_root("ItemReward"), Some(domain));
+    assert_eq!(schema.inheritance_root("CurrencyReward"), Some(domain));
+    assert_eq!(
+        schema.concrete_assignable_types("Reward"),
+        Some(vec![
+            TypeName::new("Reward").expect("type name"),
+            TypeName::new("CurrencyReward").expect("type name"),
+            TypeName::new("ItemReward").expect("type name"),
+        ])
+    );
     assert_eq!(model.record_by_domain_key(domain, "base"), Some(base_id));
     assert_eq!(model.record_by_domain_key(domain, "item"), Some(item_id));
     assert_eq!(
@@ -357,12 +358,15 @@ fn lookup_for_middle_type_does_not_return_ancestor_records() {
     let model = builder.build().expect("domain index should build");
     let item_id = record_id_at(&model, 1);
 
-    assert_eq!(model.lookup_assignable("Reward", "entity"), None);
-    assert_eq!(model.lookup_assignable("Reward", "item"), Some(item_id));
+    assert_eq!(model.lookup_assignable(&schema, "Reward", "entity"), None);
+    assert_eq!(
+        model.lookup_assignable(&schema, "Reward", "item"),
+        Some(item_id)
+    );
 }
 
 #[test]
-fn domain_index_exposes_type_ancestors() {
+fn schema_exposes_type_ancestors_without_a_model_relation_copy() {
     let schema = compile_schema(
         r"
             type Entity { name: string; }
@@ -371,16 +375,18 @@ fn domain_index_exposes_type_ancestors() {
         ",
     );
 
-    let model = CfdDataModel::builder(&schema)
-        .build()
-        .expect("empty model should build");
-    let entity = model.type_id("Entity").expect("Entity type id");
-    let reward = model.type_id("Reward").expect("Reward type id");
-    let item = model.type_id("ItemReward").expect("ItemReward type id");
+    let entity = TypeName::new("Entity").expect("type name");
+    let reward = TypeName::new("Reward").expect("type name");
 
-    assert_eq!(model.type_ancestors(entity), Some(&[][..]));
-    assert_eq!(model.type_ancestors(reward), Some(&[entity][..]));
-    assert_eq!(model.type_ancestors(item), Some(&[reward, entity][..]));
+    assert_eq!(schema.ancestor_type_names("Entity"), Some(&[][..]));
+    assert_eq!(
+        schema.ancestor_type_names("Reward"),
+        Some(&[entity.clone()][..])
+    );
+    assert_eq!(
+        schema.ancestor_type_names("ItemReward"),
+        Some(&[reward, entity][..])
+    );
 }
 
 #[test]

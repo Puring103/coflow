@@ -1,10 +1,10 @@
 use crate::build::{BuildSchema, RecordDraft, ValueDraft};
 use crate::diagnostics::CfdPath;
 use crate::model::{
-    CfdDomainId, CfdRecord, CfdRecordId, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId,
-    RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
+    CfdRecord, CfdRecordId, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId, RefSite,
+    SpreadEdge, SpreadEdgeId, SpreadSite,
 };
-use coflow_cft::{CftValueType, RecordKey};
+use coflow_cft::{CftValueType, RecordKey, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
@@ -25,7 +25,7 @@ pub(crate) struct SpreadIndexes {
 
 pub(crate) fn build_spread_indexes(
     drafts: &[RecordDraft],
-    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     schema: &BuildSchema<'_>,
 ) -> SpreadIndexes {
     let mut out = SpreadIndexes::default();
@@ -48,7 +48,7 @@ fn collect_spread_edges(
     host: CfdRecordId,
     path: &CfdPath,
     drafts: &[RecordDraft],
-    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     schema: &BuildSchema<'_>,
     out: &mut SpreadIndexes,
 ) {
@@ -66,10 +66,13 @@ fn collect_spread_edges(
     }
 
     for (source, fields) in fields_by_source {
-        let Some(expected_type) = schema.type_id(&source.expected_type) else {
+        let Some(expected_type) = schema
+            .resolve_type(&source.expected_type)
+            .map(|ty| ty.name.clone())
+        else {
             continue;
         };
-        let Some(domain) = schema.type_domain_id(&source.expected_type) else {
+        let Some(inheritance_root) = schema.inheritance_root(&source.expected_type).cloned() else {
             continue;
         };
         let Some((source_id, source_key)) = lookup_domain_ref(
@@ -83,7 +86,10 @@ fn collect_spread_edges(
         let Some(source_draft) = drafts.get(source_id.index()) else {
             continue;
         };
-        let Some(source_type) = schema.type_id(&source_draft.actual_type) else {
+        let Some(source_type) = schema
+            .resolve_type(&source_draft.actual_type)
+            .map(|ty| ty.name.clone())
+        else {
             continue;
         };
         let site = SpreadSite::new(host, path.clone());
@@ -95,7 +101,7 @@ fn collect_spread_edges(
             path: path.clone(),
             fields,
             expected_type,
-            domain,
+            inheritance_root,
             source_key,
             source: source_id,
             source_type,
@@ -123,7 +129,7 @@ fn collect_nested_spread_edges(
     host: CfdRecordId,
     path: &CfdPath,
     drafts: &[RecordDraft],
-    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     schema: &BuildSchema<'_>,
     out: &mut SpreadIndexes,
 ) {
@@ -189,7 +195,7 @@ fn collect_nested_spread_edges(
 
 pub(crate) fn build_ref_indexes(
     records: &[CfdRecord],
-    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     schema: &BuildSchema<'_>,
     spread_edges: &[SpreadEdge],
 ) -> RefIndexes {
@@ -259,7 +265,7 @@ pub(crate) fn build_ref_indexes(
 
 struct RefEdgeBuildContext<'a, 'schema> {
     records: &'a [CfdRecord],
-    record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     schema: &'a BuildSchema<'schema>,
     spread_edges_by_host: BTreeMap<CfdRecordId, Vec<&'a SpreadEdge>>,
 }
@@ -286,10 +292,15 @@ fn collect_ref_edges(
     }
     match (value, ty.non_nullable()) {
         (CfdValue::Ref(key), CftValueType::RecordRef(expected_type)) => {
-            let Some(expected_type_id) = context.schema.type_id(expected_type) else {
+            let Some(expected_type_name) = context
+                .schema
+                .resolve_type(expected_type)
+                .map(|ty| ty.name.clone())
+            else {
                 return;
             };
-            let Some(domain) = context.schema.type_domain_id(expected_type) else {
+            let Some(inheritance_root) = context.schema.inheritance_root(expected_type).cloned()
+            else {
                 return;
             };
             let Some((target, _)) = lookup_domain_ref(
@@ -303,7 +314,11 @@ fn collect_ref_edges(
             let Some(target_record) = context.records.get(target.index()) else {
                 return;
             };
-            let Some(target_type) = context.schema.type_id(target_record.actual_type()) else {
+            let Some(target_type) = context
+                .schema
+                .resolve_type(target_record.actual_type())
+                .map(|ty| ty.name.clone())
+            else {
                 return;
             };
             let site = dimension.map_or_else(
@@ -314,8 +329,8 @@ fn collect_ref_edges(
             out.edges.push(RefEdge {
                 id,
                 site: site.clone(),
-                expected_type: expected_type_id,
-                domain,
+                expected_type: expected_type_name,
+                inheritance_root,
                 key: key.clone(),
                 target,
                 target_type,
@@ -376,13 +391,13 @@ fn collect_ref_edges(
 
 fn lookup_domain_ref(
     schema: &BuildSchema<'_>,
-    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     target_type: &str,
     key: &str,
 ) -> Option<(CfdRecordId, RecordKey)> {
     schema
-        .type_domain_id(target_type)
-        .and_then(|domain_id| record_by_domain_key.get(&domain_id))
+        .inheritance_root(target_type)
+        .and_then(|inheritance_root| record_by_domain_key.get(inheritance_root))
         .and_then(|records| records.get_key_value(key))
         .map(|(key, id)| (*id, key.clone()))
 }

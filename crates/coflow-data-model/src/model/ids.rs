@@ -50,36 +50,6 @@ impl RecordCoordinate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct CfdTypeId(usize);
-
-impl CfdTypeId {
-    #[must_use]
-    pub(crate) const fn new(index: usize) -> Self {
-        Self(index)
-    }
-
-    #[must_use]
-    pub fn index(self) -> usize {
-        self.0
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct CfdDomainId(usize);
-
-impl CfdDomainId {
-    #[must_use]
-    pub(crate) const fn new(index: usize) -> Self {
-        Self(index)
-    }
-
-    #[must_use]
-    pub fn index(self) -> usize {
-        self.0
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct CfdRecordId(usize);
 
 impl CfdRecordId {

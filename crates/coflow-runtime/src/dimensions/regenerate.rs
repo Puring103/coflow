@@ -4,6 +4,7 @@ use coflow_api::{
     DimensionSourceOptionsRequest, DimensionSourceRequest, Label, ProviderRegistry, ResolvedSource,
     Severity, SourceLocation, SourceLocationSpec, TableContext,
 };
+use coflow_cft::CftSchema;
 use coflow_data_model::{CfdDataModel, CfdValue};
 use coflow_project::Project;
 use std::collections::{BTreeMap, BTreeSet};
@@ -13,11 +14,12 @@ use std::path::{Path, PathBuf};
 #[must_use]
 pub fn regenerate_dimension_sources(
     project: &Project,
+    schema: &CftSchema,
     model: &CfdDataModel,
     fields: &[DimensionField],
     registry: &ProviderRegistry,
 ) -> DimensionGenerationResult {
-    let plan_result = plan_dimension_generation(project, model, fields);
+    let plan_result = plan_dimension_generation(project, schema, model, fields);
     if !plan_result.diagnostics.is_empty() {
         return DimensionGenerationResult {
             diagnostics: plan_result.diagnostics,
@@ -34,6 +36,7 @@ pub fn regenerate_dimension_sources(
 #[must_use]
 pub(crate) fn plan_dimension_generation(
     project: &Project,
+    schema: &CftSchema,
     model: &CfdDataModel,
     fields: &[DimensionField],
 ) -> DimensionGenerationPlanResult {
@@ -47,7 +50,7 @@ pub(crate) fn plan_dimension_generation(
 
     let mut operations = Vec::new();
     for (dimension, config) in &project.config.dimensions {
-        let result = plan_configured_dimension(project, model, fields, dimension, config);
+        let result = plan_configured_dimension(project, schema, model, fields, dimension, config);
         operations.extend(result.plan.operations);
         diagnostics.extend(result.diagnostics);
     }
@@ -92,6 +95,7 @@ fn validate_dimension_directories(project: &Project) -> DiagnosticSet {
 
 fn plan_configured_dimension(
     project: &Project,
+    schema: &CftSchema,
     model: &CfdDataModel,
     fields: &[DimensionField],
     dimension: &str,
@@ -128,7 +132,7 @@ fn plan_configured_dimension(
             path: path.clone(),
             sheet: format!("{}_{}", field.bucket, field.source_field),
             actual_type: field.source_type.to_string(),
-            entries: dimension_entries(model, field),
+            entries: dimension_entries(schema, model, field),
             variants: config.variants.clone(),
             bucket: field.bucket.to_string(),
             is_singleton: field.is_singleton,
@@ -613,10 +617,14 @@ fn dimension_resolved_source(
     }
 }
 
-fn dimension_entries(model: &CfdDataModel, field: &DimensionField) -> Vec<DimensionSourceEntry> {
+fn dimension_entries(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    field: &DimensionField,
+) -> Vec<DimensionSourceEntry> {
     if field.is_singleton {
         model
-            .records_assignable_to(&field.source_type)
+            .records_assignable_to(schema, &field.source_type)
             .next()
             .map(|(_, record)| DimensionSourceEntry {
                 key: field.source_field.to_string(),
@@ -631,7 +639,7 @@ fn dimension_entries(model: &CfdDataModel, field: &DimensionField) -> Vec<Dimens
             .collect()
     } else {
         model
-            .records_assignable_to(&field.source_type)
+            .records_assignable_to(schema, &field.source_type)
             .map(|(_, record)| DimensionSourceEntry {
                 key: record.key().to_string(),
                 actual_type: field.source_type.to_string(),

@@ -1,7 +1,7 @@
 use coflow_cft::{CftConstValue, CftValueType, FieldName};
 use coflow_data_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdPath, CfdRecord, CfdRecordId, CfdValue,
-    RefSite,
+    DimensionRefCoordinate, RefSite,
 };
 use coflow_structure::{BudgetExceeded, StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
@@ -60,15 +60,14 @@ impl CheckValue {
             CfdValue::String(value) => Self::String(value.clone()),
             CfdValue::Enum(value) => Self::Enum(value.clone()),
             CfdValue::Object(_) => Self::Record(CheckRecordRef::Resolved(location)),
-            CfdValue::Ref(key) => {
-                let resolved = if location.storage.dimension.is_some() {
-                    ty.and_then(|ty| match ty.non_nullable() {
-                        CftValueType::RecordRef(expected) => model.lookup_assignable(expected, key),
-                        _ => None,
-                    })
-                } else {
-                    model.resolve_effective_ref(&location.storage.ref_site())
-                };
+            CfdValue::Ref(_key) => {
+                let resolved = location.storage.ref_site(model).and_then(|site| {
+                    if site.dimension.is_some() {
+                        model.resolve_direct_ref(&site)
+                    } else {
+                        model.resolve_effective_ref(&site)
+                    }
+                });
                 resolved.map_or_else(
                     || Self::Record(CheckRecordRef::Unresolved),
                     |id| {
@@ -400,8 +399,28 @@ impl ModelCursor {
         }
     }
 
-    pub(super) fn ref_site(&self) -> RefSite {
-        RefSite::new(self.record, self.path.clone())
+    pub(super) fn ref_site(&self, model: &CfdDataModel) -> Option<RefSite> {
+        let Some(dimension) = &self.dimension else {
+            return Some(RefSite::new(self.record, self.path.clone()));
+        };
+        let record = model.record(self.record)?;
+        let (field, values) = record
+            .dimension_fields
+            .get_key_value(dimension.field.as_str())?;
+        let (variant, _) = values.variants.get_key_value(dimension.variant.as_str())?;
+        let mut edge_path = CfdPath::root().field(field.as_str());
+        edge_path
+            .segments
+            .extend(self.path.segments.iter().cloned());
+        Some(RefSite::in_dimension(
+            self.record,
+            edge_path,
+            DimensionRefCoordinate {
+                field: field.clone(),
+                dimension: values.dimension.clone(),
+                variant: variant.clone(),
+            },
+        ))
     }
 }
 

@@ -504,6 +504,7 @@ fn commit_dimensions_if_needed(
 
     let dimension_result = dimensions::regenerate_dimension_sources(
         &ctx.project,
+        &ctx.schema,
         &output.model,
         &ctx.dimension_fields,
         ctx.registry,

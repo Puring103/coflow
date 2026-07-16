@@ -473,9 +473,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<()> {
-        let context = SourceValueSemanticContext {
-            schema: self.schema,
-        };
+        let context = SourceValueSemanticContext;
         let request =
             ValueValidationRequest::new(expected, value, ValueValidationMode::SourceFragment);
         match crate::semantics::validate_value_for_schema(self.schema.cft(), &context, request) {
@@ -580,18 +578,12 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     }
 }
 
-struct SourceValueSemanticContext<'a, 'schema> {
-    schema: &'a BuildSchema<'schema>,
-}
+struct SourceValueSemanticContext;
 
-impl CfdValueSemanticContext for SourceValueSemanticContext<'_, '_> {
-    fn type_domain_id(&self, type_name: &str) -> Option<crate::CfdDomainId> {
-        self.schema.type_domain_id(type_name)
-    }
-
+impl CfdValueSemanticContext for SourceValueSemanticContext {
     fn record_by_domain_key(
         &self,
-        _domain_id: crate::CfdDomainId,
+        _inheritance_root: &TypeName,
         _key: &str,
     ) -> Option<CfdRecordId> {
         None
