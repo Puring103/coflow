@@ -220,6 +220,12 @@ export function InspectorPanel({
   }, [focusRequest])
 
   const onBodyKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'ArrowLeft' && !isNativeEditorTarget(event.target as HTMLElement)) {
+      event.preventDefault()
+      event.stopPropagation()
+      onExitKeyboardNavigation?.()
+      return
+    }
     if (event.key === 'Escape') {
       event.preventDefault()
       event.stopPropagation()
@@ -276,6 +282,11 @@ export function InspectorPanel({
           ref={bodyRef}
           tabIndex={-1}
           onKeyDown={onBodyKeyDown}
+          onMouseDownCapture={event => {
+            const target = event.target as HTMLElement
+            if (isNativeEditorTarget(target)) return
+            bodyRef.current?.focus({ preventScroll: true })
+          }}
         >
           {record && data ? (
             <>
@@ -365,3 +376,11 @@ function dictKeyText(key: CfdDictKey): string {
 }
 
 const EMPTY_EXPANDED_PATHS = new Set<string>()
+
+function isNativeEditorTarget(target: HTMLElement): boolean {
+  return target.isContentEditable
+    || target.tagName === 'INPUT'
+    || target.tagName === 'TEXTAREA'
+    || target.tagName === 'SELECT'
+    || target.tagName === 'BUTTON'
+}

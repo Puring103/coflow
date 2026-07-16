@@ -42,7 +42,7 @@ import {
 } from '../wire'
 import { Icon } from './Icon'
 import { DiagBadge } from './DiagBadge'
-import { typeColor, enumColor } from '../utils/typeColor'
+import { typeColor, fieldTypeColor } from '../utils/typeColor'
 import { useEditorLookups } from '../utils/editContext'
 import type { EditorLookupAccess } from '../utils/editContext'
 import {
@@ -812,11 +812,16 @@ function ScalarFieldRow({
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 12 }}>
         {leading}
         <span className="dc-row-label-text">{label}</span>
+        {declaredType && (
+          <span className="dc-field-type-hint" style={{ '--field-color': fieldTypeColor(declaredType) } as CSSProperties}>
+            {declaredType}
+          </span>
+        )}
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
           {canEdit ? (
-            <DirectEditor value={value} onCommit={onCommit!} refTargetType={resolvedRefTarget} enumType={enumType} nullable={nullable} />
+            <DirectEditor value={value} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} nullable={nullable} />
           ) : (
             <ValueChip value={value} />
           )}
@@ -848,12 +853,14 @@ function topLevelSegmentOfPathKey(pathKey: string): string {
 export function DirectEditor({
   value,
   onCommit,
+  declaredType,
   refTargetType,
   enumType,
   nullable,
 }: {
   value: FieldValue
   onCommit: (next: FieldValue) => void
+  declaredType?: string
   refTargetType?: string
   enumType?: string
   nullable?: boolean
@@ -876,7 +883,7 @@ export function DirectEditor({
     return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
   }
   if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string') {
-    return <TextDirectInput value={value} onCommit={onCommit} />
+    return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor(declaredType ?? value.kind)} />
   }
   return <ValueChip value={value} />
 }
@@ -884,9 +891,11 @@ export function DirectEditor({
 function TextDirectInput({
   value,
   onCommit,
+  color,
 }: {
   value: FieldValue & { kind: 'int' | 'float' | 'string' }
   onCommit: (next: FieldValue) => void
+  color: string
 }) {
   const initial = plainFieldValueText(value)
   const [text, setText] = useState(initial)
@@ -929,7 +938,8 @@ function TextDirectInput({
 
   return (
     <input
-      className="dc-input dc-input-flat"
+      className="dc-input dc-input-flat dc-input-themed"
+      style={{ '--field-color': color } as CSSProperties}
       type={value.kind === 'int' || value.kind === 'float' ? 'number' : 'text'}
       value={text}
       onChange={e => setText(e.target.value)}
@@ -965,7 +975,7 @@ export function EnumDirectSelect({
   const [variants, setVariants] = useState<string[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const current = value.kind === 'enum' ? enumVariantText(value) : NULL_SENTINEL
-  const color = enumColor(enumName ?? '')
+  const color = fieldTypeColor(enumName ?? 'enum')
   useEffect(() => {
     if (!enumName) { setVariants([]); return }
     let alive = true
@@ -1050,6 +1060,7 @@ export function RefDirectSelect({
   const [loadError, setLoadError] = useState<string | null>(null)
   const currentKey = value.kind === 'ref' ? value.value : ''
   const selectedValue = value.kind === 'null' ? NULL_SENTINEL : currentKey
+  const color = typeColor(targetType ?? 'ref')
 
   useEffect(() => {
     if (!targetType) {
@@ -1088,7 +1099,7 @@ export function RefDirectSelect({
   if (targetType && targets !== null && targets.length > 0) {
     const hasCurrent = value.kind === 'ref' && !!value.value && targets.some(target => target.key === value.value)
     return (
-      <span className="dc-pill-wrap dc-pill-wrap-ref">
+      <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
         <SearchableSelect
           className="dc-pill-select dc-pill-select-ref dc-pill-select-inwrap"
           value={value.kind === 'null' && !nullable ? '' : selectedValue}
@@ -1108,8 +1119,7 @@ export function RefDirectSelect({
   }
 
   return (
-    <span className="dc-pill-wrap dc-pill-wrap-ref">
-      <span className="dc-pill-prefix" aria-hidden>&amp;</span>
+    <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
       <input
         className="dc-pill-select dc-pill-select-ref dc-pill-select-inwrap"
         defaultValue={currentKey}
@@ -1411,6 +1421,11 @@ function ExpandableRow({
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
           </span>
           <span className="dc-row-label-text">{label}</span>
+          {declaredType && (
+            <span className="dc-field-type-hint" style={{ '--field-color': fieldTypeColor(declaredType) } as CSSProperties}>
+              {declaredType}
+            </span>
+          )}
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">

@@ -51,6 +51,7 @@ import {
   type TableDirection,
 } from '../state/tableCellNavigation'
 import { selectionEditIntentForKey } from '../state/selectionKeyboard'
+import { fieldTypeColor } from '../utils/typeColor'
 
 interface Props {
   data: FileRecords
@@ -198,7 +199,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
         const cell = fieldCell(record, name)
-        const declared = cell?.annotation?.declared_type
+        const declared = cell?.annotation?.declared_type ?? inferredCellType(cell)
         if (declared) { map[name] = declared; break }
       }
     }
@@ -288,7 +289,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     return [
       helper.accessor(row => recordKey(row), {
         id: 'key',
-        header: 'Key',
+        header: () => (
+          <span className="th-label">
+            <span className="th-label-name">Key</span>
+            <span className="th-label-type th-label-type-key">key</span>
+          </span>
+        ),
         cell: info => {
           const filePath = dataForCellsRef.current.file_path
           const rowSev = severityForCoordinate(diagnosticsRef.current, filePath, info.row.original.coordinate)
@@ -319,7 +325,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         return helper.display({
           id: name,
           header: () => (
-            <span className="th-label">
+            <span
+              className="th-label"
+              style={{ '--field-color': fieldTypeColor(declared ?? name) } as React.CSSProperties}
+            >
               <span className="th-label-name">{name}</span>
               {declared && (
                 <span className="th-label-type" title={`类型：${declared}`}>{declared}</span>
@@ -539,6 +548,25 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             }
 
             if (e.key === 'Enter' && onEnterInspector) {
+              if (selection.kind === 'value') {
+                const field = selectedTopLevelField(selection.fieldPath)
+                const selectedRow = rows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
+                const selectedCell = field && selectedRow ? fieldCell(selectedRow.original, field) : undefined
+                if (selectedCell?.value.kind === 'bool' && canEdit && !cellReadOnly(selectedCell)) {
+                  e.preventDefault()
+                  try {
+                    await onWriteField?.(
+                      selection.coordinate,
+                      selection.fieldPath,
+                      { kind: 'bool', value: !selectedCell.value.value },
+                    )
+                    setCellNotice(null)
+                  } catch (error) {
+                    setCellNotice(`无法编辑：${errorMessage(error)}`)
+                  }
+                  return
+                }
+              }
               e.preventDefault()
               onEnterInspector()
               return
@@ -834,6 +862,18 @@ function isEastAsianWide(cp: number): boolean {
 function fieldCell(record: RecordRow, fieldName: string) {
   const index = record.field_index[fieldName]
   return typeof index === 'number' ? record.fields[index] : undefined
+}
+
+function inferredCellType(cell: RecordRow['fields'][number] | undefined): string | undefined {
+  if (!cell) return undefined
+  const value = cell.value
+  if (value.kind === 'enum') return value.value.enum_name
+  if (value.kind === 'ref') return cellRefTargetType(cell) ? `&${cellRefTargetType(cell)}` : 'ref'
+  if (value.kind === 'object') return value.value.actual_type
+  if (value.kind === 'array') return 'array'
+  if (value.kind === 'dict') return 'dict'
+  if (value.kind === 'null') return 'null'
+  return value.kind
 }
 
 

@@ -31,3 +31,18 @@ export function enumColor(name: string): string {
     : document.documentElement.getAttribute('data-theme') !== 'light'
   return `hsl(${hue}, 45%, ${dark ? 58 : 38}%)`
 }
+
+/** Color used by field type hints and editors. Primitive types keep a
+ * familiar semantic color while named schema types remain stable per name. */
+export function fieldTypeColor(declaredType: string): string {
+  const normalized = declaredType.trim().replace(/\?$/, '').replace(/^&/, '')
+  const primitive = normalized.toLowerCase()
+  const dark = typeof document === 'undefined'
+    ? true
+    : document.documentElement.getAttribute('data-theme') !== 'light'
+  const lightness = dark ? 62 : 40
+  if (primitive === 'bool') return `hsl(145, 48%, ${lightness}%)`
+  if (primitive === 'int' || primitive === 'float') return `hsl(35, 72%, ${lightness}%)`
+  if (primitive === 'string') return `hsl(190, 52%, ${lightness}%)`
+  return typeColor(normalized || declaredType)
+}

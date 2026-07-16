@@ -96,10 +96,12 @@ export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight, onOpe
       e.preventDefault()
       const next = flat[Math.min(idx + 1, flat.length - 1)]
       focusByPath(rootRef.current, next.node.path)
+      if (!next.node.is_dir && next.node.in_sources) onSelectFile(next.node.path)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       const prev = flat[Math.max(idx - 1, 0)]
       focusByPath(rootRef.current, prev.node.path)
+      if (!prev.node.is_dir && prev.node.in_sources) onSelectFile(prev.node.path)
     } else if (e.key === 'ArrowRight') {
       const item = flat[idx]
       if (!item) return
@@ -110,7 +112,10 @@ export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight, onOpe
         toggle(item.node.path)
       } else {
         const child = flat[idx + 1]
-        if (child && child.depth > item.depth) focusByPath(rootRef.current, child.node.path)
+        if (child && child.depth > item.depth) {
+          focusByPath(rootRef.current, child.node.path)
+          if (!child.node.is_dir && child.node.in_sources) onSelectFile(child.node.path)
+        }
         else onExitRight?.()
       }
     } else if (e.key === 'ArrowLeft') {

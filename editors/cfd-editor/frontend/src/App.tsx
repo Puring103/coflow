@@ -129,7 +129,10 @@ export default function App() {
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [projectAction, setProjectAction] = useState<'check' | 'build' | null>(null)
-  const [projectActionNotice, setProjectActionNotice] = useState<string | null>(null)
+  const [projectActionNotice, setProjectActionNotice] = useState<{
+    message: string
+    tone: 'success' | 'error'
+  } | null>(null)
 
   const router = useRouter()
   const { theme, toggle: toggleTheme } = useTheme()
@@ -933,6 +936,30 @@ export default function App() {
     return { typeCount: inType.length, matchedCount: matched.length }
   }, [activeFileData, activeType, globalSearch])
 
+  // A hidden row must not remain keyboard-selected after search narrows the
+  // active set. Close a hidden table inspector, and keep record mode on the
+  // first record that is still visible.
+  useEffect(() => {
+    if (!activeFileData || !currentRoute || !globalSearch.trim()) return
+    const visible = activeFileData.records.filter(record => (
+      (!activeType || recordActualType(record) === activeType)
+      && recordMatchesSearch(record, globalSearch)
+    ))
+    setInspectorSelection(current => {
+      if (!current || current.filePath !== currentRoute.file) return current
+      return visible.some(record => sameCoordinate(record.coordinate, current.coordinate))
+        ? current
+        : null
+    })
+    if (
+      currentRoute.view === 'record'
+      && visible.length > 0
+      && !visible.some(record => sameCoordinate(record.coordinate, currentRoute.coordinate))
+    ) {
+      router.replace({ view: 'record', file: currentRoute.file, coordinate: visible[0].coordinate })
+    }
+  }, [activeFileData, activeType, currentRoute, globalSearch, router])
+
   // Stable callbacks for TableView so React.memo can bail out on re-renders
   // caused by inspector panel state changes (collapsed, open, width).
   const tableOnSelectRecord = useCallback(
@@ -992,13 +1019,24 @@ export default function App() {
       const result = action === 'check'
         ? await api.checkProject(identity.sessionId)
         : await api.buildProject(identity.sessionId)
-      setProjectActionNotice(action === 'check' ? '检查通过' : result.replace('Build completed:', '构建完成：'))
+      setProjectActionNotice({
+        message: action === 'check' ? '检查完成：项目通过' : result.replace('Build completed:', '构建完成：'),
+        tone: 'success',
+      })
     } catch (error) {
-      setErrorMsg(`${action === 'check' ? '检查' : '构建'}失败: ${errorMessage(error)}`)
+      const message = `${action === 'check' ? '检查' : '构建'}失败: ${errorMessage(error)}`
+      setErrorMsg(message)
+      setProjectActionNotice({ message, tone: 'error' })
     } finally {
       setProjectAction(null)
     }
   }, [generation, projectAction])
+
+  useEffect(() => {
+    if (!projectActionNotice) return
+    const timer = window.setTimeout(() => setProjectActionNotice(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [projectActionNotice])
 
   const openSourceFile = useCallback(async (filePath: string) => {
     const identity = generation.currentIdentity()
@@ -1265,11 +1303,6 @@ export default function App() {
           </span>
         )}
         <span className="topbar-spacer" />
-        {projectActionNotice && (
-          <span className="topbar-action-status" role="status" title={projectActionNotice}>
-            {projectActionNotice}
-          </span>
-        )}
         {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
           <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
             {historySnapshot.undo.length > 0 ? `可撤销 ${historySnapshot.undo.length}` : `可重做 ${historySnapshot.redo.length}`}
@@ -1506,7 +1539,9 @@ export default function App() {
                   />
                 )}
                 {currentRoute.view === 'record' && (
-                  <RecordView
+                  globalSearch.trim() && matchedCount === 0 ? (
+                    <div className="empty-hint">无匹配 "{globalSearch}" 的记录</div>
+                  ) : <RecordView
                     data={activeFileData}
                     coordinate={currentRoute.coordinate}
                     typeFilter={activeType}
@@ -1627,6 +1662,16 @@ export default function App() {
             openRecordByKey(file, key, actualType)
           }}
         />
+      )}
+
+      {projectActionNotice && (
+        <div
+          className={`project-action-toast project-action-toast-${projectActionNotice.tone}`}
+          role={projectActionNotice.tone === 'error' ? 'alert' : 'status'}
+        >
+          <Icon name={projectActionNotice.tone === 'error' ? 'error' : 'check'} size={14} />
+          <span>{projectActionNotice.message}</span>
+        </div>
       )}
 
       {showHelp && (

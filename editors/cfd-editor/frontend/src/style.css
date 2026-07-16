@@ -114,7 +114,10 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   height: 100vh;
   overflow: hidden;
   background: var(--bg-1);
+  user-select: none;
 }
+
+input, textarea, [contenteditable="true"] { user-select: text; }
 
 /* ─── Topbar ─── */
 .topbar {
@@ -198,14 +201,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 
 .topbar-spacer { flex: 1; }
-.topbar-action-status {
-  max-width: min(34vw, 420px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--green);
-  font-size: var(--fs-xs);
-}
 .icon-spin { animation: update-icon-spin 0.9s linear infinite; }
 
 .undo-badge {
@@ -806,7 +801,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   color: var(--text-dim);
   font-weight: 600;
   font-size: var(--fs-sm);
-  height: var(--h-row);
+  height: 42px;
 }
 .data-table th:last-child {
   border-right: none;
@@ -815,7 +810,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 8px;
+  padding: 4px 8px;
   background: none;
   border: none;
   color: inherit;
@@ -828,9 +823,11 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .th-sort-btn:disabled { cursor: default; }
 .th-sort-btn:hover:not(:disabled) { color: var(--text); }
 .th-label {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
   min-width: 0;
   overflow: hidden;
 }
@@ -843,16 +840,13 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
   font-weight: 500;
-  color: var(--text-mute);
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: var(--bg-3);
-  border: 1px solid var(--border);
+  color: var(--field-color, var(--text-mute));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 140px;
 }
+.th-label-type-key { color: var(--text-mute); }
 .th-sort-icon { opacity: 0.7; }
 .th-sort-icon.asc { transform: rotate(180deg); }
 .th-resizer {
@@ -1026,6 +1020,33 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.project-action-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 5200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(760px, calc(100vw - 32px));
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-2);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  color: var(--text);
+}
+.project-action-toast > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-action-toast-success { border-color: color-mix(in srgb, var(--green) 55%, var(--border)); }
+.project-action-toast-success > svg { color: var(--green); }
+.project-action-toast-error { border-color: color-mix(in srgb, var(--red) 55%, var(--border)); }
+.project-action-toast-error > svg { color: var(--red); }
 .cell-syntax-editor {
   width: 100%;
   min-width: 0;
@@ -1799,6 +1820,18 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   white-space: normal;
   min-width: 0;
 }
+.dc-field-type-hint {
+  margin-left: auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--field-color, var(--text-mute));
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  flex-shrink: 1;
+}
 .dc-drag-handle {
   display: inline-flex;
   align-items: center;
@@ -2123,6 +2156,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   background-color: var(--bg-1);
   border-color: var(--accent);
 }
+.dc-input-themed:focus { border-color: var(--field-color, var(--accent)); }
 .dc-input-flat::-webkit-outer-spin-button,
 .dc-input-flat::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -2264,9 +2298,8 @@ td:hover select.dc-pill-select.dc-pill-select-enum,
   border-color: color-mix(in srgb, var(--enum-color, var(--purple)) 45%, transparent);
   background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 10%, var(--bg-1));
 }
-/* Ref pill wrapper — hosts the `&` prefix and owns the border/background so
- * the prefix sits inside the pill's colored area. The inner select then
- * strips its own border/background. */
+/* Ref pill wrapper — the control stays neutral and only the `&` prefix uses
+ * the referenced type's theme color. */
 .dc-pill-wrap {
   display: inline-flex;
   align-items: center;
@@ -2285,8 +2318,8 @@ td:hover select.dc-pill-select.dc-pill-select-enum,
  * width too — including the `&`. */
 .dc-pill-wrap-ref {
   position: relative;
-  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
-  background-color: color-mix(in srgb, var(--accent) 4%, transparent);
+  border-color: var(--border);
+  background-color: var(--bg-2);
 }
 .dc-pill-wrap-ref::before {
   content: '&';
@@ -2294,7 +2327,7 @@ td:hover select.dc-pill-select.dc-pill-select-enum,
   left: 8px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--accent);
+  color: var(--ref-color, var(--accent));
   font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
   font-size: var(--fs-ui);
   font-weight: 600;
@@ -2306,23 +2339,20 @@ td:hover select.dc-pill-select.dc-pill-select-enum,
 .dc-row:hover .dc-pill-wrap-ref,
 td:hover .dc-pill-wrap-ref,
 .dc-node-card:hover .dc-pill-wrap-ref {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background-color: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+  border-color: var(--border-strong);
+  background-color: var(--bg-1);
 }
 .dc-pill-wrap-ref:focus-within {
-  border-color: var(--accent);
-  background-color: color-mix(in srgb, var(--accent) 12%, var(--bg-1));
+  border-color: var(--border-strong);
+  background-color: var(--bg-1);
 }
 
-/* Select nested in the ref wrapper — strip its own border, reserve room
- * for the `&` prefix drawn by the wrapper's ::before. Background must
- * remain fully opaque (see the ref-pill comment above): a transparent
- * background makes Chromium fall back to white for the native option
- * popup the instant the pointer leaves the wrapper. */
+/* Select nested in the ref wrapper — strip its own border and reserve room
+ * for the `&` prefix drawn by the wrapper's ::before. */
 select.dc-pill-select.dc-pill-select-inwrap,
 input.dc-pill-select.dc-pill-select-inwrap {
   border: none;
-  background-color: color-mix(in srgb, var(--accent) 6%, var(--bg-2));
+  background-color: var(--bg-2);
   padding-left: 20px;
   height: 100%;
 }
@@ -2332,12 +2362,12 @@ input.dc-pill-select.dc-pill-select-inwrap:hover,
 .dc-row:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap,
 td:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap,
 .dc-node-card:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap {
-  background-color: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+  background-color: var(--bg-1);
   border: none;
 }
 select.dc-pill-select.dc-pill-select-inwrap:focus,
 input.dc-pill-select.dc-pill-select-inwrap:focus {
-  background-color: color-mix(in srgb, var(--accent) 12%, var(--bg-1));
+  background-color: var(--bg-1);
   border: none;
 }
 
