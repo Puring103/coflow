@@ -1,6 +1,6 @@
 # 数据模型
 
-Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Excel、CSV 和 CFD 会被 Provider 转换成来源无关的 input records；维度文件会转换成直接关联 owner record 的 dimension value batches。DataModel 统一处理默认值、类型检查、引用解析、继承索引和业务校验。
+Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Excel、CSV 和 CFD 会被 Provider 转换成来源无关的 loaded record drafts；维度文件会转换成直接关联 owner record 的 dimension value drafts。DataModel 统一处理默认值、类型检查、引用解析、记录索引和业务校验。
 
 数据模型不保留数据源格式差异。导出、代码生成、编辑器视图和 `check {}` 都基于同一个模型工作。
 
@@ -11,7 +11,8 @@ Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Exce
 ```text
 CfdDataModel
   tables              # TypeName -> CfdTable
-  domain_index        # TypeName -> TypeId / DomainId
+  record_by_type_key  # (actual TypeName, RecordKey) -> RecordId
+  record_by_domain_key # (inheritance root TypeName, RecordKey) -> RecordId
   records             # 所有顶层 records
   ref_edges           # 直接 &Type 引用边
   spread_edges        # ...&key spread 来源边
@@ -31,7 +32,9 @@ CfdObject
   dimension_fields     # FieldName -> DimensionName -> VariantName -> value/origin
 ```
 
-`records` 是集中存储。table 和继承索引只保存 `CfdRecordId`，消费者通过 model 查询记录，而不是复制记录内容。
+`records` 是集中存储。table 和记录索引只保存 `CfdRecordId`，消费者通过 model 查询记录，而不是复制记录内容。
+
+类型声明、继承根、祖先、后代和 assignability 只由 `CftSchema` 维护。DataModel 的索引使用 canonical `TypeName`，不复制第二套 type/domain/ancestor 关系模型。
 
 ## Value 类型
 
@@ -101,7 +104,7 @@ CfdObject
 
 ## 引用索引
 
-直接 `&Type` 引用会生成 `RefEdge`。`RefEdge` 记录 host record、字段路径、期望 type、继承命名域、目标 key 和目标 record id。
+直接 `&Type` 引用会生成 `RefEdge`。`RefEdge` 记录 host record、字段路径、canonical 期望 type、继承根、目标 key、目标实际 type 和目标 record id。
 
 ```text
 RefSite(host_record, field_path) -> RefEdge
@@ -112,7 +115,7 @@ DataModel 同时维护：
 - `ref_by_site`：按字段位置查目标。
 - `ref_by_host`：按 record 枚举直接出边，供图视图使用。
 - `ref_by_target`：按目标 record 枚举入边，供 rename 和删除检查使用。
-- `spread_by_site` / `spread_by_source`：独立描述 `...&key` 来源，不进入直接引用图。
+- `spread_by_site` / `spread_by_host` / `spread_by_source`：独立描述 `...&key` 来源，不进入直接引用图。
 
 ## 数据源顺序
 
