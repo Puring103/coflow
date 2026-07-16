@@ -1,7 +1,30 @@
 use coflow_data_model::CfdRecordId;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::DependencyGraph;
+#[derive(Debug, Clone, Default)]
+pub struct DependencyGraph {
+    pub reads_from: BTreeMap<CfdRecordId, BTreeSet<CfdRecordId>>,
+}
+
+impl DependencyGraph {
+    #[must_use]
+    pub fn affected_by(&self, changed: &[CfdRecordId]) -> Vec<CfdRecordId> {
+        let mut out: BTreeSet<CfdRecordId> = changed.iter().copied().collect();
+        let changed_set: BTreeSet<CfdRecordId> = changed.iter().copied().collect();
+        for (reader, reads) in &self.reads_from {
+            if reads.iter().any(|id| changed_set.contains(id)) {
+                out.insert(*reader);
+            }
+        }
+        out.into_iter().collect()
+    }
+
+    pub(crate) fn merge(&mut self, source: Self) {
+        for (reader, reads) in source.reads_from {
+            self.reads_from.entry(reader).or_default().extend(reads);
+        }
+    }
+}
 
 #[derive(Debug, Default)]
 pub(super) struct DependencyCollector {

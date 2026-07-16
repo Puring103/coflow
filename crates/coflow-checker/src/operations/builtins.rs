@@ -1,25 +1,221 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Builtin {
+    Len,
+    Contains,
+    Unique,
+    Min,
+    Max,
+    Sum,
+    Keys,
+    Values,
+    Matches,
+}
+
+impl Builtin {
+    pub(crate) fn by_name(name: &str) -> Option<Self> {
+        BUILTINS
+            .iter()
+            .copied()
+            .find(|builtin| builtin.name() == name)
+    }
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Len => "len",
+            Self::Contains => "contains",
+            Self::Unique => "isUnique",
+            Self::Min => "min",
+            Self::Max => "max",
+            Self::Sum => "sum",
+            Self::Keys => "keys",
+            Self::Values => "values",
+            Self::Matches => "matches",
+        }
+    }
+
+    pub(crate) const fn arity(self) -> usize {
+        match self {
+            Self::Contains | Self::Matches => 2,
+            Self::Len
+            | Self::Unique
+            | Self::Min
+            | Self::Max
+            | Self::Sum
+            | Self::Keys
+            | Self::Values => 1,
+        }
+    }
+}
+
+pub(crate) const BUILTINS: &[Builtin] = &[
+    Builtin::Len,
+    Builtin::Contains,
+    Builtin::Unique,
+    Builtin::Min,
+    Builtin::Max,
+    Builtin::Sum,
+    Builtin::Keys,
+    Builtin::Values,
+    Builtin::Matches,
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_registry_keeps_names_and_arities_together() {
+        let entries = BUILTINS
+            .iter()
+            .map(|builtin| (builtin.name(), builtin.arity()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            entries,
+            vec![
+                ("len", 1),
+                ("contains", 2),
+                ("isUnique", 1),
+                ("min", 1),
+                ("max", 1),
+                ("sum", 1),
+                ("keys", 1),
+                ("values", 1),
+                ("matches", 2),
+            ]
+        );
+        for (name, _) in entries {
+            assert!(Builtin::by_name(name).is_some());
+        }
+        assert_eq!(Builtin::by_name("missing"), None);
+    }
+}
+
+use coflow_cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind};
+
+pub(crate) enum CallTarget {
+    EnumConstructor,
+    Builtin(Builtin),
+}
+
+pub(crate) struct CallSignature {
+    pub(crate) target: CallTarget,
+}
+
+impl CallSignature {
+    pub(crate) fn resolve_function(
+        name: &str,
+        arg_count: usize,
+        is_enum_name: bool,
+    ) -> Result<Self, CallSignatureError> {
+        if is_enum_name {
+            if arg_count == 1 {
+                return Ok(Self {
+                    target: CallTarget::EnumConstructor,
+                });
+            }
+            return Err(CallSignatureError::Arity {
+                message: "枚举构造函数需要 1 个参数".to_string(),
+            });
+        }
+
+        let Some(builtin) = Builtin::by_name(name) else {
+            return Err(CallSignatureError::UnknownFunction {
+                name: name.to_string(),
+            });
+        };
+        require_arity(builtin, arg_count, builtin.arity())?;
+        Ok(Self {
+            target: CallTarget::Builtin(builtin),
+        })
+    }
+
+    pub(crate) fn resolve_method(name: &str, arg_count: usize) -> Result<Self, CallSignatureError> {
+        let Some(builtin) = Builtin::by_name(name) else {
+            return Err(CallSignatureError::UnknownFunction {
+                name: name.to_string(),
+            });
+        };
+        let expected_args = builtin.arity().saturating_sub(1);
+        require_arity(builtin, arg_count, expected_args)?;
+        Ok(Self {
+            target: CallTarget::Builtin(builtin),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CallSignatureError {
+    UnknownFunction { name: String },
+    Arity { message: String },
+}
+
+pub(crate) fn matches_pattern_arg(arg: &CftSchemaCheckExpr) -> Result<&str, CallSignatureError> {
+    let CftSchemaCheckExprKind::String(pattern) = &arg.kind else {
+        return Err(CallSignatureError::Arity {
+            message: "matches 的 pattern 必须是字符串字面量".to_string(),
+        });
+    };
+    Ok(pattern)
+}
+
+fn require_arity(
+    builtin: Builtin,
+    actual: usize,
+    expected: usize,
+) -> Result<(), CallSignatureError> {
+    if actual == expected {
+        return Ok(());
+    }
+    Err(CallSignatureError::Arity {
+        message: format!("{} 需要 {} 个参数", builtin.name(), expected),
+    })
+}
+
+use coflow_cft::{CftSchema, EnumName};
+use coflow_data_model::CfdEnumValue;
+
+pub(crate) fn enum_with_value(
+    schema: &CftSchema,
+    enum_name: &EnumName,
+    value: i64,
+) -> CfdEnumValue {
+    match schema.enum_value_from_int(enum_name.as_str(), value) {
+        Some(enum_value) => enum_value.into(),
+        None => anonymous_enum_value(enum_name, value),
+    }
+}
+
+pub(crate) fn anonymous_enum_value(enum_name: &EnumName, value: i64) -> CfdEnumValue {
+    CfdEnumValue {
+        enum_name: enum_name.clone(),
+        variant: None,
+        value,
+    }
+}
+
 use std::collections::BTreeMap;
 
 use coflow_data_model::{CfdDataModel, CfdErrorCode};
 use coflow_structure::StructuralBudget;
 use regex::Regex;
 
-use super::builtins::Builtin;
 use super::diagnostics::{format_value_for_message, value_type_is_float};
 use super::ops::{self, OpsError, OpsResult};
 use super::value::{
-    comparable_key, dict_key_from_check_value, dict_key_matches, values_equal, CheckItems,
-    CheckValue, LocatedBudgetExceeded, LocatedCheckValue,
+    comparable_key, dict_key_from_check_value, dict_key_matches, values_equal, EvalItems,
+    EvalValue, LocatedBudgetExceeded, LocatedEvalValue, ScalarValue,
 };
 
-pub(super) fn len_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue> {
+pub(crate) fn len_value<'model>(
+    value: LocatedEvalValue<'model>,
+) -> OpsResult<LocatedEvalValue<'model>> {
     match value.value {
-        CheckValue::Array { items, .. } => Ok(LocatedCheckValue::new(
-            CheckValue::Int(items.len() as i64),
+        EvalValue::Array { items, .. } => Ok(LocatedEvalValue::new(
+            EvalValue::int(items.len() as i64),
             value.location,
         )),
-        CheckValue::Dict { entries, .. } => Ok(LocatedCheckValue::new(
-            CheckValue::Int(entries.len() as i64),
+        EvalValue::Dict { entries, .. } => Ok(LocatedEvalValue::new(
+            EvalValue::int(entries.len() as i64),
             value.location,
         )),
         other => Err(OpsError::eval_type(
@@ -32,14 +228,14 @@ pub(super) fn len_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
     }
 }
 
-pub(super) fn contains_value(
-    collection: &LocatedCheckValue,
-    value: &CheckValue,
+pub(crate) fn contains_value(
+    collection: &LocatedEvalValue<'_>,
+    value: &EvalValue<'_>,
     model: &CfdDataModel,
     budget: &mut StructuralBudget,
 ) -> OpsResult<bool> {
     match &collection.value {
-        CheckValue::Array {
+        EvalValue::Array {
             items,
             element_type,
         } => {
@@ -62,7 +258,7 @@ pub(super) fn contains_value(
             }
             Ok(false)
         }
-        CheckValue::Dict { entries, .. } => {
+        EvalValue::Dict { entries, .. } => {
             let Some(key) = dict_key_from_check_value(value) else {
                 return Err(OpsError::eval_type(
                     collection.location.clone(),
@@ -88,17 +284,17 @@ pub(super) fn contains_value(
     }
 }
 
-pub(super) struct UniqueEvaluation {
-    pub(super) value: LocatedCheckValue,
-    pub(super) duplicate: Option<String>,
+pub(crate) struct UniqueEvaluation<'model> {
+    pub(crate) value: LocatedEvalValue<'model>,
+    pub(crate) duplicate: Option<String>,
 }
 
-pub(super) fn unique_value(
-    value: LocatedCheckValue,
-    model: &CfdDataModel,
+pub(crate) fn unique_value<'model>(
+    value: LocatedEvalValue<'model>,
+    model: &'model CfdDataModel,
     budget: &mut StructuralBudget,
-) -> OpsResult<UniqueEvaluation> {
-    let CheckValue::Array {
+) -> OpsResult<UniqueEvaluation<'model>> {
+    let EvalValue::Array {
         items,
         element_type,
     } = &value.value
@@ -140,34 +336,38 @@ pub(super) fn unique_value(
                     "重复值 {} 出现在索引 {first_index} 和 {index}",
                     format_value_for_message(&item.value)
                 )),
-                value: LocatedCheckValue::new(CheckValue::Bool(false), value.location),
+                value: LocatedEvalValue::new(EvalValue::bool(false), value.location),
             });
         }
     }
     Ok(UniqueEvaluation {
-        value: LocatedCheckValue::new(CheckValue::Bool(true), value.location),
+        value: LocatedEvalValue::new(EvalValue::bool(true), value.location),
         duplicate: None,
     })
 }
 
-pub(super) fn keys_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue> {
-    let CheckValue::Dict {
+pub(crate) fn keys_value<'model>(
+    value: LocatedEvalValue<'model>,
+) -> OpsResult<LocatedEvalValue<'model>> {
+    let EvalValue::Dict {
         entries, key_type, ..
     } = value.value
     else {
         return Err(OpsError::eval_type(value.location, "keys 需要 dict"));
     };
-    Ok(LocatedCheckValue::new(
-        CheckValue::Array {
-            items: CheckItems::DictKeys(entries),
+    Ok(LocatedEvalValue::new(
+        EvalValue::Array {
+            items: EvalItems::DictKeys(entries),
             element_type: key_type,
         },
         value.location,
     ))
 }
 
-pub(super) fn values_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue> {
-    let CheckValue::Dict {
+pub(crate) fn values_value<'model>(
+    value: LocatedEvalValue<'model>,
+) -> OpsResult<LocatedEvalValue<'model>> {
+    let EvalValue::Dict {
         entries,
         value_type,
         ..
@@ -175,22 +375,22 @@ pub(super) fn values_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckVa
     else {
         return Err(OpsError::eval_type(value.location, "values 需要 dict"));
     };
-    Ok(LocatedCheckValue::new(
-        CheckValue::Array {
-            items: CheckItems::DictValues(entries),
+    Ok(LocatedEvalValue::new(
+        EvalValue::Array {
+            items: EvalItems::DictValues(entries),
             element_type: value_type,
         },
         value.location,
     ))
 }
 
-pub(super) fn matches_value(
-    value: LocatedCheckValue,
+pub(crate) fn matches_value<'model>(
+    value: LocatedEvalValue<'model>,
     pattern: &str,
-) -> OpsResult<LocatedCheckValue> {
+) -> OpsResult<LocatedEvalValue<'model>> {
     let location = value.location.clone();
     let value_kind = value.value.clone();
-    let CheckValue::String(text) = value.value else {
+    let Some(ScalarValue::String(text)) = value.value.scalar() else {
         return Err(OpsError::eval_type(
             location,
             format!(
@@ -202,20 +402,20 @@ pub(super) fn matches_value(
     let regex = Regex::new(pattern).map_err(|err| {
         OpsError::eval_type(None, format!("正则 pattern `{pattern}` 无法编译: {err}"))
     })?;
-    Ok(LocatedCheckValue::new(
-        CheckValue::Bool(regex.is_match(&text)),
+    Ok(LocatedEvalValue::new(
+        EvalValue::bool(regex.is_match(text)),
         value.location,
     ))
 }
 
-pub(super) fn min_max_value(
+pub(crate) fn min_max_value<'model>(
     builtin: Builtin,
-    value: LocatedCheckValue,
-    model: &CfdDataModel,
+    value: LocatedEvalValue<'model>,
+    model: &'model CfdDataModel,
     budget: &mut StructuralBudget,
-) -> OpsResult<LocatedCheckValue> {
+) -> OpsResult<LocatedEvalValue<'model>> {
     let location = value.location.clone();
-    let CheckValue::Array {
+    let EvalValue::Array {
         items,
         element_type,
     } = &value.value
@@ -250,7 +450,7 @@ pub(super) fn min_max_value(
         else {
             continue;
         };
-        if matches!(item.value, CheckValue::Null) {
+        if matches!(item.value.scalar(), Some(ScalarValue::Null)) {
             continue;
         }
         match &mut out {
@@ -276,16 +476,16 @@ pub(super) fn min_max_value(
             ),
         ));
     };
-    Ok(LocatedCheckValue::new(out, location))
+    Ok(LocatedEvalValue::new(out, location))
 }
 
-pub(super) fn sum_value(
-    value: LocatedCheckValue,
-    model: &CfdDataModel,
+pub(crate) fn sum_value<'model>(
+    value: LocatedEvalValue<'model>,
+    model: &'model CfdDataModel,
     budget: &mut StructuralBudget,
-) -> OpsResult<LocatedCheckValue> {
+) -> OpsResult<LocatedEvalValue<'model>> {
     let location = value.location.clone();
-    let CheckValue::Array {
+    let EvalValue::Array {
         items,
         element_type,
     } = &value.value
@@ -315,8 +515,8 @@ pub(super) fn sum_value(
         else {
             continue;
         };
-        match item.value {
-            CheckValue::Int(value) if !saw_float => {
+        match item.value.scalar() {
+            Some(ScalarValue::Int(value)) if !saw_float => {
                 saw_numeric = true;
                 let Some(next) = int_sum.checked_add(value) else {
                     return Err(OpsError::eval_type(
@@ -326,11 +526,11 @@ pub(super) fn sum_value(
                 };
                 int_sum = next;
             }
-            CheckValue::Int(value) => {
+            Some(ScalarValue::Int(value)) => {
                 saw_numeric = true;
                 float_sum += value as f64;
             }
-            CheckValue::Float(value) => {
+            Some(ScalarValue::Float(value)) => {
                 saw_numeric = true;
                 if !saw_float {
                     saw_float = true;
@@ -338,25 +538,22 @@ pub(super) fn sum_value(
                 }
                 float_sum += value;
             }
-            CheckValue::Null => {}
-            other => {
+            Some(ScalarValue::Null) => {}
+            _ => {
                 return Err(OpsError::eval_type(
                     location,
                     format!(
                         "sum 元素不是数值: 实际为 {}",
-                        format_value_for_message(&other)
+                        format_value_for_message(&item.value)
                     ),
                 ));
             }
         }
     }
     if saw_float || (!saw_numeric && value_type_is_float(element_type.as_ref())) {
-        Ok(LocatedCheckValue::new(
-            CheckValue::Float(float_sum),
-            location,
-        ))
+        Ok(LocatedEvalValue::new(EvalValue::float(float_sum), location))
     } else {
-        Ok(LocatedCheckValue::new(CheckValue::Int(int_sum), location))
+        Ok(LocatedEvalValue::new(EvalValue::int(int_sum), location))
     }
 }
 

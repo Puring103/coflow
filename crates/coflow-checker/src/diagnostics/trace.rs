@@ -6,8 +6,8 @@ use coflow_cft::{
 };
 use coflow_data_model::CfdDataModel;
 
-use super::diagnostics::format_value_for_message;
-use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
+use super::format_value_for_message;
+use crate::eval::{LocatedEvalValue, ScalarValue, ValueLocation};
 
 type ExprKey = usize;
 
@@ -43,26 +43,26 @@ impl CaptureRequest {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct TraceFact {
-    pub(super) display: Option<String>,
-    pub(super) bool_value: Option<bool>,
-    pub(super) actual_type: Option<String>,
-    pub(super) is_null: bool,
-    pub(super) location: Option<ValueLocation>,
+pub(crate) struct TraceFact {
+    pub(crate) display: Option<String>,
+    pub(crate) bool_value: Option<bool>,
+    pub(crate) actual_type: Option<String>,
+    pub(crate) is_null: bool,
+    pub(crate) location: Option<ValueLocation>,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ComparisonFailure {
-    pub(super) lhs_expression: String,
-    pub(super) lhs: TraceFact,
-    pub(super) rhs_expression: String,
-    pub(super) rhs: TraceFact,
-    pub(super) op: CftSchemaCmpOp,
-    pub(super) location: Option<ValueLocation>,
+pub(crate) struct ComparisonFailure {
+    pub(crate) lhs_expression: String,
+    pub(crate) lhs: TraceFact,
+    pub(crate) rhs_expression: String,
+    pub(crate) rhs: TraceFact,
+    pub(crate) op: CftSchemaCmpOp,
+    pub(crate) location: Option<ValueLocation>,
 }
 
 #[derive(Debug, Default)]
-pub(super) struct EvaluationTrace {
+pub(crate) struct EvaluationTrace {
     requests: BTreeMap<ExprKey, CaptureRequest>,
     facts: BTreeMap<ExprKey, TraceFact>,
     comparison_failure: Option<ComparisonFailure>,
@@ -70,7 +70,7 @@ pub(super) struct EvaluationTrace {
 }
 
 impl EvaluationTrace {
-    pub(super) fn for_explanation(expr: &CftSchemaCheckExpr) -> Self {
+    pub(crate) fn for_explanation(expr: &CftSchemaCheckExpr) -> Self {
         let mut trace = Self::default();
         match &expr.kind {
             CftSchemaCheckExprKind::Call { name, args }
@@ -122,10 +122,10 @@ impl EvaluationTrace {
             .merge(request);
     }
 
-    pub(super) fn record(
+    pub(crate) fn record(
         &mut self,
         expr: &CftSchemaCheckExpr,
-        value: &LocatedCheckValue,
+        value: &LocatedEvalValue<'_>,
         model: &CfdDataModel,
     ) {
         let key = expr_key(expr);
@@ -135,19 +135,19 @@ impl EvaluationTrace {
         self.facts.insert(key, trace_fact(request, value, model));
     }
 
-    pub(super) fn fact(&self, expr: &CftSchemaCheckExpr) -> Option<&TraceFact> {
+    pub(crate) fn fact(&self, expr: &CftSchemaCheckExpr) -> Option<&TraceFact> {
         self.facts.get(&expr_key(expr))
     }
 
-    pub(super) fn note_comparison_failure(
+    pub(crate) fn note_comparison_failure(
         &mut self,
         lhs: &CftSchemaCheckExpr,
         op: CftSchemaCmpOp,
         rhs: &CftSchemaCheckExpr,
         location: Option<ValueLocation>,
     ) {
-        let lhs_expression = super::diagnostics::render_expr(lhs);
-        let rhs_expression = super::diagnostics::render_expr(rhs);
+        let lhs_expression = super::render_expr(lhs);
+        let rhs_expression = super::render_expr(rhs);
         let Some(lhs) = self.fact(lhs).cloned() else {
             return;
         };
@@ -164,15 +164,15 @@ impl EvaluationTrace {
         });
     }
 
-    pub(super) const fn comparison_failure(&self) -> Option<&ComparisonFailure> {
+    pub(crate) const fn comparison_failure(&self) -> Option<&ComparisonFailure> {
         self.comparison_failure.as_ref()
     }
 
-    pub(super) fn note_unique_failure(&mut self, collection: &CftSchemaCheckExpr, detail: String) {
+    pub(crate) fn note_unique_failure(&mut self, collection: &CftSchemaCheckExpr, detail: String) {
         self.unique_failures.insert(expr_key(collection), detail);
     }
 
-    pub(super) fn unique_failure(&self, collection: &CftSchemaCheckExpr) -> Option<&str> {
+    pub(crate) fn unique_failure(&self, collection: &CftSchemaCheckExpr) -> Option<&str> {
         self.unique_failures
             .get(&expr_key(collection))
             .map(String::as_str)
@@ -181,7 +181,7 @@ impl EvaluationTrace {
 
 fn trace_fact(
     request: CaptureRequest,
-    value: &LocatedCheckValue,
+    value: &LocatedEvalValue<'_>,
     model: &CfdDataModel,
 ) -> TraceFact {
     TraceFact {
@@ -189,8 +189,8 @@ fn trace_fact(
             .display
             .then(|| format_value_for_message(&value.value)),
         bool_value: if request.bool_value {
-            match &value.value {
-                CheckValue::Bool(value) => Some(*value),
+            match value.value.scalar() {
+                Some(ScalarValue::Bool(value)) => Some(value),
                 _ => None,
             }
         } else {
@@ -200,7 +200,7 @@ fn trace_fact(
             .actual_type
             .then(|| value.value.actual_type(model).map(str::to_string))
             .flatten(),
-        is_null: matches!(value.value, CheckValue::Null),
+        is_null: matches!(value.value.scalar(), Some(ScalarValue::Null)),
         location: value.location.clone(),
     }
 }

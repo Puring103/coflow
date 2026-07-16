@@ -9,7 +9,7 @@
 mod common;
 use common::*;
 
-use coflow_checker::{run_checks_with_options, CheckOptions, StructuralLimits};
+use coflow_checker::StructuralLimits;
 use std::collections::BTreeSet;
 
 type BuildFn = fn(&CftSchema) -> Result<CfdDataModel, CfdDiagnostics>;
@@ -773,7 +773,7 @@ fn build_present_attr_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
 }
 
 fn run_checks(schema: &CftSchema, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
-    model.run_checks(schema)
+    run_model_checks(&model, schema)
 }
 
 fn assert_builds(
@@ -788,9 +788,7 @@ fn assert_checks(schema_source: &str, records: impl IntoIterator<Item = LoadedRe
     let schema = compile_schema(schema_source);
     let model = model_from_records(&schema, records).expect("adjacent-valid model should build");
     let compiled = schema;
-    model
-        .run_checks(&compiled)
-        .expect("adjacent-valid checks should pass");
+    run_model_checks(&model, &compiled).expect("adjacent-valid checks should pass");
 }
 
 fn adjacent_known_record_type() {
@@ -858,14 +856,8 @@ fn check_budget_exceeded() -> CfdDiagnostics {
         )],
     )
     .expect("budget coverage model builds");
-    run_checks_with_options(
-        &schema,
-        &model,
-        CheckOptions {
-            structural_limits: StructuralLimits::new(100, 100, 1),
-        },
-    )
-    .expect_err("collection work should exceed one")
+    run_model_checks_with_limits(&model, &schema, StructuralLimits::new(100, 100, 1))
+        .expect_err("collection work should exceed one")
 }
 
 fn adjacent_check_budget_valid() {
@@ -885,14 +877,8 @@ fn adjacent_check_budget_valid() {
         )],
     )
     .expect("adjacent budget model builds");
-    run_checks_with_options(
-        &schema,
-        &model,
-        CheckOptions {
-            structural_limits: StructuralLimits::new(100, 100, 2),
-        },
-    )
-    .expect("work exactly at the limit should pass");
+    run_model_checks_with_limits(&model, &schema, StructuralLimits::new(100, 100, 2))
+        .expect("work exactly at the limit should pass");
 }
 
 fn adjacent_acyclic_schema_default() {

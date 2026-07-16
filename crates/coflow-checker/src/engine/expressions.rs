@@ -1,24 +1,22 @@
 use super::evaluator::{CheckEvaluator, EvalResult};
 use super::ops;
 use super::type_predicates;
-use super::value::{CheckValue, LocatedCheckValue};
+use super::value::{EvalValue, LocatedEvalValue};
 use coflow_cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind};
 
-pub(super) fn eval_expr(
-    evaluator: &mut CheckEvaluator<'_>,
+pub(super) fn eval_expr<'model>(
+    evaluator: &mut CheckEvaluator<'model>,
     expr: &CftSchemaCheckExpr,
-) -> EvalResult<LocatedCheckValue> {
+) -> EvalResult<LocatedEvalValue<'model>> {
     match &expr.kind {
-        CftSchemaCheckExprKind::Int(value) => Ok(LocatedCheckValue::value(CheckValue::Int(*value))),
+        CftSchemaCheckExprKind::Int(value) => Ok(LocatedEvalValue::value(EvalValue::int(*value))),
         CftSchemaCheckExprKind::Float(value) => {
-            Ok(LocatedCheckValue::value(CheckValue::Float(*value)))
+            Ok(LocatedEvalValue::value(EvalValue::float(*value)))
         }
-        CftSchemaCheckExprKind::Bool(value) => {
-            Ok(LocatedCheckValue::value(CheckValue::Bool(*value)))
-        }
-        CftSchemaCheckExprKind::Null => Ok(LocatedCheckValue::value(CheckValue::Null)),
+        CftSchemaCheckExprKind::Bool(value) => Ok(LocatedEvalValue::value(EvalValue::bool(*value))),
+        CftSchemaCheckExprKind::Null => Ok(LocatedEvalValue::value(EvalValue::null())),
         CftSchemaCheckExprKind::String(value) => {
-            Ok(LocatedCheckValue::value(CheckValue::String(value.clone())))
+            Ok(LocatedEvalValue::value(EvalValue::string(value.clone())))
         }
         CftSchemaCheckExprKind::Name(name) => evaluator.eval_name(name),
         CftSchemaCheckExprKind::Field { expr: inner, name } => {
@@ -48,15 +46,15 @@ pub(super) fn eval_expr(
     }
 }
 
-fn eval_field_expr(
-    evaluator: &mut CheckEvaluator<'_>,
+fn eval_field_expr<'model>(
+    evaluator: &mut CheckEvaluator<'model>,
     inner: &CftSchemaCheckExpr,
     name: &str,
-) -> EvalResult<LocatedCheckValue> {
+) -> EvalResult<LocatedEvalValue<'model>> {
     if let CftSchemaCheckExprKind::Name(enum_name) = &inner.kind {
         if let Some(enum_value) = evaluator.schema.enum_variant_value(enum_name, name) {
             if let Some(value) = evaluator.schema.enum_value_from_int(enum_name, enum_value) {
-                return Ok(LocatedCheckValue::value(CheckValue::Enum(value.into())));
+                return Ok(LocatedEvalValue::value(EvalValue::enum_value(value.into())));
             }
         }
     }
@@ -64,15 +62,15 @@ fn eval_field_expr(
     evaluator.eval_field(target, name)
 }
 
-fn eval_index_expr(
-    evaluator: &mut CheckEvaluator<'_>,
+fn eval_index_expr<'model>(
+    evaluator: &mut CheckEvaluator<'model>,
     inner: &CftSchemaCheckExpr,
     index: &CftSchemaCheckExpr,
-) -> EvalResult<LocatedCheckValue> {
+) -> EvalResult<LocatedEvalValue<'model>> {
     let target = evaluator.eval_expr(inner)?;
     let index = evaluator.eval_expr(index)?;
     let result = evaluator.eval_index(target, index)?;
-    if let CheckValue::Record(record) = &result.value {
+    if let EvalValue::Record(record) = &result.value {
         if let Some(id) = record.top_record_id() {
             evaluator.note_read_from(id);
         }
@@ -80,14 +78,14 @@ fn eval_index_expr(
     Ok(result)
 }
 
-fn eval_is_expr(
-    evaluator: &mut CheckEvaluator<'_>,
+fn eval_is_expr<'model>(
+    evaluator: &mut CheckEvaluator<'model>,
     inner: &CftSchemaCheckExpr,
     predicate: &coflow_cft::CftSchemaTypePredicate,
-) -> EvalResult<LocatedCheckValue> {
+) -> EvalResult<LocatedEvalValue<'model>> {
     let value = evaluator.eval_expr(inner)?;
-    Ok(LocatedCheckValue::new(
-        CheckValue::Bool(type_predicates::value_matches_predicate(
+    Ok(LocatedEvalValue::new(
+        EvalValue::bool(type_predicates::value_matches_predicate(
             evaluator.schema,
             evaluator.model,
             &value.value,
@@ -97,11 +95,11 @@ fn eval_is_expr(
     ))
 }
 
-fn eval_cmp_chain_expr(
-    evaluator: &mut CheckEvaluator<'_>,
+fn eval_cmp_chain_expr<'model>(
+    evaluator: &mut CheckEvaluator<'model>,
     first: &CftSchemaCheckExpr,
     rest: &[(coflow_cft::CftSchemaCmpOp, CftSchemaCheckExpr)],
-) -> EvalResult<LocatedCheckValue> {
+) -> EvalResult<LocatedEvalValue<'model>> {
     let mut lhs_expr = first;
     let mut lhs = evaluator.eval_expr(first)?;
     for (op, rhs_expr) in rest {
@@ -114,10 +112,10 @@ fn eval_cmp_chain_expr(
             rhs.location.clone(),
         ))? {
             evaluator.note_comparison_failure(lhs_expr, *op, rhs_expr, location.clone());
-            return Ok(LocatedCheckValue::new(CheckValue::Bool(false), location));
+            return Ok(LocatedEvalValue::new(EvalValue::bool(false), location));
         }
         lhs_expr = rhs_expr;
         lhs = rhs;
     }
-    Ok(LocatedCheckValue::value(CheckValue::Bool(true)))
+    Ok(LocatedEvalValue::value(EvalValue::bool(true)))
 }

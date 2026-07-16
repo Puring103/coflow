@@ -1,0 +1,53 @@
+use coflow_data_model::{CfdDiagnostic, CfdDiagnostics, CfdRecordId};
+
+use crate::{DependencyCollection, DependencyGraph};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RootedCheckDiagnostic {
+    pub root: CfdRecordId,
+    pub diagnostic: CfdDiagnostic,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CheckExecutionStats {
+    pub requested_roots: usize,
+    pub executed_rounds: usize,
+    pub dependency_collection: DependencyCollection,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CheckOutput {
+    pub diagnostics: Vec<RootedCheckDiagnostic>,
+    pub dependencies: DependencyGraph,
+    pub statistics: CheckExecutionStats,
+}
+
+impl CheckOutput {
+    pub(crate) fn empty(dependency_collection: DependencyCollection) -> Self {
+        Self {
+            statistics: CheckExecutionStats {
+                dependency_collection,
+                ..CheckExecutionStats::default()
+            },
+            ..Self::default()
+        }
+    }
+
+    #[must_use]
+    pub fn is_success(&self) -> bool {
+        self.diagnostics.is_empty()
+    }
+
+    pub fn into_result(self) -> Result<(), CfdDiagnostics> {
+        if self.diagnostics.is_empty() {
+            Ok(())
+        } else {
+            Err(CfdDiagnostics::new(
+                self.diagnostics
+                    .into_iter()
+                    .map(|rooted| rooted.diagnostic)
+                    .collect(),
+            ))
+        }
+    }
+}

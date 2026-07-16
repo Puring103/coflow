@@ -3,12 +3,10 @@
 mod common;
 use common::*;
 
-use coflow_checker::{run_checks_with_options, CheckOptions, StructuralLimits};
+use coflow_checker::StructuralLimits;
 
-const fn options(max_depth: u64, max_nodes: u64, max_work: u64) -> CheckOptions {
-    CheckOptions {
-        structural_limits: StructuralLimits::new(max_depth, max_nodes, max_work),
-    }
+const fn options(max_depth: u64, max_nodes: u64, max_work: u64) -> StructuralLimits {
+    StructuralLimits::new(max_depth, max_nodes, max_work)
 }
 
 #[test]
@@ -25,7 +23,7 @@ fn expression_depth_limit_stops_the_current_record_with_a_stable_diagnostic() {
     builder.add_record("item", "Item", [("enabled", LoadedValueDraft::from(true))]);
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_with_options(&schema, &model, options(3, 100, 100))
+    let err = run_model_checks_with_limits(&model, &schema, options(3, 100, 100))
         .expect_err("deep expression should exhaust the checker depth budget");
     let diagnostic = err
         .diagnostics
@@ -42,7 +40,7 @@ fn expression_depth_limit_stops_the_current_record_with_a_stable_diagnostic() {
         Some(CfdPath::root())
     );
 
-    run_checks_with_options(&schema, &model, options(16, 100, 100))
+    run_model_checks_with_limits(&model, &schema, options(16, 100, 100))
         .expect("the adjacent larger depth limit accepts the same expression");
 }
 
@@ -58,7 +56,7 @@ fn nested_data_traversal_uses_the_same_depth_contract() {
     );
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_with_options(&schema, &model, options(2, 100, 100))
+    let err = run_model_checks_with_limits(&model, &schema, options(2, 100, 100))
         .expect_err("nested data should exhaust the traversal depth budget");
     let diagnostic = err
         .diagnostics
@@ -102,7 +100,7 @@ fn quantifier_work_limit_points_at_the_first_rejected_item() {
     );
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_with_options(&schema, &model, options(100, 100, 6))
+    let err = run_model_checks_with_limits(&model, &schema, options(100, 100, 6))
         .expect_err("aggregate expansion plus the third item should exceed work six");
     let diagnostic = err
         .diagnostics
@@ -146,7 +144,7 @@ fn aggregate_builtins_charge_work_before_scanning() {
     );
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_with_options(&schema, &model, options(100, 100, 3))
+    let err = run_model_checks_with_limits(&model, &schema, options(100, 100, 3))
         .expect_err("isUnique should charge collection work before scanning");
     let diagnostic = err
         .diagnostics
@@ -189,7 +187,7 @@ fn aggregate_conversion_charges_nodes_before_copying_items() {
     );
     let model = builder.build().expect("model builds");
 
-    let err = run_checks_with_options(&schema, &model, options(100, 3, 100))
+    let err = run_model_checks_with_limits(&model, &schema, options(100, 3, 100))
         .expect_err("the first array item should exceed the conversion node budget");
     let diagnostic = err
         .diagnostics
@@ -229,6 +227,6 @@ fn aggregate_len_keeps_a_borrowed_cursor_without_materializing_items() {
     );
     let model = builder.build().expect("model builds");
 
-    run_checks_with_options(&schema, &model, options(100, 16, 100))
+    run_model_checks_with_limits(&model, &schema, options(100, 16, 100))
         .expect("len should retain only the aggregate cursor and never visit its elements");
 }

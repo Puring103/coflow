@@ -4,7 +4,7 @@
 pub(crate) use coflow_cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
-pub(crate) use coflow_checker::CfdCheckExt;
+pub(crate) use coflow_checker::StructuralLimits;
 pub(crate) use coflow_data_model::*;
 
 pub(crate) fn compile_schema(source: &str) -> CftSchema {
@@ -38,4 +38,24 @@ pub(crate) fn record_id_at(model: &CfdDataModel, index: usize) -> CfdRecordId {
         .map(|(record_id, _)| record_id)
         .find(|record_id| record_id.index() == index)
         .expect("record id should exist")
+}
+
+pub(crate) fn run_model_checks(
+    model: &CfdDataModel,
+    schema: &CftSchema,
+) -> Result<(), CfdDiagnostics> {
+    coflow_checker::run_checks(schema, model, coflow_checker::CheckRequest::all()).into_result()
+}
+
+pub(crate) fn run_model_checks_with_limits(
+    model: &CfdDataModel,
+    schema: &CftSchema,
+    structural_limits: StructuralLimits,
+) -> Result<(), CfdDiagnostics> {
+    coflow_checker::run_checks(
+        schema,
+        model,
+        coflow_checker::CheckRequest::all().with_structural_limits(structural_limits),
+    )
+    .into_result()
 }

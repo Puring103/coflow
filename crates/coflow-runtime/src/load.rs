@@ -204,7 +204,7 @@ pub(crate) fn load_project_data(
         }
     };
     let check = if options.run_checks {
-        run_full_project_checks(project, schema, &model, &origins)
+        run_full_project_checks(schema, &model, &origins)
     } else {
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),
@@ -328,7 +328,6 @@ pub(crate) fn reload_project_data_from_cache(
     }
 
     build_output_from_cache(
-        project,
         schema,
         indexes,
         source_data,
@@ -595,7 +594,6 @@ fn refresh_dimension_source_plans(
 
 #[allow(clippy::too_many_arguments)]
 fn build_output_from_cache(
-    project: &Project,
     schema: &CftSchema,
     indexes: &mut SessionIndexBuilder,
     source_data: SourceDataCache,
@@ -651,7 +649,6 @@ fn build_output_from_cache(
         previous_checks
             .and_then(|previous| {
                 run_incremental_project_checks(
-                    project,
                     schema,
                     &model,
                     &origins,
@@ -659,7 +656,7 @@ fn build_output_from_cache(
                     changed_records,
                 )
             })
-            .unwrap_or_else(|| run_full_project_checks(project, schema, &model, &origins))
+            .unwrap_or_else(|| run_full_project_checks(schema, &model, &origins))
     } else {
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),

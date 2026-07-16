@@ -1,14 +1,14 @@
 use coflow_cft::{CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaUnaryOp};
 use coflow_data_model::CfdErrorCode;
 
-use super::diagnostics::{cmp_op_str, render_expr, CheckExplanation};
-use super::evaluation_trace::EvaluationTrace;
-use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
+use super::trace::EvaluationTrace;
+use super::{cmp_op_str, render_expr, CheckExplanation};
+use crate::eval::{LocatedEvalValue, ScalarValue, ValueLocation};
 
-pub(super) fn explain_false_value_expr(
+pub(crate) fn explain_false_value_expr(
     trace: &EvaluationTrace,
     expr: &CftSchemaCheckExpr,
-    value: &LocatedCheckValue,
+    value: &LocatedEvalValue<'_>,
     rendered: String,
 ) -> CheckExplanation {
     match &expr.kind {
@@ -72,10 +72,10 @@ pub(super) fn explain_false_value_expr(
     }
 }
 
-pub(super) fn explain_false_expr(
+pub(crate) fn explain_false_expr(
     trace: &EvaluationTrace,
     expr: &CftSchemaCheckExpr,
-    value: &LocatedCheckValue,
+    value: &LocatedEvalValue<'_>,
 ) -> Option<CheckExplanation> {
     let rendered = render_expr(expr);
     match &expr.kind {
@@ -101,7 +101,7 @@ pub(super) fn explain_false_expr(
         | CftSchemaCheckExprKind::Index { .. }
         | CftSchemaCheckExprKind::Call { .. }
         | CftSchemaCheckExprKind::MethodCall { .. }
-            if matches!(value.value, CheckValue::Bool(false)) =>
+            if matches!(value.value.scalar(), Some(ScalarValue::Bool(false))) =>
         {
             Some(explain_false_value_expr(trace, expr, value, rendered))
         }
@@ -238,7 +238,7 @@ fn explain_failed_comparison(
     )
 }
 
-pub(super) fn value_expr_actual(trace: &EvaluationTrace, expr: &CftSchemaCheckExpr) -> String {
+pub(crate) fn value_expr_actual(trace: &EvaluationTrace, expr: &CftSchemaCheckExpr) -> String {
     trace
         .fact(expr)
         .and_then(|fact| fact.display.as_ref())

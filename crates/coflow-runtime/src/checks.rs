@@ -3,13 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use coflow_api::{map_diagnostics_with_origins, DiagnosticSet};
 use coflow_cft::CftSchema;
 use coflow_checker::{
-    run_checks_for_dimensions_subset_with_deps, DependencyGraph, DimensionCheckPlan,
-    DimensionCheckRound, RootedCheckDiagnostic,
+    run_checks, CheckRequest, DependencyCollection, DependencyGraph, DimensionCheckRound,
+    RootedCheckDiagnostic,
 };
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, CfdRecordId, RecordOrigin,
 };
-use coflow_project::{DimensionConfig, Project};
 
 use crate::indexes::DiagnosticLogicalLocation;
 use crate::load::logical_locations_from_cfd;
@@ -49,34 +48,38 @@ struct StableCheckLabel {
 }
 
 pub(crate) fn run_full_project_checks(
-    project: &Project,
     schema: &CftSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
 ) -> ProjectCheckOutput {
     let targets = model.records().map(|(id, _)| id).collect::<Vec<_>>();
-    let (diagnostics, dependencies) = run_checks_for_dimensions_subset_with_deps(
+    let output = run_checks(
         schema,
         model,
-        &dimension_check_plan(&project.config.dimensions),
-        &targets,
+        CheckRequest::records(&targets)
+            .with_rounds(dimension_check_rounds(schema))
+            .with_dependency_collection(DependencyCollection::Reads),
     );
+    let diagnostics = output.diagnostics;
+    let dependencies = output.dependencies;
     if check_state_is_stable(model, &diagnostics, &dependencies) {
         if let Some(output) = stabilize_check_state(model, diagnostics, dependencies)
             .and_then(|state| render_check_state(model, origins, state))
         {
             return output;
         }
-        let (fallback, _) = run_checks_for_dimensions_subset_with_deps(
+        let fallback = run_checks(
             schema,
             model,
-            &dimension_check_plan(&project.config.dimensions),
-            &targets,
+            CheckRequest::records(&targets)
+                .with_rounds(dimension_check_rounds(schema))
+                .with_dependency_collection(DependencyCollection::Reads),
         );
         return render_raw_check_output(
             model,
             origins,
             fallback
+                .diagnostics
                 .into_iter()
                 .map(|rooted| rooted.diagnostic)
                 .collect(),
@@ -93,7 +96,6 @@ pub(crate) fn run_full_project_checks(
 }
 
 pub(crate) fn run_incremental_project_checks(
-    project: &Project,
     schema: &CftSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
@@ -113,13 +115,15 @@ pub(crate) fn run_incremental_project_checks(
         .iter()
         .map(|coordinate| model.record_by_type_key(&coordinate.actual_type, &coordinate.key))
         .collect::<Option<Vec<_>>>()?;
-    let (diagnostics, dependencies) = run_checks_for_dimensions_subset_with_deps(
+    let output = run_checks(
         schema,
         model,
-        &dimension_check_plan(&project.config.dimensions),
-        &targets,
+        CheckRequest::records(&targets)
+            .with_rounds(dimension_check_rounds(schema))
+            .with_dependency_collection(DependencyCollection::Reads),
     );
-    let replacement = stabilize_check_state(model, diagnostics, dependencies)?;
+    let replacement =
+        stabilize_check_state(model, output.diagnostics, output.dependencies)?;
     let mut state = previous.clone();
     state
         .diagnostics
@@ -288,13 +292,17 @@ fn coordinate_for_id(model: &CfdDataModel, id: CfdRecordId) -> Option<RecordCoor
     Some(record.coordinate())
 }
 
-fn dimension_check_plan(dimensions: &BTreeMap<String, DimensionConfig>) -> DimensionCheckPlan {
-    DimensionCheckPlan::new(dimensions.iter().flat_map(|(dimension, config)| {
-        config
-            .variants
-            .iter()
-            .map(|variant| DimensionCheckRound::new(dimension.clone(), variant.clone()))
-    }))
+fn dimension_check_rounds(schema: &CftSchema) -> Vec<DimensionCheckRound> {
+    schema
+        .all_dimensions()
+        .flat_map(|dimension| {
+            dimension
+                .variants
+                .iter()
+                .cloned()
+                .map(|variant| DimensionCheckRound::new(dimension.name.clone(), variant))
+        })
+        .collect()
 }
 
 fn render_raw_check_output(

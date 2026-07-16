@@ -8,7 +8,7 @@
 )]
 
 mod common;
-use coflow_checker::{run_checks_for_dimensions_subset_with_deps, DimensionCheckPlan};
+use coflow_checker::{CheckRequest, DependencyCollection};
 use common::*;
 
 fn build_model(_schema: &CftSchema, builder: CfdModelBuilder<'_>) -> CfdDataModel {
@@ -68,12 +68,13 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
         .lookup_assignable(&schema, "Item", "reader")
         .expect("reader");
 
-    let (diagnostics, graph) = run_checks_for_dimensions_subset_with_deps(
+    let output = coflow_checker::run_checks(
         &schema,
         &model,
-        &DimensionCheckPlan::default(),
-        &[reader],
+        CheckRequest::records(&[reader]).with_dependency_collection(DependencyCollection::Reads),
     );
+    let diagnostics = output.diagnostics;
+    let graph = output.dependencies;
 
     assert!(
         diagnostics.iter().all(|rooted| {
@@ -162,7 +163,7 @@ fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
         ],
     );
     let model = build_model(&schema, builder);
-    model.run_checks(&schema).expect("checks should pass");
+    run_model_checks(&model, &schema).expect("checks should pass");
 }
 
 #[test]
@@ -226,9 +227,7 @@ fn check_diagnostics_use_specific_codes_for_scalar_false_conditions() {
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
-        .expect_err("scalar check diagnostics should fail");
+    let err = run_model_checks(&model, &schema).expect_err("scalar check diagnostics should fail");
 
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     assert_has_code(&err, CfdErrorCode::CheckBoolExpectedTrue);
@@ -301,9 +300,8 @@ fn check_diagnostics_use_specific_codes_for_quantifiers_and_when_context() {
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
-        .expect_err("quantifier and when diagnostics should fail");
+    let err =
+        run_model_checks(&model, &schema).expect_err("quantifier and when diagnostics should fail");
 
     assert_first_code(&err, CfdErrorCode::CheckAnyQuantifierFailed);
     assert_has_code(&err, CfdErrorCode::CheckNoneQuantifierFailed);
@@ -331,7 +329,7 @@ fn check_runner_reports_false_conditions_with_paths() {
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item_1", "Item", [("value", LoadedValueDraft::from(0_i64))]);
     let model = build_model(&schema, builder);
-    let err = model.run_checks(&schema).expect_err("check should fail");
+    let err = run_model_checks(&model, &schema).expect_err("check should fail");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     assert_eq!(
         err.diagnostics[0]
@@ -356,9 +354,7 @@ fn logical_and_binds_tighter_than_or_and_bitwise_precedence_remains_left_associa
         std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&logical, builder);
-    model
-        .run_checks(&logical)
-        .expect("logical && should bind tighter than ||");
+    run_model_checks(&model, &logical).expect("logical && should bind tighter than ||");
 
     let bitwise = compile_schema(
         r#"
@@ -372,8 +368,7 @@ fn logical_and_binds_tighter_than_or_and_bitwise_precedence_remains_left_associa
         std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&bitwise, builder);
-    model
-        .run_checks(&bitwise)
+    run_model_checks(&model, &bitwise)
         .expect("same-precedence bitwise operators evaluate left-to-right");
 }
 
@@ -395,9 +390,7 @@ fn short_circuit_nullable_guards_and_null_access_are_reported() {
         std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&guarded, builder);
-    model
-        .run_checks(&guarded)
-        .expect("guarded check should pass");
+    run_model_checks(&model, &guarded).expect("guarded check should pass");
 
     let unguarded = compile_schema(
         r#"
@@ -415,7 +408,7 @@ fn short_circuit_nullable_guards_and_null_access_are_reported() {
         std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&unguarded, builder);
-    let err = model.run_checks(&unguarded).expect_err("null access");
+    let err = run_model_checks(&model, &unguarded).expect_err("null access");
     assert_has_code(&err, CfdErrorCode::CheckNullAccess);
 }
 
@@ -450,7 +443,7 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
         )],
     );
     let model = build_model(&pass, builder);
-    model.run_checks(&pass).expect("checks should pass");
+    run_model_checks(&model, &pass).expect("checks should pass");
 
     let empty = compile_schema(
         r#"
@@ -470,9 +463,7 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
         )],
     );
     let model = build_model(&empty, builder);
-    let err = model
-        .run_checks(&empty)
-        .expect_err("min over all-null values");
+    let err = run_model_checks(&model, &empty).expect_err("min over all-null values");
     assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
 }
 
@@ -497,9 +488,7 @@ fn contains_reports_runtime_type_errors_for_null_collections() {
         )],
     );
     let valid = build_model(&schema, valid_builder);
-    valid
-        .run_checks(&schema)
-        .expect("contains should work for a present nullable array");
+    run_model_checks(&valid, &schema).expect("contains should work for a present nullable array");
 
     let mut null_builder = CfdDataModel::builder(&schema);
     null_builder.add_record(
@@ -508,8 +497,7 @@ fn contains_reports_runtime_type_errors_for_null_collections() {
         std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let null = build_model(&schema, null_builder);
-    let err = null
-        .run_checks(&schema)
+    let err = run_model_checks(&null, &schema)
         .expect_err("contains(null, value) should be a runtime type error");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
@@ -546,8 +534,7 @@ fn non_finite_float_comparisons_are_runtime_type_errors() {
         [("value", LoadedValueDraft::from(0.0_f64))],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
+    let err = run_model_checks(&model, &schema)
         .expect_err("NaN comparisons should fail as runtime type errors");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
@@ -601,7 +588,7 @@ fn inherited_checks_and_statement_order_are_stable() {
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model.run_checks(&schema).expect_err("child checks fail");
+    let err = run_model_checks(&model, &schema).expect_err("child checks fail");
     let paths = err
         .diagnostics
         .iter()
@@ -643,7 +630,7 @@ fn hard_stop_in_one_check_block_does_not_skip_later_blocks() {
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model.run_checks(&schema).expect_err("checks should fail");
+    let err = run_model_checks(&model, &schema).expect_err("checks should fail");
 
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
@@ -672,9 +659,7 @@ fn quantifiers_report_soft_failures_and_preserve_hard_errors() {
         )],
     );
     let model = build_model(&soft_fail, builder);
-    let err = model
-        .run_checks(&soft_fail)
-        .expect_err("all reports each failing element");
+    let err = run_model_checks(&model, &soft_fail).expect_err("all reports each failing element");
     let soft_fail_paths = err
         .diagnostics
         .iter()
@@ -710,9 +695,8 @@ fn quantifiers_report_soft_failures_and_preserve_hard_errors() {
         )],
     );
     let model = build_model(&hard_stop, builder);
-    let err = model
-        .run_checks(&hard_stop)
-        .expect_err("hard eval error should not be swallowed");
+    let err =
+        run_model_checks(&model, &hard_stop).expect_err("hard eval error should not be swallowed");
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
 }
 
@@ -741,7 +725,7 @@ fn inline_object_checks_use_nested_paths() {
         )],
     );
     let model = build_model(&schema, builder);
-    let err = model.run_checks(&schema).expect_err("nested check fails");
+    let err = run_model_checks(&model, &schema).expect_err("nested check fails");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     let diag = err
         .diagnostics
@@ -788,7 +772,7 @@ fn flag_enum_bitwise_composites_and_int_ops_work() {
         ],
     );
     let model = build_model(&schema, builder);
-    model.run_checks(&schema).expect("operators should pass");
+    run_model_checks(&model, &schema).expect("operators should pass");
 }
 
 #[test]
@@ -811,9 +795,7 @@ fn runtime_reports_index_dict_and_regex_edges() {
         )],
     );
     let model = build_model(&negative_index, builder);
-    let err = model
-        .run_checks(&negative_index)
-        .expect_err("negative index should fail");
+    let err = run_model_checks(&model, &negative_index).expect_err("negative index should fail");
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
 
     let missing_key = compile_schema(
@@ -837,9 +819,7 @@ fn runtime_reports_index_dict_and_regex_edges() {
         )],
     );
     let model = build_model(&missing_key, builder);
-    let err = model
-        .run_checks(&missing_key)
-        .expect_err("missing dict key should fail");
+    let err = run_model_checks(&model, &missing_key).expect_err("missing dict key should fail");
     assert_has_code(&err, CfdErrorCode::CheckMissingDictKey);
 
     let regex = compile_schema(
@@ -857,9 +837,7 @@ fn runtime_reports_index_dict_and_regex_edges() {
         [("label", LoadedValueDraft::from("怪物配置"))],
     );
     let model = build_model(&regex, builder);
-    model
-        .run_checks(&regex)
-        .expect("matches should use Unicode regex semantics");
+    run_model_checks(&model, &regex).expect("matches should use Unicode regex semantics");
 }
 
 #[test]
@@ -894,9 +872,7 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
-        .expect_err("invalid target should fail once");
+    let err = run_model_checks(&model, &schema).expect_err("invalid target should fail once");
 
     let failures = err
         .diagnostics
@@ -934,9 +910,8 @@ fn checks_through_refs_blame_the_target_value_and_relate_the_ref_source() {
     );
     let model = build_model(&schema, builder);
 
-    let err = model
-        .run_checks(&schema)
-        .expect_err("target price should fail the holder check");
+    let err =
+        run_model_checks(&model, &schema).expect_err("target price should fail the holder check");
     let diagnostic = err
         .diagnostics
         .iter()
@@ -977,9 +952,7 @@ fn checks_preserve_every_hop_in_a_reference_chain() {
     );
     let model = build_model(&schema, builder);
 
-    let err = model
-        .run_checks(&schema)
-        .expect_err("leaf value should fail the root check");
+    let err = run_model_checks(&model, &schema).expect_err("leaf value should fail the root check");
     let diagnostic = err
         .diagnostics
         .iter()
@@ -1029,9 +1002,8 @@ fn checks_keep_target_locations_through_collection_access_and_virtual_ids() {
     );
     let model = build_model(&schema, builder);
 
-    let err = model
-        .run_checks(&schema)
-        .expect_err("target collection value and id should fail");
+    let err =
+        run_model_checks(&model, &schema).expect_err("target collection value and id should fail");
     let paths = err
         .diagnostics
         .iter()
@@ -1085,9 +1057,7 @@ fn checks_can_access_ref_fields_inherited_from_spread() {
     ));
 
     let model = build_model(&schema, builder);
-    model
-        .run_checks(&schema)
-        .expect("spread-inherited ref should resolve in checks");
+    run_model_checks(&model, &schema).expect("spread-inherited ref should resolve in checks");
 
     let nested_schema = compile_schema(
         r#"
@@ -1120,8 +1090,7 @@ fn checks_can_access_ref_fields_inherited_from_spread() {
     );
 
     let nested_model = build_model(&nested_schema, nested_builder);
-    nested_model
-        .run_checks(&nested_schema)
+    run_model_checks(&nested_model, &nested_schema)
         .expect("nested spread-inherited ref should resolve in checks");
 
     let mut chained_builder = CfdDataModel::builder(&schema);
@@ -1145,8 +1114,7 @@ fn checks_can_access_ref_fields_inherited_from_spread() {
     ));
 
     let chained_model = build_model(&schema, chained_builder);
-    chained_model
-        .run_checks(&schema)
+    run_model_checks(&chained_model, &schema)
         .expect("chained spread-inherited ref should resolve in checks");
 }
 
@@ -1167,9 +1135,7 @@ fn empty_sum_and_float_edge_semantics_are_preserved() {
         std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&empty_sum, builder);
-    model
-        .run_checks(&empty_sum)
-        .expect("empty int sum should evaluate as 0");
+    run_model_checks(&model, &empty_sum).expect("empty int sum should evaluate as 0");
 
     let float_div_zero = compile_schema(
         r#"
@@ -1186,7 +1152,6 @@ fn empty_sum_and_float_edge_semantics_are_preserved() {
         [("value", LoadedValueDraft::from(1.0_f64))],
     );
     let model = build_model(&float_div_zero, builder);
-    model
-        .run_checks(&float_div_zero)
+    run_model_checks(&model, &float_div_zero)
         .expect("float division by zero follows f64 infinity semantics");
 }

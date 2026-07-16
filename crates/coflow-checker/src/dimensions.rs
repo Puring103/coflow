@@ -1,19 +1,77 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use coflow_cft::{CftSchema, CftValueType};
+use coflow_cft::{CftSchema, CftValueType, DimensionName, VariantName};
 use coflow_data_model::{
-    CfdDataModel, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
+    CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
     DimensionValueLookup,
 };
 use coflow_structure::{StructuralBudget, TraversalCursor};
 
-use super::diagnostics::dimension_lookup_error_message;
-use super::value::{CheckRecordRef, CheckValue, LocatedCheckValue, ValueLocation};
+use crate::diagnostics::dimension_lookup_error_message;
+use crate::eval::{EvalRecordRef, EvalValue, LocatedEvalValue, ValueLocation};
 use crate::DimensionCheckContext;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DimensionCheckRound {
+    pub dimension: DimensionName,
+    pub variant: VariantName,
+}
+
+impl DimensionCheckRound {
+    #[must_use]
+    pub const fn new(dimension: DimensionName, variant: VariantName) -> Self {
+        Self { dimension, variant }
+    }
+}
+
+pub(crate) fn attach_dimension_origins(
+    model: &CfdDataModel,
+    round: &DimensionCheckRound,
+    diagnostic: &mut CfdDiagnostic,
+) {
+    if let Some(primary) = &mut diagnostic.primary {
+        attach_dimension_origin(model, round, primary);
+    }
+    for related in &mut diagnostic.related {
+        attach_dimension_origin(model, round, related);
+    }
+}
+
+fn attach_dimension_origin(
+    model: &CfdDataModel,
+    round: &DimensionCheckRound,
+    label: &mut coflow_data_model::CfdLabel,
+) {
+    let Some(record) = label.record.and_then(|record| model.record(record)) else {
+        return;
+    };
+    let Some(field) = label
+        .path
+        .segments
+        .iter()
+        .find_map(|segment| match segment {
+            coflow_data_model::CfdPathSegment::Field(field) => Some(field.as_str()),
+            coflow_data_model::CfdPathSegment::Index(_)
+            | coflow_data_model::CfdPathSegment::DictKey(_) => None,
+        })
+    else {
+        return;
+    };
+    let Some(values) = record
+        .dimension_field(field)
+        .filter(|values| values.dimension == round.dimension)
+    else {
+        return;
+    };
+    label.origin = values
+        .variants
+        .get(&round.variant)
+        .map(|value| value.origin.clone());
+}
+
 #[derive(Debug, Clone)]
-pub(super) struct DimensionRoundView {
+pub(crate) struct DimensionRoundView {
     variant: Arc<str>,
     fields_by_record: Arc<BTreeMap<CfdRecordId, BTreeMap<String, ProjectedDimensionField>>>,
 }
@@ -31,24 +89,19 @@ enum ProjectedDimensionField {
     },
 }
 
-pub(super) struct MaterializedDimensionValue<'a> {
-    pub(super) value: &'a CfdValue,
-    pub(super) field_type: Option<&'a CftValueType>,
-    pub(super) location: ValueLocation,
+pub(crate) struct MaterializedDimensionValue<'a> {
+    pub(crate) value: &'a CfdValue,
+    pub(crate) field_type: Option<CftValueType>,
+    pub(crate) location: ValueLocation,
 }
 
 impl DimensionRoundView {
-    pub(super) fn compile(
+    pub(crate) fn compile(
         schema: &CftSchema,
         model: &CfdDataModel,
         context: &DimensionCheckContext,
     ) -> Self {
-        let Some(variant) = context.variant.as_deref() else {
-            return Self {
-                variant: Arc::from(""),
-                fields_by_record: Arc::new(BTreeMap::new()),
-            };
-        };
+        let variant = &context.variant;
         let mut fields_by_record = BTreeMap::new();
         for (record_id, record) in model.records() {
             let Some(type_meta) = schema.resolve_type(record.actual_type()) else {
@@ -60,7 +113,7 @@ impl DimensionRoundView {
                     field
                         .dimension
                         .as_ref()
-                        .is_some_and(|dimension| dimension.dimension.as_str() == context.dimension)
+                        .is_some_and(|dimension| dimension.dimension == context.dimension)
                 })
                 .map(|field| {
                     let traverse_nested =
@@ -106,12 +159,12 @@ impl DimensionRoundView {
             }
         }
         Self {
-            variant: Arc::from(variant),
+            variant: Arc::from(variant.as_str()),
             fields_by_record: Arc::new(fields_by_record),
         }
     }
 
-    pub(super) fn errors_for(&self, record: CfdRecordId) -> impl Iterator<Item = (&str, &str)> {
+    pub(crate) fn errors_for(&self, record: CfdRecordId) -> impl Iterator<Item = (&str, &str)> {
         self.fields_by_record
             .get(&record)
             .into_iter()
@@ -130,7 +183,7 @@ impl DimensionRoundView {
             })
     }
 
-    pub(super) fn field_names(&self, record: CfdRecordId) -> impl Iterator<Item = &str> {
+    pub(crate) fn field_names(&self, record: CfdRecordId) -> impl Iterator<Item = &str> {
         self.fields_by_record
             .get(&record)
             .into_iter()
@@ -156,13 +209,13 @@ impl DimensionRoundView {
             })
     }
 
-    pub(super) fn materialize<'a>(
-        &'a self,
-        model: &'a CfdDataModel,
+    pub(crate) fn materialize<'model>(
+        &self,
+        model: &'model CfdDataModel,
         source_record: CfdRecordId,
         field_name: &str,
         logical_location: &ValueLocation,
-    ) -> Result<Option<MaterializedDimensionValue<'a>>, DimensionVariantAbort> {
+    ) -> Result<Option<MaterializedDimensionValue<'model>>, DimensionVariantAbort> {
         let Some(projection) = self
             .fields_by_record
             .get(&source_record)
@@ -205,8 +258,8 @@ impl DimensionRoundView {
         }
         Ok(Some(MaterializedDimensionValue {
             value,
-            field_type: Some(field_type),
-            location: logical_location.backed_by(super::value::ModelCursor::dimension(
+            field_type: Some(field_type.clone()),
+            location: logical_location.backed_by(crate::eval::ModelCursor::dimension(
                 source_record,
                 field_name,
                 self.variant.as_ref(),
@@ -215,7 +268,7 @@ impl DimensionRoundView {
     }
 }
 
-pub(super) enum DimensionVariantAbort {
+pub(crate) enum DimensionVariantAbort {
     Skipped,
     Error {
         code: CfdErrorCode,
@@ -224,12 +277,12 @@ pub(super) enum DimensionVariantAbort {
     },
 }
 
-pub(super) fn apply_dimension_variant(
-    model: &CfdDataModel,
+pub(crate) fn apply_dimension_variant<'model>(
+    model: &'model CfdDataModel,
     round: Option<&DimensionRoundView>,
-    record: &CheckRecordRef,
+    record: &EvalRecordRef,
     field_name: &str,
-    located: &mut LocatedCheckValue,
+    located: &mut LocatedEvalValue<'model>,
     budget: &mut StructuralBudget,
 ) -> Result<Option<CfdRecordId>, DimensionVariantAbort> {
     let Some(round) = round else {
@@ -246,9 +299,9 @@ pub(super) fn apply_dimension_variant(
     else {
         return Ok(None);
     };
-    located.value = CheckValue::from_cfd_value(
+    located.value = EvalValue::from_cfd_value(
         materialized.value,
-        materialized.field_type,
+        materialized.field_type.as_ref(),
         materialized.location.clone(),
         model,
         budget,

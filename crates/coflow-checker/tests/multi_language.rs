@@ -4,13 +4,55 @@ mod common;
 use common::*;
 
 use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
-use coflow_checker::{
-    run_checks, run_checks_for_dimensions, run_checks_for_dimensions_with_deps, DimensionCheckPlan,
-    DimensionCheckRound,
-};
+use coflow_checker::{CheckRequest, DependencyCollection, DependencyGraph, DimensionCheckRound};
 
-fn language_plan() -> DimensionCheckPlan {
-    DimensionCheckPlan::from_variants("language", ["zh", "en"])
+fn dimension_rounds(
+    dimension: &str,
+    variants: impl IntoIterator<Item = &'static str>,
+) -> Vec<DimensionCheckRound> {
+    let dimension = DimensionName::new(dimension).expect("dimension name");
+    variants
+        .into_iter()
+        .map(|variant| {
+            DimensionCheckRound::new(
+                dimension.clone(),
+                VariantName::new(variant).expect("variant name"),
+            )
+        })
+        .collect()
+}
+
+fn language_plan() -> Vec<DimensionCheckRound> {
+    dimension_rounds("language", ["zh", "en"])
+}
+
+fn run_checks_for_dimensions(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    rounds: &[DimensionCheckRound],
+) -> Result<(), CfdDiagnostics> {
+    coflow_checker::run_checks(
+        schema,
+        model,
+        CheckRequest::all().with_rounds(rounds.iter().cloned()),
+    )
+    .into_result()
+}
+
+fn run_checks_for_dimensions_with_deps(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    rounds: &[DimensionCheckRound],
+) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
+    let mut output = coflow_checker::run_checks(
+        schema,
+        model,
+        CheckRequest::all()
+            .with_rounds(rounds.iter().cloned())
+            .with_dependency_collection(DependencyCollection::Reads),
+    );
+    let dependencies = std::mem::take(&mut output.dependencies);
+    (output.into_result(), dependencies)
 }
 
 fn add_overlay(
@@ -85,7 +127,7 @@ fn simple_model(
 #[test]
 fn default_round_uses_only_the_owner_field() {
     let (schema, model) = simple_model(None, None);
-    run_checks(&schema, &model).expect("default round passes");
+    run_model_checks(&model, &schema).expect("default round passes");
     assert_eq!(model.record_count(), 1);
 }
 
@@ -158,12 +200,8 @@ fn inherited_dimension_field_checks_child_owner_records() {
         LoadedValueDraft::from(""),
     );
     let model = builder.build().expect("model builds");
-    let err = run_checks_for_dimensions(
-        &schema,
-        &model,
-        &DimensionCheckPlan::from_variants("language", ["zh"]),
-    )
-    .expect_err("inherited check should fail");
+    let err = run_checks_for_dimensions(&schema, &model, &dimension_rounds("language", ["zh"]))
+        .expect_err("inherited check should fail");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
 }
 
@@ -224,12 +262,8 @@ fn nested_object_array_and_dict_checks_use_overlay_subtrees() {
         LoadedValueDraft::dict([(LoadedDictKeyDraft::from("main"), text(""))]),
     );
     let model = builder.build().expect("model builds");
-    let err = run_checks_for_dimensions(
-        &schema,
-        &model,
-        &DimensionCheckPlan::from_variants("language", ["zh"]),
-    )
-    .expect_err("nested overlay values should fail");
+    let err = run_checks_for_dimensions(&schema, &model, &dimension_rounds("language", ["zh"]))
+        .expect_err("nested overlay values should fail");
 
     let paths = err
         .diagnostics
@@ -282,12 +316,8 @@ fn overlay_record_refs_resolve_without_storage_records() {
         LoadedValueDraft::object("Copy", [("target", LoadedValueDraft::record_ref("target"))]),
     );
     let model = builder.build().expect("overlay refs resolve");
-    let err = run_checks_for_dimensions(
-        &schema,
-        &model,
-        &DimensionCheckPlan::from_variants("language", ["zh"]),
-    )
-    .expect_err("nested ref check should fail");
+    let err = run_checks_for_dimensions(&schema, &model, &dimension_rounds("language", ["zh"]))
+        .expect_err("nested ref check should fail");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     assert_eq!(model.record_count(), 2);
 }
@@ -331,10 +361,10 @@ fn configured_dimensions_run_independently() {
         LoadedValueDraft::from(""),
     );
     let model = builder.build().expect("model builds");
-    let plan = DimensionCheckPlan::new([
-        DimensionCheckRound::new("language", "zh"),
-        DimensionCheckRound::new("platform", "pc"),
-    ]);
+    let plan = vec![
+        dimension_rounds("language", ["zh"])[0].clone(),
+        dimension_rounds("platform", ["pc"])[0].clone(),
+    ];
     let err = run_checks_for_dimensions(&schema, &model, &plan)
         .expect_err("platform round should fail independently");
     assert!(err

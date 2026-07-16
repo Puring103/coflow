@@ -3,12 +3,12 @@ use coflow_structure::StructuralBudget;
 
 use super::diagnostics::format_value_for_message;
 use super::ops::{OpsError, OpsResult};
-use super::value::{CheckValue, LocatedBudgetExceeded, LocatedCheckValue};
+use super::value::{EvalValue, LocatedBudgetExceeded, LocatedEvalValue};
 
-pub(super) fn quantifier_len(collection: &LocatedCheckValue) -> OpsResult<usize> {
+pub(crate) fn quantifier_len(collection: &LocatedEvalValue<'_>) -> OpsResult<usize> {
     match &collection.value {
-        CheckValue::Array { items, .. } => Ok(items.len()),
-        CheckValue::Dict { entries, .. } => Ok(entries.len()),
+        EvalValue::Array { items, .. } => Ok(items.len()),
+        EvalValue::Dict { entries, .. } => Ok(entries.len()),
         other => Err(OpsError::new(
             CfdErrorCode::CheckEvalTypeError,
             None,
@@ -20,14 +20,14 @@ pub(super) fn quantifier_len(collection: &LocatedCheckValue) -> OpsResult<usize>
     }
 }
 
-pub(super) fn quantifier_item(
-    collection: &LocatedCheckValue,
+pub(crate) fn quantifier_item<'model>(
+    collection: &LocatedEvalValue<'model>,
     index: usize,
-    model: &CfdDataModel,
+    model: &'model CfdDataModel,
     budget: &mut StructuralBudget,
-) -> OpsResult<Option<LocatedCheckValue>> {
+) -> OpsResult<Option<LocatedEvalValue<'model>>> {
     match &collection.value {
-        CheckValue::Array {
+        EvalValue::Array {
             items,
             element_type,
         } => items
@@ -39,7 +39,7 @@ pub(super) fn quantifier_item(
                 budget,
             )
             .map_err(budget_error),
-        CheckValue::Dict {
+        EvalValue::Dict {
             entries,
             key_type,
             value_type,

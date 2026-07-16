@@ -1,23 +1,26 @@
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp,
-    CftSchemaQuantifierKind, CftSchemaTypePredicate, CftValueType, CftSchemaUnaryOp,
+    CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp, CftValueType,
 };
 use coflow_data_model::{CfdErrorCode, CfdPath, CfdPathSegment, DimensionFieldLookupError};
 
-use super::value::{CheckValue, ValueLocation};
+use crate::eval::{EvalValue, ScalarValue, ValueLocation};
+
+pub(crate) mod explanations;
+pub(crate) mod trace;
 
 #[derive(Debug)]
-pub(super) struct CheckExplanation {
-    pub(super) code: CfdErrorCode,
-    pub(super) expression: String,
-    pub(super) actual: Option<String>,
-    pub(super) expected: Option<String>,
-    pub(super) context: Vec<String>,
-    pub(super) location: Option<ValueLocation>,
+pub(crate) struct CheckExplanation {
+    pub(crate) code: CfdErrorCode,
+    pub(crate) expression: String,
+    pub(crate) actual: Option<String>,
+    pub(crate) expected: Option<String>,
+    pub(crate) context: Vec<String>,
+    pub(crate) location: Option<ValueLocation>,
 }
 
 impl CheckExplanation {
-    pub(super) fn new(
+    pub(crate) fn new(
         code: CfdErrorCode,
         expression: impl Into<String>,
         location: Option<ValueLocation>,
@@ -32,22 +35,22 @@ impl CheckExplanation {
         }
     }
 
-    pub(super) fn with_actual(mut self, actual: impl Into<String>) -> Self {
+    pub(crate) fn with_actual(mut self, actual: impl Into<String>) -> Self {
         self.actual = Some(actual.into());
         self
     }
 
-    pub(super) fn with_expected(mut self, expected: impl Into<String>) -> Self {
+    pub(crate) fn with_expected(mut self, expected: impl Into<String>) -> Self {
         self.expected = Some(expected.into());
         self
     }
 
-    pub(super) fn with_context(mut self, context: &[String]) -> Self {
+    pub(crate) fn with_context(mut self, context: &[String]) -> Self {
         self.context.extend(context.iter().cloned());
         self
     }
 
-    pub(super) fn message(&self) -> String {
+    pub(crate) fn message(&self) -> String {
         let mut out = format!("校验失败: {}", self.expression);
         if let Some(actual) = &self.actual {
             out.push_str("\n实际值: ");
@@ -65,7 +68,7 @@ impl CheckExplanation {
     }
 }
 
-pub(super) fn dimension_lookup_error_message(
+pub(crate) fn dimension_lookup_error_message(
     actual_type: &str,
     field_name: &str,
     variant: &str,
@@ -87,7 +90,7 @@ pub(super) fn dimension_lookup_error_message(
     }
 }
 
-pub(super) fn unary_op_str(op: CftSchemaUnaryOp) -> &'static str {
+pub(crate) fn unary_op_str(op: CftSchemaUnaryOp) -> &'static str {
     match op {
         CftSchemaUnaryOp::Not => "!",
         CftSchemaUnaryOp::BitNot => "~",
@@ -95,7 +98,7 @@ pub(super) fn unary_op_str(op: CftSchemaUnaryOp) -> &'static str {
     }
 }
 
-pub(super) fn bin_op_str(op: CftSchemaBinOp) -> &'static str {
+pub(crate) fn bin_op_str(op: CftSchemaBinOp) -> &'static str {
     match op {
         CftSchemaBinOp::Or => "||",
         CftSchemaBinOp::And => "&&",
@@ -114,7 +117,7 @@ pub(super) fn bin_op_str(op: CftSchemaBinOp) -> &'static str {
     }
 }
 
-pub(super) fn cmp_op_str(op: CftSchemaCmpOp) -> &'static str {
+pub(crate) fn cmp_op_str(op: CftSchemaCmpOp) -> &'static str {
     match op {
         CftSchemaCmpOp::Eq => "==",
         CftSchemaCmpOp::Ne => "!=",
@@ -125,7 +128,7 @@ pub(super) fn cmp_op_str(op: CftSchemaCmpOp) -> &'static str {
     }
 }
 
-pub(super) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
+pub(crate) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
     match stmt {
         CftSchemaCheckStmt::Expr(expr) => render_expr(expr),
         CftSchemaCheckStmt::Quantifier {
@@ -155,7 +158,7 @@ pub(super) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
     }
 }
 
-pub(super) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
+pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
     match &expr.kind {
         CftSchemaCheckExprKind::Int(value) => value.to_string(),
         CftSchemaCheckExprKind::Float(value) => value.to_string(),
@@ -212,7 +215,7 @@ pub(super) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
     }
 }
 
-pub(super) fn format_cfd_path_for_message(path: &CfdPath) -> String {
+pub(crate) fn format_cfd_path_for_message(path: &CfdPath) -> String {
     let mut out = String::new();
     for segment in &path.segments {
         match segment {
@@ -241,7 +244,7 @@ pub(super) fn format_cfd_path_for_message(path: &CfdPath) -> String {
     }
 }
 
-pub(super) fn one_line_message(message: &str) -> String {
+pub(crate) fn one_line_message(message: &str) -> String {
     message
         .lines()
         .map(str::trim)
@@ -250,30 +253,37 @@ pub(super) fn one_line_message(message: &str) -> String {
         .join("; ")
 }
 
-/// Render a `CheckValue` as a short token for inclusion in a diagnostic
+/// Render a `EvalValue` as a short token for inclusion in a diagnostic
 /// message: strings are quoted, collections summarize, records show their key.
-pub(super) fn format_value_for_message(value: &CheckValue) -> String {
+pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
+    if let Some(scalar) = value.scalar() {
+        return match scalar {
+            ScalarValue::Null => "null".to_string(),
+            ScalarValue::Bool(v) => v.to_string(),
+            ScalarValue::Int(v) => v.to_string(),
+            ScalarValue::Float(v) => v.to_string(),
+            ScalarValue::String(s) => format!("\"{s}\""),
+            ScalarValue::Enum(e) => match &e.variant {
+                Some(variant) => format!("{}.{}", e.enum_name, variant),
+                None => format!("{}({})", e.enum_name, e.value),
+            },
+        };
+    }
     match value {
-        CheckValue::Null => "null".to_string(),
-        CheckValue::Bool(v) => v.to_string(),
-        CheckValue::Int(v) => v.to_string(),
-        CheckValue::Float(v) => v.to_string(),
-        CheckValue::String(s) => format!("\"{s}\""),
-        CheckValue::Enum(e) => match &e.variant {
-            Some(variant) => format!("{}.{}", e.enum_name, variant),
-            None => format!("{}({})", e.enum_name, e.value),
-        },
-        CheckValue::EnumNamespace(name) => name.clone(),
-        CheckValue::Record(_) => "<record>".to_string(),
-        CheckValue::Entry(entry) => {
+        EvalValue::Model(_) | EvalValue::DictKey(_) | EvalValue::Temporary(_) => {
+            unreachable!("scalar values returned above")
+        }
+        EvalValue::EnumNamespace(name) => name.to_string(),
+        EvalValue::Record(_) => "<record>".to_string(),
+        EvalValue::Entry(entry) => {
             format!("<entry key={}>", format_value_for_message(&entry.key))
         }
-        CheckValue::Array { items, .. } => format!("<array len={}>", items.len()),
-        CheckValue::Dict { entries, .. } => format!("<dict len={}>", entries.len()),
+        EvalValue::Array { items, .. } => format!("<array len={}>", items.len()),
+        EvalValue::Dict { entries, .. } => format!("<dict len={}>", entries.len()),
     }
 }
 
-pub(super) fn value_type_is_float(ty: Option<&CftValueType>) -> bool {
+pub(crate) fn value_type_is_float(ty: Option<&CftValueType>) -> bool {
     match ty {
         Some(CftValueType::Float) => true,
         Some(CftValueType::Nullable(inner)) => value_type_is_float(Some(inner)),

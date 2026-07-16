@@ -2,12 +2,10 @@ use super::deps::{DependencyCollector, DependencyGraphBuilder};
 use super::dimensions::{DimensionRoundView, DimensionVariantAbort};
 use super::evaluator::CheckEvaluator;
 use super::statements;
-use super::value::{CheckRecordRef, CheckValue, ValueLocation};
+use super::value::{EvalRecordRef, EvalValue, ValueLocation};
 use crate::{DependencyGraph, DimensionCheckContext};
 use coflow_cft::{CftSchema, FieldName};
-use coflow_data_model::{
-    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdRecordId, CfdValue,
-};
+use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
 
@@ -77,39 +75,14 @@ impl<'a> CheckRunner<'a> {
         }
     }
 
-    pub(crate) fn run(mut self) -> Result<(), CfdDiagnostics> {
-        for (record_id, record) in self.model.records() {
-            self.run_one_record(record_id, record);
-        }
-        self.into_result()
-    }
-
-    pub(crate) fn run_for(mut self, targets: &[CfdRecordId]) -> Result<(), CfdDiagnostics> {
-        for id in targets {
-            if let Some(record) = self.model.record(*id) {
-                self.run_one_record(*id, record);
-            }
-        }
-        self.into_result()
-    }
-
-    pub(crate) fn run_with_deps(mut self) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
-        self.deps = Some(DependencyGraphBuilder::new());
-        for (record_id, record) in self.model.records() {
-            self.run_one_record(record_id, record);
-        }
-        let graph = self
-            .deps
-            .take()
-            .map_or_else(DependencyGraph::default, DependencyGraphBuilder::finish);
-        (self.into_result(), graph)
-    }
-
-    pub(crate) fn run_for_with_deps_rooted(
+    pub(crate) fn run_rooted(
         mut self,
         targets: &[CfdRecordId],
+        collect_dependencies: bool,
     ) -> (Vec<(CfdRecordId, CfdDiagnostic)>, DependencyGraph) {
-        self.deps = Some(DependencyGraphBuilder::new());
+        if collect_dependencies {
+            self.deps = Some(DependencyGraphBuilder::new());
+        }
         for id in targets {
             if let Some(record) = self.model.record(*id) {
                 self.run_one_record(*id, record);
@@ -149,7 +122,7 @@ impl<'a> CheckRunner<'a> {
             return;
         };
         self.run_record_checks(
-            CheckRecordRef::Resolved(location.clone()),
+            EvalRecordRef::Resolved(location.clone()),
             Some(record_id),
             location.clone(),
             if self.dimension_round.is_some() {
@@ -180,17 +153,9 @@ impl<'a> CheckRunner<'a> {
         }
     }
 
-    fn into_result(self) -> Result<(), CfdDiagnostics> {
-        if self.diagnostics.is_empty() {
-            Ok(())
-        } else {
-            Err(CfdDiagnostics::new(self.diagnostics))
-        }
-    }
-
     fn run_record_checks(
         &mut self,
-        record: CheckRecordRef,
+        record: EvalRecordRef,
         root_record: Option<CfdRecordId>,
         root_location: ValueLocation,
         selection: CheckSelection,
@@ -206,7 +171,7 @@ impl<'a> CheckRunner<'a> {
             CheckSelection::Default | CheckSelection::FullVariantSubtree => None,
         };
         let checks = self.schema.check_schedule(&actual_type, dimension);
-        let root = CheckValue::Record(record);
+        let root = EvalValue::Record(record);
         let deps = self.deps.as_ref().map_or_else(
             || DependencyCollector::disabled(root_record),
             |deps| deps.collector_for(root_record),
@@ -356,7 +321,7 @@ impl<'a> CheckRunner<'a> {
                     return;
                 }
                 self.run_record_checks(
-                    CheckRecordRef::Resolved(location.clone()),
+                    EvalRecordRef::Resolved(location.clone()),
                     root_record,
                     location.clone(),
                     selection,

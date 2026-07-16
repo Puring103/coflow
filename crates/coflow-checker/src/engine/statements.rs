@@ -4,7 +4,7 @@ use super::diagnostics::{
 use super::evaluator::{CheckEvaluator, EvalAbort, EvalFlow};
 use super::explanations;
 use super::quantifiers;
-use super::value::{CheckValue, LocatedCheckValue, ValueLocation};
+use super::value::{LocatedEvalValue, ScalarValue, ValueLocation};
 use coflow_cft::{
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckStmt, CftSchemaQuantifierKind,
     ScheduledCheckBlock,
@@ -80,8 +80,10 @@ fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> E
 fn eval_expr_stmt(evaluator: &mut CheckEvaluator<'_>, expr: &CftSchemaCheckExpr) -> EvalFlow {
     let (result, trace) = evaluator.eval_expr_with_trace(expr);
     match result {
-        Ok(value) if matches!(value.value, CheckValue::Bool(true)) => EvalFlow::Continue,
-        Ok(value) if matches!(value.value, CheckValue::Bool(false)) => {
+        Ok(value) if matches!(value.value.scalar(), Some(ScalarValue::Bool(true))) => {
+            EvalFlow::Continue
+        }
+        Ok(value) if matches!(value.value.scalar(), Some(ScalarValue::Bool(false))) => {
             let explanation = explanations::explain_false_expr(&trace, expr, &value)
                 .unwrap_or_else(|| {
                     CheckExplanation::new(
@@ -114,7 +116,7 @@ fn eval_when_stmt(
     body: &[CftSchemaCheckStmt],
 ) -> EvalFlow {
     match evaluator.eval_expr(condition) {
-        Ok(value) if matches!(value.value, CheckValue::Bool(true)) => {
+        Ok(value) if matches!(value.value.scalar(), Some(ScalarValue::Bool(true))) => {
             evaluator
                 .contexts
                 .push(format!("在 when {} 内", render_expr(condition)));
@@ -122,7 +124,9 @@ fn eval_when_stmt(
             let _ = evaluator.contexts.pop();
             flow
         }
-        Ok(value) if matches!(value.value, CheckValue::Bool(false)) => EvalFlow::Continue,
+        Ok(value) if matches!(value.value.scalar(), Some(ScalarValue::Bool(false))) => {
+            EvalFlow::Continue
+        }
         Ok(value) => {
             evaluator.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
@@ -171,19 +175,19 @@ fn eval_quantifier_stmt(
     )
 }
 
-struct QuantifierExecution<'a> {
+struct QuantifierExecution<'a, 'model> {
     kind: CftSchemaQuantifierKind,
     binding: &'a str,
-    collection_value: &'a LocatedCheckValue,
+    collection_value: &'a LocatedEvalValue<'model>,
     item_count: usize,
     body: &'a [CftSchemaCheckStmt],
     collection: &'a CftSchemaCheckExpr,
     stmt: &'a CftSchemaCheckStmt,
 }
 
-fn eval_quantifier(
-    evaluator: &mut CheckEvaluator<'_>,
-    execution: QuantifierExecution<'_>,
+fn eval_quantifier<'model>(
+    evaluator: &mut CheckEvaluator<'model>,
+    execution: QuantifierExecution<'_, 'model>,
 ) -> EvalFlow {
     let QuantifierExecution {
         kind,
