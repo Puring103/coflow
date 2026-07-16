@@ -1,3 +1,34 @@
+# Coflow 0.7.1
+
+## Highlights
+
+### Editor Navigation And Data Inspection
+
+- Added directional navigation across the file tree, view controls, search, table, record view, graph, and inspector.
+- Refined table keyboard selection so boundary movement is predictable and inspector entry remains explicit.
+- Flattened object, array, and dictionary cell inspection so nested content and collection actions are immediately available.
+- Added file-type navigation and persistent document tabs for multi-type data sources.
+
+### Editor Reliability
+
+- Fixed table column resizing so widths track the pointer, respect a minimum width, and persist under `.coflow/editor.json`.
+- Preserved manual column widths while retaining automatic sizing for columns without saved settings.
+- Added project check/build actions, source-file opening, and restored configured output and dimension artifacts.
+
+## Included Commits Since v0.7.0
+
+- `cdc9b77e` feat(editor): unify inspector record navigation
+- `869de11e` feat(editor): add directional workspace navigation
+- `6f1ec42a` feat(editor): add project actions and source opening
+- `679e5243` feat(editor): refine table keyboard interactions
+- `00f63fc9` docs: clarify coflow skill scope
+- `ff6fd5b2` feat(editor): add file type navigation and document tabs
+- `5a2642bd` fix(build): restore configured outputs and dimension artifacts
+- `0ddf3f92` feat(editor): refine panel navigation and cell inspection
+- `27ceacc7` fix(editor): make table column resizing reliable
+
+---
+
 # Coflow 0.7.0
 
 ## Highlights

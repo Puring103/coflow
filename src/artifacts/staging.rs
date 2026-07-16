@@ -40,7 +40,7 @@ pub(super) fn stage_artifact_set(
     let staged = StagedArtifactDir::create(state_dir, slot, dir)?;
     for artifact in artifacts.into_files() {
         let path = staged.path().join(&artifact.relative_path);
-        let requested_path = staged.requested_path().join(&artifact.relative_path);
+        let requested_path = staged.requested_path()?.join(&artifact.relative_path);
         if let Some(parent) = path.parent() {
             fault::check(Point::CreateArtifactParent).map_err(|err| {
                 diagnostic_set(
@@ -79,8 +79,9 @@ pub(super) fn stage_artifact_set(
     fault::check(Point::SyncStagingTree)
         .and_then(|()| sync_directory_tree(staged.path()))
         .map_err(|err| diagnostic_set(dir, format!("failed to sync staged artifacts: {err}")))?;
+    let requested_path = staged.requested_path()?;
     fault::check(Point::SyncStagingTree)
-        .and_then(|()| sync_directory_tree(staged.requested_path()))
+        .and_then(|()| sync_directory_tree(requested_path))
         .map_err(|err| {
             diagnostic_set(
                 dir,
@@ -179,18 +180,27 @@ impl StagedArtifactDir {
         &self.staging_dir
     }
 
-    #[must_use]
-    fn requested_path(&self) -> &Path {
-        &self
-            .requested_staging
+    fn requested_path(&self) -> Result<&Path, DiagnosticSet> {
+        self.requested_staging
             .as_ref()
-            .expect("requested staging is available before sealing")
-            .staging_dir
+            .map(|requested| requested.staging_dir.as_path())
+            .ok_or_else(|| {
+                diagnostic_set(
+                    &self.requested_dir,
+                    "requested artifact staging is unavailable before sealing",
+                )
+            })
     }
 
     pub(super) fn seal(
         mut self,
     ) -> Result<(PublishedArtifactDir, RequestedArtifactDir), DiagnosticSet> {
+        let requested_staging = self.requested_staging.take().ok_or_else(|| {
+            diagnostic_set(
+                &self.requested_dir,
+                "requested artifact staging is unavailable before sealing",
+            )
+        })?;
         let state_dir = self
             .staging_dir
             .parent()
@@ -234,10 +244,6 @@ impl StagedArtifactDir {
             requested_dir: self.requested_dir.clone(),
             generation_dir,
         };
-        let requested_staging = self
-            .requested_staging
-            .take()
-            .expect("requested staging is available before sealing");
         Ok((published, requested_staging))
     }
 }

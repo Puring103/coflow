@@ -36,14 +36,14 @@ use coflow_runtime::{
 };
 
 use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
+use crate::editor::settings::{
+    read_project_settings, sanitized_column_widths, write_project_settings,
+};
 use crate::editor::types::{
     CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
     CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError,
     EditorProjectSettings, FileRecords, FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome,
     ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
-};
-use crate::editor::settings::{
-    read_project_settings, sanitized_column_widths, write_project_settings,
 };
 
 pub use diagnostics::Diagnostics;
@@ -204,19 +204,20 @@ impl SessionStore {
             .or_default()
             .insert(actual_type, sanitized_column_widths(widths));
         write_project_settings(&session.project_root, &settings)?;
+        drop(session);
         Ok(settings)
     }
 
     pub fn check_project(&self, id: u32) -> Result<String, EditorError> {
         let (yaml_path, registry) = self.project_action_context(id)?;
         let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
-            .map_err(project_diagnostics_to_editor_error)?;
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
         match coflow::commands::check_project(&project, registry.as_ref())
-            .map_err(project_diagnostics_to_editor_error)?
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow::commands::CommandOutcome::Success(_) => Ok("Check passed".to_string()),
             coflow::commands::CommandOutcome::Diagnostics(diagnostics) => {
-                Err(project_diagnostics_to_editor_error(diagnostics))
+                Err(project_diagnostics_to_editor_error(&diagnostics))
             }
         }
     }
@@ -224,13 +225,13 @@ impl SessionStore {
     pub fn build_project(&self, id: u32) -> Result<String, EditorError> {
         let (yaml_path, registry) = self.project_action_context(id)?;
         let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
-            .map_err(project_diagnostics_to_editor_error)?;
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
         match coflow::commands::build_project(
             &project,
             registry.as_ref(),
             coflow::commands::BuildOptions::default(),
         )
-            .map_err(project_diagnostics_to_editor_error)?
+        .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow::commands::CommandOutcome::Success(report) => {
                 let mut outputs = vec![report.data.dir.display().to_string()];
@@ -240,7 +241,7 @@ impl SessionStore {
                 Ok(format!("Build completed: {}", outputs.join(", ")))
             }
             coflow::commands::CommandOutcome::Diagnostics(diagnostics) => {
-                Err(project_diagnostics_to_editor_error(diagnostics))
+                Err(project_diagnostics_to_editor_error(&diagnostics))
             }
         }
     }
@@ -256,15 +257,17 @@ impl SessionStore {
                 "`{file_path}` is not a source file in the current project"
             )));
         }
-        let root = session
-            .project_root
-            .canonicalize()
-            .map_err(|error| EditorError::project(format!("failed to resolve project root: {error}")))?;
+        let root = session.project_root.canonicalize().map_err(|error| {
+            EditorError::project(format!("failed to resolve project root: {error}"))
+        })?;
         let path = session
             .project_root
             .join(file_path)
             .canonicalize()
-            .map_err(|error| EditorError::not_found(format!("failed to resolve `{file_path}`: {error}")))?;
+            .map_err(|error| {
+                EditorError::not_found(format!("failed to resolve `{file_path}`: {error}"))
+            })?;
+        drop(session);
         if !path.starts_with(&root) || !path.is_file() {
             return Err(EditorError::not_found(format!(
                 "source file `{file_path}` is outside the project or does not exist"
@@ -1040,9 +1043,7 @@ fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> Ed
     EditorError::write(message).with_diagnostics(flat)
 }
 
-fn project_diagnostics_to_editor_error(
-    diagnostics: coflow_api::DiagnosticSet,
-) -> EditorError {
+fn project_diagnostics_to_editor_error(diagnostics: &coflow_api::DiagnosticSet) -> EditorError {
     let message = diagnostics
         .iter()
         .map(|diagnostic| diagnostic.message.as_str())

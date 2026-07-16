@@ -10,8 +10,8 @@ mod watcher;
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_runtime::{DimensionValueCoordinate, DimensionValueView, RecordCoordinate};
 use editor::{
-    CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, EditorError, FileRecords, GraphData,
-    EditorProjectSettings, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget,
+    CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, EditorError, EditorProjectSettings,
+    FileRecords, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget,
     RenameRecordOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use host::EditorHost;
@@ -404,8 +404,7 @@ fn open_with_default_application(path: &std::path::Path) -> Result<(), EditorErr
         command.arg(path);
         command
     };
-    command
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| EditorError::other(format!("failed to open `{}`: {error}", path.display())))
+    command.spawn().map(|_| ()).map_err(|error| {
+        EditorError::other(format!("failed to open `{}`: {error}", path.display()))
+    })
 }

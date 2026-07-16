@@ -1,6 +1,6 @@
 [package]
 name = "coflow-builtins"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 description = "Default provider registry for Coflow hosts."
 license = "Apache-2.0"

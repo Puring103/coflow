@@ -35,6 +35,7 @@ pub struct CsharpDimensionTable {
 }
 
 impl<'a> CsharpLoweringPlan<'a> {
+    #[allow(clippy::too_many_lines)]
     pub fn lower(
         schema: &'a CftSchema,
         int_32: bool,

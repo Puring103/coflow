@@ -1,6 +1,6 @@
 [package]
 name = "cfd-editor"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 description = "CFD Editor — Tauri 2 desktop app"
 license = "Apache-2.0"
