@@ -1,10 +1,10 @@
 mod annotations;
 mod budget;
-mod checked_type;
 mod checks;
 mod defaults;
 mod entry;
 mod enums;
+mod inferred_type;
 mod inheritance;
 mod lower;
 mod state;

@@ -57,6 +57,7 @@ fn ref_type_rejects_non_object_collection_and_singleton_targets() {
         "enum Rarity { Common, } type Bad { value: &Rarity; }",
         "type Item { name: string; } type Bad { value: &[Item]; }",
         "type Item { name: string; } type Bad { value: &{string: Item}; }",
+        "type Item { name: string; } type Bad { value: & &Item; }",
         "@singleton type Settings { value: string; } type Bad { value: &Settings; }",
         "@singleton type Settings { value: string; } type Bad { value: Settings; }",
         "@singleton type Settings { value: string; } type Bad { value: Settings?; }",

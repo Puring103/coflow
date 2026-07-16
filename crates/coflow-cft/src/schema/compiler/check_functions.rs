@@ -1,8 +1,9 @@
 use super::CheckTypeAnalyzer;
 use crate::diagnostics::CftErrorCode;
-use crate::schema::compiler::checked_type::{
-    min_max_supported, types_comparable, unique_supported, unwrap_nullable, CheckedType,
+use crate::schema::compiler::inferred_type::{
+    min_max_supported, types_comparable, unique_supported, unwrap_nullable, InferredType,
 };
+use crate::schema::CftValueType;
 use crate::syntax::ast::{CheckExpr, CheckExprKind, NameRef};
 use crate::syntax::Span;
 use regex::Regex;
@@ -13,7 +14,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         name: &NameRef,
         args: &[CheckExpr],
         span: Span,
-    ) -> CheckedType {
+    ) -> InferredType {
         if self.compiler.enums.contains_key(&name.name) {
             if args.len() != 1 {
                 self.diag(
@@ -21,17 +22,17 @@ impl CheckTypeAnalyzer<'_, '_> {
                     span,
                     "enum constructor expects one argument",
                 );
-                return CheckedType::Unknown;
+                return InferredType::Unknown;
             }
             let arg_ty = self.check_expr_value(&args[0]);
-            if !types_comparable(&arg_ty, &CheckedType::Int) && arg_ty != CheckedType::Unknown {
+            if !types_comparable(&arg_ty, &InferredType::int()) && !arg_ty.is_unknown() {
                 self.diag(
                     CftErrorCode::FunctionArgTypeMismatch,
                     args[0].span,
                     "enum constructor argument must be int",
                 );
             }
-            return CheckedType::Enum(name.name.clone());
+            return InferredType::enum_value(crate::EnumName::from_validated(name.name.clone()));
         }
 
         self.diag(
@@ -42,7 +43,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         for arg in args {
             self.check_expr_value(arg);
         }
-        CheckedType::Unknown
+        InferredType::Unknown
     }
 
     pub(super) fn check_method_call(
@@ -51,7 +52,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         name: &NameRef,
         args: &[CheckExpr],
         span: Span,
-    ) -> CheckedType {
+    ) -> InferredType {
         let receiver_ty = self.check_expr_value(receiver);
         match name.name.as_str() {
             "len" => self.check_len_method(receiver, args, span, &receiver_ty),
@@ -71,7 +72,7 @@ impl CheckTypeAnalyzer<'_, '_> {
                 for arg in args {
                     let _ = self.check_expr_value(arg);
                 }
-                CheckedType::Unknown
+                InferredType::Unknown
             }
         }
     }
@@ -81,22 +82,23 @@ impl CheckTypeAnalyzer<'_, '_> {
         receiver: &CheckExpr,
         args: &[CheckExpr],
         span: Span,
-        receiver_ty: &CheckedType,
-    ) -> CheckedType {
+        receiver_ty: &InferredType,
+    ) -> InferredType {
         if self.expect_arity(args, 0, span).is_err() {
-            return CheckedType::Unknown;
+            return InferredType::Unknown;
         }
-        if !matches!(
-            unwrap_nullable(receiver_ty),
-            CheckedType::Array(_) | CheckedType::Dict(_, _) | CheckedType::Unknown
-        ) {
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if receiver_ty.array_element().is_none()
+            && receiver_ty.dict_types().is_none()
+            && !receiver_ty.is_unknown()
+        {
             self.diag(
                 CftErrorCode::FunctionArgTypeMismatch,
                 receiver.span,
                 "len expects an array or dict",
             );
         }
-        CheckedType::Int
+        InferredType::int()
     }
 
     fn check_contains_method(
@@ -104,39 +106,37 @@ impl CheckTypeAnalyzer<'_, '_> {
         receiver: &CheckExpr,
         args: &[CheckExpr],
         span: Span,
-        receiver_ty: &CheckedType,
-    ) -> CheckedType {
+        receiver_ty: &InferredType,
+    ) -> InferredType {
         if self.expect_arity(args, 1, span).is_err() {
-            return CheckedType::Bool;
+            return InferredType::bool();
         }
         let value_ty = self.check_expr_value(&args[0]);
-        match unwrap_nullable(receiver_ty) {
-            CheckedType::Array(elem) => {
-                if !types_comparable(elem, &value_ty) && value_ty != CheckedType::Unknown {
-                    self.diag(
-                        CftErrorCode::FunctionArgTypeMismatch,
-                        args[0].span,
-                        "contains value type does not match array element type",
-                    );
-                }
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if let Some(elem) = receiver_ty.array_element() {
+            if !types_comparable(&elem, &value_ty) && !value_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::FunctionArgTypeMismatch,
+                    args[0].span,
+                    "contains value type does not match array element type",
+                );
             }
-            CheckedType::Dict(key, _) => {
-                if !types_comparable(key, &value_ty) && value_ty != CheckedType::Unknown {
-                    self.diag(
-                        CftErrorCode::FunctionArgTypeMismatch,
-                        args[0].span,
-                        "contains value type does not match dict key type",
-                    );
-                }
+        } else if let Some((key, _)) = receiver_ty.dict_types() {
+            if !types_comparable(&key, &value_ty) && !value_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::FunctionArgTypeMismatch,
+                    args[0].span,
+                    "contains value type does not match dict key type",
+                );
             }
-            CheckedType::Unknown => {}
-            _ => self.diag(
+        } else if !receiver_ty.is_unknown() {
+            self.diag(
                 CftErrorCode::FunctionArgTypeMismatch,
                 receiver.span,
                 "contains expects an array or dict",
-            ),
+            );
         }
-        CheckedType::Bool
+        InferredType::bool()
     }
 
     fn check_unique_method(
@@ -144,26 +144,28 @@ impl CheckTypeAnalyzer<'_, '_> {
         receiver: &CheckExpr,
         args: &[CheckExpr],
         span: Span,
-        receiver_ty: &CheckedType,
-    ) -> CheckedType {
+        receiver_ty: &InferredType,
+    ) -> InferredType {
         if self.expect_arity(args, 0, span).is_err() {
-            return CheckedType::Bool;
+            return InferredType::bool();
         }
-        match unwrap_nullable(receiver_ty) {
-            CheckedType::Array(elem) if unique_supported(elem) => {}
-            CheckedType::Array(_) => self.diag(
-                CftErrorCode::UniqueUnsupportedElementType,
-                receiver.span,
-                "isUnique does not support this element type",
-            ),
-            CheckedType::Unknown => {}
-            _ => self.diag(
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if let Some(elem) = receiver_ty.array_element() {
+            if !unique_supported(&elem) {
+                self.diag(
+                    CftErrorCode::UniqueUnsupportedElementType,
+                    receiver.span,
+                    "isUnique does not support this element type",
+                );
+            }
+        } else if !receiver_ty.is_unknown() {
+            self.diag(
                 CftErrorCode::FunctionArgTypeMismatch,
                 receiver.span,
                 "isUnique expects an array",
-            ),
+            );
         }
-        CheckedType::Bool
+        InferredType::bool()
     }
 
     fn check_min_max_method(
@@ -171,30 +173,32 @@ impl CheckTypeAnalyzer<'_, '_> {
         receiver: &CheckExpr,
         args: &[CheckExpr],
         span: Span,
-        receiver_ty: &CheckedType,
-    ) -> CheckedType {
+        receiver_ty: &InferredType,
+    ) -> InferredType {
         if self.expect_arity(args, 0, span).is_err() {
-            return CheckedType::Unknown;
+            return InferredType::Unknown;
         }
-        match unwrap_nullable(receiver_ty) {
-            CheckedType::Array(elem) if min_max_supported(elem) => unwrap_nullable(elem).clone(),
-            CheckedType::Array(_) => {
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if let Some(elem) = receiver_ty.array_element() {
+            if min_max_supported(&elem) {
+                unwrap_nullable(&elem)
+            } else {
                 self.diag(
                     CftErrorCode::FunctionArgTypeMismatch,
                     receiver.span,
                     "min/max expects int, float, or enum arrays",
                 );
-                CheckedType::Unknown
+                InferredType::Unknown
             }
-            CheckedType::Unknown => CheckedType::Unknown,
-            _ => {
-                self.diag(
-                    CftErrorCode::FunctionArgTypeMismatch,
-                    receiver.span,
-                    "min/max expects an array",
-                );
-                CheckedType::Unknown
-            }
+        } else if receiver_ty.is_unknown() {
+            InferredType::Unknown
+        } else {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                receiver.span,
+                "min/max expects an array",
+            );
+            InferredType::Unknown
         }
     }
 
@@ -203,32 +207,34 @@ impl CheckTypeAnalyzer<'_, '_> {
         receiver: &CheckExpr,
         args: &[CheckExpr],
         span: Span,
-        receiver_ty: &CheckedType,
-    ) -> CheckedType {
+        receiver_ty: &InferredType,
+    ) -> InferredType {
         if self.expect_arity(args, 0, span).is_err() {
-            return CheckedType::Unknown;
+            return InferredType::Unknown;
         }
-        match unwrap_nullable(receiver_ty) {
-            CheckedType::Array(elem) => match unwrap_nullable(elem) {
-                CheckedType::Int | CheckedType::Float => unwrap_nullable(elem).clone(),
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if let Some(elem) = receiver_ty.array_element() {
+            let elem = unwrap_nullable(&elem);
+            match elem.value_type() {
+                Some(CftValueType::Int | CftValueType::Float) => elem,
                 _ => {
                     self.diag(
                         CftErrorCode::FunctionArgTypeMismatch,
                         receiver.span,
                         "sum expects an int or float array",
                     );
-                    CheckedType::Unknown
+                    InferredType::Unknown
                 }
-            },
-            CheckedType::Unknown => CheckedType::Unknown,
-            _ => {
-                self.diag(
-                    CftErrorCode::FunctionArgTypeMismatch,
-                    receiver.span,
-                    "sum expects an array",
-                );
-                CheckedType::Unknown
             }
+        } else if receiver_ty.is_unknown() {
+            InferredType::Unknown
+        } else {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                receiver.span,
+                "sum expects an array",
+            );
+            InferredType::Unknown
         }
     }
 
@@ -237,22 +243,23 @@ impl CheckTypeAnalyzer<'_, '_> {
         receiver: &CheckExpr,
         args: &[CheckExpr],
         span: Span,
-        receiver_ty: &CheckedType,
-    ) -> CheckedType {
+        receiver_ty: &InferredType,
+    ) -> InferredType {
         if self.expect_arity(args, 0, span).is_err() {
-            return CheckedType::Unknown;
+            return InferredType::Unknown;
         }
-        match unwrap_nullable(receiver_ty) {
-            CheckedType::Dict(key, _) => CheckedType::Array(key.clone()),
-            CheckedType::Unknown => CheckedType::Unknown,
-            _ => {
-                self.diag(
-                    CftErrorCode::FunctionArgTypeMismatch,
-                    receiver.span,
-                    "keys expects a dict",
-                );
-                CheckedType::Unknown
-            }
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if let Some((key, _)) = receiver_ty.dict_types() {
+            InferredType::array(key)
+        } else if receiver_ty.is_unknown() {
+            InferredType::Unknown
+        } else {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                receiver.span,
+                "keys expects a dict",
+            );
+            InferredType::Unknown
         }
     }
 
@@ -261,22 +268,23 @@ impl CheckTypeAnalyzer<'_, '_> {
         receiver: &CheckExpr,
         args: &[CheckExpr],
         span: Span,
-        receiver_ty: &CheckedType,
-    ) -> CheckedType {
+        receiver_ty: &InferredType,
+    ) -> InferredType {
         if self.expect_arity(args, 0, span).is_err() {
-            return CheckedType::Unknown;
+            return InferredType::Unknown;
         }
-        match unwrap_nullable(receiver_ty) {
-            CheckedType::Dict(_, value) => CheckedType::Array(value.clone()),
-            CheckedType::Unknown => CheckedType::Unknown,
-            _ => {
-                self.diag(
-                    CftErrorCode::FunctionArgTypeMismatch,
-                    receiver.span,
-                    "values expects a dict",
-                );
-                CheckedType::Unknown
-            }
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if let Some((_, value)) = receiver_ty.dict_types() {
+            InferredType::array(value)
+        } else if receiver_ty.is_unknown() {
+            InferredType::Unknown
+        } else {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                receiver.span,
+                "values expects a dict",
+            );
+            InferredType::Unknown
         }
     }
 
@@ -285,14 +293,12 @@ impl CheckTypeAnalyzer<'_, '_> {
         receiver: &CheckExpr,
         args: &[CheckExpr],
         span: Span,
-        receiver_ty: &CheckedType,
-    ) -> CheckedType {
+        receiver_ty: &InferredType,
+    ) -> InferredType {
         if self.expect_arity(args, 1, span).is_err() {
-            return CheckedType::Bool;
+            return InferredType::bool();
         }
-        if !types_comparable(receiver_ty, &CheckedType::String)
-            && *receiver_ty != CheckedType::Unknown
-        {
+        if !types_comparable(receiver_ty, &InferredType::string()) && !receiver_ty.is_unknown() {
             self.diag(
                 CftErrorCode::FunctionArgTypeMismatch,
                 receiver.span,
@@ -315,7 +321,7 @@ impl CheckTypeAnalyzer<'_, '_> {
                 "matches pattern must be a string literal",
             );
         }
-        CheckedType::Bool
+        InferredType::bool()
     }
 
     fn expect_arity(&mut self, args: &[CheckExpr], expected: usize, span: Span) -> Result<(), ()> {
