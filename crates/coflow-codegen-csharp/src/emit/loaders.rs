@@ -11,6 +11,7 @@ use crate::emit::readers::{
 use crate::emit::types::{
     collection_default_expr, csharp_property_type, csharp_type, default_value_expr,
 };
+use crate::lowering::CsharpDimensionTable;
 use crate::lowering::CsharpLoweringPlan;
 use crate::model::{CsharpLoadField, CsharpLoader, CsharpPolymorphicCase};
 use crate::names::escape_csharp_string;
@@ -72,6 +73,49 @@ pub(super) fn loader_method(
         requires_hydration,
         fields,
         polymorphic_cases,
+        is_polymorphic: false,
+        expected: String::new(),
+    })
+}
+
+pub(super) fn dimension_loader_method(
+    table: &CsharpDimensionTable,
+    view: &CsharpLoweringPlan<'_>,
+) -> Result<CsharpLoader, CsharpCodegenError> {
+    let mut used_local_names = loader_reserved_local_names(table.fields.iter());
+    let key_ty = CftSchemaTypeRef::String;
+    let fields = table
+        .fields
+        .iter()
+        .map(|field| {
+            load_field(
+                field,
+                &table.source_name,
+                false,
+                &mut used_local_names,
+                view,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let requires_hydration = fields.iter().any(|field| field.requires_context);
+    Ok(CsharpLoader {
+        type_name: view.csharp_type_name(&table.source_name),
+        source_name: table.source_name.clone(),
+        key_type_name: "string".to_string(),
+        key_local_name: field_local_name("id", &mut used_local_names)?,
+        key_property: "Id".to_string(),
+        key_read_expr: read_required_expr(
+            "id",
+            "obj",
+            &read_token_expr(&key_ty, "token", "context", view)?,
+        ),
+        key_messagepack_read_expr: read_messagepack_expr(&key_ty, "reader", "context", view)?,
+        is_table: true,
+        is_disk_loadable: true,
+        is_struct: false,
+        requires_hydration,
+        fields,
+        polymorphic_cases: Vec::new(),
         is_polymorphic: false,
         expected: String::new(),
     })

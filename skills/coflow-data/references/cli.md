@@ -239,11 +239,11 @@ coflow export messagepack examples/rpg --out generated/data
 
 输出文件名为 `<TypeName>.msgpack`。
 
-### 不可变 generation
+### 输出目录与 generation
 
-`outputs.data.dir` 或 `--out` 保留为输出放置锚点。Coflow 将不可变 generation 分类写入项目目录的 `.coflow/artifacts/generations/`，将发布中的临时目录写入 `.coflow/artifacts/staging/`，不会在输出锚点同级留下隐藏 sidecar。命令成功信息输出实际目录，当前 data generation 记录在 `.coflow/artifacts/active.json` 中。
+`outputs.data.dir` 或 `--out` 是导出成功后消费者直接读取的目录。Coflow 将不可变 generation 分类写入项目目录的 `.coflow/artifacts/generations/`，同时在输出目录同级准备 staging；验证完成后，staging 会替换配置指定的目录。命令成功信息输出该稳定目录，内部 data generation 记录在 `.coflow/artifacts/active.json` 中。
 
-所有文件写入、同步和回读验证成功后，Coflow 才原子替换唯一 active manifest。失败时旧 manifest 和旧 generation 仍然完整。不要修改 generation 文件；新发布不会原地覆盖它们。
+所有文件写入、同步、回读验证和目标目录替换成功后，Coflow 才原子替换唯一 active manifest。失败时已替换的目标目录会回滚，旧 manifest 和旧 generation 仍然完整。输出目录由 Coflow 完整接管，不要在其中放置手写文件。
 
 ## `clean`
 
@@ -289,7 +289,7 @@ coflow codegen csharp examples/rpg --out generated/csharp --namespace Game.Confi
 | `json` | Newtonsoft.Json loader |
 | `messagepack` | MessagePack-CSharp loader |
 
-C# 也发布为不可变 generation。实际目录由命令输出，并记录在 active manifest 的 `outputs.code.generation_dir`。
+C# 代码会写入 `outputs.code.dir` 或 `--out` 指定的稳定目录，同时保留不可变 generation。命令输出稳定目录；内部 snapshot 记录在 active manifest 的 `outputs.code.generation_dir`。
 
 对于 `@idAsEnum`，单独运行 `codegen csharp` 会读取 active manifest 中已有的 lock state；没有 manifest 时从应提交到版本库的 `coflow.enum.lock.json` 恢复。该命令不会加载数据源，因此不会新增 data-driven enum variant。需要根据当前数据补全 variant 时，使用 `coflow build`。
 

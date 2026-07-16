@@ -4,7 +4,7 @@ mod loaders;
 mod readers;
 mod types;
 
-use crate::lowering::CsharpLoweringPlan;
+use crate::lowering::{CsharpDimensionTable, CsharpLoweringPlan};
 use crate::model::{
     CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpParameter,
     CsharpProperty, CsharpType,
@@ -16,7 +16,9 @@ use std::collections::{BTreeSet, HashSet};
 
 pub use database::build_csharp_database;
 use identifiers::{csharp_public_member_name, csharp_public_type_name, field_local_name};
-use loaders::{field_type_requires_context, loader_method, polymorphic_loader};
+use loaders::{
+    dimension_loader_method, field_type_requires_context, loader_method, polymorphic_loader,
+};
 use types::{csharp_field_property_type, csharp_type};
 
 pub fn build_csharp_enum(schema_enum: &CftEnum) -> CsharpEnum {
@@ -125,6 +127,67 @@ pub fn build_csharp_type(
         assignments,
         loader,
         equality,
+    })
+}
+
+pub fn build_csharp_dimension_type(
+    table: &CsharpDimensionTable,
+    view: &CsharpLoweringPlan<'_>,
+) -> Result<CsharpType, CsharpCodegenError> {
+    let name = view.csharp_type_name(&table.source_name);
+    let mut constructor_parameters = vec![CsharpParameter {
+        ty: "string".to_string(),
+        name: "id".to_string(),
+    }];
+    let mut properties = vec![CsharpProperty {
+        visibility: "public".to_string(),
+        name: "Id".to_string(),
+        type_name: "string".to_string(),
+        backing_field: None,
+        summary: None,
+        obsolete: false,
+    }];
+    let mut assignments = vec![CsharpConstructorAssignment {
+        property: "Id".to_string(),
+        target: "Id".to_string(),
+        parameter: "id".to_string(),
+    }];
+    let mut used_names = HashSet::new();
+    for field in &table.fields {
+        let local_name = field_local_name(&field.name, &mut used_names)?;
+        let property_type = csharp_field_property_type(field, view);
+        constructor_parameters.push(CsharpParameter {
+            ty: property_type.clone(),
+            name: local_name.clone(),
+        });
+        add_field_constructor_member(
+            field,
+            property_type,
+            local_name,
+            view,
+            &mut properties,
+            &mut assignments,
+        );
+    }
+
+    Ok(CsharpType {
+        name: name.clone(),
+        declaration: format!("public sealed partial class {name} : IEquatable<{name}>"),
+        constructor_visibility: "public".to_string(),
+        summary: None,
+        obsolete: false,
+        properties,
+        constructor_parameters,
+        base_constructor_args: Vec::new(),
+        base_constructor_call: None,
+        assignments,
+        loader: Some(dimension_loader_method(table, view)?),
+        equality: Some(CsharpEquality {
+            key_property: "Id".to_string(),
+            is_struct: false,
+            by_fields: false,
+            fields: Vec::new(),
+        }),
     })
 }
 

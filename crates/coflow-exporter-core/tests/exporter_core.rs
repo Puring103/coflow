@@ -7,8 +7,13 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
-use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
+use coflow_cft::{
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, DimensionName, FieldName,
+    ModuleId, RecordKey, TypeName, VariantName,
+};
+use coflow_data_model::{
+    CfdDataModel, CfdInputDictKey, CfdInputDimensionValue, CfdInputValue, RecordOrigin,
+};
 use coflow_exporter_core::{export_model_to_sink, ExportEventSink};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
@@ -137,9 +142,15 @@ impl ExportEventSink for TestSink {
 }
 
 fn compile_schema(source: &str) -> Result<CftSchema, String> {
+    compile_schema_with_dimensions(source, &CftDimensionInputs::default())
+}
+
+fn compile_schema_with_dimensions(
+    source: &str,
+    dimensions: &CftDimensionInputs,
+) -> Result<CftSchema, String> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default())
-        .map_err(|err| format!("schema should compile: {err:?}"))
+    build_schema(&modules, dimensions).map_err(|err| format!("schema should compile: {err:?}"))
 }
 
 fn build_model(builder: coflow_data_model::CfdModelBuilder<'_>) -> Result<CfdDataModel, String> {
@@ -184,6 +195,95 @@ fn exports_every_concrete_table_with_synthesized_record_keys() -> TestResult {
         ])])
     );
     assert_eq!(tables["Monster"], TestValue::Array(Vec::new()));
+    Ok(())
+}
+
+#[test]
+fn exports_record_owned_dimension_overlays_as_compatible_variant_tables() -> TestResult {
+    let dimensions =
+        CftDimensionInputs::try_new([("language", vec!["zh".to_string(), "en".to_string()])])
+            .map_err(|err| err.to_string())?;
+    let schema = compile_schema_with_dimensions(
+        r#"
+            type Item {
+                @localized
+                name: string;
+            }
+            type SpecialItem : Item {}
+
+            @singleton
+            type UiText {
+                @localized
+                welcome: string;
+            }
+        "#,
+        &dimensions,
+    )?;
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
+    builder.add_record(
+        "elixir",
+        "SpecialItem",
+        [("name", CfdInputValue::from("Elixir"))],
+    );
+    builder.add_record(
+        "UiText",
+        "UiText",
+        [("welcome", CfdInputValue::from("Welcome"))],
+    );
+    for (source_type, source_key, field, variant, value) in [
+        ("Item", "potion", "name", "zh", "药水"),
+        ("SpecialItem", "elixir", "name", "en", "Elixir EN"),
+        ("UiText", "UiText", "welcome", "zh", "欢迎"),
+    ] {
+        builder.add_input_dimension_value(CfdInputDimensionValue {
+            source_type: TypeName::new(source_type).map_err(|err| err.to_string())?,
+            source_key: RecordKey::new(source_key).map_err(|err| err.to_string())?,
+            field: FieldName::new(field).map_err(|err| err.to_string())?,
+            dimension: DimensionName::new("language").map_err(|err| err.to_string())?,
+            variant: VariantName::new(variant).map_err(|err| err.to_string())?,
+            value: CfdInputValue::from(value),
+            origin: RecordOrigin::None,
+        });
+    }
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
+
+    assert_eq!(
+        tables["Item_nameVariants"],
+        TestValue::Array(vec![
+            TestValue::Map(vec![
+                ("id".to_string(), TestValue::String("potion".to_string())),
+                (
+                    "default".to_string(),
+                    TestValue::String("Potion".to_string()),
+                ),
+                ("zh".to_string(), TestValue::String("药水".to_string())),
+                ("en".to_string(), TestValue::Null),
+            ]),
+            TestValue::Map(vec![
+                ("id".to_string(), TestValue::String("elixir".to_string())),
+                (
+                    "default".to_string(),
+                    TestValue::String("Elixir".to_string()),
+                ),
+                ("zh".to_string(), TestValue::Null),
+                ("en".to_string(), TestValue::String("Elixir EN".to_string()),),
+            ]),
+        ])
+    );
+    assert_eq!(
+        tables["UiText_welcomeVariants"],
+        TestValue::Array(vec![TestValue::Map(vec![
+            ("id".to_string(), TestValue::String("welcome".to_string()),),
+            (
+                "default".to_string(),
+                TestValue::String("Welcome".to_string()),
+            ),
+            ("zh".to_string(), TestValue::String("欢迎".to_string())),
+            ("en".to_string(), TestValue::Null),
+        ])])
+    );
     Ok(())
 }
 

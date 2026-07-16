@@ -43,8 +43,7 @@ fn export_json_validates_declared_output_type() {
         String::from_utf8_lossy(&output.stdout)
     );
 
-    let generation = active_artifact_dir(&project_dir, "data");
-    let drop_table = std::fs::read_to_string(generation.join("DropTable.json"))
+    let drop_table = std::fs::read_to_string(out_dir.join("DropTable.json"))
         .expect("DropTable.json should be written");
     assert!(drop_table.contains(r#""$type": "ItemReward""#));
     assert!(drop_table.contains(r#""monster": "goblin_warrior""#));
@@ -99,9 +98,8 @@ fn export_messagepack_writes_msgpack_tables() {
         "stdout: {}",
         String::from_utf8_lossy(&output.stdout)
     );
-    let generation = active_artifact_dir(&project_dir, "data");
-    assert!(generation.join("Item.msgpack").exists());
-    assert!(generation.join("DropTable.msgpack").exists());
+    assert!(out_dir.join("Item.msgpack").exists());
+    assert!(out_dir.join("DropTable.msgpack").exists());
 
     std::fs::remove_dir_all(root_dir).expect("clean temp dir");
 }

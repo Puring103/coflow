@@ -39,7 +39,6 @@ fn codegen_csharp_writes_newtonsoft_json_source_provider() {
         String::from_utf8_lossy(&output.stdout)
     );
 
-    let out_dir = active_artifact_dir(&root, "code");
     let coflow_tables =
         std::fs::read_to_string(out_dir.join("CoflowTables.cs")).expect("CoflowTables.cs");
     assert!(coflow_tables.contains("using Newtonsoft.Json.Linq;"));
@@ -86,7 +85,6 @@ fn codegen_csharp_uses_messagepack_loader_when_data_output_is_messagepack() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let out_dir = active_artifact_dir(&project_dir, "code");
     let coflow_tables =
         std::fs::read_to_string(out_dir.join("CoflowTables.cs")).expect("CoflowTables.cs");
     assert!(coflow_tables.contains("using MessagePack;"));

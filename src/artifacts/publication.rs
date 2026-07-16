@@ -45,7 +45,7 @@ impl PublishedArtifactSnapshot {
         self.manifest
             .outputs
             .get(slot)
-            .map(|output| output.generation_dir.as_path())
+            .map(|output| output.requested_dir.as_path())
             .ok_or_else(|| {
                 diagnostic_set(
                     PathBuf::from(slot),
@@ -67,10 +67,12 @@ pub fn publish_artifacts(
         manifest.enum_lock = read_versioned_enum_lock(project)?;
     }
     let mut pending_generations = PendingGenerations::default();
+    let mut requested_outputs = Vec::with_capacity(staged_outputs.len());
     for (slot, staged) in staged_outputs {
-        let generation = staged.seal()?;
+        let (generation, requested_output) = staged.seal()?;
         pending_generations.track(&generation);
         manifest.outputs.insert(slot.to_string(), generation);
+        requested_outputs.push(requested_output);
     }
     for slot in removed_outputs {
         manifest.outputs.remove(*slot);
@@ -81,6 +83,10 @@ pub fn publish_artifacts(
     }
     manifest.version = MANIFEST_VERSION;
     manifest.revision = unique_revision();
+
+    for output in &mut requested_outputs {
+        output.publish()?;
+    }
 
     if persist_enum_lock {
         write_versioned_enum_lock(
@@ -94,6 +100,9 @@ pub fn publish_artifacts(
         )?;
     }
     write_active_manifest(project, &manifest)?;
+    for output in &mut requested_outputs {
+        output.activate();
+    }
     pending_generations.activate();
     Ok(PublishedArtifactSnapshot { manifest })
 }
@@ -461,10 +470,21 @@ mod tests {
             EnumLockUpdate::Replace(old_lock.clone()),
         )
         .expect("publish baseline artifacts");
+        assert_eq!(
+            baseline
+                .output_dir(DATA_OUTPUT_SLOT)
+                .expect("baseline requested output"),
+            requested
+        );
         let old_generation = baseline
-            .output_dir(DATA_OUTPUT_SLOT)
+            .manifest
+            .outputs
+            .get(DATA_OUTPUT_SLOT)
             .expect("baseline output")
-            .to_path_buf();
+            .generation_dir
+            .clone();
+        let old_requested = std::fs::read(requested.join("nested/value.txt"))
+            .expect("read baseline requested output");
         let manifest_path = root.join(".coflow/artifacts/active.json");
         let old_manifest = std::fs::read(&manifest_path).expect("read baseline manifest");
 
@@ -498,6 +518,12 @@ mod tests {
                 .expect("read old active artifact"),
             "old",
             "{point:?} changed the active generation"
+        );
+        assert_eq!(
+            std::fs::read(requested.join("nested/value.txt"))
+                .expect("read requested output after failure"),
+            old_requested,
+            "{point:?} changed the requested output"
         );
         assert_eq!(
             read_active_enum_lock(&project).expect("read active enum lock"),

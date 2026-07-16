@@ -354,13 +354,13 @@ dimensions:
     out_dir: data/dimensions/language
 ```
 
-## 产物 generation
+## 输出目录与 generation
 
-`outputs.data.dir` 和 `outputs.code.dir` 是不可变 generation 的放置锚点。
+`outputs.data.dir` 和 `outputs.code.dir` 是构建成功后消费者直接使用的输出目录。目录内容由 Coflow 完整接管，不要在其中放置手写文件。
 
-写入时，Coflow 在锚点同级生成、同步并验证完整 generation；data、code 和 `@idAsEnum` lock state 通过 `.coflow/artifacts/active.json` 一次激活。如果构建过程中出现诊断，Coflow 不会激活新的 build、export 或 codegen snapshot。
+写入时，Coflow 先生成、同步并验证完整 staging 和不可变 generation，再替换配置指定的输出目录。data、code 和 `@idAsEnum` lock state 通过 `.coflow/artifacts/active.json` 组成同一个 snapshot；任一步失败都会恢复旧输出目录，并且不会激活新的 build、export 或 codegen snapshot。
 
-命令成功信息会输出实际 generation 目录。消费者也可以从 active manifest 的 `outputs.<slot>.generation_dir` 读取当前位置。**不要修改或向 generation 目录添加手写文件**。
+命令成功信息输出配置指定的目录。不可变 generation 保存在 `.coflow/artifacts/generations/`，用于 active manifest 和历史清理，不是需要消费者追踪的输出路径。
 
 ## 常见错误
 

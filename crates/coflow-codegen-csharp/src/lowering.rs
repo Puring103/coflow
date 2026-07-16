@@ -1,6 +1,6 @@
 use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnum, CftField, CftSchema, CftSchemaTypeRef, CftType};
+use coflow_cft::{CftEnum, CftField, CftSchema, CftSchemaTypeRef, CftType, FieldName, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug)]
@@ -9,6 +9,7 @@ pub struct CsharpLoweringPlan<'a> {
     pub float_32: bool,
     schema: &'a CftSchema,
     types: Vec<&'a CftType>,
+    dimension_tables: Vec<CsharpDimensionTable>,
     enums: Vec<&'a CftEnum>,
     csharp_types: BTreeMap<String, String>,
     csharp_enums: BTreeMap<String, String>,
@@ -24,6 +25,13 @@ pub struct CsharpLoweringPlan<'a> {
     assignable_types: BTreeMap<String, Vec<String>>,
     types_with_descendants: BTreeSet<String>,
     uses_localization: bool,
+}
+
+#[derive(Debug)]
+pub struct CsharpDimensionTable {
+    pub source_name: String,
+    pub source_type: String,
+    pub fields: Vec<CftField>,
 }
 
 impl<'a> CsharpLoweringPlan<'a> {
@@ -53,7 +61,7 @@ impl<'a> CsharpLoweringPlan<'a> {
         let mut ref_targets = BTreeSet::new();
         let mut id_as_enum_names = BTreeSet::new();
         let mut type_id_as_enum = BTreeMap::new();
-        let mut assignable_types = BTreeMap::new();
+        let mut assignable_types: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut types_with_descendants = BTreeSet::new();
         let mut uses_localization = false;
 
@@ -92,9 +100,72 @@ impl<'a> CsharpLoweringPlan<'a> {
             }
         }
 
+        let mut dimension_tables = BTreeMap::new();
+        for dimension in schema.all_dimensions() {
+            for source_field in &dimension.fields {
+                let source_name = format!(
+                    "{}_{}Variants",
+                    source_field.declaring_type, source_field.name
+                );
+                let declaring_type = TypeName::new(source_name.clone()).map_err(|err| {
+                    CsharpCodegenError::new(format!(
+                        "invalid generated dimension table name `{source_name}`: {err}"
+                    ))
+                })?;
+                let field_type = CftSchemaTypeRef::Nullable(Box::new(
+                    source_field.ty_ref.non_nullable().clone(),
+                ));
+                let mut fields = Vec::with_capacity(dimension.variants.len() + 1);
+                for name in
+                    std::iter::once("default").chain(dimension.variants.iter().map(AsRef::as_ref))
+                {
+                    fields.push(CftField {
+                        declaring_type: declaring_type.clone(),
+                        name: FieldName::new(name).map_err(|err| {
+                            CsharpCodegenError::new(format!(
+                                "invalid generated dimension field name `{name}`: {err}"
+                            ))
+                        })?,
+                        ty_ref: field_type.clone(),
+                        default: None,
+                        is_expand: false,
+                        dimension: None,
+                        span: source_field.span,
+                    });
+                }
+                csharp_types.insert(source_name.clone(), csharp_type_name(&source_name));
+                declared_tables.push(source_name.clone());
+                dimension_tables.insert(
+                    source_name.clone(),
+                    CsharpDimensionTable {
+                        source_name,
+                        source_type: source_field.declaring_type.to_string(),
+                        fields,
+                    },
+                );
+            }
+        }
+        declared_tables.sort();
+        let dimension_tables = dimension_tables.into_values().collect::<Vec<_>>();
+        let dimension_source_types = dimension_tables
+            .iter()
+            .map(|table| (table.source_name.as_str(), table.source_type.as_str()))
+            .collect::<BTreeMap<_, _>>();
+
         let loadable_tables = declared_tables
             .iter()
-            .filter(|name| non_empty_tables.is_none_or(|tables| tables.contains(*name)))
+            .filter(|name| {
+                non_empty_tables.is_none_or(|tables| {
+                    dimension_source_types.get(name.as_str()).map_or_else(
+                        || tables.contains(*name),
+                        |source_type| {
+                            assignable_types.get(*source_type).is_some_and(|types| {
+                                types.iter().any(|type_name| tables.contains(type_name))
+                            })
+                        },
+                    )
+                })
+            })
             .cloned()
             .collect::<Vec<_>>();
         let loadable_table_set = loadable_tables.iter().cloned().collect();
@@ -104,6 +175,7 @@ impl<'a> CsharpLoweringPlan<'a> {
             float_32,
             schema,
             types,
+            dimension_tables,
             enums,
             csharp_types,
             csharp_enums,
@@ -140,6 +212,10 @@ impl<'a> CsharpLoweringPlan<'a> {
         self.types.iter().copied()
     }
 
+    pub fn dimension_tables(&self) -> &[CsharpDimensionTable] {
+        &self.dimension_tables
+    }
+
     pub const fn uses_localization(&self) -> bool {
         self.uses_localization
     }
@@ -173,7 +249,11 @@ impl<'a> CsharpLoweringPlan<'a> {
     }
 
     pub fn all_type_names(&self) -> impl Iterator<Item = &str> {
-        self.types.iter().map(|ty| ty.name.as_str())
+        self.types.iter().map(|ty| ty.name.as_str()).chain(
+            self.dimension_tables
+                .iter()
+                .map(|table| table.source_name.as_str()),
+        )
     }
 
     pub fn declared_table_names(&self) -> &[String] {

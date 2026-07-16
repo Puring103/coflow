@@ -152,10 +152,58 @@ fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), Strin
         "new Localized<string>(string.Concat(\"Item/display_name/\", id.ToString())",
     )?;
 
+    let variants = generated_file(&files, "ItemDisplayNameVariants.cs")?;
+    require_contains(
+        variants,
+        "public sealed partial class ItemDisplayNameVariants",
+    )?;
+    require_contains(variants, "public string Id { get; }")?;
+    require_contains(variants, "public string? Default { get; }")?;
+    require_contains(variants, "public string? En { get; }")?;
+    require_contains(variants, "public string? Zh { get; }")?;
+
+    let database = generated_file(&files, "CoflowTables.cs")?;
+    require_contains(
+        database,
+        "public Table<string, ItemDisplayNameVariants> TbItemDisplayNameVariants { get; }",
+    )?;
+    require_contains(
+        database,
+        "ItemDisplayNameVariants.LoadRawTable(Path.Combine(dataDir, \"Item_display_nameVariants.json\"))",
+    )?;
+
     let helper = generated_file(&files, "Localized.cs")?;
     require_contains(helper, "public readonly struct Localized<T>")?;
     require_contains(helper, "public static class Localization")?;
     require_contains(helper, "public interface LocalizationProvider")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_messagepack_emits_dimension_variant_types_and_loaders() -> Result<(), String> {
+    let schema = compile_schema_with_dimensions(
+        r#"
+            type Item {
+                @localized
+                name: string;
+            }
+        "#,
+        CftDimensionInputs::try_new([("language", vec!["en".to_string()])])
+            .expect("valid dimension fixture"),
+    )?;
+    let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+
+    let variants = generated_file(&files, "ItemNameVariants.cs")?;
+    require_contains(variants, "public string? Default { get; }")?;
+    require_contains(variants, "public string? En { get; }")?;
+    require_contains(variants, "CoflowMessagePack.ReadString(ref reader)")?;
+
+    let database = generated_file(&files, "CoflowTables.cs")?;
+    require_contains(
+        database,
+        "ItemNameVariants.LoadRawTable(Path.Combine(dataDir, \"Item_nameVariants.msgpack\"))",
+    )?;
     Ok(())
 }
 

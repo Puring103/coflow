@@ -53,7 +53,7 @@ generated/csharp/
 
 `CoflowTables.cs` 是默认入口。每个 CFT type / enum 会生成对应 C# 文件。本地化字段存在时，会额外生成运行时 helper。
 
-`outputs.code.dir` 或 `--out` 是不可变 generation 的放置锚点。生成成功信息会输出实际 generation 目录；当前目录也记录在 `.coflow/artifacts/active.json` 的 `outputs.code.generation_dir`。后续 codegen 创建新 generation，不会修改或删除旧 generation。不要在 generation 中放置或修改手写代码。
+`outputs.code.dir` 或 `--out` 是生成成功后的实际 C# 目录。Coflow 先验证 staging 和不可变 generation，再完整替换该目录；生成成功信息会输出这个稳定目录。不可变 snapshot 记录在 `.coflow/artifacts/active.json` 的 `outputs.code.generation_dir`。不要在输出目录中放置手写代码。
 
 ## 入口类
 
@@ -231,6 +231,11 @@ public Localized<string> Name { get; }
 var displayName = item.Name.Value;
 var englishName = item.Name.For("en");
 ```
+
+每个维度字段还会生成一个 `{声明类型}{字段名}Variants` C# 类型，并在
+`CoflowTables` 中公开对应的 `Table<string, ...>`。例如 `Item.name` 生成
+`ItemNameVariants.cs` 和 `TbItemNameVariants`，loader 读取数据输出中的
+`Item_nameVariants.json` 或 `Item_nameVariants.msgpack`。
 
 详见 [本地化与维度](../10-localization.md)。
 

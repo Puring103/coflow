@@ -61,14 +61,14 @@ coflow check examples/rpg
 coflow build examples/rpg
 ```
 
-`examples/rpg/coflow.yaml` 声明 data/code generation 的放置锚点：
+`examples/rpg/coflow.yaml` 声明 data/code 的实际输出目录：
 
 ```text
 examples/rpg/generated/data
 examples/rpg/generated/csharp
 ```
 
-Coflow 每次构建都会在 `.coflow/artifacts/generations/` 写入并验证新的不可变 generation，再原子替换 `.coflow/artifacts/active.json`。命令成功信息会输出实际 generation 目录；程序也可以从 active manifest 的 `outputs.data.generation_dir` / `outputs.code.generation_dir` 读取。不要修改 generation 文件。使用 `coflow clean [CONFIG_OR_DIR]` 清理历史 generation 和中断遗留的 staging；当前活动 generation 会保留。
+Coflow 每次构建都会先写入并验证 staging 和 `.coflow/artifacts/generations/` 中的不可变 generation，再完整替换配置指定的 data/code 输出目录，最后原子替换 `.coflow/artifacts/active.json`。命令成功信息会输出稳定输出目录；不要在这些目录中放置手写文件。使用 `coflow clean [CONFIG_OR_DIR]` 清理历史 generation 和中断遗留的 staging；当前活动 generation 会保留。
 
 单独运行某个阶段：
 

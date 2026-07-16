@@ -43,13 +43,11 @@ fn build_exports_data_and_generates_csharp_for_json_project() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let data_generation = active_artifact_dir(&project_dir, "data");
-    let code_generation = active_artifact_dir(&project_dir, "code");
-    assert!(data_generation.join("Item.json").exists());
-    assert!(data_generation.join("Bundle.json").exists());
-    assert!(!data_generation.join("EmptyThing.json").exists());
+    assert!(data_dir.join("Item.json").exists());
+    assert!(data_dir.join("Bundle.json").exists());
+    assert!(!data_dir.join("EmptyThing.json").exists());
     let coflow_tables =
-        std::fs::read_to_string(code_generation.join("CoflowTables.cs")).expect("CoflowTables.cs");
+        std::fs::read_to_string(code_dir.join("CoflowTables.cs")).expect("CoflowTables.cs");
     assert!(coflow_tables
         .replace("\r\n", "\n")
         .contains("namespace Game.Config\n{"));
@@ -93,11 +91,9 @@ fn build_exports_messagepack_when_configured() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let data_generation = active_artifact_dir(&project_dir, "data");
-    let code_generation = active_artifact_dir(&project_dir, "code");
-    assert!(data_generation.join("Item.msgpack").exists());
-    assert!(data_generation.join("Bundle.msgpack").exists());
-    assert!(code_generation.join("CoflowTables.cs").exists());
+    assert!(data_dir.join("Item.msgpack").exists());
+    assert!(data_dir.join("Bundle.msgpack").exists());
+    assert!(code_dir.join("CoflowTables.cs").exists());
 
     std::fs::remove_dir_all(root_dir).expect("clean temp dir");
 }
@@ -157,10 +153,98 @@ outputs:
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let exported = std::fs::read_to_string(active_artifact_dir(&root, "data").join("Item.json"))
+    let exported = std::fs::read_to_string(root.join("generated/data/Item.json"))
         .expect("read exported Item.json");
     assert!(exported.contains("sword_01"), "exported: {exported}");
     assert!(exported.contains("铁剑"), "exported: {exported}");
+}
+
+#[test]
+fn build_exports_dimension_variant_tables_to_requested_data_dir() {
+    let root = temp_project_dir("build-dimension-export");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/localization")).expect("create localization dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+            type Item {
+                @localized
+                name: string;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n")
+        .expect("write source data");
+    std::fs::write(
+        root.join("data/localization/Item_name.csv"),
+        "id,default,zh,en\npotion,Old,药水,null\n",
+    )
+    .expect("write dimension data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/
+sources:
+  - path: data/items.csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh, en]
+    out_dir: data/localization
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/code
+    namespace: Game.Config
+"#,
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["build", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run build");
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let variants: Value = serde_json::from_slice(
+        &std::fs::read(root.join("generated/data/Item_nameVariants.json"))
+            .expect("read dimension export"),
+    )
+    .expect("parse dimension export");
+    assert_eq!(
+        variants,
+        serde_json::json!([{
+            "id": "potion",
+            "default": "Potion",
+            "zh": "药水",
+            "en": null
+        }])
+    );
+    let generated_type = root.join("generated/code/ItemNameVariants.cs");
+    assert!(
+        generated_type.exists(),
+        "dimension C# type should be published to {}",
+        generated_type.display()
+    );
+    let database = std::fs::read_to_string(root.join("generated/code/CoflowTables.cs"))
+        .expect("read generated CoflowTables.cs");
+    assert!(database.contains(
+        "public Table<string, ItemNameVariants> TbItemNameVariants { get; }"
+    ));
+    assert!(database.contains(
+        "ItemNameVariants.LoadRawTable(Path.Combine(dataDir, \"Item_nameVariants.json\"))"
+    ));
 }
 
 #[test]
@@ -293,7 +377,7 @@ outputs:
 }
 
 #[test]
-fn build_publishes_one_manifest_over_immutable_generations() {
+fn build_updates_requested_outputs_and_tracks_immutable_generations() {
     let root = temp_project_dir("build-immutable-generations");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(&root).expect("create project root");
@@ -323,6 +407,14 @@ fn build_publishes_one_manifest_over_immutable_generations() {
     let first_item = std::fs::read(first_data.join("Item.json")).expect("read first Item.json");
     let first_tables =
         std::fs::read(first_code.join("CoflowTables.cs")).expect("read first C# generation");
+    assert_eq!(
+        std::fs::read(requested_data.join("Item.json")).expect("read first requested data"),
+        first_item
+    );
+    assert_eq!(
+        std::fs::read(requested_code.join("CoflowTables.cs")).expect("read first requested code"),
+        first_tables
+    );
 
     let source_path = root.join("data/records.cfd");
     let source = std::fs::read_to_string(&source_path).expect("read source");
@@ -360,8 +452,13 @@ fn build_publishes_one_manifest_over_immutable_generations() {
         std::fs::read(first_code.join("CoflowTables.cs")).expect("re-read first C# generation"),
         first_tables
     );
-    assert!(!requested_data.exists());
-    assert!(!requested_code.exists());
+    assert!(std::fs::read_to_string(requested_data.join("Item.json"))
+        .expect("read second requested data")
+        .contains("Elixir"));
+    assert_eq!(
+        std::fs::read(requested_code.join("CoflowTables.cs")).expect("read second requested code"),
+        std::fs::read(second_code.join("CoflowTables.cs")).expect("read second C# generation")
+    );
     let generation_root = root.join(".coflow/artifacts/generations");
     let canonical_generation_root =
         std::fs::canonicalize(&generation_root).expect("canonical generation root");

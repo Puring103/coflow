@@ -12,6 +12,8 @@ pub(super) enum Point {
     SyncStagingTree,
     SealGeneration,
     SyncGenerationParent,
+    MoveRequestedOutputToBackup,
+    PublishRequestedOutput,
     ReadActiveManifest,
     ValidateActiveGeneration,
     WriteEnumLockMirror,
@@ -65,7 +67,7 @@ pub(super) fn inject(point: Point) -> InjectionGuard {
 }
 
 #[cfg(test)]
-pub(super) const ALL_POINTS: [Point; 15] = [
+pub(super) const ALL_POINTS: [Point; 17] = [
     Point::CreateOutputParent,
     Point::CreateStagingDirectory,
     Point::CreateArtifactParent,
@@ -76,6 +78,8 @@ pub(super) const ALL_POINTS: [Point; 15] = [
     Point::SyncStagingTree,
     Point::SealGeneration,
     Point::SyncGenerationParent,
+    Point::MoveRequestedOutputToBackup,
+    Point::PublishRequestedOutput,
     Point::ReadActiveManifest,
     Point::ValidateActiveGeneration,
     Point::WriteEnumLockMirror,

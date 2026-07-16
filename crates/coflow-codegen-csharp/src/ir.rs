@@ -1,4 +1,6 @@
-use crate::emit::{build_csharp_database, build_csharp_enum, build_csharp_type};
+use crate::emit::{
+    build_csharp_database, build_csharp_dimension_type, build_csharp_enum, build_csharp_type,
+};
 use crate::lowering::CsharpLoweringPlan;
 use crate::model::{CsharpEnum, CsharpEnumVariant, CsharpProject};
 use crate::names::{
@@ -96,10 +98,17 @@ pub fn build_project(
         })
         .collect::<Vec<_>>();
 
-    let types = view
+    let mut types = view
         .all_types()
         .map(|schema_type| build_csharp_type(schema_type, &view))
         .collect::<Result<Vec<_>, _>>()?;
+    types.extend(
+        view.dimension_tables()
+            .iter()
+            .map(|table| build_csharp_dimension_type(table, &view))
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    types.sort_by(|left, right| left.name.cmp(&right.name));
 
     let database = build_csharp_database(&view, &tables, &options.database_class, data_format)?;
     let singletons = build_csharp_singletons(&view);

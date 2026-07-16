@@ -235,11 +235,11 @@ CLI、编辑器和自动化命令复用这些 capability，而不是导入 ownin
 3. 宿主调用选中 exporter / codegen 的 option decoder，把 project-facing JSON 转换为 provider-owned typed options。
 4. root artifact release module 对全部输出执行 artifact safety 检查。
 5. 全部 provider 使用 decoded options 完成纯内存 generation。
-6. 全部 generation 成功后才依次 staging，最后只 publication 一次 active manifest。
+6. 全部 generation 和目标目录 staging 成功后，事务性替换目标目录，最后只 publication 一次 active manifest。
 
 存在诊断时不写产物。
 
-通过检查后，CLI 使用 staging 目录写入、同步并回读验证完整产物，再把目录封存为不可变 generation。旧 generation 不会被改写。
+通过检查后，CLI 使用 staging 目录写入、同步并回读验证完整产物，再把目录封存为不可变 generation，并用同一份产物替换 `outputs.*.dir`。旧 generation 不会被改写；目标目录替换失败时，已经替换的目标会恢复到旧版本。
 
 data、code generation 与 C# `@idAsEnum` lock state 组成一个 manifest snapshot。CLI 先原子更新可提交到版本库的 `coflow.enum.lock.json` 镜像，再以一次原子替换项目目录下 `.coflow/artifacts/active.json` 激活整个 snapshot。任何被报告的失败都发生在最终激活之前，因此旧 active snapshot 保持完整；已有 active manifest 始终优先于镜像。没有本地 manifest 的干净 clone 才从镜像恢复编号。
 

@@ -127,6 +127,33 @@ sword,weapon | melee,武器 | 近战,weapon | melee
 
 非字符串字段也可以进入维度流程，但变体值必须符合原字段类型。
 
+## 构建导出
+
+`build` 和 `export` 会为每个维度字段额外生成一张 `{声明类型}_{字段名}Variants` 表。JSON 使用 `.json`，MessagePack 使用 `.msgpack`。例如：
+
+```text
+Item_nameVariants.json
+```
+
+表中每条记录包含源 record key、默认值和配置顺序下的全部变体：
+
+```json
+[
+  {
+    "id": "sword_fire",
+    "default": "Fire Sword",
+    "zh": "火焰剑",
+    "en": "Fire Sword"
+  }
+]
+```
+
+缺失或显式为 `null` 的变体导出为 `null`。继承该字段的子 type record 会进入声明类型对应的 Variants 表；singleton 字段使用字段名作为 `id`。这些表来自 record overlay 投影，不会重新引入合成 schema type 或 DataModel record。
+
+配置 C# codegen 时，每张 Variants 表还会生成对应的
+`{声明类型}{字段名}Variants.cs` 和 `CoflowTables.Tb{声明类型}{字段名}Variants`，
+其 loader 使用带下划线的 Variants 数据文件名。
+
 ## 本地化作为语言维度
 
 本地化就是 `language` 维度的一种使用方式。`@localized` 声明字段随语言变化：

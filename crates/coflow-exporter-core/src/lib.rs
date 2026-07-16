@@ -151,7 +151,127 @@ where
         }
         sink_event(&location, sink.end_table())?;
     }
+    export_dimension_tables(schema, model, sink)?;
     Ok(())
+}
+
+fn export_dimension_tables<S>(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    sink: &mut S,
+) -> Result<(), ExportError>
+where
+    S: ExportEventSink,
+{
+    for dimension in schema.all_dimensions() {
+        for field in &dimension.fields {
+            let source_type =
+                schema
+                    .resolve_type(&field.declaring_type)
+                    .ok_or_else(|| ExportError {
+                        location: format!("{}.{}", field.declaring_type, field.name),
+                        message: "dimension field has unknown declaring type".to_string(),
+                    })?;
+            let table_name = format!("{}_{}Variants", field.declaring_type, field.name);
+            let record_count = model.records_assignable_to(&field.declaring_type).count();
+            let mut location = ExportLocation::new(&table_name);
+            sink_event(&location, sink.begin_table(&table_name, record_count))?;
+            for (_, record) in model.records_assignable_to(&field.declaring_type) {
+                location.record = Some(if source_type.is_singleton {
+                    field.name.to_string()
+                } else {
+                    record.key().to_string()
+                });
+                let result = encode_dimension_record(
+                    schema,
+                    sink,
+                    dimension,
+                    field,
+                    source_type.is_singleton,
+                    record,
+                    &mut location,
+                );
+                location.record = None;
+                result?;
+            }
+            sink_event(&location, sink.end_table())?;
+        }
+    }
+    Ok(())
+}
+
+fn encode_dimension_record<S>(
+    schema: &CftSchema,
+    sink: &mut S,
+    dimension: &coflow_cft::CftDimension,
+    field: &CftField,
+    is_singleton: bool,
+    record: &CfdRecord,
+    location: &mut ExportLocation<'_>,
+) -> Result<(), ExportError>
+where
+    S: ExportEventSink,
+{
+    sink_event(location, sink.begin_map(dimension.variants.len() + 2))?;
+
+    let checkpoint = location.enter_field("id");
+    let result = (|| {
+        sink_event(location, sink.map_key("id"))?;
+        sink_event(
+            location,
+            sink.string(if is_singleton {
+                field.name.as_str()
+            } else {
+                record.key()
+            }),
+        )
+    })();
+    location.exit(checkpoint);
+    result?;
+
+    let checkpoint = location.enter_field("default");
+    let result = (|| {
+        let value = record.field(&field.name).ok_or_else(|| {
+            ExportError::at(
+                location,
+                format!(
+                    "record `{}` is missing dimension source field `{}`",
+                    record.actual_type(),
+                    field.name
+                ),
+            )
+        })?;
+        sink_event(location, sink.map_key("default"))?;
+        encode_value(schema, sink, &field.ty_ref, value, location)
+    })();
+    location.exit(checkpoint);
+    result?;
+
+    let overlay = record.dimension_field(&field.name);
+    if overlay.is_some_and(|values| values.dimension != dimension.name) {
+        return Err(ExportError::at(
+            location,
+            format!(
+                "dimension source field `{}` contains values for a different dimension",
+                field.name
+            ),
+        ));
+    }
+    for variant in &dimension.variants {
+        let checkpoint = location.enter_field(variant);
+        let result = (|| {
+            sink_event(location, sink.map_key(variant))?;
+            if let Some(value) = overlay.and_then(|values| values.variants.get(variant)) {
+                encode_value(schema, sink, &field.ty_ref, &value.value, location)
+            } else {
+                sink_event(location, sink.null())
+            }
+        })();
+        location.exit(checkpoint);
+        result?;
+    }
+
+    sink_event(location, sink.end_map())
 }
 
 fn encode_table<S>(
