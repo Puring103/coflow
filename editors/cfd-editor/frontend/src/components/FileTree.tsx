@@ -6,6 +6,7 @@ interface Props {
   nodes: FileTreeNode[]
   selectedFile: string | null
   onSelectFile: (path: string) => void
+  onExitRight?: () => void
 }
 
 const COLLAPSE_KEY = 'cfd-editor-tree-collapsed'
@@ -50,7 +51,7 @@ function visibleFlatItems(
   return out
 }
 
-export function FileTree({ nodes, selectedFile, onSelectFile }: Props) {
+export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed())
 
@@ -65,7 +66,13 @@ export function FileTree({ nodes, selectedFile, onSelectFile }: Props) {
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return
+    if (
+      e.key !== 'ArrowDown'
+      && e.key !== 'ArrowUp'
+      && e.key !== 'ArrowLeft'
+      && e.key !== 'ArrowRight'
+      && e.key !== 'Enter'
+    ) return
     const flat = visibleFlatItems(nodes, collapsed, 0)
     if (flat.length === 0) return
     const cur = document.activeElement as HTMLElement | null
@@ -78,6 +85,29 @@ export function FileTree({ nodes, selectedFile, onSelectFile }: Props) {
       e.preventDefault()
       const prev = flat[Math.max(idx - 1, 0)]
       focusByPath(rootRef.current, prev.node.path)
+    } else if (e.key === 'ArrowRight') {
+      const item = flat[idx]
+      if (!item) return
+      e.preventDefault()
+      if (!item.node.is_dir) {
+        onExitRight?.()
+      } else if (collapsed.has(item.node.path)) {
+        toggle(item.node.path)
+      } else {
+        const child = flat[idx + 1]
+        if (child && child.depth > item.depth) focusByPath(rootRef.current, child.node.path)
+        else onExitRight?.()
+      }
+    } else if (e.key === 'ArrowLeft') {
+      const item = flat[idx]
+      if (!item) return
+      e.preventDefault()
+      if (item.node.is_dir && !collapsed.has(item.node.path)) {
+        toggle(item.node.path)
+      } else {
+        const parent = findVisibleParent(flat, idx)
+        if (parent) focusByPath(rootRef.current, parent.node.path)
+      }
     } else if (e.key === 'Enter') {
       const target = cur?.dataset.path
       const targetNode = flat.find(it => it.node.path === target)?.node
@@ -126,6 +156,17 @@ export function FileTree({ nodes, selectedFile, onSelectFile }: Props) {
       ))}
     </div>
   )
+}
+
+function findVisibleParent(
+  items: ReturnType<typeof visibleFlatItems>,
+  index: number,
+) {
+  const depth = items[index]?.depth ?? 0
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (items[i].depth < depth) return items[i]
+  }
+  return null
 }
 
 /** If `node` is an ancestor directory of `targetFile`, remove it from

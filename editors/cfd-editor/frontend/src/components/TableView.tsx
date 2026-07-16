@@ -86,11 +86,12 @@ interface Props {
   onColumnWidthsChange?: (widths: ColumnSizingState) => void
   onEnterInspector?: () => void
   focusRequest?: number
+  onNavigationBoundary?: (direction: TableDirection) => void
 }
 
 const ROW_H = 30
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
@@ -509,6 +510,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           className="table-scroll"
           ref={tableScrollRef}
           tabIndex={0}
+          onFocus={e => {
+            if (e.target !== e.currentTarget || selection || rows.length === 0) return
+            onSelectRecord?.(rows[0].original.coordinate)
+          }}
           onKeyDown={async e => {
             if (isNativeEditingTarget(e.target)) return
             if (!selection || selection.filePath !== data.file_path) return
@@ -527,6 +532,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 if (next.kind === 'record') onSelectRecord?.(next.coordinate)
                 else onSelectValue?.(next.coordinate, next.fieldPath)
                 revealTableSelection(next)
+              } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+                onNavigationBoundary?.(e.key)
               }
               return
             }

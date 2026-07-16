@@ -139,6 +139,10 @@ export default function App() {
   const [preferredView, setPreferredView] = useState<'table' | 'record' | 'graph'>('table')
   const [globalSearch, setGlobalSearch] = useState('')
   const globalSearchRef = useRef<HTMLInputElement>(null)
+  const sidebarRef = useRef<HTMLDivElement>(null)
+  const typeTabsRef = useRef<HTMLDivElement>(null)
+  const viewTabsRef = useRef<HTMLDivElement>(null)
+  const viewContainerRef = useRef<HTMLDivElement>(null)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const [inspectorFocusRequest, setInspectorFocusRequest] = useState(0)
   const [tableFocusRequest, setTableFocusRequest] = useState(0)
@@ -941,13 +945,48 @@ export default function App() {
     },
     [currentRoute?.view, currentRoute?.file, openValueInspector],
   )
+
+  const focusFileTree = useCallback(() => {
+    const tree = sidebarRef.current?.querySelector<HTMLElement>('.file-tree')
+    const target = tree?.querySelector<HTMLElement>('[role="treeitem"][aria-selected="true"]')
+      ?? tree?.querySelector<HTMLElement>('[role="treeitem"]')
+    target?.focus({ preventScroll: true })
+  }, [])
+  const focusTypeTabs = useCallback(() => {
+    const target = typeTabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      ?? typeTabsRef.current?.querySelector<HTMLElement>('[role="tab"]')
+    target?.focus({ preventScroll: true })
+  }, [])
+  const focusViewTabs = useCallback(() => {
+    const target = viewTabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      ?? viewTabsRef.current?.querySelector<HTMLElement>('[role="tab"]')
+    target?.focus({ preventScroll: true })
+  }, [])
+  const focusGlobalSearch = useCallback(() => {
+    globalSearchRef.current?.focus({ preventScroll: true })
+    globalSearchRef.current?.select()
+  }, [])
+  const focusActiveView = useCallback(() => {
+    const target = viewContainerRef.current?.querySelector<HTMLElement>(
+      '.table-scroll, .rv-sidebar-item.selected, .rv-main, .graph-view-wrap',
+    )
+    target?.focus({ preventScroll: true })
+  }, [])
+  const focusInspector = useCallback(() => {
+    setInspectorCollapsed(false)
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('.inspector-panel:not(.collapsed) .inspector-body')
+        ?.focus({ preventScroll: true })
+    })
+  }, [])
   const tableOnEnterInspector = useCallback(() => {
     setInspectorCollapsed(false)
     setInspectorFocusRequest(request => request + 1)
   }, [])
   const inspectorOnExitKeyboardNavigation = useCallback(() => {
-    setTableFocusRequest(request => request + 1)
-  }, [])
+    if (currentRoute?.view === 'table') setTableFocusRequest(request => request + 1)
+    else focusActiveView()
+  }, [currentRoute?.view, focusActiveView])
   const tableColumnWidths = useMemo(() => (
     currentRoute?.view === 'table' && activeType
       ? definedColumnWidths(projectSettings?.table_column_widths[currentRoute.file]?.[activeType])
@@ -1206,7 +1245,7 @@ export default function App() {
       )}
 
       <div className="main-layout">
-        <div className="sidebar">
+        <div className="sidebar" ref={sidebarRef}>
           <div className="sidebar-header">
             <span>文件</span>
           </div>
@@ -1215,6 +1254,10 @@ export default function App() {
               nodes={project.file_tree}
               selectedFile={activeFile}
               onSelectFile={openFile}
+              onExitRight={() => {
+                if (activeFileData?.type_names.length) focusTypeTabs()
+                else focusViewTabs()
+              }}
             />
           ) : (
             <div className="sidebar-empty">
@@ -1277,7 +1320,7 @@ export default function App() {
 
               {/* Type tabs row */}
               {activeFileData.type_names.length > 0 && (
-                <div className="view-tabs view-tabs-types" role="tablist" aria-label="类型">
+                <div className="view-tabs view-tabs-types" role="tablist" aria-label="类型" ref={typeTabsRef}>
                   <div className="type-tabs-inline">
                     {activeFileData.type_names.map(t => (
                       <button
@@ -1288,7 +1331,10 @@ export default function App() {
                         tabIndex={activeType === t ? 0 : -1}
                         data-tab-id={t}
                         onClick={() => setActiveType(t)}
-                        onKeyDown={e => onTabListKeyDown(e, activeFileData.type_names, setActiveType)}
+                        onKeyDown={e => onTabListKeyDown(e, activeFileData.type_names, setActiveType, {
+                          onLeftBoundary: focusFileTree,
+                          onDown: focusViewTabs,
+                        })}
                         style={{'--tab-color': typeColor(t), '--tab-color-dim': typeColor(t)} as React.CSSProperties}
                         >
                           {t}
@@ -1302,7 +1348,7 @@ export default function App() {
               )}
 
               {/* View switcher */}
-              <div className="view-tabs view-tabs-views" role="tablist" aria-label="视图">
+              <div className="view-tabs view-tabs-views" role="tablist" aria-label="视图" ref={viewTabsRef}>
                 {(['record', 'table', 'graph'] as const).map(v => (
                   <button
                     key={v}
@@ -1312,7 +1358,16 @@ export default function App() {
                     tabIndex={currentRoute.view === v ? 0 : -1}
                     data-tab-id={v}
                     onClick={() => switchView(v)}
-                    onKeyDown={e => onTabListKeyDown(e, ['record', 'table', 'graph'], v => switchView(v as 'table' | 'record' | 'graph'))}
+                    onKeyDown={e => onTabListKeyDown(
+                      e,
+                      ['record', 'table', 'graph'],
+                      v => switchView(v as 'table' | 'record' | 'graph'),
+                      {
+                        onLeftBoundary: focusFileTree,
+                        onUp: activeFileData.type_names.length ? focusTypeTabs : focusFileTree,
+                        onDown: focusGlobalSearch,
+                      },
+                    )}
                   >
                     <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
                     {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
@@ -1328,6 +1383,18 @@ export default function App() {
                   placeholder="搜索记录… (Ctrl+F)"
                   value={globalSearch}
                   onChange={e => setGlobalSearch(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault()
+                      focusViewTabs()
+                    } else if (e.key === 'ArrowDown') {
+                      e.preventDefault()
+                      focusActiveView()
+                    } else if (e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0) {
+                      e.preventDefault()
+                      focusFileTree()
+                    }
+                  }}
                   aria-label="搜索记录"
                   role="searchbox"
                 />
@@ -1344,7 +1411,7 @@ export default function App() {
                 </span>
               </div>
 
-              <div className="view-container">
+              <div className="view-container" ref={viewContainerRef}>
                 {currentRoute.view === 'table' && (
                   <TableView
                     data={activeFileData}
@@ -1371,6 +1438,11 @@ export default function App() {
                     onColumnWidthsChange={tableOnColumnWidthsChange}
                     onEnterInspector={tableOnEnterInspector}
                     focusRequest={tableFocusRequest}
+                    onNavigationBoundary={direction => {
+                      if (direction === 'ArrowLeft') focusFileTree()
+                      else if (direction === 'ArrowUp') focusGlobalSearch()
+                      else focusInspector()
+                    }}
                   />
                 )}
                 {currentRoute.view === 'record' && (
@@ -1398,6 +1470,8 @@ export default function App() {
                     onDiagnosticBadgeClick={(coordinate, fieldPath) =>
                       focusDiagnosticForAnchor(currentRoute.file, coordinate.key, coordinate.actual_type, fieldPath)
                     }
+                    onExitLeft={focusFileTree}
+                    onExitUp={focusGlobalSearch}
                   />
                 )}
                 {currentRoute.view === 'graph' && (
@@ -1416,6 +1490,9 @@ export default function App() {
                       onDiagnosticBadgeClick={(file, coordinate, fieldPath) =>
                         focusDiagnosticForAnchor(file, coordinate.key, coordinate.actual_type, fieldPath)
                       }
+                      onExitLeft={focusFileTree}
+                      onExitUp={focusGlobalSearch}
+                      onExitRight={focusInspector}
                     />
                   ) : (
                     <div className="empty-hint">加载图谱中…</div>
@@ -1581,16 +1658,43 @@ function onTabListKeyDown(
   e: React.KeyboardEvent,
   tabs: string[],
   onSelect: (id: string) => void,
+  boundaries: {
+    onLeftBoundary?: () => void
+    onUp?: () => void
+    onDown?: () => void
+  } = {},
 ) {
+  if (e.key === 'ArrowUp' && boundaries.onUp) {
+    e.preventDefault()
+    boundaries.onUp()
+    return
+  }
+  if (e.key === 'ArrowDown' && boundaries.onDown) {
+    e.preventDefault()
+    boundaries.onDown()
+    return
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    const id = (e.currentTarget as HTMLElement).dataset.tabId
+    if (id) onSelect(id)
+    return
+  }
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return
   const nodes = Array.from(
-    e.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [],
+    e.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [],
   )
   const i = nodes.indexOf(e.currentTarget as HTMLElement)
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     e.preventDefault()
     const dir = e.key === 'ArrowRight' ? 1 : -1
-    const next = nodes[(i + dir + nodes.length) % nodes.length]
+    const nextIndex = i + dir
+    if (nextIndex < 0) {
+      boundaries.onLeftBoundary?.()
+      return
+    }
+    if (nextIndex >= nodes.length) return
+    const next = nodes[nextIndex]
     next.focus()
     const id = next.dataset.tabId
     if (id) onSelect(id)

@@ -56,9 +56,11 @@ interface Props {
    *  a field row (top-level fieldPath). Forwarded up to App so the
    *  diagnostics panel can focus the matching item. */
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
+  onExitLeft?: () => void
+  onExitUp?: () => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -160,12 +162,15 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   })
 
   const onSidebarKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowRight' && e.key !== 'Enter') return
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Enter') return
     const ids = sidebarRecords.map(r => coordinateId(r.coordinate))
     if (ids.length === 0) return
     const cur = document.activeElement as HTMLElement | null
     const idx = Math.max(0, ids.indexOf(activeId))
-    if (e.key === 'ArrowRight') {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      onExitLeft?.()
+    } else if (e.key === 'ArrowRight') {
       e.preventDefault()
       const first = mainRef.current?.querySelector<HTMLElement>('.dc-row[data-field-path-wire]')
       if (first) {
@@ -181,6 +186,10 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       requestAnimationFrame(() => sidebarRef.current?.querySelector<HTMLElement>(`[data-coordinate-id="${cssEscape(next)}"]`)?.focus())
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
+      if (idx === 0) {
+        onExitUp?.()
+        return
+      }
       const prev = ids[Math.max(idx - 1, 0)]
       const previousRecord = sidebarRecords.find(r => coordinateId(r.coordinate) === prev)
       if (previousRecord && prev !== activeId) onOpenRecord(previousRecord.coordinate)
@@ -284,6 +293,18 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
             value={fieldSearch}
             onChange={e => setFieldSearch(e.target.value)}
             onKeyDown={e => {
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                onExitUp?.()
+                return
+              }
+              if (e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0) {
+                e.preventDefault()
+                sidebarRef.current?.querySelector<HTMLElement>(
+                  `[data-coordinate-id="${cssEscape(activeId)}"]`,
+                )?.focus({ preventScroll: true })
+                return
+              }
               if (e.key !== 'ArrowDown') return
               const first = mainRef.current?.querySelector<HTMLElement>('.dc-row[data-field-path-wire]')
               if (!first) return

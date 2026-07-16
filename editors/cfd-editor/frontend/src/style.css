@@ -2391,6 +2391,10 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   height: 100%;
   overflow: hidden;
 }
+.graph-view-wrap:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
 .graph-view {
   flex: 1;
   width: 100%;

@@ -261,9 +261,12 @@ interface Props {
   onDiagnosticBadgeClick?: (
     file: string, coordinate: RecordCoordinate, fieldPath: string | null,
   ) => void
+  onExitLeft?: () => void
+  onExitUp?: () => void
+  onExitRight?: () => void
 }
 
-export function GraphView({ graphData, activeType, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick }: Props) {
+export function GraphView({ graphData, activeType, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight }: Props) {
   const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
@@ -576,7 +579,30 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
   }, [])
 
   return (
-    <div className="graph-view-wrap" ref={wrapRef}>
+    <div
+      className="graph-view-wrap"
+      ref={wrapRef}
+      tabIndex={0}
+      onKeyDown={event => {
+        if (event.target !== event.currentTarget) return
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault()
+          onExitLeft?.()
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault()
+          onExitUp?.()
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault()
+          onExitRight?.()
+        } else if (event.key === 'Enter') {
+          const first = event.currentTarget.querySelector<HTMLElement>('.react-flow__node')
+          if (first) {
+            event.preventDefault()
+            first.focus({ preventScroll: true })
+          }
+        }
+      }}
+    >
       <div className="graph-view">
         {rfNodes.length === 0 ? (
           <div className="empty-hint">
