@@ -134,8 +134,6 @@ export function FileTree({ nodes, fileTypes, selectedFile, selectedType, onSelec
           if (child && child.depth > item.depth) {
             focusByPath(rootRef.current, flatItemPath(child))
             activateFlatItem(child, fileTypes, onSelectFile)
-          } else {
-            onExitRight?.()
           }
         }
       }

@@ -58,9 +58,11 @@ interface Props {
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
   onExitLeft?: () => void
   onExitUp?: () => void
+  firstRecordFocusRequest?: number
+  onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -105,6 +107,20 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   const sidebarRecords = recordSearch
     ? allSidebarRecords.filter(record => recordMatchesSearch(record, recordSearch))
     : allSidebarRecords
+
+  useEffect(() => {
+    if (!firstRecordFocusRequest) return
+    const first = sidebarRecords[0]
+    if (first) {
+      onOpenRecord(first.coordinate)
+      requestAnimationFrame(() => {
+        sidebarRef.current?.querySelector<HTMLElement>(
+          `[data-coordinate-id="${cssEscape(coordinateId(first.coordinate))}"]`,
+        )?.focus({ preventScroll: true })
+      })
+    }
+    onFirstRecordFocusConsumed?.(firstRecordFocusRequest)
+  }, [firstRecordFocusRequest])
 
   if (!record) {
     return <div className="record-view"><div className="empty-hint">记录 "{coordinate.actual_type}.{coordinate.key}" 未找到</div></div>

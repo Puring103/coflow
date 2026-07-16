@@ -220,12 +220,6 @@ export function InspectorPanel({
   }, [focusRequest])
 
   const onBodyKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'ArrowLeft' && !isNativeEditorTarget(event.target as HTMLElement)) {
-      event.preventDefault()
-      event.stopPropagation()
-      onExitKeyboardNavigation?.()
-      return
-    }
     if (event.key === 'Escape') {
       event.preventDefault()
       event.stopPropagation()
@@ -323,6 +317,7 @@ export function InspectorPanel({
                   diagnostics={fieldDiags}
                   selectedFieldPath={selectedActionPathWire ? null : keyboardFieldPath}
                   selectedActionPathWire={selectedActionPathWire}
+                  flattenSingleComplexField={inspectingValue}
                   onSelectValue={path => {
                     setSelectedActionPathWire(null)
                     setKeyboardFieldPath(path)

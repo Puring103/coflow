@@ -42,6 +42,7 @@ import { CreateRecordDialog } from './CreateRecordDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import {
+  recordSelection,
   selectionMatchesRecord,
   selectionMatchesValue,
   type EditorSelection,
@@ -87,12 +88,14 @@ interface Props {
   onColumnWidthsChange?: (widths: ColumnSizingState) => void
   onEnterInspector?: () => void
   focusRequest?: number
+  firstRecordFocusRequest?: number
+  onFirstRecordFocusConsumed?: (request: number) => void
   onNavigationBoundary?: (direction: TableDirection) => void
 }
 
 const ROW_H = 30
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
@@ -486,6 +489,17 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     tableScrollRef.current?.focus({ preventScroll: true })
     revealTableSelection(selection)
   }, [focusRequest])
+
+  useEffect(() => {
+    if (!firstRecordFocusRequest) return
+    tableScrollRef.current?.focus({ preventScroll: true })
+    const first = rows[0]?.original.coordinate
+    if (first) {
+      onSelectRecord?.(first)
+      revealTableSelection(recordSelection(data.file_path, first))
+    }
+    onFirstRecordFocusConsumed?.(firstRecordFocusRequest)
+  }, [firstRecordFocusRequest])
 
   useEffect(() => {
     if (selection) revealTableSelection(selection)

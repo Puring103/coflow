@@ -160,6 +160,7 @@ export default function App() {
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const [inspectorFocusRequest, setInspectorFocusRequest] = useState(0)
   const [tableFocusRequest, setTableFocusRequest] = useState(0)
+  const [firstRecordFocusRequest, setFirstRecordFocusRequest] = useState(0)
   const startupProjectRequested = useRef(false)
   // Field path to briefly highlight after a diagnostic jump. Cleared after
   // the RecordView applies the highlight so subsequent navigations don't
@@ -1091,6 +1092,12 @@ export default function App() {
         ?.focus({ preventScroll: true })
     })
   }, [])
+  const focusFirstRecord = useCallback(() => {
+    setFirstRecordFocusRequest(request => request + 1)
+  }, [])
+  const consumeFirstRecordFocusRequest = useCallback((request: number) => {
+    setFirstRecordFocusRequest(current => current === request ? 0 : current)
+  }, [])
 
   const runProjectAction = useCallback(async (action: 'check' | 'build') => {
     const identity = generation.currentIdentity()
@@ -1284,6 +1291,10 @@ export default function App() {
   function switchView(view: 'table' | 'record' | 'graph') {
     if (!currentRoute) return
     setPreferredView(view)
+    if (view === 'table') {
+      setFirstRecordFocusRequest(0)
+      closeInspector()
+    }
     if (view === 'record') {
       const firstCoordinate =
         (activeType
@@ -1294,6 +1305,7 @@ export default function App() {
       router.replace({ view, file: currentRoute.file, coordinate: firstCoordinate })
     } else {
       router.replace({ view, file: currentRoute.file, typeFilter: activeType } as typeof currentRoute)
+      if (view === 'table') requestAnimationFrame(focusViewTabs)
     }
   }
 
@@ -1414,7 +1426,7 @@ export default function App() {
               selectedFile={activeFile}
               selectedType={activeType}
               onSelectFile={openFile}
-              onExitRight={focusViewTabs}
+              onExitRight={focusFirstRecord}
               onOpenSourceFile={openSourceFile}
             />
           ) : (
@@ -1567,7 +1579,7 @@ export default function App() {
                       focusViewTabs()
                     } else if (e.key === 'ArrowDown') {
                       e.preventDefault()
-                      focusActiveView()
+                      focusFirstRecord()
                     } else if (e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0) {
                       e.preventDefault()
                       focusFileTree()
@@ -1616,10 +1628,11 @@ export default function App() {
                     onColumnWidthsChange={tableOnColumnWidthsChange}
                     onEnterInspector={tableOnEnterInspector}
                     focusRequest={tableFocusRequest}
+                    firstRecordFocusRequest={firstRecordFocusRequest}
+                    onFirstRecordFocusConsumed={consumeFirstRecordFocusRequest}
                     onNavigationBoundary={direction => {
                       if (direction === 'ArrowLeft') focusFileTree()
                       else if (direction === 'ArrowUp') focusGlobalSearch()
-                      else focusInspector()
                     }}
                   />
                 )}
@@ -1652,6 +1665,8 @@ export default function App() {
                     }
                     onExitLeft={focusFileTree}
                     onExitUp={focusGlobalSearch}
+                    firstRecordFocusRequest={firstRecordFocusRequest}
+                    onFirstRecordFocusConsumed={consumeFirstRecordFocusRequest}
                   />
                 )}
                 {currentRoute.view === 'graph' && (
@@ -1673,6 +1688,8 @@ export default function App() {
                       onExitLeft={focusFileTree}
                       onExitUp={focusGlobalSearch}
                       onExitRight={focusInspector}
+                      firstRecordFocusRequest={firstRecordFocusRequest}
+                      onFirstRecordFocusConsumed={consumeFirstRecordFocusRequest}
                     />
                   ) : (
                     <div className="empty-hint">加载图谱中…</div>

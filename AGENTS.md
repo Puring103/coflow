@@ -1,5 +1,13 @@
 # Agent Workflow
 
+## Editor Process Safety
+
+Do not start, stop, restart, or repeatedly open and close the CFD editor unless the user explicitly
+asks for it. Assume the user may have the editor open for other work. Prefer headless frontend
+tests and builds for verification. If a Rust check cannot replace `cfd-editor.exe` because the
+running editor has locked it, report the blocked check; do not terminate the process or retry in a
+way that interrupts the user's editor session.
+
 ## Coflow Skill Scope
 
 All skills provided by Coflow are user-facing skills for working with Coflow. They are not intended

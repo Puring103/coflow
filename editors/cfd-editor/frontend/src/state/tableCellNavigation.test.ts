@@ -19,6 +19,7 @@ describe('table cell navigation', () => {
     expect(name).toEqual(valueSelection('data/items.cfd', rows[0], [fieldPathField('name')]))
     expect(price).toEqual(valueSelection('data/items.cfd', rows[0], [fieldPathField('price')]))
     expect(moveTableSelection(name, 'ArrowLeft', rows, columns)).toEqual(record)
+    expect(moveTableSelection(price, 'ArrowRight', rows, columns)).toBe(price)
   })
 
   it('keeps the selected column while moving between visible rows', () => {

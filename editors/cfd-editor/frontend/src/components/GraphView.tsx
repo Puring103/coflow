@@ -264,9 +264,11 @@ interface Props {
   onExitLeft?: () => void
   onExitUp?: () => void
   onExitRight?: () => void
+  firstRecordFocusRequest?: number
+  onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function GraphView({ graphData, activeType, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight }: Props) {
+export function GraphView({ graphData, activeType, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
@@ -508,6 +510,18 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
   // We manipulate DOM classes directly to avoid the state→rerender→mouseleave
   // flicker cycle. The adjacency map is rebuilt whenever edges change.
   const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!firstRecordFocusRequest) return
+    const first = visibleNodes[0]
+    if (first) onSelectRecord?.(first.file_path, first.coordinate)
+    requestAnimationFrame(() => {
+      const target = wrapRef.current?.querySelector<HTMLElement>('.react-flow__node')
+        ?? wrapRef.current
+      target?.focus({ preventScroll: true })
+    })
+    onFirstRecordFocusConsumed?.(firstRecordFocusRequest)
+  }, [firstRecordFocusRequest])
 
   // nodeId → set of nodeIds it is directly connected to
   const adjacencyRef = useRef<Map<string, Set<string>>>(new Map())

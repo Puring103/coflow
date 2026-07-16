@@ -334,6 +334,7 @@ export interface ExpandedProps {
   onSelectValue?: (fieldPath: FieldPathSegment[]) => void
   onSelectAction?: (pathWire: string) => void
   onEditingFinished?: () => void
+  flattenSingleComplexField?: boolean
 }
 
 export function DataCardExpanded({
@@ -355,6 +356,7 @@ export function DataCardExpanded({
   onSelectValue,
   onSelectAction,
   onEditingFinished,
+  flattenSingleComplexField = false,
 }: ExpandedProps) {
   const ctx = useMemo(
     () => buildDiagCtx(diagnostics, onDiagnosticBadgeClick),
@@ -436,6 +438,29 @@ export function DataCardExpanded({
         const refTargetType = cellRefTargetType(fc)
         const enumType = cellEnumType(fc)
         const nullable = cellNullable(fc)
+        const nullCollectionShape = fc.value.kind === 'null'
+          ? collectionShapeForDeclaredType(declaredType)
+          : null
+        const displayedValue = nullCollectionShape ?? fc.value
+        if (
+          flattenSingleComplexField
+          && fields.length === 1
+          && (displayedValue.kind === 'object' || displayedValue.kind === 'array' || displayedValue.kind === 'dict')
+        ) {
+          return (
+            <ComplexValueChildren
+              key={fc.name}
+              value={displayedValue}
+              depth={depth}
+              fieldPath={[fieldPathField(fc.name)]}
+              pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
+              onEdit={fieldEdit}
+              onCollectionEdit={fieldEdit ? onCollectionEdit : undefined}
+              onRowToggle={onRowToggle}
+              valueAnnotation={fc.annotation}
+            />
+          )
+        }
         return (
           <FieldRow
             key={fc.name}
@@ -1398,7 +1423,6 @@ function ExpandableRow({
   }, [shouldAutoExpand])
   const summary = headerSummary(value, declaredType)
   const count = childCount(value)
-  const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
   const rowTitle = [spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
@@ -1437,88 +1461,115 @@ function ExpandableRow({
         <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
       </div>
       {expanded && (
-        <>
-          {value.kind === 'object' &&
-            objectFields(value).map((fc) => {
-              const childAnn = childAnnotation(fc.name) ?? fc.annotation
-              return (
-              <FieldRow
-                key={fc.name}
-                label={fc.name}
-                value={fc.value}
-                depth={depth + 1}
-                onEdit={onEdit}
-                onCollectionEdit={onCollectionEdit}
-                fieldPath={[...fieldPath, fieldPathField(fc.name)]}
-                pathKey={pathKey ? `${pathKey}.${fc.name}` : fc.name}
-                onRowToggle={onRowToggle}
-                declaredType={annotationDeclaredType(childAnn)}
-                refTargetType={annotationRefTargetType(childAnn)}
-                enumType={annotationEnumType(childAnn)}
-                nullable={annotationNullable(childAnn)}
-                valueAnnotation={childAnn}
-              />
-              )
-            })}
-          {value.kind === 'array' && (
-            <ArrayItems
-              container={value}
-              depth={depth + 1}
-              fieldPath={fieldPath}
-              pathKey={pathKey}
-              onEdit={onEdit}
-              onCollectionEdit={onCollectionEdit}
-              onRowToggle={onRowToggle}
-              itemTemplate={annotationItem(valueAnnotation)}
-              itemAnnotations={valueAnnotation?.children}
-            />
-          )}
-          {value.kind === 'dict' &&
-            value.value.map(([key, item]) => {
-              const keyText = dictKeyPathText(key)
-              const itemAnnotation = childAnnotation(keyText)
-              const itemTemplate = annotationItem(valueAnnotation)
-              const effectiveAnnotation = itemAnnotation ?? itemTemplate
-              return (
-              <FieldRow
-                key={dictKeyText(key)}
-                label={dictKeyText(key)}
-                value={item}
-                depth={depth + 1}
-                onEdit={onEdit}
-                fieldPath={[...fieldPath, fieldPathDictKey(dictKeyPathText(key))]}
-                pathKey={pathKey ? `${pathKey}[${dictKeyText(key)}]` : `[${dictKeyText(key)}]`}
-                onRowToggle={onRowToggle}
-                declaredType={annotationDeclaredType(effectiveAnnotation)}
-                refTargetType={annotationRefTargetType(effectiveAnnotation)}
-                enumType={annotationEnumType(effectiveAnnotation)}
-                nullable={annotationNullable(effectiveAnnotation)}
-                valueAnnotation={effectiveAnnotation}
-                trailing={onEdit ? (
-                  <DeleteButton
-                    title="删除"
-                    onClick={() => onCollectionEdit?.(fieldPath, { kind: 'dict_remove', key })}
-                  />
-                ) : undefined}
-              />
-            )})}
-          {onCollectionEdit && (value.kind === 'array' || value.kind === 'dict') && (
-            <CollectionAddRow
-              container={value}
-              depth={depth + 1}
-              fieldPath={fieldPath}
-              onCollectionEdit={edit => onCollectionEdit(fieldPath, edit)}
-              itemAnnotation={annotationItem(valueAnnotation)}
-            />
-          )}
-          {value.kind === 'array' && value.value.length === 0 && (
-            <EmptyHint depth={depth + 1} text="空数组" />
-          )}
-          {value.kind === 'dict' && value.value.length === 0 && (
-            <EmptyHint depth={depth + 1} text="空字典" />
-          )}
-        </>
+        <ComplexValueChildren
+          value={value}
+          depth={depth + 1}
+          fieldPath={fieldPath}
+          pathKey={pathKey}
+          onEdit={onEdit}
+          onCollectionEdit={onCollectionEdit}
+          onRowToggle={onRowToggle}
+          valueAnnotation={valueAnnotation}
+        />
       )}
+    </>
+  )
+}
+
+function ComplexValueChildren({
+  value,
+  depth,
+  fieldPath,
+  pathKey,
+  onEdit,
+  onCollectionEdit,
+  onRowToggle,
+  valueAnnotation,
+}: {
+  value: FieldValue
+  depth: number
+  fieldPath: FieldPathSegment[]
+  pathKey?: string
+  onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
+  onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
+  onRowToggle?: (path: string, expanded: boolean) => void
+  valueAnnotation?: FieldAnnotation | null
+}) {
+  if (value.kind !== 'object' && value.kind !== 'array' && value.kind !== 'dict') return null
+  const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
+  return (
+    <>
+      {value.kind === 'object' && objectFields(value).map((fc) => {
+        const annotation = childAnnotation(fc.name) ?? fc.annotation
+        return (
+          <FieldRow
+            key={fc.name}
+            label={fc.name}
+            value={fc.value}
+            depth={depth}
+            onEdit={onEdit}
+            onCollectionEdit={onCollectionEdit}
+            fieldPath={[...fieldPath, fieldPathField(fc.name)]}
+            pathKey={pathKey ? `${pathKey}.${fc.name}` : fc.name}
+            onRowToggle={onRowToggle}
+            declaredType={annotationDeclaredType(annotation)}
+            refTargetType={annotationRefTargetType(annotation)}
+            enumType={annotationEnumType(annotation)}
+            nullable={annotationNullable(annotation)}
+            valueAnnotation={annotation}
+          />
+        )
+      })}
+      {value.kind === 'array' && (
+        <ArrayItems
+          container={value}
+          depth={depth}
+          fieldPath={fieldPath}
+          pathKey={pathKey}
+          onEdit={onEdit}
+          onCollectionEdit={onCollectionEdit}
+          onRowToggle={onRowToggle}
+          itemTemplate={annotationItem(valueAnnotation)}
+          itemAnnotations={valueAnnotation?.children}
+        />
+      )}
+      {value.kind === 'dict' && value.value.map(([key, item]) => {
+        const annotation = childAnnotation(dictKeyPathText(key)) ?? annotationItem(valueAnnotation)
+        return (
+          <FieldRow
+            key={dictKeyText(key)}
+            label={dictKeyText(key)}
+            value={item}
+            depth={depth}
+            onEdit={onEdit}
+            fieldPath={[...fieldPath, fieldPathDictKey(dictKeyPathText(key))]}
+            pathKey={pathKey ? `${pathKey}[${dictKeyText(key)}]` : `[${dictKeyText(key)}]`}
+            onRowToggle={onRowToggle}
+            declaredType={annotationDeclaredType(annotation)}
+            refTargetType={annotationRefTargetType(annotation)}
+            enumType={annotationEnumType(annotation)}
+            nullable={annotationNullable(annotation)}
+            valueAnnotation={annotation}
+            trailing={onEdit ? (
+              <DeleteButton
+                title="删除"
+                onClick={() => onCollectionEdit?.(fieldPath, { kind: 'dict_remove', key })}
+              />
+            ) : undefined}
+          />
+        )
+      })}
+      {onCollectionEdit && (value.kind === 'array' || value.kind === 'dict') && (
+        <CollectionAddRow
+          container={value}
+          depth={depth}
+          fieldPath={fieldPath}
+          onCollectionEdit={edit => onCollectionEdit(fieldPath, edit)}
+          itemAnnotation={annotationItem(valueAnnotation)}
+        />
+      )}
+      {value.kind === 'array' && value.value.length === 0 && <EmptyHint depth={depth} text="空数组" />}
+      {value.kind === 'dict' && value.value.length === 0 && <EmptyHint depth={depth} text="空字典" />}
     </>
   )
 }
