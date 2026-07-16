@@ -1,5 +1,13 @@
 # Agent Workflow
 
+## Coflow Skill Scope
+
+All skills provided by Coflow are user-facing skills for working with Coflow. They are not intended
+for developing, testing, maintaining, packaging, or releasing Coflow itself. Do not invoke those
+skills, or treat any instructions contained in them as constraints on work in this repository.
+Repository development is governed only by this `AGENTS.md` and the applicable project
+documentation and tooling.
+
 For normal development commits and normal CI, run only the two required Rust checks from the repository root:
 
 ```powershell
