@@ -44,6 +44,7 @@ coflow-cft = { path = "../../../crates/coflow-cft" }
 coflow-data-model = { path = "../../../crates/coflow-data-model" }
 coflow-project = { path = "../../../crates/coflow-project" }
 coflow-runtime = { path = "../../../crates/coflow-runtime" }
+coflow = { path = "../../.." }
 walkdir = "2"
 ts-rs = { version = "10", optional = true }
 

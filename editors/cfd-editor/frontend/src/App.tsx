@@ -128,6 +128,8 @@ export default function App() {
   const helpReturnRef = useRef<HTMLElement | null>(null)
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [projectAction, setProjectAction] = useState<'check' | 'build' | null>(null)
+  const [projectActionNotice, setProjectActionNotice] = useState<string | null>(null)
 
   const router = useRouter()
   const { theme, toggle: toggleTheme } = useTheme()
@@ -979,6 +981,34 @@ export default function App() {
         ?.focus({ preventScroll: true })
     })
   }, [])
+
+  const runProjectAction = useCallback(async (action: 'check' | 'build') => {
+    const identity = generation.currentIdentity()
+    if (!identity || projectAction) return
+    setProjectAction(action)
+    setProjectActionNotice(null)
+    setErrorMsg(null)
+    try {
+      const result = action === 'check'
+        ? await api.checkProject(identity.sessionId)
+        : await api.buildProject(identity.sessionId)
+      setProjectActionNotice(action === 'check' ? '检查通过' : result.replace('Build completed:', '构建完成：'))
+    } catch (error) {
+      setErrorMsg(`${action === 'check' ? '检查' : '构建'}失败: ${errorMessage(error)}`)
+    } finally {
+      setProjectAction(null)
+    }
+  }, [generation, projectAction])
+
+  const openSourceFile = useCallback(async (filePath: string) => {
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    try {
+      await api.openSourceFile(identity.sessionId, filePath)
+    } catch (error) {
+      setErrorMsg(`打开源文件失败: ${errorMessage(error)}`)
+    }
+  }, [generation])
   const tableOnEnterInspector = useCallback(() => {
     setInspectorCollapsed(false)
     setInspectorFocusRequest(request => request + 1)
@@ -1172,7 +1202,12 @@ export default function App() {
   return (
     <ObjectDraftHost lookups={lookups} generationKey={lookupGenerationKey}>
     <div className="app">
-      <div className="topbar">
+      <div
+        className="topbar"
+        role="toolbar"
+        aria-label="编辑器工具栏"
+        onKeyDown={event => onToolbarKeyDown(event, focusFileTree)}
+      >
         <span className="app-title">CFD Editor</span>
         <button className="btn btn-outlined" onClick={openProject}>
           <Icon name="open" size={13} />
@@ -1205,12 +1240,36 @@ export default function App() {
         >
           <Icon name="arrow-right" size={14} />
         </button>
+        <span className="topbar-divider" />
+        <button
+          className="btn btn-icon"
+          onClick={() => runProjectAction('check')}
+          disabled={!project || projectAction !== null}
+          title="检查项目"
+          aria-label="检查项目"
+        >
+          <Icon name={projectAction === 'check' ? 'refresh' : 'check'} size={14} className={projectAction === 'check' ? 'icon-spin' : undefined} />
+        </button>
+        <button
+          className="btn btn-icon"
+          onClick={() => runProjectAction('build')}
+          disabled={!project || projectAction !== null}
+          title="构建项目"
+          aria-label="构建项目"
+        >
+          <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={14} className={projectAction === 'build' ? 'icon-spin' : undefined} />
+        </button>
         {project && (
           <span className="project-root" title={project.project_root}>
             {project.project_root}
           </span>
         )}
         <span className="topbar-spacer" />
+        {projectActionNotice && (
+          <span className="topbar-action-status" role="status" title={projectActionNotice}>
+            {projectActionNotice}
+          </span>
+        )}
         {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
           <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
             {historySnapshot.undo.length > 0 ? `可撤销 ${historySnapshot.undo.length}` : `可重做 ${historySnapshot.redo.length}`}
@@ -1258,6 +1317,7 @@ export default function App() {
                 if (activeFileData?.type_names.length) focusTypeTabs()
                 else focusViewTabs()
               }}
+              onOpenSourceFile={openSourceFile}
             />
           ) : (
             <div className="sidebar-empty">
@@ -1709,6 +1769,34 @@ function onTabListKeyDown(
     last?.focus()
     const id = last?.dataset.tabId
     if (id) onSelect(id)
+  }
+}
+
+function onToolbarKeyDown(event: React.KeyboardEvent, onExitDown: () => void) {
+  if (!(event.target instanceof HTMLButtonElement)) return
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    onExitDown()
+    return
+  }
+  if (
+    event.key !== 'ArrowLeft'
+    && event.key !== 'ArrowRight'
+    && event.key !== 'Home'
+    && event.key !== 'End'
+  ) return
+  const buttons = Array.from(
+    event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+  )
+  const index = buttons.indexOf(event.target)
+  if (index < 0) return
+  event.preventDefault()
+  if (event.key === 'Home') buttons[0]?.focus()
+  else if (event.key === 'End') buttons[buttons.length - 1]?.focus()
+  else {
+    const next = index + (event.key === 'ArrowRight' ? 1 : -1)
+    if (next >= 0 && next < buttons.length) buttons[next].focus()
+    else if (next < 0) onExitDown()
   }
 }
 

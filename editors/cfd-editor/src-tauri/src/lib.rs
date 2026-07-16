@@ -75,6 +75,41 @@ async fn set_table_column_widths(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn check_project(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<String, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().check_project(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn build_project(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<String, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().build_project(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn open_source_file(
+    session_id: u32,
+    file_path: String,
+    host: State<'_, EditorHost>,
+) -> Result<(), EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        let path = host.sessions().source_file_path(session_id, &file_path)?;
+        open_with_default_application(&path)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn get_file_records(
     session_id: u32,
     file_path: String,
@@ -328,6 +363,9 @@ pub fn run() -> tauri::Result<()> {
             close_session,
             get_project_settings,
             set_table_column_widths,
+            check_project,
+            build_project,
+            open_source_file,
             get_file_records,
             get_graph,
             get_enum_variants,
@@ -345,4 +383,29 @@ pub fn run() -> tauri::Result<()> {
             delete_record,
         ])
         .run(tauri::generate_context!())
+}
+
+fn open_with_default_application(path: &std::path::Path) -> Result<(), EditorError> {
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = std::process::Command::new("rundll32.exe");
+        command.arg("url.dll,FileProtocolHandler").arg(path);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = std::process::Command::new("open");
+        command.arg(path);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(path);
+        command
+    };
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| EditorError::other(format!("failed to open `{}`: {error}", path.display())))
 }

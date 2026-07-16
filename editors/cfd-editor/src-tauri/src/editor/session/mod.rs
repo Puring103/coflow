@@ -25,6 +25,7 @@ mod revision;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path as StdPath;
+use std::path::PathBuf as StdPathBuf;
 use std::sync::{Arc, RwLock};
 
 use coflow_api::ProviderRegistry;
@@ -195,6 +196,86 @@ impl SessionStore {
             .insert(actual_type, sanitized_column_widths(widths));
         write_project_settings(&session.project_root, &settings)?;
         Ok(settings)
+    }
+
+    pub fn check_project(&self, id: u32) -> Result<String, EditorError> {
+        let (yaml_path, registry) = self.project_action_context(id)?;
+        let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
+            .map_err(project_diagnostics_to_editor_error)?;
+        match coflow::commands::check_project(&project, registry.as_ref())
+            .map_err(project_diagnostics_to_editor_error)?
+        {
+            coflow::commands::CommandOutcome::Success(_) => Ok("Check passed".to_string()),
+            coflow::commands::CommandOutcome::Diagnostics(diagnostics) => {
+                Err(project_diagnostics_to_editor_error(diagnostics))
+            }
+        }
+    }
+
+    pub fn build_project(&self, id: u32) -> Result<String, EditorError> {
+        let (yaml_path, registry) = self.project_action_context(id)?;
+        let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
+            .map_err(project_diagnostics_to_editor_error)?;
+        match coflow::commands::build_project(
+            &project,
+            registry.as_ref(),
+            coflow::commands::BuildOptions::default(),
+        )
+            .map_err(project_diagnostics_to_editor_error)?
+        {
+            coflow::commands::CommandOutcome::Success(report) => {
+                let mut outputs = vec![report.data.dir.display().to_string()];
+                if let Some(code) = report.code {
+                    outputs.push(code.dir.display().to_string());
+                }
+                Ok(format!("Build completed: {}", outputs.join(", ")))
+            }
+            coflow::commands::CommandOutcome::Diagnostics(diagnostics) => {
+                Err(project_diagnostics_to_editor_error(diagnostics))
+            }
+        }
+    }
+
+    pub fn source_file_path(&self, id: u32, file_path: &str) -> Result<StdPathBuf, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned during source path lookup"))?;
+        if !session.queries().has_source_file(file_path) {
+            return Err(EditorError::not_found(format!(
+                "`{file_path}` is not a source file in the current project"
+            )));
+        }
+        let root = session
+            .project_root
+            .canonicalize()
+            .map_err(|error| EditorError::project(format!("failed to resolve project root: {error}")))?;
+        let path = session
+            .project_root
+            .join(file_path)
+            .canonicalize()
+            .map_err(|error| EditorError::not_found(format!("failed to resolve `{file_path}`: {error}")))?;
+        if !path.starts_with(&root) || !path.is_file() {
+            return Err(EditorError::not_found(format!(
+                "source file `{file_path}` is outside the project or does not exist"
+            )));
+        }
+        Ok(path)
+    }
+
+    fn project_action_context(
+        &self,
+        id: u32,
+    ) -> Result<(StdPathBuf, Arc<ProviderRegistry>), EditorError> {
+        let entry = self.session(id)?;
+        let yaml_path = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned during project action"))?
+            .yaml_path
+            .clone();
+        Ok((yaml_path, self.registry()?))
     }
 
     pub fn reload_session(&self, id: u32) -> Result<ProjectSnapshot, EditorError> {
@@ -905,6 +986,22 @@ fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> Ed
         .map(|d| d.flat_view(None, None, None))
         .collect();
     EditorError::write(message).with_diagnostics(flat)
+}
+
+fn project_diagnostics_to_editor_error(
+    diagnostics: coflow_api::DiagnosticSet,
+) -> EditorError {
+    let message = diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>()
+        .join("; ");
+    let flat = diagnostics
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.flat_view(None, None, None))
+        .collect();
+    EditorError::project(message).with_diagnostics(flat)
 }
 
 fn finalize_mutation(

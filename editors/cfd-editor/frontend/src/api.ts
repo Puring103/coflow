@@ -109,6 +109,18 @@ export async function setTableColumnWidths(
   })
 }
 
+export async function checkProject(sessionId: number): Promise<string> {
+  return invokeCommand<string>('check_project', { sessionId })
+}
+
+export async function buildProject(sessionId: number): Promise<string> {
+  return invokeCommand<string>('build_project', { sessionId })
+}
+
+export async function openSourceFile(sessionId: number, filePath: string): Promise<void> {
+  return invokeCommand('open_source_file', { sessionId, filePath })
+}
+
 export async function getEnumVariants(sessionId: number, enumName: string): Promise<string[]> {
   return invokeCommand<string[]>('get_enum_variants', { sessionId, enumName })
 }

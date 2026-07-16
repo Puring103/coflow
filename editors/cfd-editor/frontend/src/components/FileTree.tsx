@@ -7,6 +7,7 @@ interface Props {
   selectedFile: string | null
   onSelectFile: (path: string) => void
   onExitRight?: () => void
+  onOpenSourceFile?: (path: string) => void
 }
 
 const COLLAPSE_KEY = 'cfd-editor-tree-collapsed'
@@ -51,9 +52,11 @@ function visibleFlatItems(
   return out
 }
 
-export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight }: Props) {
+export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight, onOpenSourceFile }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed())
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  const contextReturnPath = useRef<string | null>(null)
 
   const toggle = (path: string) => {
     setCollapsed(prev => {
@@ -66,6 +69,18 @@ export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight }: Pro
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    const focused = document.activeElement as HTMLElement | null
+    if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && focused?.dataset.path) {
+      const flat = visibleFlatItems(nodes, collapsed, 0)
+      const node = flat.find(item => item.node.path === focused.dataset.path)?.node
+      if (node && !node.is_dir && node.in_sources && onOpenSourceFile) {
+        e.preventDefault()
+        const rect = focused.getBoundingClientRect()
+        contextReturnPath.current = node.path
+        setContextMenu({ x: rect.left + 20, y: rect.top + rect.height, path: node.path })
+      }
+      return
+    }
     if (
       e.key !== 'ArrowDown'
       && e.key !== 'ArrowUp'
@@ -141,6 +156,19 @@ export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight }: Pro
     })
   }, [selectedFile, nodes])
 
+  useEffect(() => {
+    if (!contextMenu) return
+    requestAnimationFrame(() => {
+      rootRef.current?.querySelector<HTMLButtonElement>('.file-tree-context-menu .ctx-item')?.focus()
+    })
+    const close = (event: MouseEvent) => {
+      if ((event.target as HTMLElement | null)?.closest('.file-tree-context-menu')) return
+      setContextMenu(null)
+    }
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [contextMenu])
+
   return (
     <div className="file-tree" role="tree" aria-label="项目文件" onKeyDown={onKeyDown} ref={rootRef}>
       {nodes.map(n => (
@@ -152,8 +180,42 @@ export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight }: Pro
           depth={0}
           collapsed={collapsed}
           onToggle={toggle}
+          onContextMenu={(event, path) => {
+            if (!onOpenSourceFile) return
+            event.preventDefault()
+            contextReturnPath.current = path
+            setContextMenu({ x: event.clientX, y: event.clientY, path })
+          }}
         />
       ))}
+      {contextMenu && onOpenSourceFile && (
+        <div
+          className="context-menu file-tree-context-menu"
+          role="menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onKeyDown={event => {
+            if (event.key !== 'Escape') return
+            event.preventDefault()
+            const path = contextReturnPath.current
+            setContextMenu(null)
+            if (path) requestAnimationFrame(() => focusByPath(rootRef.current, path))
+          }}
+        >
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              const path = contextMenu.path
+              setContextMenu(null)
+              onOpenSourceFile(path)
+            }}
+          >
+            <Icon name="open" size={13} aria-hidden />
+            打开源文件
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -196,13 +258,14 @@ function cssEscape(s: string): string {
   return s.replace(/["\\]/g, '\\$&')
 }
 
-function TreeNode({ node, selectedFile, onSelectFile, depth, collapsed, onToggle }: {
+function TreeNode({ node, selectedFile, onSelectFile, depth, collapsed, onToggle, onContextMenu }: {
   node: FileTreeNode
   selectedFile: string | null
   onSelectFile: (path: string) => void
   depth: number
   collapsed: Set<string>
   onToggle: (path: string) => void
+  onContextMenu: (event: React.MouseEvent, path: string) => void
 }) {
   const selected = !node.is_dir && node.path === selectedFile
 
@@ -245,6 +308,7 @@ function TreeNode({ node, selectedFile, onSelectFile, depth, collapsed, onToggle
             depth={depth + 1}
             collapsed={collapsed}
             onToggle={onToggle}
+            onContextMenu={onContextMenu}
           />
         ))}
       </div>
@@ -264,6 +328,7 @@ function TreeNode({ node, selectedFile, onSelectFile, depth, collapsed, onToggle
       tabIndex={ghost ? -1 : 0}
       data-path={node.path}
       onClick={() => !ghost && onSelectFile(node.path)}
+      onContextMenu={event => { if (!ghost) onContextMenu(event, node.path) }}
       onKeyDown={e => {
         if (e.key === 'Enter' && !ghost) {
           e.preventDefault()
