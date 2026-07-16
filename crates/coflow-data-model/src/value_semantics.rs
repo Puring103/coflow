@@ -311,8 +311,9 @@ fn validate_dict_key(
     value: &CfdDictKey,
 ) -> Result<(), CfdValueSemanticError> {
     match (non_nullable(expected), value) {
-        (CftValueType::String, CfdDictKey::String(_))
-        | (CftValueType::Int, CfdDictKey::Int(_)) => Ok(()),
+        (CftValueType::String, CfdDictKey::String(_)) | (CftValueType::Int, CfdDictKey::Int(_)) => {
+            Ok(())
+        }
         (CftValueType::Enum(enum_name), CfdDictKey::Enum(enum_value)) => {
             validate_enum(schema, enum_name, enum_value)
         }
@@ -327,7 +328,7 @@ fn validate_enum(
     expected_enum: &str,
     value: &CfdEnumValue,
 ) -> Result<(), CfdValueSemanticError> {
-    if value.enum_name != expected_enum {
+    if value.enum_name.as_str() != expected_enum {
         return Err(CfdValueSemanticError::new(format!(
             "expected enum `{expected_enum}`, got enum `{}`",
             value.enum_name
@@ -360,11 +361,6 @@ fn validate_ref_target<C: CfdValueSemanticContext>(
     target_key: &str,
     pending_insert: Option<PendingInsertRef<'_>>,
 ) -> Result<(), CfdValueSemanticError> {
-    if target_key.is_empty() {
-        return Err(CfdValueSemanticError::new(
-            "reference key must not be empty",
-        ));
-    }
     let Some(domain) = context.type_domain_id(expected_type) else {
         return Err(CfdValueSemanticError::new(format!(
             "unknown reference target type `{expected_type}`"

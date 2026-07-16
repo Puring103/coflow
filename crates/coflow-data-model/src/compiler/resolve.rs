@@ -1,6 +1,7 @@
 use crate::compiler_context::{CfdValueDraft, DataModelCompilerContext, RecordDraft};
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
 use crate::model::{CfdDictKey, CfdDomainId, CfdObject, CfdRecordId, CfdValue};
+use coflow_cft::{FieldName, RecordKey, TypeName};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -25,10 +26,10 @@ struct ResolvedMemo {
 }
 
 impl ValueNode {
-    fn field(&self, name: impl Into<String>) -> Self {
+    fn field(&self, name: &FieldName) -> Self {
         Self {
             record: self.record,
-            path: self.path.clone().field(name),
+            path: self.path.clone().field(name.as_str()),
             branch: self.branch.clone(),
         }
     }
@@ -63,7 +64,7 @@ impl ValueNode {
 pub(super) struct ValueResolver<'a, 'schema> {
     schema: &'a DataModelCompilerContext<'schema>,
     drafts: &'a [RecordDraft],
-    record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     diagnostics: &'a mut Vec<CfdDiagnostic>,
     memo: BTreeMap<ValueNode, ResolvedMemo>,
     active: BTreeMap<ValueNode, usize>,
@@ -78,7 +79,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     pub(super) fn new(
         schema: &'a DataModelCompilerContext<'schema>,
         drafts: &'a [RecordDraft],
-        record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
+        record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
         diagnostics: &'a mut Vec<CfdDiagnostic>,
         structural_limits: StructuralLimits,
     ) -> Self {
@@ -100,7 +101,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     pub(super) fn resolve_record_fields(
         &mut self,
         record: CfdRecordId,
-    ) -> Option<BTreeMap<String, CfdValue>> {
+    ) -> Option<BTreeMap<FieldName, CfdValue>> {
         self.budget = StructuralBudget::new(self.structural_limits);
         self.budget_exhausted = false;
         self.memo.clear();
@@ -138,16 +139,15 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
 
     fn resolve_fields(
         &mut self,
-        fields: &BTreeMap<String, CfdValueDraft>,
+        fields: &BTreeMap<FieldName, CfdValueDraft>,
         parent: &ValueNode,
         cursor: TraversalCursor,
-    ) -> Option<BTreeMap<String, CfdValue>> {
+    ) -> Option<BTreeMap<FieldName, CfdValue>> {
         let diagnostic_start = self.diagnostics.len();
         let mut out = BTreeMap::new();
         let mut complete = true;
         for (name, value) in fields {
-            let Some(value) = self.resolve_node(value, parent.field(name.clone()), cursor, false)
-            else {
+            let Some(value) = self.resolve_node(value, parent.field(name), cursor, false) else {
                 complete = false;
                 continue;
             };
@@ -219,8 +219,8 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         match value {
             CfdValueDraft::Value(value) => Some(value.clone()),
             CfdValueDraft::PendingRef { expected_type, key } => {
-                let _ = self.resolve_ref_target(expected_type, key, node)?;
-                Some(CfdValue::Ref(key.clone()))
+                let (_, key) = self.resolve_ref_target(expected_type, key, node)?;
+                Some(CfdValue::Ref(key))
             }
             CfdValueDraft::PendingSpreadField {
                 source_type,
@@ -258,15 +258,19 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
 
     fn resolve_ref_target(
         &mut self,
-        expected_type: &str,
+        expected_type: &TypeName,
         key: &str,
         node: &ValueNode,
-    ) -> Option<CfdRecordId> {
+    ) -> Option<(CfdRecordId, RecordKey)> {
         let target = self
             .schema
-            .type_domain_id(expected_type)
-            .and_then(|domain_id| self.record_by_domain_key.get(&(domain_id, key.to_string())))
-            .copied();
+            .type_domain_id(expected_type.as_str())
+            .and_then(|domain_id| {
+                self.record_by_domain_key
+                    .get(&domain_id)?
+                    .get_key_value(key)
+                    .map(|(key, id)| (*id, key.clone()))
+            });
 
         let Some(target) = target else {
             self.diagnostics.push(
@@ -279,10 +283,10 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             return None;
         };
 
-        let target_draft = self.drafts.get(target.index())?;
+        let target_draft = self.drafts.get(target.0.index())?;
         if !self
             .schema
-            .is_assignable(&target_draft.actual_type, expected_type)
+            .is_assignable(target_draft.actual_type.as_str(), expected_type.as_str())
         {
             self.diagnostics.push(
                 CfdDiagnostic::error(
@@ -297,7 +301,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             return None;
         }
 
-        Some(target)
+        Some((target.0, target.1))
     }
 
     fn resolve_dict_entries(
@@ -364,13 +368,13 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
 
     fn resolve_spread_field(
         &mut self,
-        source_type: &str,
+        source_type: &TypeName,
         key: &str,
-        field: &str,
+        field: &FieldName,
         node: &ValueNode,
         cursor: TraversalCursor,
     ) -> Option<CfdValue> {
-        let source_id = self.resolve_ref_target(source_type, key, node)?;
+        let (source_id, _) = self.resolve_ref_target(source_type, key, node)?;
         let drafts = self.drafts;
         let source_draft = drafts.get(source_id.index())?;
         let Some(value) = source_draft.fields.get(field) else {
@@ -388,7 +392,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             value,
             ValueNode {
                 record: source_id,
-                path: CfdPath::root().field(field),
+                path: CfdPath::root().field(field.as_str()),
                 branch: Vec::new(),
             },
             cursor,

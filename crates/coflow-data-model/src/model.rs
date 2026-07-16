@@ -11,7 +11,7 @@ pub use domain::CfdDomainIndex;
 pub use edges::{
     DimensionRefCoordinate, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
 };
-pub use ids::{CfdDomainId, CfdRecordId, CfdTypeId};
+pub use ids::{CfdDomainId, CfdRecordId, CfdTypeId, RecordCoordinate};
 pub use input::{CfdInputDictKey, CfdInputDimensionValue, CfdInputRecord, CfdInputValue};
 pub use tables::{CfdPolymorphicIndex, CfdTable};
 pub use value::{
@@ -21,17 +21,17 @@ pub use value::{
 
 use crate::diagnostic::CfdPath;
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
-use coflow_cft::CftSchema;
+use coflow_cft::{CftSchema, RecordKey, TypeName};
 use coflow_structure::StructuralLimits;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDataModel {
-    pub(crate) tables: BTreeMap<String, CfdTable>,
-    pub(crate) inheritance_index: BTreeMap<String, CfdPolymorphicIndex>,
+    pub(crate) tables: BTreeMap<TypeName, CfdTable>,
+    pub(crate) inheritance_index: BTreeMap<TypeName, CfdPolymorphicIndex>,
     pub(crate) domain_index: CfdDomainIndex,
-    pub(crate) record_by_type_key: BTreeMap<(CfdTypeId, String), CfdRecordId>,
-    pub(crate) record_by_domain_key: BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    pub(crate) record_by_type_key: BTreeMap<CfdTypeId, BTreeMap<RecordKey, CfdRecordId>>,
+    pub(crate) record_by_domain_key: BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     pub(crate) records: Vec<CfdRecord>,
     pub(crate) ref_edges: Vec<RefEdge>,
     pub(crate) ref_by_site: BTreeMap<RefSite, RefEdgeId>,
@@ -134,17 +134,13 @@ impl CfdDataModel {
     #[must_use]
     pub fn record_by_type_key(&self, type_name: &str, key: &str) -> Option<CfdRecordId> {
         let type_id = self.type_id(type_name)?;
-        self.record_by_type_key
-            .get(&(type_id, key.to_string()))
-            .copied()
+        self.record_by_type_key.get(&type_id)?.get(key).copied()
     }
 
     /// Looks up a record by inheritance connected-component domain and key.
     #[must_use]
     pub fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId> {
-        self.record_by_domain_key
-            .get(&(domain_id, key.to_string()))
-            .copied()
+        self.record_by_domain_key.get(&domain_id)?.get(key).copied()
     }
 
     fn type_is_assignable_by_name(&self, actual_type: &str, expected_type: &str) -> bool {

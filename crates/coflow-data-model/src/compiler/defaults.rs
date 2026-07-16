@@ -44,9 +44,7 @@ impl Validator<'_, '_> {
     ) -> Option<CfdValueDraft> {
         if matches!(value, CftSchemaDefaultValue::EmptyObject) {
             return match non_nullable_type(ty) {
-                CftValueType::Dict(_, _) => {
-                    Some(CfdValueDraft::Value(CfdValue::Dict(Vec::new())))
-                }
+                CftValueType::Dict(_, _) => Some(CfdValueDraft::Value(CfdValue::Dict(Vec::new()))),
                 CftValueType::Object(type_name) => {
                     self.default_object_value(type_name, record, path, cursor)
                 }
@@ -59,9 +57,7 @@ impl Validator<'_, '_> {
 
         let out = match value {
             CftSchemaDefaultValue::Null if ty.is_nullable() => CfdValue::Null,
-            CftSchemaDefaultValue::Int(value)
-                if type_accepts_default(ty, &CftValueType::Int) =>
-            {
+            CftSchemaDefaultValue::Int(value) if type_accepts_default(ty, &CftValueType::Int) => {
                 CfdValue::Int(*value)
             }
             CftSchemaDefaultValue::Float(value)
@@ -79,9 +75,7 @@ impl Validator<'_, '_> {
                 }
                 CfdValue::Float(*value)
             }
-            CftSchemaDefaultValue::Bool(value)
-                if type_accepts_default(ty, &CftValueType::Bool) =>
-            {
+            CftSchemaDefaultValue::Bool(value) if type_accepts_default(ty, &CftValueType::Bool) => {
                 CfdValue::Bool(*value)
             }
             CftSchemaDefaultValue::String(value)
@@ -95,8 +89,8 @@ impl Validator<'_, '_> {
                 value,
             } if matches!(non_nullable_type(ty), CftValueType::Enum(name) if name == enum_name) => {
                 CfdValue::Enum(CfdEnumValue {
-                    enum_name: enum_name.to_string(),
-                    variant: Some(variant.to_string()),
+                    enum_name: enum_name.clone(),
+                    variant: Some(variant.clone()),
                     value: *value,
                 })
             }

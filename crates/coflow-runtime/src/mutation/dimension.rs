@@ -13,7 +13,9 @@ use super::types::{
     DimensionSourceCoordinate, DimensionValueCoordinate, DimensionValueExpectation,
     PreparedMutationOp,
 };
-use super::{one_mutation_error, one_path_error, schema_field, MutationValue};
+use super::{
+    one_mutation_error, one_path_error, schema_field, validated_record_coordinate, MutationValue,
+};
 
 struct DimensionMutationTarget<'schema> {
     record: RecordCoordinate,
@@ -110,7 +112,7 @@ fn resolve_dimension_target<'schema>(
     dimension: &str,
     variant: &str,
 ) -> Result<DimensionMutationTarget<'schema>, DiagnosticSet> {
-    let record = RecordCoordinate::new(actual_type, record_key);
+    let record = validated_record_coordinate(actual_type, record_key)?;
     let record_id = session
         .records
         .id_for_coordinate(&record.actual_type, &record.key)
@@ -274,7 +276,9 @@ fn value_at_nested_path<'a>(
 ) -> Option<&'a CfdValue> {
     for segment in path {
         current = match (current, segment) {
-            (CfdValue::Object(object), CfdPathSegment::Field(field)) => object.fields.get(field)?,
+            (CfdValue::Object(object), CfdPathSegment::Field(field)) => {
+                object.fields.get(field.as_str())?
+            }
             (CfdValue::Array(items), CfdPathSegment::Index(index)) => items.get(*index)?,
             (CfdValue::Dict(entries), CfdPathSegment::DictKey(key)) => entries
                 .iter()

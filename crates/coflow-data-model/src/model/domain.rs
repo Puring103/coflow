@@ -1,10 +1,11 @@
 use super::ids::{CfdDomainId, CfdTypeId};
+use coflow_cft::TypeName;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDomainIndex {
-    pub(crate) type_id_by_name: BTreeMap<String, CfdTypeId>,
-    pub(crate) type_names: Vec<String>,
+    pub(crate) type_id_by_name: BTreeMap<TypeName, CfdTypeId>,
+    pub(crate) type_names: Vec<TypeName>,
     pub(crate) type_domain: Vec<CfdDomainId>,
     pub(crate) domain_members: Vec<Vec<CfdTypeId>>,
     pub(crate) ancestors_by_type: Vec<Vec<CfdTypeId>>,
@@ -13,8 +14,8 @@ pub struct CfdDomainIndex {
 impl CfdDomainIndex {
     #[must_use]
     pub(crate) fn new(
-        type_id_by_name: BTreeMap<String, CfdTypeId>,
-        type_names: Vec<String>,
+        type_id_by_name: BTreeMap<TypeName, CfdTypeId>,
+        type_names: Vec<TypeName>,
         type_domain: Vec<CfdDomainId>,
         domain_members: Vec<Vec<CfdTypeId>>,
         ancestors_by_type: Vec<Vec<CfdTypeId>>,
@@ -35,7 +36,7 @@ impl CfdDomainIndex {
 
     #[must_use]
     pub(crate) fn type_name(&self, type_id: CfdTypeId) -> Option<&str> {
-        self.type_names.get(type_id.index()).map(String::as_str)
+        self.type_names.get(type_id.index()).map(TypeName::as_str)
     }
 
     #[must_use]

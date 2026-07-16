@@ -47,7 +47,8 @@ pub(super) fn build_session(
             EditorError::project(prefixed_diagnostics("failed to build project", &err))
         })?;
     let file_tree = engine.queries().file_tree();
-    let (file_type_names, type_display_names) = type_navigation(engine.queries(), registry, &file_tree);
+    let (file_type_names, type_display_names) =
+        type_navigation(engine.queries(), registry, &file_tree);
     let diagnostics = diagnostics_from_store(engine.queries().diagnostics(), &project_root);
 
     Ok((
@@ -82,7 +83,7 @@ fn type_navigation(
         let mut type_names = Vec::new();
         let mut type_seen = HashSet::new();
         for view in queries.record_views_in_file(&file_path) {
-            let type_name = view.coordinate.actual_type.clone();
+            let type_name = view.coordinate.actual_type.to_string();
             if type_seen.insert(type_name.clone()) {
                 type_names.push(type_name);
             }

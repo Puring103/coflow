@@ -49,14 +49,19 @@ pub(super) fn enum_value(
         .and_then(|rest| rest.strip_prefix('.'))
         .unwrap_or(raw_variant);
     let schema = session.schema();
-    let int_value = schema
+    let enum_value = schema
         .enum_variant_value(enum_name, variant)
+        .and_then(|value| schema.enum_value_from_int(enum_name, value))
         .ok_or_else(|| one_value_error(format!("unknown enum variant `{enum_name}.{variant}`")))?;
-    Ok(CfdEnumValue {
-        enum_name: enum_name.to_string(),
-        variant: Some(variant.to_string()),
-        value: int_value,
-    })
+    Ok(enum_value.into())
+}
+
+pub(super) fn validated_record_coordinate(
+    actual_type: impl Into<String>,
+    key: impl Into<String>,
+) -> Result<crate::RecordCoordinate, DiagnosticSet> {
+    crate::RecordCoordinate::try_new(actual_type, key)
+        .map_err(|error| one_mutation_error("MUTATION-COORDINATE", error.to_string()))
 }
 
 fn non_nullable(ty: &CftValueType) -> &CftValueType {

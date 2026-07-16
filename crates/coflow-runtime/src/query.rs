@@ -313,7 +313,7 @@ impl<'a> ProjectQueries<'a> {
                             .map(|(_, record)| record.key().to_string())
                             .collect()
                     },
-                    |index| index.records.keys().cloned().collect(),
+                    |index| index.records.keys().map(ToString::to_string).collect(),
                 );
                 Some(IdAsEnumInfo {
                     enum_name,
@@ -394,7 +394,7 @@ fn dimension_value_at_path<'a>(
     for segment in path {
         value = match (segment, value) {
             (CfdPathSegment::Field(field), CfdValue::Object(object)) => {
-                object.fields().get(field)?
+                object.fields().get(field.as_str())?
             }
             (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
             (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => {

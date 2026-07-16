@@ -351,14 +351,17 @@ fn write_terrain_workbook_with_expand(path: &PathBuf) -> Result<(), XlsxError> {
 }
 
 fn expanded_env_value(shc: f64, temperature: f64, diffusion: f64) -> CfdValue {
-    CfdValue::Object(Box::new(CfdObject::new(
-        "EnvCfg",
-        BTreeMap::from([
-            ("shc".to_string(), CfdValue::Float(shc)),
-            ("temperature".to_string(), CfdValue::Float(temperature)),
-            ("diffusion".to_string(), CfdValue::Float(diffusion)),
-        ]),
-    )))
+    CfdValue::Object(Box::new(
+        CfdObject::try_new(
+            "EnvCfg",
+            BTreeMap::from([
+                ("shc".to_string(), CfdValue::Float(shc)),
+                ("temperature".to_string(), CfdValue::Float(temperature)),
+                ("diffusion".to_string(), CfdValue::Float(diffusion)),
+            ]),
+        )
+        .unwrap(),
+    ))
 }
 
 #[test]

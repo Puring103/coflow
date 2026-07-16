@@ -166,7 +166,7 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
 
     let schema = &schema;
     let writer = CfdWriter::new();
-    let request_value = CfdValue::Ref("blade".to_string());
+    let request_value = CfdValue::record_ref("blade").unwrap();
     let segments = vec![
         WriteFieldPathSegment::Field("first_clear_reward".to_string()),
         WriteFieldPathSegment::Field("item".to_string()),
@@ -305,7 +305,7 @@ picker: Holder {
         .expect("target_b id");
 
     let writer = CfdWriter::new();
-    let new_value = CfdValue::Ref("target_b".to_string());
+    let new_value = CfdValue::record_ref("target_b").unwrap();
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -377,7 +377,7 @@ picker: Holder {
     let schema = &schema;
 
     let writer = CfdWriter::new();
-    let new_value = CfdValue::Ref("ghost".to_string());
+    let new_value = CfdValue::record_ref("ghost").unwrap();
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -408,58 +408,8 @@ picker: Holder {
 }
 
 #[test]
-fn rejects_empvalue_type_key() {
-    let dir = temp_dir("empty-ref");
-    let file = dir.join("data.cfd");
-    fs::write(
-        &file,
-        r"picker: Holder {
-  current: &x,
-}
-",
-    )
-    .expect("write seed");
-
-    let schema = compile_schema(
-        r"
-        type Item {
-          name: string;
-        }
-
-        type Holder {
-          current: &Item;
-        }
-        ",
-    );
-
-    let schema = &schema;
-
-    let writer = CfdWriter::new();
-    let new_value = CfdValue::Ref(String::new());
-    let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
-    let source = empty_source(&file);
-    let origin = origin_for(&file);
-    let model = empty_model(&schema);
-    let result = writer.write_field(
-        WriteContext {
-            project_root: &dir,
-            schema: schema,
-            model: Some(&model),
-        },
-        &WriteCellRequest {
-            origin: &origin,
-            record_key: "picker",
-            actual_type: "Holder",
-            field_path: &segments,
-            new_value: &new_value,
-            schema: schema,
-            source: &source,
-        },
-    );
-    let Err(diag) = result else {
-        panic!("empty ref should be rejected");
-    };
-    assert!(diag.iter().any(|d| d.message.contains("empty reference")));
+fn rejects_empty_reference_key_at_value_boundary() {
+    assert!(CfdValue::record_ref("").is_err());
 }
 
 fn empty_model(schema: &CftSchema) -> CfdDataModel {
@@ -610,11 +560,11 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
     let writer = CfdWriter::new();
     let slot_fields = std::collections::BTreeMap::from([(
         "item".to_string(),
-        CfdValue::Ref("sword".to_string()),
+        CfdValue::record_ref("sword").unwrap(),
     )]);
     let fields = std::collections::BTreeMap::from([(
         "slot".to_string(),
-        CfdValue::Object(Box::new(CfdObject::new("Slot", slot_fields))),
+        CfdValue::Object(Box::new(CfdObject::try_new("Slot", slot_fields).unwrap())),
     )]);
 
     writer

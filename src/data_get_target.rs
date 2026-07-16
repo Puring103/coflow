@@ -60,5 +60,5 @@ fn parse_record_selector(value: &str) -> Result<RecordCoordinate, String> {
             "record selector `{value}` must be written as TYPE.KEY"
         ));
     }
-    Ok(RecordCoordinate::new(actual_type, key))
+    RecordCoordinate::try_new(actual_type, key).map_err(|error| error.to_string())
 }

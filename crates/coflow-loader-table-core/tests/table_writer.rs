@@ -280,7 +280,7 @@ fn replacing_ref_inside_array_rewrites_owning_cell() {
     builder.add_input_record(input);
     let model = builder.build().expect("model");
     let origin = table_origin(BTreeMap::from([(vec!["rewards".to_string()], 2)]));
-    let new_value = CfdValue::Ref("gem".to_string());
+    let new_value = CfdValue::record_ref("gem").unwrap();
     let path = vec![
         WriteFieldPathSegment::Field("rewards".to_string()),
         WriteFieldPathSegment::Index(0),
@@ -332,13 +332,16 @@ fn expanded_object_edit_writes_each_child_column() {
         (vec!["stats".to_string(), "attack".to_string()], 3),
     ]);
     let origin = table_origin(field_columns);
-    let stats = CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
-        "Stats",
-        BTreeMap::from([
-            ("hp".to_string(), CfdValue::Int(100)),
-            ("attack".to_string(), CfdValue::Int(9)),
-        ]),
-    )));
+    let stats = CfdValue::Object(Box::new(
+        coflow_data_model::CfdObject::try_new(
+            "Stats",
+            BTreeMap::from([
+                ("hp".to_string(), CfdValue::Int(100)),
+                ("attack".to_string(), CfdValue::Int(9)),
+            ]),
+        )
+        .unwrap(),
+    ));
     let path = field_path("stats");
     let request = TableFieldWrite {
         origin: &origin,

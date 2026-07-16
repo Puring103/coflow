@@ -7,7 +7,7 @@ use crate::compiler_context::{
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdEnumValue, CfdInputValue, CfdRecordId, CfdValue};
 use crate::origin::RecordOrigin;
-use coflow_cft::{CftField, CftValueType};
+use coflow_cft::{CftField, CftValueType, FieldName, TypeName};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -97,10 +97,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         let schema = self.schema;
         let diagnostic_start = self.diagnostics.len();
 
-        let Some(is_abstract) = schema
-            .resolve_type(actual_type)
-            .map(|meta| meta.is_abstract)
-        else {
+        let Some(actual_type_meta) = schema.resolve_type(actual_type) else {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::UnknownType,
@@ -110,7 +107,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             );
             return None;
         };
-        if is_abstract {
+        if actual_type_meta.is_abstract {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::AbstractRecordType,
@@ -161,10 +158,14 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         let mut spread_sources = Vec::new();
         let mut spread_field_sources = BTreeMap::new();
         for spread in input_spreads {
-            let spread_origin = top_level_spread_source(actual_type, spread);
-            let Some(spread_fields) =
-                self.validate_object_spread(actual_type, spread, record, path.clone(), cursor)
-            else {
+            let spread_origin = top_level_spread_source(&actual_type_meta.name, spread);
+            let Some(spread_fields) = self.validate_object_spread(
+                &actual_type_meta.name,
+                spread,
+                record,
+                path.clone(),
+                cursor,
+            ) else {
                 continue;
             };
             if let Some(origin) = &spread_origin {
@@ -198,14 +199,14 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 None
             };
             if let Some(value) = value {
-                out.insert(field.name.to_string(), value);
+                out.insert(field.name.clone(), value);
             }
         }
 
         if self.diagnostics.len() == diagnostic_start {
             Some(RecordDraft {
                 key: key.to_string(),
-                actual_type: actual_type.to_string(),
+                actual_type: actual_type_meta.name.clone(),
                 fields: out,
                 origin: RecordOrigin::None,
                 spread_sources,
@@ -278,10 +279,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             (CftValueType::String, CfdInputValue::String(value)) => {
                 Some(CfdValueDraft::Value(CfdValue::String(value.clone())))
             }
-            (
-                CftValueType::Enum(expected),
-                CfdInputValue::EnumVariant { enum_name, variant },
-            ) => {
+            (CftValueType::Enum(expected), CfdInputValue::EnumVariant { enum_name, variant }) => {
                 if enum_name.as_str() != expected.as_str() {
                     self.push(
                         CfdDiagnostic::error(
@@ -297,7 +295,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             }
             (CftValueType::RecordRef(expected), CfdInputValue::RecordRef(key)) => {
                 Some(CfdValueDraft::PendingRef {
-                    expected_type: expected.to_string(),
+                    expected_type: expected.clone(),
                     key: key.clone(),
                 })
             }
@@ -389,31 +387,31 @@ impl<'s, 'schema> Validator<'s, 'schema> {
 
     fn validate_object_spread(
         &mut self,
-        type_name: &str,
+        type_name: &TypeName,
         spread: &CfdInputValue,
         record: Option<CfdRecordId>,
         path: CfdPath,
         parent: TraversalCursor,
-    ) -> Option<BTreeMap<String, CfdValueDraft>> {
+    ) -> Option<BTreeMap<FieldName, CfdValueDraft>> {
         let cursor = self.enter_value(parent, record, &path)?;
         match spread {
             CfdInputValue::RecordRef(key) => Some(
                 self.schema
-                    .full_fields(type_name)
+                    .full_fields(type_name.as_str())
                     .map(|field| {
                         (
-                            field.name.to_string(),
+                            field.name.clone(),
                             CfdValueDraft::PendingSpreadField {
-                                source_type: type_name.to_string(),
+                                source_type: type_name.clone(),
                                 key: key.clone(),
-                                field: field.name.to_string(),
+                                field: field.name.clone(),
                             },
                         )
                     })
                     .collect(),
             ),
             CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. } => {
-                let object_type = self.schema.resolve_type(type_name)?.name.clone();
+                let object_type = self.schema.resolve_type(type_name.as_str())?.name.clone();
                 let draft = self.validate_value_inner(
                     &CftValueType::Object(object_type),
                     spread,
@@ -446,7 +444,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdEnumValue> {
-        let Some(value) = self.schema.enum_variant_value(enum_name, variant) else {
+        let Some(value) = self.schema.enum_value(enum_name, variant) else {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::InvalidEnumVariant,
@@ -456,11 +454,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             );
             return None;
         };
-        Some(CfdEnumValue {
-            enum_name: enum_name.to_string(),
-            variant: Some(variant.to_string()),
-            value,
-        })
+        Some(value.into())
     }
 
     fn type_mismatch(
@@ -570,12 +564,12 @@ impl<'s, 'schema> Validator<'s, 'schema> {
 }
 
 fn top_level_spread_source(
-    expected_type: &str,
+    expected_type: &TypeName,
     spread: &CfdInputValue,
 ) -> Option<SpreadFieldSource> {
     match spread {
         CfdInputValue::RecordRef(key) => Some(SpreadFieldSource {
-            expected_type: expected_type.to_string(),
+            expected_type: expected_type.clone(),
             key: key.clone(),
         }),
         _ => None,

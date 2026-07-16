@@ -50,7 +50,7 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
         model
             .record(drop_id)
             .and_then(|record| record.field("reward")),
-        Some(&CfdValue::Ref("reward_1".to_string()))
+        Some(&CfdValue::record_ref("reward_1").unwrap())
     );
     let _ = reward_id;
 }

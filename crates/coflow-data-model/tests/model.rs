@@ -47,11 +47,9 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
     );
     assert_eq!(
         record.field("rarity"),
-        Some(&CfdValue::Enum(CfdEnumValue {
-            enum_name: "Rarity".to_string(),
-            variant: Some("Common".to_string()),
-            value: 0,
-        }))
+        Some(&CfdValue::Enum(
+            CfdEnumValue::try_new("Rarity", Some("Common"), 0).unwrap()
+        ))
     );
     assert_eq!(record.field("tags"), Some(&CfdValue::Array(Vec::new())));
     assert_eq!(record.field("attrs"), Some(&CfdValue::Dict(Vec::new())));
@@ -383,7 +381,7 @@ fn object_typed_record_refs_resolve_by_expected_type() {
         model
             .record(drop_id)
             .and_then(|record| record.field("reward")),
-        Some(&CfdValue::Ref("reward_1".to_string()))
+        Some(&CfdValue::record_ref("reward_1").unwrap())
     );
     let _ = reward_id;
 }

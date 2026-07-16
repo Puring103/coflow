@@ -1,15 +1,16 @@
 use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
-    CftField, CftSchema, CftValueType, CftType, ValueDependencyCycle, ValueDependencyMode,
+    CftEnumValue, CftField, CftSchema, CftType, CftValueType, FieldName, TypeName,
+    ValueDependencyCycle, ValueDependencyMode,
 };
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RecordDraft {
     pub(crate) key: String,
-    pub(crate) actual_type: String,
-    pub(crate) fields: BTreeMap<String, CfdValueDraft>,
+    pub(crate) actual_type: TypeName,
+    pub(crate) fields: BTreeMap<FieldName, CfdValueDraft>,
     /// Origin moved from `CfdInputRecord`. For nested object drafts (created
     /// inside fields), defaults to `RecordOrigin::None`.
     pub(crate) origin: RecordOrigin,
@@ -20,14 +21,14 @@ pub(crate) struct RecordDraft {
     /// Top-level only: which fields came from `...spread` references and
     /// where they came from (target type + key, since record id resolution
     /// happens later). Empty for nested objects.
-    pub(crate) spread_field_sources: BTreeMap<String, SpreadFieldSource>,
+    pub(crate) spread_field_sources: BTreeMap<FieldName, SpreadFieldSource>,
 }
 
 /// A spread origin captured during validation. The compiler resolves these to
 /// concrete `CfdRecordId` values once all drafts have been indexed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct SpreadFieldSource {
-    pub(crate) expected_type: String,
+    pub(crate) expected_type: TypeName,
     pub(crate) key: String,
 }
 
@@ -36,13 +37,13 @@ pub(crate) enum CfdValueDraft {
     Value(CfdValue),
     Object(Box<RecordDraft>),
     PendingRef {
-        expected_type: String,
+        expected_type: TypeName,
         key: String,
     },
     PendingSpreadField {
-        source_type: String,
+        source_type: TypeName,
         key: String,
-        field: String,
+        field: FieldName,
     },
     Array(Vec<CfdValueDraft>),
     Dict(Vec<(CfdDictKey, CfdValueDraft)>),
@@ -75,7 +76,7 @@ impl<'a> DataModelCompilerContext<'a> {
     fn build_domain_index(cft_view: &CftSchema) -> CfdDomainIndex {
         let type_names = cft_view
             .all_types()
-            .map(|ty| ty.name.to_string())
+            .map(|ty| ty.name.clone())
             .collect::<Vec<_>>();
         let type_id_by_name = type_names
             .iter()
@@ -83,7 +84,7 @@ impl<'a> DataModelCompilerContext<'a> {
             .map(|(index, name)| (name.clone(), CfdTypeId::new(index)))
             .collect::<BTreeMap<_, _>>();
 
-        let mut domain_id_by_root = BTreeMap::<String, CfdDomainId>::new();
+        let mut domain_id_by_root = BTreeMap::<TypeName, CfdDomainId>::new();
         let mut type_domain = vec![CfdDomainId::new(0); type_names.len()];
         let mut domain_members = Vec::<Vec<CfdTypeId>>::new();
         let mut ancestors_by_type = vec![Vec::new(); type_names.len()];
@@ -111,27 +112,27 @@ impl<'a> DataModelCompilerContext<'a> {
         )
     }
 
-    fn domain_root_name(cft_view: &CftSchema, type_name: &str) -> String {
+    fn domain_root_name(cft_view: &CftSchema, type_name: &TypeName) -> TypeName {
         let mut current = type_name;
         while let Some(parent) = cft_view
-            .resolve_type(current)
-            .and_then(|meta| meta.parent.as_deref())
+            .resolve_type(current.as_str())
+            .and_then(|meta| meta.parent.as_ref())
         {
             current = parent;
         }
-        current.to_string()
+        current.clone()
     }
 
     fn ancestor_type_ids(
         cft_view: &CftSchema,
-        type_id_by_name: &BTreeMap<String, CfdTypeId>,
-        type_name: &str,
+        type_id_by_name: &BTreeMap<TypeName, CfdTypeId>,
+        type_name: &TypeName,
     ) -> Vec<CfdTypeId> {
         let mut out = Vec::new();
         let mut current = type_name;
         while let Some(parent) = cft_view
-            .resolve_type(current)
-            .and_then(|meta| meta.parent.as_deref())
+            .resolve_type(current.as_str())
+            .and_then(|meta| meta.parent.as_ref())
         {
             if let Some(type_id) = type_id_by_name.get(parent).copied() {
                 out.push(type_id);
@@ -160,16 +161,13 @@ impl<'a> DataModelCompilerContext<'a> {
         self.cft.range_is_polymorphic(type_name)
     }
 
-    pub(crate) fn assignable_target_names(&self, actual_type: &str) -> Vec<String> {
-        self.cft
-            .assignable_target_names(actual_type)
-            .into_iter()
-            .map(|name| name.to_string())
-            .collect()
+    pub(crate) fn assignable_target_names(&self, actual_type: &str) -> Vec<TypeName> {
+        self.cft.assignable_target_names(actual_type)
     }
 
-    pub(crate) fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
-        self.cft.enum_variant_value(enum_name, variant)
+    pub(crate) fn enum_value(&self, enum_name: &str, variant: &str) -> Option<CftEnumValue> {
+        let value = self.cft.enum_variant_value(enum_name, variant)?;
+        self.cft.enum_value_from_int(enum_name, value)
     }
 
     pub(crate) fn singleton_types(&self) -> impl Iterator<Item = &CftType> {

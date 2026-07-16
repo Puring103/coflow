@@ -36,14 +36,14 @@ use coflow_runtime::{
 };
 
 use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
+use crate::editor::settings::{
+    read_project_settings, sanitized_column_widths, write_project_settings,
+};
 use crate::editor::types::{
     CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
     CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError,
     EditorProjectSettings, FileRecords, FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome,
     ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
-};
-use crate::editor::settings::{
-    read_project_settings, sanitized_column_widths, write_project_settings,
 };
 
 pub use diagnostics::Diagnostics;
@@ -230,7 +230,7 @@ impl SessionStore {
             registry.as_ref(),
             coflow::commands::BuildOptions::default(),
         )
-            .map_err(project_diagnostics_to_editor_error)?
+        .map_err(project_diagnostics_to_editor_error)?
         {
             coflow::commands::CommandOutcome::Success(report) => {
                 let mut outputs = vec![report.data.dir.display().to_string()];
@@ -256,15 +256,16 @@ impl SessionStore {
                 "`{file_path}` is not a source file in the current project"
             )));
         }
-        let root = session
-            .project_root
-            .canonicalize()
-            .map_err(|error| EditorError::project(format!("failed to resolve project root: {error}")))?;
+        let root = session.project_root.canonicalize().map_err(|error| {
+            EditorError::project(format!("failed to resolve project root: {error}"))
+        })?;
         let path = session
             .project_root
             .join(file_path)
             .canonicalize()
-            .map_err(|error| EditorError::not_found(format!("failed to resolve `{file_path}`: {error}")))?;
+            .map_err(|error| {
+                EditorError::not_found(format!("failed to resolve `{file_path}`: {error}"))
+            })?;
         if !path.starts_with(&root) || !path.is_file() {
             return Err(EditorError::not_found(format!(
                 "source file `{file_path}` is outside the project or does not exist"
@@ -568,7 +569,11 @@ impl SessionStore {
                 "insert_record requires a CfdValue::Object for fields",
             ));
         };
-        let fields_map = boxed.fields;
+        let fields_map = boxed
+            .fields
+            .into_iter()
+            .map(|(name, value)| (name.to_string(), value))
+            .collect();
 
         let mut session = session_lock
             .write()
@@ -733,8 +738,8 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
     let mut type_seen = Vec::new();
     let mut type_set = HashSet::new();
     for view in queries.record_views_in_file(file_path) {
-        if type_set.insert(view.coordinate.actual_type.clone()) {
-            type_seen.push(view.coordinate.actual_type.clone());
+        if type_set.insert(view.coordinate.actual_type.to_string()) {
+            type_seen.push(view.coordinate.actual_type.to_string());
         }
         let row = record_view_to_row(&view, &ctx);
         for field in &row.fields {
@@ -745,7 +750,9 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
                 index
             });
             let stats = &mut columns[index].1;
-            stats.type_names.insert(row.coordinate.actual_type.clone());
+            stats
+                .type_names
+                .insert(row.coordinate.actual_type.to_string());
             let summary_len = row.field_summaries.get(&field.name).map_or(0, String::len);
             stats.max_summary_len = stats.max_summary_len.max(summary_len);
         }
@@ -864,7 +871,7 @@ fn snapshot_file_types(
         .map(|file_path| {
             let mut counts = BTreeMap::<String, usize>::new();
             for view in session.queries().record_views_in_file(&file_path) {
-                let type_name = view.coordinate.actual_type.clone();
+                let type_name = view.coordinate.actual_type.to_string();
                 *counts.entry(type_name).or_default() += 1;
             }
             let options = session
@@ -1040,9 +1047,7 @@ fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> Ed
     EditorError::write(message).with_diagnostics(flat)
 }
 
-fn project_diagnostics_to_editor_error(
-    diagnostics: coflow_api::DiagnosticSet,
-) -> EditorError {
+fn project_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> EditorError {
     let message = diagnostics
         .iter()
         .map(|diagnostic| diagnostic.message.as_str())
@@ -1145,7 +1150,7 @@ mod revision_tests {
         store
             .write_field(
                 session_id,
-                &RecordCoordinate::new("Item", "sword"),
+                &RecordCoordinate::try_new("Item", "sword").unwrap(),
                 &[CfdPathSegment::Field("name".to_string())],
                 &CfdValue::String("Internal write".to_string()),
             )
@@ -1233,7 +1238,7 @@ mod revision_tests {
         store
             .write_field(
                 snapshot.session_id,
-                &RecordCoordinate::new("Item", "sword"),
+                &RecordCoordinate::try_new("Item", "sword").unwrap(),
                 &[CfdPathSegment::Field("name".to_string())],
                 &CfdValue::String("Internal".to_string()),
             )
@@ -1262,7 +1267,7 @@ mod revision_tests {
             store
                 .write_field(
                     snapshot.session_id,
-                    &RecordCoordinate::new("Item", "sword"),
+                    &RecordCoordinate::try_new("Item", "sword").unwrap(),
                     &[CfdPathSegment::Field("name".to_string())],
                     &CfdValue::String("Internal".to_string()),
                 )
@@ -1294,7 +1299,7 @@ mod revision_tests {
             store
                 .write_field(
                     snapshot.session_id,
-                    &RecordCoordinate::new("Item", "sword"),
+                    &RecordCoordinate::try_new("Item", "sword").unwrap(),
                     &[CfdPathSegment::Field("name".to_string())],
                     &CfdValue::String("Internal".to_string()),
                 )

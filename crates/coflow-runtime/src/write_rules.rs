@@ -264,7 +264,7 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
         self.pending_records?
             .keys()
             .find(|record| {
-                record.key == key
+                record.key() == key
                     && self.session.model.type_domain_id(&record.actual_type) == Some(domain_id)
             })
             .map(|record| record.actual_type.as_str())

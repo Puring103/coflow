@@ -72,7 +72,7 @@ impl Diagnostics {
                 diagnostic
                     .actual_type
                     .as_deref()
-                    .is_none_or(|actual_type| actual_type == coordinate.actual_type)
+                    .is_none_or(|actual_type| actual_type == coordinate.actual_type.as_str())
             })
     }
 }
@@ -142,7 +142,7 @@ mod tests {
             diagnostic("items.cfd", "sword", Some("Item"), "typed"),
         ]);
 
-        let coordinate = RecordCoordinate::new("Item", "sword");
+        let coordinate = RecordCoordinate::try_new("Item", "sword").unwrap();
         let messages = diagnostics
             .for_record("items.cfd", &coordinate)
             .map(|diagnostic| diagnostic.message.as_str())

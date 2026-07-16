@@ -348,10 +348,14 @@ missing,,,No
 
     assert_eq!(graph.available_fields, vec!["noRes", "yesRes"]);
     assert!(graph.edges.iter().any(|edge| {
-        edge.source.key == "root" && edge.target.key == "yes" && edge.field_path == "yesRes[0]"
+        edge.source.key.as_str() == "root"
+            && edge.target.key.as_str() == "yes"
+            && edge.field_path == "yesRes[0]"
     }));
     assert!(graph.edges.iter().any(|edge| {
-        edge.source.key == "root" && edge.target.key == "missing" && edge.field_path == "noRes[0]"
+        edge.source.key.as_str() == "root"
+            && edge.target.key.as_str() == "missing"
+            && edge.field_path == "noRes[0]"
     }));
 }
 
@@ -446,7 +450,7 @@ fn spread_write_reports_source_and_matches_full_check_diagnostics() {
     let outcome = store
         .write_field(
             snapshot.session_id,
-            &RecordCoordinate::new("Item", "child"),
+            &RecordCoordinate::try_new("Item", "child").unwrap(),
             &[CfdPathSegment::Field("name".to_string())],
             &CfdValue::String("Changed".to_string()),
         )
@@ -536,7 +540,7 @@ fn edit_collection_appends_schema_default_item() {
     let outcome = store
         .edit_collection(
             snapshot.session_id,
-            &RecordCoordinate::new("Bag", "bag"),
+            &RecordCoordinate::try_new("Bag", "bag").unwrap(),
             &[CfdPathSegment::Field("nums".to_string())],
             CollectionEdit::ArrayAppend { value: None },
         )
@@ -583,7 +587,7 @@ fn edit_collection_appends_by_copying_last_item_before_schema_seed() {
     let outcome = store
         .edit_collection(
             snapshot.session_id,
-            &RecordCoordinate::new("Bag", "bag"),
+            &RecordCoordinate::try_new("Bag", "bag").unwrap(),
             &[CfdPathSegment::Field("nums".to_string())],
             CollectionEdit::ArrayAppend { value: None },
         )
@@ -645,7 +649,9 @@ fn row_diagnostics_are_precomputed_by_backend() {
     let item = records
         .records
         .iter()
-        .find(|row| row.coordinate.actual_type == "Item" && row.coordinate.key == "sword")
+        .find(|row| {
+            row.coordinate.actual_type.as_str() == "Item" && row.coordinate.key.as_str() == "sword"
+        })
         .expect("item row");
 
     assert!(item.diagnostic_severity.is_some());
@@ -807,7 +813,7 @@ dimensions:
     let outcome = store
         .write_field(
             snapshot.session_id,
-            &RecordCoordinate::new("Item", "potion"),
+            &RecordCoordinate::try_new("Item", "potion").unwrap(),
             &[CfdPathSegment::Field("name".to_string())],
             &CfdValue::String("Elixir".to_string()),
         )
@@ -851,7 +857,7 @@ fn write_project(root: &std::path::Path, name: &str) {
 }
 
 fn object_value(actual_type: &str, fields: BTreeMap<String, CfdValue>) -> CfdValue {
-    CfdValue::Object(Box::new(CfdObject::new(actual_type, fields)))
+    CfdValue::Object(Box::new(CfdObject::try_new(actual_type, fields).unwrap()))
 }
 
 fn load_ref_metadata_project() -> (SessionStore, TempDirCleanup, u32) {
@@ -907,7 +913,7 @@ fn holder_row(store: &SessionStore, session_id: u32) -> cfd_editor_lib::editor::
     records
         .records
         .into_iter()
-        .find(|row| row.coordinate.actual_type == "Holder")
+        .find(|row| row.coordinate.actual_type.as_str() == "Holder")
         .expect("holder row")
 }
 

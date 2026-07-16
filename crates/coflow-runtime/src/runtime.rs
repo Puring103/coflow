@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 use coflow_api::{
-    ArtifactSet, CodeGenerator, CodegenContext, DataExporter, DecodedOutputOptions, DiagnosticSet,
-    ExportContext, ProviderRegistry, Severity, WriterCapabilities,
+    ArtifactSet, CodeGenerator, CodegenContext, DataExporter, DecodedOutputOptions, Diagnostic,
+    DiagnosticSet, ExportContext, ProviderRegistry, Severity, WriterCapabilities,
 };
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
@@ -417,7 +417,7 @@ impl WriteProjectSession {
             .queries()
             .field_value(&coordinate.actual_type, &coordinate.key, path)
             .ok_or_else(|| {
-                DiagnosticSet::one(coflow_api::Diagnostic {
+                DiagnosticSet::one(Diagnostic {
                     code: "MUTATION-PATH".to_string(),
                     stage: "MUTATION".to_string(),
                     severity: Severity::Error,
@@ -512,7 +512,7 @@ impl WriteProjectSession {
         new_value: &CfdValue,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::SetField {
-            record: RecordCoordinate::new(actual_type, key),
+            record: validated_coordinate(actual_type, key)?,
             file: None,
             path: path.to_vec(),
             value: MutationValue::Cfd(new_value.clone()),
@@ -566,7 +566,7 @@ impl WriteProjectSession {
         new_key: &str,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::RenameRecord {
-            record: RecordCoordinate::new(actual_type, old_key),
+            record: validated_coordinate(actual_type, old_key)?,
             file: None,
             new_key: new_key.to_string(),
         })
@@ -608,7 +608,7 @@ impl WriteProjectSession {
         key: &str,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::DeleteRecord {
-            record: RecordCoordinate::new(actual_type, key),
+            record: validated_coordinate(actual_type, key)?,
             file: None,
         })
     }
@@ -626,7 +626,7 @@ impl WriteProjectSession {
             diagnostics.extend(failed.into_source_diagnostics());
         }
         if diagnostics.is_empty() {
-            diagnostics.push(coflow_api::Diagnostic::error(
+            diagnostics.push(Diagnostic::error(
                 "WRITE-TXN-NO-OUTCOME",
                 "WRITE",
                 "mutation transaction produced neither an applied operation nor a failure",
@@ -634,4 +634,14 @@ impl WriteProjectSession {
         }
         Err(diagnostics)
     }
+}
+
+fn validated_coordinate(actual_type: &str, key: &str) -> Result<RecordCoordinate, DiagnosticSet> {
+    RecordCoordinate::try_new(actual_type, key).map_err(|error| {
+        DiagnosticSet::one(Diagnostic::error(
+            "MUTATION-COORDINATE",
+            "MUTATION",
+            error.to_string(),
+        ))
+    })
 }

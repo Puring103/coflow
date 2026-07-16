@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use coflow_api::{ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet};
 use coflow_cft::{CftModuleSet, CftSchema};
-use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
+use coflow_data_model::{
+    CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RecordCoordinate,
+};
 use coflow_project::{path_to_slash, Project};
-use serde::{Deserialize, Serialize};
 
 use crate::checks::CheckState;
 use crate::dimensions::{self, dimensions_for_project, DimensionInfo};
@@ -15,31 +16,6 @@ use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
 use crate::load::SourceDataCache;
 use crate::records::{EffectiveFieldWrite, RecordView, RefTargetInfo};
 use crate::writes::record_value_at_path;
-
-/// Stable, wire-friendly coordinate of a top-level record.
-///
-/// Top-level records always have an `(actual_type, key)` pair that uniquely
-/// identifies them inside a model build.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-pub struct RecordCoordinate {
-    pub actual_type: String,
-    pub key: String,
-}
-
-impl RecordCoordinate {
-    #[must_use]
-    pub fn new(actual_type: impl Into<String>, key: impl Into<String>) -> Self {
-        Self {
-            actual_type: actual_type.into(),
-            key: key.into(),
-        }
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct ProjectSession {
@@ -265,7 +241,7 @@ impl ProjectSession {
                     continue;
                 };
                 targets.push(RefTargetInfo {
-                    coordinate: RecordCoordinate::new(record.actual_type(), record.key.clone()),
+                    coordinate: record.coordinate(),
                     file_path: file_path.to_string(),
                 });
             }

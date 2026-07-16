@@ -103,7 +103,7 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
     let holder = model.record(holder_id).expect("holder");
     assert_eq!(
         holder.field("item"),
-        Some(&CfdValue::Ref("sword".to_string()))
+        Some(&CfdValue::record_ref("sword").unwrap())
     );
     Ok(())
 }
@@ -448,11 +448,11 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
     let b_id = model.lookup_assignable("Node", "b").expect("b record");
     assert_eq!(
         model.record(a_id).and_then(|record| record.field("next")),
-        Some(&CfdValue::Ref("b".to_string()))
+        Some(&CfdValue::record_ref("b").unwrap())
     );
     assert_eq!(
         model.record(b_id).and_then(|record| record.field("next")),
-        Some(&CfdValue::Ref("a".to_string()))
+        Some(&CfdValue::record_ref("a").unwrap())
     );
     Ok(())
 }
@@ -754,7 +754,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     );
     assert!(matches!(
         encounter.field("featured_item"),
-        Some(CfdValue::Ref(target_key)) if target_key == "sword_fire"
+        Some(CfdValue::Ref(target_key)) if target_key.as_str() == "sword_fire"
     ));
     Ok(())
 }

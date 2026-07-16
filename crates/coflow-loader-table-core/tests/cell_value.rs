@@ -1002,7 +1002,7 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         ])
     );
 
-    let reference = CfdValue::Ref("sword_01".to_string());
+    let reference = CfdValue::record_ref("sword_01").map_err(|err| err.to_string())?;
     let rendered_reference = render_cell_value(&reference).map_err(|err| err.to_string())?;
     assert_eq!(rendered_reference, "&sword_01");
     assert_eq!(
@@ -1024,23 +1024,24 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         )])
     );
 
-    let enum_value = CfdValue::Enum(CfdEnumValue {
-        enum_name: "Rarity".to_string(),
-        variant: Some("Rare".to_string()),
-        value: 10,
-    });
+    let enum_value = CfdValue::Enum(
+        CfdEnumValue::try_new("Rarity", Some("Rare"), 10).map_err(|err| err.to_string())?,
+    );
     assert_eq!(
         render_cell_value(&enum_value).map_err(|err| err.to_string())?,
         "Rare"
     );
 
-    let stats = CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
-        "Stats",
-        std::collections::BTreeMap::from([
-            ("attack".to_string(), CfdValue::Int(20)),
-            ("hp".to_string(), CfdValue::Int(100)),
-        ]),
-    )));
+    let stats = CfdValue::Object(Box::new(
+        coflow_data_model::CfdObject::try_new(
+            "Stats",
+            std::collections::BTreeMap::from([
+                ("attack".to_string(), CfdValue::Int(20)),
+                ("hp".to_string(), CfdValue::Int(100)),
+            ]),
+        )
+        .map_err(|err| err.to_string())?,
+    ));
     let rendered_stats = render_cell_value(&stats).map_err(|err| err.to_string())?;
     assert_eq!(rendered_stats, "Stats{attack: 20, hp: 100}");
     let parsed_stats = parse_value(&schema, "Stats", &rendered_stats)?;
@@ -1061,13 +1062,19 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
 
 #[test]
 fn renders_polymorphic_object_values_with_type_marker() -> TestResult {
-    let nested = CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
-        "ItemReward",
-        std::collections::BTreeMap::from([
-            ("count".to_string(), CfdValue::Int(1)),
-            ("item".to_string(), CfdValue::Ref("sword".to_string())),
-        ]),
-    )));
+    let nested = CfdValue::Object(Box::new(
+        coflow_data_model::CfdObject::try_new(
+            "ItemReward",
+            std::collections::BTreeMap::from([
+                ("count".to_string(), CfdValue::Int(1)),
+                (
+                    "item".to_string(),
+                    CfdValue::record_ref("sword").map_err(|err| err.to_string())?,
+                ),
+            ]),
+        )
+        .map_err(|err| err.to_string())?,
+    ));
     let rendered = render_cell_value(&nested).map_err(|err| err.to_string())?;
 
     assert_eq!(rendered, "ItemReward{count: 1, item: &sword}".to_string());
@@ -1325,7 +1332,7 @@ fn explicit_record_refs_resolve_to_cfd_refs() -> TestResult {
 
     assert_eq!(
         drop_record.field("item"),
-        Some(&CfdValue::Ref("item_1".into()))
+        Some(&CfdValue::record_ref("item_1").unwrap())
     );
     let _ = item_record_id;
     Ok(())
@@ -1363,7 +1370,7 @@ fn direct_record_ref_shorthand_resolves_to_cfd_refs_by_expected_type() -> TestRe
 
     assert_eq!(
         drop_record.field("reward"),
-        Some(&CfdValue::Ref("reward_1".into()))
+        Some(&CfdValue::record_ref("reward_1").unwrap())
     );
     let _ = reward_record_id;
     Ok(())

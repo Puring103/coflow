@@ -3,7 +3,9 @@
 //! shipped to external hosts (Tauri front-end, LSP, ...) without leaking
 //! internal indices.
 
-use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordOrigin};
+use coflow_data_model::{
+    CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordCoordinate, RecordOrigin,
+};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
@@ -25,7 +27,7 @@ fn expect_eq<T: PartialEq + Debug + ?Sized>(
 fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>> {
     let mut fields = BTreeMap::new();
     fields.insert("hp".to_string(), CfdValue::Int(42));
-    fields.insert("next".to_string(), CfdValue::Ref("fireball".to_string()));
+    fields.insert("next".to_string(), CfdValue::record_ref("fireball")?);
     fields.insert(
         "tags".to_string(),
         CfdValue::Array(vec![
@@ -43,20 +45,16 @@ fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>
     );
     fields.insert(
         "kind".to_string(),
-        CfdValue::Enum(CfdEnumValue {
-            enum_name: "Element".into(),
-            variant: Some("Fire".into()),
-            value: 0,
-        }),
+        CfdValue::Enum(CfdEnumValue::try_new("Element", Some("Fire"), 0)?),
     );
     fields.insert(
         "child".to_string(),
-        CfdValue::Object(Box::new(CfdObject::new("Item", BTreeMap::new()))),
+        CfdValue::Object(Box::new(CfdObject::try_new("Item", BTreeMap::new())?)),
     );
 
     let record = CfdRecord {
-        key: "potion".into(),
-        object: CfdObject::new("Item", fields),
+        key: RecordCoordinate::try_new("Item", "potion")?.key,
+        object: CfdObject::try_new("Item", fields)?,
         origin: RecordOrigin::None,
         dimension_fields: BTreeMap::new(),
     };
@@ -83,6 +81,36 @@ fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>
     let round: CfdRecord = serde_json::from_str(&json)?;
     if record != round {
         return Err(std::io::Error::other(format!("round trip changed record: {round:?}")).into());
+    }
+    Ok(())
+}
+
+#[test]
+fn record_coordinate_has_stable_validated_wire_form() -> Result<(), Box<dyn std::error::Error>> {
+    let coordinate = RecordCoordinate::try_new("Item", "sword")?;
+    let json = serde_json::to_string(&coordinate)?;
+    expect_eq(
+        json.as_str(),
+        r#"{"actual_type":"Item","key":"sword"}"#,
+        "record coordinate wire shape",
+    )?;
+    expect_eq(
+        &serde_json::from_str::<RecordCoordinate>(&json)?,
+        &coordinate,
+        "record coordinate should round-trip",
+    )?;
+
+    for invalid in [
+        r#"{"actual_type":"","key":"sword"}"#,
+        r#"{"actual_type":"Item","key":""}"#,
+        r#"{"actual_type":"not valid","key":"sword"}"#,
+    ] {
+        if serde_json::from_str::<RecordCoordinate>(invalid).is_ok() {
+            return Err(std::io::Error::other(format!(
+                "invalid coordinate should fail to deserialize: {invalid}"
+            ))
+            .into());
+        }
     }
     Ok(())
 }
@@ -117,11 +145,7 @@ fn cfd_i64_wire_uses_strings_and_accepts_legacy_numbers() -> Result<(), Box<dyn 
         &serde_json::from_str::<CfdEnumValue>(
             r#"{"enum_name":"Flag","variant":null,"value":"9223372036854775807"}"#,
         )?,
-        &CfdEnumValue {
-            enum_name: "Flag".into(),
-            variant: None,
-            value: i64::MAX,
-        },
+        &CfdEnumValue::try_new("Flag", None::<String>, i64::MAX)?,
         "enum integer payloads should deserialize from decimal strings",
     )?;
     Ok(())

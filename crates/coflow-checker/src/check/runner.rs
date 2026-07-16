@@ -4,7 +4,7 @@ use super::evaluator::CheckEvaluator;
 use super::statements;
 use super::value::{CheckRecordRef, CheckValue, ValueLocation};
 use crate::{DependencyGraph, DimensionCheckContext};
-use coflow_cft::CftSchema;
+use coflow_cft::{CftSchema, FieldName};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdRecordId, CfdValue,
 };
@@ -34,7 +34,7 @@ enum CheckSelection {
 struct NestedFieldChecks<'a> {
     root_record: Option<CfdRecordId>,
     actual_type: &'a str,
-    fields: &'a BTreeMap<String, CfdValue>,
+    fields: &'a BTreeMap<FieldName, CfdValue>,
     root_location: ValueLocation,
     selection: CheckSelection,
     cursor: TraversalCursor,
@@ -247,7 +247,7 @@ impl<'a> CheckRunner<'a> {
             self.run_nested_value_checks(
                 request.root_record,
                 value,
-                request.root_location.field(name),
+                request.root_location.field(name.as_str()),
                 request.selection,
                 traversal_budget,
                 request.cursor,

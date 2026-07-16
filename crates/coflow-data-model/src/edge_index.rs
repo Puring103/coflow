@@ -4,7 +4,7 @@ use crate::model::{
     CfdDomainId, CfdRecord, CfdRecordId, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId,
     RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
 };
-use coflow_cft::CftValueType;
+use coflow_cft::{CftValueType, RecordKey};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
@@ -24,7 +24,7 @@ pub(crate) struct SpreadIndexes {
 
 pub(crate) fn build_spread_indexes(
     drafts: &[RecordDraft],
-    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     schema: &DataModelCompilerContext<'_>,
 ) -> SpreadIndexes {
     let mut out = SpreadIndexes::default();
@@ -47,7 +47,7 @@ fn collect_spread_edges(
     host: CfdRecordId,
     path: &CfdPath,
     drafts: &[RecordDraft],
-    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     schema: &DataModelCompilerContext<'_>,
     out: &mut SpreadIndexes,
 ) {
@@ -71,7 +71,7 @@ fn collect_spread_edges(
         let Some(domain) = schema.type_domain_id(&source.expected_type) else {
             continue;
         };
-        let Some(source_id) = lookup_domain_ref(
+        let Some((source_id, source_key)) = lookup_domain_ref(
             schema,
             record_by_domain_key,
             &source.expected_type,
@@ -95,7 +95,7 @@ fn collect_spread_edges(
             fields,
             expected_type,
             domain,
-            source_key: source.key,
+            source_key,
             source: source_id,
             source_type,
         });
@@ -107,7 +107,7 @@ fn collect_spread_edges(
         collect_nested_spread_edges(
             value,
             host,
-            &path.clone().field(field.clone()),
+            &path.clone().field(field.as_str()),
             drafts,
             record_by_domain_key,
             schema,
@@ -121,7 +121,7 @@ fn collect_nested_spread_edges(
     host: CfdRecordId,
     path: &CfdPath,
     drafts: &[RecordDraft],
-    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     schema: &DataModelCompilerContext<'_>,
     out: &mut SpreadIndexes,
 ) {
@@ -187,7 +187,7 @@ fn collect_nested_spread_edges(
 
 pub(crate) fn build_ref_indexes(
     records: &[CfdRecord],
-    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     schema: &DataModelCompilerContext<'_>,
     spread_edges: &[SpreadEdge],
 ) -> RefIndexes {
@@ -212,7 +212,7 @@ pub(crate) fn build_ref_indexes(
             let Some(field) = context
                 .schema
                 .full_fields(record.actual_type())
-                .find(|field| field.name.as_str() == name)
+                .find(|field| &field.name == name)
             else {
                 continue;
             };
@@ -220,7 +220,7 @@ pub(crate) fn build_ref_indexes(
                 value,
                 &field.value_type,
                 host,
-                &root.clone().field(name.clone()),
+                &root.clone().field(name.as_str()),
                 None,
                 &context,
                 &mut out,
@@ -230,7 +230,7 @@ pub(crate) fn build_ref_indexes(
             let Some(field) = context
                 .schema
                 .full_fields(record.actual_type())
-                .find(|field| field.name.as_str() == field_name)
+                .find(|field| &field.name == field_name)
             else {
                 continue;
             };
@@ -244,7 +244,7 @@ pub(crate) fn build_ref_indexes(
                     &value.value,
                     &field.value_type,
                     host,
-                    &root.clone().field(field_name.clone()),
+                    &root.clone().field(field_name.as_str()),
                     Some(&coordinate),
                     &context,
                     &mut out,
@@ -257,7 +257,7 @@ pub(crate) fn build_ref_indexes(
 
 struct RefEdgeBuildContext<'a, 'schema> {
     records: &'a [CfdRecord],
-    record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     schema: &'a DataModelCompilerContext<'schema>,
     spread_edges_by_host: BTreeMap<CfdRecordId, Vec<&'a SpreadEdge>>,
 }
@@ -290,7 +290,7 @@ fn collect_ref_edges(
             let Some(domain) = context.schema.type_domain_id(expected_type) else {
                 return;
             };
-            let Some(target) = lookup_domain_ref(
+            let Some((target, _)) = lookup_domain_ref(
                 context.schema,
                 context.record_by_domain_key,
                 expected_type,
@@ -326,8 +326,8 @@ fn collect_ref_edges(
             for (name, inner) in &boxed.fields {
                 let Some(field) = context
                     .schema
-                    .full_fields(&boxed.actual_type)
-                    .find(|field| field.name.as_str() == name)
+                    .full_fields(boxed.actual_type.as_str())
+                    .find(|field| &field.name == name)
                 else {
                     continue;
                 };
@@ -335,7 +335,7 @@ fn collect_ref_edges(
                     inner,
                     &field.value_type,
                     host,
-                    &path.clone().field(name.clone()),
+                    &path.clone().field(name.as_str()),
                     dimension,
                     context,
                     out,
@@ -374,12 +374,13 @@ fn collect_ref_edges(
 
 fn lookup_domain_ref(
     schema: &DataModelCompilerContext<'_>,
-    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     target_type: &str,
     key: &str,
-) -> Option<CfdRecordId> {
+) -> Option<(CfdRecordId, RecordKey)> {
     schema
         .type_domain_id(target_type)
-        .and_then(|domain_id| record_by_domain_key.get(&(domain_id, key.to_string())))
-        .copied()
+        .and_then(|domain_id| record_by_domain_key.get(&domain_id))
+        .and_then(|records| records.get_key_value(key))
+        .map(|(key, id)| (*id, key.clone()))
 }

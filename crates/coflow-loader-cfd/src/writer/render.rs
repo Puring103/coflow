@@ -122,8 +122,8 @@ fn value_from_schema_default(
             variant,
             value,
         } => CfdValue::Enum(CfdEnumValue {
-            enum_name: enum_name.to_string(),
-            variant: Some(variant.to_string()),
+            enum_name: enum_name.clone(),
+            variant: Some(variant.clone()),
             value: *value,
         }),
         CftSchemaDefaultValue::EmptyArray => CfdValue::Array(Vec::new()),
@@ -146,15 +146,15 @@ fn value_from_type_default(schema: &CftSchema, ty: &CftValueType) -> CfdValue {
             .map_or_else(
                 || {
                     CfdValue::Enum(CfdEnumValue {
-                        enum_name: name.to_string(),
+                        enum_name: name.clone(),
                         variant: None,
                         value: 0,
                     })
                 },
                 |variant| {
                     CfdValue::Enum(CfdEnumValue {
-                        enum_name: name.to_string(),
-                        variant: Some(variant.name.to_string()),
+                        enum_name: name.clone(),
+                        variant: Some(variant.name.clone()),
                         value: variant.value,
                     })
                 },
@@ -167,14 +167,14 @@ fn value_from_type_default(schema: &CftSchema, ty: &CftValueType) -> CfdValue {
                         .all_fields()
                         .map(|field| {
                             (
-                                field.name.to_string(),
+                                field.name.clone(),
                                 value_from_type_default(schema, &field.value_type),
                             )
                         })
                         .collect()
                 })
                 .unwrap_or_default();
-            CfdValue::Object(Box::new(CfdObject::new(name.to_string(), fields)))
+            CfdValue::Object(Box::new(CfdObject::new(name.clone(), fields)))
         }
     }
 }
@@ -228,15 +228,12 @@ pub(super) fn serialize_value_for_type(
             }
         }
         CfdValue::String(v) => format!("{v:?}"),
-        CfdValue::Enum(e) => e
-            .variant
-            .clone()
-            .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
+        CfdValue::Enum(e) => e.variant.as_ref().map_or_else(
+            || format!("{}({})", e.enum_name, e.value),
+            ToString::to_string,
+        ),
         CfdValue::Ref(target_key)
-            if matches!(
-                expected.map(non_nullable),
-                Some(CftValueType::RecordRef(_))
-            ) =>
+            if matches!(expected.map(non_nullable), Some(CftValueType::RecordRef(_))) =>
         {
             format!("&{target_key}")
         }
@@ -250,7 +247,7 @@ pub(super) fn serialize_value_for_type(
                     let field_type = schema
                         .zip(object_type_name(expected, &boxed.actual_type))
                         .and_then(|(schema, type_name)| {
-                            type_after_field_segment(schema, type_name, name)
+                            type_after_field_segment(schema, type_name, name.as_str())
                         });
                     let _ = writeln!(
                         acc,
@@ -283,10 +280,10 @@ pub(super) fn serialize_value_for_type(
                     let key = match k {
                         CfdDictKey::String(s) => format!("{s:?}"),
                         CfdDictKey::Int(n) => n.to_string(),
-                        CfdDictKey::Enum(e) => e
-                            .variant
-                            .clone()
-                            .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
+                        CfdDictKey::Enum(e) => e.variant.as_ref().map_or_else(
+                            || format!("{}({})", e.enum_name, e.value),
+                            ToString::to_string,
+                        ),
                     };
                     format!(
                         "{key}: {}",

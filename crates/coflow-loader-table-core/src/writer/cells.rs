@@ -24,7 +24,7 @@ pub(super) fn render_insert_value(
         }
         let mut cells = Vec::new();
         for (field, child_value) in record.fields() {
-            let Some(column) = child_columns.get(field) else {
+            let Some(column) = child_columns.get(field.as_str()) else {
                 return Err(unmapped_path_error(record_key, actual_type, path));
             };
             let value = render_cell_value(child_value).map_err(table_render_error)?;
@@ -64,7 +64,7 @@ pub(super) fn render_field_cells(
             if !child_columns.is_empty() {
                 let mut cells = Vec::new();
                 for (field, value) in record.fields() {
-                    let Some(column) = child_columns.get(field) else {
+                    let Some(column) = child_columns.get(field.as_str()) else {
                         return Err(unmapped_path_error(record_key, actual_type, path));
                     };
                     cells.push(TableSetCell {
@@ -143,12 +143,13 @@ fn replace_subvalue(
             Ok(value)
         }
         (WriteFieldPathSegment::Field(field), CfdValue::Object(record)) => {
-            let current =
-                record.fields().get(field).cloned().ok_or_else(|| {
-                    one_error("TABLE-WRITE", format!("field `{field}` not found"))
-                })?;
+            let (field_name, current) = record
+                .fields()
+                .get_key_value(field.as_str())
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .ok_or_else(|| one_error("TABLE-WRITE", format!("field `{field}` not found")))?;
             record.fields.insert(
-                field.clone(),
+                field_name,
                 replace_subvalue(current, &path[1..], new_value)?,
             );
             Ok(value)

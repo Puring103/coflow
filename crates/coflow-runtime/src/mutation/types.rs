@@ -173,8 +173,8 @@ pub(crate) enum PreparedMutationOp {
     InsertRecord {
         file: String,
         sheet: Option<String>,
-        actual_type: String,
-        key: String,
+        actual_type: TypeName,
+        key: RecordKey,
         fields: BTreeMap<String, CfdValue>,
     },
     SetField {
@@ -192,7 +192,7 @@ pub(crate) enum PreparedMutationOp {
     },
     RenameRecord {
         record: RecordCoordinate,
-        new_key: String,
+        new_key: RecordKey,
         report_file: Option<String>,
     },
     DeleteRecord {

@@ -21,8 +21,8 @@ use crate::indexes::{
     DiagnosticLogicalLocation, FileIndex, PendingRecordRef, RecordIndexBuilder,
     ResolvedSourceEntry, SessionIndexBuilder, SourceId, SourceIndex,
 };
-use crate::session::RecordCoordinate;
 use crate::source_resolution::{ResolvedLoaderSource, SourceResolver};
+use crate::RecordCoordinate;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ProjectLoadOutput {
@@ -181,7 +181,7 @@ pub(crate) fn load_project_data(
     let origins: Vec<RecordOrigin> = origins_of(&records);
     let record_coordinates = records
         .iter()
-        .map(|record| RecordCoordinate::new(record.actual_type.clone(), record.key.clone()))
+        .map(|record| RecordCoordinate::try_new(&record.actual_type, &record.key).ok())
         .collect::<Vec<_>>();
     let mut builder = CfdDataModel::builder(schema);
     for record in records {
@@ -193,8 +193,9 @@ pub(crate) fn load_project_data(
     let model = match builder.build() {
         Ok(model) => model,
         Err(err) => {
-            let logical_locations =
-                logical_locations_from_cfd(&err, |id| record_coordinates.get(id.index()).cloned());
+            let logical_locations = logical_locations_from_cfd(&err, |id| {
+                record_coordinates.get(id.index()).cloned().flatten()
+            });
             let diagnostics = map_diagnostics_with_origins(err, &origins);
             return Err(LoadDiagnostics {
                 diagnostics,
@@ -516,7 +517,8 @@ fn push_loaded_records(
 ) {
     for record in loaded_records {
         records_index.push(PendingRecordRef {
-            coordinate: RecordCoordinate::new(record.actual_type.clone(), record.key.clone()),
+            actual_type: record.actual_type.clone(),
+            key: record.key.clone(),
             origin: record.origin.clone(),
             source_id,
             provider_id: source.provider_id.clone(),
@@ -627,7 +629,7 @@ fn build_output_from_cache(
     let origins = origins_of(&records);
     let record_coordinates = records
         .iter()
-        .map(|record| RecordCoordinate::new(record.actual_type.clone(), record.key.clone()))
+        .map(|record| RecordCoordinate::try_new(&record.actual_type, &record.key).ok())
         .collect::<Vec<_>>();
     let mut builder = CfdDataModel::builder(schema);
     for record in records {
@@ -637,8 +639,9 @@ fn build_output_from_cache(
         builder.add_input_dimension_values(batch.dimension_values.iter().cloned());
     }
     let model = builder.build().map_err(|err| {
-        let logical_locations =
-            logical_locations_from_cfd(&err, |id| record_coordinates.get(id.index()).cloned());
+        let logical_locations = logical_locations_from_cfd(&err, |id| {
+            record_coordinates.get(id.index()).cloned().flatten()
+        });
         LoadDiagnostics {
             diagnostics: map_diagnostics_with_origins(err, &origins),
             logical_locations,
@@ -712,8 +715,8 @@ pub(crate) fn logical_locations_from_cfd(
             (coordinate.is_some() || field_path.is_some()).then_some((
                 index,
                 DiagnosticLogicalLocation {
-                    actual_type: coordinate.as_ref().map(|c| c.actual_type.clone()),
-                    record_key: coordinate.map(|c| c.key),
+                    actual_type: coordinate.as_ref().map(|c| c.actual_type.to_string()),
+                    record_key: coordinate.map(|c| c.key.to_string()),
                     field_path,
                 },
             ))

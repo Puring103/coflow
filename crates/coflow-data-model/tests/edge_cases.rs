@@ -38,13 +38,13 @@ fn cyclic_record_refs_are_allowed_because_resolution_is_two_phase() {
         model
             .record(alice_id)
             .and_then(|record| record.field("parent")),
-        Some(&CfdValue::Ref("bob".to_string()))
+        Some(&CfdValue::record_ref("bob").unwrap())
     );
     assert_eq!(
         model
             .record(bob_id)
             .and_then(|record| record.field("parent")),
-        Some(&CfdValue::Ref("alice".to_string()))
+        Some(&CfdValue::record_ref("alice").unwrap())
     );
 }
 

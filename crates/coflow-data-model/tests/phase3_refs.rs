@@ -31,7 +31,7 @@ fn key_only_record_ref_helper_builds_ref_values_for_ref_fields() {
     let holder = model.record(holder_id).expect("holder record");
     assert_eq!(
         holder.field("item"),
-        Some(&CfdValue::Ref("sword".to_string()))
+        Some(&CfdValue::record_ref("sword").unwrap())
     );
 }
 

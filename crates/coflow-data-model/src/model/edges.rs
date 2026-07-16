@@ -1,6 +1,6 @@
 use super::ids::{CfdDomainId, CfdRecordId, CfdTypeId};
 use crate::diagnostic::{CfdPath, CfdPathSegment};
-use coflow_cft::{DimensionName, FieldName, VariantName};
+use coflow_cft::{DimensionName, FieldName, RecordKey, VariantName};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -65,7 +65,7 @@ pub struct RefEdge {
     pub site: RefSite,
     pub expected_type: CfdTypeId,
     pub domain: CfdDomainId,
-    pub key: String,
+    pub key: RecordKey,
     pub target: CfdRecordId,
     pub target_type: CfdTypeId,
 }
@@ -105,10 +105,10 @@ pub struct SpreadEdge {
     pub site: SpreadSite,
     pub host: CfdRecordId,
     pub path: CfdPath,
-    pub fields: BTreeSet<String>,
+    pub fields: BTreeSet<FieldName>,
     pub expected_type: CfdTypeId,
     pub domain: CfdDomainId,
-    pub source_key: String,
+    pub source_key: RecordKey,
     pub source: CfdRecordId,
     pub source_type: CfdTypeId,
 }
@@ -123,7 +123,7 @@ impl SpreadEdge {
         let Some(CfdPathSegment::Field(field)) = relative.first() else {
             return false;
         };
-        self.fields.contains(field)
+        self.fields.contains(field.as_str())
     }
 
     #[must_use]

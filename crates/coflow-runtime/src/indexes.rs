@@ -140,8 +140,9 @@ impl DiagnosticsStore {
 
     #[must_use]
     pub fn by_record(&self, actual_type: &str, record_key: &str) -> &[usize] {
-        self.by_record
-            .get(&RecordCoordinate::new(actual_type, record_key))
+        RecordCoordinate::try_new(actual_type, record_key)
+            .ok()
+            .and_then(|coordinate| self.by_record.get(&coordinate))
             .map_or(&[], Vec::as_slice)
     }
 
@@ -180,10 +181,7 @@ pub struct DiagnosticLogicalLocation {
 impl DiagnosticLogicalLocation {
     #[must_use]
     pub fn coordinate(&self) -> Option<RecordCoordinate> {
-        Some(RecordCoordinate::new(
-            self.actual_type.clone()?,
-            self.record_key.clone()?,
-        ))
+        RecordCoordinate::try_new(self.actual_type.clone()?, self.record_key.clone()?).ok()
     }
 }
 
@@ -258,7 +256,8 @@ pub(crate) struct RecordIndexBuilder {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PendingRecordRef {
-    pub coordinate: RecordCoordinate,
+    pub actual_type: String,
+    pub key: String,
     pub origin: RecordOrigin,
     pub source_id: SourceId,
     pub provider_id: String,
@@ -273,17 +272,15 @@ impl RecordIndex {
 
     #[must_use]
     pub fn get_by_coordinate(&self, actual_type: &str, key: &str) -> Option<&RecordRef> {
-        let id = self
-            .by_coordinate
-            .get(&RecordCoordinate::new(actual_type, key))?;
+        let coordinate = RecordCoordinate::try_new(actual_type, key).ok()?;
+        let id = self.by_coordinate.get(&coordinate)?;
         self.by_id.get(id)
     }
 
     #[must_use]
     pub fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
-        self.by_coordinate
-            .get(&RecordCoordinate::new(actual_type, key))
-            .copied()
+        let coordinate = RecordCoordinate::try_new(actual_type, key).ok()?;
+        self.by_coordinate.get(&coordinate).copied()
     }
 
     #[must_use]
@@ -329,8 +326,10 @@ impl RecordIndex {
         actual_type: &str,
         key: &str,
     ) -> impl Iterator<Item = &RejectedRecordRef> {
-        self.rejected_by_coordinate
-            .get(&RecordCoordinate::new(actual_type, key))
+        let indexes = RecordCoordinate::try_new(actual_type, key)
+            .ok()
+            .and_then(|coordinate| self.rejected_by_coordinate.get(&coordinate));
+        indexes
             .into_iter()
             .flatten()
             .filter_map(|index| self.rejected.get(*index))
@@ -350,13 +349,18 @@ impl RecordIndexBuilder {
         let mut pending_by_coordinate: BTreeMap<RecordCoordinate, Vec<PendingRecordRef>> =
             BTreeMap::new();
         for pending in self.pending {
+            let Ok(coordinate) = RecordCoordinate::try_new(&pending.actual_type, &pending.key)
+            else {
+                index.push_rejected(pending);
+                continue;
+            };
             pending_by_coordinate
-                .entry(pending.coordinate.clone())
+                .entry(coordinate)
                 .or_default()
                 .push(pending);
         }
         for (id, record) in model.records() {
-            let coordinate = RecordCoordinate::new(record.actual_type(), record.key.clone());
+            let coordinate = record.coordinate();
             let Some(mut candidates) = pending_by_coordinate.remove(&coordinate) else {
                 continue;
             };
@@ -404,12 +408,17 @@ impl RecordIndex {
             .entry(pending.display_path.clone())
             .or_default()
             .push(index);
-        self.rejected_by_coordinate
-            .entry(pending.coordinate.clone())
-            .or_default()
-            .push(index);
+        let coordinate = RecordCoordinate::try_new(&pending.actual_type, &pending.key).ok();
+        if let Some(coordinate) = &coordinate {
+            self.rejected_by_coordinate
+                .entry(coordinate.clone())
+                .or_default()
+                .push(index);
+        }
         self.rejected.push(RejectedRecordRef {
-            coordinate: pending.coordinate,
+            coordinate,
+            actual_type: pending.actual_type,
+            key: pending.key,
             origin: pending.origin,
             source_id: pending.source_id,
             provider_id: pending.provider_id,
@@ -430,7 +439,9 @@ pub struct RecordRef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RejectedRecordRef {
-    pub coordinate: RecordCoordinate,
+    pub coordinate: Option<RecordCoordinate>,
+    pub actual_type: String,
+    pub key: String,
     pub origin: RecordOrigin,
     pub(crate) source_id: SourceId,
     pub provider_id: String,

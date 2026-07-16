@@ -102,8 +102,8 @@ fn rename_record_key_updates_cross_source_references() {
     assert_eq!(
         outcome.renamed,
         Some((
-            RecordCoordinate::new("Item", "sword"),
-            RecordCoordinate::new("Item", "blade")
+            RecordCoordinate::try_new("Item", "sword").unwrap(),
+            RecordCoordinate::try_new("Item", "blade").unwrap()
         ))
     );
     assert_eq!(

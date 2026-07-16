@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use coflow_api::DiagnosticSet;
-use coflow_cft::CftValueType;
+use coflow_cft::{CftValueType, FieldName, RecordKey};
 use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use serde_json::{Map, Value};
 
@@ -76,8 +76,12 @@ fn coerce_json_value(
         }
         CftValueType::Dict(key, item) => coerce_json_dict_value(session, key, item, value),
         CftValueType::RecordRef(target_type) => json_ref_key(value)
-            .map(|key| CfdValue::Ref(key.to_string()))
-            .ok_or_else(|| one_value_error(format!("expected record key for `&{target_type}`"))),
+            .ok_or_else(|| one_value_error(format!("expected record key for `&{target_type}`")))
+            .and_then(|key| {
+                RecordKey::new(key)
+                    .map(CfdValue::Ref)
+                    .map_err(|error| one_value_error(error.to_string()))
+            }),
         CftValueType::Enum(name) => {
             let variant = value
                 .as_str()
@@ -137,18 +141,15 @@ fn coerce_cfd_value(
         (CftValueType::Object(expected_type), CfdValue::Object(record)) => {
             ensure_object_type_assignable(session, expected_type, record.actual_type())?;
             let mut record = *record;
-            let actual_type = record.actual_type().to_string();
+            let actual_type = record.actual_type_name().clone();
             record.fields = coerce_cfd_object_fields(
                 session,
-                &actual_type,
+                actual_type.as_str(),
                 std::mem::take(&mut record.fields),
             )?;
             Ok(CfdValue::Object(Box::new(record)))
         }
         (CftValueType::RecordRef(_expected_type), CfdValue::Ref(target_key)) => {
-            if target_key.is_empty() {
-                return Err(one_value_error("reference key must not be empty"));
-            }
             Ok(CfdValue::Ref(target_key))
         }
         (CftValueType::Object(_), CfdValue::Ref(_)) => Err(one_value_error(
@@ -161,14 +162,17 @@ fn coerce_cfd_value(
 fn coerce_cfd_object_fields(
     session: &ProjectSession,
     actual_type: &str,
-    fields: BTreeMap<String, CfdValue>,
-) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
+    fields: BTreeMap<FieldName, CfdValue>,
+) -> Result<BTreeMap<FieldName, CfdValue>, DiagnosticSet> {
     let schema = session.schema();
     fields
         .into_iter()
         .map(|(name, value)| {
-            let field = schema_field(schema, actual_type, &name)?;
-            Ok((name, coerce_cfd_field_value(session, &field.value_type, value)?))
+            let field = schema_field(schema, actual_type, name.as_str())?;
+            Ok((
+                name,
+                coerce_cfd_field_value(session, &field.value_type, value)?,
+            ))
         })
         .collect()
 }
@@ -214,7 +218,7 @@ fn coerce_cfd_enum_value(
     enum_name: &str,
     mut value: CfdEnumValue,
 ) -> Result<CfdEnumValue, DiagnosticSet> {
-    if value.enum_name != enum_name {
+    if value.enum_name.as_str() != enum_name {
         return Err(one_value_error(format!(
             "expected enum `{enum_name}`, got `{}`",
             value.enum_name
@@ -341,6 +345,11 @@ fn coerce_json_named_value(
     let actual_type = actual_object_type(object, expected_type)?;
     ensure_object_type_assignable(session, expected_type, &actual_type)?;
     let fields = coerce_json_object_fields(session, &actual_type, object)?;
+    let actual_type = session
+        .schema()
+        .resolve_type(&actual_type)
+        .map(|meta| meta.name.clone())
+        .ok_or_else(|| one_value_error(format!("unknown object type `{actual_type}`")))?;
     Ok(CfdValue::Object(Box::new(CfdObject::new(
         actual_type,
         fields,
@@ -380,7 +389,7 @@ fn coerce_json_object_fields(
     session: &ProjectSession,
     actual_type: &str,
     object: &Map<String, Value>,
-) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
+) -> Result<BTreeMap<FieldName, CfdValue>, DiagnosticSet> {
     let schema = session.schema();
     if schema.resolve_type(actual_type).is_none() {
         return Err(one_value_error(format!(
@@ -399,7 +408,7 @@ fn coerce_json_object_fields(
         }
         let field = schema_field(schema, actual_type, field_name)?;
         fields.insert(
-            field_name.clone(),
+            field.name.clone(),
             coerce_json_field_value(session, &field.value_type, field_value)?,
         );
     }

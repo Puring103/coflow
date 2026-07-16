@@ -285,10 +285,7 @@ fn render_label(model: &CfdDataModel, label: StableCheckLabel) -> Option<CfdLabe
 
 fn coordinate_for_id(model: &CfdDataModel, id: CfdRecordId) -> Option<RecordCoordinate> {
     let record = model.record(id)?;
-    Some(RecordCoordinate::new(
-        record.actual_type(),
-        record.key.clone(),
-    ))
+    Some(record.coordinate())
 }
 
 fn dimension_check_plan(dimensions: &BTreeMap<String, DimensionConfig>) -> DimensionCheckPlan {

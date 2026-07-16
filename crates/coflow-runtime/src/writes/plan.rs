@@ -270,7 +270,7 @@ fn prepare_rename(
             &record.key,
         )));
     };
-    if record.key == new_key {
+    if record.key() == new_key {
         return Ok(RenamePlan::Noop {
             coordinate: target_ref.coordinate.clone(),
         });
@@ -374,7 +374,7 @@ fn sheet_for_file_type(session: &ProjectSession, file: &str, actual_type: &str) 
         let RecordOrigin::Table { sheet, .. } = &record_ref.origin else {
             continue;
         };
-        if record_ref.coordinate.actual_type == actual_type {
+        if record_ref.coordinate.actual_type.as_str() == actual_type {
             return Some(sheet.clone());
         }
     }

@@ -1287,7 +1287,7 @@ fn resolves_direct_reference_shorthand_cells_by_field_type() -> TestResult {
 
     assert_eq!(
         drop.field("item"),
-        Some(&CfdValue::Ref("sword_01".to_string()))
+        Some(&CfdValue::record_ref("sword_01").unwrap())
     );
     let _ = item_id;
     Ok(())

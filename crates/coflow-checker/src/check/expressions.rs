@@ -3,7 +3,6 @@ use super::ops;
 use super::type_predicates;
 use super::value::{CheckValue, LocatedCheckValue};
 use coflow_cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind};
-use coflow_data_model::CfdEnumValue;
 
 pub(super) fn eval_expr(
     evaluator: &mut CheckEvaluator<'_>,
@@ -56,11 +55,9 @@ fn eval_field_expr(
 ) -> EvalResult<LocatedCheckValue> {
     if let CftSchemaCheckExprKind::Name(enum_name) = &inner.kind {
         if let Some(enum_value) = evaluator.schema.enum_variant_value(enum_name, name) {
-            return Ok(LocatedCheckValue::value(CheckValue::Enum(CfdEnumValue {
-                enum_name: enum_name.clone(),
-                variant: Some(name.to_string()),
-                value: enum_value,
-            })));
+            if let Some(value) = evaluator.schema.enum_value_from_int(enum_name, enum_value) {
+                return Ok(LocatedCheckValue::value(CheckValue::Enum(value.into())));
+            }
         }
     }
     let target = evaluator.eval_expr(inner)?;

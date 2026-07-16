@@ -224,9 +224,9 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
         "duplicate model-build failure should keep all rejected source rows"
     );
     assert!(rejected.iter().all(|record| {
-        record.coordinate.actual_type == "Item"
-            && record.coordinate.key == "sword"
-            && record.display_path == "data/items.cfd"
+        record.coordinate.as_ref().is_some_and(|coordinate| {
+            coordinate.actual_type.as_str() == "Item" && coordinate.key.as_str() == "sword"
+        }) && record.display_path == "data/items.cfd"
     }));
     assert_eq!(
         session
@@ -268,7 +268,7 @@ fn data_list_filters_and_paginates_record_summaries() {
     );
 
     assert_eq!(list.records.len(), 1);
-    assert_eq!(list.records[0].record.key, "shield");
+    assert_eq!(list.records[0].record.key.as_str(), "shield");
     assert_eq!(list.records[0].file, "data/items.cfd");
     assert_eq!(list.records[0].provider, "cfd");
 
@@ -287,7 +287,7 @@ fn data_get_supports_selector_and_key_filters() {
     let selected = data_get(
         session.queries(),
         &DataGetQuery {
-            selector: Some(RecordCoordinate::new("Item", "sword")),
+            selector: Some(RecordCoordinate::try_new("Item", "sword").unwrap()),
             actual_type: None,
             file: None,
             keys: Vec::new(),
@@ -298,7 +298,7 @@ fn data_get_supports_selector_and_key_filters() {
     )
     .expect("get selected");
     assert_eq!(selected.records.len(), 1);
-    assert_eq!(selected.records[0].record.key, "sword");
+    assert_eq!(selected.records[0].record.key.as_str(), "sword");
     assert_eq!(selected.records[0].file, "data/items.cfd");
     assert!(selected.records[0].fields.contains_key("price"));
 
@@ -316,7 +316,7 @@ fn data_get_supports_selector_and_key_filters() {
     )
     .expect("get filtered");
     assert_eq!(filtered.records.len(), 1);
-    assert_eq!(filtered.records[0].record.key, "shield");
+    assert_eq!(filtered.records[0].record.key.as_str(), "shield");
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -336,7 +336,7 @@ fn data_get_applies_file_filter_to_selected_record() {
     let report = data_get(
         session.queries(),
         &DataGetQuery {
-            selector: Some(RecordCoordinate::new("Item", "sword")),
+            selector: Some(RecordCoordinate::try_new("Item", "sword").unwrap()),
             actual_type: None,
             file: Some("data/other.cfd".to_string()),
             keys: Vec::new(),
@@ -364,7 +364,7 @@ fn data_get_returns_diagnostic_for_missing_selector() {
     let diagnostics = data_get(
         session.queries(),
         &DataGetQuery {
-            selector: Some(RecordCoordinate::new("Item", "missing")),
+            selector: Some(RecordCoordinate::try_new("Item", "missing").unwrap()),
             actual_type: None,
             file: None,
             keys: Vec::new(),

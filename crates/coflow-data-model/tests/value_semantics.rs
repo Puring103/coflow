@@ -31,13 +31,18 @@ fn complete_validation_rejects_missing_nested_required_fields() {
         ",
     );
     let compiled = &schema;
-    let value = CfdValue::Object(Box::new(CfdObject::new(
-        "Parent",
-        BTreeMap::from([(
-            "child".to_string(),
-            CfdValue::Object(Box::new(CfdObject::new("Child", BTreeMap::new()))),
-        )]),
-    )));
+    let value = CfdValue::Object(Box::new(
+        CfdObject::try_new(
+            "Parent",
+            BTreeMap::from([(
+                "child".to_string(),
+                CfdValue::Object(Box::new(
+                    CfdObject::try_new("Child", BTreeMap::new()).unwrap(),
+                )),
+            )]),
+        )
+        .unwrap(),
+    ));
 
     let err = validate_complete_value_for_schema(
         compiled,
@@ -59,15 +64,20 @@ fn fragment_validation_allows_missing_fields_but_checks_provided_values() {
     let schema = compile_schema("type Child { required: int; }");
     let compiled = &schema;
     let expected = CftValueType::Object(TypeName::new("Child").unwrap());
-    let empty = CfdValue::Object(Box::new(CfdObject::new("Child", BTreeMap::new())));
+    let empty = CfdValue::Object(Box::new(
+        CfdObject::try_new("Child", BTreeMap::new()).unwrap(),
+    ));
 
     validate_fragment_value_for_schema(compiled, &EmptyContext, &expected, &empty, None)
         .expect("object fragment may omit required fields");
 
-    let invalid = CfdValue::Object(Box::new(CfdObject::new(
-        "Child",
-        BTreeMap::from([("required".to_string(), CfdValue::String("bad".to_string()))]),
-    )));
+    let invalid = CfdValue::Object(Box::new(
+        CfdObject::try_new(
+            "Child",
+            BTreeMap::from([("required".to_string(), CfdValue::String("bad".to_string()))]),
+        )
+        .unwrap(),
+    ));
     let err =
         validate_fragment_value_for_schema(compiled, &EmptyContext, &expected, &invalid, None)
             .expect_err("provided fragment fields still require the right type");
@@ -78,7 +88,9 @@ fn fragment_validation_allows_missing_fields_but_checks_provided_values() {
 fn complete_validation_allows_omitted_schema_defaults() {
     let schema = compile_schema("type Child { defaulted: int = 1; }");
     let compiled = &schema;
-    let value = CfdValue::Object(Box::new(CfdObject::new("Child", BTreeMap::new())));
+    let value = CfdValue::Object(Box::new(
+        CfdObject::try_new("Child", BTreeMap::new()).unwrap(),
+    ));
 
     validate_complete_value_for_schema(
         compiled,

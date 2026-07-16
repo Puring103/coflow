@@ -1,4 +1,4 @@
-use coflow_cft::{CftConstValue, CftValueType};
+use coflow_cft::{CftConstValue, CftValueType, FieldName};
 use coflow_data_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdPath, CfdRecord, CfdRecordId, CfdValue,
     RefSite,
@@ -63,9 +63,7 @@ impl CheckValue {
             CfdValue::Ref(key) => {
                 let resolved = if location.storage.dimension.is_some() {
                     ty.and_then(|ty| match ty.non_nullable() {
-                        CftValueType::RecordRef(expected) => {
-                            model.lookup_assignable(expected, key)
-                        }
+                        CftValueType::RecordRef(expected) => model.lookup_assignable(expected, key),
                         _ => None,
                     })
                 } else {
@@ -490,7 +488,7 @@ impl CheckRecordRef {
     pub(super) fn fields<'a>(
         &'a self,
         model: &'a CfdDataModel,
-    ) -> Option<&'a BTreeMap<String, CfdValue>> {
+    ) -> Option<&'a BTreeMap<FieldName, CfdValue>> {
         match self {
             Self::Resolved(location) => resolved_object_fields(model, &location.storage),
             Self::Unresolved => None,
@@ -566,7 +564,7 @@ impl CheckRecordRef {
 fn resolved_object_fields<'a>(
     model: &'a CfdDataModel,
     cursor: &ModelCursor,
-) -> Option<&'a BTreeMap<String, CfdValue>> {
+) -> Option<&'a BTreeMap<FieldName, CfdValue>> {
     if cursor.dimension.is_none() && cursor.path.segments.is_empty() {
         return model.record(cursor.record).map(CfdRecord::fields);
     }
@@ -600,7 +598,7 @@ fn model_value<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a 
     for segment in &cursor.path.segments {
         value = match (segment, value) {
             (coflow_data_model::CfdPathSegment::Field(field), CfdValue::Object(object)) => {
-                object.fields().get(field)?
+                object.fields().get(field.as_str())?
             }
             (coflow_data_model::CfdPathSegment::Index(index), CfdValue::Array(items)) => {
                 items.get(*index)?

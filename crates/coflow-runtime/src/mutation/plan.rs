@@ -221,7 +221,13 @@ fn prepare_insert(
             "insert preparation received a non-insert operation",
         ));
     };
-    let coordinate = RecordCoordinate::new(actual_type, key);
+    let coordinate = RecordCoordinate::try_new(actual_type, key).map_err(|error| {
+        DiagnosticSet::one(Diagnostic::error(
+            "MUTATION-COORDINATE",
+            "MUTATION",
+            error.to_string(),
+        ))
+    })?;
     if pending_inserts.contains_key(&coordinate) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "MUTATION-INSERT-CONFLICT",
@@ -261,7 +267,15 @@ fn fold_pending_insert_rename(
     let insert_file = file.clone();
     let folded =
         prepare_rename_on_pending_insert(session, &insert_file, record, file_guard, new_key)?;
-    let new_record = RecordCoordinate::new(&record.actual_type, new_key);
+    let new_record =
+        RecordCoordinate::try_new(record.actual_type.to_string(), new_key).map_err(|error| {
+            DiagnosticSet::one(Diagnostic::error(
+                "MUTATION-COORDINATE",
+                "MUTATION",
+                error.to_string(),
+            ))
+        })?;
+    let typed_new_key = new_record.key.clone();
     if new_record != *record && pending_inserts.contains_key(&new_record) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "MUTATION-RENAME-CONFLICT",
@@ -284,7 +298,7 @@ fn fold_pending_insert_rename(
                 actual_type,
                 fields,
                 &record.key,
-                new_key,
+                &typed_new_key,
             )?,
             PreparedMutationOp::SetField {
                 write_record,
@@ -298,7 +312,7 @@ fn fold_pending_insert_rename(
                 path,
                 value,
                 &record.key,
-                new_key,
+                &typed_new_key,
             )?,
             _ => {}
         }
@@ -313,7 +327,7 @@ fn fold_pending_insert_rename(
             "pending rename target changed during planning",
         ));
     };
-    *key = new_key.to_string();
+    *key = typed_new_key;
     pending_inserts.remove(record);
     pending_inserts.insert(new_record, insert_index);
     Ok(folded)

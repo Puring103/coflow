@@ -2,29 +2,28 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::DiagnosticSet;
 use coflow_cft::{
-    CftField, CftSchema, CftSchemaDefaultValue, CftValueType, ValueDependencyMode,
+    CftField, CftSchema, CftSchemaDefaultValue, CftValueType, FieldName, TypeName,
+    ValueDependencyMode,
 };
-use coflow_data_model::{CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordOrigin};
+use coflow_data_model::{CfdEnumValue, CfdObject, CfdValue};
 
 use super::{
     non_nullable, one_mutation_error, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
     CreateRequiredInput, DefaultMaterialization,
 };
 
-pub(super) fn default_record_for_type(
+pub(super) fn default_object_for_type(
     schema: &CftSchema,
     type_name: &str,
     materialization: DefaultMaterialization,
-) -> Result<CfdRecord, DiagnosticSet> {
+) -> Result<CfdObject, DiagnosticSet> {
     ensure_type_can_materialize(schema, type_name)?;
+    let schema_type = schema.resolve_type(type_name).ok_or_else(|| {
+        one_mutation_error("MUTATION-TYPE", format!("unknown type `{type_name}`"))
+    })?;
     let mut materializer = DefaultValueMaterializer::new(schema);
     let fields = materializer.fields_for_type(type_name, materialization, None)?;
-    Ok(CfdRecord {
-        key: String::new(),
-        object: CfdObject::new(type_name, fields),
-        origin: RecordOrigin::None,
-        dimension_fields: BTreeMap::default(),
-    })
+    Ok(CfdObject::new(schema_type.name.clone(), fields))
 }
 
 pub fn default_value_for_value_type(
@@ -41,11 +40,14 @@ pub(super) fn default_missing_fields_for_type(
     materialization: DefaultMaterialization,
     provided_names: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
-    DefaultValueMaterializer::new(schema).fields_for_type(
-        type_name,
-        materialization,
-        Some(provided_names),
-    )
+    DefaultValueMaterializer::new(schema)
+        .fields_for_type(type_name, materialization, Some(provided_names))
+        .map(|fields| {
+            fields
+                .into_iter()
+                .map(|(name, value)| (name.to_string(), value))
+                .collect()
+        })
 }
 
 pub(super) fn create_record_draft_for_type(
@@ -72,7 +74,7 @@ pub(super) fn create_record_draft_for_type(
 
 struct DefaultValueMaterializer<'a> {
     schema: &'a CftSchema,
-    memo: BTreeMap<(ValueDependencyMode, String), BTreeMap<String, CfdValue>>,
+    memo: BTreeMap<(ValueDependencyMode, TypeName), BTreeMap<FieldName, CfdValue>>,
 }
 
 impl<'a> DefaultValueMaterializer<'a> {
@@ -88,10 +90,16 @@ impl<'a> DefaultValueMaterializer<'a> {
         type_name: &str,
         materialization: DefaultMaterialization,
         skip_fields: Option<&BTreeSet<String>>,
-    ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
+    ) -> Result<BTreeMap<FieldName, CfdValue>, DiagnosticSet> {
         ensure_type_can_materialize(self.schema, type_name)?;
         let mode = dependency_mode(materialization);
-        let memo_key = (mode, type_name.to_string());
+        let Some(schema_type) = self.schema.resolve_type(type_name) else {
+            return Err(one_mutation_error(
+                "MUTATION-TYPE",
+                format!("unknown type `{type_name}`"),
+            ));
+        };
+        let memo_key = (mode, schema_type.name.clone());
         if skip_fields.is_none() {
             if let Some(fields) = self.memo.get(&memo_key) {
                 return Ok(fields.clone());
@@ -99,12 +107,6 @@ impl<'a> DefaultValueMaterializer<'a> {
             self.ensure_acyclic(type_name, mode)?;
         }
 
-        let Some(schema_type) = self.schema.resolve_type(type_name) else {
-            return Err(one_mutation_error(
-                "MUTATION-TYPE",
-                format!("unknown type `{type_name}`"),
-            ));
-        };
         let mut fields = BTreeMap::new();
         for field in schema_type.all_fields() {
             if skip_fields.is_some_and(|skip| skip.contains(field.name.as_str())) {
@@ -119,7 +121,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                 )?),
             };
             if let Some(value) = value {
-                fields.insert(field.name.to_string(), value);
+                fields.insert(field.name.clone(), value);
             }
         }
 
@@ -169,7 +171,7 @@ impl<'a> DefaultValueMaterializer<'a> {
             CftValueType::Object(name) => {
                 let fields = self.fields_for_type(name, DefaultMaterialization::Minimal, None)?;
                 Ok(Some(CfdValue::Object(Box::new(CfdObject::new(
-                    name.to_string(),
+                    name.clone(),
                     fields,
                 )))))
             }
@@ -248,15 +250,11 @@ impl<'a> DefaultValueMaterializer<'a> {
                     .enum_value_from_int(enum_name, *value)
                     .map_or_else(
                         || CfdEnumValue {
-                            enum_name: enum_name.to_string(),
-                            variant: Some(variant.to_string()),
+                            enum_name: enum_name.clone(),
+                            variant: Some(variant.clone()),
                             value: *value,
                         },
-                        |value| CfdEnumValue {
-                            enum_name: value.enum_name.to_string(),
-                            variant: value.variant.map(|variant| variant.to_string()),
-                            value: value.value,
-                        },
+                        Into::into,
                     ),
             )),
             CftSchemaDefaultValue::EmptyArray => Ok(CfdValue::Array(Vec::new())),
@@ -264,7 +262,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                 CftValueType::Object(name) => {
                     let fields = self.fields_for_type(name, materialization, None)?;
                     Ok(CfdValue::Object(Box::new(CfdObject::new(
-                        name.to_string(),
+                        name.clone(),
                         fields,
                     ))))
                 }
@@ -295,15 +293,15 @@ impl<'a> DefaultValueMaterializer<'a> {
                 Ok(value.map_or_else(
                     || {
                         CfdValue::Enum(CfdEnumValue {
-                            enum_name: name.to_string(),
+                            enum_name: name.clone(),
                             variant: None,
                             value: 0,
                         })
                     },
                     |variant| {
                         CfdValue::Enum(CfdEnumValue {
-                            enum_name: name.to_string(),
-                            variant: Some(variant.name.to_string()),
+                            enum_name: name.clone(),
+                            variant: Some(variant.name.clone()),
                             value: variant.value,
                         })
                     },
@@ -312,7 +310,7 @@ impl<'a> DefaultValueMaterializer<'a> {
             CftValueType::Object(name) => {
                 let fields = self.fields_for_type(name, materialization, None)?;
                 Ok(CfdValue::Object(Box::new(CfdObject::new(
-                    name.to_string(),
+                    name.clone(),
                     fields,
                 ))))
             }

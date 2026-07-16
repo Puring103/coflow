@@ -312,8 +312,11 @@ impl<'a> CheckEvaluator<'a> {
                     );
                     return Err(EvalAbort::Error);
                 };
+                let Some(enum_meta) = self.schema.resolve_enum(name) else {
+                    return Err(EvalAbort::Error);
+                };
                 Ok(LocatedCheckValue::value(CheckValue::Enum(
-                    enum_values::enum_with_value(self.schema, name, value),
+                    enum_values::enum_with_value(self.schema, &enum_meta.name, value),
                 )))
             }
             CallTarget::Builtin(builtin) => self.eval_builtin_call(builtin, args),

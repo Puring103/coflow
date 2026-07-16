@@ -10,7 +10,7 @@ use crate::model::{
     CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdInputDimensionValue,
     CfdInputRecord, CfdObject, CfdRecord, CfdRecordId,
 };
-use coflow_cft::{CftSchema, CftValueType};
+use coflow_cft::{CftSchema, CftValueType, RecordKey};
 use coflow_structure::StructuralLimits;
 use resolve::ValueResolver;
 use std::collections::BTreeMap;
@@ -107,8 +107,11 @@ impl<'a> ModelCompiler<'a> {
                 let Some(fields) = resolver.resolve_record_fields(record_id) else {
                     continue;
                 };
+                let Ok(key) = RecordKey::new(draft.key.clone()) else {
+                    continue;
+                };
                 records.push(CfdRecord {
-                    key: draft.key.clone(),
+                    key,
                     object: CfdObject {
                         actual_type: draft.actual_type.clone(),
                         fields,
@@ -136,7 +139,8 @@ impl<'a> ModelCompiler<'a> {
                 };
                 let Some(record_id) = indexes
                     .record_by_domain_key
-                    .get(&(domain, input.source_key.to_string()))
+                    .get(&domain)
+                    .and_then(|records| records.get(input.source_key.as_str()))
                     .copied()
                 else {
                     self.diagnostics.push(CfdDiagnostic::error(
@@ -281,7 +285,7 @@ impl<'a> ModelCompiler<'a> {
             };
             let field_values = record
                 .dimension_fields
-                .entry(input.field.to_string())
+                .entry(input.field.clone())
                 .or_insert_with(|| CfdDimensionFieldValues {
                     dimension: input.dimension.clone(),
                     variants: BTreeMap::default(),
