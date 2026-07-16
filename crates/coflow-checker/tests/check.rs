@@ -8,7 +8,9 @@
 )]
 
 mod common;
-use coflow_checker::{CheckRequest, DependencyCollection};
+use std::collections::BTreeSet;
+
+use coflow_checker::{CheckRequest, CheckRoot, CheckRound, DependencyCollection};
 use common::*;
 
 fn build_model(_schema: &CftSchema, builder: CfdModelBuilder<'_>) -> CfdDataModel {
@@ -73,6 +75,7 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
         &model,
         CheckRequest::records(&[reader]).with_dependency_collection(DependencyCollection::Reads),
     );
+    let snapshot = output.snapshot.expect("stable snapshot");
     let diagnostics = output.diagnostics;
     let graph = output.dependencies;
 
@@ -91,6 +94,129 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
         .reads_from
         .get(&reader)
         .is_some_and(|reads| reads.contains(&target)));
+    let reader_coordinate = model.record(reader).expect("reader record").coordinate();
+    let target_coordinate = model.record(target).expect("target record").coordinate();
+    let state = snapshot
+        .roots
+        .get(&CheckRoot {
+            record: reader_coordinate,
+            round: CheckRound::Default,
+        })
+        .expect("reader default root state");
+    assert_eq!(state.reads_from, BTreeSet::from([target_coordinate]));
+}
+
+#[test]
+fn empty_targets_and_empty_incremental_changes_perform_no_work() {
+    let schema = compile_schema("type Item { value: int; check { value > 0; } }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
+    let model = builder.build().expect("model builds");
+
+    let empty = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::records(&[]).with_dependency_collection(DependencyCollection::Reads),
+    );
+    assert_eq!(empty.statistics.requested_roots, 0);
+    assert_eq!(empty.statistics.executed_rounds, 0);
+    assert!(empty.diagnostics.is_empty());
+    assert!(empty.dependencies.reads_from.is_empty());
+    assert!(empty
+        .snapshot
+        .expect("empty stable snapshot")
+        .roots
+        .is_empty());
+
+    let previous = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("full snapshot");
+    let unchanged = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::incremental(&previous, &BTreeSet::new()),
+    );
+    assert_eq!(unchanged.statistics.requested_roots, 0);
+    assert_eq!(unchanged.statistics.executed_rounds, 0);
+    assert_eq!(unchanged.snapshot.expect("reused snapshot"), previous);
+}
+
+#[test]
+fn incremental_snapshot_executes_only_affected_roots_and_matches_fresh_full_output() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                value: int;
+                target: &Item? = null;
+                check {
+                    value > 0;
+                    target == null || target.value > 0;
+                }
+            }
+        "#,
+    );
+    let build_generation = |target_value| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "target",
+            "Item",
+            [
+                ("value", LoadedValueDraft::from(target_value)),
+                ("target", LoadedValueDraft::Null),
+            ],
+        );
+        builder.add_record(
+            "reader",
+            "Item",
+            [
+                ("value", LoadedValueDraft::from(1_i64)),
+                ("target", LoadedValueDraft::record_ref("target")),
+            ],
+        );
+        builder.build().expect("model builds")
+    };
+
+    let previous_model = build_generation(-1_i64);
+    let previous = coflow_checker::run_checks(
+        &schema,
+        &previous_model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("full snapshot");
+    let changed = BTreeSet::from([previous_model
+        .records()
+        .find(|(_, record)| record.key() == "target")
+        .expect("target")
+        .1
+        .coordinate()]);
+
+    let current_model = build_generation(1_i64);
+    let incremental = coflow_checker::run_checks(
+        &schema,
+        &current_model,
+        CheckRequest::incremental(&previous, &changed),
+    );
+    assert_eq!(incremental.statistics.requested_roots, 2);
+    assert_eq!(incremental.statistics.executed_rounds, 2);
+    let incremental_snapshot = incremental.snapshot.expect("incremental snapshot");
+    assert!(incremental_snapshot
+        .render_diagnostics(&current_model)
+        .expect("render incremental")
+        .is_empty());
+
+    let full_snapshot = coflow_checker::run_checks(
+        &schema,
+        &current_model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("fresh full snapshot");
+    assert_eq!(incremental_snapshot, full_snapshot);
 }
 
 #[test]
@@ -1020,10 +1146,10 @@ fn checks_keep_target_locations_through_collection_access_and_virtual_ids() {
             assert_eq!(diagnostic.related[0].path, CfdPath::root().field("item"));
             primary.path.clone()
         })
-        .collect::<std::collections::BTreeSet<_>>();
+        .collect::<BTreeSet<_>>();
     assert_eq!(
         paths,
-        std::collections::BTreeSet::from([
+        BTreeSet::from([
             CfdPath::root().field("id"),
             CfdPath::root().field("nums").index(1),
         ])

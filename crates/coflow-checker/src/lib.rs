@@ -38,15 +38,18 @@ mod eval;
 mod operations;
 mod output;
 mod request;
+mod snapshot;
 
 use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 pub use coflow_structure::StructuralLimits;
 pub use dependencies::DependencyGraph;
 pub use dimensions::DimensionCheckRound;
-use engine::CheckRunner;
 pub use output::{CheckExecutionStats, CheckOutput, RootedCheckDiagnostic};
 pub use request::{CheckRequest, CheckTargets, DependencyCollection};
+pub use snapshot::{
+    CheckRoot, CheckRound, CheckSnapshot, LogicalCheckDiagnostic, LogicalCheckLabel, RootCheckState,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DimensionCheckContext {
@@ -65,49 +68,5 @@ pub fn run_checks(
     model: &CfdDataModel,
     request: CheckRequest<'_>,
 ) -> CheckOutput {
-    let targets = match request.targets {
-        CheckTargets::All => model.records().map(|(id, _)| id).collect::<Vec<_>>(),
-        CheckTargets::Records(targets) => targets.to_vec(),
-    };
-    if targets.is_empty() {
-        return CheckOutput::empty(request.dependency_collection);
-    }
-
-    let collect_dependencies = request.dependency_collection == DependencyCollection::Reads;
-    let (default_diagnostics, mut dependencies) =
-        CheckRunner::new(schema, model, request.structural_limits)
-            .run_rooted(&targets, collect_dependencies);
-    let mut diagnostics = default_diagnostics
-        .into_iter()
-        .map(|(root, diagnostic)| RootedCheckDiagnostic { root, diagnostic })
-        .collect::<Vec<_>>();
-
-    for round in &request.rounds {
-        let context = DimensionCheckContext {
-            dimension: round.dimension.clone(),
-            variant: round.variant.clone(),
-        };
-        let (round_diagnostics, round_dependencies) =
-            CheckRunner::with_dimension_context(schema, model, context, request.structural_limits)
-                .run_rooted(&targets, collect_dependencies);
-        dependencies.merge(round_dependencies);
-        diagnostics.extend(round_diagnostics.into_iter().map(|(root, mut diagnostic)| {
-            dimensions::attach_dimension_origins(model, round, &mut diagnostic);
-            diagnostic.message = format!(
-                "[{}={}] {}",
-                round.dimension, round.variant, diagnostic.message
-            );
-            RootedCheckDiagnostic { root, diagnostic }
-        }));
-    }
-
-    CheckOutput {
-        diagnostics,
-        dependencies,
-        statistics: CheckExecutionStats {
-            requested_roots: targets.len(),
-            executed_rounds: targets.len().saturating_mul(request.rounds.len() + 1),
-            dependency_collection: request.dependency_collection,
-        },
-    }
+    engine::execute(schema, model, request)
 }

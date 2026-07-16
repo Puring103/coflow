@@ -4,7 +4,9 @@ mod common;
 use common::*;
 
 use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
-use coflow_checker::{CheckRequest, DependencyCollection, DependencyGraph, DimensionCheckRound};
+use coflow_checker::{
+    CheckRequest, CheckRoot, CheckRound, DependencyCollection, DependencyGraph, DimensionCheckRound,
+};
 
 fn dimension_rounds(
     dimension: &str,
@@ -286,8 +288,8 @@ fn overlay_record_refs_resolve_without_storage_records() {
         r"
             type Target { value: int; }
             type Copy {
-                target: &Target;
-                check { target.value > 0; }
+                target: &Target? = null;
+                check { target == null || target.value > 0; }
             }
             type Item { @localized copy: Copy; }
         ",
@@ -303,7 +305,7 @@ fn overlay_record_refs_resolve_without_storage_records() {
         "Item",
         [(
             "copy",
-            LoadedValueDraft::object("Copy", [("target", LoadedValueDraft::record_ref("target"))]),
+            LoadedValueDraft::object("Copy", [("target", LoadedValueDraft::Null)]),
         )],
     );
     add_overlay(
@@ -316,10 +318,57 @@ fn overlay_record_refs_resolve_without_storage_records() {
         LoadedValueDraft::object("Copy", [("target", LoadedValueDraft::record_ref("target"))]),
     );
     let model = builder.build().expect("overlay refs resolve");
-    let err = run_checks_for_dimensions(&schema, &model, &dimension_rounds("language", ["zh"]))
+    let rounds = dimension_rounds("language", ["zh"]);
+    let err = run_checks_for_dimensions(&schema, &model, &rounds)
         .expect_err("nested ref check should fail");
-    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
+    assert_has_code(&err, CfdErrorCode::CheckOrFailed);
     assert_eq!(model.record_count(), 2);
+
+    let output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::all()
+            .with_rounds(rounds.iter().cloned())
+            .with_dependency_collection(DependencyCollection::Reads),
+    );
+    let snapshot = output.snapshot.expect("stable dimension snapshot");
+    let target = model
+        .records()
+        .find(|(_, record)| record.key() == "target")
+        .expect("target")
+        .1
+        .coordinate();
+    let item = model
+        .records()
+        .find(|(_, record)| record.key() == "item")
+        .expect("item")
+        .1
+        .coordinate();
+    let default_state = snapshot
+        .roots
+        .get(&CheckRoot {
+            record: item.clone(),
+            round: CheckRound::Default,
+        })
+        .expect("item default state");
+    assert!(!default_state.reads_from.contains(&target));
+    let dimension_state = snapshot
+        .roots
+        .get(&CheckRoot {
+            record: item,
+            round: CheckRound::Dimension(rounds[0].clone()),
+        })
+        .expect("item dimension state");
+    assert!(dimension_state.reads_from.contains(&target));
+
+    let incremental = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::incremental(&snapshot, &std::collections::BTreeSet::from([target]))
+            .with_rounds(rounds),
+    );
+    assert_eq!(incremental.statistics.requested_roots, 2);
+    assert_eq!(incremental.statistics.executed_rounds, 3);
 }
 
 #[test]

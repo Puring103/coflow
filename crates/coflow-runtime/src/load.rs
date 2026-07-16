@@ -648,13 +648,7 @@ fn build_output_from_cache(
     let check = if run_checks {
         previous_checks
             .and_then(|previous| {
-                run_incremental_project_checks(
-                    schema,
-                    &model,
-                    &origins,
-                    previous,
-                    changed_records,
-                )
+                run_incremental_project_checks(schema, &model, &origins, previous, changed_records)
             })
             .unwrap_or_else(|| run_full_project_checks(schema, &model, &origins))
     } else {

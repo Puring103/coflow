@@ -1,6 +1,6 @@
 use coflow_data_model::{CfdDiagnostic, CfdDiagnostics, CfdRecordId};
 
-use crate::{DependencyCollection, DependencyGraph};
+use crate::{CheckSnapshot, DependencyCollection, DependencyGraph};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootedCheckDiagnostic {
@@ -20,19 +20,10 @@ pub struct CheckOutput {
     pub diagnostics: Vec<RootedCheckDiagnostic>,
     pub dependencies: DependencyGraph,
     pub statistics: CheckExecutionStats,
+    pub snapshot: Option<CheckSnapshot>,
 }
 
 impl CheckOutput {
-    pub(crate) fn empty(dependency_collection: DependencyCollection) -> Self {
-        Self {
-            statistics: CheckExecutionStats {
-                dependency_collection,
-                ..CheckExecutionStats::default()
-            },
-            ..Self::default()
-        }
-    }
-
     #[must_use]
     pub fn is_success(&self) -> bool {
         self.diagnostics.is_empty()

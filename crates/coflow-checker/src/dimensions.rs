@@ -12,7 +12,7 @@ use crate::diagnostics::dimension_lookup_error_message;
 use crate::eval::{EvalRecordRef, EvalValue, LocatedEvalValue, ValueLocation};
 use crate::DimensionCheckContext;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DimensionCheckRound {
     pub dimension: DimensionName,
     pub variant: VariantName,

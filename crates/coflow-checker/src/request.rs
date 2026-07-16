@@ -1,12 +1,18 @@
-use coflow_data_model::CfdRecordId;
+use std::collections::BTreeSet;
+
+use coflow_data_model::{CfdRecordId, RecordCoordinate};
 use coflow_structure::StructuralLimits;
 
-use crate::DimensionCheckRound;
+use crate::{CheckSnapshot, DimensionCheckRound};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CheckTargets<'a> {
     All,
     Records(&'a [CfdRecordId]),
+    Incremental {
+        previous: &'a CheckSnapshot,
+        changed: &'a BTreeSet<RecordCoordinate>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -44,6 +50,19 @@ impl<'a> CheckRequest<'a> {
             rounds: Vec::new(),
             structural_limits: StructuralLimits::default(),
             dependency_collection: DependencyCollection::None,
+        }
+    }
+
+    #[must_use]
+    pub fn incremental(
+        previous: &'a CheckSnapshot,
+        changed: &'a BTreeSet<RecordCoordinate>,
+    ) -> Self {
+        Self {
+            targets: CheckTargets::Incremental { previous, changed },
+            rounds: Vec::new(),
+            structural_limits: StructuralLimits::default(),
+            dependency_collection: DependencyCollection::Reads,
         }
     }
 
