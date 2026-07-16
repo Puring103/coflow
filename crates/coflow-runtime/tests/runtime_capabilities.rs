@@ -1,8 +1,10 @@
 #![allow(clippy::expect_used)]
 
+use std::collections::BTreeMap;
+
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
-use coflow_runtime::{FullFallbackReason, ProjectQueries, ProjectRuntime, Runtime};
+use coflow_runtime::{IncrementalFallbackReason, ProjectQueries, ProjectRuntime, Runtime};
 
 struct TempProject {
     root: std::path::PathBuf,
@@ -172,7 +174,7 @@ copy: Item { ...&base, name: "Copy", target: &base }
 }
 
 #[test]
-fn structural_mutation_reports_full_fallback_reason() {
+fn structural_mutations_report_specific_full_fallback_reasons() {
     let fixture = TempProject::new("structural-fallback");
     let mut session = runtime()
         .open_write_session(fixture.open())
@@ -187,9 +189,31 @@ fn structural_mutation_reports_full_fallback_reason() {
     assert!(stats.full_fallback);
     assert_eq!(
         stats.fallback_reason,
-        Some(FullFallbackReason::StructuralMutation)
+        Some(IncrementalFallbackReason::RecordRenamed)
     );
     assert!(session.queries().record_view("Item", "blade").is_some());
+
+    session
+        .insert_record(
+            "data/items.cfd",
+            None,
+            "shield",
+            "Item",
+            &BTreeMap::from([("name".to_string(), CfdValue::String("Shield".into()))]),
+        )
+        .expect("insert record");
+    assert_eq!(
+        session.queries().execution_stats().fallback_reason,
+        Some(IncrementalFallbackReason::RecordInserted)
+    );
+
+    session
+        .delete_record("Item", "shield")
+        .expect("delete record");
+    assert_eq!(
+        session.queries().execution_stats().fallback_reason,
+        Some(IncrementalFallbackReason::RecordDeleted)
+    );
 }
 
 #[test]

@@ -18,7 +18,7 @@ use crate::load::{
 use crate::project_schema::open_project_schema_attempt;
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::writes::MutationImpact;
-use crate::{FullFallbackReason, ProjectExecutionStats};
+use crate::ProjectExecutionStats;
 
 /// Opens a project into a reusable runtime session using explicit side-effect
 /// intent.
@@ -602,8 +602,8 @@ fn rebuild_execution_stats(
     impact: &MutationImpact,
 ) -> ProjectExecutionStats {
     let mut statistics = output.statistics;
-    if impact.structural_change {
-        statistics.mark_full_fallback(FullFallbackReason::StructuralMutation);
+    if let Some(reason) = impact.fallback_reason {
+        statistics.mark_full_fallback(reason);
     }
     statistics
 }

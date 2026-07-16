@@ -1,10 +1,15 @@
 /// Reason an incremental generation path had to execute full-scope work.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FullFallbackReason {
-    /// Insert, delete, or rename changed record/ref/spread topology.
-    StructuralMutation,
-    /// The previous checker snapshot could not be reused by the new model.
-    CheckSnapshotUnavailable,
+pub enum IncrementalFallbackReason {
+    SchemaChanged,
+    RecordInserted,
+    RecordDeleted,
+    RecordRenamed,
+    SourceTopologyChanged,
+    DimensionConfigurationChanged,
+    ProviderConfigurationChanged,
+    UnstableCoordinateMapping,
+    IncompleteDependencyState,
 }
 
 /// Deterministic work counters for the latest immutable project generation.
@@ -27,7 +32,7 @@ pub struct ProjectExecutionStats {
     pub dimension_sources_planned: usize,
     pub dimension_sources_written: usize,
     pub full_fallback: bool,
-    pub fallback_reason: Option<FullFallbackReason>,
+    pub fallback_reason: Option<IncrementalFallbackReason>,
 }
 
 impl ProjectExecutionStats {
@@ -67,7 +72,7 @@ impl ProjectExecutionStats {
         }
     }
 
-    pub(crate) fn mark_full_fallback(&mut self, reason: FullFallbackReason) {
+    pub(crate) fn mark_full_fallback(&mut self, reason: IncrementalFallbackReason) {
         self.full_fallback = true;
         self.fallback_reason.get_or_insert(reason);
     }

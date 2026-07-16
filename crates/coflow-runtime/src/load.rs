@@ -22,7 +22,7 @@ use crate::indexes::{
     ResolvedSourceEntry, SessionIndexBuilder, SourceId, SourceIndex,
 };
 use crate::source_resolution::{ResolvedLoaderSource, SourceResolver};
-use crate::{FullFallbackReason, ProjectExecutionStats, RecordCoordinate};
+use crate::{IncrementalFallbackReason, ProjectExecutionStats, RecordCoordinate};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ProjectLoadOutput {
@@ -731,7 +731,8 @@ fn run_cached_project_checks(
         |previous| {
             run_incremental_project_checks(schema, model, origins, previous, changed_records)
                 .unwrap_or_else(|| {
-                    statistics.mark_full_fallback(FullFallbackReason::CheckSnapshotUnavailable);
+                    statistics
+                        .mark_full_fallback(IncrementalFallbackReason::IncompleteDependencyState);
                     run_full_project_checks(schema, model, origins)
                 })
         },
