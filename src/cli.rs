@@ -4,9 +4,25 @@ use std::path::PathBuf;
 #[derive(Debug, Parser)]
 #[command(name = "coflow")]
 #[command(about = "Project-level tools for Coflow schemas and data.")]
+#[command(version)]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub(crate) command: Command,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::{error::ErrorKind, Parser};
+
+    #[test]
+    fn version_flags_report_package_version() {
+        for flag in ["--version", "-V"] {
+            let error = Cli::try_parse_from(["coflow", flag]).expect_err("version exits early");
+            assert_eq!(error.kind(), ErrorKind::DisplayVersion);
+            assert_eq!(error.to_string(), format!("coflow {}\n", env!("CARGO_PKG_VERSION")));
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
