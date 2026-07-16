@@ -2,7 +2,6 @@ mod dimensions;
 mod domain;
 mod edges;
 mod ids;
-mod input;
 mod tables;
 mod value;
 
@@ -12,17 +11,15 @@ pub use edges::{
     DimensionRefCoordinate, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
 };
 pub use ids::{CfdDomainId, CfdRecordId, CfdTypeId, RecordCoordinate};
-pub use input::{CfdInputDictKey, CfdInputDimensionValue, CfdInputRecord, CfdInputValue};
 pub use tables::{CfdPolymorphicIndex, CfdTable};
 pub use value::{
     CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdObject, CfdRecord,
     CfdValue,
 };
 
-use crate::diagnostic::CfdPath;
-use crate::{compiler::ModelCompiler, CfdDiagnostics};
+use crate::build::CfdModelBuilder;
+use crate::diagnostics::CfdPath;
 use coflow_cft::{CftSchema, RecordKey, TypeName};
-use coflow_structure::StructuralLimits;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +36,7 @@ pub struct CfdDataModel {
     pub(crate) ref_by_target: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
     pub(crate) spread_edges: Vec<SpreadEdge>,
     pub(crate) spread_by_site: BTreeMap<SpreadSite, Vec<SpreadEdgeId>>,
+    pub(crate) spread_by_host: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
     pub(crate) spread_by_source: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
 }
 
@@ -311,6 +309,17 @@ impl CfdDataModel {
             .filter_map(|id| self.spread_edge(*id))
     }
 
+    pub fn spread_edges_from_host(
+        &self,
+        host: CfdRecordId,
+    ) -> impl Iterator<Item = &SpreadEdge> + '_ {
+        self.spread_by_host
+            .get(&host)
+            .into_iter()
+            .flat_map(|ids| ids.iter())
+            .filter_map(|id| self.spread_edge(*id))
+    }
+
     /// Returns the source record whose spread supplied the value at `site`.
     #[must_use]
     pub fn spread_source_at(&self, site: &SpreadSite) -> Option<CfdRecordId> {
@@ -331,9 +340,8 @@ impl CfdDataModel {
 
     #[must_use]
     pub fn spread_edge_at_path(&self, host: CfdRecordId, path: &CfdPath) -> Option<&SpreadEdge> {
-        self.spread_edges
-            .iter()
-            .find(|edge| edge.host == host && edge.covers_path(path))
+        self.spread_edges_from_host(host)
+            .find(|edge| edge.covers_path(path))
     }
 
     #[must_use]
@@ -373,78 +381,5 @@ impl CfdDataModel {
         let source_path = edge.source_path_for(path)?;
         self.spread_source_path_inner(edge.source, &source_path, visited)
             .or(Some((edge.source, source_path)))
-    }
-}
-
-#[derive(Debug)]
-pub struct CfdModelBuilder<'a> {
-    schema: &'a CftSchema,
-    records: Vec<CfdInputRecord>,
-    dimension_values: Vec<CfdInputDimensionValue>,
-    structural_limits: StructuralLimits,
-}
-
-impl<'a> CfdModelBuilder<'a> {
-    #[must_use]
-    pub fn new(schema: &'a CftSchema) -> Self {
-        Self {
-            schema,
-            records: Vec::new(),
-            dimension_values: Vec::new(),
-            structural_limits: StructuralLimits::default(),
-        }
-    }
-
-    /// Configures the structural limits used while validating and materializing
-    /// each top-level record.
-    #[must_use]
-    pub fn with_structural_limits(mut self, structural_limits: StructuralLimits) -> Self {
-        self.structural_limits = structural_limits;
-        self
-    }
-
-    pub fn add_record(
-        &mut self,
-        key: impl Into<String>,
-        actual_type: impl Into<String>,
-        fields: impl IntoIterator<Item = (impl Into<String>, CfdInputValue)>,
-    ) -> &mut Self {
-        self.records
-            .push(CfdInputRecord::new(key, actual_type, fields));
-        self
-    }
-
-    pub fn add_input_record(&mut self, record: CfdInputRecord) -> &mut Self {
-        self.records.push(record);
-        self
-    }
-
-    pub fn add_input_dimension_value(&mut self, value: CfdInputDimensionValue) -> &mut Self {
-        self.dimension_values.push(value);
-        self
-    }
-
-    pub fn add_input_dimension_values(
-        &mut self,
-        values: impl IntoIterator<Item = CfdInputDimensionValue>,
-    ) -> &mut Self {
-        self.dimension_values.extend(values);
-        self
-    }
-
-    /// Builds a validated in-memory data model from source-neutral records.
-    ///
-    /// # Errors
-    ///
-    /// Returns data-model diagnostics for schema/type mismatches, missing
-    /// fields, duplicate keys, duplicate dict keys, or unresolved references.
-    pub fn build(self) -> Result<CfdDataModel, CfdDiagnostics> {
-        ModelCompiler::new(
-            self.schema,
-            self.records,
-            self.dimension_values,
-            self.structural_limits,
-        )
-        .build()
     }
 }

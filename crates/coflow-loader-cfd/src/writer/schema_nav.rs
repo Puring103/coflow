@@ -16,9 +16,7 @@ pub(super) fn type_after_field_segment_for_ref(
     field_name: &str,
 ) -> Option<CftValueType> {
     match non_nullable(current_type) {
-        CftValueType::Object(type_name) => {
-            type_after_field_segment(schema, type_name, field_name)
-        }
+        CftValueType::Object(type_name) => type_after_field_segment(schema, type_name, field_name),
         _ => None,
     }
 }
@@ -54,9 +52,7 @@ pub(super) fn object_type_name<'a>(
     }
 }
 
-pub(super) fn type_after_index_segment(
-    current_type: &CftValueType,
-) -> Option<CftValueType> {
+pub(super) fn type_after_index_segment(current_type: &CftValueType) -> Option<CftValueType> {
     match non_nullable(current_type) {
         CftValueType::Array(inner) => Some((**inner).clone()),
         _ => None,

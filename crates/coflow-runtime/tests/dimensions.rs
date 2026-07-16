@@ -12,7 +12,7 @@ use coflow_cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, DimensionName, FieldName,
     ModuleId, RecordKey, TypeName, VariantName,
 };
-use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
+use coflow_data_model::{CfdDataModel, CfdValue, LoadedRecordDraft, LoadedValueDraft};
 use coflow_project::Project;
 use coflow_runtime::{
     BuildProjectSession, DimensionValueCoordinate, DimensionValueOrigin, ReadOnlyProjectSession,
@@ -113,10 +113,10 @@ fn schema_with_localized_string() -> CftSchema {
 fn build_simple_model() -> (CftSchema, CfdDataModel) {
     let schema = schema_with_localized_string();
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(CfdInputRecord::new(
+    builder.add_loaded_record(LoadedRecordDraft::new(
         "potion",
         "Item",
-        [("name", CfdInputValue::from("Potion"))],
+        [("name", LoadedValueDraft::from("Potion"))],
     ));
     let model = builder.build().expect("model builds");
     (schema, model)

@@ -12,7 +12,7 @@ use coflow_cft::{
     ModuleId, RecordKey, TypeName, VariantName,
 };
 use coflow_data_model::{
-    CfdDataModel, CfdInputDictKey, CfdInputDimensionValue, CfdInputValue, RecordOrigin,
+    CfdDataModel, DimensionValueDraft, LoadedDictKeyDraft, LoadedValueDraft, RecordOrigin,
 };
 use coflow_exporter_core::{export_model_to_sink, ExportEventSink};
 use std::collections::BTreeMap;
@@ -182,7 +182,7 @@ fn exports_every_concrete_table_with_synthesized_record_keys() -> TestResult {
     builder.add_record(
         "item_1",
         "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(builder)?;
     let tables = export_tables(&schema, &model)?;
@@ -220,29 +220,33 @@ fn exports_record_owned_dimension_overlays_as_compatible_variant_tables() -> Tes
         &dimensions,
     )?;
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
+    builder.add_record(
+        "potion",
+        "Item",
+        [("name", LoadedValueDraft::from("Potion"))],
+    );
     builder.add_record(
         "elixir",
         "SpecialItem",
-        [("name", CfdInputValue::from("Elixir"))],
+        [("name", LoadedValueDraft::from("Elixir"))],
     );
     builder.add_record(
         "UiText",
         "UiText",
-        [("welcome", CfdInputValue::from("Welcome"))],
+        [("welcome", LoadedValueDraft::from("Welcome"))],
     );
     for (source_type, source_key, field, variant, value) in [
         ("Item", "potion", "name", "zh", "药水"),
         ("SpecialItem", "elixir", "name", "en", "Elixir EN"),
         ("UiText", "UiText", "welcome", "zh", "欢迎"),
     ] {
-        builder.add_input_dimension_value(CfdInputDimensionValue {
+        builder.add_dimension_value_draft(DimensionValueDraft {
             source_type: TypeName::new(source_type).map_err(|err| err.to_string())?,
             source_key: RecordKey::new(source_key).map_err(|err| err.to_string())?,
             field: FieldName::new(field).map_err(|err| err.to_string())?,
             dimension: DimensionName::new("language").map_err(|err| err.to_string())?,
             variant: VariantName::new(variant).map_err(|err| err.to_string())?,
-            value: CfdInputValue::from(value),
+            value: LoadedValueDraft::from(value),
             origin: RecordOrigin::None,
         });
     }
@@ -305,8 +309,8 @@ fn exports_fields_in_inherited_schema_order() -> TestResult {
         "child_1",
         "Child",
         [
-            ("parent_field", CfdInputValue::from(7_i64)),
-            ("child_field", CfdInputValue::from("leaf")),
+            ("parent_field", LoadedValueDraft::from(7_i64)),
+            ("child_field", LoadedValueDraft::from("leaf")),
         ],
     );
     let model = build_model(builder)?;
@@ -344,7 +348,10 @@ fn exports_polymorphic_inline_objects_with_type_tag_only() -> TestResult {
         "DropTable",
         [(
             "reward",
-            CfdInputValue::object("CurrencyReward", [("amount", CfdInputValue::from(50_i64))]),
+            LoadedValueDraft::object(
+                "CurrencyReward",
+                [("amount", LoadedValueDraft::from(50_i64))],
+            ),
         )],
     );
     let model = build_model(builder)?;
@@ -384,16 +391,23 @@ fn exports_refs_enums_and_dict_keys_as_exporter_scalars() -> TestResult {
     )?;
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [("name", LoadedValueDraft::from("Sword"))],
+    );
     builder.add_record(
         "holder_1",
         "Holder",
         [
-            ("item", CfdInputValue::record_ref("item_1")),
-            ("rarity", CfdInputValue::enum_variant("Rarity", "Rare")),
+            ("item", LoadedValueDraft::record_ref("item_1")),
+            ("rarity", LoadedValueDraft::enum_variant("Rarity", "Rare")),
             (
                 "by_int",
-                CfdInputValue::dict([(CfdInputDictKey::from(7_i64), CfdInputValue::from("seven"))]),
+                LoadedValueDraft::dict([(
+                    LoadedDictKeyDraft::from(7_i64),
+                    LoadedValueDraft::from("seven"),
+                )]),
             ),
         ],
     );
@@ -434,12 +448,12 @@ fn exports_nullable_and_array_fields() -> TestResult {
         "item_1",
         "Item",
         [
-            ("maybe_name", CfdInputValue::Null),
+            ("maybe_name", LoadedValueDraft::Null),
             (
                 "tags",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from("alpha"),
-                    CfdInputValue::from("beta"),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from("alpha"),
+                    LoadedValueDraft::from("beta"),
                 ]),
             ),
         ],
@@ -538,11 +552,11 @@ fn reports_sink_errors_with_record_and_full_field_path() -> TestResult {
         "Item",
         [(
             "nested",
-            CfdInputValue::object_with_declared_type([(
+            LoadedValueDraft::object_with_declared_type([(
                 "labels",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from("ok"),
-                    CfdInputValue::from("fail here"),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from("ok"),
+                    LoadedValueDraft::from("fail here"),
                 ]),
             )]),
         )],
@@ -647,7 +661,7 @@ fn streams_large_arrays_through_a_constant_state_sink() -> TestResult {
         "Item",
         [(
             "numbers",
-            CfdInputValue::Array((0..ITEM_COUNT_I64).map(CfdInputValue::from).collect()),
+            LoadedValueDraft::Array((0..ITEM_COUNT_I64).map(LoadedValueDraft::from).collect()),
         )],
     );
     let model = build_model(builder)?;
@@ -679,7 +693,7 @@ fn does_not_emit_type_tag_or_id_for_non_polymorphic_inline_object() -> TestResul
         "Holder",
         [(
             "stats",
-            CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(10_i64))]),
+            LoadedValueDraft::object_with_declared_type([("hp", LoadedValueDraft::from(10_i64))]),
         )],
     );
     let model = build_model(builder)?;

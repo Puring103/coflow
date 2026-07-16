@@ -48,16 +48,16 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
         "target",
         "Item",
         [
-            ("value", CfdInputValue::from(-1_i64)),
-            ("target", CfdInputValue::Null),
+            ("value", LoadedValueDraft::from(-1_i64)),
+            ("target", LoadedValueDraft::Null),
         ],
     );
     builder.add_record(
         "reader",
         "Item",
         [
-            ("value", CfdInputValue::from(1_i64)),
-            ("target", CfdInputValue::record_ref("target")),
+            ("value", LoadedValueDraft::from(1_i64)),
+            ("target", LoadedValueDraft::record_ref("target")),
         ],
     );
     let model = builder.build().expect("model builds");
@@ -128,30 +128,30 @@ fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
     builder.add_record(
         "item_1",
         "Item",
-        [("rarity", CfdInputValue::enum_variant("Rarity", "Rare"))],
+        [("rarity", LoadedValueDraft::enum_variant("Rarity", "Rare"))],
     );
     builder.add_record(
         "drop_1",
         "Drop",
         [
-            ("item", CfdInputValue::record_ref("item_1")),
+            ("item", LoadedValueDraft::record_ref("item_1")),
             (
                 "weights",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from(40_i64),
-                    CfdInputValue::from(60_i64),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(40_i64),
+                    LoadedValueDraft::from(60_i64),
                 ]),
             ),
             (
                 "resistances",
-                CfdInputValue::dict([
+                LoadedValueDraft::dict([
                     (
-                        CfdInputDictKey::enum_variant("Rarity", "Common"),
-                        CfdInputValue::from(0.5_f64),
+                        LoadedDictKeyDraft::enum_variant("Rarity", "Common"),
+                        LoadedValueDraft::from(0.5_f64),
                     ),
                     (
-                        CfdInputDictKey::enum_variant("Rarity", "Rare"),
-                        CfdInputValue::from(1.0_f64),
+                        LoadedDictKeyDraft::enum_variant("Rarity", "Rare"),
+                        LoadedValueDraft::from(1.0_f64),
                     ),
                 ]),
             ),
@@ -199,23 +199,26 @@ fn check_diagnostics_use_specific_codes_for_scalar_false_conditions() {
     builder.add_record(
         "reward_1",
         "ItemReward",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     builder.add_record(
         "item_1",
         "Item",
         [
-            ("level", CfdInputValue::from(0_i64)),
-            ("enabled", CfdInputValue::from(false)),
-            ("negated", CfdInputValue::from(true)),
-            ("left", CfdInputValue::from(false)),
-            ("right", CfdInputValue::from(false)),
-            ("reward", CfdInputValue::record_ref("reward_1")),
+            ("level", LoadedValueDraft::from(0_i64)),
+            ("enabled", LoadedValueDraft::from(false)),
+            ("negated", LoadedValueDraft::from(true)),
+            ("left", LoadedValueDraft::from(false)),
+            ("right", LoadedValueDraft::from(false)),
+            ("reward", LoadedValueDraft::record_ref("reward_1")),
             (
                 "tags",
-                CfdInputValue::Array(vec![CfdInputValue::from("mob"), CfdInputValue::from("mob")]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from("mob"),
+                    LoadedValueDraft::from("mob"),
+                ]),
             ),
-            ("name", CfdInputValue::from("mob_1")),
+            ("name", LoadedValueDraft::from("mob_1")),
         ],
     );
     let model = build_model(&schema, builder);
@@ -271,17 +274,26 @@ fn check_diagnostics_use_specific_codes_for_quantifiers_and_when_context() {
         [
             (
                 "any_flags",
-                CfdInputValue::Array(vec![CfdInputValue::from(false), CfdInputValue::from(false)]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(false),
+                    LoadedValueDraft::from(false),
+                ]),
             ),
             (
                 "none_flags",
-                CfdInputValue::Array(vec![CfdInputValue::from(false), CfdInputValue::from(true)]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(false),
+                    LoadedValueDraft::from(true),
+                ]),
             ),
             (
                 "all_flags",
-                CfdInputValue::Array(vec![CfdInputValue::from(true), CfdInputValue::from(false)]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(true),
+                    LoadedValueDraft::from(false),
+                ]),
             ),
-            ("gated", CfdInputValue::from(true)),
+            ("gated", LoadedValueDraft::from(true)),
         ],
     );
     let model = build_model(&schema, builder);
@@ -313,7 +325,7 @@ fn check_runner_reports_false_conditions_with_paths() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item_1", "Item", [("value", CfdInputValue::from(0_i64))]);
+    builder.add_record("item_1", "Item", [("value", LoadedValueDraft::from(0_i64))]);
     let model = build_model(&schema, builder);
     let err = model.run_checks(&schema).expect_err("check should fail");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
@@ -337,7 +349,7 @@ fn logical_and_binds_tighter_than_or_and_bitwise_precedence_remains_left_associa
     builder.add_record(
         "item_1",
         "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&logical, builder);
     model
@@ -353,7 +365,7 @@ fn logical_and_binds_tighter_than_or_and_bitwise_precedence_remains_left_associa
     builder.add_record(
         "item_1",
         "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&bitwise, builder);
     model
@@ -376,7 +388,7 @@ fn short_circuit_nullable_guards_and_null_access_are_reported() {
     builder.add_record(
         "holder_1",
         "Holder",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&guarded, builder);
     model
@@ -396,7 +408,7 @@ fn short_circuit_nullable_guards_and_null_access_are_reported() {
     builder.add_record(
         "holder_1",
         "Holder",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&unguarded, builder);
     let err = model.run_checks(&unguarded).expect_err("null access");
@@ -426,10 +438,10 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
         "Holder",
         [(
             "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(1_i64),
-                CfdInputValue::Null,
-                CfdInputValue::from(3_i64),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::from(1_i64),
+                LoadedValueDraft::Null,
+                LoadedValueDraft::from(3_i64),
             ]),
         )],
     );
@@ -448,7 +460,10 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
     builder.add_record(
         "holder_1",
         "Holder",
-        [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
+        [(
+            "nums",
+            LoadedValueDraft::Array(vec![LoadedValueDraft::Null]),
+        )],
     );
     let model = build_model(&empty, builder);
     let err = model
@@ -474,7 +489,7 @@ fn contains_reports_runtime_type_errors_for_null_collections() {
         "Holder",
         [(
             "items",
-            CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+            LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
         )],
     );
     let valid = build_model(&schema, valid_builder);
@@ -486,7 +501,7 @@ fn contains_reports_runtime_type_errors_for_null_collections() {
     null_builder.add_record(
         "holder_null",
         "Holder",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let null = build_model(&schema, null_builder);
     let err = null
@@ -524,7 +539,7 @@ fn non_finite_float_comparisons_are_runtime_type_errors() {
     builder.add_record(
         "holder_1",
         "Holder",
-        [("value", CfdInputValue::from(0.0_f64))],
+        [("value", LoadedValueDraft::from(0.0_f64))],
     );
     let model = build_model(&schema, builder);
     let err = model
@@ -563,8 +578,8 @@ fn inherited_checks_and_statement_order_are_stable() {
         "",
         "Child",
         [
-            ("first", CfdInputValue::from(0_i64)),
-            ("second", CfdInputValue::from(0_i64)),
+            ("first", LoadedValueDraft::from(0_i64)),
+            ("second", LoadedValueDraft::from(0_i64)),
         ],
     );
     let err = builder
@@ -577,8 +592,8 @@ fn inherited_checks_and_statement_order_are_stable() {
         "child_1",
         "Child",
         [
-            ("first", CfdInputValue::from(0_i64)),
-            ("second", CfdInputValue::from(0_i64)),
+            ("first", LoadedValueDraft::from(0_i64)),
+            ("second", LoadedValueDraft::from(0_i64)),
         ],
     );
     let model = build_model(&schema, builder);
@@ -619,8 +634,8 @@ fn hard_stop_in_one_check_block_does_not_skip_later_blocks() {
         "item_1",
         "Item",
         [
-            ("xs", CfdInputValue::Array(Vec::new())),
-            ("value", CfdInputValue::from(0_i64)),
+            ("xs", LoadedValueDraft::Array(Vec::new())),
+            ("value", LoadedValueDraft::from(0_i64)),
         ],
     );
     let model = build_model(&schema, builder);
@@ -646,9 +661,9 @@ fn quantifiers_report_soft_failures_and_preserve_hard_errors() {
         "Item",
         [(
             "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(-1_i64),
-                CfdInputValue::from(-2_i64),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::from(-1_i64),
+                LoadedValueDraft::from(-2_i64),
             ]),
         )],
     );
@@ -684,9 +699,9 @@ fn quantifiers_report_soft_failures_and_preserve_hard_errors() {
         "Item",
         [(
             "rows",
-            CfdInputValue::Array(vec![
-                CfdInputValue::Array(Vec::new()),
-                CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::Array(Vec::new()),
+                LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
             ]),
         )],
     );
@@ -718,7 +733,7 @@ fn inline_object_checks_use_nested_paths() {
         "Monster",
         [(
             "stats",
-            CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(0_i64))]),
+            LoadedValueDraft::object_with_declared_type([("hp", LoadedValueDraft::from(0_i64))]),
         )],
     );
     let model = build_model(&schema, builder);
@@ -761,8 +776,11 @@ fn flag_enum_bitwise_composites_and_int_ops_work() {
         "door_1",
         "Door",
         [
-            ("granted", CfdInputValue::enum_variant("Permission", "Read")),
-            ("value", CfdInputValue::from(7_i64)),
+            (
+                "granted",
+                LoadedValueDraft::enum_variant("Permission", "Read"),
+            ),
+            ("value", LoadedValueDraft::from(7_i64)),
         ],
     );
     let model = build_model(&schema, builder);
@@ -785,7 +803,7 @@ fn runtime_reports_index_dict_and_regex_edges() {
         "Item",
         [(
             "nums",
-            CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+            LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
         )],
     );
     let model = build_model(&negative_index, builder);
@@ -808,7 +826,10 @@ fn runtime_reports_index_dict_and_regex_edges() {
         "Item",
         [(
             "attrs",
-            CfdInputValue::dict([(CfdInputDictKey::from("present"), CfdInputValue::from(1_i64))]),
+            LoadedValueDraft::dict([(
+                LoadedDictKeyDraft::from("present"),
+                LoadedValueDraft::from(1_i64),
+            )]),
         )],
     );
     let model = build_model(&missing_key, builder);
@@ -829,7 +850,7 @@ fn runtime_reports_index_dict_and_regex_edges() {
     builder.add_record(
         "item_1",
         "Item",
-        [("label", CfdInputValue::from("怪物配置"))],
+        [("label", LoadedValueDraft::from("怪物配置"))],
     );
     let model = build_model(&regex, builder);
     model
@@ -858,14 +879,14 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
     builder.add_record(
         "target_1",
         "Target",
-        [("value", CfdInputValue::from(0_i64))],
+        [("value", LoadedValueDraft::from(0_i64))],
     );
     builder.add_record(
         "holder_1",
         "Holder",
         [
-            ("first", CfdInputValue::record_ref("target_1")),
-            ("second", CfdInputValue::record_ref("target_1")),
+            ("first", LoadedValueDraft::record_ref("target_1")),
+            ("second", LoadedValueDraft::record_ref("target_1")),
         ],
     );
     let model = build_model(&schema, builder);
@@ -897,11 +918,15 @@ fn checks_through_refs_blame_the_target_value_and_relate_the_ref_source() {
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("target", "Target", [("price", CfdInputValue::from(0_i64))]);
+    builder.add_record(
+        "target",
+        "Target",
+        [("price", LoadedValueDraft::from(0_i64))],
+    );
     builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("target"))],
+        [("item", LoadedValueDraft::record_ref("target"))],
     );
     let model = build_model(&schema, builder);
 
@@ -935,16 +960,16 @@ fn checks_preserve_every_hop_in_a_reference_chain() {
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("leaf", "Leaf", [("value", CfdInputValue::from(0_i64))]);
+    builder.add_record("leaf", "Leaf", [("value", LoadedValueDraft::from(0_i64))]);
     builder.add_record(
         "middle",
         "Middle",
-        [("leaf", CfdInputValue::record_ref("leaf"))],
+        [("leaf", LoadedValueDraft::record_ref("leaf"))],
     );
     builder.add_record(
         "root",
         "Root",
-        [("middle", CfdInputValue::record_ref("middle"))],
+        [("middle", LoadedValueDraft::record_ref("middle"))],
     );
     let model = build_model(&schema, builder);
 
@@ -987,13 +1012,16 @@ fn checks_keep_target_locations_through_collection_access_and_virtual_ids() {
         "Target",
         [(
             "nums",
-            CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(0_i64)]),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::from(1_i64),
+                LoadedValueDraft::from(0_i64),
+            ]),
         )],
     );
     builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("target"))],
+        [("item", LoadedValueDraft::record_ref("target"))],
     );
     let model = build_model(&schema, builder);
 
@@ -1039,17 +1067,17 @@ fn checks_can_access_ref_fields_inherited_from_spread() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("price", CfdInputValue::from(1_i64))]);
+    builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(1_i64))]);
     builder.add_record(
         "base",
         "Holder",
-        [("item", CfdInputValue::record_ref("sword"))],
+        [("item", LoadedValueDraft::record_ref("sword"))],
     );
-    builder.add_input_record(CfdInputRecord::with_spreads(
+    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "copy",
         "Holder",
-        [CfdInputValue::record_ref("base")],
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        [LoadedValueDraft::record_ref("base")],
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     ));
 
     let model = build_model(&schema, builder);
@@ -1069,20 +1097,20 @@ fn checks_can_access_ref_fields_inherited_from_spread() {
     );
 
     let mut nested_builder = CfdDataModel::builder(&nested_schema);
-    nested_builder.add_record("sword", "Item", [("price", CfdInputValue::from(1_i64))]);
+    nested_builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(1_i64))]);
     nested_builder.add_record(
         "base_stats",
         "Stats",
-        [("item", CfdInputValue::record_ref("sword"))],
+        [("item", LoadedValueDraft::record_ref("sword"))],
     );
     nested_builder.add_record(
         "holder",
         "Holder",
         [(
             "stats",
-            CfdInputValue::object_spread(
-                [CfdInputValue::record_ref("base_stats")],
-                std::iter::empty::<(&str, CfdInputValue)>(),
+            LoadedValueDraft::object_spread(
+                [LoadedValueDraft::record_ref("base_stats")],
+                std::iter::empty::<(&str, LoadedValueDraft)>(),
             ),
         )],
     );
@@ -1093,23 +1121,23 @@ fn checks_can_access_ref_fields_inherited_from_spread() {
         .expect("nested spread-inherited ref should resolve in checks");
 
     let mut chained_builder = CfdDataModel::builder(&schema);
-    chained_builder.add_record("sword", "Item", [("price", CfdInputValue::from(1_i64))]);
+    chained_builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(1_i64))]);
     chained_builder.add_record(
         "base",
         "Holder",
-        [("item", CfdInputValue::record_ref("sword"))],
+        [("item", LoadedValueDraft::record_ref("sword"))],
     );
-    chained_builder.add_input_record(CfdInputRecord::with_spreads(
+    chained_builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "middle",
         "Holder",
-        [CfdInputValue::record_ref("base")],
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        [LoadedValueDraft::record_ref("base")],
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     ));
-    chained_builder.add_input_record(CfdInputRecord::with_spreads(
+    chained_builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "copy",
         "Holder",
-        [CfdInputValue::record_ref("middle")],
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        [LoadedValueDraft::record_ref("middle")],
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     ));
 
     let chained_model = build_model(&schema, chained_builder);
@@ -1132,7 +1160,7 @@ fn empty_sum_and_float_edge_semantics_are_preserved() {
     builder.add_record(
         "item_1",
         "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&empty_sum, builder);
     model
@@ -1148,7 +1176,11 @@ fn empty_sum_and_float_edge_semantics_are_preserved() {
         "#,
     );
     let mut builder = CfdDataModel::builder(&float_div_zero);
-    builder.add_record("item_1", "Item", [("value", CfdInputValue::from(1.0_f64))]);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [("value", LoadedValueDraft::from(1.0_f64))],
+    );
     let model = build_model(&float_div_zero, builder);
     model
         .run_checks(&float_div_zero)

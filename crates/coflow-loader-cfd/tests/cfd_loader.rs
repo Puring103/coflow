@@ -13,7 +13,7 @@ use coflow_api::{
 };
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::CfdDataModel;
-use coflow_data_model::{CfdInputValue, CfdValue};
+use coflow_data_model::{CfdValue, LoadedValueDraft};
 use coflow_loader_cfd::{
     load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextErrorCode, CfdTextLoadError,
 };
@@ -51,7 +51,7 @@ fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
     assert_eq!(records[0].actual_type, "Item");
     assert_eq!(
         records[0].fields.get("name"),
-        Some(&CfdInputValue::from("Iron Sword"))
+        Some(&LoadedValueDraft::from("Iron Sword"))
     );
     assert!(!records[0].fields.contains_key("id"));
     Ok(())
@@ -81,7 +81,7 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
 
     assert_eq!(
         records[1].fields.get("item"),
-        Some(&CfdInputValue::record_ref("sword"))
+        Some(&LoadedValueDraft::record_ref("sword"))
     );
 
     let model = load_cfd_model(
@@ -581,7 +581,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let origins = coflow_api::origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(&schema);
     for record in loaded.records {
-        builder.add_input_record(record);
+        builder.add_loaded_record(record);
     }
     let err = builder.build().expect_err("second record is missing value");
     let mapped = coflow_api::map_diagnostics_with_origins(err, &origins);

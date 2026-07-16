@@ -22,7 +22,7 @@ fn expression_depth_limit_stops_the_current_record_with_a_stable_diagnostic() {
         ",
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item", "Item", [("enabled", CfdInputValue::from(true))]);
+    builder.add_record("item", "Item", [("enabled", LoadedValueDraft::from(true))]);
     let model = builder.build().expect("model builds");
 
     let err = run_checks_with_options(&schema, &model, options(3, 100, 100))
@@ -49,12 +49,12 @@ fn expression_depth_limit_stops_the_current_record_with_a_stable_diagnostic() {
 #[test]
 fn nested_data_traversal_uses_the_same_depth_contract() {
     let schema = compile_schema("type Node { child: Node? = null; check { true; } }");
-    let child = |value| CfdInputValue::object_with_declared_type([("child", value)]);
+    let child = |value| LoadedValueDraft::object_with_declared_type([("child", value)]);
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "root",
         "Node",
-        [("child", child(child(CfdInputValue::Null)))],
+        [("child", child(child(LoadedValueDraft::Null)))],
     );
     let model = builder.build().expect("model builds");
 
@@ -92,11 +92,11 @@ fn quantifier_work_limit_points_at_the_first_rejected_item() {
         "Item",
         [(
             "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(1_i64),
-                CfdInputValue::from(2_i64),
-                CfdInputValue::from(3_i64),
-                CfdInputValue::from(4_i64),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::from(1_i64),
+                LoadedValueDraft::from(2_i64),
+                LoadedValueDraft::from(3_i64),
+                LoadedValueDraft::from(4_i64),
             ]),
         )],
     );
@@ -136,11 +136,11 @@ fn aggregate_builtins_charge_work_before_scanning() {
         "Item",
         [(
             "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(1_i64),
-                CfdInputValue::from(2_i64),
-                CfdInputValue::from(3_i64),
-                CfdInputValue::from(4_i64),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::from(1_i64),
+                LoadedValueDraft::from(2_i64),
+                LoadedValueDraft::from(3_i64),
+                LoadedValueDraft::from(4_i64),
             ]),
         )],
     );
@@ -180,10 +180,10 @@ fn aggregate_conversion_charges_nodes_before_copying_items() {
         "Item",
         [(
             "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(1_i64),
-                CfdInputValue::from(2_i64),
-                CfdInputValue::from(3_i64),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::from(1_i64),
+                LoadedValueDraft::from(2_i64),
+                LoadedValueDraft::from(3_i64),
             ]),
         )],
     );
@@ -224,7 +224,7 @@ fn aggregate_len_keeps_a_borrowed_cursor_without_materializing_items() {
         "Item",
         [(
             "nums",
-            CfdInputValue::Array((0..ITEM_COUNT_I64).map(CfdInputValue::from).collect()),
+            LoadedValueDraft::Array((0..ITEM_COUNT_I64).map(LoadedValueDraft::from).collect()),
         )],
     );
     let model = builder.build().expect("model builds");

@@ -1,6 +1,6 @@
 use coflow_cft::{CftSchema, CftValueType};
 
-use crate::diagnostic::CfdPath;
+use crate::diagnostics::CfdPath;
 use crate::model::{CfdDictKey, CfdDomainId, CfdEnumValue, CfdRecordId, CfdValue};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

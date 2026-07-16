@@ -1,65 +1,14 @@
-use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
-use crate::origin::RecordOrigin;
-use coflow_cft::{
-    CftEnumValue, CftField, CftSchema, CftType, CftValueType, FieldName, TypeName,
-    ValueDependencyCycle, ValueDependencyMode,
-};
+use crate::model::{CfdDomainId, CfdDomainIndex, CfdTypeId};
+use coflow_cft::{CftEnumValue, CftField, CftSchema, CftType, TypeName};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct RecordDraft {
-    pub(crate) key: String,
-    pub(crate) actual_type: TypeName,
-    pub(crate) fields: BTreeMap<FieldName, CfdValueDraft>,
-    /// Origin moved from `CfdInputRecord`. For nested object drafts (created
-    /// inside fields), defaults to `RecordOrigin::None`.
-    pub(crate) origin: RecordOrigin,
-    /// Object-level spread occurrences at this record/object site. Kept even
-    /// when local fields override every imported field so source rewrites can
-    /// still target the spread token.
-    pub(crate) spread_sources: Vec<SpreadFieldSource>,
-    /// Top-level only: which fields came from `...spread` references and
-    /// where they came from (target type + key, since record id resolution
-    /// happens later). Empty for nested objects.
-    pub(crate) spread_field_sources: BTreeMap<FieldName, SpreadFieldSource>,
-}
-
-/// A spread origin captured during validation. The compiler resolves these to
-/// concrete `CfdRecordId` values once all drafts have been indexed.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct SpreadFieldSource {
-    pub(crate) expected_type: TypeName,
-    pub(crate) key: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum CfdValueDraft {
-    Value(CfdValue),
-    Object(Box<RecordDraft>),
-    PendingRef {
-        expected_type: TypeName,
-        key: String,
-    },
-    PendingSpreadField {
-        source_type: TypeName,
-        key: String,
-        field: FieldName,
-    },
-    Array(Vec<CfdValueDraft>),
-    Dict(Vec<(CfdDictKey, CfdValueDraft)>),
-    DictSpread {
-        spreads: Vec<CfdValueDraft>,
-        entries: Vec<(CfdDictKey, CfdValueDraft)>,
-    },
-}
-
 #[derive(Debug, Clone)]
-pub(crate) struct DataModelCompilerContext<'a> {
+pub(crate) struct BuildSchema<'a> {
     cft: &'a CftSchema,
     domain_index: CfdDomainIndex,
 }
 
-impl<'a> DataModelCompilerContext<'a> {
+impl<'a> BuildSchema<'a> {
     pub(crate) fn new(schema: &'a CftSchema) -> Self {
         let domain_index = Self::build_domain_index(schema);
 
@@ -174,13 +123,6 @@ impl<'a> DataModelCompilerContext<'a> {
         self.cft.singleton_types()
     }
 
-    pub(crate) fn schema_default_cycle(&self, type_name: &str) -> Option<ValueDependencyCycle> {
-        self.cft
-            .value_dependencies()
-            .materialization_order(type_name, ValueDependencyMode::SchemaDefaults)?
-            .err()
-    }
-
     pub(crate) fn domain_index(&self) -> &CfdDomainIndex {
         &self.domain_index
     }
@@ -191,33 +133,5 @@ impl<'a> DataModelCompilerContext<'a> {
 
     pub(crate) fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId> {
         self.domain_index.type_domain_by_name(type_name)
-    }
-}
-
-pub(crate) fn type_accepts_default(expected: &CftValueType, actual: &CftValueType) -> bool {
-    match expected {
-        CftValueType::Nullable(inner) => type_accepts_default(inner, actual),
-        _ => expected == actual,
-    }
-}
-
-pub(crate) fn display_value_type(ty: &CftValueType) -> String {
-    ty.display_label()
-}
-
-pub(crate) fn input_value_kind(value: &CfdInputValue) -> &'static str {
-    match value {
-        CfdInputValue::Null => "null",
-        CfdInputValue::Bool(_) => "bool",
-        CfdInputValue::Int(_) => "int",
-        CfdInputValue::Float(_) => "float",
-        CfdInputValue::String(_) => "string",
-        CfdInputValue::EnumVariant { .. } => "enum",
-        CfdInputValue::Object { .. } => "object",
-        CfdInputValue::ObjectSpread { .. } => "object spread",
-        CfdInputValue::RecordRef(_) => "record ref",
-        CfdInputValue::Array(_) => "array",
-        CfdInputValue::Dict(_) => "dict",
-        CfdInputValue::DictSpread { .. } => "dict spread",
     }
 }

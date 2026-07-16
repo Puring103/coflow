@@ -20,9 +20,9 @@ fn add_overlay(
     field: &str,
     dimension: &str,
     variant: &str,
-    value: CfdInputValue,
+    value: LoadedValueDraft,
 ) {
-    builder.add_input_dimension_value(CfdInputDimensionValue {
+    builder.add_dimension_value_draft(DimensionValueDraft {
         source_type: TypeName::new(source_type).unwrap(),
         source_key: RecordKey::new(source_key).unwrap(),
         field: FieldName::new(field).unwrap(),
@@ -45,10 +45,17 @@ fn simple_schema() -> CftSchema {
     )
 }
 
-fn simple_model(zh: Option<CfdInputValue>, en: Option<CfdInputValue>) -> (CftSchema, CfdDataModel) {
+fn simple_model(
+    zh: Option<LoadedValueDraft>,
+    en: Option<LoadedValueDraft>,
+) -> (CftSchema, CfdDataModel) {
     let schema = simple_schema();
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
+    builder.add_record(
+        "potion",
+        "Item",
+        [("name", LoadedValueDraft::from("Potion"))],
+    );
     if let Some(value) = zh {
         add_overlay(
             &mut builder,
@@ -85,8 +92,8 @@ fn default_round_uses_only_the_owner_field() {
 #[test]
 fn variant_round_can_fail_at_the_owner_field_path() {
     let (schema, model) = simple_model(
-        Some(CfdInputValue::from("")),
-        Some(CfdInputValue::from("Potion")),
+        Some(LoadedValueDraft::from("")),
+        Some(LoadedValueDraft::from("Potion")),
     );
     let err = run_checks_for_dimensions(&schema, &model, &language_plan())
         .expect_err("empty zh value should fail");
@@ -104,13 +111,13 @@ fn variant_round_can_fail_at_the_owner_field_path() {
 #[test]
 fn explicit_null_skips_while_missing_is_reported() {
     let (schema, null_model) = simple_model(
-        Some(CfdInputValue::Null),
-        Some(CfdInputValue::from("Potion")),
+        Some(LoadedValueDraft::Null),
+        Some(LoadedValueDraft::from("Potion")),
     );
     run_checks_for_dimensions(&schema, &null_model, &language_plan())
         .expect("explicit null skips the zh field check");
 
-    let (schema, missing_model) = simple_model(None, Some(CfdInputValue::from("Potion")));
+    let (schema, missing_model) = simple_model(None, Some(LoadedValueDraft::from("Potion")));
     let err = run_checks_for_dimensions(&schema, &missing_model, &language_plan())
         .expect_err("missing zh value is not a null skip");
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
@@ -137,8 +144,8 @@ fn inherited_dimension_field_checks_child_owner_records() {
         "child",
         "Child",
         [
-            ("name", CfdInputValue::from("Child")),
-            ("value", CfdInputValue::from(1_i64)),
+            ("name", LoadedValueDraft::from("Child")),
+            ("value", LoadedValueDraft::from(1_i64)),
         ],
     );
     add_overlay(
@@ -148,7 +155,7 @@ fn inherited_dimension_field_checks_child_owner_records() {
         "name",
         "language",
         "zh",
-        CfdInputValue::from(""),
+        LoadedValueDraft::from(""),
     );
     let model = builder.build().expect("model builds");
     let err = run_checks_for_dimensions(
@@ -175,17 +182,17 @@ fn nested_object_array_and_dict_checks_use_overlay_subtrees() {
             }
         "#,
     );
-    let text = |label: &str| CfdInputValue::object("Text", [("label", label.into())]);
+    let text = |label: &str| LoadedValueDraft::object("Text", [("label", label.into())]);
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",
         "Item",
         [
             ("text", text("default")),
-            ("texts", CfdInputValue::Array(vec![text("default")])),
+            ("texts", LoadedValueDraft::Array(vec![text("default")])),
             (
                 "by_slot",
-                CfdInputValue::dict([(CfdInputDictKey::from("main"), text("default"))]),
+                LoadedValueDraft::dict([(LoadedDictKeyDraft::from("main"), text("default"))]),
             ),
         ],
     );
@@ -205,7 +212,7 @@ fn nested_object_array_and_dict_checks_use_overlay_subtrees() {
         "texts",
         "language",
         "zh",
-        CfdInputValue::Array(vec![text("")]),
+        LoadedValueDraft::Array(vec![text("")]),
     );
     add_overlay(
         &mut builder,
@@ -214,7 +221,7 @@ fn nested_object_array_and_dict_checks_use_overlay_subtrees() {
         "by_slot",
         "language",
         "zh",
-        CfdInputValue::dict([(CfdInputDictKey::from("main"), text(""))]),
+        LoadedValueDraft::dict([(LoadedDictKeyDraft::from("main"), text(""))]),
     );
     let model = builder.build().expect("model builds");
     let err = run_checks_for_dimensions(
@@ -252,13 +259,17 @@ fn overlay_record_refs_resolve_without_storage_records() {
         ",
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("target", "Target", [("value", CfdInputValue::from(0_i64))]);
+    builder.add_record(
+        "target",
+        "Target",
+        [("value", LoadedValueDraft::from(0_i64))],
+    );
     builder.add_record(
         "item",
         "Item",
         [(
             "copy",
-            CfdInputValue::object("Copy", [("target", CfdInputValue::record_ref("target"))]),
+            LoadedValueDraft::object("Copy", [("target", LoadedValueDraft::record_ref("target"))]),
         )],
     );
     add_overlay(
@@ -268,7 +279,7 @@ fn overlay_record_refs_resolve_without_storage_records() {
         "copy",
         "language",
         "zh",
-        CfdInputValue::object("Copy", [("target", CfdInputValue::record_ref("target"))]),
+        LoadedValueDraft::object("Copy", [("target", LoadedValueDraft::record_ref("target"))]),
     );
     let model = builder.build().expect("overlay refs resolve");
     let err = run_checks_for_dimensions(
@@ -297,8 +308,8 @@ fn configured_dimensions_run_independently() {
         "item",
         "Item",
         [
-            ("name", CfdInputValue::from("default")),
-            ("label", CfdInputValue::from("default")),
+            ("name", LoadedValueDraft::from("default")),
+            ("label", LoadedValueDraft::from("default")),
         ],
     );
     add_overlay(
@@ -308,7 +319,7 @@ fn configured_dimensions_run_independently() {
         "name",
         "language",
         "zh",
-        CfdInputValue::from("ok"),
+        LoadedValueDraft::from("ok"),
     );
     add_overlay(
         &mut builder,
@@ -317,7 +328,7 @@ fn configured_dimensions_run_independently() {
         "label",
         "platform",
         "pc",
-        CfdInputValue::from(""),
+        LoadedValueDraft::from(""),
     );
     let model = builder.build().expect("model builds");
     let plan = DimensionCheckPlan::new([
@@ -335,8 +346,8 @@ fn configured_dimensions_run_independently() {
 #[test]
 fn dependency_graph_has_no_synthetic_record_edges() {
     let (schema, model) = simple_model(
-        Some(CfdInputValue::from("药水")),
-        Some(CfdInputValue::from("Potion")),
+        Some(LoadedValueDraft::from("药水")),
+        Some(LoadedValueDraft::from("Potion")),
     );
     let (result, graph) = run_checks_for_dimensions_with_deps(&schema, &model, &language_plan());
     result.expect("checks pass");

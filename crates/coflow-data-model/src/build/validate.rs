@@ -1,30 +1,26 @@
 mod dicts;
 
-use crate::compiler_context::{
-    display_value_type, input_value_kind, CfdValueDraft, DataModelCompilerContext, RecordDraft,
-    SpreadFieldSource,
-};
-use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
-use crate::model::{CfdEnumValue, CfdInputValue, CfdRecordId, CfdValue};
-use crate::origin::RecordOrigin;
-use crate::value_semantics::{
-    CfdValueSemanticContext, ValueValidationMode, ValueValidationRequest,
-};
+use crate::build::{BuildSchema, RecordDraft, SpreadFieldSource, ValueDraft};
+use crate::diagnostics::RecordOrigin;
+use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
+use crate::ingest::LoadedValueDraft;
+use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
+use crate::semantics::{CfdValueSemanticContext, ValueValidationMode, ValueValidationRequest};
 use coflow_cft::{CftField, CftValueType, FieldName, TypeName};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Validation and resolution helper.
 ///
-/// Separating `schema` (a copied `&'s DataModelCompilerContext` reference) from
+/// Separating `schema` (a copied `&'s BuildSchema` reference) from
 /// `diagnostics` (a mutable borrow) lets every method call
 /// `schema.full_fields(type)` and obtain field references whose lifetime is
-/// tied to the outer `DataModelCompilerContext`, **not** to `self`. The references
+/// tied to the outer `BuildSchema`, **not** to `self`. The references
 /// can therefore be iterated while `&mut self` methods are called to emit
 /// diagnostics — something impossible when the schema is an owned field of
 /// the same struct.
 pub(super) struct Validator<'s, 'schema> {
-    pub(super) schema: &'s DataModelCompilerContext<'schema>,
+    pub(super) schema: &'s BuildSchema<'schema>,
     pub(super) diagnostics: &'s mut Vec<CfdDiagnostic>,
     pub(super) default_objects: BTreeMap<String, CachedDefaultObject>,
     structural_limits: StructuralLimits,
@@ -41,7 +37,7 @@ pub(super) struct CachedDefaultObject {
 
 impl<'s, 'schema> Validator<'s, 'schema> {
     pub(super) fn new(
-        schema: &'s DataModelCompilerContext<'schema>,
+        schema: &'s BuildSchema<'schema>,
         diagnostics: &'s mut Vec<CfdDiagnostic>,
         structural_limits: StructuralLimits,
     ) -> Self {
@@ -61,8 +57,8 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         expected_type: Option<&str>,
         key: &str,
         actual_type: &str,
-        input_spreads: &[CfdInputValue],
-        input_fields: &BTreeMap<String, CfdInputValue>,
+        input_spreads: &[LoadedValueDraft],
+        input_fields: &BTreeMap<String, LoadedValueDraft>,
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<RecordDraft> {
@@ -88,8 +84,8 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         expected_type: Option<&str>,
         key: &str,
         actual_type: &str,
-        input_spreads: &[CfdInputValue],
-        input_fields: &BTreeMap<String, CfdInputValue>,
+        input_spreads: &[LoadedValueDraft],
+        input_fields: &BTreeMap<String, LoadedValueDraft>,
         record: Option<CfdRecordId>,
         path: CfdPath,
         cursor: TraversalCursor,
@@ -121,7 +117,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             return None;
         }
         if let Some(expected) = expected_type {
-            if let Err(error) = crate::value_semantics::validate_object_type_assignable(
+            if let Err(error) = crate::semantics::validate_object_type_assignable(
                 schema.cft(),
                 expected,
                 actual_type,
@@ -224,22 +220,22 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     fn validate_field_value(
         &mut self,
         field: &CftField,
-        value: &CfdInputValue,
+        value: &LoadedValueDraft,
         record: Option<CfdRecordId>,
         path: CfdPath,
         cursor: TraversalCursor,
-    ) -> Option<CfdValueDraft> {
+    ) -> Option<ValueDraft> {
         self.validate_value(&field.value_type, value, record, path, cursor)
     }
 
     pub(super) fn validate_value(
         &mut self,
         ty: &CftValueType,
-        value: &CfdInputValue,
+        value: &LoadedValueDraft,
         record: Option<CfdRecordId>,
         path: CfdPath,
         parent: TraversalCursor,
-    ) -> Option<CfdValueDraft> {
+    ) -> Option<ValueDraft> {
         let cursor = self.enter_value(parent, record, &path)?;
         self.validate_value_inner(ty, value, record, path, cursor)
     }
@@ -247,35 +243,38 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     fn validate_value_inner(
         &mut self,
         ty: &CftValueType,
-        value: &CfdInputValue,
+        value: &LoadedValueDraft,
         record: Option<CfdRecordId>,
         path: CfdPath,
         cursor: TraversalCursor,
-    ) -> Option<CfdValueDraft> {
+    ) -> Option<ValueDraft> {
         if let CftValueType::Nullable(inner) = ty {
-            return if matches!(value, CfdInputValue::Null) {
-                Some(CfdValueDraft::Value(CfdValue::Null))
+            return if matches!(value, LoadedValueDraft::Null) {
+                Some(ValueDraft::Value(CfdValue::Null))
             } else {
                 self.validate_value_inner(inner, value, record, path, cursor)
             };
         }
 
         match (ty, value) {
-            (CftValueType::Int, CfdInputValue::Int(value)) => {
-                Some(CfdValueDraft::Value(CfdValue::Int(*value)))
+            (CftValueType::Int, LoadedValueDraft::Int(value)) => {
+                Some(ValueDraft::Value(CfdValue::Int(*value)))
             }
-            (CftValueType::Float, CfdInputValue::Float(value)) => {
+            (CftValueType::Float, LoadedValueDraft::Float(value)) => {
                 let value = CfdValue::Float(*value);
                 self.validate_materialized_value(ty, &value, record, path)?;
-                Some(CfdValueDraft::Value(value))
+                Some(ValueDraft::Value(value))
             }
-            (CftValueType::Bool, CfdInputValue::Bool(value)) => {
-                Some(CfdValueDraft::Value(CfdValue::Bool(*value)))
+            (CftValueType::Bool, LoadedValueDraft::Bool(value)) => {
+                Some(ValueDraft::Value(CfdValue::Bool(*value)))
             }
-            (CftValueType::String, CfdInputValue::String(value)) => {
-                Some(CfdValueDraft::Value(CfdValue::String(value.clone())))
+            (CftValueType::String, LoadedValueDraft::String(value)) => {
+                Some(ValueDraft::Value(CfdValue::String(value.clone())))
             }
-            (CftValueType::Enum(expected), CfdInputValue::EnumVariant { enum_name, variant }) => {
+            (
+                CftValueType::Enum(expected),
+                LoadedValueDraft::EnumVariant { enum_name, variant },
+            ) => {
                 let enum_value =
                     self.resolve_enum_value(enum_name, variant, record, path.clone())?;
                 let value = CfdValue::Enum(enum_value);
@@ -285,21 +284,21 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                     record,
                     path,
                 )?;
-                Some(CfdValueDraft::Value(value))
+                Some(ValueDraft::Value(value))
             }
-            (CftValueType::RecordRef(expected), CfdInputValue::RecordRef(key)) => {
-                Some(CfdValueDraft::PendingRef {
+            (CftValueType::RecordRef(expected), LoadedValueDraft::RecordRef(key)) => {
+                Some(ValueDraft::PendingRef {
                     expected_type: expected.clone(),
                     key: key.clone(),
                 })
             }
             (
                 CftValueType::Object(expected),
-                CfdInputValue::Object {
+                LoadedValueDraft::Object {
                     actual_type,
                     fields,
                 }
-                | CfdInputValue::ObjectSpread {
+                | LoadedValueDraft::ObjectSpread {
                     actual_type,
                     spreads: _,
                     fields,
@@ -320,7 +319,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                     expected.to_string()
                 };
                 let spreads = match value {
-                    CfdInputValue::ObjectSpread { spreads, .. } => spreads.as_slice(),
+                    LoadedValueDraft::ObjectSpread { spreads, .. } => spreads.as_slice(),
                     _ => &[],
                 };
                 let draft = self.validate_record(
@@ -333,9 +332,9 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                     path,
                     cursor,
                 )?;
-                Some(CfdValueDraft::Object(Box::new(draft)))
+                Some(ValueDraft::Object(Box::new(draft)))
             }
-            (CftValueType::Array(inner), CfdInputValue::Array(items)) => {
+            (CftValueType::Array(inner), LoadedValueDraft::Array(items)) => {
                 let mut out = Vec::with_capacity(items.len());
                 for (index, item) in items.iter().enumerate() {
                     let Some(value) =
@@ -345,16 +344,16 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                     };
                     out.push(value);
                 }
-                Some(CfdValueDraft::Array(out))
+                Some(ValueDraft::Array(out))
             }
-            (CftValueType::Dict(key_ty, value_ty), CfdInputValue::Dict(entries)) => {
+            (CftValueType::Dict(key_ty, value_ty), LoadedValueDraft::Dict(entries)) => {
                 let out =
                     self.validate_dict_entries(key_ty, value_ty, entries, record, &path, cursor);
-                Some(CfdValueDraft::Dict(out))
+                Some(ValueDraft::Dict(out))
             }
             (
                 CftValueType::Dict(key_ty, value_ty),
-                CfdInputValue::DictSpread { spreads, entries },
+                LoadedValueDraft::DictSpread { spreads, entries },
             ) => {
                 let mut out_spreads = Vec::with_capacity(spreads.len());
                 for spread in spreads {
@@ -367,7 +366,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 }
                 let out_entries =
                     self.validate_dict_entries(key_ty, value_ty, entries, record, &path, cursor);
-                Some(CfdValueDraft::DictSpread {
+                Some(ValueDraft::DictSpread {
                     spreads: out_spreads,
                     entries: out_entries,
                 })
@@ -382,20 +381,20 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     fn validate_object_spread(
         &mut self,
         type_name: &TypeName,
-        spread: &CfdInputValue,
+        spread: &LoadedValueDraft,
         record: Option<CfdRecordId>,
         path: CfdPath,
         parent: TraversalCursor,
-    ) -> Option<BTreeMap<FieldName, CfdValueDraft>> {
+    ) -> Option<BTreeMap<FieldName, ValueDraft>> {
         let cursor = self.enter_value(parent, record, &path)?;
         match spread {
-            CfdInputValue::RecordRef(key) => Some(
+            LoadedValueDraft::RecordRef(key) => Some(
                 self.schema
                     .full_fields(type_name.as_str())
                     .map(|field| {
                         (
                             field.name.clone(),
-                            CfdValueDraft::PendingSpreadField {
+                            ValueDraft::PendingSpreadField {
                                 source_type: type_name.clone(),
                                 key: key.clone(),
                                 field: field.name.clone(),
@@ -404,7 +403,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                     })
                     .collect(),
             ),
-            CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. } => {
+            LoadedValueDraft::Object { .. } | LoadedValueDraft::ObjectSpread { .. } => {
                 let object_type = self.schema.resolve_type(type_name.as_str())?.name.clone();
                 let draft = self.validate_value_inner(
                     &CftValueType::Object(object_type),
@@ -413,7 +412,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                     path,
                     cursor,
                 )?;
-                let CfdValueDraft::Object(record_draft) = draft else {
+                let ValueDraft::Object(record_draft) = draft else {
                     return None;
                 };
                 Some(record_draft.fields)
@@ -454,7 +453,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     fn type_mismatch(
         &mut self,
         expected: &str,
-        value: &CfdInputValue,
+        value: &LoadedValueDraft,
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) {
@@ -479,11 +478,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         };
         let request =
             ValueValidationRequest::new(expected, value, ValueValidationMode::SourceFragment);
-        match crate::value_semantics::validate_value_for_schema(
-            self.schema.cft(),
-            &context,
-            request,
-        ) {
+        match crate::semantics::validate_value_for_schema(self.schema.cft(), &context, request) {
             Ok(()) => Some(()),
             Err(error) => {
                 self.push(
@@ -586,7 +581,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
 }
 
 struct SourceValueSemanticContext<'a, 'schema> {
-    schema: &'a DataModelCompilerContext<'schema>,
+    schema: &'a BuildSchema<'schema>,
 }
 
 impl CfdValueSemanticContext for SourceValueSemanticContext<'_, '_> {
@@ -609,13 +604,34 @@ impl CfdValueSemanticContext for SourceValueSemanticContext<'_, '_> {
 
 fn top_level_spread_source(
     expected_type: &TypeName,
-    spread: &CfdInputValue,
+    spread: &LoadedValueDraft,
 ) -> Option<SpreadFieldSource> {
     match spread {
-        CfdInputValue::RecordRef(key) => Some(SpreadFieldSource {
+        LoadedValueDraft::RecordRef(key) => Some(SpreadFieldSource {
             expected_type: expected_type.clone(),
             key: key.clone(),
         }),
         _ => None,
+    }
+}
+
+fn display_value_type(ty: &CftValueType) -> String {
+    ty.display_label()
+}
+
+fn input_value_kind(value: &LoadedValueDraft) -> &'static str {
+    match value {
+        LoadedValueDraft::Null => "null",
+        LoadedValueDraft::Bool(_) => "bool",
+        LoadedValueDraft::Int(_) => "int",
+        LoadedValueDraft::Float(_) => "float",
+        LoadedValueDraft::String(_) => "string",
+        LoadedValueDraft::EnumVariant { .. } => "enum",
+        LoadedValueDraft::Object { .. } => "object",
+        LoadedValueDraft::ObjectSpread { .. } => "object spread",
+        LoadedValueDraft::RecordRef(_) => "record ref",
+        LoadedValueDraft::Array(_) => "array",
+        LoadedValueDraft::Dict(_) => "dict",
+        LoadedValueDraft::DictSpread { .. } => "dict spread",
     }
 }

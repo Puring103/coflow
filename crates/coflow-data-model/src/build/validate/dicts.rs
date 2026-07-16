@@ -1,6 +1,7 @@
-use crate::compiler_context::CfdValueDraft;
-use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
-use crate::model::{CfdDictKey, CfdInputDictKey, CfdInputValue, CfdRecordId};
+use crate::build::ValueDraft;
+use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
+use crate::ingest::{LoadedDictKeyDraft, LoadedValueDraft};
+use crate::model::{CfdDictKey, CfdRecordId};
 use coflow_cft::CftValueType;
 use coflow_structure::TraversalCursor;
 
@@ -11,11 +12,11 @@ impl Validator<'_, '_> {
         &mut self,
         key_ty: &CftValueType,
         value_ty: &CftValueType,
-        entries: &[(CfdInputDictKey, CfdInputValue)],
+        entries: &[(LoadedDictKeyDraft, LoadedValueDraft)],
         record: Option<CfdRecordId>,
         path: &CfdPath,
         cursor: TraversalCursor,
-    ) -> Vec<(CfdDictKey, CfdValueDraft)> {
+    ) -> Vec<(CfdDictKey, ValueDraft)> {
         let mut seen = std::collections::BTreeMap::<CfdDictKey, CfdPath>::new();
         let mut out = Vec::with_capacity(entries.len());
         for (key, value) in entries {
@@ -45,18 +46,18 @@ impl Validator<'_, '_> {
     fn validate_dict_key(
         &mut self,
         ty: &CftValueType,
-        key: &CfdInputDictKey,
+        key: &LoadedDictKeyDraft,
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdDictKey> {
         let value = match key {
-            CfdInputDictKey::String(value) => CfdDictKey::String(value.clone()),
-            CfdInputDictKey::Int(value) => CfdDictKey::Int(*value),
-            CfdInputDictKey::EnumVariant { enum_name, variant } => CfdDictKey::Enum(
+            LoadedDictKeyDraft::String(value) => CfdDictKey::String(value.clone()),
+            LoadedDictKeyDraft::Int(value) => CfdDictKey::Int(*value),
+            LoadedDictKeyDraft::EnumVariant { enum_name, variant } => CfdDictKey::Enum(
                 self.resolve_enum_value(enum_name, variant, record, path.clone())?,
             ),
         };
-        match crate::value_semantics::validate_dict_key_for_schema(self.schema.cft(), ty, &value) {
+        match crate::semantics::validate_dict_key_for_schema(self.schema.cft(), ty, &value) {
             Ok(()) => Some(value),
             Err(error) => {
                 self.push(

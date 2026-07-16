@@ -1,5 +1,5 @@
-use crate::compiler_context::{CfdValueDraft, DataModelCompilerContext, RecordDraft};
-use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
+use crate::build::{BuildSchema, RecordDraft, ValueDraft};
+use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
 use crate::model::{CfdDictKey, CfdDomainId, CfdObject, CfdRecordId, CfdValue};
 use coflow_cft::{FieldName, RecordKey, TypeName};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
@@ -62,7 +62,7 @@ impl ValueNode {
 }
 
 pub(super) struct ValueResolver<'a, 'schema> {
-    schema: &'a DataModelCompilerContext<'schema>,
+    schema: &'a BuildSchema<'schema>,
     drafts: &'a [RecordDraft],
     record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     diagnostics: &'a mut Vec<CfdDiagnostic>,
@@ -77,7 +77,7 @@ pub(super) struct ValueResolver<'a, 'schema> {
 
 impl<'a, 'schema> ValueResolver<'a, 'schema> {
     pub(super) fn new(
-        schema: &'a DataModelCompilerContext<'schema>,
+        schema: &'a BuildSchema<'schema>,
         drafts: &'a [RecordDraft],
         record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
         diagnostics: &'a mut Vec<CfdDiagnostic>,
@@ -121,7 +121,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     pub(super) fn resolve_dimension_value(
         &mut self,
         record: CfdRecordId,
-        value: &CfdValueDraft,
+        value: &ValueDraft,
         path: CfdPath,
     ) -> Option<CfdValue> {
         self.budget = StructuralBudget::new(self.structural_limits);
@@ -139,7 +139,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
 
     fn resolve_fields(
         &mut self,
-        fields: &BTreeMap<FieldName, CfdValueDraft>,
+        fields: &BTreeMap<FieldName, ValueDraft>,
         parent: &ValueNode,
         cursor: TraversalCursor,
     ) -> Option<BTreeMap<FieldName, CfdValue>> {
@@ -158,7 +158,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
 
     fn resolve_node(
         &mut self,
-        value: &CfdValueDraft,
+        value: &ValueDraft,
         node: ValueNode,
         parent: TraversalCursor,
         memoize: bool,
@@ -169,7 +169,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         }
         let kind = if matches!(
             value,
-            CfdValueDraft::PendingSpreadField { .. } | CfdValueDraft::DictSpread { .. }
+            ValueDraft::PendingSpreadField { .. } | ValueDraft::DictSpread { .. }
         ) {
             StructureKind::SpreadResolution
         } else {
@@ -212,13 +212,13 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
 
     fn resolve_value(
         &mut self,
-        value: &CfdValueDraft,
+        value: &ValueDraft,
         node: &ValueNode,
         cursor: TraversalCursor,
     ) -> Option<CfdValue> {
         match value {
-            CfdValueDraft::Value(value) => Some(value.clone()),
-            CfdValueDraft::PendingRef {
+            ValueDraft::Value(value) => Some(value.clone()),
+            ValueDraft::PendingRef {
                 expected_type: _,
                 key,
             } => match RecordKey::new(key.clone()) {
@@ -231,19 +231,19 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                     None
                 }
             },
-            CfdValueDraft::PendingSpreadField {
+            ValueDraft::PendingSpreadField {
                 source_type,
                 key,
                 field,
             } => self.resolve_spread_field(source_type, key, field, node, cursor),
-            CfdValueDraft::Object(record_draft) => {
+            ValueDraft::Object(record_draft) => {
                 let fields = self.resolve_fields(&record_draft.fields, node, cursor)?;
                 Some(CfdValue::Object(Box::new(CfdObject {
                     actual_type: record_draft.actual_type.clone(),
                     fields,
                 })))
             }
-            CfdValueDraft::Array(items) => {
+            ValueDraft::Array(items) => {
                 let mut out = Vec::with_capacity(items.len());
                 let mut complete = true;
                 for (index, item) in items.iter().enumerate() {
@@ -256,10 +256,10 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                 }
                 complete.then_some(CfdValue::Array(out))
             }
-            CfdValueDraft::Dict(entries) => self
+            ValueDraft::Dict(entries) => self
                 .resolve_dict_entries(entries, node, cursor)
                 .map(CfdValue::Dict),
-            CfdValueDraft::DictSpread { spreads, entries } => self
+            ValueDraft::DictSpread { spreads, entries } => self
                 .resolve_dict_spread(spreads, entries, node, cursor)
                 .map(CfdValue::Dict),
         }
@@ -315,7 +315,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
 
     fn resolve_dict_entries(
         &mut self,
-        entries: &[(CfdDictKey, CfdValueDraft)],
+        entries: &[(CfdDictKey, ValueDraft)],
         node: &ValueNode,
         cursor: TraversalCursor,
     ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
@@ -334,8 +334,8 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
 
     fn resolve_dict_spread(
         &mut self,
-        spreads: &[CfdValueDraft],
-        entries: &[(CfdDictKey, CfdValueDraft)],
+        spreads: &[ValueDraft],
+        entries: &[(CfdDictKey, ValueDraft)],
         node: &ValueNode,
         cursor: TraversalCursor,
     ) -> Option<Vec<(CfdDictKey, CfdValue)>> {

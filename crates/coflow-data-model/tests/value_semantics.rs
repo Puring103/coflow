@@ -134,24 +134,24 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
     struct Case {
         name: &'static str,
         schema: &'static str,
-        source_value: CfdInputValue,
+        source_value: LoadedValueDraft,
         mutation_value: CfdValue,
-        context_records: Vec<CfdInputRecord>,
+        context_records: Vec<LoadedRecordDraft>,
         valid: bool,
     }
 
     let object = |actual_type: &str, fields: BTreeMap<String, CfdValue>| {
         CfdValue::Object(Box::new(CfdObject::try_new(actual_type, fields).unwrap()))
     };
-    let input_record = |key: &str, actual_type: &str, fields: Vec<(&str, CfdInputValue)>| {
-        CfdInputRecord::new(key, actual_type, fields)
+    let input_record = |key: &str, actual_type: &str, fields: Vec<(&str, LoadedValueDraft)>| {
+        LoadedRecordDraft::new(key, actual_type, fields)
     };
 
     let cases = vec![
         Case {
             name: "nullable null",
             schema: "type Root { value: int?; }",
-            source_value: CfdInputValue::Null,
+            source_value: LoadedValueDraft::Null,
             mutation_value: CfdValue::Null,
             context_records: Vec::new(),
             valid: true,
@@ -159,7 +159,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         Case {
             name: "primitive mismatch",
             schema: "type Root { value: int; }",
-            source_value: CfdInputValue::String("bad".to_string()),
+            source_value: LoadedValueDraft::String("bad".to_string()),
             mutation_value: CfdValue::String("bad".to_string()),
             context_records: Vec::new(),
             valid: false,
@@ -167,7 +167,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         Case {
             name: "non-finite float",
             schema: "type Root { value: float; }",
-            source_value: CfdInputValue::Float(f64::NAN),
+            source_value: LoadedValueDraft::Float(f64::NAN),
             mutation_value: CfdValue::Float(f64::NAN),
             context_records: Vec::new(),
             valid: false,
@@ -175,7 +175,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         Case {
             name: "array item mismatch",
             schema: "type Root { value: [int]; }",
-            source_value: CfdInputValue::Array(vec![CfdInputValue::String("bad".to_string())]),
+            source_value: LoadedValueDraft::Array(vec![LoadedValueDraft::String("bad".to_string())]),
             mutation_value: CfdValue::Array(vec![CfdValue::String("bad".to_string())]),
             context_records: Vec::new(),
             valid: false,
@@ -183,9 +183,9 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         Case {
             name: "dict key mismatch",
             schema: "type Root { value: {int: string}; }",
-            source_value: CfdInputValue::dict([(
-                CfdInputDictKey::String("bad".to_string()),
-                CfdInputValue::String("value".to_string()),
+            source_value: LoadedValueDraft::dict([(
+                LoadedDictKeyDraft::String("bad".to_string()),
+                LoadedValueDraft::String("value".to_string()),
             )]),
             mutation_value: CfdValue::Dict(vec![(
                 CfdDictKey::String("bad".to_string()),
@@ -197,7 +197,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         Case {
             name: "unknown enum variant",
             schema: "enum Rarity { Common } type Root { value: Rarity; }",
-            source_value: CfdInputValue::enum_variant("Rarity", "Missing"),
+            source_value: LoadedValueDraft::enum_variant("Rarity", "Missing"),
             mutation_value: CfdValue::Enum(
                 CfdEnumValue::try_new("Rarity", Some("Missing"), 0).unwrap(),
             ),
@@ -207,9 +207,9 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         Case {
             name: "missing nested required field",
             schema: "type Child { required: int; } type Root { value: Child; }",
-            source_value: CfdInputValue::object(
+            source_value: LoadedValueDraft::object(
                 "Child",
-                std::iter::empty::<(&str, CfdInputValue)>(),
+                std::iter::empty::<(&str, LoadedValueDraft)>(),
             ),
             mutation_value: object("Child", BTreeMap::new()),
             context_records: Vec::new(),
@@ -218,7 +218,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         Case {
             name: "abstract object instantiation",
             schema: "abstract type Base { n: int; } type Root { value: Base; }",
-            source_value: CfdInputValue::object("Base", [("n", CfdInputValue::Int(1))]),
+            source_value: LoadedValueDraft::object("Base", [("n", LoadedValueDraft::Int(1))]),
             mutation_value: object(
                 "Base",
                 BTreeMap::from([("n".to_string(), CfdValue::Int(1))]),
@@ -229,7 +229,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         Case {
             name: "valid concrete object",
             schema: "abstract type Base {} type Child : Base { n: int; } type Root { value: Base; }",
-            source_value: CfdInputValue::object("Child", [("n", CfdInputValue::Int(1))]),
+            source_value: LoadedValueDraft::object("Child", [("n", LoadedValueDraft::Int(1))]),
             mutation_value: object(
                 "Child",
                 BTreeMap::from([("n".to_string(), CfdValue::Int(1))]),
@@ -240,19 +240,19 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         Case {
             name: "valid record ref",
             schema: "type Target { name: string; } type Root { value: &Target; }",
-            source_value: CfdInputValue::record_ref("target"),
+            source_value: LoadedValueDraft::record_ref("target"),
             mutation_value: CfdValue::record_ref("target").unwrap(),
             context_records: vec![input_record(
                 "target",
                 "Target",
-                vec![("name", CfdInputValue::String("Target".to_string()))],
+                vec![("name", LoadedValueDraft::String("Target".to_string()))],
             )],
             valid: true,
         },
         Case {
             name: "missing record ref",
             schema: "type Target {} type Root { value: &Target; }",
-            source_value: CfdInputValue::record_ref("missing"),
+            source_value: LoadedValueDraft::record_ref("missing"),
             mutation_value: CfdValue::record_ref("missing").unwrap(),
             context_records: Vec::new(),
             valid: false,
@@ -260,7 +260,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         Case {
             name: "record ref actual type mismatch",
             schema: "abstract type Reward {} type ItemReward : Reward {} type CurrencyReward : Reward {} type Root { value: &ItemReward; }",
-            source_value: CfdInputValue::record_ref("reward"),
+            source_value: LoadedValueDraft::record_ref("reward"),
             mutation_value: CfdValue::record_ref("reward").unwrap(),
             context_records: vec![input_record("reward", "CurrencyReward", Vec::new())],
             valid: false,
@@ -272,14 +272,14 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
 
         let mut source_builder = CfdDataModel::builder(&schema);
         for record in case.context_records.iter().cloned() {
-            source_builder.add_input_record(record);
+            source_builder.add_loaded_record(record);
         }
         source_builder.add_record("root", "Root", [("value", case.source_value)]);
         let source_valid = source_builder.build().is_ok();
 
         let mut context_builder = CfdDataModel::builder(&schema);
         for record in case.context_records {
-            context_builder.add_input_record(record);
+            context_builder.add_loaded_record(record);
         }
         let context_model = context_builder.build().expect("valid context records");
         let expected = &schema

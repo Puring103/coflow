@@ -10,7 +10,7 @@
 
 use coflow_api::{ArtifactContent, DataExporter, ExportContext};
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
-use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
+use coflow_data_model::{CfdDataModel, LoadedDictKeyDraft, LoadedValueDraft};
 use coflow_exporter_json::export_json_artifacts;
 use serde_json::json;
 use serde_json::Value;
@@ -74,19 +74,25 @@ fn exports_tables_with_schema_order_defaults_and_record_key_id() -> TestResult {
         "iron_sword",
         "Item",
         [
-            ("rarity", CfdInputValue::enum_variant("Rarity", "Rare")),
+            ("rarity", LoadedValueDraft::enum_variant("Rarity", "Rare")),
             (
                 "tags",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from("weapon"),
-                    CfdInputValue::from("melee"),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from("weapon"),
+                    LoadedValueDraft::from("melee"),
                 ]),
             ),
             (
                 "attrs",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from("attack"), CfdInputValue::from(12_i64)),
-                    (CfdInputDictKey::from("level"), CfdInputValue::from(3_i64)),
+                LoadedValueDraft::dict([
+                    (
+                        LoadedDictKeyDraft::from("attack"),
+                        LoadedValueDraft::from(12_i64),
+                    ),
+                    (
+                        LoadedDictKeyDraft::from("level"),
+                        LoadedValueDraft::from(3_i64),
+                    ),
                 ]),
             ),
         ],
@@ -120,10 +126,13 @@ fn streaming_json_preserves_pretty_output_bytes() -> TestResult {
         "item_1",
         "Item",
         [
-            ("name", CfdInputValue::from("Sword")),
+            ("name", LoadedValueDraft::from("Sword")),
             (
                 "numbers",
-                CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(2_i64)]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(1_i64),
+                    LoadedValueDraft::from(2_i64),
+                ]),
             ),
         ],
     );
@@ -154,7 +163,11 @@ fn artifact_export_omits_empty_tables() -> TestResult {
     )?;
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [("name", LoadedValueDraft::from("Sword"))],
+    );
     let model = build_model(builder)?;
     let tables = export_tables(&schema, &model)?;
 
@@ -173,7 +186,11 @@ fn json_exporter_skips_empty_table_files() -> TestResult {
     )?;
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [("name", LoadedValueDraft::from("Sword"))],
+    );
     let model = build_model(builder)?;
     let schema = &schema;
     let options = coflow_exporter_json::JsonExporter
@@ -234,7 +251,7 @@ fn exports_refs_as_keys_and_polymorphic_objects_with_type_tags() -> TestResult {
     builder.add_record(
         "iron_sword",
         "Item",
-        [("name", CfdInputValue::from("Iron Sword"))],
+        [("name", LoadedValueDraft::from("Iron Sword"))],
     );
     builder.add_record(
         "drop_1",
@@ -242,25 +259,25 @@ fn exports_refs_as_keys_and_polymorphic_objects_with_type_tags() -> TestResult {
         [
             (
                 "rewards",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::object(
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::object(
                         "ItemReward",
                         [
-                            ("item", CfdInputValue::record_ref("iron_sword")),
-                            ("count", CfdInputValue::from(2_i64)),
+                            ("item", LoadedValueDraft::record_ref("iron_sword")),
+                            ("count", LoadedValueDraft::from(2_i64)),
                         ],
                     ),
-                    CfdInputValue::object(
+                    LoadedValueDraft::object(
                         "CurrencyReward",
-                        [("amount", CfdInputValue::from(50_i64))],
+                        [("amount", LoadedValueDraft::from(50_i64))],
                     ),
                 ]),
             ),
             (
                 "weights",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from(70_i64),
-                    CfdInputValue::from(30_i64),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(70_i64),
+                    LoadedValueDraft::from(30_i64),
                 ]),
             ),
         ],
@@ -309,7 +326,7 @@ fn exports_type_tag_for_concrete_parent_ranges_even_when_actual_is_parent() -> T
         "Holder",
         [(
             "reward",
-            CfdInputValue::object("Reward", [("name", CfdInputValue::from("Base"))]),
+            LoadedValueDraft::object("Reward", [("name", LoadedValueDraft::from("Base"))]),
         )],
     );
     let model = build_model(builder)?;
@@ -349,22 +366,28 @@ fn exports_dict_keys_as_json_object_keys() -> TestResult {
         [
             (
                 "by_enum",
-                CfdInputValue::dict([
+                LoadedValueDraft::dict([
                     (
-                        CfdInputDictKey::enum_variant("DamageType", "Fire"),
-                        CfdInputValue::from(0.5_f64),
+                        LoadedDictKeyDraft::enum_variant("DamageType", "Fire"),
+                        LoadedValueDraft::from(0.5_f64),
                     ),
                     (
-                        CfdInputDictKey::enum_variant("DamageType", "Ice"),
-                        CfdInputValue::from(0.2_f64),
+                        LoadedDictKeyDraft::enum_variant("DamageType", "Ice"),
+                        LoadedValueDraft::from(0.2_f64),
                     ),
                 ]),
             ),
             (
                 "by_int",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from(1_i64), CfdInputValue::from("one")),
-                    (CfdInputDictKey::from(2_i64), CfdInputValue::from("two")),
+                LoadedValueDraft::dict([
+                    (
+                        LoadedDictKeyDraft::from(1_i64),
+                        LoadedValueDraft::from("one"),
+                    ),
+                    (
+                        LoadedDictKeyDraft::from(2_i64),
+                        LoadedValueDraft::from("two"),
+                    ),
                 ]),
             ),
         ],
@@ -413,18 +436,21 @@ fn exports_nullable_composite_values_using_schema_value_types() -> TestResult {
         [
             (
                 "maybe_stats",
-                CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(10_i64))]),
+                LoadedValueDraft::object_with_declared_type([(
+                    "hp",
+                    LoadedValueDraft::from(10_i64),
+                )]),
             ),
             (
                 "maybe_tags",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from("alpha"),
-                    CfdInputValue::from("beta"),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from("alpha"),
+                    LoadedValueDraft::from("beta"),
                 ]),
             ),
             (
                 "maybe_attrs",
-                CfdInputValue::dict([("score".into(), CfdInputValue::from(7_i64))]),
+                LoadedValueDraft::dict([("score".into(), LoadedValueDraft::from(7_i64))]),
             ),
         ],
     );
@@ -432,9 +458,9 @@ fn exports_nullable_composite_values_using_schema_value_types() -> TestResult {
         "h2",
         "Holder",
         [
-            ("maybe_stats", CfdInputValue::Null),
-            ("maybe_tags", CfdInputValue::Null),
-            ("maybe_attrs", CfdInputValue::Null),
+            ("maybe_stats", LoadedValueDraft::Null),
+            ("maybe_tags", LoadedValueDraft::Null),
+            ("maybe_attrs", LoadedValueDraft::Null),
         ],
     );
     let model = build_model(builder)?;

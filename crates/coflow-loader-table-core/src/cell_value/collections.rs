@@ -1,5 +1,5 @@
 use coflow_cft::CftSchema;
-use coflow_data_model::{CfdInputDictKey, CfdInputValue};
+use coflow_data_model::{LoadedDictKeyDraft, LoadedValueDraft};
 
 use super::diagnostics::{missing_boundary, syntax, type_mismatch, CellValueDiagnostics};
 use super::scan::{find_top_level_char, split_top_level, strip_outer_pair};
@@ -12,14 +12,14 @@ pub(super) fn parse_array(
     inner: &CellType,
     text: &str,
     context: ValueContext,
-) -> Result<CfdInputValue, CellValueDiagnostics> {
+) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let explicit = strip_outer_pair(text, '[', ']');
     if explicit.is_none() && !context.is_root() {
         return Err(missing_boundary("nested array must use `[]`"));
     }
     let content = explicit.map_or(text, |inner| inner).trim();
     if content.is_empty() {
-        return Ok(CfdInputValue::Array(Vec::new()));
+        return Ok(LoadedValueDraft::Array(Vec::new()));
     }
 
     let mut out = Vec::new();
@@ -27,7 +27,7 @@ pub(super) fn parse_array(
         reject_comma_array_item(inner, item)?;
         out.push(parse_value(schema, inner, item, ValueContext::Nested)?);
     }
-    Ok(CfdInputValue::Array(out))
+    Ok(LoadedValueDraft::Array(out))
 }
 
 fn reject_comma_array_item(inner: &CellType, item: &str) -> Result<(), CellValueDiagnostics> {
@@ -48,14 +48,14 @@ pub(super) fn parse_dict(
     value: &CellType,
     text: &str,
     context: ValueContext,
-) -> Result<CfdInputValue, CellValueDiagnostics> {
+) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let explicit = strip_outer_pair(text, '{', '}');
     if explicit.is_none() && !context.is_root() {
         return Err(missing_boundary("nested dict must use `{}`"));
     }
     let content = explicit.map_or(text, |inner| inner).trim();
     if content.is_empty() {
-        return Ok(CfdInputValue::dict(std::iter::empty()));
+        return Ok(LoadedValueDraft::dict(std::iter::empty()));
     }
 
     let mut out = Vec::new();
@@ -70,26 +70,27 @@ pub(super) fn parse_dict(
             parse_value(schema, value, value_text, ValueContext::Nested)?,
         ));
     }
-    Ok(CfdInputValue::dict(out))
+    Ok(LoadedValueDraft::dict(out))
 }
 
 fn parse_dict_key(
     schema: &CftSchema,
     key: &CellType,
     text: &str,
-) -> Result<CfdInputDictKey, CellValueDiagnostics> {
+) -> Result<LoadedDictKeyDraft, CellValueDiagnostics> {
     let text = text.trim();
     match key {
-        CellType::String => parse_string(text).map(CfdInputDictKey::String),
-        CellType::Int => Ok(CfdInputDictKey::Int(
+        CellType::String => parse_string(text).map(LoadedDictKeyDraft::String),
+        CellType::Int => Ok(LoadedDictKeyDraft::Int(
             text.parse::<i64>().map_err(|_| type_mismatch("int key"))?,
         )),
         CellType::Enum(enum_name) => {
-            let CfdInputValue::EnumVariant { variant, .. } = parse_enum(schema, enum_name, text)?
+            let LoadedValueDraft::EnumVariant { variant, .. } =
+                parse_enum(schema, enum_name, text)?
             else {
                 return Err(type_mismatch("enum key"));
             };
-            Ok(CfdInputDictKey::enum_variant(enum_name, variant))
+            Ok(LoadedDictKeyDraft::enum_variant(enum_name, variant))
         }
         CellType::Nullable(inner) => parse_dict_key(schema, inner, text),
         other => Err(type_mismatch(&format!("dict key {}", other.display()))),

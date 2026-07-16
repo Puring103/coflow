@@ -7,7 +7,7 @@
 
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
-    CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue, RecordOrigin, SourceDocument,
+    CfdDataModel, CfdValue, LoadedRecordDraft, LoadedValueDraft, RecordOrigin, SourceDocument,
 };
 use coflow_loader_table_core::writer::{
     plan_field_write, plan_insert_record, HeaderReconciliationPlan, TableFieldWrite,
@@ -124,14 +124,14 @@ fn nested_collection_edit_rewrites_owning_cell_value() {
         }
         ",
     );
-    let input = CfdInputRecord::new(
+    let input = LoadedRecordDraft::new(
         "sword",
         "Item",
         [(
             "tags",
-            CfdInputValue::Array(vec![
-                CfdInputValue::String("old".to_string()),
-                CfdInputValue::String("keep".to_string()),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::String("old".to_string()),
+                LoadedValueDraft::String("keep".to_string()),
             ]),
         )],
     )
@@ -140,7 +140,7 @@ fn nested_collection_edit_rewrites_owning_cell_value() {
         2,
     )])));
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(input);
+    builder.add_loaded_record(input);
     let model = builder.build().expect("model");
     let origin = table_origin(BTreeMap::from([(vec!["tags".to_string()], 2)]));
     let new_value = CfdValue::String("new".to_string());
@@ -184,19 +184,19 @@ fn nested_dict_entry_edit_rewrites_owning_cell_value() {
         }
         ",
     );
-    let input = CfdInputRecord::new(
+    let input = LoadedRecordDraft::new(
         "sword",
         "Item",
         [(
             "weights",
-            CfdInputValue::dict([
+            LoadedValueDraft::dict([
                 (
-                    coflow_data_model::CfdInputDictKey::from("rare"),
-                    CfdInputValue::Int(1),
+                    coflow_data_model::LoadedDictKeyDraft::from("rare"),
+                    LoadedValueDraft::Int(1),
                 ),
                 (
-                    coflow_data_model::CfdInputDictKey::from("common"),
-                    CfdInputValue::Int(2),
+                    coflow_data_model::LoadedDictKeyDraft::from("common"),
+                    LoadedValueDraft::Int(2),
                 ),
             ]),
         )],
@@ -206,7 +206,7 @@ fn nested_dict_entry_edit_rewrites_owning_cell_value() {
         2,
     )])));
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(input);
+    builder.add_loaded_record(input);
     let model = builder.build().expect("model");
     let origin = table_origin(BTreeMap::from([(vec!["weights".to_string()], 2)]));
     let new_value = CfdValue::Int(9);
@@ -255,29 +255,29 @@ fn replacing_ref_inside_array_rewrites_owning_cell() {
         }
         ",
     );
-    let input = CfdInputRecord::new(
+    let input = LoadedRecordDraft::new(
         "drop_1",
         "Drop",
         [(
             "rewards",
-            CfdInputValue::Array(vec![CfdInputValue::record_ref("coin")]),
+            LoadedValueDraft::Array(vec![LoadedValueDraft::record_ref("coin")]),
         )],
     )
     .with_origin(table_origin(BTreeMap::from([(
         vec!["rewards".to_string()],
         2,
     )])));
-    let source = CfdInputRecord::new(
+    let source = LoadedRecordDraft::new(
         "coin",
         "Reward",
         [
-            ("name", CfdInputValue::String("Coin".to_string())),
-            ("amount", CfdInputValue::Int(10)),
+            ("name", LoadedValueDraft::String("Coin".to_string())),
+            ("amount", LoadedValueDraft::Int(10)),
         ],
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(source);
-    builder.add_input_record(input);
+    builder.add_loaded_record(source);
+    builder.add_loaded_record(input);
     let model = builder.build().expect("model");
     let origin = table_origin(BTreeMap::from([(vec!["rewards".to_string()], 2)]));
     let new_value = CfdValue::record_ref("gem").unwrap();

@@ -5,8 +5,8 @@ use coflow_api::{
 };
 use coflow_cft::{CftSchema, RecordKey};
 use coflow_data_model::{
-    CfdDataModel, CfdDiagnostics, CfdInputDimensionValue, CfdInputRecord, CfdPath, CfdPathSegment,
-    CfdRecordId, RecordOrigin,
+    CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId, DimensionValueDraft,
+    LoadedRecordDraft, RecordOrigin,
 };
 use coflow_project::{path_to_slash, Project};
 use std::collections::{BTreeMap, BTreeSet};
@@ -41,8 +41,8 @@ pub(crate) struct SourceDataCache {
 #[derive(Debug, Clone)]
 struct CachedSourceBatch {
     entry: ResolvedSourceEntry,
-    records: Arc<[CfdInputRecord]>,
-    dimension_values: Arc<[CfdInputDimensionValue]>,
+    records: Arc<[LoadedRecordDraft]>,
+    dimension_values: Arc<[DimensionValueDraft]>,
     dimension_field: Option<dimensions::DimensionField>,
 }
 
@@ -123,7 +123,7 @@ pub(crate) fn load_project_data(
     indexes: &mut SessionIndexBuilder,
     options: LoadProjectDataOptions,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
-    let mut records: Vec<CfdInputRecord> = Vec::new();
+    let mut records: Vec<LoadedRecordDraft> = Vec::new();
     let mut source_data = SourceDataCache::default();
     let mut diagnostics = DiagnosticSet::empty();
     let resolver = SourceResolver::new(project, registry);
@@ -185,10 +185,10 @@ pub(crate) fn load_project_data(
         .collect::<Vec<_>>();
     let mut builder = CfdDataModel::builder(schema);
     for record in records {
-        builder.add_input_record(record);
+        builder.add_loaded_record(record);
     }
     for batch in &source_data.batches {
-        builder.add_input_dimension_values(batch.dimension_values.iter().cloned());
+        builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
     }
     let model = match builder.build() {
         Ok(model) => model,
@@ -345,7 +345,7 @@ fn load_resolved_sources(
     sources: &mut SourceIndex,
     records_index: &mut RecordIndexBuilder,
     files: &mut FileIndex,
-    records: &mut Vec<CfdInputRecord>,
+    records: &mut Vec<LoadedRecordDraft>,
     source_data: &mut SourceDataCache,
     resolved_sources: Vec<ResolvedLoaderSource>,
 ) -> DiagnosticSet {
@@ -381,7 +381,7 @@ fn load_resolved_sources(
             &spec,
         ) {
             Ok(batch) => {
-                let cached_records: Arc<[CfdInputRecord]> = batch.records.into();
+                let cached_records: Arc<[LoadedRecordDraft]> = batch.records.into();
                 push_loaded_records(
                     records,
                     records_index,
@@ -410,7 +410,7 @@ fn load_resolved_dimension_sources(
     registry: &ProviderRegistry,
     sources: &mut SourceIndex,
     files: &mut FileIndex,
-    records: &[CfdInputRecord],
+    records: &[LoadedRecordDraft],
     source_data: &mut SourceDataCache,
     resolved_sources: Vec<ResolvedLoaderSource>,
     field: &dimensions::DimensionField,
@@ -444,8 +444,8 @@ fn load_dimension_batch(
     registry: &ProviderRegistry,
     source: &ResolvedSource,
     field: &dimensions::DimensionField,
-    records: &[CfdInputRecord],
-) -> Result<Vec<CfdInputDimensionValue>, DiagnosticSet> {
+    records: &[LoadedRecordDraft],
+) -> Result<Vec<DimensionValueDraft>, DiagnosticSet> {
     let manager = registry
         .dimension_source_manager(&source.provider_id)
         .ok_or_else(|| DiagnosticSet::one(missing_cached_provider(&source.provider_id)))?;
@@ -508,12 +508,12 @@ fn load_dimension_batch(
 }
 
 fn push_loaded_records(
-    records: &mut Vec<CfdInputRecord>,
+    records: &mut Vec<LoadedRecordDraft>,
     records_index: &mut RecordIndexBuilder,
     source_id: SourceId,
     source: &ResolvedSource,
     display_path: &str,
-    loaded_records: &[CfdInputRecord],
+    loaded_records: &[LoadedRecordDraft],
 ) {
     for record in loaded_records {
         records_index.push(PendingRecordRef {
@@ -633,10 +633,10 @@ fn build_output_from_cache(
         .collect::<Vec<_>>();
     let mut builder = CfdDataModel::builder(schema);
     for record in records {
-        builder.add_input_record(record);
+        builder.add_loaded_record(record);
     }
     for batch in &source_data.batches {
-        builder.add_input_dimension_values(batch.dimension_values.iter().cloned());
+        builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
     }
     let model = builder.build().map_err(|err| {
         let logical_locations = logical_locations_from_cfd(&err, |id| {

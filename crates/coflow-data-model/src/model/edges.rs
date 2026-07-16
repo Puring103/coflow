@@ -1,5 +1,5 @@
 use super::ids::{CfdDomainId, CfdRecordId, CfdTypeId};
-use crate::diagnostic::{CfdPath, CfdPathSegment};
+use crate::diagnostics::{CfdPath, CfdPathSegment};
 use coflow_cft::{DimensionName, FieldName, RecordKey, VariantName};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;

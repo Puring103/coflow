@@ -27,12 +27,12 @@ mod options;
 pub mod writer;
 use coflow_cfd::parse_cfd;
 use coflow_cft::CftSchema;
-use coflow_data_model::{CfdDataModel, CfdInputRecord, RecordOrigin};
+use coflow_data_model::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
 use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
 };
-use lower::{lower_records, syntax_diagnostics, ParsedCfdInputRecord};
+use lower::{lower_records, syntax_diagnostics, ParsedLoadedRecordDraft};
 use options::decode_cfd_source_options;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -57,7 +57,7 @@ pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
 /// Parses `.cfd` text into source-neutral input records.
 ///
 /// The returned records use the top-level CFD record name as
-/// [`CfdInputRecord::key`]. No `id` field is emitted.
+/// [`LoadedRecordDraft::key`]. No `id` field is emitted.
 ///
 /// # Errors
 ///
@@ -65,7 +65,7 @@ pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
 pub fn parse_cfd_input_records(
     schema: &CftSchema,
     source: &str,
-) -> Result<Vec<CfdInputRecord>, CfdTextLoadError> {
+) -> Result<Vec<LoadedRecordDraft>, CfdTextLoadError> {
     parse_cfd_input_records_with_spans(schema, source).map(|records| {
         records
             .into_iter()
@@ -77,7 +77,7 @@ pub fn parse_cfd_input_records(
 fn parse_cfd_input_records_with_spans(
     schema: &CftSchema,
     source: &str,
-) -> Result<Vec<ParsedCfdInputRecord>, CfdTextLoadError> {
+) -> Result<Vec<ParsedLoadedRecordDraft>, CfdTextLoadError> {
     let (ast, diagnostics) = parse_cfd(source);
     if !diagnostics.is_empty() {
         return Err(CfdTextLoadError::Text(syntax_diagnostics(diagnostics)));
@@ -101,7 +101,7 @@ pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, 
             span: Some(text_span(source, record.span)),
         };
         origins.push(origin.clone());
-        builder.add_input_record(record.record.with_origin(origin));
+        builder.add_loaded_record(record.record.with_origin(origin));
     }
     builder
         .build()

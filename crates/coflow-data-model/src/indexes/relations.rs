@@ -1,5 +1,5 @@
-use crate::compiler_context::{CfdValueDraft, DataModelCompilerContext, RecordDraft};
-use crate::diagnostic::CfdPath;
+use crate::build::{BuildSchema, RecordDraft, ValueDraft};
+use crate::diagnostics::CfdPath;
 use crate::model::{
     CfdDomainId, CfdRecord, CfdRecordId, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId,
     RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
@@ -19,13 +19,14 @@ pub(crate) struct RefIndexes {
 pub(crate) struct SpreadIndexes {
     pub(crate) edges: Vec<SpreadEdge>,
     pub(crate) by_site: BTreeMap<SpreadSite, Vec<SpreadEdgeId>>,
+    pub(crate) by_host: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
     pub(crate) by_source: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
 }
 
 pub(crate) fn build_spread_indexes(
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: &DataModelCompilerContext<'_>,
+    schema: &BuildSchema<'_>,
 ) -> SpreadIndexes {
     let mut out = SpreadIndexes::default();
     for (index, draft) in drafts.iter().enumerate() {
@@ -48,7 +49,7 @@ fn collect_spread_edges(
     path: &CfdPath,
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: &DataModelCompilerContext<'_>,
+    schema: &BuildSchema<'_>,
     out: &mut SpreadIndexes,
 ) {
     let mut fields_by_source = draft
@@ -100,6 +101,7 @@ fn collect_spread_edges(
             source_type,
         });
         out.by_site.entry(site).or_default().push(id);
+        out.by_host.entry(host).or_default().push(id);
         out.by_source.entry(source_id).or_default().push(id);
     }
 
@@ -117,19 +119,19 @@ fn collect_spread_edges(
 }
 
 fn collect_nested_spread_edges(
-    value: &CfdValueDraft,
+    value: &ValueDraft,
     host: CfdRecordId,
     path: &CfdPath,
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: &DataModelCompilerContext<'_>,
+    schema: &BuildSchema<'_>,
     out: &mut SpreadIndexes,
 ) {
     match value {
-        CfdValueDraft::Object(draft) => {
+        ValueDraft::Object(draft) => {
             collect_spread_edges(draft, host, path, drafts, record_by_domain_key, schema, out);
         }
-        CfdValueDraft::Array(items) => {
+        ValueDraft::Array(items) => {
             for (index, item) in items.iter().enumerate() {
                 collect_nested_spread_edges(
                     item,
@@ -142,7 +144,7 @@ fn collect_nested_spread_edges(
                 );
             }
         }
-        CfdValueDraft::Dict(entries) => {
+        ValueDraft::Dict(entries) => {
             for (key, item) in entries {
                 collect_nested_spread_edges(
                     item,
@@ -155,7 +157,7 @@ fn collect_nested_spread_edges(
                 );
             }
         }
-        CfdValueDraft::DictSpread { spreads, entries } => {
+        ValueDraft::DictSpread { spreads, entries } => {
             for item in spreads {
                 collect_nested_spread_edges(
                     item,
@@ -179,16 +181,16 @@ fn collect_nested_spread_edges(
                 );
             }
         }
-        CfdValueDraft::Value(_)
-        | CfdValueDraft::PendingRef { .. }
-        | CfdValueDraft::PendingSpreadField { .. } => {}
+        ValueDraft::Value(_)
+        | ValueDraft::PendingRef { .. }
+        | ValueDraft::PendingSpreadField { .. } => {}
     }
 }
 
 pub(crate) fn build_ref_indexes(
     records: &[CfdRecord],
     record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: &DataModelCompilerContext<'_>,
+    schema: &BuildSchema<'_>,
     spread_edges: &[SpreadEdge],
 ) -> RefIndexes {
     let mut out = RefIndexes::default();
@@ -258,7 +260,7 @@ pub(crate) fn build_ref_indexes(
 struct RefEdgeBuildContext<'a, 'schema> {
     records: &'a [CfdRecord],
     record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: &'a DataModelCompilerContext<'schema>,
+    schema: &'a BuildSchema<'schema>,
     spread_edges_by_host: BTreeMap<CfdRecordId, Vec<&'a SpreadEdge>>,
 }
 
@@ -373,7 +375,7 @@ fn collect_ref_edges(
 }
 
 fn lookup_domain_ref(
-    schema: &DataModelCompilerContext<'_>,
+    schema: &BuildSchema<'_>,
     record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     target_type: &str,
     key: &str,

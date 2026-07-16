@@ -10,7 +10,7 @@
 //! Origins are source-neutral: they describe *where* a record lives, not
 //! *which loader* produced it. Loaders set the appropriate variant when they
 //! parse records; writers branch on the variant to perform an edit.
-use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, CfdPathSegment};
+use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, CfdPathSegment};
 use crate::model::CfdRecordId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

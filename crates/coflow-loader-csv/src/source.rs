@@ -1,7 +1,7 @@
 use crate::diagnostics::{CsvDiagnostic, CsvDiagnostics, CsvLocation};
 use crate::format::parse;
 use coflow_cft::CftSchema;
-use coflow_data_model::CfdInputRecord;
+use coflow_data_model::LoadedRecordDraft;
 use coflow_loader_table_core::{
     collect_table_input_records as collect_shared_table_input_records, TableSheet,
     TableSheetConfig, TableSource,
@@ -99,7 +99,7 @@ impl From<TableSheetConfig> for CsvSheet {
 
 #[derive(Debug, Clone)]
 pub struct CsvInputRecords {
-    pub records: Vec<CfdInputRecord>,
+    pub records: Vec<LoadedRecordDraft>,
 }
 
 /// Loads configured CSV sources into input records without building a data

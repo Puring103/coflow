@@ -29,7 +29,7 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
     builder.add_record(
         "item_1",
         "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = builder.build().expect("data model should build");
 
@@ -59,7 +59,11 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
 fn data_model_reports_direct_schema_default_cycle() {
     let schema = compile_schema("type Node { child: Node = {}; }");
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("root", "Node", std::iter::empty::<(&str, CfdInputValue)>());
+    builder.add_record(
+        "root",
+        "Node",
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
+    );
 
     let err = builder.build().expect_err("default cycle must be rejected");
     let diagnostic = diagnostic_with_code(&err, CfdErrorCode::ValueDependencyCycle);
@@ -83,7 +87,7 @@ fn data_model_reports_indirect_schema_default_cycle() {
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("root", "A", std::iter::empty::<(&str, CfdInputValue)>());
+    builder.add_record("root", "A", std::iter::empty::<(&str, LoadedValueDraft)>());
 
     let err = builder.build().expect_err("default cycle must be rejected");
     let diagnostic = diagnostic_with_code(&err, CfdErrorCode::ValueDependencyCycle);
@@ -103,7 +107,11 @@ fn data_model_reuses_shared_schema_default_subgraphs() {
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("root", "Root", std::iter::empty::<(&str, CfdInputValue)>());
+    builder.add_record(
+        "root",
+        "Root",
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
+    );
 
     let model = builder.build().expect("shared default graph builds");
     let root = model
@@ -126,11 +134,11 @@ fn data_model_reuses_shared_schema_default_subgraphs() {
 fn data_model_reports_direct_spread_dependency_cycle() {
     let schema = compile_schema("type Stats { hp: int; }");
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(CfdInputRecord::with_spreads(
+    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "self_ref",
         "Stats",
-        [CfdInputValue::record_ref("self_ref")],
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        [LoadedValueDraft::record_ref("self_ref")],
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     ));
 
     let err = builder.build().expect_err("spread cycle must be rejected");
@@ -150,11 +158,11 @@ fn data_model_reports_one_canonical_indirect_spread_cycle() {
     let schema = compile_schema("type Stats { hp: int; }");
     let mut builder = CfdDataModel::builder(&schema);
     for (key, source) in [("a", "b"), ("b", "c"), ("c", "a")] {
-        builder.add_input_record(CfdInputRecord::with_spreads(
+        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
             key,
             "Stats",
-            [CfdInputValue::record_ref(source)],
-            std::iter::empty::<(&str, CfdInputValue)>(),
+            [LoadedValueDraft::record_ref(source)],
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
         ));
     }
 
@@ -176,26 +184,34 @@ fn data_model_reports_one_canonical_indirect_spread_cycle() {
 fn data_model_resolves_shared_spread_source_for_multiple_consumers() {
     let schema = compile_schema("type Stats { hp: int; }");
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("base", "Stats", [("hp", CfdInputValue::from(7_i64))]);
+    builder.add_record("base", "Stats", [("hp", LoadedValueDraft::from(7_i64))]);
     for key in ["left", "right"] {
-        builder.add_input_record(CfdInputRecord::with_spreads(
+        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
             key,
             "Stats",
-            [CfdInputValue::record_ref("base")],
-            std::iter::empty::<(&str, CfdInputValue)>(),
+            [LoadedValueDraft::record_ref("base")],
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
         ));
     }
 
     let model = builder.build().expect("shared spread source resolves");
+    let base = model.lookup_assignable("Stats", "base").expect("base");
     for key in ["left", "right"] {
-        let record = model
-            .lookup_assignable("Stats", key)
-            .and_then(|id| model.record(id));
+        let id = model.lookup_assignable("Stats", key).expect("consumer");
+        let record = model.record(id);
         assert_eq!(
             record.and_then(|record| record.field("hp")),
             Some(&CfdValue::Int(7))
         );
+        assert_eq!(model.spread_edges_from_host(id).count(), 1);
+        assert_eq!(
+            model
+                .spread_edge_at_path(id, &CfdPath::root().field("hp"))
+                .map(|edge| edge.source),
+            Some(base)
+        );
     }
+    assert_eq!(model.spread_edges_from_host(base).count(), 0);
 }
 
 #[test]
@@ -211,14 +227,18 @@ fn dimension_field_lookup_reads_record_owned_overlay() {
             .expect("valid dimension fixture"),
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
-    builder.add_input_dimension_value(CfdInputDimensionValue {
+    builder.add_record(
+        "potion",
+        "Item",
+        [("name", LoadedValueDraft::from("Potion"))],
+    );
+    builder.add_dimension_value_draft(DimensionValueDraft {
         source_type: coflow_cft::TypeName::new("Item").unwrap(),
         source_key: coflow_cft::RecordKey::new("potion").unwrap(),
         field: coflow_cft::FieldName::new("name").unwrap(),
         dimension: coflow_cft::DimensionName::new("platform").unwrap(),
         variant: coflow_cft::VariantName::new("pc").unwrap(),
-        value: CfdInputValue::from("PC Potion"),
+        value: LoadedValueDraft::from("PC Potion"),
         origin: RecordOrigin::None,
     });
     let model = builder.build().expect("data model should build");
@@ -252,19 +272,23 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
             .expect("valid dimension fixture"),
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
+    builder.add_record(
+        "potion",
+        "Item",
+        [("name", LoadedValueDraft::from("Potion"))],
+    );
     builder.add_record(
         "starter",
         "Offer",
-        [("item", CfdInputValue::record_ref("potion"))],
+        [("item", LoadedValueDraft::record_ref("potion"))],
     );
-    builder.add_input_dimension_value(CfdInputDimensionValue {
+    builder.add_dimension_value_draft(DimensionValueDraft {
         source_type: coflow_cft::TypeName::new("Offer").unwrap(),
         source_key: coflow_cft::RecordKey::new("starter").unwrap(),
         field: coflow_cft::FieldName::new("item").unwrap(),
         dimension: coflow_cft::DimensionName::new("platform").unwrap(),
         variant: coflow_cft::VariantName::new("pc").unwrap(),
-        value: CfdInputValue::record_ref("potion"),
+        value: LoadedValueDraft::record_ref("potion"),
         origin: RecordOrigin::None,
     });
 
@@ -304,15 +328,15 @@ fn dimension_field_lookup_uses_singleton_owner_record() {
     builder.add_record(
         "UiText",
         "UiText",
-        [("welcome", CfdInputValue::from("Welcome"))],
+        [("welcome", LoadedValueDraft::from("Welcome"))],
     );
-    builder.add_input_dimension_value(CfdInputDimensionValue {
+    builder.add_dimension_value_draft(DimensionValueDraft {
         source_type: coflow_cft::TypeName::new("UiText").unwrap(),
         source_key: coflow_cft::RecordKey::new("UiText").unwrap(),
         field: coflow_cft::FieldName::new("welcome").unwrap(),
         dimension: coflow_cft::DimensionName::new("language").unwrap(),
         variant: coflow_cft::VariantName::new("zh").unwrap(),
-        value: CfdInputValue::from("欢迎"),
+        value: LoadedValueDraft::from("欢迎"),
         origin: RecordOrigin::None,
     });
     let model = builder.build().expect("data model should build");
@@ -351,14 +375,14 @@ fn object_typed_record_refs_resolve_by_expected_type() {
     builder.add_record(
         "reward_1",
         "ItemReward",
-        [("count", CfdInputValue::from(1_i64))],
+        [("count", LoadedValueDraft::from(1_i64))],
     );
     builder.add_record(
         "drop_1",
         "Drop",
         [
-            ("reward", CfdInputValue::record_ref("reward_1")),
-            ("item_reward", CfdInputValue::record_ref("reward_1")),
+            ("reward", LoadedValueDraft::record_ref("reward_1")),
+            ("item_reward", LoadedValueDraft::record_ref("reward_1")),
         ],
     );
     let model = builder.build().expect("data model should build");
@@ -397,11 +421,11 @@ fn parent_record_keys_do_not_satisfy_child_typed_refs() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("base_1", "Base", [("name", CfdInputValue::from("base"))]);
+    builder.add_record("base_1", "Base", [("name", LoadedValueDraft::from("base"))]);
     builder.add_record(
         "holder_1",
         "Holder",
-        [("child", CfdInputValue::record_ref("base_1"))],
+        [("child", LoadedValueDraft::record_ref("base_1"))],
     );
 
     let err = builder
@@ -425,7 +449,7 @@ fn inline_objects_use_declared_type_when_not_polymorphic() {
         "Monster",
         [(
             "stats",
-            CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(100_i64))]),
+            LoadedValueDraft::object_with_declared_type([("hp", LoadedValueDraft::from(100_i64))]),
         )],
     );
     let model = builder.build().expect("data model should build");
@@ -457,7 +481,10 @@ fn ref_type_rejects_inline_objects() {
         "Holder",
         [(
             "item",
-            CfdInputValue::object_with_declared_type([("name", CfdInputValue::from("Sword"))]),
+            LoadedValueDraft::object_with_declared_type([(
+                "name",
+                LoadedValueDraft::from("Sword"),
+            )]),
         )],
     );
 
@@ -487,21 +514,21 @@ fn plain_object_fields_reject_record_refs() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record("sword", "Item", [("name", LoadedValueDraft::from("Sword"))]);
     builder.add_record(
         "holder",
         "Holder",
         [
-            ("item", CfdInputValue::record_ref("sword")),
+            ("item", LoadedValueDraft::record_ref("sword")),
             (
                 "items",
-                CfdInputValue::Array(vec![CfdInputValue::record_ref("sword")]),
+                LoadedValueDraft::Array(vec![LoadedValueDraft::record_ref("sword")]),
             ),
             (
                 "by_name",
-                CfdInputValue::dict([(
-                    CfdInputDictKey::from("main"),
-                    CfdInputValue::record_ref("sword"),
+                LoadedValueDraft::dict([(
+                    LoadedDictKeyDraft::from("main"),
+                    LoadedValueDraft::record_ref("sword"),
                 )]),
             ),
         ],
@@ -527,20 +554,20 @@ fn object_spread_merges_record_refs_before_local_overrides() {
         "base",
         "Stats",
         [
-            ("hp", CfdInputValue::from(100_i64)),
-            ("attack", CfdInputValue::from(20_i64)),
+            ("hp", LoadedValueDraft::from(100_i64)),
+            ("attack", LoadedValueDraft::from(20_i64)),
         ],
     );
     builder.add_record(
         "elite",
         "Monster",
         [
-            ("name", CfdInputValue::from("Elite")),
+            ("name", LoadedValueDraft::from("Elite")),
             (
                 "stats",
-                CfdInputValue::object_spread(
-                    [CfdInputValue::record_ref("base")],
-                    [("hp", CfdInputValue::from(180_i64))],
+                LoadedValueDraft::object_spread(
+                    [LoadedValueDraft::record_ref("base")],
+                    [("hp", LoadedValueDraft::from(180_i64))],
                 ),
             ),
         ],
@@ -576,13 +603,16 @@ fn semantic_edges_report_data_model_diagnostics() {
         "item_1",
         "Item",
         [
-            ("unknown", CfdInputValue::from(1_i64)),
-            ("rarity", CfdInputValue::enum_variant("Rarity", "Missing")),
+            ("unknown", LoadedValueDraft::from(1_i64)),
+            (
+                "rarity",
+                LoadedValueDraft::enum_variant("Rarity", "Missing"),
+            ),
             (
                 "attrs",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from("x"), CfdInputValue::from(1_i64)),
-                    (CfdInputDictKey::from("x"), CfdInputValue::from(2_i64)),
+                LoadedValueDraft::dict([
+                    (LoadedDictKeyDraft::from("x"), LoadedValueDraft::from(1_i64)),
+                    (LoadedDictKeyDraft::from("x"), LoadedValueDraft::from(2_i64)),
                 ]),
             ),
         ],
@@ -600,8 +630,8 @@ fn duplicate_keys_report_record_level_id_paths() {
     let schema = compile_schema("type Item { value: int; }");
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("same", "Item", [("value", CfdInputValue::from(1_i64))]);
-    builder.add_record("same", "Item", [("value", CfdInputValue::from(2_i64))]);
+    builder.add_record("same", "Item", [("value", LoadedValueDraft::from(1_i64))]);
+    builder.add_record("same", "Item", [("value", LoadedValueDraft::from(2_i64))]);
 
     let err = builder.build().expect_err("duplicate concrete key");
     let diag = diagnostic_with_code(&err, CfdErrorCode::DuplicateId);
@@ -617,7 +647,7 @@ fn empty_record_keys_are_rejected() {
     let schema = compile_schema("type Item { value: int; }");
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("", "Item", [("value", CfdInputValue::from(1_i64))]);
+    builder.add_record("", "Item", [("value", LoadedValueDraft::from(1_i64))]);
 
     let err = builder.build().expect_err("empty key should fail");
     let diag = diagnostic_with_code(&err, CfdErrorCode::MissingIdField);
@@ -633,7 +663,7 @@ fn non_identifier_record_keys_are_rejected() {
 
     for key in ["123", "fire-ball", "fire.ball", "type"] {
         let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record(key, "Item", [("value", CfdInputValue::from(1_i64))]);
+        builder.add_record(key, "Item", [("value", LoadedValueDraft::from(1_i64))]);
 
         let Err(err) = builder.build() else {
             panic!("`{key}` should fail as a record key")
@@ -654,18 +684,19 @@ fn record_value_lookup_traverses_object_array_and_dict_paths() {
             }
         "#,
     );
-    let nested =
-        |value| CfdInputValue::object_with_declared_type([("value", CfdInputValue::from(value))]);
+    let nested = |value| {
+        LoadedValueDraft::object_with_declared_type([("value", LoadedValueDraft::from(value))])
+    };
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",
         "Item",
         [
             ("nested", nested(1_i64)),
-            ("items", CfdInputValue::Array(vec![nested(2_i64)])),
+            ("items", LoadedValueDraft::Array(vec![nested(2_i64)])),
             (
                 "entries",
-                CfdInputValue::dict([(CfdInputDictKey::from("slot"), nested(3_i64))]),
+                LoadedValueDraft::dict([(LoadedDictKeyDraft::from("slot"), nested(3_i64))]),
             ),
         ],
     );

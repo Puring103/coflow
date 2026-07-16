@@ -23,12 +23,12 @@ fn cyclic_record_refs_are_allowed_because_resolution_is_two_phase() {
     builder.add_record(
         "alice",
         "Person",
-        [("parent", CfdInputValue::record_ref("bob"))],
+        [("parent", LoadedValueDraft::record_ref("bob"))],
     );
     builder.add_record(
         "bob",
         "Person",
-        [("parent", CfdInputValue::record_ref("alice"))],
+        [("parent", LoadedValueDraft::record_ref("alice"))],
     );
 
     let model = builder.build().expect("cycles should resolve");
@@ -61,7 +61,7 @@ fn unresolved_record_ref_reports_reference_stage_diagnostic() {
     builder.add_record(
         "drop_1",
         "Drop",
-        [("item", CfdInputValue::record_ref("missing"))],
+        [("item", LoadedValueDraft::record_ref("missing"))],
     );
 
     let err = builder.build().expect_err("missing ref should fail");
@@ -86,7 +86,7 @@ fn top_level_abstract_records_are_rejected() {
     builder.add_record(
         "reward_1",
         "Reward",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let err = builder
         .build()
@@ -111,8 +111,11 @@ fn invalid_enum_and_non_finite_float_inputs_are_rejected() {
         "item_1",
         "Item",
         [
-            ("rarity", CfdInputValue::enum_variant("Rarity", "Missing")),
-            ("weight", CfdInputValue::from(f64::NAN)),
+            (
+                "rarity",
+                LoadedValueDraft::enum_variant("Rarity", "Missing"),
+            ),
+            ("weight", LoadedValueDraft::from(f64::NAN)),
         ],
     );
     let err = builder.build().expect_err("invalid values should fail");

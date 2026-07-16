@@ -1,18 +1,18 @@
-use crate::compiler_context::{DataModelCompilerContext, RecordDraft};
-use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
+use crate::build::{BuildSchema, RecordDraft};
+use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdDomainId, CfdPolymorphicIndex, CfdRecordId, CfdTable, CfdTypeId};
 use coflow_cft::{is_cft_identifier, record_key_ident_error, RecordKey, TypeName};
 use std::collections::BTreeMap;
 
-pub(super) struct ModelIndexes {
-    pub(super) tables: BTreeMap<TypeName, CfdTable>,
-    pub(super) inheritance_index: BTreeMap<TypeName, CfdPolymorphicIndex>,
-    pub(super) record_by_type_key: BTreeMap<CfdTypeId, BTreeMap<RecordKey, CfdRecordId>>,
-    pub(super) record_by_domain_key: BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+pub(crate) struct ModelIndexes {
+    pub(crate) tables: BTreeMap<TypeName, CfdTable>,
+    pub(crate) inheritance_index: BTreeMap<TypeName, CfdPolymorphicIndex>,
+    pub(crate) record_by_type_key: BTreeMap<CfdTypeId, BTreeMap<RecordKey, CfdRecordId>>,
+    pub(crate) record_by_domain_key: BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
 }
 
-pub(super) fn build_indexes(
-    schema: &DataModelCompilerContext<'_>,
+pub(crate) fn build_indexes(
+    schema: &BuildSchema<'_>,
     drafts: &[RecordDraft],
     diagnostics: &mut Vec<CfdDiagnostic>,
 ) -> ModelIndexes {
@@ -121,7 +121,7 @@ pub(super) fn build_indexes(
 }
 
 fn add_polymorphic_ids(
-    schema: &DataModelCompilerContext<'_>,
+    schema: &BuildSchema<'_>,
     inheritance_index: &mut BTreeMap<TypeName, CfdPolymorphicIndex>,
     actual_type: &TypeName,
     key: &RecordKey,
@@ -140,8 +140,8 @@ fn add_polymorphic_ids(
     }
 }
 
-pub(super) fn validate_singletons(
-    schema: &DataModelCompilerContext<'_>,
+pub(crate) fn validate_singletons(
+    schema: &BuildSchema<'_>,
     drafts: &[RecordDraft],
     tables: &BTreeMap<TypeName, CfdTable>,
     diagnostics: &mut Vec<CfdDiagnostic>,

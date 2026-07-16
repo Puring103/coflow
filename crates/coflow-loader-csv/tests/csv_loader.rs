@@ -23,7 +23,7 @@ fn build_model(schema: &CftSchema, sources: &[CsvSource]) -> Result<CfdDataModel
     let origins = origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {
-        builder.add_input_record(record);
+        builder.add_loaded_record(record);
     }
     builder
         .build()

@@ -1,7 +1,7 @@
 use super::validate::CachedDefaultObject;
 use super::Validator;
-use crate::compiler_context::{type_accepts_default, CfdValueDraft, RecordDraft};
-use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
+use crate::build::{RecordDraft, ValueDraft};
+use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
 use coflow_cft::{CftField, CftSchemaDefaultValue, CftValueType};
 use coflow_structure::TraversalCursor;
@@ -15,10 +15,12 @@ impl Validator<'_, '_> {
         record: Option<CfdRecordId>,
         path: CfdPath,
         parent: TraversalCursor,
-    ) -> Option<CfdValueDraft> {
+    ) -> Option<ValueDraft> {
         if matches!(value, CftSchemaDefaultValue::EmptyObject) {
             if let CftValueType::Object(type_name) = non_nullable_type(&field.value_type) {
-                if let Some(cycle) = self.schema.schema_default_cycle(type_name) {
+                if let Some(cycle) =
+                    crate::dependencies::schema_default_cycle(self.schema.cft(), type_name)
+                {
                     self.push(
                         CfdDiagnostic::error(
                             CfdErrorCode::ValueDependencyCycle,
@@ -41,10 +43,10 @@ impl Validator<'_, '_> {
         record: Option<CfdRecordId>,
         path: CfdPath,
         cursor: TraversalCursor,
-    ) -> Option<CfdValueDraft> {
+    ) -> Option<ValueDraft> {
         if matches!(value, CftSchemaDefaultValue::EmptyObject) {
             return match non_nullable_type(ty) {
-                CftValueType::Dict(_, _) => Some(CfdValueDraft::Value(CfdValue::Dict(Vec::new()))),
+                CftValueType::Dict(_, _) => Some(ValueDraft::Value(CfdValue::Dict(Vec::new()))),
                 CftValueType::Object(type_name) => {
                     self.default_object_value(type_name, record, path, cursor)
                 }
@@ -95,7 +97,7 @@ impl Validator<'_, '_> {
             }
         };
         self.validate_materialized_value(ty, &out, record, path)?;
-        Some(CfdValueDraft::Value(out))
+        Some(ValueDraft::Value(out))
     }
 
     fn default_object_value(
@@ -104,7 +106,7 @@ impl Validator<'_, '_> {
         record: Option<CfdRecordId>,
         path: CfdPath,
         cursor: TraversalCursor,
-    ) -> Option<CfdValueDraft> {
+    ) -> Option<ValueDraft> {
         if let Some((nodes, depth)) = self
             .default_objects
             .get(type_name)
@@ -114,9 +116,10 @@ impl Validator<'_, '_> {
             return self
                 .default_objects
                 .get(type_name)
-                .map(|cached| CfdValueDraft::Object(Box::new(cached.draft.clone())));
+                .map(|cached| ValueDraft::Object(Box::new(cached.draft.clone())));
         }
-        if let Some(cycle) = self.schema.schema_default_cycle(type_name) {
+        if let Some(cycle) = crate::dependencies::schema_default_cycle(self.schema.cft(), type_name)
+        {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::ValueDependencyCycle,
@@ -146,7 +149,7 @@ impl Validator<'_, '_> {
                 depth,
             },
         );
-        Some(CfdValueDraft::Object(Box::new(draft)))
+        Some(ValueDraft::Object(Box::new(draft)))
     }
 
     fn push_default_type_mismatch(&mut self, record: Option<CfdRecordId>, path: CfdPath) {
@@ -163,7 +166,7 @@ impl Validator<'_, '_> {
 fn draft_shape(root: &RecordDraft) -> (u64, u64) {
     enum DraftNode<'a> {
         Record(&'a RecordDraft),
-        Value(&'a CfdValueDraft),
+        Value(&'a ValueDraft),
     }
 
     let mut nodes = 0_u64;
@@ -182,7 +185,7 @@ fn draft_shape(root: &RecordDraft) -> (u64, u64) {
                         .map(|value| (DraftNode::Value(value), child_depth)),
                 );
             }
-            DraftNode::Value(CfdValueDraft::Object(record)) => {
+            DraftNode::Value(ValueDraft::Object(record)) => {
                 pending.extend(
                     record
                         .fields
@@ -190,21 +193,21 @@ fn draft_shape(root: &RecordDraft) -> (u64, u64) {
                         .map(|value| (DraftNode::Value(value), child_depth)),
                 );
             }
-            DraftNode::Value(CfdValueDraft::Array(items)) => {
+            DraftNode::Value(ValueDraft::Array(items)) => {
                 pending.extend(
                     items
                         .iter()
                         .map(|value| (DraftNode::Value(value), child_depth)),
                 );
             }
-            DraftNode::Value(CfdValueDraft::Dict(entries)) => {
+            DraftNode::Value(ValueDraft::Dict(entries)) => {
                 pending.extend(
                     entries
                         .iter()
                         .map(|(_, value)| (DraftNode::Value(value), child_depth)),
                 );
             }
-            DraftNode::Value(CfdValueDraft::DictSpread { spreads, entries }) => {
+            DraftNode::Value(ValueDraft::DictSpread { spreads, entries }) => {
                 pending.extend(
                     spreads
                         .iter()
@@ -217,9 +220,9 @@ fn draft_shape(root: &RecordDraft) -> (u64, u64) {
                 );
             }
             DraftNode::Value(
-                CfdValueDraft::Value(_)
-                | CfdValueDraft::PendingRef { .. }
-                | CfdValueDraft::PendingSpreadField { .. },
+                ValueDraft::Value(_)
+                | ValueDraft::PendingRef { .. }
+                | ValueDraft::PendingSpreadField { .. },
             ) => {}
         }
     }
@@ -230,5 +233,12 @@ fn non_nullable_type(ty: &CftValueType) -> &CftValueType {
     match ty {
         CftValueType::Nullable(inner) => non_nullable_type(inner),
         _ => ty,
+    }
+}
+
+fn type_accepts_default(expected: &CftValueType, actual: &CftValueType) -> bool {
+    match expected {
+        CftValueType::Nullable(inner) => type_accepts_default(inner, actual),
+        _ => expected == actual,
     }
 }

@@ -1,16 +1,20 @@
+mod context;
 mod defaults;
-mod indexes;
+mod draft;
 mod resolve;
 mod validate;
 
-use crate::compiler_context::DataModelCompilerContext;
-use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdPath};
-use crate::edge_index::{build_ref_indexes, build_spread_indexes};
+pub(crate) use context::BuildSchema;
+pub(crate) use draft::{RecordDraft, SpreadFieldSource, ValueDraft};
+
+use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdPath};
+use crate::indexes::{self, build_ref_indexes, build_spread_indexes};
+use crate::ingest::{DimensionValueDraft, LoadedRecordDraft, LoadedValueDraft};
 use crate::model::{
-    CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdDomainId, CfdInputDimensionValue,
-    CfdInputRecord, CfdObject, CfdRecord, CfdRecordId,
+    CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdDomainId, CfdObject, CfdRecord,
+    CfdRecordId,
 };
-use crate::value_semantics::{
+use crate::semantics::{
     CfdValueSemanticContext, CfdValueSemanticErrorKind, ValueValidationMode, ValueValidationRequest,
 };
 use coflow_cft::{CftSchema, CftValueType, FieldName, RecordKey};
@@ -19,10 +23,81 @@ use resolve::ValueResolver;
 use std::collections::BTreeMap;
 use validate::Validator;
 
+#[derive(Debug)]
+pub struct CfdModelBuilder<'a> {
+    schema: &'a CftSchema,
+    records: Vec<LoadedRecordDraft>,
+    dimension_values: Vec<DimensionValueDraft>,
+    structural_limits: StructuralLimits,
+}
+
+impl<'a> CfdModelBuilder<'a> {
+    #[must_use]
+    pub fn new(schema: &'a CftSchema) -> Self {
+        Self {
+            schema,
+            records: Vec::new(),
+            dimension_values: Vec::new(),
+            structural_limits: StructuralLimits::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_structural_limits(mut self, structural_limits: StructuralLimits) -> Self {
+        self.structural_limits = structural_limits;
+        self
+    }
+
+    pub fn add_record(
+        &mut self,
+        key: impl Into<String>,
+        actual_type: impl Into<String>,
+        fields: impl IntoIterator<Item = (impl Into<String>, LoadedValueDraft)>,
+    ) -> &mut Self {
+        self.records
+            .push(LoadedRecordDraft::new(key, actual_type, fields));
+        self
+    }
+
+    pub fn add_loaded_record(&mut self, record: LoadedRecordDraft) -> &mut Self {
+        self.records.push(record);
+        self
+    }
+
+    pub fn add_dimension_value_draft(&mut self, value: DimensionValueDraft) -> &mut Self {
+        self.dimension_values.push(value);
+        self
+    }
+
+    pub fn add_dimension_value_drafts(
+        &mut self,
+        values: impl IntoIterator<Item = DimensionValueDraft>,
+    ) -> &mut Self {
+        self.dimension_values.extend(values);
+        self
+    }
+
+    /// Builds a validated in-memory data model from source-neutral drafts.
+    ///
+    /// # Errors
+    ///
+    /// Returns data-model diagnostics for invalid values, duplicate keys, or
+    /// unresolved references.
+    pub fn build(self) -> Result<CfdDataModel, CfdDiagnostics> {
+        ModelCompiler::new(
+            self.schema,
+            self.records,
+            self.dimension_values,
+            self.structural_limits,
+        )
+        .build()
+    }
+}
+
 pub(crate) struct ModelCompiler<'a> {
-    schema: DataModelCompilerContext<'a>,
-    input: Vec<CfdInputRecord>,
-    dimension_values: Vec<CfdInputDimensionValue>,
+    schema: BuildSchema<'a>,
+    input: Vec<LoadedRecordDraft>,
+    dimension_values: Vec<DimensionValueDraft>,
     diagnostics: Vec<CfdDiagnostic>,
     structural_limits: StructuralLimits,
 }
@@ -30,12 +105,12 @@ pub(crate) struct ModelCompiler<'a> {
 impl<'a> ModelCompiler<'a> {
     pub(crate) fn new(
         schema_source: &'a CftSchema,
-        input: Vec<CfdInputRecord>,
-        dimension_values: Vec<CfdInputDimensionValue>,
+        input: Vec<LoadedRecordDraft>,
+        dimension_values: Vec<DimensionValueDraft>,
         structural_limits: StructuralLimits,
     ) -> Self {
         Self {
-            schema: DataModelCompilerContext::new(schema_source),
+            schema: BuildSchema::new(schema_source),
             input,
             dimension_values,
             diagnostics: Vec::new(),
@@ -334,13 +409,14 @@ impl<'a> ModelCompiler<'a> {
             ref_by_target: ref_indexes.by_target,
             spread_edges: spread_indexes.edges,
             spread_by_site: spread_indexes.by_site,
+            spread_by_host: spread_indexes.by_host,
             spread_by_source: spread_indexes.by_source,
         })
     }
 }
 
 struct BuildValueSemanticContext<'a, 'schema> {
-    schema: &'a DataModelCompilerContext<'schema>,
+    schema: &'a BuildSchema<'schema>,
     records: &'a [CfdRecord],
     record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
 }
@@ -360,7 +436,7 @@ impl CfdValueSemanticContext for BuildValueSemanticContext<'_, '_> {
 }
 
 fn validate_resolved_records(
-    schema: &DataModelCompilerContext<'_>,
+    schema: &BuildSchema<'_>,
     records: &[CfdRecord],
     record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
     diagnostics: &mut Vec<CfdDiagnostic>,
@@ -385,7 +461,7 @@ fn validate_resolved_records(
                 ValueValidationMode::Complete,
             );
             if let Err(error) =
-                crate::value_semantics::validate_value_for_schema(schema.cft(), &context, request)
+                crate::semantics::validate_value_for_schema(schema.cft(), &context, request)
             {
                 diagnostics.push(
                     CfdDiagnostic::error(semantic_error_code(error.kind()), error.message())

@@ -19,11 +19,11 @@ fn key_only_record_ref_helper_builds_ref_values_for_ref_fields() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record("sword", "Item", [("name", LoadedValueDraft::from("Sword"))]);
     builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("sword"))],
+        [("item", LoadedValueDraft::record_ref("sword"))],
     );
 
     let model = builder.build().expect("key-only ref should build");
@@ -54,16 +54,16 @@ fn ref_fields_accept_child_records_and_reject_inline_objects_siblings_and_parent
         "item",
         "ItemReward",
         [
-            ("name", CfdInputValue::from("item")),
-            ("count", CfdInputValue::from(1_i64)),
+            ("name", LoadedValueDraft::from("item")),
+            ("count", LoadedValueDraft::from(1_i64)),
         ],
     );
     child_builder.add_record(
         "holder",
         "Holder",
         [
-            ("reward", CfdInputValue::record_ref("item")),
-            ("item_reward", CfdInputValue::record_ref("item")),
+            ("reward", LoadedValueDraft::record_ref("item")),
+            ("item_reward", LoadedValueDraft::record_ref("item")),
         ],
     );
     child_builder
@@ -77,9 +77,12 @@ fn ref_fields_accept_child_records_and_reject_inline_objects_siblings_and_parent
         [
             (
                 "reward",
-                CfdInputValue::object_with_declared_type([("name", CfdInputValue::from("inline"))]),
+                LoadedValueDraft::object_with_declared_type([(
+                    "name",
+                    LoadedValueDraft::from("inline"),
+                )]),
             ),
-            ("item_reward", CfdInputValue::record_ref("missing")),
+            ("item_reward", LoadedValueDraft::record_ref("missing")),
         ],
     );
     let err = inline_builder
@@ -92,16 +95,16 @@ fn ref_fields_accept_child_records_and_reject_inline_objects_siblings_and_parent
         "currency",
         "CurrencyReward",
         [
-            ("name", CfdInputValue::from("currency")),
-            ("amount", CfdInputValue::from(2_i64)),
+            ("name", LoadedValueDraft::from("currency")),
+            ("amount", LoadedValueDraft::from(2_i64)),
         ],
     );
     sibling_builder.add_record(
         "holder",
         "Holder",
         [
-            ("reward", CfdInputValue::record_ref("currency")),
-            ("item_reward", CfdInputValue::record_ref("currency")),
+            ("reward", LoadedValueDraft::record_ref("currency")),
+            ("item_reward", LoadedValueDraft::record_ref("currency")),
         ],
     );
     let err = sibling_builder
@@ -110,13 +113,13 @@ fn ref_fields_accept_child_records_and_reject_inline_objects_siblings_and_parent
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
 
     let mut parent_builder = CfdDataModel::builder(&schema);
-    parent_builder.add_record("base", "Reward", [("name", CfdInputValue::from("base"))]);
+    parent_builder.add_record("base", "Reward", [("name", LoadedValueDraft::from("base"))]);
     parent_builder.add_record(
         "holder",
         "Holder",
         [
-            ("reward", CfdInputValue::record_ref("base")),
-            ("item_reward", CfdInputValue::record_ref("base")),
+            ("reward", LoadedValueDraft::record_ref("base")),
+            ("item_reward", LoadedValueDraft::record_ref("base")),
         ],
     );
     let err = parent_builder
@@ -135,11 +138,11 @@ fn inline_object_fields_reject_record_refs() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record("sword", "Item", [("name", LoadedValueDraft::from("Sword"))]);
     builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("sword"))],
+        [("item", LoadedValueDraft::record_ref("sword"))],
     );
 
     let err = builder
@@ -161,7 +164,7 @@ fn missing_key_reports_ref_target_not_found() {
     builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("missing"))],
+        [("item", LoadedValueDraft::record_ref("missing"))],
     );
 
     let err = builder.build().expect_err("missing ref should fail");
@@ -181,15 +184,15 @@ fn direct_refs_populate_ref_edge_indexes() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record("sword", "Item", [("name", LoadedValueDraft::from("Sword"))]);
     builder.add_record(
         "holder",
         "Holder",
         [
-            ("item", CfdInputValue::record_ref("sword")),
+            ("item", LoadedValueDraft::record_ref("sword")),
             (
                 "items",
-                CfdInputValue::Array(vec![CfdInputValue::record_ref("sword")]),
+                LoadedValueDraft::Array(vec![LoadedValueDraft::record_ref("sword")]),
             ),
         ],
     );
@@ -245,27 +248,27 @@ fn object_spread_source_is_not_a_direct_ref_edge() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record("sword", "Item", [("name", LoadedValueDraft::from("Sword"))]);
     builder.add_record(
         "base",
         "Stats",
         [
-            ("hp", CfdInputValue::from(10_i64)),
-            ("item", CfdInputValue::record_ref("sword")),
+            ("hp", LoadedValueDraft::from(10_i64)),
+            ("item", LoadedValueDraft::record_ref("sword")),
             (
                 "nested",
-                CfdInputValue::object_with_declared_type([(
+                LoadedValueDraft::object_with_declared_type([(
                     "item",
-                    CfdInputValue::record_ref("sword"),
+                    LoadedValueDraft::record_ref("sword"),
                 )]),
             ),
         ],
     );
-    builder.add_input_record(CfdInputRecord::with_spreads(
+    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "copy",
         "Stats",
-        [CfdInputValue::record_ref("base")],
-        [("hp", CfdInputValue::from(20_i64))],
+        [LoadedValueDraft::record_ref("base")],
+        [("hp", LoadedValueDraft::from(20_i64))],
     ));
 
     let model = builder.build().expect("spread should build");
@@ -336,17 +339,17 @@ fn fully_overridden_spread_still_records_object_level_edge() {
         "base",
         "Item",
         [
-            ("name", CfdInputValue::from("Base")),
-            ("power", CfdInputValue::from(1_i64)),
+            ("name", LoadedValueDraft::from("Base")),
+            ("power", LoadedValueDraft::from(1_i64)),
         ],
     );
-    builder.add_input_record(CfdInputRecord::with_spreads(
+    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "copy",
         "Item",
-        [CfdInputValue::record_ref("base")],
+        [LoadedValueDraft::record_ref("base")],
         [
-            ("name", CfdInputValue::from("Copy")),
-            ("power", CfdInputValue::from(2_i64)),
+            ("name", LoadedValueDraft::from("Copy")),
+            ("power", LoadedValueDraft::from(2_i64)),
         ],
     ));
 
@@ -385,26 +388,26 @@ fn multiple_spreads_at_same_object_site_keep_all_edges() {
         "hp_base",
         "Stats",
         [
-            ("hp", CfdInputValue::from(10_i64)),
-            ("mp", CfdInputValue::from(0_i64)),
+            ("hp", LoadedValueDraft::from(10_i64)),
+            ("mp", LoadedValueDraft::from(0_i64)),
         ],
     );
     builder.add_record(
         "mp_base",
         "Stats",
         [
-            ("hp", CfdInputValue::from(0_i64)),
-            ("mp", CfdInputValue::from(20_i64)),
+            ("hp", LoadedValueDraft::from(0_i64)),
+            ("mp", LoadedValueDraft::from(20_i64)),
         ],
     );
-    builder.add_input_record(CfdInputRecord::with_spreads(
+    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "copy",
         "Stats",
         [
-            CfdInputValue::record_ref("hp_base"),
-            CfdInputValue::record_ref("mp_base"),
+            LoadedValueDraft::record_ref("hp_base"),
+            LoadedValueDraft::record_ref("mp_base"),
         ],
-        [("hp", CfdInputValue::from(30_i64))],
+        [("hp", LoadedValueDraft::from(30_i64))],
     ));
 
     let model = builder.build().expect("multi-spread should build");

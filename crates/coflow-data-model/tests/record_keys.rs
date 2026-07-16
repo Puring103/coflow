@@ -23,12 +23,12 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
     builder.add_record(
         "reward_1",
         "ItemReward",
-        [("count", CfdInputValue::from(3_i64))],
+        [("count", LoadedValueDraft::from(3_i64))],
     );
     builder.add_record(
         "drop_1",
         "Drop",
-        [("reward", CfdInputValue::record_ref("reward_1"))],
+        [("reward", LoadedValueDraft::record_ref("reward_1"))],
     );
     let model = builder.build().expect("record-key refs should build");
     let reward_id = record_id_at(&model, 0);
@@ -66,11 +66,11 @@ fn parent_records_cannot_satisfy_child_typed_refs() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("base_1", "Base", [("name", CfdInputValue::from("base"))]);
+    builder.add_record("base_1", "Base", [("name", LoadedValueDraft::from("base"))]);
     builder.add_record(
         "holder_1",
         "Holder",
-        [("child", CfdInputValue::record_ref("base_1"))],
+        [("child", LoadedValueDraft::record_ref("base_1"))],
     );
 
     let err = builder
@@ -89,11 +89,15 @@ fn object_typed_fields_do_not_accept_bare_string_refs() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [("name", LoadedValueDraft::from("Sword"))],
+    );
     builder.add_record(
         "holder_1",
         "Holder",
-        [("item", CfdInputValue::from("item_1"))],
+        [("item", LoadedValueDraft::from("item_1"))],
     );
 
     let err = builder
@@ -116,12 +120,12 @@ fn duplicate_keys_are_reported_for_concrete_and_polymorphic_ranges() {
     concrete.add_record(
         "same",
         "ItemReward",
-        [("count", CfdInputValue::from(1_i64))],
+        [("count", LoadedValueDraft::from(1_i64))],
     );
     concrete.add_record(
         "same",
         "ItemReward",
-        [("count", CfdInputValue::from(2_i64))],
+        [("count", LoadedValueDraft::from(2_i64))],
     );
     let err = concrete.build().expect_err("duplicate concrete key");
     assert_has_code(&err, CfdErrorCode::DuplicateId);
@@ -130,12 +134,12 @@ fn duplicate_keys_are_reported_for_concrete_and_polymorphic_ranges() {
     polymorphic.add_record(
         "same",
         "ItemReward",
-        [("count", CfdInputValue::from(1_i64))],
+        [("count", LoadedValueDraft::from(1_i64))],
     );
     polymorphic.add_record(
         "same",
         "CurrencyReward",
-        [("amount", CfdInputValue::from(2_i64))],
+        [("amount", LoadedValueDraft::from(2_i64))],
     );
     let err = polymorphic.build().expect_err("duplicate polymorphic key");
     assert_has_code(&err, CfdErrorCode::DuplicatePolymorphicId);
@@ -151,8 +155,8 @@ fn unrelated_types_can_reuse_record_keys_in_separate_domains() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("value", CfdInputValue::from(1_i64))]);
-    builder.add_record("sword", "Skill", [("value", CfdInputValue::from(2_i64))]);
+    builder.add_record("sword", "Item", [("value", LoadedValueDraft::from(1_i64))]);
+    builder.add_record("sword", "Skill", [("value", LoadedValueDraft::from(2_i64))]);
 
     let model = builder
         .build()
@@ -189,12 +193,12 @@ fn same_abstract_base_children_reject_duplicate_domain_keys() {
     builder.add_record(
         "same",
         "ItemReward",
-        [("count", CfdInputValue::from(1_i64))],
+        [("count", LoadedValueDraft::from(1_i64))],
     );
     builder.add_record(
         "same",
         "CurrencyReward",
-        [("amount", CfdInputValue::from(2_i64))],
+        [("amount", LoadedValueDraft::from(2_i64))],
     );
 
     let err = builder
@@ -213,13 +217,13 @@ fn plain_parent_and_child_reject_duplicate_domain_keys() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("same", "Base", [("name", CfdInputValue::from("base"))]);
+    builder.add_record("same", "Base", [("name", LoadedValueDraft::from("base"))]);
     builder.add_record(
         "same",
         "Child",
         [
-            ("name", CfdInputValue::from("child")),
-            ("power", CfdInputValue::from(3_i64)),
+            ("name", LoadedValueDraft::from("child")),
+            ("power", LoadedValueDraft::from(3_i64)),
         ],
     );
 
@@ -240,14 +244,18 @@ fn multi_level_inheritance_chain_rejects_duplicate_domain_keys() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("same", "Entity", [("name", CfdInputValue::from("entity"))]);
+    builder.add_record(
+        "same",
+        "Entity",
+        [("name", LoadedValueDraft::from("entity"))],
+    );
     builder.add_record(
         "same",
         "ItemReward",
         [
-            ("name", CfdInputValue::from("item")),
-            ("value", CfdInputValue::from(1_i64)),
-            ("count", CfdInputValue::from(2_i64)),
+            ("name", LoadedValueDraft::from("item")),
+            ("value", LoadedValueDraft::from(1_i64)),
+            ("count", LoadedValueDraft::from(2_i64)),
         ],
     );
 
@@ -268,21 +276,25 @@ fn domain_lookup_finds_any_member_record_but_type_lookup_uses_actual_type() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("base", "Reward", [("name", CfdInputValue::from("reward"))]);
+    builder.add_record(
+        "base",
+        "Reward",
+        [("name", LoadedValueDraft::from("reward"))],
+    );
     builder.add_record(
         "item",
         "ItemReward",
         [
-            ("name", CfdInputValue::from("item")),
-            ("count", CfdInputValue::from(1_i64)),
+            ("name", LoadedValueDraft::from("item")),
+            ("count", LoadedValueDraft::from(1_i64)),
         ],
     );
     builder.add_record(
         "currency",
         "CurrencyReward",
         [
-            ("name", CfdInputValue::from("currency")),
-            ("amount", CfdInputValue::from(2_i64)),
+            ("name", LoadedValueDraft::from("currency")),
+            ("amount", LoadedValueDraft::from(2_i64)),
         ],
     );
 
@@ -330,15 +342,15 @@ fn lookup_for_middle_type_does_not_return_ancestor_records() {
     builder.add_record(
         "entity",
         "Entity",
-        [("name", CfdInputValue::from("entity"))],
+        [("name", LoadedValueDraft::from("entity"))],
     );
     builder.add_record(
         "item",
         "ItemReward",
         [
-            ("name", CfdInputValue::from("item")),
-            ("value", CfdInputValue::from(1_i64)),
-            ("count", CfdInputValue::from(2_i64)),
+            ("name", LoadedValueDraft::from("item")),
+            ("value", LoadedValueDraft::from(1_i64)),
+            ("count", LoadedValueDraft::from(2_i64)),
         ],
     );
 
@@ -387,14 +399,14 @@ fn concrete_ref_expected_type_rejects_sibling_and_parent_records_in_same_domain(
         "currency",
         "CurrencyReward",
         [
-            ("name", CfdInputValue::from("currency")),
-            ("amount", CfdInputValue::from(2_i64)),
+            ("name", LoadedValueDraft::from("currency")),
+            ("amount", LoadedValueDraft::from(2_i64)),
         ],
     );
     sibling_builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("currency"))],
+        [("item", LoadedValueDraft::record_ref("currency"))],
     );
 
     let err = sibling_builder
@@ -403,11 +415,15 @@ fn concrete_ref_expected_type_rejects_sibling_and_parent_records_in_same_domain(
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
 
     let mut parent_builder = CfdDataModel::builder(&schema);
-    parent_builder.add_record("base", "Reward", [("name", CfdInputValue::from("reward"))]);
+    parent_builder.add_record(
+        "base",
+        "Reward",
+        [("name", LoadedValueDraft::from("reward"))],
+    );
     parent_builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("base"))],
+        [("item", LoadedValueDraft::record_ref("base"))],
     );
 
     let err = parent_builder

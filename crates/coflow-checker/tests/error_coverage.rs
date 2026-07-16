@@ -363,8 +363,8 @@ fn build_singleton_count_invalid(schema: &CftSchema) -> Result<CfdDataModel, Cfd
     model_from_records(
         schema,
         [
-            one_record("first", "Cfg", [("value", CfdInputValue::from(1_i64))]),
-            one_record("second", "Cfg", [("value", CfdInputValue::from(2_i64))]),
+            one_record("first", "Cfg", [("value", LoadedValueDraft::from(1_i64))]),
+            one_record("second", "Cfg", [("value", LoadedValueDraft::from(2_i64))]),
         ],
     )
 }
@@ -375,7 +375,7 @@ fn adjacent_singleton_count_valid() {
         [one_record(
             "main",
             "Cfg",
-            [("value", CfdInputValue::from(1_i64))],
+            [("value", LoadedValueDraft::from(1_i64))],
         )],
     );
 }
@@ -389,7 +389,7 @@ fn build_singleton_key_invalid(schema: &CftSchema) -> Result<CfdDataModel, CfdDi
         [one_record(
             "1bad",
             "Cfg",
-            [("value", CfdInputValue::from(1_i64))],
+            [("value", LoadedValueDraft::from(1_i64))],
         )],
     )
 }
@@ -398,8 +398,8 @@ fn build_singleton_key_collision(schema: &CftSchema) -> Result<CfdDataModel, Cfd
     model_from_records(
         schema,
         [
-            one_record("dup", "A", [("x", CfdInputValue::from(1_i64))]),
-            one_record("dup", "B", [("y", CfdInputValue::from(2_i64))]),
+            one_record("dup", "A", [("x", LoadedValueDraft::from(1_i64))]),
+            one_record("dup", "B", [("y", LoadedValueDraft::from(2_i64))]),
         ],
     )
 }
@@ -408,19 +408,19 @@ fn adjacent_singleton_keys_unique() {
     assert_builds(
         "@singleton type A { x: int; } @singleton type B { y: int; }",
         [
-            one_record("a", "A", [("x", CfdInputValue::from(1_i64))]),
-            one_record("b", "B", [("y", CfdInputValue::from(2_i64))]),
+            one_record("a", "A", [("x", LoadedValueDraft::from(1_i64))]),
+            one_record("b", "B", [("y", LoadedValueDraft::from(2_i64))]),
         ],
     );
 }
 
 fn model_from_records(
     schema: &CftSchema,
-    records: impl IntoIterator<Item = CfdInputRecord>,
+    records: impl IntoIterator<Item = LoadedRecordDraft>,
 ) -> Result<CfdDataModel, CfdDiagnostics> {
     let mut builder = CfdDataModel::builder(schema);
     for record in records {
-        builder.add_input_record(record);
+        builder.add_loaded_record(record);
     }
     builder.build()
 }
@@ -428,9 +428,9 @@ fn model_from_records(
 fn one_record(
     key: &str,
     actual_type: &str,
-    fields: impl IntoIterator<Item = (&'static str, CfdInputValue)>,
-) -> CfdInputRecord {
-    CfdInputRecord::new(key, actual_type, fields)
+    fields: impl IntoIterator<Item = (&'static str, LoadedValueDraft)>,
+) -> LoadedRecordDraft {
+    LoadedRecordDraft::new(key, actual_type, fields)
 }
 
 fn build_unknown_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
@@ -449,7 +449,10 @@ fn build_missing_object_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiag
             "Drop",
             [(
                 "reward",
-                CfdInputValue::object_with_declared_type([("amount", CfdInputValue::from(1_i64))]),
+                LoadedValueDraft::object_with_declared_type([(
+                    "amount",
+                    LoadedValueDraft::from(1_i64),
+                )]),
             )],
         )],
     )
@@ -463,7 +466,7 @@ fn build_object_type_mismatch(schema: &CftSchema) -> Result<CfdDataModel, CfdDia
             "Drop",
             [(
                 "reward",
-                CfdInputValue::object("Item", [("name", CfdInputValue::from("sword"))]),
+                LoadedValueDraft::object("Item", [("name", LoadedValueDraft::from("sword"))]),
             )],
         )],
     )
@@ -476,8 +479,8 @@ fn build_unknown_field(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostic
             "item",
             "Item",
             [
-                ("value", CfdInputValue::from(1_i64)),
-                ("missing", CfdInputValue::from(2_i64)),
+                ("value", LoadedValueDraft::from(1_i64)),
+                ("missing", LoadedValueDraft::from(2_i64)),
             ],
         )],
     )
@@ -501,7 +504,7 @@ fn build_data_structure_limit_exceeded(schema: &CftSchema) -> Result<CfdDataMode
         "Item",
         [(
             "value",
-            CfdInputValue::Array(vec![CfdInputValue::Array(vec![1_i64.into()])]),
+            LoadedValueDraft::Array(vec![LoadedValueDraft::Array(vec![1_i64.into()])]),
         )],
     );
     builder.build()
@@ -513,7 +516,7 @@ fn build_type_mismatch(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostic
         [one_record(
             "item",
             "Item",
-            [("value", CfdInputValue::from("not an int"))],
+            [("value", LoadedValueDraft::from("not an int"))],
         )],
     )
 }
@@ -524,7 +527,10 @@ fn build_invalid_enum_variant(schema: &CftSchema) -> Result<CfdDataModel, CfdDia
         [one_record(
             "item",
             "Item",
-            [("rarity", CfdInputValue::enum_variant("Rarity", "Missing"))],
+            [(
+                "rarity",
+                LoadedValueDraft::enum_variant("Rarity", "Missing"),
+            )],
         )],
     )
 }
@@ -537,9 +543,9 @@ fn build_duplicate_dict_key(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
             "Item",
             [(
                 "attrs",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from("x"), CfdInputValue::from(1_i64)),
-                    (CfdInputDictKey::from("x"), CfdInputValue::from(2_i64)),
+                LoadedValueDraft::dict([
+                    (LoadedDictKeyDraft::from("x"), LoadedValueDraft::from(1_i64)),
+                    (LoadedDictKeyDraft::from("x"), LoadedValueDraft::from(2_i64)),
                 ]),
             )],
         )],
@@ -552,7 +558,7 @@ fn build_missing_id_field(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnos
         [one_record(
             "",
             "Item",
-            [("value", CfdInputValue::from(1_i64))],
+            [("value", LoadedValueDraft::from(1_i64))],
         )],
     )
 }
@@ -563,7 +569,7 @@ fn build_invalid_record_key(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
         [one_record(
             "bad-key",
             "Item",
-            [("value", CfdInputValue::from(1_i64))],
+            [("value", LoadedValueDraft::from(1_i64))],
         )],
     )
 }
@@ -572,8 +578,8 @@ fn build_duplicate_id(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics
     model_from_records(
         schema,
         [
-            one_record("item", "Item", [("value", CfdInputValue::from(1_i64))]),
-            one_record("item", "Item", [("value", CfdInputValue::from(2_i64))]),
+            one_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]),
+            one_record("item", "Item", [("value", LoadedValueDraft::from(2_i64))]),
         ],
     )
 }
@@ -585,12 +591,12 @@ fn build_duplicate_polymorphic_id(schema: &CftSchema) -> Result<CfdDataModel, Cf
             one_record(
                 "same",
                 "CoinReward",
-                [("amount", CfdInputValue::from(1_i64))],
+                [("amount", LoadedValueDraft::from(1_i64))],
             ),
             one_record(
                 "same",
                 "ItemReward",
-                [("count", CfdInputValue::from(2_i64))],
+                [("count", LoadedValueDraft::from(2_i64))],
             ),
         ],
     )
@@ -602,7 +608,7 @@ fn build_missing_ref_target(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
         [one_record(
             "drop",
             "Drop",
-            [("item", CfdInputValue::record_ref("missing"))],
+            [("item", LoadedValueDraft::record_ref("missing"))],
         )],
     )
 }
@@ -613,7 +619,7 @@ fn build_check_failed_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
         [one_record(
             "item",
             "Item",
-            [("value", CfdInputValue::from(0_i64))],
+            [("value", LoadedValueDraft::from(0_i64))],
         )],
     )
 }
@@ -663,19 +669,19 @@ fn build_scalar_false_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
                 "item",
                 "Item",
                 [
-                    ("enabled", CfdInputValue::from(false)),
-                    ("negated", CfdInputValue::from(true)),
-                    ("left", CfdInputValue::from(false)),
-                    ("right", CfdInputValue::from(false)),
-                    ("reward", CfdInputValue::record_ref("reward")),
+                    ("enabled", LoadedValueDraft::from(false)),
+                    ("negated", LoadedValueDraft::from(true)),
+                    ("left", LoadedValueDraft::from(false)),
+                    ("right", LoadedValueDraft::from(false)),
+                    ("reward", LoadedValueDraft::record_ref("reward")),
                     (
                         "tags",
-                        CfdInputValue::Array(vec![
-                            CfdInputValue::from("mob"),
-                            CfdInputValue::from("mob"),
+                        LoadedValueDraft::Array(vec![
+                            LoadedValueDraft::from("mob"),
+                            LoadedValueDraft::from("mob"),
                         ]),
                     ),
-                    ("name", CfdInputValue::from("mob_1")),
+                    ("name", LoadedValueDraft::from("mob_1")),
                 ],
             ),
         ],
@@ -706,23 +712,23 @@ fn build_quantifier_false_model(schema: &CftSchema) -> Result<CfdDataModel, CfdD
             [
                 (
                     "any_flags",
-                    CfdInputValue::Array(vec![
-                        CfdInputValue::from(false),
-                        CfdInputValue::from(false),
+                    LoadedValueDraft::Array(vec![
+                        LoadedValueDraft::from(false),
+                        LoadedValueDraft::from(false),
                     ]),
                 ),
                 (
                     "none_flags",
-                    CfdInputValue::Array(vec![
-                        CfdInputValue::from(false),
-                        CfdInputValue::from(true),
+                    LoadedValueDraft::Array(vec![
+                        LoadedValueDraft::from(false),
+                        LoadedValueDraft::from(true),
                     ]),
                 ),
                 (
                     "all_flags",
-                    CfdInputValue::Array(vec![
-                        CfdInputValue::from(true),
-                        CfdInputValue::from(false),
+                    LoadedValueDraft::Array(vec![
+                        LoadedValueDraft::from(true),
+                        LoadedValueDraft::from(false),
                     ]),
                 ),
             ],
@@ -744,7 +750,7 @@ fn build_empty_nums_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnos
         [one_record(
             "item",
             "Item",
-            [("nums", CfdInputValue::Array(Vec::new()))],
+            [("nums", LoadedValueDraft::Array(Vec::new()))],
         )],
     )
 }
@@ -757,9 +763,9 @@ fn build_present_attr_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
             "Item",
             [(
                 "attrs",
-                CfdInputValue::dict([(
-                    CfdInputDictKey::from("present"),
-                    CfdInputValue::from(1_i64),
+                LoadedValueDraft::dict([(
+                    LoadedDictKeyDraft::from("present"),
+                    LoadedValueDraft::from(1_i64),
                 )]),
             )],
         )],
@@ -772,13 +778,13 @@ fn run_checks(schema: &CftSchema, model: &CfdDataModel) -> Result<(), CfdDiagnos
 
 fn assert_builds(
     schema_source: &str,
-    records: impl IntoIterator<Item = CfdInputRecord>,
+    records: impl IntoIterator<Item = LoadedRecordDraft>,
 ) -> CfdDataModel {
     let schema = compile_schema(schema_source);
     model_from_records(&schema, records).expect("adjacent-valid model should build")
 }
 
-fn assert_checks(schema_source: &str, records: impl IntoIterator<Item = CfdInputRecord>) {
+fn assert_checks(schema_source: &str, records: impl IntoIterator<Item = LoadedRecordDraft>) {
     let schema = compile_schema(schema_source);
     let model = model_from_records(&schema, records).expect("adjacent-valid model should build");
     let compiled = schema;
@@ -793,7 +799,7 @@ fn adjacent_known_record_type() {
         [one_record(
             "item",
             "Item",
-            [("value", CfdInputValue::from(1_i64))],
+            [("value", LoadedValueDraft::from(1_i64))],
         )],
     );
 }
@@ -804,7 +810,7 @@ fn adjacent_concrete_child_record_type() {
         [one_record(
             "reward",
             "CoinReward",
-            [("amount", CfdInputValue::from(1_i64))],
+            [("amount", LoadedValueDraft::from(1_i64))],
         )],
     );
 }
@@ -817,7 +823,7 @@ fn adjacent_polymorphic_object_with_actual_type() {
             "Drop",
             [(
                 "reward",
-                CfdInputValue::object("CoinReward", [("amount", CfdInputValue::from(1_i64))]),
+                LoadedValueDraft::object("CoinReward", [("amount", LoadedValueDraft::from(1_i64))]),
             )],
         )],
     );
@@ -844,7 +850,10 @@ fn check_budget_exceeded() -> CfdDiagnostics {
             "Item",
             [(
                 "nums",
-                CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(2_i64)]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(1_i64),
+                    LoadedValueDraft::from(2_i64),
+                ]),
             )],
         )],
     )
@@ -868,7 +877,10 @@ fn adjacent_check_budget_valid() {
             "Item",
             [(
                 "nums",
-                CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(2_i64)]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(1_i64),
+                    LoadedValueDraft::from(2_i64),
+                ]),
             )],
         )],
     )
@@ -899,7 +911,7 @@ fn adjacent_data_structure_at_limit() {
         "Item",
         [(
             "value",
-            CfdInputValue::Array(vec![CfdInputValue::Array(vec![1_i64.into()])]),
+            LoadedValueDraft::Array(vec![LoadedValueDraft::Array(vec![1_i64.into()])]),
         )],
     );
     builder
@@ -917,7 +929,7 @@ fn adjacent_known_enum_variant() {
         [one_record(
             "item",
             "Item",
-            [("rarity", CfdInputValue::enum_variant("Rarity", "Rare"))],
+            [("rarity", LoadedValueDraft::enum_variant("Rarity", "Rare"))],
         )],
     );
 }
@@ -930,9 +942,9 @@ fn adjacent_unique_dict_keys() {
             "Item",
             [(
                 "attrs",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from("x"), CfdInputValue::from(1_i64)),
-                    (CfdInputDictKey::from("y"), CfdInputValue::from(2_i64)),
+                LoadedValueDraft::dict([
+                    (LoadedDictKeyDraft::from("x"), LoadedValueDraft::from(1_i64)),
+                    (LoadedDictKeyDraft::from("y"), LoadedValueDraft::from(2_i64)),
                 ]),
             )],
         )],
@@ -951,8 +963,8 @@ fn adjacent_unique_ids() {
     assert_builds(
         "type Item { value: int; }",
         [
-            one_record("item_1", "Item", [("value", CfdInputValue::from(1_i64))]),
-            one_record("item_2", "Item", [("value", CfdInputValue::from(2_i64))]),
+            one_record("item_1", "Item", [("value", LoadedValueDraft::from(1_i64))]),
+            one_record("item_2", "Item", [("value", LoadedValueDraft::from(2_i64))]),
         ],
     );
 }
@@ -964,12 +976,12 @@ fn adjacent_unique_polymorphic_ids() {
             one_record(
                 "coin",
                 "CoinReward",
-                [("amount", CfdInputValue::from(1_i64))],
+                [("amount", LoadedValueDraft::from(1_i64))],
             ),
             one_record(
                 "item",
                 "ItemReward",
-                [("count", CfdInputValue::from(2_i64))],
+                [("count", LoadedValueDraft::from(2_i64))],
             ),
         ],
     );
@@ -979,11 +991,11 @@ fn adjacent_existing_ref_target() {
     assert_builds(
         "type Item { name: string; } type Drop { item: &Item; }",
         [
-            one_record("sword", "Item", [("name", CfdInputValue::from("Sword"))]),
+            one_record("sword", "Item", [("name", LoadedValueDraft::from("Sword"))]),
             one_record(
                 "drop",
                 "Drop",
-                [("item", CfdInputValue::record_ref("sword"))],
+                [("item", LoadedValueDraft::record_ref("sword"))],
             ),
         ],
     );
@@ -995,7 +1007,7 @@ fn adjacent_true_check() {
         [one_record(
             "item",
             "Item",
-            [("value", CfdInputValue::from(1_i64))],
+            [("value", LoadedValueDraft::from(1_i64))],
         )],
     );
 }
@@ -1033,20 +1045,20 @@ fn adjacent_scalar_false_checks() {
                 "item",
                 "Item",
                 [
-                    ("enabled", CfdInputValue::from(true)),
-                    ("negated", CfdInputValue::from(false)),
-                    ("left", CfdInputValue::from(true)),
-                    ("right", CfdInputValue::from(true)),
-                    ("reward", CfdInputValue::record_ref("reward")),
-                    ("optional", CfdInputValue::from(1_i64)),
+                    ("enabled", LoadedValueDraft::from(true)),
+                    ("negated", LoadedValueDraft::from(false)),
+                    ("left", LoadedValueDraft::from(true)),
+                    ("right", LoadedValueDraft::from(true)),
+                    ("reward", LoadedValueDraft::record_ref("reward")),
+                    ("optional", LoadedValueDraft::from(1_i64)),
                     (
                         "tags",
-                        CfdInputValue::Array(vec![
-                            CfdInputValue::from("mob"),
-                            CfdInputValue::from("boss"),
+                        LoadedValueDraft::Array(vec![
+                            LoadedValueDraft::from("mob"),
+                            LoadedValueDraft::from("boss"),
                         ]),
                     ),
-                    ("name", CfdInputValue::from("npc_1")),
+                    ("name", LoadedValueDraft::from("npc_1")),
                 ],
             ),
         ],
@@ -1073,23 +1085,23 @@ fn adjacent_quantifier_checks() {
             [
                 (
                     "any_flags",
-                    CfdInputValue::Array(vec![
-                        CfdInputValue::from(false),
-                        CfdInputValue::from(true),
+                    LoadedValueDraft::Array(vec![
+                        LoadedValueDraft::from(false),
+                        LoadedValueDraft::from(true),
                     ]),
                 ),
                 (
                     "none_flags",
-                    CfdInputValue::Array(vec![
-                        CfdInputValue::from(false),
-                        CfdInputValue::from(false),
+                    LoadedValueDraft::Array(vec![
+                        LoadedValueDraft::from(false),
+                        LoadedValueDraft::from(false),
                     ]),
                 ),
                 (
                     "all_flags",
-                    CfdInputValue::Array(vec![
-                        CfdInputValue::from(true),
-                        CfdInputValue::from(true),
+                    LoadedValueDraft::Array(vec![
+                        LoadedValueDraft::from(true),
+                        LoadedValueDraft::from(true),
                     ]),
                 ),
             ],
@@ -1105,7 +1117,7 @@ fn adjacent_check_eval_type_valid() {
             "Item",
             [(
                 "nums",
-                CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+                LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
             )],
         )],
     );
@@ -1126,7 +1138,7 @@ fn adjacent_in_bounds_index() {
             "Item",
             [(
                 "nums",
-                CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+                LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
             )],
         )],
     );
@@ -1140,9 +1152,9 @@ fn adjacent_existing_dict_key() {
             "Item",
             [(
                 "attrs",
-                CfdInputValue::dict([(
-                    CfdInputDictKey::from("present"),
-                    CfdInputValue::from(1_i64),
+                LoadedValueDraft::dict([(
+                    LoadedDictKeyDraft::from("present"),
+                    LoadedValueDraft::from(1_i64),
                 )]),
             )],
         )],
@@ -1157,14 +1169,14 @@ fn adjacent_non_empty_min() {
             "Item",
             [(
                 "nums",
-                CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+                LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
             )],
         )],
     );
 }
 
 fn declared_error_code_names() -> BTreeSet<String> {
-    let source = include_str!("../../coflow-data-model/src/diagnostic.rs");
+    let source = include_str!("../../coflow-data-model/src/diagnostics/codes.rs");
     let enum_body = source
         .split("pub enum CfdErrorCode {")
         .nth(1)

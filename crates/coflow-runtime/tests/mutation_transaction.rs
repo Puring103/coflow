@@ -14,7 +14,7 @@ use coflow_api::{
     WriterDescriptor,
 };
 use coflow_data_model::{
-    CfdInputRecord, CfdInputValue, CfdPathSegment, CfdValue, RecordOrigin, SourceDocument,
+    CfdPathSegment, CfdValue, LoadedRecordDraft, LoadedValueDraft, RecordOrigin, SourceDocument,
 };
 use coflow_project::Project;
 use coflow_runtime::{MutationOp, MutationRequest, MutationValue, RecordCoordinate, Runtime};
@@ -161,7 +161,7 @@ impl SourceProvider for TestProvider {
                 },
             )
         };
-        let mut fields = BTreeMap::from([("value", CfdInputValue::Int(value))]);
+        let mut fields = BTreeMap::from([("value", LoadedValueDraft::Int(value))]);
         if ctx.schema.resolve_type("Item").is_some_and(|item| {
             item.own_fields()
                 .any(|field| field.name.as_str() == "target")
@@ -169,14 +169,14 @@ impl SourceProvider for TestProvider {
             fields.insert(
                 "target",
                 if key == "two" {
-                    CfdInputValue::record_ref("one")
+                    LoadedValueDraft::record_ref("one")
                 } else {
-                    CfdInputValue::Null
+                    LoadedValueDraft::Null
                 },
             );
         }
         Ok(LoadedSource {
-            records: vec![CfdInputRecord::new(key, "Item", fields).with_origin(origin)],
+            records: vec![LoadedRecordDraft::new(key, "Item", fields).with_origin(origin)],
         })
     }
 }
