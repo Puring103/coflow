@@ -54,7 +54,7 @@ pub use origin::{
     SourceDocument, SourceLocation, TextSpan,
 };
 pub use value_semantics::{
-    validate_complete_value_for_schema, validate_fragment_value_for_schema,
-    validate_object_type_assignable, CfdValueSemanticContext, CfdValueSemanticError,
-    PendingInsertRef,
+    validate_object_type_assignable, validate_value_for_schema, CfdValueSemanticContext,
+    CfdValueSemanticError, CfdValueSemanticErrorKind, PendingInsertRef, ValueValidationMode,
+    ValueValidationRequest,
 };

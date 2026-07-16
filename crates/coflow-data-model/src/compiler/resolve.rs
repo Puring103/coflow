@@ -218,10 +218,19 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     ) -> Option<CfdValue> {
         match value {
             CfdValueDraft::Value(value) => Some(value.clone()),
-            CfdValueDraft::PendingRef { expected_type, key } => {
-                let (_, key) = self.resolve_ref_target(expected_type, key, node)?;
-                Some(CfdValue::Ref(key))
-            }
+            CfdValueDraft::PendingRef {
+                expected_type: _,
+                key,
+            } => match RecordKey::new(key.clone()) {
+                Ok(key) => Some(CfdValue::Ref(key)),
+                Err(error) => {
+                    self.diagnostics.push(
+                        CfdDiagnostic::error(CfdErrorCode::TypeMismatch, error.to_string())
+                            .with_primary(Some(node.record), node.path.clone()),
+                    );
+                    None
+                }
+            },
             CfdValueDraft::PendingSpreadField {
                 source_type,
                 key,

@@ -7,10 +7,13 @@ use crate::compiler_context::DataModelCompilerContext;
 use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdPath};
 use crate::edge_index::{build_ref_indexes, build_spread_indexes};
 use crate::model::{
-    CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdInputDimensionValue,
+    CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdDomainId, CfdInputDimensionValue,
     CfdInputRecord, CfdObject, CfdRecord, CfdRecordId,
 };
-use coflow_cft::{CftSchema, CftValueType, RecordKey};
+use crate::value_semantics::{
+    CfdValueSemanticContext, CfdValueSemanticErrorKind, ValueValidationMode, ValueValidationRequest,
+};
+use coflow_cft::{CftSchema, CftValueType, FieldName, RecordKey};
 use coflow_structure::StructuralLimits;
 use resolve::ValueResolver;
 use std::collections::BTreeMap;
@@ -122,6 +125,16 @@ impl<'a> ModelCompiler<'a> {
             }
         }
 
+        if !self.diagnostics.is_empty() {
+            return Err(CfdDiagnostics::new(self.diagnostics));
+        }
+
+        validate_resolved_records(
+            &self.schema,
+            &records,
+            &indexes.record_by_domain_key,
+            &mut self.diagnostics,
+        );
         if !self.diagnostics.is_empty() {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
@@ -323,5 +336,89 @@ impl<'a> ModelCompiler<'a> {
             spread_by_site: spread_indexes.by_site,
             spread_by_source: spread_indexes.by_source,
         })
+    }
+}
+
+struct BuildValueSemanticContext<'a, 'schema> {
+    schema: &'a DataModelCompilerContext<'schema>,
+    records: &'a [CfdRecord],
+    record_by_domain_key: &'a BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+}
+
+impl CfdValueSemanticContext for BuildValueSemanticContext<'_, '_> {
+    fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId> {
+        self.schema.type_domain_id(type_name)
+    }
+
+    fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId> {
+        self.record_by_domain_key.get(&domain_id)?.get(key).copied()
+    }
+
+    fn record_actual_type(&self, id: CfdRecordId) -> Option<&str> {
+        self.records.get(id.index()).map(CfdRecord::actual_type)
+    }
+}
+
+fn validate_resolved_records(
+    schema: &DataModelCompilerContext<'_>,
+    records: &[CfdRecord],
+    record_by_domain_key: &BTreeMap<CfdDomainId, BTreeMap<RecordKey, CfdRecordId>>,
+    diagnostics: &mut Vec<CfdDiagnostic>,
+) {
+    let context = BuildValueSemanticContext {
+        schema,
+        records,
+        record_by_domain_key,
+    };
+    for (index, record) in records.iter().enumerate() {
+        let record_id = CfdRecordId::new(index);
+        for (field_name, value) in record.fields() {
+            let Some(field) = schema
+                .cft()
+                .field(record.actual_type(), field_name.as_str())
+            else {
+                continue;
+            };
+            let request = ValueValidationRequest::new(
+                &field.value_type,
+                value,
+                ValueValidationMode::Complete,
+            );
+            if let Err(error) =
+                crate::value_semantics::validate_value_for_schema(schema.cft(), &context, request)
+            {
+                diagnostics.push(
+                    CfdDiagnostic::error(semantic_error_code(error.kind()), error.message())
+                        .with_primary(
+                            Some(record_id),
+                            prefixed_field_path(field_name, error.path()),
+                        ),
+                );
+            }
+        }
+    }
+}
+
+fn prefixed_field_path(field: &FieldName, relative: &CfdPath) -> CfdPath {
+    let mut path = CfdPath::root().field(field.as_str());
+    path.segments.extend(relative.segments.iter().cloned());
+    path
+}
+
+pub(super) const fn semantic_error_code(kind: CfdValueSemanticErrorKind) -> crate::CfdErrorCode {
+    match kind {
+        CfdValueSemanticErrorKind::UnknownType => crate::CfdErrorCode::UnknownType,
+        CfdValueSemanticErrorKind::AbstractType => crate::CfdErrorCode::AbstractRecordType,
+        CfdValueSemanticErrorKind::SingletonType | CfdValueSemanticErrorKind::TypeMismatch => {
+            crate::CfdErrorCode::TypeMismatch
+        }
+        CfdValueSemanticErrorKind::ObjectTypeMismatch => crate::CfdErrorCode::ObjectTypeMismatch,
+        CfdValueSemanticErrorKind::UnknownField => crate::CfdErrorCode::UnknownField,
+        CfdValueSemanticErrorKind::MissingRequiredField => {
+            crate::CfdErrorCode::MissingRequiredField
+        }
+        CfdValueSemanticErrorKind::InvalidEnumVariant => crate::CfdErrorCode::InvalidEnumVariant,
+        CfdValueSemanticErrorKind::RefTargetNotFound => crate::CfdErrorCode::RefTargetNotFound,
+        CfdValueSemanticErrorKind::RefTargetTypeMismatch => crate::CfdErrorCode::TypeMismatch,
     }
 }

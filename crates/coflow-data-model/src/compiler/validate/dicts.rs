@@ -49,32 +49,22 @@ impl Validator<'_, '_> {
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdDictKey> {
-        match (ty.non_nullable(), key) {
-            (CftValueType::String, CfdInputDictKey::String(value)) => {
-                Some(CfdDictKey::String(value.clone()))
-            }
-            (CftValueType::Int, CfdInputDictKey::Int(value)) => Some(CfdDictKey::Int(*value)),
-            (
-                CftValueType::Enum(expected),
-                CfdInputDictKey::EnumVariant { enum_name, variant },
-            ) => {
-                if enum_name.as_str() != expected.as_str() {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            format!("expected enum key `{expected}`, got `{enum_name}`"),
-                        )
-                        .with_primary(record, path),
-                    );
-                    return None;
-                }
-                let value = self.resolve_enum_value(enum_name, variant, record, path)?;
-                Some(CfdDictKey::Enum(value))
-            }
-            _ => {
+        let value = match key {
+            CfdInputDictKey::String(value) => CfdDictKey::String(value.clone()),
+            CfdInputDictKey::Int(value) => CfdDictKey::Int(*value),
+            CfdInputDictKey::EnumVariant { enum_name, variant } => CfdDictKey::Enum(
+                self.resolve_enum_value(enum_name, variant, record, path.clone())?,
+            ),
+        };
+        match crate::value_semantics::validate_dict_key_for_schema(self.schema.cft(), ty, &value) {
+            Ok(()) => Some(value),
+            Err(error) => {
                 self.push(
-                    CfdDiagnostic::error(CfdErrorCode::TypeMismatch, "dict key type mismatch")
-                        .with_primary(record, path),
+                    CfdDiagnostic::error(
+                        super::super::semantic_error_code(error.kind()),
+                        error.message(),
+                    )
+                    .with_primary(record, path),
                 );
                 None
             }

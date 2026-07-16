@@ -496,14 +496,16 @@ fn prepare_insert_fields(
         write_rules::validate_value_semantics(
             session,
             schema,
-            &write_rules::ValueValidationRequest {
-                expected: &field.value_type,
+            coflow_data_model::ValueValidationRequest::new(
+                &field.value_type,
                 value,
-                pending_records: Some(pending_records),
-                pending_insert: Some(PendingInsertRef { actual_type, key }),
-                code: "MUTATION-SHAPE",
-                stage: "MUTATION",
-            },
+                coflow_data_model::ValueValidationMode::Mutation,
+            )
+            .with_pending_insert(PendingInsertRef { actual_type, key }),
+            Some(pending_records),
+            "MUTATION-VALUE",
+            "MUTATION-SHAPE",
+            "MUTATION",
         )?;
     }
     Ok(out)
@@ -529,11 +531,8 @@ fn prepare_provided_insert_fields(
         }
         MutationFields::Cfd(fields) => {
             for (name, value) in fields {
-                let field = schema_field(schema, actual_type, &name)?;
-                out.insert(
-                    name,
-                    coerce_cfd_field_value(session, &field.value_type, value)?,
-                );
+                schema_field(schema, actual_type, &name)?;
+                out.insert(name, coerce_cfd_field_value(session, value)?);
             }
         }
     }

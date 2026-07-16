@@ -2,7 +2,7 @@ use coflow_api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
 use coflow_cft::{CftSchema, CftValueType};
 use coflow_data_model::{
     CfdDomainId, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext,
-    PendingInsertRef,
+    ValueValidationMode, ValueValidationRequest,
 };
 use std::collections::BTreeMap;
 
@@ -166,14 +166,11 @@ pub(crate) fn validate_value_for_write(
     validate_value_semantics(
         session,
         schema,
-        &ValueValidationRequest {
-            expected,
-            value,
-            pending_records: None,
-            pending_insert: None,
-            code,
-            stage,
-        },
+        ValueValidationRequest::new(expected, value, ValueValidationMode::Mutation),
+        None,
+        code,
+        code,
+        stage,
     )
 }
 
@@ -183,49 +180,58 @@ pub(crate) fn validate_value_for_write_with_pending(
     expected: &CftValueType,
     value: &CfdValue,
     pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
-    code: &'static str,
+    value_code: &'static str,
+    reference_code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
     validate_value_semantics(
         session,
         schema,
-        &ValueValidationRequest {
-            expected,
-            value,
-            pending_records: Some(pending_records),
-            pending_insert: None,
-            code,
-            stage,
-        },
+        ValueValidationRequest::new(expected, value, ValueValidationMode::Mutation),
+        Some(pending_records),
+        value_code,
+        reference_code,
+        stage,
     )
-}
-
-pub(crate) struct ValueValidationRequest<'a> {
-    pub(crate) expected: &'a CftValueType,
-    pub(crate) value: &'a CfdValue,
-    pub(crate) pending_records: Option<&'a BTreeMap<crate::RecordCoordinate, usize>>,
-    pub(crate) pending_insert: Option<PendingInsertRef<'a>>,
-    pub(crate) code: &'static str,
-    pub(crate) stage: &'static str,
 }
 
 pub(crate) fn validate_value_semantics(
     session: &ProjectSession,
     schema: &CftSchema,
-    request: &ValueValidationRequest<'_>,
+    request: ValueValidationRequest<'_>,
+    pending_records: Option<&BTreeMap<crate::RecordCoordinate, usize>>,
+    value_code: &'static str,
+    reference_code: &'static str,
+    stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
     let context = ProjectValueSemanticContext {
         session,
-        pending_records: request.pending_records,
+        pending_records,
     };
-    coflow_data_model::validate_complete_value_for_schema(
-        schema,
-        &context,
-        request.expected,
-        request.value,
-        request.pending_insert,
-    )
-    .map_err(|err| one_error(request.code, request.stage, err.message()))
+    coflow_data_model::validate_value_for_schema(schema, &context, request).map_err(|err| {
+        let reference_error = matches!(
+            err.kind(),
+            coflow_data_model::CfdValueSemanticErrorKind::RefTargetNotFound
+                | coflow_data_model::CfdValueSemanticErrorKind::RefTargetTypeMismatch
+                | coflow_data_model::CfdValueSemanticErrorKind::MissingRequiredField
+        );
+        let code = if reference_error {
+            reference_code
+        } else {
+            value_code
+        };
+        let message = if code == "MUTATION-VALUE"
+            && err.kind() == coflow_data_model::CfdValueSemanticErrorKind::TypeMismatch
+        {
+            format!(
+                "value does not match expected schema type: {}",
+                err.message()
+            )
+        } else {
+            err.message().to_string()
+        };
+        one_error(code, stage, message)
+    })
 }
 
 pub(crate) fn ensure_object_type_assignable(

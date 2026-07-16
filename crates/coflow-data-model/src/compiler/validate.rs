@@ -7,6 +7,9 @@ use crate::compiler_context::{
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdEnumValue, CfdInputValue, CfdRecordId, CfdValue};
 use crate::origin::RecordOrigin;
+use crate::value_semantics::{
+    CfdValueSemanticContext, ValueValidationMode, ValueValidationRequest,
+};
 use coflow_cft::{CftField, CftValueType, FieldName, TypeName};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
@@ -107,7 +110,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             );
             return None;
         };
-        if actual_type_meta.is_abstract {
+        if expected_type.is_none() && actual_type_meta.is_abstract {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::AbstractRecordType,
@@ -118,13 +121,14 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             return None;
         }
         if let Some(expected) = expected_type {
-            if !schema.is_assignable(actual_type, expected) {
+            if let Err(error) = crate::value_semantics::validate_object_type_assignable(
+                schema.cft(),
+                expected,
+                actual_type,
+            ) {
                 self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::ObjectTypeMismatch,
-                        format!("type `{actual_type}` is not assignable to `{expected}`"),
-                    )
-                    .with_primary(record, path),
+                    CfdDiagnostic::error(super::semantic_error_code(error.kind()), error.message())
+                        .with_primary(record, path),
                 );
                 return None;
             }
@@ -261,17 +265,9 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 Some(CfdValueDraft::Value(CfdValue::Int(*value)))
             }
             (CftValueType::Float, CfdInputValue::Float(value)) => {
-                if !value.is_finite() {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            "float value must be finite",
-                        )
-                        .with_primary(record, path),
-                    );
-                    return None;
-                }
-                Some(CfdValueDraft::Value(CfdValue::Float(*value)))
+                let value = CfdValue::Float(*value);
+                self.validate_materialized_value(ty, &value, record, path)?;
+                Some(CfdValueDraft::Value(value))
             }
             (CftValueType::Bool, CfdInputValue::Bool(value)) => {
                 Some(CfdValueDraft::Value(CfdValue::Bool(*value)))
@@ -280,18 +276,16 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 Some(CfdValueDraft::Value(CfdValue::String(value.clone())))
             }
             (CftValueType::Enum(expected), CfdInputValue::EnumVariant { enum_name, variant }) => {
-                if enum_name.as_str() != expected.as_str() {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            format!("expected enum `{expected}`, got `{enum_name}`"),
-                        )
-                        .with_primary(record, path),
-                    );
-                    return None;
-                }
-                let enum_value = self.resolve_enum_value(enum_name, variant, record, path)?;
-                Some(CfdValueDraft::Value(CfdValue::Enum(enum_value)))
+                let enum_value =
+                    self.resolve_enum_value(enum_name, variant, record, path.clone())?;
+                let value = CfdValue::Enum(enum_value);
+                self.validate_materialized_value(
+                    &CftValueType::Enum(expected.clone()),
+                    &value,
+                    record,
+                    path,
+                )?;
+                Some(CfdValueDraft::Value(value))
             }
             (CftValueType::RecordRef(expected), CfdInputValue::RecordRef(key)) => {
                 Some(CfdValueDraft::PendingRef {
@@ -473,6 +467,34 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         );
     }
 
+    pub(super) fn validate_materialized_value(
+        &mut self,
+        expected: &CftValueType,
+        value: &CfdValue,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<()> {
+        let context = SourceValueSemanticContext {
+            schema: self.schema,
+        };
+        let request =
+            ValueValidationRequest::new(expected, value, ValueValidationMode::SourceFragment);
+        match crate::value_semantics::validate_value_for_schema(
+            self.schema.cft(),
+            &context,
+            request,
+        ) {
+            Ok(()) => Some(()),
+            Err(error) => {
+                self.push(
+                    CfdDiagnostic::error(super::semantic_error_code(error.kind()), error.message())
+                        .with_primary(record, path),
+                );
+                None
+            }
+        }
+    }
+
     pub(super) fn push(&mut self, diagnostic: CfdDiagnostic) {
         self.diagnostics.push(diagnostic);
     }
@@ -560,6 +582,28 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             CfdDiagnostic::error(CfdErrorCode::DataStructureLimitExceeded, message)
                 .with_primary(record, path),
         );
+    }
+}
+
+struct SourceValueSemanticContext<'a, 'schema> {
+    schema: &'a DataModelCompilerContext<'schema>,
+}
+
+impl CfdValueSemanticContext for SourceValueSemanticContext<'_, '_> {
+    fn type_domain_id(&self, type_name: &str) -> Option<crate::CfdDomainId> {
+        self.schema.type_domain_id(type_name)
+    }
+
+    fn record_by_domain_key(
+        &self,
+        _domain_id: crate::CfdDomainId,
+        _key: &str,
+    ) -> Option<CfdRecordId> {
+        None
+    }
+
+    fn record_actual_type(&self, _id: CfdRecordId) -> Option<&str> {
+        None
     }
 }
 

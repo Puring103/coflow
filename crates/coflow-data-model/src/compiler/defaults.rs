@@ -63,16 +63,6 @@ impl Validator<'_, '_> {
             CftSchemaDefaultValue::Float(value)
                 if type_accepts_default(ty, &CftValueType::Float) =>
             {
-                if !value.is_finite() {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            "float value must be finite",
-                        )
-                        .with_primary(record, path),
-                    );
-                    return None;
-                }
                 CfdValue::Float(*value)
             }
             CftSchemaDefaultValue::Bool(value) if type_accepts_default(ty, &CftValueType::Bool) => {
@@ -104,6 +94,7 @@ impl Validator<'_, '_> {
                 return None;
             }
         };
+        self.validate_materialized_value(ty, &out, record, path)?;
         Some(CfdValueDraft::Value(out))
     }
 

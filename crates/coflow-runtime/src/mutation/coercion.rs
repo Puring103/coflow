@@ -18,7 +18,7 @@ pub(super) fn coerce_mutation_value(
 ) -> Result<CfdValue, DiagnosticSet> {
     let value = match value {
         MutationValue::Json(value) => coerce_json_value(session, expected, &value),
-        MutationValue::Cfd(value) => coerce_cfd_value(session, expected, value),
+        MutationValue::Cfd(value) => normalize_cfd_value(session, value),
     }?;
     validate_value_for_write(session, expected, &value, pending_records)?;
     Ok(value)
@@ -34,10 +34,9 @@ pub(super) fn coerce_json_field_value(
 
 pub(super) fn coerce_cfd_field_value(
     session: &ProjectSession,
-    field_ty: &CftValueType,
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
-    coerce_cfd_value(session, field_ty, value)
+    normalize_cfd_value(session, value)
 }
 
 fn coerce_json_value(
@@ -103,78 +102,40 @@ fn json_ref_key(value: &Value) -> Option<&str> {
     object.get("$ref")?.as_str()
 }
 
-fn coerce_cfd_value(
+fn normalize_cfd_value(
     session: &ProjectSession,
-    expected: &CftValueType,
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
-    if let CftValueType::Nullable(inner) = expected {
-        return if matches!(value, CfdValue::Null) {
-            Ok(CfdValue::Null)
-        } else {
-            coerce_cfd_value(session, inner, value)
-        };
-    }
-    match (expected, value) {
-        (CftValueType::Int, value @ CfdValue::Int(_))
-        | (CftValueType::Float, value @ CfdValue::Float(_))
-        | (CftValueType::Bool, value @ CfdValue::Bool(_))
-        | (CftValueType::String, value @ CfdValue::String(_)) => Ok(value),
-        (CftValueType::Array(inner), CfdValue::Array(items)) => items
+    match value {
+        CfdValue::Array(items) => items
             .into_iter()
-            .map(|item| coerce_cfd_value(session, inner, item))
+            .map(|item| normalize_cfd_value(session, item))
             .collect::<Result<Vec<_>, DiagnosticSet>>()
             .map(CfdValue::Array),
-        (CftValueType::Dict(key_type, item_type), CfdValue::Dict(entries)) => entries
+        CfdValue::Dict(entries) => entries
             .into_iter()
             .map(|(key, item)| {
                 Ok((
-                    coerce_cfd_dict_key(session, key_type, key)?,
-                    coerce_cfd_value(session, item_type, item)?,
+                    normalize_cfd_dict_key(session, key)?,
+                    normalize_cfd_value(session, item)?,
                 ))
             })
             .collect::<Result<Vec<_>, DiagnosticSet>>()
             .map(CfdValue::Dict),
-        (CftValueType::Enum(name), CfdValue::Enum(enum_value)) => {
-            coerce_cfd_enum_value(session, name, enum_value).map(CfdValue::Enum)
+        CfdValue::Enum(enum_value) => {
+            normalize_cfd_enum_value(session, enum_value).map(CfdValue::Enum)
         }
-        (CftValueType::Object(expected_type), CfdValue::Object(record)) => {
-            ensure_object_type_assignable(session, expected_type, record.actual_type())?;
+        CfdValue::Object(record) => {
             let mut record = *record;
-            let actual_type = record.actual_type_name().clone();
-            record.fields = coerce_cfd_object_fields(
-                session,
-                actual_type.as_str(),
-                std::mem::take(&mut record.fields),
-            )?;
+            record.fields = record
+                .fields
+                .into_iter()
+                .map(|(name, value)| Ok((name, normalize_cfd_value(session, value)?)))
+                .collect::<Result<_, DiagnosticSet>>()?;
             Ok(CfdValue::Object(Box::new(record)))
         }
-        (CftValueType::RecordRef(_expected_type), CfdValue::Ref(target_key)) => {
-            Ok(CfdValue::Ref(target_key))
-        }
-        (CftValueType::Object(_), CfdValue::Ref(_)) => Err(one_value_error(
-            "inline object fields do not accept record refs",
-        )),
-        _ => Err(one_value_error("value does not match expected schema type")),
+        value => Ok(value),
     }
-}
-
-fn coerce_cfd_object_fields(
-    session: &ProjectSession,
-    actual_type: &str,
-    fields: BTreeMap<FieldName, CfdValue>,
-) -> Result<BTreeMap<FieldName, CfdValue>, DiagnosticSet> {
-    let schema = session.schema();
-    fields
-        .into_iter()
-        .map(|(name, value)| {
-            let field = schema_field(schema, actual_type, name.as_str())?;
-            Ok((
-                name,
-                coerce_cfd_field_value(session, &field.value_type, value)?,
-            ))
-        })
-        .collect()
 }
 
 fn validate_value_for_write(
@@ -190,48 +151,37 @@ fn validate_value_for_write(
         expected,
         value,
         pending_records,
+        "MUTATION-VALUE",
         "MUTATION-SHAPE",
         "MUTATION",
     )
 }
 
-fn coerce_cfd_dict_key(
+fn normalize_cfd_dict_key(
     session: &ProjectSession,
-    key_type: &CftValueType,
     key: CfdDictKey,
 ) -> Result<CfdDictKey, DiagnosticSet> {
-    match (key_type, key) {
-        (CftValueType::Nullable(inner), key) => coerce_cfd_dict_key(session, inner, key),
-        (CftValueType::String, key @ CfdDictKey::String(_))
-        | (CftValueType::Int, key @ CfdDictKey::Int(_)) => Ok(key),
-        (CftValueType::Enum(enum_name), CfdDictKey::Enum(value)) => {
-            coerce_cfd_enum_value(session, enum_name, value).map(CfdDictKey::Enum)
-        }
-        _ => Err(one_value_error(
-            "dict key does not match expected schema type",
-        )),
+    match key {
+        CfdDictKey::Enum(value) => normalize_cfd_enum_value(session, value).map(CfdDictKey::Enum),
+        key => Ok(key),
     }
 }
 
-fn coerce_cfd_enum_value(
+fn normalize_cfd_enum_value(
     session: &ProjectSession,
-    enum_name: &str,
     mut value: CfdEnumValue,
 ) -> Result<CfdEnumValue, DiagnosticSet> {
-    if value.enum_name.as_str() != enum_name {
-        return Err(one_value_error(format!(
-            "expected enum `{enum_name}`, got `{}`",
-            value.enum_name
-        )));
-    }
     if let Some(variant) = value.variant.as_ref() {
-        // The variant name is authoritative; the backing int on the wire may
-        // be stale if the editor reuses a previous selection.
+        // Variant identity is authoritative at the wire boundary; semantic
+        // validation checks the normalized enum against the expected type.
         let schema = session.schema();
         let expected_value = schema
-            .enum_variant_value(enum_name, variant)
+            .enum_variant_value(value.enum_name.as_str(), variant)
             .ok_or_else(|| {
-                one_value_error(format!("unknown enum variant `{enum_name}.{variant}`"))
+                one_value_error(format!(
+                    "unknown enum variant `{}.{variant}`",
+                    value.enum_name
+                ))
             })?;
         value.value = expected_value;
     }
