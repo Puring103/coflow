@@ -1,11 +1,15 @@
 import { useRef, useState, useEffect } from 'react'
 import type { FileTreeNode } from '../bindings/FileTreeNode'
+import type { FileTypeOption } from '../bindings/FileTypeOption'
 import { Icon } from './Icon'
+import { typeColor } from '../utils/typeColor'
 
 interface Props {
   nodes: FileTreeNode[]
+  fileTypes: Record<string, FileTypeOption[] | undefined>
   selectedFile: string | null
-  onSelectFile: (path: string) => void
+  selectedType: string
+  onSelectFile: (path: string, typeName: string) => void
   onExitRight?: () => void
   onOpenSourceFile?: (path: string) => void
 }
@@ -33,26 +37,37 @@ function saveCollapsed(set: Set<string>) {
 }
 
 /** Walk only the nodes that are currently visible given the collapsed set. */
+type FlatItem =
+  | { kind: 'node'; node: FileTreeNode; depth: number }
+  | { kind: 'type'; filePath: string; type: FileTypeOption; depth: number }
+
 function visibleFlatItems(
   nodes: FileTreeNode[],
   collapsed: Set<string>,
+  fileTypes: Record<string, FileTypeOption[] | undefined>,
   depth: number,
-  out: { node: FileTreeNode; depth: number }[] = [],
+  out: FlatItem[] = [],
 ) {
   for (const n of nodes) {
     if (n.is_dir) {
-      out.push({ node: n, depth })
+      out.push({ kind: 'node', node: n, depth })
       if (!collapsed.has(n.path)) {
-        visibleFlatItems(n.children, collapsed, depth + 1, out)
+        visibleFlatItems(n.children, collapsed, fileTypes, depth + 1, out)
       }
     } else if (n.in_sources) {
-      out.push({ node: n, depth })
+      out.push({ kind: 'node', node: n, depth })
+      const types = fileTypes[n.path] ?? []
+      if (types.length > 1 && !collapsed.has(n.path)) {
+        for (const type of types) {
+          out.push({ kind: 'type', filePath: n.path, type, depth: depth + 1 })
+        }
+      }
     }
   }
   return out
 }
 
-export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight, onOpenSourceFile }: Props) {
+export function FileTree({ nodes, fileTypes, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed())
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null)
@@ -71,8 +86,8 @@ export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight, onOpe
   const onKeyDown = (e: React.KeyboardEvent) => {
     const focused = document.activeElement as HTMLElement | null
     if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && focused?.dataset.path) {
-      const flat = visibleFlatItems(nodes, collapsed, 0)
-      const node = flat.find(item => item.node.path === focused.dataset.path)?.node
+      const filePath = focused.dataset.filePath ?? focused.dataset.path
+      const node = findNode(nodes, filePath)
       if (node && !node.is_dir && node.in_sources && onOpenSourceFile) {
         e.preventDefault()
         const rect = focused.getBoundingClientRect()
@@ -88,55 +103,69 @@ export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight, onOpe
       && e.key !== 'ArrowRight'
       && e.key !== 'Enter'
     ) return
-    const flat = visibleFlatItems(nodes, collapsed, 0)
+    const flat = visibleFlatItems(nodes, collapsed, fileTypes, 0)
     if (flat.length === 0) return
     const cur = document.activeElement as HTMLElement | null
-    const idx = flat.findIndex(it => it.node.path === cur?.dataset.path)
+    const idx = flat.findIndex(item => flatItemPath(item) === cur?.dataset.path)
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       const next = flat[Math.min(idx + 1, flat.length - 1)]
-      focusByPath(rootRef.current, next.node.path)
-      if (!next.node.is_dir && next.node.in_sources) onSelectFile(next.node.path)
+      focusByPath(rootRef.current, flatItemPath(next))
+      activateFlatItem(next, fileTypes, onSelectFile)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       const prev = flat[Math.max(idx - 1, 0)]
-      focusByPath(rootRef.current, prev.node.path)
-      if (!prev.node.is_dir && prev.node.in_sources) onSelectFile(prev.node.path)
+      focusByPath(rootRef.current, flatItemPath(prev))
+      activateFlatItem(prev, fileTypes, onSelectFile)
     } else if (e.key === 'ArrowRight') {
       const item = flat[idx]
       if (!item) return
       e.preventDefault()
-      if (!item.node.is_dir) {
+      if (item.kind === 'type') {
         onExitRight?.()
-      } else if (collapsed.has(item.node.path)) {
-        toggle(item.node.path)
       } else {
-        const child = flat[idx + 1]
-        if (child && child.depth > item.depth) {
-          focusByPath(rootRef.current, child.node.path)
-          if (!child.node.is_dir && child.node.in_sources) onSelectFile(child.node.path)
+        const expandable = item.node.is_dir || (fileTypes[item.node.path]?.length ?? 0) > 1
+        if (!expandable) {
+          onExitRight?.()
+        } else if (collapsed.has(item.node.path)) {
+          toggle(item.node.path)
+        } else {
+          const child = flat[idx + 1]
+          if (child && child.depth > item.depth) {
+            focusByPath(rootRef.current, flatItemPath(child))
+            activateFlatItem(child, fileTypes, onSelectFile)
+          } else {
+            onExitRight?.()
+          }
         }
-        else onExitRight?.()
       }
     } else if (e.key === 'ArrowLeft') {
       const item = flat[idx]
       if (!item) return
       e.preventDefault()
-      if (item.node.is_dir && !collapsed.has(item.node.path)) {
+      if (item.kind === 'type') {
+        focusByPath(rootRef.current, item.filePath)
+      } else if (
+        (item.node.is_dir || (fileTypes[item.node.path]?.length ?? 0) > 1)
+        && !collapsed.has(item.node.path)
+      ) {
         toggle(item.node.path)
       } else {
         const parent = findVisibleParent(flat, idx)
-        if (parent) focusByPath(rootRef.current, parent.node.path)
+        if (parent) focusByPath(rootRef.current, flatItemPath(parent))
       }
     } else if (e.key === 'Enter') {
       const target = cur?.dataset.path
-      const targetNode = flat.find(it => it.node.path === target)?.node
-      if (targetNode) {
+      const targetItem = flat.find(item => flatItemPath(item) === target)
+      if (targetItem) {
         e.preventDefault()
-        if (targetNode.is_dir) {
-          toggle(targetNode.path)
-        } else if (targetNode.in_sources) {
-          onSelectFile(targetNode.path)
+        if (
+          targetItem.kind === 'node'
+          && (targetItem.node.is_dir || (fileTypes[targetItem.node.path]?.length ?? 0) > 1)
+        ) {
+          toggle(targetItem.node.path)
+        } else {
+          activateFlatItem(targetItem, fileTypes, onSelectFile)
         }
       }
     }
@@ -155,11 +184,12 @@ export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight, onOpe
       for (const n of nodes) {
         if (walkExpandIfParent(n, selectedFile, next)) changed = true
       }
+      if ((fileTypes[selectedFile]?.length ?? 0) > 1 && next.delete(selectedFile)) changed = true
       if (!changed) return prev
       saveCollapsed(next)
       return next
     })
-  }, [selectedFile, nodes])
+  }, [selectedFile, nodes, fileTypes])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -180,7 +210,9 @@ export function FileTree({ nodes, selectedFile, onSelectFile, onExitRight, onOpe
         <TreeNode
           key={n.path}
           node={n}
+          fileTypes={fileTypes}
           selectedFile={selectedFile}
+          selectedType={selectedType}
           onSelectFile={onSelectFile}
           depth={0}
           collapsed={collapsed}
@@ -236,6 +268,37 @@ function findVisibleParent(
   return null
 }
 
+function flatItemPath(item: FlatItem): string {
+  return item.kind === 'node' ? item.node.path : typeItemPath(item.filePath, item.type.name)
+}
+
+function typeItemPath(filePath: string, typeName: string): string {
+  return `${filePath}\u001f${typeName}`
+}
+
+function activateFlatItem(
+  item: FlatItem,
+  fileTypes: Record<string, FileTypeOption[] | undefined>,
+  onSelectFile: (path: string, typeName: string) => void,
+) {
+  if (item.kind === 'type') {
+    onSelectFile(item.filePath, item.type.name)
+    return
+  }
+  if (!item.node.is_dir && (fileTypes[item.node.path]?.length ?? 0) <= 1) {
+    onSelectFile(item.node.path, fileTypes[item.node.path]?.[0]?.name ?? '')
+  }
+}
+
+function findNode(nodes: FileTreeNode[], path: string): FileTreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node
+    const child = findNode(node.children, path)
+    if (child) return child
+  }
+  return null
+}
+
 /** If `node` is an ancestor directory of `targetFile`, remove it from
  *  `collapsed` (i.e. expand it) and recurse into children. Returns true when
  *  the set actually changed. */
@@ -263,17 +326,17 @@ function cssEscape(s: string): string {
   return s.replace(/["\\]/g, '\\$&')
 }
 
-function TreeNode({ node, selectedFile, onSelectFile, depth, collapsed, onToggle, onContextMenu }: {
+function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, depth, collapsed, onToggle, onContextMenu }: {
   node: FileTreeNode
+  fileTypes: Record<string, FileTypeOption[] | undefined>
   selectedFile: string | null
-  onSelectFile: (path: string) => void
+  selectedType: string
+  onSelectFile: (path: string, typeName: string) => void
   depth: number
   collapsed: Set<string>
   onToggle: (path: string) => void
   onContextMenu: (event: React.MouseEvent, path: string) => void
 }) {
-  const selected = !node.is_dir && node.path === selectedFile
-
   if (node.is_dir) {
     const isCollapsed = collapsed.has(node.path)
     return (
@@ -308,7 +371,9 @@ function TreeNode({ node, selectedFile, onSelectFile, depth, collapsed, onToggle
           <TreeNode
             key={c.path}
             node={c}
+            fileTypes={fileTypes}
             selectedFile={selectedFile}
+            selectedType={selectedType}
             onSelectFile={onSelectFile}
             depth={depth + 1}
             collapsed={collapsed}
@@ -322,6 +387,56 @@ function TreeNode({ node, selectedFile, onSelectFile, depth, collapsed, onToggle
 
   const ghost = !node.in_sources
   const isCfd = node.name.endsWith('.cfd')
+  const types = fileTypes[node.path] ?? []
+  const hasTypeChildren = !ghost && types.length > 1
+  const isCollapsed = collapsed.has(node.path)
+  const selected = node.path === selectedFile && (types.length <= 1 || !selectedType)
+
+  if (hasTypeChildren) {
+    return (
+      <div role="group">
+        <div
+          className={`tree-file tree-file-parent${node.path === selectedFile ? ' contains-selection' : ''}${isCfd ? ' is-cfd' : ''}`}
+          style={{ paddingLeft: (depth + 1) * 12 + 8 }}
+          role="treeitem"
+          aria-level={depth + 1}
+          aria-expanded={!isCollapsed}
+          tabIndex={0}
+          data-path={node.path}
+          data-file-path={node.path}
+          onClick={() => onToggle(node.path)}
+          onContextMenu={event => onContextMenu(event, node.path)}
+          title={node.path}
+        >
+          <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={11} className="tree-file-chevron" aria-hidden />
+          <Icon name={isCfd ? 'file-cfd' : 'file'} size={13} className="icon-file" aria-hidden />
+          <span className="tree-item-label">{node.name}</span>
+        </div>
+        {!isCollapsed && types.map(type => (
+          <div
+            key={type.name}
+            className={`tree-type${node.path === selectedFile && type.name === selectedType ? ' selected' : ''}`}
+            style={{ paddingLeft: (depth + 2) * 12 + 20, '--type-color': typeColor(type.name) } as React.CSSProperties}
+            role="treeitem"
+            aria-level={depth + 2}
+            aria-selected={node.path === selectedFile && type.name === selectedType}
+            tabIndex={0}
+            data-path={typeItemPath(node.path, type.name)}
+            data-file-path={node.path}
+            data-type-name={type.name}
+            onClick={() => onSelectFile(node.path, type.name)}
+            onContextMenu={event => onContextMenu(event, node.path)}
+            title={type.display_name === type.name ? type.name : `${type.display_name} (${type.name})`}
+          >
+            <span className="tree-type-dot" aria-hidden />
+            <span className="tree-item-label">{type.display_name}</span>
+            <span className="tree-type-count">{type.record_count}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div
       className={`tree-file${selected ? ' selected' : ''}${ghost ? ' ghost' : ''}${isCfd ? ' is-cfd' : ''}`}
@@ -332,13 +447,15 @@ function TreeNode({ node, selectedFile, onSelectFile, depth, collapsed, onToggle
       aria-disabled={ghost || undefined}
       tabIndex={ghost ? -1 : 0}
       data-path={node.path}
-      onClick={() => !ghost && onSelectFile(node.path)}
+      data-file-path={node.path}
+      data-type-name={types[0]?.name}
+      onClick={() => !ghost && onSelectFile(node.path, types[0]?.name ?? '')}
       onContextMenu={event => { if (!ghost) onContextMenu(event, node.path) }}
       onKeyDown={e => {
         if (e.key === 'Enter' && !ghost) {
           e.preventDefault()
           e.stopPropagation()
-          onSelectFile(node.path)
+          onSelectFile(node.path, types[0]?.name ?? '')
         }
       }}
       title={ghost ? '不在 sources 目录内（只读）' : node.path}

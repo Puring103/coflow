@@ -125,9 +125,23 @@ pub struct ProjectSnapshot {
     pub revision: u32,
     pub project_root: String,
     pub file_tree: Vec<FileTreeNode>,
+    #[serde(default)]
+    pub file_types: BTreeMap<String, Vec<FileTypeOption>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_source_file: Option<String>,
     pub diagnostics: Vec<FlatDiagnostic>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct FileTypeOption {
+    pub name: String,
+    pub display_name: String,
+    pub record_count: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

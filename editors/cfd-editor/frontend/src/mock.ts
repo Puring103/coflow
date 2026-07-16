@@ -42,6 +42,15 @@ export const MOCK_PROJECT: ProjectSnapshot = {
     },
     { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, first_source_descendant: null, children: [] },
   ],
+  file_types: {
+    'data/item.cfd': [
+      { name: 'Item', display_name: 'Items', record_count: 2 },
+      { name: 'Weapon', display_name: 'Weapons', record_count: 1 },
+    ],
+    'data/npc.cfd': [
+      { name: 'Npc', display_name: 'Npc', record_count: 2 },
+    ],
+  },
   diagnostics: [
     {
       severity: 'error',

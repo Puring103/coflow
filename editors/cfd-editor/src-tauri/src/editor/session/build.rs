@@ -2,8 +2,8 @@
 
 use coflow_api::{DiagnosticSet, ProviderRegistry, WriterCapabilities};
 use coflow_project::Project;
-use coflow_runtime::{FileTreeNode, ProjectRuntime, Runtime};
-use std::collections::HashMap;
+use coflow_runtime::{FileTreeNode, ProjectQueries, ProjectRuntime, Runtime};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::diagnostics::diagnostics_from_store;
 use super::revision::RevisionCoordinator;
@@ -47,6 +47,7 @@ pub(super) fn build_session(
             EditorError::project(prefixed_diagnostics("failed to build project", &err))
         })?;
     let file_tree = engine.queries().file_tree();
+    let (file_type_names, type_display_names) = type_navigation(engine.queries(), registry, &file_tree);
     let diagnostics = diagnostics_from_store(engine.queries().diagnostics(), &project_root);
 
     Ok((
@@ -55,11 +56,62 @@ pub(super) fn build_session(
             yaml_path,
             engine,
             diagnostics,
+            file_type_names,
+            type_display_names,
             ref_target_cache: HashMap::new(),
             revisions: RevisionCoordinator::initial(),
         },
         SessionSnapshotParts { file_tree },
     ))
+}
+
+fn type_navigation(
+    queries: ProjectQueries<'_>,
+    registry: &ProviderRegistry,
+    file_tree: &[FileTreeNode],
+) -> (
+    BTreeMap<String, Vec<String>>,
+    BTreeMap<(String, String), String>,
+) {
+    let mut files = Vec::new();
+    collect_source_files(file_tree, &mut files);
+    let mut display_names = BTreeMap::new();
+    let mut file_type_names = BTreeMap::new();
+    let schema_type_names = queries.schema_type_names();
+    for file_path in files {
+        let mut type_names = Vec::new();
+        let mut type_seen = HashSet::new();
+        for view in queries.record_views_in_file(&file_path) {
+            let type_name = view.coordinate.actual_type.clone();
+            if type_seen.insert(type_name.clone()) {
+                type_names.push(type_name);
+            }
+        }
+        for type_name in &schema_type_names {
+            let Ok(Some(sheet)) = queries.table_sheet_for_type(registry, &file_path, &type_name)
+            else {
+                continue;
+            };
+            if type_seen.insert(type_name.clone()) {
+                type_names.push(type_name.clone());
+            }
+            if sheet != *type_name {
+                display_names.insert((file_path.clone(), type_name.clone()), sheet);
+            }
+        }
+        file_type_names.insert(file_path, type_names);
+    }
+    (file_type_names, display_names)
+}
+
+fn collect_source_files(nodes: &[FileTreeNode], files: &mut Vec<String>) {
+    for node in nodes {
+        if node.is_dir {
+            collect_source_files(&node.children, files);
+        } else if node.in_sources {
+            files.push(node.path.clone());
+        }
+    }
 }
 
 pub(super) fn diagnostic_messages(diagnostics: &DiagnosticSet) -> String {

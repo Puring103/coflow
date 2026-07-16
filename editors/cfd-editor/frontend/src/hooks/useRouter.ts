@@ -11,6 +11,7 @@ type Action =
   | { type: 'replace'; route: Route }
   | { type: 'back' }
   | { type: 'forward' }
+  | { type: 'clear' }
 
 function reduce(s: State, a: Action): State {
   switch (a.type) {
@@ -25,6 +26,8 @@ function reduce(s: State, a: Action): State {
       return s.cursor > 0 ? { ...s, cursor: s.cursor - 1 } : s
     case 'forward':
       return s.cursor < s.stack.length - 1 ? { ...s, cursor: s.cursor + 1 } : s
+    case 'clear':
+      return { stack: [], cursor: -1 }
   }
 }
 
@@ -36,6 +39,7 @@ export interface RouterState {
   replace: (r: Route) => void
   back: () => void
   forward: () => void
+  clear: () => void
 }
 
 export function useRouter(): RouterState {
@@ -45,6 +49,7 @@ export function useRouter(): RouterState {
   const replace = useCallback((r: Route) => dispatch({ type: 'replace', route: r }), [])
   const back    = useCallback(() => dispatch({ type: 'back' }),    [])
   const forward = useCallback(() => dispatch({ type: 'forward' }), [])
+  const clear = useCallback(() => dispatch({ type: 'clear' }), [])
 
   // Memoize the returned object so consumers that depend on `router` in
   // their own useEffect/useCallback deps don't re-subscribe every render
@@ -57,6 +62,7 @@ export function useRouter(): RouterState {
     replace,
     back,
     forward,
-  }), [s, push, replace, back, forward])
+    clear,
+  }), [s, push, replace, back, forward, clear])
 }
 

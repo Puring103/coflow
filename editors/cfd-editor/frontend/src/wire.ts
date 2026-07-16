@@ -22,7 +22,7 @@ export type DiagnosticItem = FlatDiagnostic
 export type Route =
   | { view: 'table'; file: string; typeFilter?: string }
   | { view: 'record'; file: string; coordinate: RecordCoordinate }
-  | { view: 'graph'; file: string }
+  | { view: 'graph'; file: string; typeFilter?: string }
 
 export type GraphNodeView = GraphNode & {
   id: string

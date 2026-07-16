@@ -77,6 +77,15 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
+    pub fn schema_type_names(self) -> Vec<String> {
+        self.session
+            .schema()
+            .all_types()
+            .map(|schema_type| schema_type.name.to_string())
+            .collect()
+    }
+
+    #[must_use]
     pub fn schema_type_fields(self, type_name: &str) -> Vec<(String, String)> {
         self.session
             .schema()
@@ -354,6 +363,27 @@ impl<'a> ProjectQueries<'a> {
                     .with_provider_id(entry.provider_id.clone())
             },
         )
+    }
+
+    /// Return the provider-resolved table/sheet name for a record type in a
+    /// source file. Non-table providers and unmapped types return `None`.
+    pub fn table_sheet_for_type(
+        self,
+        registry: &ProviderRegistry,
+        file: &str,
+        actual_type: &str,
+    ) -> Result<Option<String>, coflow_api::DiagnosticSet> {
+        let Some(entry) = self
+            .files()
+            .source_for_display(file)
+            .and_then(|source_id| self.sources().entries().get(source_id.index()))
+        else {
+            return Ok(None);
+        };
+        let Some(manager) = registry.table_manager(&entry.provider_id) else {
+            return Ok(None);
+        };
+        manager.sheet_for_type(&entry.source, actual_type)
     }
 }
 

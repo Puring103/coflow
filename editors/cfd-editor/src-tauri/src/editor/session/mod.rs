@@ -39,8 +39,8 @@ use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, Wir
 use crate::editor::types::{
     CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
     CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError,
-    EditorProjectSettings, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot,
-    RecordColumn, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
+    EditorProjectSettings, FileRecords, FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome,
+    ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
 };
 use crate::editor::settings::{
     read_project_settings, sanitized_column_widths, write_project_settings,
@@ -66,6 +66,8 @@ pub struct EditorSession {
     pub yaml_path: std::path::PathBuf,
     pub engine: WriteProjectSession,
     pub diagnostics: Diagnostics,
+    file_type_names: BTreeMap<String, Vec<String>>,
+    type_display_names: BTreeMap<(String, String), String>,
     ref_target_cache: HashMap<String, Vec<RefTarget>>,
     revisions: RevisionCoordinator,
 }
@@ -88,6 +90,13 @@ impl EditorSession {
     fn commit_internal_write(&mut self, paths: &[String]) {
         self.revisions
             .commit_internal_write(&self.project_root, paths);
+    }
+
+    fn type_display_name(&self, file_path: &str, type_name: &str) -> String {
+        self.type_display_names
+            .get(&(file_path.to_string(), type_name.to_string()))
+            .cloned()
+            .unwrap_or_else(|| type_name.to_string())
     }
 }
 
@@ -832,13 +841,56 @@ fn project_snapshot(
     session: &EditorSession,
     snapshot: SessionSnapshotParts,
 ) -> ProjectSnapshot {
+    let file_types = snapshot_file_types(session, &snapshot.file_tree);
     ProjectSnapshot {
         session_id,
         revision: session.revisions.current(),
         project_root: strip_unc_prefix(&session.project_root.display().to_string()),
         first_source_file: first_source_file(&snapshot.file_tree),
         file_tree: snapshot.file_tree,
+        file_types,
         diagnostics: session.diagnostics.to_wire(),
+    }
+}
+
+fn snapshot_file_types(
+    session: &EditorSession,
+    nodes: &[coflow_runtime::FileTreeNode],
+) -> BTreeMap<String, Vec<FileTypeOption>> {
+    let mut files = Vec::new();
+    collect_source_files(nodes, &mut files);
+    files
+        .into_iter()
+        .map(|file_path| {
+            let mut counts = BTreeMap::<String, usize>::new();
+            for view in session.queries().record_views_in_file(&file_path) {
+                let type_name = view.coordinate.actual_type.clone();
+                *counts.entry(type_name).or_default() += 1;
+            }
+            let options = session
+                .file_type_names
+                .get(&file_path)
+                .cloned()
+                .unwrap_or_else(|| counts.keys().cloned().collect())
+                .into_iter()
+                .map(|name| FileTypeOption {
+                    display_name: session.type_display_name(&file_path, &name),
+                    record_count: counts.get(&name).copied().unwrap_or_default(),
+                    name,
+                })
+                .collect();
+            (file_path, options)
+        })
+        .collect()
+}
+
+fn collect_source_files(nodes: &[coflow_runtime::FileTreeNode], files: &mut Vec<String>) {
+    for node in nodes {
+        if node.is_dir {
+            collect_source_files(&node.children, files);
+        } else if node.in_sources {
+            files.push(node.path.clone());
+        }
     }
 }
 
@@ -1353,6 +1405,25 @@ mod revision_tests {
             "schema: schema.cft\nsources:\n  - path: data/items.csv\n    type: csv\n    sheets:\n      - sheet: items\n        type: Item\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\n",
         )
         .expect("write project configuration");
+    }
+
+    #[test]
+    fn project_snapshot_uses_unique_sheet_mapping_as_type_display_name() {
+        let root = temp_project_dir("type-display-name");
+        write_dimension_project(&root);
+        let store = SessionStore::new().expect("create session store");
+        let snapshot = store
+            .load_project(&root.join("coflow.yaml"))
+            .expect("load project");
+        let option = snapshot
+            .file_types
+            .get("data/items.csv")
+            .and_then(|options| options.first())
+            .expect("file type option");
+        assert_eq!(option.name, "Item");
+        assert_eq!(option.display_name, "items");
+        assert_eq!(option.record_count, 1);
+        std::fs::remove_dir_all(root).expect("remove temp project");
     }
 
     fn temp_project_dir(label: &str) -> std::path::PathBuf {

@@ -33,7 +33,6 @@ import {
   type FieldValue,
 } from './wire'
 import { recordMatchesSearch } from './value/fieldValue'
-import { typeColor } from './utils/typeColor'
 import { isEditableFile } from './utils/editable'
 import { EditorLookupController } from './state/editorLookups'
 import {
@@ -60,6 +59,15 @@ import './style.css'
 const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
 const LAST_PROJECT_STORAGE_KEY = 'cfd-editor-last-project-yaml'
+
+interface WorkspaceTab {
+  id: string
+  filePath: string
+  typeName: string
+}
+function workspaceTabId(filePath: string, typeName: string): string {
+  return `${filePath}\u001f${typeName}`
+}
 
 /** Passed as `highlightField` when a record-level (no field path) jump lands
  *  on a record view — RecordView flashes the CardHeader instead of a row. */
@@ -137,6 +145,8 @@ export default function App() {
   const router = useRouter()
   const { theme, toggle: toggleTheme } = useTheme()
   const [activeType, setActiveType] = useState<string>('')
+  const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([])
+  const [activeWorkspaceTabId, setActiveWorkspaceTabId] = useState<string | null>(null)
   // The last view the user actively picked. `openFile` pushes a table
   // placeholder because record view needs a coordinate we don't yet have;
   // once the file data lands, the effect below upgrades the route to
@@ -145,7 +155,6 @@ export default function App() {
   const [globalSearch, setGlobalSearch] = useState('')
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
-  const typeTabsRef = useRef<HTMLDivElement>(null)
   const viewTabsRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
@@ -211,7 +220,13 @@ export default function App() {
       setFileDataCache(MOCK_FILE_RECORDS)
       setGraphCache({ [graphCacheKey('data/npc.cfd', GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
       if (MOCK_PROJECT.first_source_file) {
-        router.push({ view: 'table', file: MOCK_PROJECT.first_source_file })
+        const filePath = MOCK_PROJECT.first_source_file
+        const typeName = MOCK_PROJECT.file_types[filePath]?.[0]?.name ?? ''
+        const tab = { id: workspaceTabId(filePath, typeName), filePath, typeName }
+        setWorkspaceTabs([tab])
+        setActiveWorkspaceTabId(tab.id)
+        setActiveType(typeName)
+        router.push({ view: 'table', file: filePath, typeFilter: typeName })
       }
     }
   }, [generation, lookups, router.push])
@@ -236,9 +251,21 @@ export default function App() {
       setFileDataCache({})
       setGraphCache({})
       setProjectSettings(null)
+      setWorkspaceTabs([])
+      setActiveWorkspaceTabId(null)
+      setActiveType('')
       history.clear()
       const firstFile = snapshot.first_source_file ?? collectSourceFiles(snapshot)[0]
-      if (firstFile) router.push({ view: 'table', file: firstFile })
+      if (firstFile) {
+        const typeName = snapshot.file_types[firstFile]?.[0]?.name ?? ''
+        const tab = { id: workspaceTabId(firstFile, typeName), filePath: firstFile, typeName }
+        setWorkspaceTabs([tab])
+        setActiveWorkspaceTabId(tab.id)
+        setActiveType(typeName)
+        router.push({ view: 'table', file: firstFile, typeFilter: typeName })
+      } else {
+        router.clear()
+      }
       if (api.isTauri) {
         api.getProjectSettings(snapshot.session_id).then(settings => {
           if (generation.currentSession() === snapshot.session_id) setProjectSettings(settings)
@@ -336,7 +363,15 @@ export default function App() {
       }
       if (!current || !keepFile) {
         setProject(snapshot)
-        router.push({ view: 'table', file: nextFile })
+        const typeName = snapshot.file_types[nextFile]?.[0]?.name ?? ''
+        const tab = { id: workspaceTabId(nextFile, typeName), filePath: nextFile, typeName }
+        setWorkspaceTabs(existing => [
+          ...existing.filter(item => sourceFiles.includes(item.filePath) && item.id !== tab.id),
+          tab,
+        ])
+        setActiveWorkspaceTabId(tab.id)
+        setActiveType(typeName)
+        router.push({ view: 'table', file: nextFile, typeFilter: typeName })
         return
       }
       try {
@@ -353,7 +388,13 @@ export default function App() {
         }
         if (current.view === 'record') {
           const stillExists = fileRecords?.records.some(r => sameCoordinate(r.coordinate, current.coordinate)) ?? false
-          router.replace(stillExists ? current : { view: 'table', file: nextFile })
+          router.replace(stillExists
+            ? current
+            : {
+                view: 'table',
+                file: nextFile,
+                typeFilter: current.coordinate.actual_type,
+              })
         } else {
           router.replace(current)
         }
@@ -361,7 +402,7 @@ export default function App() {
         if (generation.isCurrent(snapshot.session_id, snapshot.revision)) {
           setProject(snapshot)
           reportSessionError(snapshot.session_id, '刷新项目失败', err)
-          router.push({ view: 'table', file: nextFile })
+          router.push({ view: 'table', file: nextFile, typeFilter: snapshot.file_types[nextFile]?.[0]?.name ?? '' })
         }
       }
     },
@@ -547,28 +588,33 @@ export default function App() {
   }, [router.current?.view])
 
   const openFile = useCallback(
-    (filePath: string) => {
+    (filePath: string, requestedType = '') => {
       setGlobalSearch('')
-      // Preserve the current view mode so the user doesn't get bounced back
-      // to table on every file click. Record view needs a coordinate — push
-      // table for now; the effect below promotes the route to record view
-      // (with the first record's coordinate) as soon as file data lands.
+      const typeName = requestedType || project?.file_types[filePath]?.[0]?.name || ''
+      const id = workspaceTabId(filePath, typeName)
+      setWorkspaceTabs(current => current.some(tab => tab.id === id)
+        ? current
+        : [...current, { id, filePath, typeName }])
+      setActiveWorkspaceTabId(id)
+      setActiveType(typeName)
       const currentView = router.current?.view ?? 'table'
       if (currentView === 'graph') {
-        router.push({ view: 'graph', file: filePath })
+        router.push({ view: 'graph', file: filePath, typeFilter: typeName })
         return
       }
-      router.push({ view: 'table', file: filePath })
+      router.push({ view: 'table', file: filePath, typeFilter: typeName })
     },
-    [router]
+    [project?.file_types, router]
   )
 
   const openRecord = useCallback(
     (filePath: string, coordinate: RecordCoordinate) => {
       setPreferredView('record')
-      // Keep the type tab in sync with the record the user is opening, so
-      // the record-view sidebar (filtered by activeType) actually contains
-      // it and the tab highlight matches.
+      const id = workspaceTabId(filePath, coordinate.actual_type)
+      setWorkspaceTabs(current => current.some(tab => tab.id === id)
+        ? current
+        : [...current, { id, filePath, typeName: coordinate.actual_type }])
+      setActiveWorkspaceTabId(id)
       setActiveType(coordinate.actual_type)
       router.push({ view: 'record', file: filePath, coordinate })
     },
@@ -894,6 +940,16 @@ export default function App() {
 
   const currentRoute = router.current
   const activeFile = currentRoute?.file ?? null
+  useEffect(() => {
+    if (!currentRoute) return
+    const typeName = currentRoute.view === 'record'
+      ? currentRoute.coordinate.actual_type
+      : currentRoute.typeFilter ?? ''
+    const id = workspaceTabId(currentRoute.file, typeName)
+    if (!workspaceTabs.some(tab => tab.id === id)) return
+    setActiveWorkspaceTabId(id)
+    if (typeName) setActiveType(typeName)
+  }, [currentRoute, workspaceTabs])
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeGraphKey = activeFile
     ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
@@ -907,6 +963,21 @@ export default function App() {
     }
     return map
   }, [fileDataCache])
+  const navigationFileTypes = useMemo(() => {
+    if (!project) return {}
+    const next = { ...project.file_types }
+    for (const [filePath, records] of Object.entries(fileDataCache)) {
+      const counts = new Map<string, number>()
+      for (const record of records.records) {
+        counts.set(record.coordinate.actual_type, (counts.get(record.coordinate.actual_type) ?? 0) + 1)
+      }
+      next[filePath] = (next[filePath] ?? []).map(option => ({
+        ...option,
+        record_count: counts.get(option.name) ?? 0,
+      }))
+    }
+    return next
+  }, [fileDataCache, project])
   const fileDiagnostics = useMemo(
     () => activeFile && project ? project.diagnostics.filter(d => d.file_path === activeFile) : [],
     [activeFile, project?.diagnostics],
@@ -975,15 +1046,27 @@ export default function App() {
     [currentRoute?.view, currentRoute?.file, openValueInspector],
   )
 
+  const closeWorkspaceTab = useCallback((id: string) => {
+    const index = workspaceTabs.findIndex(tab => tab.id === id)
+    if (index < 0) return
+    const remaining = workspaceTabs.filter(tab => tab.id !== id)
+    setWorkspaceTabs(remaining)
+    if (id !== activeWorkspaceTabId) return
+    const next = remaining[Math.min(index, remaining.length - 1)]
+    if (!next) {
+      setActiveWorkspaceTabId(null)
+      setActiveType('')
+      closeInspector()
+      router.clear()
+      return
+    }
+    openFile(next.filePath, next.typeName)
+  }, [activeWorkspaceTabId, closeInspector, openFile, router, workspaceTabs])
+
   const focusFileTree = useCallback(() => {
     const tree = sidebarRef.current?.querySelector<HTMLElement>('.file-tree')
     const target = tree?.querySelector<HTMLElement>('[role="treeitem"][aria-selected="true"]')
       ?? tree?.querySelector<HTMLElement>('[role="treeitem"]')
-    target?.focus({ preventScroll: true })
-  }, [])
-  const focusTypeTabs = useCallback(() => {
-    const target = typeTabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
-      ?? typeTabsRef.current?.querySelector<HTMLElement>('[role="tab"]')
     target?.focus({ preventScroll: true })
   }, [])
   const focusViewTabs = useCallback(() => {
@@ -1185,13 +1268,18 @@ export default function App() {
     }
   }, [showHelp])
 
-  // Sync activeType when file or its type set changes
+  // Sync the active type from the document target, falling back to the
+  // first type reported for the file when an older route has no filter.
   useEffect(() => {
     if (!activeFileData) return
-    if (!activeFileData.type_names.includes(activeType)) {
-      setActiveType(activeFileData.type_names[0] ?? '')
-    }
-  }, [activeFileData?.file_path, activeFileData?.type_names])
+    const routedType = currentRoute?.view === 'record'
+      ? currentRoute.coordinate.actual_type
+      : currentRoute?.typeFilter
+    const nextType = routedType && activeFileData.type_names.includes(routedType)
+      ? routedType
+      : activeFileData.type_names[0] ?? ''
+    if (nextType !== activeType) setActiveType(nextType)
+  }, [activeFileData?.file_path, activeFileData?.type_names, currentRoute, activeType])
 
   function switchView(view: 'table' | 'record' | 'graph') {
     if (!currentRoute) return
@@ -1205,7 +1293,7 @@ export default function App() {
       if (!firstCoordinate) return
       router.replace({ view, file: currentRoute.file, coordinate: firstCoordinate })
     } else {
-      router.replace({ view, file: currentRoute.file } as typeof currentRoute)
+      router.replace({ view, file: currentRoute.file, typeFilter: activeType } as typeof currentRoute)
     }
   }
 
@@ -1219,7 +1307,9 @@ export default function App() {
     if (!currentRoute) return
     if (activeFileData?.file_path !== currentRoute.file) return
     if (currentRoute.view === 'table' && preferredView === 'record') {
-      const firstCoord = activeFileData.records[0]?.coordinate
+      const firstCoord = activeFileData.records.find(
+        record => !activeType || recordActualType(record) === activeType,
+      )?.coordinate
       if (firstCoord) {
         router.replace({ view: 'record', file: currentRoute.file, coordinate: firstCoord })
       }
@@ -1278,30 +1368,6 @@ export default function App() {
         >
           <Icon name="arrow-right" size={14} />
         </button>
-        <span className="topbar-divider" />
-        <button
-          className="btn btn-icon"
-          onClick={() => runProjectAction('check')}
-          disabled={!project || projectAction !== null}
-          title="检查项目"
-          aria-label="检查项目"
-        >
-          <Icon name={projectAction === 'check' ? 'refresh' : 'check'} size={14} className={projectAction === 'check' ? 'icon-spin' : undefined} />
-        </button>
-        <button
-          className="btn btn-icon"
-          onClick={() => runProjectAction('build')}
-          disabled={!project || projectAction !== null}
-          title="构建项目"
-          aria-label="构建项目"
-        >
-          <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={14} className={projectAction === 'build' ? 'icon-spin' : undefined} />
-        </button>
-        {project && (
-          <span className="project-root" title={project.project_root}>
-            {project.project_root}
-          </span>
-        )}
         <span className="topbar-spacer" />
         {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
           <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
@@ -1344,12 +1410,11 @@ export default function App() {
           {project ? (
             <FileTree
               nodes={project.file_tree}
+              fileTypes={navigationFileTypes}
               selectedFile={activeFile}
+              selectedType={activeType}
               onSelectFile={openFile}
-              onExitRight={() => {
-                if (activeFileData?.type_names.length) focusTypeTabs()
-                else focusViewTabs()
-              }}
+              onExitRight={focusViewTabs}
               onOpenSourceFile={openSourceFile}
             />
           ) : (
@@ -1375,97 +1440,117 @@ export default function App() {
 
         <div className="content-area-wrap">
         <div className="content-area">
+          {workspaceTabs.length > 0 && (
+            <div className="document-tabs" role="tablist" aria-label="已打开内容">
+              {workspaceTabs.map(tab => {
+                const fileName = tab.filePath.split('/').pop() ?? tab.filePath
+                const types = project?.file_types[tab.filePath] ?? []
+                const type = types.find(option => option.name === tab.typeName)
+                const label = type
+                  ? `${fileName} / ${type.display_name}`
+                  : fileName
+                return (
+                  <div
+                    key={tab.id}
+                    className={`document-tab${tab.id === activeWorkspaceTabId ? ' active' : ''}`}
+                    role="tab"
+                    aria-selected={tab.id === activeWorkspaceTabId}
+                    tabIndex={tab.id === activeWorkspaceTabId ? 0 : -1}
+                    data-tab-id={tab.id}
+                    onClick={() => openFile(tab.filePath, tab.typeName)}
+                    onKeyDown={event => {
+                      if (event.key === 'Delete') {
+                        event.preventDefault()
+                        closeWorkspaceTab(tab.id)
+                        return
+                      }
+                      onTabListKeyDown(
+                        event,
+                        workspaceTabs.map(item => item.id),
+                        id => {
+                          const target = workspaceTabs.find(item => item.id === id)
+                          if (target) openFile(target.filePath, target.typeName)
+                        },
+                      )
+                    }}
+                    title={type && type.display_name !== type.name
+                      ? `${tab.filePath} / ${type.display_name} (${type.name})`
+                      : `${tab.filePath}${tab.typeName ? ` / ${tab.typeName}` : ''}`}
+                  >
+                    <Icon name="file" size={12} className="document-tab-icon" aria-hidden />
+                    <span className="document-tab-label">{label}</span>
+                    {readOnly && tab.id === activeWorkspaceTabId && <Icon name="lock" size={10} className="document-tab-lock" aria-hidden />}
+                    <button
+                      type="button"
+                      className="document-tab-close"
+                      onClick={event => {
+                        event.stopPropagation()
+                        closeWorkspaceTab(tab.id)
+                      }}
+                      aria-label={`关闭 ${label}`}
+                      title="关闭标签"
+                    >
+                      <Icon name="close" size={11} aria-hidden />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
           {currentRoute && activeFileData ? (
             <>
-              {/* File breadcrumb */}
-              <div className="content-breadcrumb">
-                <Icon name="file" size={12} className="breadcrumb-icon" aria-hidden />
-                {activeFile?.split('/').map((part, i, arr) => {
-                  const dirPath = arr.slice(0, i + 1).join('/')
-                  const isLeaf = i === arr.length - 1
-                  const siblingFile = firstSourceFileForPath(project, dirPath)
-                  const clickable = !isLeaf && !!siblingFile
-                  return (
-                    <span key={i} className="breadcrumb-part">
-                      {i > 0 && <span className="breadcrumb-sep" aria-hidden>/</span>}
-                      {clickable && siblingFile ? (
-                        <button
-                          type="button"
-                          className="breadcrumb-link"
-                          title={`跳转到 ${siblingFile}`}
-                          onClick={() => openFile(siblingFile)}
-                        >
-                          {part}
-                        </button>
-                      ) : (
-                        <span className={isLeaf ? 'breadcrumb-leaf' : ''}>{part}</span>
+              <div className="document-toolbar">
+                <div className="document-view-tabs" role="tablist" aria-label="视图" ref={viewTabsRef}>
+                  {(['record', 'table', 'graph'] as const).map(v => (
+                    <button
+                      key={v}
+                      className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
+                      role="tab"
+                      aria-selected={currentRoute.view === v}
+                      tabIndex={currentRoute.view === v ? 0 : -1}
+                      data-tab-id={v}
+                      onClick={() => switchView(v)}
+                      onKeyDown={e => onTabListKeyDown(
+                        e,
+                        ['record', 'table', 'graph'],
+                        v => switchView(v as 'table' | 'record' | 'graph'),
+                        {
+                          onLeftBoundary: focusFileTree,
+                          onUp: focusFileTree,
+                          onDown: focusGlobalSearch,
+                        },
                       )}
-                    </span>
-                  )
-                })}
+                    >
+                      <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
+                      {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
+                    </button>
+                  ))}
+                </div>
+                <span className="document-toolbar-spacer" />
                 {readOnly && (
-                  <span className="breadcrumb-readonly" title="该来源未提供可写能力">
+                  <span className="document-readonly" title="该来源未提供可写能力">
                     <Icon name="lock" size={11} aria-hidden />
                     只读
                   </span>
                 )}
-              </div>
-
-              {/* Type tabs row */}
-              {activeFileData.type_names.length > 0 && (
-                <div className="view-tabs view-tabs-types" role="tablist" aria-label="类型" ref={typeTabsRef}>
-                  <div className="type-tabs-inline">
-                    {activeFileData.type_names.map(t => (
-                      <button
-                        key={t}
-                        className={`tab-btn${activeType === t ? ' active' : ''}`}
-                        role="tab"
-                        aria-selected={activeType === t}
-                        tabIndex={activeType === t ? 0 : -1}
-                        data-tab-id={t}
-                        onClick={() => setActiveType(t)}
-                        onKeyDown={e => onTabListKeyDown(e, activeFileData.type_names, setActiveType, {
-                          onLeftBoundary: focusFileTree,
-                          onDown: focusViewTabs,
-                        })}
-                        style={{'--tab-color': typeColor(t), '--tab-color-dim': typeColor(t)} as React.CSSProperties}
-                        >
-                          {t}
-                          <span className="tab-count">
-                          {activeFileData.records.filter(r => recordActualType(r) === t).length}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* View switcher */}
-              <div className="view-tabs view-tabs-views" role="tablist" aria-label="视图" ref={viewTabsRef}>
-                {(['record', 'table', 'graph'] as const).map(v => (
-                  <button
-                    key={v}
-                    className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
-                    role="tab"
-                    aria-selected={currentRoute.view === v}
-                    tabIndex={currentRoute.view === v ? 0 : -1}
-                    data-tab-id={v}
-                    onClick={() => switchView(v)}
-                    onKeyDown={e => onTabListKeyDown(
-                      e,
-                      ['record', 'table', 'graph'],
-                      v => switchView(v as 'table' | 'record' | 'graph'),
-                      {
-                        onLeftBoundary: focusFileTree,
-                        onUp: activeFileData.type_names.length ? focusTypeTabs : focusFileTree,
-                        onDown: focusGlobalSearch,
-                      },
-                    )}
-                  >
-                    <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
-                    {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
-                  </button>
-                ))}
+                <button
+                  className="btn btn-icon"
+                  onClick={() => runProjectAction('check')}
+                  disabled={!project || projectAction !== null}
+                  title="检查项目"
+                  aria-label="检查项目"
+                >
+                  <Icon name={projectAction === 'check' ? 'refresh' : 'check'} size={14} className={projectAction === 'check' ? 'icon-spin' : undefined} />
+                </button>
+                <button
+                  className="btn btn-icon"
+                  onClick={() => runProjectAction('build')}
+                  disabled={!project || projectAction !== null}
+                  title="构建项目"
+                  aria-label="构建项目"
+                >
+                  <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={14} className={projectAction === 'build' ? 'icon-spin' : undefined} />
+                </button>
               </div>
 
               {/* Record search bar — shared across all three views */}
@@ -1843,23 +1928,4 @@ function onToolbarKeyDown(event: React.KeyboardEvent, onExitDown: () => void) {
     if (next >= 0 && next < buttons.length) buttons[next].focus()
     else if (next < 0) onExitDown()
   }
-}
-
-/** Find the first in-source file whose path starts with `dirPath/`. Used to
- *  make breadcrumb path segments clickable to jump into that directory. */
-function firstSourceFileForPath(project: ProjectSnapshot | null, dirPath: string): string | null {
-  if (!project) return null
-  function find(n: ProjectSnapshot['file_tree'][number]): string | null {
-    if (n.path === dirPath) return n.first_source_descendant ?? null
-    for (const c of n.children) {
-      const hit = find(c)
-      if (hit) return hit
-    }
-    return null
-  }
-  for (const n of project.file_tree) {
-    const hit = find(n)
-    if (hit) return hit
-  }
-  return null
 }
