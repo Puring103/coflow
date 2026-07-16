@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use coflow_api::{map_diagnostics_with_origins, DiagnosticSet};
 use coflow_cft::CftSchema;
 use coflow_checker::{
-    run_checks, CheckRequest, CheckSnapshot, DependencyCollection, DimensionCheckRound,
+    run_checks, CheckExecutionStats, CheckRequest, CheckSnapshot, DependencyCollection,
+    DimensionCheckRound,
 };
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdRecordId, RecordOrigin};
 
@@ -18,6 +19,7 @@ pub(crate) struct ProjectCheckOutput {
     pub(crate) diagnostics: DiagnosticSet,
     pub(crate) logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
     pub(crate) state: CheckState,
+    pub(crate) statistics: CheckExecutionStats,
 }
 
 pub(crate) fn run_full_project_checks(
@@ -32,8 +34,9 @@ pub(crate) fn run_full_project_checks(
             .with_rounds(dimension_check_rounds(schema))
             .with_dependency_collection(DependencyCollection::Reads),
     );
+    let statistics = output.statistics;
     if let Some(snapshot) = output.snapshot {
-        if let Some(rendered) = render_check_snapshot(model, origins, snapshot) {
+        if let Some(rendered) = render_check_snapshot(model, origins, snapshot, statistics) {
             return rendered;
         }
     }
@@ -45,6 +48,7 @@ pub(crate) fn run_full_project_checks(
             .into_iter()
             .map(|rooted| rooted.diagnostic)
             .collect(),
+        statistics,
     )
 }
 
@@ -60,13 +64,14 @@ pub(crate) fn run_incremental_project_checks(
         model,
         CheckRequest::incremental(previous, changed).with_rounds(dimension_check_rounds(schema)),
     );
-    render_check_snapshot(model, origins, output.snapshot?)
+    render_check_snapshot(model, origins, output.snapshot?, output.statistics)
 }
 
 fn render_check_snapshot(
     model: &CfdDataModel,
     origins: &[RecordOrigin],
     state: CheckSnapshot,
+    statistics: CheckExecutionStats,
 ) -> Option<ProjectCheckOutput> {
     let raw = CfdDiagnostics::new(state.render_diagnostics(model)?);
     let logical_locations = logical_locations_from_cfd(&raw, |id| coordinate_for_id(model, id));
@@ -74,6 +79,7 @@ fn render_check_snapshot(
         diagnostics: map_diagnostics_with_origins(raw, origins),
         logical_locations,
         state,
+        statistics,
     })
 }
 
@@ -100,6 +106,7 @@ fn render_raw_check_output(
     model: &CfdDataModel,
     origins: &[RecordOrigin],
     diagnostics: Vec<CfdDiagnostic>,
+    statistics: CheckExecutionStats,
 ) -> ProjectCheckOutput {
     let raw = CfdDiagnostics::new(diagnostics);
     let logical_locations = logical_locations_from_cfd(&raw, |id| coordinate_for_id(model, id));
@@ -107,6 +114,7 @@ fn render_raw_check_output(
         diagnostics: map_diagnostics_with_origins(raw, origins),
         logical_locations,
         state: CheckSnapshot::default(),
+        statistics,
     }
 }
 

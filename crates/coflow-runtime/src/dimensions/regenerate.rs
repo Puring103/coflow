@@ -22,9 +22,11 @@ pub(crate) fn regenerate_dimension_sources_scoped(
 ) -> DimensionGenerationResult {
     let plan_result =
         plan_dimension_generation_scoped(project, schema, model, fields, affected_fields);
+    let planned_sources = plan_result.plan.operations.len();
     if !plan_result.diagnostics.is_empty() {
         return DimensionGenerationResult {
             diagnostics: plan_result.diagnostics,
+            planned_sources,
             ..DimensionGenerationResult::default()
         };
     }
@@ -32,6 +34,7 @@ pub(crate) fn regenerate_dimension_sources_scoped(
     let mut diagnostics = plan_result.diagnostics;
     diagnostics.extend(result.diagnostics);
     result.diagnostics = diagnostics;
+    result.planned_sources = planned_sources;
     result
 }
 
@@ -309,28 +312,26 @@ pub(crate) fn commit_dimension_generation(
     let mut diagnostics = DiagnosticSet::empty();
     let mut transaction = DimensionGenerationTransaction::default();
     let mut changed_paths = BTreeSet::new();
+    let planned_sources = plan.operations.len();
+    let mut written_sources = 0_usize;
 
     for operation in plan.operations {
-        match operation {
-            DimensionGenerationPlanOp::Move { from, to } => {
-                commit_dimension_move(
-                    &mut transaction,
-                    &project.config_path,
-                    from,
-                    to,
-                    &mut diagnostics,
-                    &mut changed_paths,
-                );
-            }
-            DimensionGenerationPlanOp::Remove(path) => {
-                commit_dimension_remove(
-                    &mut transaction,
-                    &project.config_path,
-                    path,
-                    &mut diagnostics,
-                    &mut changed_paths,
-                );
-            }
+        let changed = match operation {
+            DimensionGenerationPlanOp::Move { from, to } => commit_dimension_move(
+                &mut transaction,
+                &project.config_path,
+                from,
+                to,
+                &mut diagnostics,
+                &mut changed_paths,
+            ),
+            DimensionGenerationPlanOp::Remove(path) => commit_dimension_remove(
+                &mut transaction,
+                &project.config_path,
+                path,
+                &mut diagnostics,
+                &mut changed_paths,
+            ),
             DimensionGenerationPlanOp::Sync(operation) => commit_dimension_sync(
                 project,
                 registry,
@@ -339,6 +340,9 @@ pub(crate) fn commit_dimension_generation(
                 &mut diagnostics,
                 &mut changed_paths,
             ),
+        };
+        if changed {
+            written_sources = written_sources.saturating_add(1);
         }
     }
 
@@ -346,6 +350,8 @@ pub(crate) fn commit_dimension_generation(
         transaction,
         diagnostics,
         changed_paths: changed_paths.into_iter().collect(),
+        planned_sources,
+        written_sources,
     }
 }
 
@@ -356,10 +362,10 @@ fn commit_dimension_move(
     to: PathBuf,
     diagnostics: &mut DiagnosticSet,
     changed_paths: &mut BTreeSet<PathBuf>,
-) {
+) -> bool {
     if let Err(error) = transaction.move_file(&from, &to, config_path) {
         diagnostics.extend(error);
-        return;
+        return false;
     }
     if let Err(error) = fs::rename(&from, &to) {
         diagnostics.push(Diagnostic::error(
@@ -374,7 +380,9 @@ fn commit_dimension_move(
     } else {
         changed_paths.insert(from);
         changed_paths.insert(to);
+        return true;
     }
+    false
 }
 
 fn commit_dimension_remove(
@@ -383,10 +391,10 @@ fn commit_dimension_remove(
     path: PathBuf,
     diagnostics: &mut DiagnosticSet,
     changed_paths: &mut BTreeSet<PathBuf>,
-) {
+) -> bool {
     if let Err(error) = transaction.remove_file(&path, config_path) {
         diagnostics.extend(error);
-        return;
+        return false;
     }
     if let Err(error) = fs::remove_file(&path) {
         diagnostics.push(Diagnostic::error(
@@ -399,7 +407,9 @@ fn commit_dimension_remove(
         ));
     } else {
         changed_paths.insert(path);
+        return true;
     }
+    false
 }
 
 fn commit_dimension_sync(
@@ -409,7 +419,7 @@ fn commit_dimension_sync(
     operation: DimensionGenerationOperation,
     diagnostics: &mut DiagnosticSet,
     changed_paths: &mut BTreeSet<PathBuf>,
-) {
+) -> bool {
     let Some(manager) = registry.dimension_source_manager(&operation.provider_id) else {
         diagnostics.push(dimension_diagnostic(
             &project.config_path,
@@ -420,7 +430,7 @@ fn commit_dimension_sync(
                 operation.provider_id
             ),
         ));
-        return;
+        return false;
     };
     let options = match manager.source_options(&DimensionSourceOptionsRequest {
         sheet: &operation.sheet,
@@ -429,7 +439,7 @@ fn commit_dimension_sync(
         Ok(options) => options,
         Err(error) => {
             diagnostics.extend(error);
-            return;
+            return false;
         }
     };
     let source =
@@ -438,7 +448,7 @@ fn commit_dimension_sync(
         transaction.snapshot_file(&operation.path, &operation.dimension, &project.config_path)
     {
         diagnostics.extend(error);
-        return;
+        return false;
     }
     let result = manager.sync_dimension_source(
         TableContext {
@@ -453,9 +463,13 @@ fn commit_dimension_sync(
     match result {
         Ok(result) if result.changed => {
             changed_paths.insert(operation.path);
+            true
         }
-        Ok(_) => {}
-        Err(error) => diagnostics.extend(error),
+        Ok(_) => false,
+        Err(error) => {
+            diagnostics.extend(error);
+            false
+        }
     }
 }
 
@@ -506,6 +520,8 @@ pub struct DimensionGenerationResult {
     pub transaction: DimensionGenerationTransaction,
     pub diagnostics: DiagnosticSet,
     pub changed_paths: Vec<PathBuf>,
+    pub planned_sources: usize,
+    pub written_sources: usize,
 }
 
 #[derive(Debug, Default)]

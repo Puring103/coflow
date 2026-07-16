@@ -18,6 +18,7 @@ use crate::load::{
 use crate::project_schema::open_project_schema_attempt;
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::writes::MutationImpact;
+use crate::{FullFallbackReason, ProjectExecutionStats};
 
 /// Opens a project into a reusable runtime session using explicit side-effect
 /// intent.
@@ -118,9 +119,18 @@ pub(crate) fn rebuild_project_session_from_generation(
         source_data,
         check_state,
         changed_dimension_paths,
+        execution_stats,
     } = rebuild_data_pipeline(&ctx, session, impact, &mut diagnostics)?;
     Ok(SessionBuildOutput {
-        session: assemble_session(ctx, model, diagnostics, indexes, source_data, check_state),
+        session: assemble_session(
+            ctx,
+            model,
+            diagnostics,
+            indexes,
+            source_data,
+            check_state,
+            execution_stats,
+        ),
         changed_dimension_paths,
     })
 }
@@ -157,6 +167,7 @@ fn finish_project_session(
         source_data,
         check_state,
         changed_dimension_paths,
+        execution_stats,
     } = if diagnostics.is_empty() {
         build_data_pipeline(&ctx, &mut diagnostics)?
     } else {
@@ -164,7 +175,15 @@ fn finish_project_session(
     };
 
     Ok(SessionBuildOutput {
-        session: assemble_session(ctx, model, diagnostics, indexes, source_data, check_state),
+        session: assemble_session(
+            ctx,
+            model,
+            diagnostics,
+            indexes,
+            source_data,
+            check_state,
+            execution_stats,
+        ),
         changed_dimension_paths,
     })
 }
@@ -201,6 +220,7 @@ struct LoadedSessionData {
     source_data: SourceDataCache,
     check_state: CheckState,
     changed_dimension_paths: Vec<PathBuf>,
+    execution_stats: ProjectExecutionStats,
 }
 
 impl LoadedSessionData {
@@ -211,6 +231,7 @@ impl LoadedSessionData {
             source_data: SourceDataCache::default(),
             check_state: CheckState::default(),
             changed_dimension_paths: Vec::new(),
+            execution_stats: ProjectExecutionStats::default(),
         })
     }
 }
@@ -235,13 +256,19 @@ fn build_data_pipeline(
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
                 changed_dimension_paths: Vec::new(),
+                execution_stats: ProjectExecutionStats::default(),
             });
         }
     };
 
+    let mut execution_stats = output.statistics;
     let mut dimensions = commit_dimensions_if_needed(ctx, &output, None, diagnostics);
+    record_dimension_work(&mut execution_stats, &dimensions);
     if diagnostics.is_empty() && ctx.has_dimension_fields() {
-        (output, indexes) = reload_with_dimensions(ctx, diagnostics)?;
+        let (reloaded, reloaded_indexes) = reload_with_dimensions(ctx, diagnostics)?;
+        execution_stats.merge(reloaded.statistics);
+        output = reloaded;
+        indexes = reloaded_indexes;
     }
 
     let indexes = indexes.finalize_with_model(&output.model);
@@ -257,6 +284,7 @@ fn build_data_pipeline(
         source_data: output.source_data,
         check_state: output.check_state,
         changed_dimension_paths: dimensions.changed_paths,
+        execution_stats,
     })
 }
 
@@ -288,16 +316,19 @@ fn rebuild_data_pipeline(
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
                 changed_dimension_paths: Vec::new(),
+                execution_stats: ProjectExecutionStats::default(),
             });
         }
     };
 
+    let mut execution_stats = rebuild_execution_stats(&output, impact);
     let mut dimensions = commit_dimensions_if_needed(
         ctx,
         &output,
         (!impact.structural_change).then_some(&impact.changed_records),
         diagnostics,
     );
+    record_dimension_work(&mut execution_stats, &dimensions);
     if diagnostics.is_empty() && ctx.has_dimension_fields() {
         let cache = output
             .source_data
@@ -335,7 +366,11 @@ fn rebuild_data_pipeline(
             (!impact.structural_change).then_some(&previous.check_state),
             &impact.changed_records,
         ) {
-            Ok(loaded) => (output, indexes) = loaded,
+            Ok((reloaded, reloaded_indexes)) => {
+                execution_stats.merge(reloaded.statistics);
+                output = reloaded;
+                indexes = reloaded_indexes;
+            }
             Err(load_failure) => {
                 diagnostics.extend_with_logical_locations(
                     load_failure.diagnostics.diagnostics,
@@ -359,6 +394,7 @@ fn rebuild_data_pipeline(
         source_data: output.source_data,
         check_state: output.check_state,
         changed_dimension_paths: dimensions.changed_paths,
+        execution_stats,
     })
 }
 
@@ -477,6 +513,8 @@ struct DataLoadFailure {
 struct CommittedDimensions {
     transaction: Option<DimensionGenerationTransaction>,
     changed_paths: Vec<PathBuf>,
+    planned_sources: usize,
+    written_sources: usize,
 }
 
 fn build_read_only_data(
@@ -496,6 +534,7 @@ fn build_read_only_data(
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
                 changed_dimension_paths: Vec::new(),
+                execution_stats: ProjectExecutionStats::default(),
             });
         }
     };
@@ -507,6 +546,7 @@ fn build_read_only_data(
         source_data: output.source_data,
         check_state: output.check_state,
         changed_dimension_paths: Vec::new(),
+        execution_stats: output.statistics,
     })
 }
 
@@ -540,7 +580,32 @@ fn commit_dimensions_if_needed(
         transaction: (!dimension_result.transaction.is_empty())
             .then_some(dimension_result.transaction),
         changed_paths: dimension_result.changed_paths,
+        planned_sources: dimension_result.planned_sources,
+        written_sources: dimension_result.written_sources,
     }
+}
+
+const fn record_dimension_work(
+    statistics: &mut ProjectExecutionStats,
+    dimensions: &CommittedDimensions,
+) {
+    statistics.dimension_sources_planned = statistics
+        .dimension_sources_planned
+        .saturating_add(dimensions.planned_sources);
+    statistics.dimension_sources_written = statistics
+        .dimension_sources_written
+        .saturating_add(dimensions.written_sources);
+}
+
+fn rebuild_execution_stats(
+    output: &ProjectLoadOutput,
+    impact: &MutationImpact,
+) -> ProjectExecutionStats {
+    let mut statistics = output.statistics;
+    if impact.structural_change {
+        statistics.mark_full_fallback(FullFallbackReason::StructuralMutation);
+    }
+    statistics
 }
 
 fn rollback_dimensions_after_failed_pipeline(
@@ -563,6 +628,7 @@ fn assemble_session(
     indexes: SessionIndexes,
     source_data: SourceDataCache,
     check_state: CheckState,
+    execution_stats: ProjectExecutionStats,
 ) -> ProjectSession {
     ProjectSession {
         project: ctx.project,
@@ -577,6 +643,7 @@ fn assemble_session(
         loader_extensions: loader_extensions(ctx.registry),
         source_data,
         check_state,
+        execution_stats,
     }
 }
 

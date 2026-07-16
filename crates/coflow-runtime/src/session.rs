@@ -16,6 +16,7 @@ use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
 use crate::load::SourceDataCache;
 use crate::records::{EffectiveFieldWrite, RecordView, RefTargetInfo};
 use crate::writes::record_value_at_path;
+use crate::ProjectExecutionStats;
 
 #[derive(Debug)]
 pub(crate) struct ProjectSession {
@@ -31,6 +32,7 @@ pub(crate) struct ProjectSession {
     pub(crate) loader_extensions: BTreeSet<String>,
     pub(crate) source_data: SourceDataCache,
     pub(crate) check_state: CheckState,
+    pub(crate) execution_stats: ProjectExecutionStats,
 }
 
 impl ProjectSession {
@@ -62,6 +64,11 @@ impl ProjectSession {
     #[must_use]
     pub const fn files(&self) -> &FileIndex {
         &self.files
+    }
+
+    #[must_use]
+    pub const fn execution_stats(&self) -> &ProjectExecutionStats {
+        &self.execution_stats
     }
 
     #[must_use]

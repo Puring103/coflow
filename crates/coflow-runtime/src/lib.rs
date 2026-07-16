@@ -33,6 +33,7 @@ mod schema_inspect;
 mod session;
 mod session_build;
 mod source_resolution;
+mod statistics;
 mod write_rules;
 mod writes;
 
@@ -81,3 +82,4 @@ pub use schema_inspect::{
 };
 pub use session::ProjectSchemaSession;
 pub(crate) use session::ProjectSession;
+pub use statistics::{FullFallbackReason, ProjectExecutionStats};

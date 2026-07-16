@@ -724,6 +724,20 @@ dimensions:
         "diagnostics: {:?}",
         session.queries().diagnostics().as_set()
     );
+    assert_eq!(
+        session
+            .queries()
+            .execution_stats()
+            .dimension_sources_planned,
+        1
+    );
+    assert_eq!(
+        session
+            .queries()
+            .execution_stats()
+            .dimension_sources_written,
+        1
+    );
     assert!(session
         .queries()
         .has_source_file("data/dimensions/language/Item_name.csv"));
@@ -906,6 +920,20 @@ dimensions:
         "diagnostics: {:?}",
         session.queries().diagnostics().as_set()
     );
+    assert_eq!(
+        session
+            .queries()
+            .execution_stats()
+            .dimension_sources_planned,
+        0
+    );
+    assert_eq!(
+        session
+            .queries()
+            .execution_stats()
+            .dimension_sources_written,
+        0
+    );
     assert!(
         !root.join("data/dimensions/language/Item_name.csv").exists(),
         "read-only session must not create dimension source files"
@@ -970,6 +998,14 @@ dimensions:
         "diagnostics: {:?}",
         session.queries().diagnostics().as_set()
     );
+    assert_eq!(
+        session
+            .queries()
+            .execution_stats()
+            .dimension_records_projected,
+        1
+    );
+    assert_eq!(session.queries().execution_stats().check_roots_executed, 2);
 
     assert!(!session
         .queries()
@@ -1629,6 +1665,20 @@ dimensions:
         "diagnostics: {:?}",
         session.queries().diagnostics().as_set()
     );
+    assert_eq!(
+        session
+            .queries()
+            .execution_stats()
+            .dimension_sources_planned,
+        1
+    );
+    assert_eq!(
+        session
+            .queries()
+            .execution_stats()
+            .dimension_sources_written,
+        1
+    );
 
     let generated_path = root.join("data/dimensions/language/Item_name.csv");
     let first_modified = std::fs::metadata(&generated_path)
@@ -1643,6 +1693,20 @@ dimensions:
         !session.queries().has_diagnostics(),
         "diagnostics: {:?}",
         session.queries().diagnostics().as_set()
+    );
+    assert_eq!(
+        session
+            .queries()
+            .execution_stats()
+            .dimension_sources_planned,
+        1
+    );
+    assert_eq!(
+        session
+            .queries()
+            .execution_stats()
+            .dimension_sources_written,
+        0
     );
     let second_modified = std::fs::metadata(&generated_path)
         .expect("metadata")

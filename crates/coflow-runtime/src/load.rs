@@ -22,7 +22,7 @@ use crate::indexes::{
     ResolvedSourceEntry, SessionIndexBuilder, SourceId, SourceIndex,
 };
 use crate::source_resolution::{ResolvedLoaderSource, SourceResolver};
-use crate::RecordCoordinate;
+use crate::{FullFallbackReason, ProjectExecutionStats, RecordCoordinate};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ProjectLoadOutput {
@@ -31,6 +31,7 @@ pub(crate) struct ProjectLoadOutput {
     pub(crate) logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
     pub(crate) source_data: SourceDataCache,
     pub(crate) check_state: CheckState,
+    pub(crate) statistics: ProjectExecutionStats,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -113,6 +114,7 @@ pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput,
         logical_locations: BTreeMap::new(),
         source_data: SourceDataCache::default(),
         check_state: CheckState::default(),
+        statistics: ProjectExecutionStats::default(),
     })
 }
 
@@ -124,6 +126,7 @@ pub(crate) fn load_project_data(
     indexes: &mut SessionIndexBuilder,
     options: LoadProjectDataOptions,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
+    let mut statistics = ProjectExecutionStats::default();
     let mut records: Vec<LoadedRecordDraft> = Vec::new();
     let mut source_data = SourceDataCache::default();
     let mut diagnostics = DiagnosticSet::empty();
@@ -137,6 +140,9 @@ pub(crate) fn load_project_data(
                 continue;
             }
         };
+        statistics.sources_resolved = statistics
+            .sources_resolved
+            .saturating_add(resolved_sources.len());
 
         diagnostics.extend(load_resolved_sources(
             project,
@@ -153,6 +159,9 @@ pub(crate) fn load_project_data(
     if options.include_implicit_dimension_sources {
         match resolver.resolve_dimension_sources(dimension_plan) {
             Ok(resolved_sources) => {
+                statistics.sources_resolved = statistics
+                    .sources_resolved
+                    .saturating_add(resolved_sources.len());
                 for (resolved_source, field) in resolved_sources {
                     diagnostics.extend(load_resolved_dimension_sources(
                         project,
@@ -176,6 +185,7 @@ pub(crate) fn load_project_data(
     }
 
     let origins: Vec<RecordOrigin> = origins_of(&records);
+    let draft_record_count = records.len();
     let record_coordinates = records
         .iter()
         .map(|record| RecordCoordinate::try_new(&record.actual_type, &record.key).ok())
@@ -207,14 +217,17 @@ pub(crate) fn load_project_data(
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
             state: CheckState::default(),
+            statistics: coflow_checker::CheckExecutionStats::default(),
         }
     };
+    record_model_work(&mut statistics, draft_record_count, &model, &check);
     Ok(ProjectLoadOutput {
         model,
         diagnostics: check.diagnostics,
         logical_locations: check.logical_locations,
         source_data,
         check_state: check.state,
+        statistics,
     })
 }
 
@@ -232,6 +245,7 @@ pub(crate) fn reload_project_data_from_cache(
     previous_checks: Option<&CheckState>,
     changed_records: &BTreeSet<RecordCoordinate>,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
+    let mut statistics = ProjectExecutionStats::default();
     let mut source_data = SourceDataCache {
         batches: previous
             .batches
@@ -243,7 +257,7 @@ pub(crate) fn reload_project_data_from_cache(
             .collect(),
     };
     if options.include_implicit_dimension_sources && refresh_implicit_dimension_sources {
-        refresh_dimension_source_plans(
+        statistics.sources_resolved = refresh_dimension_source_plans(
             project,
             dimension_plan,
             registry,
@@ -268,24 +282,15 @@ pub(crate) fn reload_project_data_from_cache(
             .then_some(index)
         })
         .collect::<Vec<_>>();
+    statistics.sources_reloaded = reload_indexes.len();
 
-    for index in &reload_indexes {
-        let batch = &source_data.batches[*index];
-        if batch.dimension_field.is_some() {
-            continue;
-        }
-        let Some(loader) = registry.source_provider(&batch.entry.provider_id) else {
-            diagnostics.push(missing_cached_provider(&batch.entry.provider_id));
-            continue;
-        };
-        diagnostics.extend(loader.preflight(
-            SourceLoadContext {
-                project_root: &project.root_dir,
-                schema,
-            },
-            &batch.entry.source,
-        ));
-    }
+    diagnostics.extend(preflight_cached_sources(
+        project,
+        schema,
+        registry,
+        &source_data,
+        &reload_indexes,
+    ));
     if !diagnostics.is_empty() {
         return Err(load_failure(diagnostics));
     }
@@ -335,7 +340,36 @@ pub(crate) fn reload_project_data_from_cache(
         options.run_checks,
         previous_checks,
         changed_records,
+        statistics,
     )
+}
+
+fn preflight_cached_sources(
+    project: &Project,
+    schema: &CftSchema,
+    registry: &ProviderRegistry,
+    source_data: &SourceDataCache,
+    reload_indexes: &[usize],
+) -> DiagnosticSet {
+    let mut diagnostics = DiagnosticSet::empty();
+    for index in reload_indexes {
+        let batch = &source_data.batches[*index];
+        if batch.dimension_field.is_some() {
+            continue;
+        }
+        let Some(loader) = registry.source_provider(&batch.entry.provider_id) else {
+            diagnostics.push(missing_cached_provider(&batch.entry.provider_id));
+            continue;
+        };
+        diagnostics.extend(loader.preflight(
+            SourceLoadContext {
+                project_root: &project.root_dir,
+                schema,
+            },
+            &batch.entry.source,
+        ));
+    }
+    diagnostics
 }
 
 const fn load_failure(diagnostics: DiagnosticSet) -> LoadDiagnostics {
@@ -555,14 +589,16 @@ fn refresh_dimension_source_plans(
     registry: &ProviderRegistry,
     previous: &SourceDataCache,
     source_data: &mut SourceDataCache,
-) -> Result<(), LoadDiagnostics> {
+) -> Result<usize, LoadDiagnostics> {
     source_data
         .batches
         .retain(|batch| batch.dimension_field.is_none());
     let resolver = SourceResolver::new(project, registry);
     let mut diagnostics = DiagnosticSet::empty();
+    let mut resolved_count = 0;
     match resolver.resolve_dimension_sources(dimension_plan) {
         Ok(resolved_sources) => {
+            resolved_count = resolved_sources.len();
             for ((_, source), field) in resolved_sources {
                 let display_path = display_path_for(project, &source);
                 let entry = ResolvedSourceEntry {
@@ -590,7 +626,7 @@ fn refresh_dimension_source_plans(
         Err(err) => diagnostics.extend(err),
     }
     if diagnostics.is_empty() {
-        Ok(())
+        Ok(resolved_count)
     } else {
         Err(LoadDiagnostics {
             diagnostics,
@@ -607,6 +643,7 @@ fn build_output_from_cache(
     run_checks: bool,
     previous_checks: Option<&CheckState>,
     changed_records: &BTreeSet<RecordCoordinate>,
+    mut statistics: ProjectExecutionStats,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records = Vec::new();
     for batch in &source_data.batches {
@@ -632,6 +669,7 @@ fn build_output_from_cache(
         }
     }
     let origins = origins_of(&records);
+    let draft_record_count = records.len();
     let record_coordinates = records
         .iter()
         .map(|record| RecordCoordinate::try_new(&record.actual_type, &record.key).ok())
@@ -653,25 +691,80 @@ fn build_output_from_cache(
         }
     })?;
     let check = if run_checks {
-        previous_checks
-            .and_then(|previous| {
-                run_incremental_project_checks(schema, &model, &origins, previous, changed_records)
-            })
-            .unwrap_or_else(|| run_full_project_checks(schema, &model, &origins))
+        run_cached_project_checks(
+            schema,
+            &model,
+            &origins,
+            previous_checks,
+            changed_records,
+            &mut statistics,
+        )
     } else {
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
             state: CheckState::default(),
+            statistics: coflow_checker::CheckExecutionStats::default(),
         }
     };
+    record_model_work(&mut statistics, draft_record_count, &model, &check);
     Ok(ProjectLoadOutput {
         model,
         diagnostics: check.diagnostics,
         logical_locations: check.logical_locations,
         source_data,
         check_state: check.state,
+        statistics,
     })
+}
+
+fn run_cached_project_checks(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    origins: &[RecordOrigin],
+    previous_checks: Option<&CheckState>,
+    changed_records: &BTreeSet<RecordCoordinate>,
+    statistics: &mut ProjectExecutionStats,
+) -> ProjectCheckOutput {
+    previous_checks.map_or_else(
+        || run_full_project_checks(schema, model, origins),
+        |previous| {
+            run_incremental_project_checks(schema, model, origins, previous, changed_records)
+                .unwrap_or_else(|| {
+                    statistics.mark_full_fallback(FullFallbackReason::CheckSnapshotUnavailable);
+                    run_full_project_checks(schema, model, origins)
+                })
+        },
+    )
+}
+
+fn record_model_work(
+    statistics: &mut ProjectExecutionStats,
+    draft_record_count: usize,
+    model: &CfdDataModel,
+    check: &ProjectCheckOutput,
+) {
+    statistics.draft_records_collected = statistics
+        .draft_records_collected
+        .saturating_add(draft_record_count);
+    statistics.records_validated = statistics
+        .records_validated
+        .saturating_add(draft_record_count);
+    statistics.records_materialized = statistics
+        .records_materialized
+        .saturating_add(model.record_count());
+    statistics.ref_edges_rebuilt = statistics
+        .ref_edges_rebuilt
+        .saturating_add(model.direct_ref_edges().count());
+    statistics.spread_edges_rebuilt = statistics
+        .spread_edges_rebuilt
+        .saturating_add(model.spread_edges().count());
+    statistics.check_roots_executed = statistics
+        .check_roots_executed
+        .saturating_add(check.statistics.executed_rounds);
+    statistics.dimension_records_projected = statistics
+        .dimension_records_projected
+        .saturating_add(check.statistics.dimension_projected_records);
 }
 
 fn missing_cached_provider(provider_id: &str) -> Diagnostic {

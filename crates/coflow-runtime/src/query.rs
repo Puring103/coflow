@@ -10,7 +10,8 @@ use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
 use crate::{
     DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState, DimensionValueView,
     EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, FileTreeOptions, IdAsEnumInfo,
-    ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
+    ProjectExecutionStats, ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView,
+    RefTargetInfo,
 };
 
 /// Read-only capability over one immutable project generation.
@@ -36,6 +37,11 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub const fn diagnostics(self) -> &'a DiagnosticsStore {
         self.session.diagnostics()
+    }
+
+    #[must_use]
+    pub const fn execution_stats(self) -> &'a ProjectExecutionStats {
+        self.session.execution_stats()
     }
 
     #[must_use]
