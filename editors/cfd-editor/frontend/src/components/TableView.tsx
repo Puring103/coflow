@@ -267,11 +267,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       const isPill = kind !== null
       const chrome = (isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME) + BADGE_ROOM
       let maxContent = 0
+      let hasComplexValue = false
       let declaredForHeader: string | undefined
       for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
         const cell = fieldCell(record, column.name)
         if (!cell) continue
+        if (isComplexValue(cell.value)) hasComplexValue = true
         const w = measure(valueSummary(cell.value))
         if (w > maxContent) maxContent = w
         if (!declaredForHeader) declaredForHeader = cell.annotation?.declared_type ?? undefined
@@ -279,7 +281,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       const summaryWidth = maxContent + chrome
       const typeChipWidth = declaredForHeader ? measureMono(declaredForHeader) + 16 : 0
       const headerWidth = measure(column.name) + PLAIN_CHROME + 12 /* sort caret */ + typeChipWidth
-      hints[column.name] = Math.min(VALUE_MAX, Math.max(MIN, Math.ceil(Math.max(summaryWidth, headerWidth))))
+      const minimumWidth = hasComplexValue ? 300 : MIN
+      hints[column.name] = Math.min(VALUE_MAX, Math.max(minimumWidth, Math.ceil(Math.max(summaryWidth, headerWidth))))
     }
     return hints
     // Deps intentionally stable: file, active type, column identity/count,
@@ -423,6 +426,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               <span className={sev ? `dc-cell-diag dc-cell-diag-${sev}` : undefined} title={title}>
                 <EditableCell
                   value={f.value}
+                  label={name}
                   editable={cellEditable}
                   refTargetType={cellRefTargetType(f)}
                   enumType={cellEnumType(f)}
@@ -480,6 +484,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     count: rows.length,
     getScrollElement: () => tableScrollRef.current,
     estimateSize: () => ROW_H,
+    getItemKey: index => rows[index]?.id ?? index,
     overscan: 12,
   })
   const virtualRows = rowVirtualizer.getVirtualItems()
@@ -649,6 +654,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             const selectedRow = rows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
             const selectedCell = selectedRow ? fieldCell(selectedRow.original, field) : undefined
             const editable = !!selectedCell && canEdit && !cellReadOnly(selectedCell)
+            const directlyEditable = editable && !isComplexValue(selectedCell?.value)
             const modified = e.ctrlKey || e.metaKey || e.altKey
             const lower = e.key.toLowerCase()
 
@@ -675,7 +681,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               }
               return
             }
-            if ((e.ctrlKey || e.metaKey) && lower === 'v' && editable && onParseCellText && onWriteField) {
+            if ((e.ctrlKey || e.metaKey) && lower === 'v' && directlyEditable && onParseCellText && onWriteField) {
               e.preventDefault()
               try {
                 const text = await navigator.clipboard.readText()
@@ -688,7 +694,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               return
             }
 
-            const intent = editable && selectedCell
+            const intent = directlyEditable && selectedCell
               ? selectionEditIntentForKey(e.key, modified, selectedCell.value.kind)
               : null
             if (!intent) return
@@ -804,6 +810,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 return (
                   <tr
                     key={row.id}
+                    data-index={vr.index}
+                    ref={rowVirtualizer.measureElement}
                     className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
                     onContextMenu={e => {
                       e.preventDefault()
@@ -822,6 +830,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       )
                       const classes = [
                         pillColumns.has(cell.column.id) ? 'pill-cell' : '',
+                        fieldPath && isComplexValue(fieldCell(row.original, cell.column.id)?.value) ? 'complex-cell' : '',
                         selected ? 'selected-cell' : '',
                       ].filter(Boolean).join(' ')
                       return (
@@ -983,6 +992,10 @@ function inferredCellType(cell: RecordRow['fields'][number] | undefined): string
   return value.kind
 }
 
+function isComplexValue(value: FieldValue | undefined): boolean {
+  return value?.kind === 'object' || value?.kind === 'array' || value?.kind === 'dict'
+}
+
 
 
 /** Stable identity for the column set: file path + column names joined.
@@ -1093,9 +1106,10 @@ function CellSyntaxEditor({
 }
 
 function EditableCell({
-  value, editable, refTargetType, enumType, nullable, onCommit, onEditingFinished,
+  value, label, editable, refTargetType, enumType, nullable, onCommit, onEditingFinished,
 }: {
   value: FieldValue
+  label?: string
   editable: boolean
   refTargetType?: string
   enumType?: string
@@ -1179,7 +1193,7 @@ function EditableCell({
       } : undefined}
       title={canEdit ? '双击编辑' : undefined}
     >
-      <DataCardCompact value={value} />
+      <DataCardCompact value={value} label={label} />
     </div>
   )
 }

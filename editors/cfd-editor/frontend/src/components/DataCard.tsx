@@ -188,8 +188,105 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value }: { value: FieldValue }) {
-  return <ValueChip value={value} />
+export function DataCardCompact({ value, label }: { value: FieldValue; label?: string }) {
+  return isComplexValue(value)
+    ? <MarkdownValueTree value={value} label={value.kind === 'array' ? undefined : label} depth={0} />
+    : <ValueChip value={value} />
+}
+
+const TREE_MAX_DEPTH = 3
+const TREE_MAX_ITEMS = 4
+
+function MarkdownValueTree({ value, label, depth }: {
+  value: FieldValue & { kind: 'object' | 'array' | 'dict' }
+  label?: string
+  depth: number
+}) {
+  const entries = treeEntries(value)
+  const visible = entries.slice(0, TREE_MAX_ITEMS)
+  const hiddenCount = entries.length - visible.length
+  const depthClass = `markdown-tree-depth-${Math.min(depth, 2)}`
+
+  return (
+    <div className={`markdown-value-tree ${depthClass}${label ? ' has-branch-label' : ''}`}>
+      {label && <div className="markdown-tree-branch-label">{label}</div>}
+      {depth >= TREE_MAX_DEPTH ? (
+        <div className="markdown-tree-more">…</div>
+      ) : entries.length === 0 ? (
+        <div className="markdown-tree-empty">—</div>
+      ) : (
+        <div className="markdown-tree-items">
+          {visible.map((entry, index) => (
+            <MarkdownTreeItem key={`${entry.marker}:${index}`} entry={entry} depth={depth} />
+          ))}
+          {hiddenCount > 0 && <div className="markdown-tree-more">… +{hiddenCount}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface MarkdownTreeEntry {
+  marker: string
+  markerKind: 'plain' | 'index' | 'key'
+  branchLabel?: string
+  value: FieldValue
+}
+
+function MarkdownTreeItem({ entry, depth }: { entry: MarkdownTreeEntry; depth: number }) {
+  const complex = isComplexValue(entry.value) ? entry.value : null
+  return (
+    <div className={`markdown-tree-item${complex ? ' complex-item' : ''}`}>
+      <span className={`markdown-tree-marker marker-${entry.markerKind}`}>{entry.marker}</span>
+      <div className="markdown-tree-content">
+        {complex ? (
+          <MarkdownValueTree value={complex} label={entry.branchLabel} depth={depth + 1} />
+        ) : (
+          <span className="markdown-tree-leaf"><ValueChip value={entry.value} /></span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function treeEntries(value: FieldValue & { kind: 'object' | 'array' | 'dict' }): MarkdownTreeEntry[] {
+  if (value.kind === 'object') {
+    return Object.entries(value.value.fields)
+      .filter((entry): entry is [string, FieldValue] => entry[1] !== undefined)
+      .map(([fieldName, fieldValue]) => ({
+        marker: '',
+        markerKind: 'plain',
+        branchLabel: isComplexValue(fieldValue) ? fieldName : undefined,
+        value: fieldValue,
+      }))
+  }
+  if (value.kind === 'array') {
+    return value.value.map((item, index) => {
+      const complex = isComplexValue(item)
+      return {
+        marker: complex ? `${index + 1}.` : '',
+        markerKind: complex ? 'index' : 'plain',
+        value: item,
+      }
+    })
+  }
+  return value.value.map(([key, item]) => ({
+    marker: `${dictTreeKey(key)} →`,
+    markerKind: 'key',
+    value: item,
+  }))
+}
+
+function isComplexValue(value: FieldValue): value is FieldValue & { kind: 'object' | 'array' | 'dict' } {
+  return value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
+}
+
+function dictTreeKey(key: DictKey): string {
+  switch (key.kind) {
+    case 'string': return key.value
+    case 'int': return String(key.value)
+    case 'enum': return dictEnumVariantText(key)
+  }
 }
 
 function ValueChip({ value }: { value: FieldValue }) {
