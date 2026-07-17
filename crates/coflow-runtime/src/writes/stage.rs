@@ -363,10 +363,7 @@ fn stage_rename_record_key(
         affected_files.insert(action.display_path().to_string());
     }
     for action in &plan.rewrite_actions {
-        let outcome = action
-            .writer
-            .rewrite_record_references(ctx, &action.request.as_request(schema))?;
-        diagnostics.extend(outcome.diagnostics);
+        diagnostics.extend(action.execute(&session.project.root_dir, schema, &session.model)?);
         affected_files.insert(action.display_path().to_string());
     }
     let old_key = plan.old_coordinate.key.clone();

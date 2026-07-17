@@ -252,6 +252,15 @@ pub(super) fn spread_entries_at_path<'a>(
     block_entries_at_path(schema, value, &value_type, &path[1..])
 }
 
+pub(super) fn spread_entries_in_value_at_path<'a>(
+    schema: &CftSchema,
+    value: &'a AstValue,
+    value_type: &CftValueType,
+    path: &[WriteFieldPathSegment],
+) -> Result<&'a [CfdBlockEntry], DiagnosticSet> {
+    block_entries_at_path(schema, value, value_type, path)
+}
+
 fn block_entries_at_path<'a>(
     schema: &CftSchema,
     value: &'a AstValue,

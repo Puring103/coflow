@@ -1163,6 +1163,117 @@ fn rename_record_rewrites_refs_in_dimension_overlays() {
 }
 
 #[test]
+fn rename_record_rewrites_spread_sources_in_dimension_overlays() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-spread-rename-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_dimension_spread_project(&root);
+    let dimension_file = root.join("data/dimensions/platform/Holder.cfd");
+    let mut session = session(&root);
+
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::RenameRecord {
+            record: PatchRecordSelector {
+                actual_type: "Leaf".to_string(),
+                key: "base".to_string(),
+            },
+            file: None,
+            new_key: "renamed".to_string(),
+        }],
+    });
+
+    assert!(report.write_ok, "report: {report:#?}");
+    let main = std::fs::read_to_string(root.join("data/main.cfd")).expect("read main source");
+    let dimension = std::fs::read_to_string(&dimension_file).expect("read dimension source");
+    assert!(main.contains("...&renamed"), "{main}");
+    assert_eq!(dimension.matches("...&renamed").count(), 2, "{dimension}");
+    assert!(!dimension.contains("...&base"), "{dimension}");
+    assert_incremental_diagnostics_match_fresh(&session, &root);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn dimension_spread_rewrite_failure_compensates_every_source() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-spread-compensate-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_dimension_spread_project(&root);
+    let mut session = session(&root);
+    let main_file = root.join("data/main.cfd");
+    let dimension_file = root.join("data/dimensions/platform/Holder.cfd");
+    let original_main = std::fs::read(&main_file).expect("read main source");
+    std::fs::write(&dimension_file, "this is invalid CFD").expect("corrupt dimension source");
+    let corrupted_dimension = std::fs::read(&dimension_file).expect("read corrupt source");
+
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::RenameRecord {
+            record: PatchRecordSelector {
+                actual_type: "Leaf".to_string(),
+                key: "base".to_string(),
+            },
+            file: None,
+            new_key: "renamed".to_string(),
+        }],
+    });
+
+    assert!(!report.write_ok, "report: {report:#?}");
+    assert_eq!(std::fs::read(&main_file).expect("read restored main"), original_main);
+    assert_eq!(
+        std::fs::read(&dimension_file).expect("read restored dimension"),
+        corrupted_dimension
+    );
+    assert!(session.queries().record_view("Leaf", "base").is_some());
+    assert!(session.queries().record_view("Leaf", "renamed").is_none());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn write_dimension_spread_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data/dimensions/platform")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"
+            type Leaf { value: int; }
+            type Stats { nested: Leaf; }
+
+            @singleton
+            type Holder {
+                @dimension("platform")
+                stats: Stats;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/main.cfd"),
+        "base: Leaf { value: 1 }\nHolder: Holder { stats: { nested: { ...&base } } }\n",
+    )
+    .expect("write records");
+    std::fs::write(
+        root.join("data/dimensions/platform/Holder.cfd"),
+        "stats: Holder { default: { nested: { value: 1 } }, pc: { nested: { ...&base } }, mobile: { nested: { ...&base } } }\n",
+    )
+    .expect("write dimension values");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/main.cfd
+dimensions:
+  platform:
+    variants: [pc, mobile]
+    out_dir: data/dimensions/platform
+"#,
+    )
+    .expect("write config");
+}
+
+#[test]
 fn dimension_reference_checks_match_full_diagnostics() {
     let root = std::env::temp_dir().join(format!(
         "coflow-data-patch-dimension-ref-check-incremental-{}",
