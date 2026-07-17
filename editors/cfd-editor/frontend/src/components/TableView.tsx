@@ -344,6 +344,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           )
         },
         size: columnWidths?.key ?? columnSizeHints.key ?? 140,
+        sortDescFirst: false,
       }),
       ...allFieldNames.map(name => {
         const declared = columnDeclaredTypes[name]
@@ -361,6 +362,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             </span>
           ),
           size: columnWidths?.[name] ?? columnSizeHints[name] ?? 120,
+          enableSorting: false,
           cell: ({ row }) => {
             const filePath = dataForCellsRef.current.file_path
             const f = fieldCell(row.original, name)
@@ -468,6 +470,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     getFilteredRowModel: getFilteredRowModel(),
     getRowId: row => coordinateId(row.coordinate),
     globalFilterFn,
+    enableSortingRemoval: true,
+    enableMultiSort: false,
     enableColumnResizing: true,
   })
 
@@ -495,7 +499,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     const key = tableCellKey(target.coordinate, columnId)
     let attempts = 0
     const reveal = () => {
-      const cell = tableScrollRef.current?.querySelector<HTMLElement>(
+      const scroller = tableScrollRef.current
+      const cell = scroller?.querySelector<HTMLElement>(
         `[data-table-cell-key="${CSS.escape(key)}"]`,
       )
       if (!cell && attempts < 4) {
@@ -503,7 +508,24 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         requestAnimationFrame(reveal)
         return
       }
-      cell?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      if (!cell || !scroller) return
+      // Vertical: fall back to browser nearest logic.
+      cell.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      if (columnId === 'key') return
+      // Horizontal: ensure the WHOLE column is visible, respecting the sticky
+      // Key column that overlays the left edge. Only scroll if either edge is
+      // clipped; center if the cell is wider than the visible area.
+      const scrollerRect = scroller.getBoundingClientRect()
+      const cellRect = cell.getBoundingClientRect()
+      const keyCol = scroller.querySelector<HTMLElement>('thead .sticky-key-column')
+      const leftOccluded = keyCol ? keyCol.getBoundingClientRect().right : scrollerRect.left
+      const visibleLeft = Math.max(scrollerRect.left, leftOccluded)
+      const visibleRight = scrollerRect.right
+      if (cellRect.right > visibleRight) {
+        scroller.scrollLeft += cellRect.right - visibleRight + 4
+      } else if (cellRect.left < visibleLeft) {
+        scroller.scrollLeft -= visibleLeft - cellRect.left + 4
+      }
     }
     reveal()
   }
@@ -513,6 +535,17 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     tableScrollRef.current?.focus({ preventScroll: true })
     revealTableSelection(selection)
   }, [focusRequest])
+
+  // Any selection change (click, keyboard nav, inspector-driven) should
+  // reveal the selected cell so its full column stays visible under the
+  // sticky Key column.
+  const selectionKeyForReveal = selection
+    ? `${selection.filePath}::${coordinateId(selection.coordinate)}::${selection.kind === 'value' ? JSON.stringify(selection.fieldPath) : '__record__'}`
+    : null
+  useEffect(() => {
+    if (!selection) return
+    revealTableSelection(selection)
+  }, [selectionKeyForReveal])
 
   useEffect(() => {
     if (!firstRecordFocusRequest) return
@@ -703,11 +736,17 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           className="th-sort-btn"
                           onClick={h.column.getToggleSortingHandler()}
                           disabled={!h.column.getCanSort()}
-                          title={h.column.getCanSort() ? '点击排序' : undefined}
+                          title={h.column.getCanSort()
+                            ? sort === 'asc'
+                              ? '当前主键升序；点击切换为降序'
+                              : sort === 'desc'
+                                ? '当前主键降序；点击取消排序'
+                                : '点击按主键升序'
+                            : undefined}
                         >
                           {flexRender(h.column.columnDef.header, h.getContext())}
-                          {sort === 'asc' && <Icon name="chevron-down" size={10} className="th-sort-icon asc" aria-hidden />}
-                          {sort === 'desc' && <Icon name="chevron-right" size={10} className="th-sort-icon desc" aria-hidden />}
+                          {sort === 'asc' && <Icon name="chevron-up" size={11} className="th-sort-icon asc" aria-hidden />}
+                          {sort === 'desc' && <Icon name="chevron-down" size={11} className="th-sort-icon desc" aria-hidden />}
                         </button>
                         {h.column.getCanResize() && (
                           <div

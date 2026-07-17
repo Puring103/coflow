@@ -67,6 +67,15 @@ function visibleFlatItems(
   return out
 }
 
+function countSourceFiles(nodes: FileTreeNode[]): number {
+  let count = 0
+  for (const n of nodes) {
+    if (!n.is_dir && n.in_sources) count++
+    else if (n.is_dir) count += countSourceFiles(n.children)
+  }
+  return count
+}
+
 export function FileTree({ nodes, fileTypes, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed())
@@ -202,27 +211,51 @@ export function FileTree({ nodes, fileTypes, selectedFile, selectedType, onSelec
     return () => window.removeEventListener('mousedown', close)
   }, [contextMenu])
 
+  const sourceCount = countSourceFiles(nodes)
+
   return (
     <div className="file-tree" role="tree" aria-label="项目文件" onKeyDown={onKeyDown} ref={rootRef}>
-      {nodes.map(n => (
-        <TreeNode
-          key={n.path}
-          node={n}
-          fileTypes={fileTypes}
-          selectedFile={selectedFile}
-          selectedType={selectedType}
-          onSelectFile={onSelectFile}
-          depth={0}
-          collapsed={collapsed}
-          onToggle={toggle}
-          onContextMenu={(event, path) => {
-            if (!onOpenSourceFile) return
-            event.preventDefault()
-            contextReturnPath.current = path
-            setContextMenu({ x: event.clientX, y: event.clientY, path })
-          }}
-        />
-      ))}
+      <div className="tree-section">
+        <button
+          type="button"
+          className="tree-heading"
+          onClick={() => toggle('__files__')}
+          aria-expanded={!collapsed.has('__files__')}
+        >
+          <Icon
+            name={collapsed.has('__files__') ? 'chevron-right' : 'chevron-down'}
+            size={11}
+            className="tree-heading-chev"
+            aria-hidden
+          />
+          <Icon name="folder" size={13} className="tree-heading-folder" aria-hidden />
+          <strong>文件</strong>
+          <span className="tree-heading-count">{sourceCount}</span>
+        </button>
+        {!collapsed.has('__files__') && (
+          <div className="tree-content">
+            {nodes.map(n => (
+              <TreeNode
+                key={n.path}
+                node={n}
+                fileTypes={fileTypes}
+                selectedFile={selectedFile}
+                selectedType={selectedType}
+                onSelectFile={onSelectFile}
+                depth={0}
+                collapsed={collapsed}
+                onToggle={toggle}
+                onContextMenu={(event, path) => {
+                  if (!onOpenSourceFile) return
+                  event.preventDefault()
+                  contextReturnPath.current = path
+                  setContextMenu({ x: event.clientX, y: event.clientY, path })
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
       {contextMenu && onOpenSourceFile && (
         <div
           className="context-menu file-tree-context-menu"

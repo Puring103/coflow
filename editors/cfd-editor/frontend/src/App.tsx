@@ -12,6 +12,7 @@ import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
+import type { FieldAnnotation } from './bindings/FieldAnnotation'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
@@ -152,10 +153,59 @@ export default function App() {
   // once the file data lands, the effect below upgrades the route to
   // `preferredView` if that's not what we currently show.
   const [preferredView, setPreferredView] = useState<'table' | 'record' | 'graph'>('table')
+  const [activePane, setActivePane] = useState<'files' | 'search' | 'ai'>(() => {
+    try {
+      const v = localStorage.getItem('cfd-editor-active-pane')
+      return v === 'search' || v === 'ai' ? v : 'files'
+    } catch { return 'files' }
+  })
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    try { localStorage.setItem('cfd-editor-active-pane', activePane) } catch { /* quota */ }
+  }, [activePane])
+  useEffect(() => {
+    if (!settingsOpen) return
+    const onClick = (e: MouseEvent) => {
+      if (!settingsMenuRef.current?.contains(e.target as Node)) setSettingsOpen(false)
+    }
+    window.addEventListener('mousedown', onClick)
+    return () => window.removeEventListener('mousedown', onClick)
+  }, [settingsOpen])
+  const [tabOverflowOpen, setTabOverflowOpen] = useState(false)
+  const [tabsOverflow, setTabsOverflow] = useState(false)
+  const tabScrollRef = useRef<HTMLDivElement>(null)
+  const tabOverflowRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!tabOverflowOpen) return
+    const onClick = (e: MouseEvent) => {
+      if (!tabOverflowRef.current?.contains(e.target as Node)) setTabOverflowOpen(false)
+    }
+    window.addEventListener('mousedown', onClick)
+    return () => window.removeEventListener('mousedown', onClick)
+  }, [tabOverflowOpen])
+  // Scroll the active tab into view when it changes.
+  useEffect(() => {
+    if (!activeWorkspaceTabId) return
+    const el = tabScrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeWorkspaceTabId)}"]`)
+    el?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+  }, [activeWorkspaceTabId])
+  // Track whether tabs actually overflow their container so we only surface the
+  // dropdown when needed. ResizeObserver reacts to sidebar / inspector resizes;
+  // scrollWidth changes when tabs open/close are handled by the workspaceTabs dep.
+  useEffect(() => {
+    const el = tabScrollRef.current
+    if (!el) { setTabsOverflow(false); return }
+    const check = () => setTabsOverflow(el.scrollWidth > el.clientWidth + 1)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    for (const child of Array.from(el.children)) ro.observe(child)
+    return () => ro.disconnect()
+  }, [workspaceTabs])
   const [globalSearch, setGlobalSearch] = useState('')
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
-  const viewTabsRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const [inspectorFocusRequest, setInspectorFocusRequest] = useState(0)
@@ -983,6 +1033,27 @@ export default function App() {
     () => activeFile && project ? project.diagnostics.filter(d => d.file_path === activeFile) : [],
     [activeFile, project?.diagnostics],
   )
+  // Graph view is only meaningful for files with ref-typed fields. Scan cell
+  // annotations once per file so the topbar can hide the 图谱 tab up-front —
+  // otherwise the loaded graph would be empty.
+  const graphSupported = useMemo(() => {
+    if (!activeFileData) return false
+    const hasRef = (a: FieldAnnotation | null | undefined): boolean => {
+      if (!a) return false
+      if (a.ref_target_type) return true
+      if (hasRef(a.item_annotation)) return true
+      for (const child of Object.values(a.children)) {
+        if (hasRef(child)) return true
+      }
+      return false
+    }
+    for (const record of activeFileData.records) {
+      for (const cell of record.fields) {
+        if (hasRef(cell.annotation)) return true
+      }
+    }
+    return false
+  }, [activeFileData])
   // Set of file paths that can be opened via the record/table views. Used by
   // the diagnostics panel to decide whether "跳转" is available for a row —
   // if the diagnostic's file isn't part of the source set, we hide the button
@@ -1068,11 +1139,6 @@ export default function App() {
     const tree = sidebarRef.current?.querySelector<HTMLElement>('.file-tree')
     const target = tree?.querySelector<HTMLElement>('[role="treeitem"][aria-selected="true"]')
       ?? tree?.querySelector<HTMLElement>('[role="treeitem"]')
-    target?.focus({ preventScroll: true })
-  }, [])
-  const focusViewTabs = useCallback(() => {
-    const target = viewTabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
-      ?? viewTabsRef.current?.querySelector<HTMLElement>('[role="tab"]')
     target?.focus({ preventScroll: true })
   }, [])
   const focusGlobalSearch = useCallback(() => {
@@ -1305,7 +1371,6 @@ export default function App() {
       router.replace({ view, file: currentRoute.file, coordinate: firstCoordinate })
     } else {
       router.replace({ view, file: currentRoute.file, typeFilter: activeType } as typeof currentRoute)
-      if (view === 'table') requestAnimationFrame(focusViewTabs)
     }
   }
 
@@ -1339,6 +1404,15 @@ export default function App() {
     }
   }, [currentRoute, preferredView, activeType, activeFileData, router])
 
+  // If the current file doesn't support graph view but a stale route asks for
+  // it, drop back to the table so the empty state isn't shown.
+  useEffect(() => {
+    if (!currentRoute || currentRoute.view !== 'graph') return
+    if (activeFileData?.file_path !== currentRoute.file) return
+    if (graphSupported) return
+    router.replace({ view: 'table', file: currentRoute.file, typeFilter: activeType })
+  }, [currentRoute, activeFileData, graphSupported, activeType, router])
+
   return (
     <ObjectDraftHost lookups={lookups} generationKey={lookupGenerationKey}>
     <div className="app">
@@ -1348,60 +1422,87 @@ export default function App() {
         aria-label="编辑器工具栏"
         onKeyDown={event => onToolbarKeyDown(event, focusFileTree)}
       >
-        <span className="app-title">CFD Editor</span>
-        <button className="btn btn-outlined" onClick={openProject}>
-          <Icon name="open" size={13} />
-          打开项目
-        </button>
-        <button
-          className="btn btn-outlined"
-          onClick={newProject}
-          title="选一个空目录创建新的 Coflow 工程（等价于 coflow init）"
-        >
-          <Icon name="plus" size={13} />
-          新建工程
-        </button>
-        <span className="topbar-divider" />
-        <button
-          className="btn btn-icon"
-          onClick={router.back}
-          disabled={!router.canBack}
-          title="后退 (Alt+←)"
-          aria-label="后退"
-        >
-          <Icon name="arrow-left" size={14} />
-        </button>
-        <button
-          className="btn btn-icon"
-          onClick={router.forward}
-          disabled={!router.canForward}
-          title="前进 (Alt+→)"
-          aria-label="前进"
-        >
-          <Icon name="arrow-right" size={14} />
-        </button>
-        <span className="topbar-spacer" />
-        {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
-          <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
-            {historySnapshot.undo.length > 0 ? `可撤销 ${historySnapshot.undo.length}` : `可重做 ${historySnapshot.redo.length}`}
-          </span>
-        )}
-        <button
-          className="btn btn-icon"
-          onClick={toggleTheme}
-          title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-          aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-        >
-          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
-        </button>
-        <button
-          className="btn btn-icon"
-          onClick={() => setShowHelp(v => !v)}
-          title="帮助 (?)"
-          aria-label="帮助"
-        >
-          <Icon name="help" size={14} />
-        </button>
+        <div className="topbar-left">
+          <span className="app-title">CFD Editor</span>
+          <button className="btn btn-outlined" onClick={openProject}>
+            <Icon name="open" size={13} />
+            <span className="btn-label">打开</span>
+          </button>
+          <button
+            className="btn btn-outlined"
+            onClick={newProject}
+            title="选一个空目录创建新的 Coflow 工程（等价于 coflow init）"
+          >
+            <Icon name="plus" size={13} />
+            <span className="btn-label">新建</span>
+          </button>
+          <span className="topbar-divider" />
+          <button
+            className="btn btn-icon"
+            onClick={router.back}
+            disabled={!router.canBack}
+            title="后退 (Alt+←)"
+            aria-label="后退"
+          >
+            <Icon name="arrow-left" size={14} />
+          </button>
+          <button
+            className="btn btn-icon"
+            onClick={router.forward}
+            disabled={!router.canForward}
+            title="前进 (Alt+→)"
+            aria-label="前进"
+          >
+            <Icon name="arrow-right" size={14} />
+          </button>
+        </div>
+        <div className="topbar-center">
+          {currentRoute && activeFileData ? (
+            <>
+              <div className="document-view-tabs" role="tablist" aria-label="视图">
+                {((['record', 'table', 'graph'] as const).filter(v => v !== 'graph' || graphSupported)).map(v => (
+                  <button
+                    key={v}
+                    className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
+                    role="tab"
+                    aria-selected={currentRoute.view === v}
+                    data-tab-id={v}
+                    onClick={() => switchView(v)}
+                  >
+                    <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
+                    {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
+                  </button>
+                ))}
+              </div>
+              <span className="topbar-divider" />
+              <button
+                className="btn btn-outlined btn-check"
+                onClick={() => runProjectAction('check')}
+                disabled={!project || projectAction !== null}
+                title="检查项目"
+              >
+                <Icon name={projectAction === 'check' ? 'refresh' : 'check'} size={13} className={projectAction === 'check' ? 'icon-spin' : undefined} />
+                <span className="btn-label">检查</span>
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => runProjectAction('build')}
+                disabled={!project || projectAction !== null}
+                title="构建项目"
+              >
+                <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={13} className={projectAction === 'build' ? 'icon-spin' : undefined} />
+                <span className="btn-label">构建</span>
+              </button>
+            </>
+          ) : null}
+        </div>
+        <div className="topbar-right">
+          {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
+            <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
+              {historySnapshot.undo.length > 0 ? `可撤销 ${historySnapshot.undo.length}` : `可重做 ${historySnapshot.redo.length}`}
+            </span>
+          )}
+        </div>
       </div>
 
       {errorMsg && (
@@ -1415,26 +1516,138 @@ export default function App() {
       )}
 
       <div className="main-layout">
-        <div className="sidebar" ref={sidebarRef}>
-          <div className="sidebar-header">
-            <span>文件</span>
+        <nav className="activity-bar" role="toolbar" aria-label="活动栏">
+          <button
+            className={`activity-btn${activePane === 'files' ? ' active' : ''}`}
+            title="文件"
+            aria-label="文件"
+            aria-pressed={activePane === 'files'}
+            onClick={() => { setActivePane('files'); focusFileTree() }}
+          >
+            <Icon name="folder" size={20} />
+          </button>
+          <button
+            className={`activity-btn${activePane === 'search' ? ' active' : ''}`}
+            title="搜索记录 (Ctrl+F)"
+            aria-label="搜索"
+            aria-pressed={activePane === 'search'}
+            onClick={() => { setActivePane('search'); requestAnimationFrame(focusGlobalSearch) }}
+          >
+            <Icon name="search" size={20} />
+          </button>
+          <button
+            className={`activity-btn${activePane === 'ai' ? ' active' : ''}`}
+            title="AI 助手"
+            aria-label="AI 助手"
+            aria-pressed={activePane === 'ai'}
+            onClick={() => setActivePane('ai')}
+          >
+            <Icon name="sparkles" size={20} />
+          </button>
+          <div className="activity-bar-bottom" ref={settingsMenuRef}>
+            <button
+              className="activity-btn"
+              title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
+              aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
+              onClick={toggleTheme}
+            >
+              <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} />
+            </button>
+            <button
+              className={`activity-btn${settingsOpen ? ' active' : ''}`}
+              title="设置"
+              aria-label="设置"
+              aria-haspopup="true"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen(v => !v)}
+            >
+              <Icon name="settings" size={20} />
+            </button>
+            {settingsOpen && (
+              <div className="settings-dropdown" role="menu">
+                <button
+                  className="settings-item"
+                  role="menuitem"
+                  onClick={() => { setShowHelp(true); setSettingsOpen(false) }}
+                >
+                  <Icon name="help" size={14} />
+                  <span>键盘快捷键 / 帮助</span>
+                </button>
+              </div>
+            )}
           </div>
-          {project ? (
-            <FileTree
-              nodes={project.file_tree}
-              fileTypes={navigationFileTypes}
-              selectedFile={activeFile}
-              selectedType={activeType}
-              onSelectFile={openFile}
-              onExitRight={focusFirstRecord}
-              onOpenSourceFile={openSourceFile}
-            />
-          ) : (
-            <div className="sidebar-empty">
-              {api.isTauri ? '未打开项目' : '浏览器预览（Mock）'}
-            </div>
+        </nav>
+        <div className="sidebar" ref={sidebarRef}>
+          {activePane === 'files' && (
+            <>
+              {project ? (
+                <FileTree
+                  nodes={project.file_tree}
+                  fileTypes={navigationFileTypes}
+                  selectedFile={activeFile}
+                  selectedType={activeType}
+                  onSelectFile={openFile}
+                  onExitRight={focusFirstRecord}
+                  onOpenSourceFile={openSourceFile}
+                />
+              ) : (
+                <div className="sidebar-empty">
+                  {api.isTauri ? '未打开项目' : '浏览器预览（Mock）'}
+                </div>
+              )}
+            </>
           )}
-          {api.isTauri && <UpdateControl />}
+          {activePane === 'search' && (
+            <>
+              <div className="sidebar-header"><span>搜索</span></div>
+              <div className="pane-search-wrap">
+                <label className="pane-search">
+                  <Icon name="search" size={13} />
+                  <input
+                    placeholder="按 key / 字段值搜索…"
+                    value={globalSearch}
+                    onChange={e => setGlobalSearch(e.target.value)}
+                    aria-label="跨文件搜索"
+                  />
+                </label>
+                <div className="pane-search-hint">
+                  当前搜索会同时应用到打开的记录视图。在文档内用 Ctrl+F 直接聚焦。
+                </div>
+              </div>
+            </>
+          )}
+          {activePane === 'ai' && (
+            <>
+              <div className="sidebar-header ai-header">
+                <span>
+                  <Icon name="sparkles" size={12} className="ai-header-icon" />
+                  AI 助手
+                </span>
+              </div>
+              <div className="ai-pane">
+                <div className="ai-pane-placeholder">
+                  <Icon name="sparkles" size={22} />
+                  <div className="title">让 AI 帮你编辑配置</div>
+                  <div className="hint">选中记录后描述你想做的修改，或让它检查配置一致性。</div>
+                </div>
+                <div className="ai-pane-suggest">
+                  <button type="button" disabled>为选中的记录补齐缺失字段</button>
+                  <button type="button" disabled>找出所有存在诊断的记录</button>
+                  <button type="button" disabled>解释当前字段的类型定义</button>
+                </div>
+                <div className="ai-pane-input">
+                  <textarea
+                    placeholder="AI 助手尚未接入。当前仅为界面占位。"
+                    disabled
+                  />
+                  <button type="button" className="ai-send" disabled aria-label="发送">
+                    <Icon name="arrow-right" size={13} />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+          {activePane === 'files' && api.isTauri && <UpdateControl />}
         </div>
 
         <div
@@ -1450,120 +1663,133 @@ export default function App() {
           }}
         />
 
+        <div className="editor-column">
         <div className="content-area-wrap">
         <div className="content-area">
           {workspaceTabs.length > 0 && (
             <div className="document-tabs" role="tablist" aria-label="已打开内容">
-              {workspaceTabs.map(tab => {
-                const fileName = tab.filePath.split('/').pop() ?? tab.filePath
-                const types = project?.file_types[tab.filePath] ?? []
-                const type = types.find(option => option.name === tab.typeName)
-                const label = type
-                  ? `${fileName} / ${type.display_name}`
-                  : fileName
-                return (
-                  <div
-                    key={tab.id}
-                    className={`document-tab${tab.id === activeWorkspaceTabId ? ' active' : ''}`}
-                    role="tab"
-                    aria-selected={tab.id === activeWorkspaceTabId}
-                    tabIndex={tab.id === activeWorkspaceTabId ? 0 : -1}
-                    data-tab-id={tab.id}
-                    onClick={() => openFile(tab.filePath, tab.typeName)}
-                    onKeyDown={event => {
-                      if (event.key === 'Delete') {
-                        event.preventDefault()
-                        closeWorkspaceTab(tab.id)
-                        return
-                      }
-                      onTabListKeyDown(
-                        event,
-                        workspaceTabs.map(item => item.id),
-                        id => {
-                          const target = workspaceTabs.find(item => item.id === id)
-                          if (target) openFile(target.filePath, target.typeName)
-                        },
-                      )
-                    }}
-                    title={type && type.display_name !== type.name
-                      ? `${tab.filePath} / ${type.display_name} (${type.name})`
-                      : `${tab.filePath}${tab.typeName ? ` / ${tab.typeName}` : ''}`}
-                  >
-                    <Icon name="file" size={12} className="document-tab-icon" aria-hidden />
-                    <span className="document-tab-label">{label}</span>
-                    {readOnly && tab.id === activeWorkspaceTabId && <Icon name="lock" size={10} className="document-tab-lock" aria-hidden />}
-                    <button
-                      type="button"
-                      className="document-tab-close"
-                      onClick={event => {
-                        event.stopPropagation()
-                        closeWorkspaceTab(tab.id)
+              <div
+                className="tab-scroll"
+                ref={tabScrollRef}
+                onWheel={event => {
+                  if (event.deltaX !== 0) return
+                  const el = tabScrollRef.current
+                  if (!el || Math.abs(event.deltaY) < 1) return
+                  event.preventDefault()
+                  el.scrollLeft += event.deltaY
+                }}
+              >
+                {workspaceTabs.map(tab => {
+                  const fileName = tab.filePath.split('/').pop() ?? tab.filePath
+                  const types = project?.file_types[tab.filePath] ?? []
+                  const type = types.find(option => option.name === tab.typeName)
+                  const label = type
+                    ? `${fileName} / ${type.display_name}`
+                    : fileName
+                  return (
+                    <div
+                      key={tab.id}
+                      className={`document-tab${tab.id === activeWorkspaceTabId ? ' active' : ''}`}
+                      role="tab"
+                      aria-selected={tab.id === activeWorkspaceTabId}
+                      tabIndex={tab.id === activeWorkspaceTabId ? 0 : -1}
+                      data-tab-id={tab.id}
+                      onClick={() => openFile(tab.filePath, tab.typeName)}
+                      onKeyDown={event => {
+                        if (event.key === 'Delete') {
+                          event.preventDefault()
+                          closeWorkspaceTab(tab.id)
+                          return
+                        }
+                        onTabListKeyDown(
+                          event,
+                          workspaceTabs.map(item => item.id),
+                          id => {
+                            const target = workspaceTabs.find(item => item.id === id)
+                            if (target) openFile(target.filePath, target.typeName)
+                          },
+                        )
                       }}
-                      aria-label={`关闭 ${label}`}
-                      title="关闭标签"
+                      title={type && type.display_name !== type.name
+                        ? `${tab.filePath} / ${type.display_name} (${type.name})`
+                        : `${tab.filePath}${tab.typeName ? ` / ${tab.typeName}` : ''}`}
                     >
-                      <Icon name="close" size={11} aria-hidden />
-                    </button>
-                  </div>
-                )
-              })}
+                      <Icon name="file" size={12} className="document-tab-icon" aria-hidden />
+                      <span className="document-tab-label">{label}</span>
+                      {readOnly && tab.id === activeWorkspaceTabId && <Icon name="lock" size={10} className="document-tab-lock" aria-hidden />}
+                      <button
+                        type="button"
+                        className="document-tab-close"
+                        onClick={event => {
+                          event.stopPropagation()
+                          closeWorkspaceTab(tab.id)
+                        }}
+                        aria-label={`关闭 ${label}`}
+                        title="关闭标签"
+                      >
+                        <Icon name="close" size={11} aria-hidden />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+              {tabsOverflow && (
+                <div className="tab-overflow" ref={tabOverflowRef}>
+                  <button
+                    type="button"
+                    className="tab-overflow-btn"
+                    onClick={() => setTabOverflowOpen(v => !v)}
+                    aria-label="所有已打开标签"
+                    title="所有已打开标签"
+                    aria-expanded={tabOverflowOpen}
+                  >
+                    <Icon name="chevron-down" size={13} />
+                  </button>
+                  {tabOverflowOpen && (
+                    <div className="tab-overflow-menu" role="menu">
+                      {workspaceTabs.map(tab => {
+                        const fileName = tab.filePath.split('/').pop() ?? tab.filePath
+                        const types = project?.file_types[tab.filePath] ?? []
+                        const type = types.find(option => option.name === tab.typeName)
+                        const label = type
+                          ? `${fileName} / ${type.display_name}`
+                          : fileName
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            role="menuitem"
+                            className={`tab-overflow-item${tab.id === activeWorkspaceTabId ? ' active' : ''}`}
+                            onClick={() => {
+                              openFile(tab.filePath, tab.typeName)
+                              setTabOverflowOpen(false)
+                              requestAnimationFrame(() => {
+                                const el = tabScrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(tab.id)}"]`)
+                                el?.scrollIntoView({ inline: 'center', block: 'nearest' })
+                              })
+                            }}
+                          >
+                            <Icon name="file" size={12} aria-hidden />
+                            <span className="name">{label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {currentRoute && activeFileData ? (
             <>
-              <div className="document-toolbar">
-                <div className="document-view-tabs" role="tablist" aria-label="视图" ref={viewTabsRef}>
-                  {(['record', 'table', 'graph'] as const).map(v => (
-                    <button
-                      key={v}
-                      className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
-                      role="tab"
-                      aria-selected={currentRoute.view === v}
-                      tabIndex={currentRoute.view === v ? 0 : -1}
-                      data-tab-id={v}
-                      onClick={() => switchView(v)}
-                      onKeyDown={e => onTabListKeyDown(
-                        e,
-                        ['record', 'table', 'graph'],
-                        v => switchView(v as 'table' | 'record' | 'graph'),
-                        {
-                          onLeftBoundary: focusFileTree,
-                          onUp: focusFileTree,
-                          onDown: focusGlobalSearch,
-                        },
-                      )}
-                    >
-                      <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
-                      {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
-                    </button>
-                  ))}
-                </div>
-                <span className="document-toolbar-spacer" />
-                {readOnly && (
+              {readOnly && (
+                <div className="document-toolbar readonly-only">
                   <span className="document-readonly" title="该来源未提供可写能力">
                     <Icon name="lock" size={11} aria-hidden />
                     只读
                   </span>
-                )}
-                <button
-                  className="btn btn-icon"
-                  onClick={() => runProjectAction('check')}
-                  disabled={!project || projectAction !== null}
-                  title="检查项目"
-                  aria-label="检查项目"
-                >
-                  <Icon name={projectAction === 'check' ? 'refresh' : 'check'} size={14} className={projectAction === 'check' ? 'icon-spin' : undefined} />
-                </button>
-                <button
-                  className="btn btn-icon"
-                  onClick={() => runProjectAction('build')}
-                  disabled={!project || projectAction !== null}
-                  title="构建项目"
-                  aria-label="构建项目"
-                >
-                  <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={14} className={projectAction === 'build' ? 'icon-spin' : undefined} />
-                </button>
-              </div>
+                </div>
+              )}
 
               {/* Record search bar — shared across all three views */}
               <div className="global-search-bar">
@@ -1574,10 +1800,7 @@ export default function App() {
                   value={globalSearch}
                   onChange={e => setGlobalSearch(e.target.value)}
                   onKeyDown={e => {
-                    if (e.key === 'ArrowUp') {
-                      e.preventDefault()
-                      focusViewTabs()
-                    } else if (e.key === 'ArrowDown') {
+                    if (e.key === 'ArrowDown') {
                       e.preventDefault()
                       focusFirstRecord()
                     } else if (e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0) {
@@ -1747,24 +1970,24 @@ export default function App() {
           onExitKeyboardNavigation={inspectorOnExitKeyboardNavigation}
         />
         </div>
+        {project && (
+          <DiagnosticsPanel
+            diagnostics={project.diagnostics}
+            focus={diagFocus}
+            onFocusConsumed={() => setDiagFocus(null)}
+            isJumpable={(file) => sourceFileSet.has(file)}
+            onJumpToRecord={(file, key, actualType) => {
+              setHighlightField(RECORD_HIGHLIGHT_SENTINEL)
+              openRecordByKey(file, key, actualType)
+            }}
+            onJumpToField={(file, key, actualType, fieldPath) => {
+              setHighlightField(fieldPath)
+              openRecordByKey(file, key, actualType)
+            }}
+          />
+        )}
+        </div>
       </div>
-
-      {project && (
-        <DiagnosticsPanel
-          diagnostics={project.diagnostics}
-          focus={diagFocus}
-          onFocusConsumed={() => setDiagFocus(null)}
-          isJumpable={(file) => sourceFileSet.has(file)}
-          onJumpToRecord={(file, key, actualType) => {
-            setHighlightField(RECORD_HIGHLIGHT_SENTINEL)
-            openRecordByKey(file, key, actualType)
-          }}
-          onJumpToField={(file, key, actualType, fieldPath) => {
-            setHighlightField(fieldPath)
-            openRecordByKey(file, key, actualType)
-          }}
-        />
-      )}
 
       {projectActionNotice && (
         <div
@@ -1932,8 +2155,11 @@ function onToolbarKeyDown(event: React.KeyboardEvent, onExitDown: () => void) {
     && event.key !== 'Home'
     && event.key !== 'End'
   ) return
+  // The center view switch (记录/表格/图谱) is intentionally excluded from the
+  // toolbar's arrow-key roving nav — it's a mouse/click affordance, not part of
+  // the left-to-right keyboard chain.
   const buttons = Array.from(
-    event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+    event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled):not(.tab-view)'),
   )
   const index = buttons.indexOf(event.target)
   if (index < 0) return

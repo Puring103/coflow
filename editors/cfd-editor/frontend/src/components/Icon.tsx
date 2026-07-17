@@ -3,11 +3,12 @@ interface IconProps {
     | 'folder' | 'file' | 'file-cfd'
     | 'arrow-left' | 'arrow-right'
     | 'plus' | 'close' | 'search' | 'help'
-    | 'chevron-right' | 'chevron-down'
+    | 'chevron-right' | 'chevron-down' | 'chevron-up'
     | 'error' | 'warning' | 'info' | 'check'
     | 'jump' | 'open' | 'dot' | 'edit'
     | 'table' | 'record' | 'graph' | 'filter' | 'sun' | 'moon' | 'lock'
     | 'download' | 'refresh' | 'build'
+    | 'sparkles' | 'settings'
   size?: number
   className?: string
 }
@@ -24,6 +25,7 @@ const PATHS: Record<IconProps['name'], string> = {
   'help':          'M9.5 9a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 4M12 18h.01',
   'chevron-right': 'M9 6l6 6-6 6',
   'chevron-down':  'M6 9l6 6 6-6',
+  'chevron-up':    'M6 15l6-6 6 6',
   'error':         'M12 9v4M12 17h.01M3 12a9 9 0 1018 0 9 9 0 00-18 0z',
   'warning':       'M12 9v4M12 17h.01M10.3 3.86l-8.4 14.5A2 2 0 003.6 21.4h16.8a2 2 0 001.7-3.04l-8.4-14.5a2 2 0 00-3.4 0z',
   'info':          'M12 16v-4M12 8h.01M3 12a9 9 0 1018 0 9 9 0 00-18 0z',
@@ -42,6 +44,8 @@ const PATHS: Record<IconProps['name'], string> = {
   'download':      'M12 3v12M7 10l5 5 5-5M5 21h14',
   'refresh':       'M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 006.7 6.7L4 11M5.5 15A7 7 0 0017.3 17.3L20 13',
   'build':         'M14.7 6.3a4 4 0 01-5 5L4 17l3 3 5.7-5.7a4 4 0 005-5l-2.4 2.4-3-3L14.7 6.3z',
+  'sparkles':      'M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3zM19 14l.75 2.25L22 17l-2.25.75L19 20l-.75-2.25L16 17l2.25-.75L19 14z',
+  'settings':      'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z',
 }
 
 export function Icon({ name, size = 14, className }: IconProps) {
