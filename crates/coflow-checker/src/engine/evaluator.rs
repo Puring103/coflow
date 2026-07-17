@@ -84,6 +84,14 @@ impl<'model> CheckEvaluator<'model> {
         self.deps.note_read_from(target);
     }
 
+    fn note_value_read(&mut self, value: &LocatedEvalValue<'model>) {
+        if let EvalValue::Record(record) = &value.value {
+            if let Some(id) = record.top_record_id() {
+                self.note_read_from(id);
+            }
+        }
+    }
+
     pub(super) fn eval_ops<T>(&mut self, result: OpsResult<T>) -> EvalResult<T> {
         result.map_err(|err| {
             let (code, location, message) = err.into_parts();
@@ -210,7 +218,9 @@ impl<'model> CheckEvaluator<'model> {
     pub(super) fn eval_name(&mut self, name: &str) -> EvalResult<LocatedEvalValue<'model>> {
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.get(name) {
-                return Ok(value.clone());
+                let value = value.clone();
+                self.note_value_read(&value);
+                return Ok(value);
             }
         }
         let current_field = access::current_field(
@@ -221,14 +231,10 @@ impl<'model> CheckEvaluator<'model> {
             &mut self.budget,
         );
         if let Some(mut value) = self.eval_ops(current_field)? {
-            if let EvalValue::Record(record) = &value.value {
-                if let Some(id) = record.top_record_id() {
-                    self.note_read_from(id);
-                }
-            }
             if let EvalValue::Record(record) = self.current.clone() {
                 self.apply_dimension_variant(&record, name, &mut value)?;
             }
+            self.note_value_read(&value);
             return Ok(value);
         }
         if let Some(value) = self.schema.resolve_const(name) {
@@ -257,14 +263,10 @@ impl<'model> CheckEvaluator<'model> {
         };
         let field = access::field_value(self.schema, self.model, target, name, &mut self.budget);
         let mut result = self.eval_ops(field)?;
-        if let EvalValue::Record(record) = &result.value {
-            if let Some(id) = record.top_record_id() {
-                self.note_read_from(id);
-            }
-        }
         if let Some(record) = target_record {
             self.apply_dimension_variant(&record, name, &mut result)?;
         }
+        self.note_value_read(&result);
         Ok(result)
     }
 

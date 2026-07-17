@@ -34,6 +34,7 @@ pub(crate) fn build_spread_indexes(
             draft,
             CfdRecordId::from_index(index),
             &CfdPath::root(),
+            None,
             drafts,
             record_by_domain_key,
             schema,
@@ -43,10 +44,33 @@ pub(crate) fn build_spread_indexes(
     out
 }
 
+pub(crate) fn extend_dimension_spread_indexes(
+    out: &mut SpreadIndexes,
+    value: &ValueDraft,
+    host: CfdRecordId,
+    path: &CfdPath,
+    dimension: &DimensionRefCoordinate,
+    drafts: &[RecordDraft],
+    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+    schema: BuildSchema<'_>,
+) {
+    collect_nested_spread_edges(
+        value,
+        host,
+        path,
+        Some(dimension),
+        drafts,
+        record_by_domain_key,
+        schema,
+        out,
+    );
+}
+
 fn collect_spread_edges(
     draft: &RecordDraft,
     host: CfdRecordId,
     path: &CfdPath,
+    dimension: Option<&DimensionRefCoordinate>,
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     schema: BuildSchema<'_>,
@@ -92,7 +116,10 @@ fn collect_spread_edges(
         else {
             continue;
         };
-        let site = SpreadSite::new(host, path.clone());
+        let site = dimension.map_or_else(
+            || SpreadSite::new(host, path.clone()),
+            |dimension| SpreadSite::in_dimension(host, path.clone(), dimension.clone()),
+        );
         let id = SpreadEdgeId::new(out.edges.len());
         out.edges.push(SpreadEdge {
             id,
@@ -116,6 +143,7 @@ fn collect_spread_edges(
             value,
             host,
             &path.clone().field(field.as_str()),
+            dimension,
             drafts,
             record_by_domain_key,
             schema,
@@ -128,6 +156,7 @@ fn collect_nested_spread_edges(
     value: &ValueDraft,
     host: CfdRecordId,
     path: &CfdPath,
+    dimension: Option<&DimensionRefCoordinate>,
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     schema: BuildSchema<'_>,
@@ -135,7 +164,16 @@ fn collect_nested_spread_edges(
 ) {
     match value {
         ValueDraft::Object(draft) => {
-            collect_spread_edges(draft, host, path, drafts, record_by_domain_key, schema, out);
+            collect_spread_edges(
+                draft,
+                host,
+                path,
+                dimension,
+                drafts,
+                record_by_domain_key,
+                schema,
+                out,
+            );
         }
         ValueDraft::Array(items) => {
             for (index, item) in items.iter().enumerate() {
@@ -143,6 +181,7 @@ fn collect_nested_spread_edges(
                     item,
                     host,
                     &path.clone().index(index),
+                    dimension,
                     drafts,
                     record_by_domain_key,
                     schema,
@@ -156,6 +195,7 @@ fn collect_nested_spread_edges(
                     item,
                     host,
                     &path.clone().dict_key_value(key),
+                    dimension,
                     drafts,
                     record_by_domain_key,
                     schema,
@@ -169,6 +209,7 @@ fn collect_nested_spread_edges(
                     item,
                     host,
                     path,
+                    dimension,
                     drafts,
                     record_by_domain_key,
                     schema,
@@ -180,6 +221,7 @@ fn collect_nested_spread_edges(
                     item,
                     host,
                     &path.clone().dict_key_value(key),
+                    dimension,
                     drafts,
                     record_by_domain_key,
                     schema,
@@ -271,10 +313,19 @@ struct RefEdgeBuildContext<'a, 'schema> {
 }
 
 impl RefEdgeBuildContext<'_, '_> {
-    fn is_spread_inherited_path(&self, host: CfdRecordId, path: &CfdPath) -> bool {
+    fn is_spread_inherited_path(
+        &self,
+        host: CfdRecordId,
+        path: &CfdPath,
+        dimension: Option<&DimensionRefCoordinate>,
+    ) -> bool {
         self.spread_edges_by_host
             .get(&host)
-            .is_some_and(|edges| edges.iter().any(|edge| edge.covers_path(path)))
+            .is_some_and(|edges| {
+                edges.iter().any(|edge| {
+                    edge.site.dimension.as_ref() == dimension && edge.covers_path(path)
+                })
+            })
     }
 }
 
@@ -287,7 +338,7 @@ fn collect_ref_edges(
     context: &RefEdgeBuildContext<'_, '_>,
     out: &mut RefIndexes,
 ) {
-    if dimension.is_none() && context.is_spread_inherited_path(host, path) {
+    if context.is_spread_inherited_path(host, path, dimension) {
         return;
     }
     match (value, ty.non_nullable()) {

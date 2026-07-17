@@ -27,8 +27,9 @@ pub(crate) use runner::CheckRunner;
 pub(crate) fn execute(
     schema: &CftSchema,
     model: &CfdDataModel,
-    request: CheckRequest<'_>,
+    mut request: CheckRequest<'_>,
 ) -> CheckOutput {
+    request.rounds = deduplicate_preserving_order(request.rounds);
     let collect_dependencies = request.dependency_collection == DependencyCollection::Reads;
     let all_targets = || model.records().map(|(id, _)| id).collect::<Vec<_>>();
     let (default_targets, dimension_targets, previous, replaced) = match request.targets {
@@ -43,7 +44,7 @@ pub(crate) fn execute(
             (targets, dimensions, None, BTreeSet::new())
         }
         CheckTargets::Records(targets) => {
-            let targets = targets.to_vec();
+            let targets = deduplicate_preserving_order(targets.to_vec());
             let dimensions = request
                 .rounds
                 .iter()
@@ -53,8 +54,9 @@ pub(crate) fn execute(
             (targets, dimensions, None, BTreeSet::new())
         }
         CheckTargets::Incremental { previous, changed } => {
+            let changed = expand_materialization_changes(model, changed);
             let selection = previous
-                .affected_roots(changed, &request.rounds)
+                .affected_roots(&changed, &request.rounds)
                 .and_then(|roots| {
                     let mut default_targets = Vec::new();
                     let mut dimension_targets = request
@@ -212,4 +214,29 @@ pub(crate) fn execute(
             dependency_collection: request.dependency_collection,
         },
     }
+}
+
+fn deduplicate_preserving_order<T: Clone + Ord>(values: Vec<T>) -> Vec<T> {
+    let mut seen = BTreeSet::new();
+    values
+        .into_iter()
+        .filter(|value| seen.insert(value.clone()))
+        .collect()
+}
+
+fn expand_materialization_changes(
+    model: &CfdDataModel,
+    changed: &BTreeSet<coflow_data_model::RecordCoordinate>,
+) -> BTreeSet<coflow_data_model::RecordCoordinate> {
+    let source_ids = changed.iter().filter_map(|coordinate| {
+        model.record_by_type_key(&coordinate.actual_type, &coordinate.key)
+    });
+    let mut expanded = changed.clone();
+    expanded.extend(
+        model
+            .materialization_dependents(source_ids)
+            .into_iter()
+            .filter_map(|id| model.record(id).map(coflow_data_model::CfdRecord::coordinate)),
+    );
+    expanded
 }

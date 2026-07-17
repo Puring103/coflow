@@ -146,6 +146,127 @@ fn empty_targets_and_empty_incremental_changes_perform_no_work() {
 }
 
 #[test]
+fn duplicate_targets_are_normalized_before_snapshot_capture() {
+    let schema = compile_schema("type Item { value: int; check { value > 0; } }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(-1_i64))]);
+    let model = builder.build().expect("model builds");
+    let item = model.records().next().expect("item").0;
+
+    let output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::records(&[item, item])
+            .with_dependency_collection(DependencyCollection::Reads),
+    );
+
+    assert_eq!(output.statistics.requested_roots, 1);
+    assert_eq!(output.statistics.executed_rounds, 1);
+    assert_eq!(output.diagnostics.len(), 1);
+    let rendered = output
+        .snapshot
+        .expect("stable snapshot")
+        .render_diagnostics(&model)
+        .expect("render snapshot");
+    assert_eq!(rendered.len(), 1);
+}
+
+#[test]
+fn incremental_checks_follow_quantified_record_refs() {
+    let schema = compile_schema(
+        r#"
+            type Item { value: int; }
+            type Group {
+                items: [&Item];
+                check { all item in items { item.value > 0; } }
+            }
+        "#,
+    );
+    let build_generation = |value| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record("item", "Item", [("value", LoadedValueDraft::from(value))]);
+        builder.add_record(
+            "group",
+            "Group",
+            [(
+                "items",
+                LoadedValueDraft::Array(vec![LoadedValueDraft::record_ref("item")]),
+            )],
+        );
+        builder.build().expect("model builds")
+    };
+
+    assert_incremental_matches_full(&schema, build_generation, "item");
+}
+
+#[test]
+fn incremental_checks_follow_materialized_spread_sources() {
+    let schema = compile_schema("type Item { value: int; check { value > 0; } }");
+    let build_generation = |value| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record("base", "Item", [("value", LoadedValueDraft::from(value))]);
+        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
+            "middle",
+            "Item",
+            [LoadedValueDraft::record_ref("base")],
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
+        ));
+        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
+            "copy",
+            "Item",
+            [LoadedValueDraft::record_ref("middle")],
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
+        ));
+        builder.build().expect("model builds")
+    };
+
+    assert_incremental_matches_full(&schema, build_generation, "base");
+}
+
+fn assert_incremental_matches_full(
+    schema: &CftSchema,
+    build_generation: impl Fn(i64) -> CfdDataModel,
+    changed_key: &str,
+) {
+    let previous_model = build_generation(1);
+    let previous = coflow_checker::run_checks(
+        schema,
+        &previous_model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("full snapshot");
+    let changed = previous_model
+        .records()
+        .find(|(_, record)| record.key() == changed_key)
+        .expect("changed record")
+        .1
+        .coordinate();
+
+    let current_model = build_generation(-1);
+    let incremental = coflow_checker::run_checks(
+        schema,
+        &current_model,
+        CheckRequest::incremental(&previous, &BTreeSet::from([changed])),
+    )
+    .snapshot
+    .expect("incremental snapshot")
+    .render_diagnostics(&current_model)
+    .expect("render incremental");
+    let full = coflow_checker::run_checks(
+        schema,
+        &current_model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("fresh full snapshot")
+    .render_diagnostics(&current_model)
+    .expect("render full");
+
+    assert_eq!(incremental, full);
+}
+
+#[test]
 fn incremental_snapshot_executes_only_affected_roots_and_matches_fresh_full_output() {
     let schema = compile_schema(
         r#"

@@ -8,10 +8,13 @@ pub(crate) use context::BuildSchema;
 pub(crate) use draft::{RecordDraft, SpreadFieldSource, ValueDraft};
 
 use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdPath};
-use crate::indexes::{self, build_ref_indexes, build_spread_indexes};
+use crate::indexes::{
+    self, build_ref_indexes, build_spread_indexes, extend_dimension_spread_indexes,
+};
 use crate::ingest::{DimensionValueDraft, LoadedRecordDraft, LoadedValueDraft};
 use crate::model::{
     CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdObject, CfdRecord, CfdRecordId,
+    DimensionRefCoordinate,
 };
 use crate::semantics::{
     CfdValueSemanticContext, CfdValueSemanticErrorKind, ValueValidationMode, ValueValidationRequest,
@@ -343,6 +346,26 @@ impl<'a> ModelCompiler<'a> {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
 
+        let mut spread_indexes =
+            build_spread_indexes(&drafts, &indexes.record_by_domain_key, self.schema);
+        for (record_id, input, draft, path) in &resolved_dimension_values {
+            let coordinate = DimensionRefCoordinate {
+                field: input.field.clone(),
+                dimension: input.dimension.clone(),
+                variant: input.variant.clone(),
+            };
+            extend_dimension_spread_indexes(
+                &mut spread_indexes,
+                draft,
+                *record_id,
+                path,
+                &coordinate,
+                &drafts,
+                &indexes.record_by_domain_key,
+                self.schema,
+            );
+        }
+
         let mut dimension_values = Vec::with_capacity(resolved_dimension_values.len());
         {
             let mut resolver = ValueResolver::new(
@@ -383,8 +406,6 @@ impl<'a> ModelCompiler<'a> {
             );
         }
 
-        let spread_indexes =
-            build_spread_indexes(&drafts, &indexes.record_by_domain_key, self.schema);
         let ref_indexes = build_ref_indexes(
             &records,
             &indexes.record_by_domain_key,

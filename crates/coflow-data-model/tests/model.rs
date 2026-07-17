@@ -325,6 +325,70 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
 }
 
 #[test]
+fn dimension_spreads_are_precomputed_with_typed_coordinates() {
+    let schema = compile_schema_with_dimensions(
+        r#"
+            type Stats { value: int; }
+            type Holder {
+                @dimension("platform")
+                stats: Stats;
+            }
+        "#,
+        CftDimensionInputs::try_new([("platform", vec!["pc".to_string()])])
+            .expect("valid dimension fixture"),
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "base",
+        "Stats",
+        [("value", LoadedValueDraft::from(1_i64))],
+    );
+    builder.add_record(
+        "holder",
+        "Holder",
+        [(
+            "stats",
+            LoadedValueDraft::object("Stats", [("value", LoadedValueDraft::from(2_i64))]),
+        )],
+    );
+    builder.add_dimension_value_draft(DimensionValueDraft {
+        source_type: coflow_cft::TypeName::new("Holder").unwrap(),
+        source_key: coflow_cft::RecordKey::new("holder").unwrap(),
+        field: coflow_cft::FieldName::new("stats").unwrap(),
+        dimension: coflow_cft::DimensionName::new("platform").unwrap(),
+        variant: coflow_cft::VariantName::new("pc").unwrap(),
+        value: LoadedValueDraft::object_spread(
+            [LoadedValueDraft::record_ref("base")],
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
+        ),
+        origin: RecordOrigin::None,
+    });
+
+    let model = builder.build().expect("data model should build");
+    let base = model
+        .lookup_assignable(&schema, "Stats", "base")
+        .expect("base");
+    let holder = model
+        .lookup_assignable(&schema, "Holder", "holder")
+        .expect("holder");
+    let edge = model
+        .spread_edges_from_source(base)
+        .find(|edge| edge.host == holder)
+        .expect("dimension spread edge");
+    let coordinate = edge.site.dimension.as_ref().expect("dimension coordinate");
+
+    assert_eq!(edge.path, CfdPath::root().field("stats"));
+    assert_eq!(coordinate.field.as_str(), "stats");
+    assert_eq!(coordinate.dimension.as_str(), "platform");
+    assert_eq!(coordinate.variant.as_str(), "pc");
+    assert_eq!(
+        model.spread_source_at_path(holder, &CfdPath::root().field("stats").field("value")),
+        None,
+        "default provenance must ignore dimension-only spread edges"
+    );
+}
+
+#[test]
 fn dimension_field_lookup_uses_singleton_owner_record() {
     let schema = compile_schema_with_dimensions(
         r#"

@@ -75,12 +75,30 @@ pub struct RefEdge {
 pub struct SpreadSite {
     pub host: CfdRecordId,
     pub path: CfdPath,
+    pub dimension: Option<DimensionRefCoordinate>,
 }
 
 impl SpreadSite {
     #[must_use]
     pub const fn new(host: CfdRecordId, path: CfdPath) -> Self {
-        Self { host, path }
+        Self {
+            host,
+            path,
+            dimension: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn in_dimension(
+        host: CfdRecordId,
+        path: CfdPath,
+        dimension: DimensionRefCoordinate,
+    ) -> Self {
+        Self {
+            host,
+            path,
+            dimension: Some(dimension),
+        }
     }
 }
 

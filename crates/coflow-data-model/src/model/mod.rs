@@ -269,6 +269,25 @@ impl CfdDataModel {
             .filter_map(|id| self.spread_edge(*id))
     }
 
+    /// Returns the transitive spread-materialization closure, including the
+    /// supplied source records themselves.
+    #[must_use]
+    pub fn materialization_dependents(
+        &self,
+        sources: impl IntoIterator<Item = CfdRecordId>,
+    ) -> BTreeSet<CfdRecordId> {
+        let mut visited = sources.into_iter().collect::<BTreeSet<_>>();
+        let mut pending = visited.iter().copied().collect::<Vec<_>>();
+        while let Some(source) = pending.pop() {
+            for edge in self.spread_edges_from_source(source) {
+                if visited.insert(edge.host) {
+                    pending.push(edge.host);
+                }
+            }
+        }
+        visited
+    }
+
     /// Returns the source record whose spread supplied the value at `site`.
     #[must_use]
     pub fn spread_source_at(&self, site: &SpreadSite) -> Option<CfdRecordId> {
@@ -290,7 +309,7 @@ impl CfdDataModel {
     #[must_use]
     pub fn spread_edge_at_path(&self, host: CfdRecordId, path: &CfdPath) -> Option<&SpreadEdge> {
         self.spread_edges_from_host(host)
-            .find(|edge| edge.covers_path(path))
+            .find(|edge| edge.site.dimension.is_none() && edge.covers_path(path))
     }
 
     #[must_use]

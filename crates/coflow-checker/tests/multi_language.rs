@@ -379,6 +379,154 @@ fn overlay_record_refs_resolve_without_storage_records() {
 }
 
 #[test]
+fn incremental_dimension_checks_follow_overlay_ref_target() {
+    let schema = compile_schema(
+        r#"
+            type Item { value: int; }
+            type Offer {
+                @dimension("platform")
+                item: &Item;
+                check { item.value > 0; }
+            }
+        "#,
+    );
+    let build_generation = |pc_value| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "default_item",
+            "Item",
+            [("value", LoadedValueDraft::from(1_i64))],
+        );
+        builder.add_record(
+            "pc_item",
+            "Item",
+            [("value", LoadedValueDraft::from(pc_value))],
+        );
+        builder.add_record(
+            "offer",
+            "Offer",
+            [("item", LoadedValueDraft::record_ref("default_item"))],
+        );
+        add_overlay(
+            &mut builder,
+            "Offer",
+            "offer",
+            "item",
+            "platform",
+            "pc",
+            LoadedValueDraft::record_ref("pc_item"),
+        );
+        builder.build().expect("model builds")
+    };
+
+    assert_incremental_dimension_matches_full(
+        &schema,
+        build_generation,
+        "pc_item",
+        dimension_rounds("platform", ["pc"]),
+    );
+}
+
+#[test]
+fn incremental_dimension_checks_follow_overlay_spread_sources() {
+    let schema = compile_schema(
+        r#"
+            type Stats { value: int; }
+            type Holder {
+                @dimension("platform")
+                stats: Stats;
+                check { stats.value > 0; }
+            }
+        "#,
+    );
+    let build_generation = |source_value| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "base",
+            "Stats",
+            [("value", LoadedValueDraft::from(source_value))],
+        );
+        builder.add_record(
+            "holder",
+            "Holder",
+            [(
+                "stats",
+                LoadedValueDraft::object("Stats", [("value", LoadedValueDraft::from(1_i64))]),
+            )],
+        );
+        add_overlay(
+            &mut builder,
+            "Holder",
+            "holder",
+            "stats",
+            "platform",
+            "pc",
+            LoadedValueDraft::object_spread(
+                [LoadedValueDraft::record_ref("base")],
+                std::iter::empty::<(&str, LoadedValueDraft)>(),
+            ),
+        );
+        builder.build().expect("model builds")
+    };
+
+    assert_incremental_dimension_matches_full(
+        &schema,
+        build_generation,
+        "base",
+        dimension_rounds("platform", ["pc"]),
+    );
+}
+
+fn assert_incremental_dimension_matches_full(
+    schema: &CftSchema,
+    build_generation: impl Fn(i64) -> CfdDataModel,
+    changed_key: &str,
+    rounds: Vec<DimensionCheckRound>,
+) {
+    let previous_model = build_generation(1);
+    let previous = coflow_checker::run_checks(
+        schema,
+        &previous_model,
+        CheckRequest::all()
+            .with_rounds(rounds.iter().cloned())
+            .with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("full snapshot");
+    let changed = previous_model
+        .records()
+        .find(|(_, record)| record.key() == changed_key)
+        .expect("changed record")
+        .1
+        .coordinate();
+
+    let current_model = build_generation(-1);
+    let incremental = coflow_checker::run_checks(
+        schema,
+        &current_model,
+        CheckRequest::incremental(&previous, &std::collections::BTreeSet::from([changed]))
+            .with_rounds(rounds.iter().cloned()),
+    )
+    .snapshot
+    .expect("incremental snapshot")
+    .render_diagnostics(&current_model)
+    .expect("render incremental");
+    let full = coflow_checker::run_checks(
+        schema,
+        &current_model,
+        CheckRequest::all()
+            .with_rounds(rounds)
+            .with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("fresh full snapshot")
+    .render_diagnostics(&current_model)
+    .expect("render full");
+
+    assert_eq!(incremental, full);
+}
+
+#[test]
 fn configured_dimensions_run_independently() {
     let schema = compile_schema(
         r#"
@@ -427,6 +575,36 @@ fn configured_dimensions_run_independently() {
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.message.contains("[platform=pc]")));
+}
+
+#[test]
+fn duplicate_dimension_rounds_are_normalized() {
+    let (schema, model) = simple_model(Some(LoadedValueDraft::from("")), None);
+    let round = dimension_rounds("language", ["zh"])
+        .into_iter()
+        .next()
+        .expect("round");
+
+    let output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::all()
+            .with_rounds([round.clone(), round])
+            .with_dependency_collection(DependencyCollection::Reads),
+    );
+
+    assert_eq!(output.statistics.requested_roots, 1);
+    assert_eq!(output.statistics.executed_rounds, 2);
+    assert_eq!(output.diagnostics.len(), 1);
+    assert_eq!(
+        output
+            .snapshot
+            .expect("snapshot")
+            .render_diagnostics(&model)
+            .expect("render snapshot")
+            .len(),
+        1
+    );
 }
 
 #[test]
