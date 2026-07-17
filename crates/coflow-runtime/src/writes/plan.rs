@@ -98,7 +98,7 @@ impl MutationExecutionPlan {
                     visit(action.source(), action.writer())?;
                 }
                 for action in &plan.rewrite_actions {
-                    visit(action.source(), Some(&action.writer))?;
+                    visit(action.source(), action.writer())?;
                 }
                 for action in &plan.dimension_actions {
                     visit(&action.source, None)?;
