@@ -409,6 +409,26 @@ dimensions:
         records.records.is_empty(),
         "managed dimension files must not appear as synthetic record rows"
     );
+    let dimension_records = store
+        .get_dimension_file_records(
+            snapshot.session_id,
+            "data/dimensions/language/Item_name.csv",
+        )
+        .expect("get dimension file records");
+    assert_eq!(dimension_records.field, "name");
+    assert_eq!(dimension_records.variants, ["zh", "en"]);
+    assert_eq!(dimension_records.rows.len(), 1);
+    assert_eq!(dimension_records.rows[0].coordinate.key, "potion");
+    assert_eq!(
+        dimension_records.rows[0].default_value,
+        CfdValue::String("Potion".to_string())
+    );
+    assert!(matches!(
+        dimension_records.rows[0].values.get("zh"),
+        Some(coflow_runtime::DimensionValueState::Value(
+            CfdValue::String(value)
+        )) if value == "药水"
+    ));
 }
 
 #[test]

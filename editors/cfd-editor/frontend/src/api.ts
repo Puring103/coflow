@@ -6,6 +6,7 @@ import type { CollectionEdit } from './bindings/CollectionEdit'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { DeleteRecordOutcome } from './bindings/DeleteRecordOutcome'
 import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordinate'
+import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { DimensionValueView } from './bindings/DimensionValueView'
 import type { FileRecords } from './bindings/FileRecords'
@@ -91,8 +92,35 @@ export async function closeSession(sessionId: number): Promise<void> {
   return invokeCommand('close_session', { sessionId })
 }
 
+export interface DimensionFileRow {
+  coordinate: RecordCoordinate
+  default_value: FieldValue
+  values: Record<string, DimensionValueState | undefined>
+}
+
+export interface DimensionFileRecords {
+  revision: number
+  file_path: string
+  dimension: string
+  display_name: string
+  field: string
+  variants: string[]
+  rows: DimensionFileRow[]
+}
+
 export async function getProjectSettings(sessionId: number): Promise<EditorProjectSettings> {
   return invokeCommand<EditorProjectSettings>('get_project_settings', { sessionId })
+}
+
+export async function getProjectDimensions(sessionId: number): Promise<DimensionInfo[]> {
+  return invokeCommand<DimensionInfo[]>('get_project_dimensions', { sessionId })
+}
+
+export async function getDimensionFileRecords(
+  sessionId: number,
+  filePath: string,
+): Promise<DimensionFileRecords> {
+  return invokeCommand<DimensionFileRecords>('get_dimension_file_records', { sessionId, filePath })
 }
 
 export async function setTableColumnWidths(

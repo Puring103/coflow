@@ -975,7 +975,7 @@ function inferredCellType(cell: RecordRow['fields'][number] | undefined): string
   if (!cell) return undefined
   const value = cell.value
   if (value.kind === 'enum') return value.value.enum_name
-  if (value.kind === 'ref') return cellRefTargetType(cell) ? `&${cellRefTargetType(cell)}` : 'ref'
+  if (value.kind === 'ref') return 'ref'
   if (value.kind === 'object') return value.value.actual_type
   if (value.kind === 'array') return 'array'
   if (value.kind === 'dict') return 'dict'

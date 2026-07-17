@@ -8,11 +8,15 @@ import { InspectorPanel } from './components/InspectorPanel'
 import { Icon } from './components/Icon'
 import { ObjectDraftHost } from './components/ObjectDraftHost'
 import { UpdateControl } from './components/UpdateControl'
+import { DimensionTableView } from './components/DimensionTableView'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
-import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
+import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH, MOCK_DIMENSION_FILE_RECORDS } from './mock'
 import * as api from './api'
 import type { FieldAnnotation } from './bindings/FieldAnnotation'
+import type { DimensionInfo } from './bindings/DimensionInfo'
+import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordinate'
+import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
@@ -26,6 +30,7 @@ import {
   diagnosticMatchesAnchor,
   errorDiagnostics,
   errorMessage,
+  annotationChildren,
   cloneValue,
   recordActualType,
   recordKey,
@@ -126,6 +131,9 @@ export default function App() {
   const lookupGenerationKey = project ? `${project.session_id}:${project.revision}` : 'none'
   const historySnapshot = useSyncExternalStore(history.subscribe, history.getSnapshot, history.getSnapshot)
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
+  const [dimensionFileCache, setDimensionFileCache] = useState<Record<string, api.DimensionFileRecords>>({})
+  const [projectDimensions, setProjectDimensions] = useState<DimensionInfo[]>([])
+  const [dimensionView, setDimensionView] = useState<'table' | 'record'>('table')
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
   const [projectSettings, setProjectSettings] = useState<EditorProjectSettings | null>(null)
   const fileDataCacheRef = useRef(fileDataCache)
@@ -137,7 +145,7 @@ export default function App() {
   const helpReturnRef = useRef<HTMLElement | null>(null)
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [projectAction, setProjectAction] = useState<'check' | 'build' | null>(null)
+  const [projectAction, setProjectAction] = useState<'build' | null>(null)
   const [projectActionNotice, setProjectActionNotice] = useState<{
     message: string
     tone: 'success' | 'error'
@@ -269,6 +277,7 @@ export default function App() {
       lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision })
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
+      setProjectDimensions(MOCK_PROJECT.dimensions)
       setGraphCache({ [graphCacheKey('data/npc.cfd', GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
       if (MOCK_PROJECT.first_source_file) {
         const filePath = MOCK_PROJECT.first_source_file
@@ -300,8 +309,10 @@ export default function App() {
         return snapshot
       })
       setFileDataCache({})
+      setDimensionFileCache({})
       setGraphCache({})
       setProjectSettings(null)
+      setProjectDimensions(api.isTauri ? [] : MOCK_PROJECT.dimensions)
       setWorkspaceTabs([])
       setActiveWorkspaceTabId(null)
       setActiveType('')
@@ -323,6 +334,13 @@ export default function App() {
         }).catch(err => {
           if (generation.currentSession() === snapshot.session_id) {
             setErrorMsg(`读取编辑器设置失败: ${errorMessage(err)}`)
+          }
+        })
+        api.getProjectDimensions(snapshot.session_id).then(dimensions => {
+          if (generation.currentSession() === snapshot.session_id) setProjectDimensions(dimensions)
+        }).catch(err => {
+          if (generation.currentSession() === snapshot.session_id) {
+            setErrorMsg(`读取维度配置失败: ${errorMessage(err)}`)
           }
         })
       }
@@ -569,6 +587,7 @@ export default function App() {
   useEffect(() => {
     if (!project || !router.current) return
     const file = router.current.file
+    if (dimensionForFile(projectDimensions, file)) return
     if (fileDataCache[file]?.revision === project.revision) return
     if (!api.isTauri) return // mock branch already populated
     const sessionId = project.session_id
@@ -592,7 +611,36 @@ export default function App() {
       .finally(() => {
         if (generation.isRequestCurrent(request)) setLoadingFile(null)
       })
-  }, [generation, project, router.current, fileDataCache, reportSessionError])
+  }, [generation, project, projectDimensions, router.current, fileDataCache, reportSessionError])
+
+  useEffect(() => {
+    if (!project || !router.current) return
+    const file = router.current.file
+    if (!dimensionForFile(projectDimensions, file)) return
+    if (dimensionFileCache[file]?.revision === project.revision) return
+    if (!api.isTauri) {
+      const mock = MOCK_DIMENSION_FILE_RECORDS[file]
+      if (mock) setDimensionFileCache(cache => ({ ...cache, [file]: mock }))
+      return
+    }
+    const sessionId = project.session_id
+    const revision = project.revision
+    const request = generation.captureRequest()
+    setLoadingFile(file)
+    api.getDimensionFileRecords(sessionId, file)
+      .then(records => {
+        if (!generation.isCurrent(sessionId, revision) || records.revision !== revision) return
+        setDimensionFileCache(cache => ({ ...cache, [file]: records }))
+      })
+      .catch(error => {
+        if (generation.isRequestCurrent(request)) {
+          reportSessionError(sessionId, '读取维度文件失败', error)
+        }
+      })
+      .finally(() => {
+        if (generation.isRequestCurrent(request)) setLoadingFile(null)
+      })
+  }, [dimensionFileCache, generation, project, projectDimensions, reportSessionError, router.current])
 
   // Lazy-load graph when switching to graph view
   useEffect(() => {
@@ -885,6 +933,51 @@ export default function App() {
     [history, mutationPort],
   )
 
+  const writeDimensionCell = useCallback(async (
+    data: api.DimensionFileRecords,
+    row: api.DimensionFileRow,
+    variant: string,
+    expected: DimensionValueState,
+    next: DimensionValueState,
+  ) => {
+    const coordinate: DimensionValueCoordinate = {
+      actual_type: row.coordinate.actual_type,
+      record_key: row.coordinate.key,
+      field: data.field,
+      dimension: data.dimension,
+      variant,
+      path: [],
+    }
+    const updateCache = (value: DimensionValueState, revision: number) => {
+      setDimensionFileCache(cache => {
+        const current = cache[data.file_path]
+        if (!current) return cache
+        return {
+          ...cache,
+          [data.file_path]: {
+            ...current,
+            revision,
+            rows: current.rows.map(currentRow => sameCoordinate(currentRow.coordinate, row.coordinate)
+              ? { ...currentRow, values: { ...currentRow.values, [variant]: value } }
+              : currentRow),
+          },
+        }
+      })
+    }
+    if (!api.isTauri) {
+      updateCache(next, data.revision)
+      return
+    }
+    const result = await mutations.writeDimensionValue(
+      data.file_path,
+      coordinate,
+      expected,
+      next,
+    )
+    if (!result) return
+    updateCache(result, generation.currentIdentity()?.revision ?? data.revision)
+  }, [generation, mutations])
+
   // Sidebar splitter: on mousedown, attach mousemove/mouseup listeners that
   // track the pointer X and clamp the new width to [160, 480]. Persist on
   // release. We use window listeners (not React state per move) so the drag
@@ -991,6 +1084,7 @@ export default function App() {
 
   const currentRoute = router.current
   const activeFile = currentRoute?.file ?? null
+  useEffect(() => setDimensionView('table'), [activeFile])
   useEffect(() => {
     if (!currentRoute) return
     const typeName = currentRoute.view === 'record'
@@ -1002,6 +1096,7 @@ export default function App() {
     if (typeName) setActiveType(typeName)
   }, [currentRoute, workspaceTabs])
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
+  const activeDimensionData = activeFile ? dimensionFileCache[activeFile] : null
   const activeGraphKey = activeFile
     ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
     : null
@@ -1042,7 +1137,7 @@ export default function App() {
       if (!a) return false
       if (a.ref_target_type) return true
       if (hasRef(a.item_annotation)) return true
-      for (const child of Object.values(a.children)) {
+      for (const child of annotationChildren(a)) {
         if (hasRef(child)) return true
       }
       return false
@@ -1145,6 +1240,10 @@ export default function App() {
     globalSearchRef.current?.focus({ preventScroll: true })
     globalSearchRef.current?.select()
   }, [])
+  const focusDocumentTabs = useCallback(() => {
+    document.querySelector<HTMLElement>('.document-view-tabs .tab-btn.active')
+      ?.focus({ preventScroll: true })
+  }, [])
   const focusActiveView = useCallback(() => {
     const target = viewContainerRef.current?.querySelector<HTMLElement>(
       '.table-scroll, .rv-sidebar-item.selected, .rv-main, .graph-view-wrap',
@@ -1165,22 +1264,20 @@ export default function App() {
     setFirstRecordFocusRequest(current => current === request ? 0 : current)
   }, [])
 
-  const runProjectAction = useCallback(async (action: 'check' | 'build') => {
+  const runBuild = useCallback(async () => {
     const identity = generation.currentIdentity()
     if (!identity || projectAction) return
-    setProjectAction(action)
+    setProjectAction('build')
     setProjectActionNotice(null)
     setErrorMsg(null)
     try {
-      const result = action === 'check'
-        ? await api.checkProject(identity.sessionId)
-        : await api.buildProject(identity.sessionId)
+      const result = await api.buildProject(identity.sessionId)
       setProjectActionNotice({
-        message: action === 'check' ? '检查完成：项目通过' : result.replace('Build completed:', '构建完成：'),
+        message: result.replace('Build completed:', '构建完成：'),
         tone: 'success',
       })
     } catch (error) {
-      const message = `${action === 'check' ? '检查' : '构建'}失败: ${errorMessage(error)}`
+      const message = `构建失败: ${errorMessage(error)}`
       setErrorMsg(message)
       setProjectActionNotice({ message, tone: 'error' })
     } finally {
@@ -1457,9 +1554,24 @@ export default function App() {
           </button>
         </div>
         <div className="topbar-center">
-          {currentRoute && activeFileData ? (
+          {currentRoute && (activeFileData || activeDimensionData) ? (
             <>
-              <div className="document-view-tabs" role="tablist" aria-label="视图">
+              {activeDimensionData ? (
+                <div className="document-view-tabs" role="tablist" aria-label="视图">
+                  {(['record', 'table'] as const).map(view => (
+                    <button
+                      key={view}
+                      className={`tab-btn tab-view${dimensionView === view ? ' active' : ''}`}
+                      role="tab"
+                      aria-selected={dimensionView === view}
+                      onClick={() => setDimensionView(view)}
+                    >
+                      <Icon name={view} size={13} aria-hidden />
+                      {view === 'table' ? '表格' : '记录'}
+                    </button>
+                  ))}
+                </div>
+              ) : activeFileData && <div className="document-view-tabs" role="tablist" aria-label="视图">
                 {((['record', 'table', 'graph'] as const).filter(v => v !== 'graph' || graphSupported)).map(v => (
                   <button
                     key={v}
@@ -1473,25 +1585,15 @@ export default function App() {
                     {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
                   </button>
                 ))}
-              </div>
-              <span className="topbar-divider" />
+              </div>}
               <button
-                className="btn btn-outlined btn-check"
-                onClick={() => runProjectAction('check')}
-                disabled={!project || projectAction !== null}
-                title="检查项目"
-              >
-                <Icon name={projectAction === 'check' ? 'refresh' : 'check'} size={13} className={projectAction === 'check' ? 'icon-spin' : undefined} />
-                <span className="btn-label">检查</span>
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => runProjectAction('build')}
+                className="btn btn-primary btn-icon btn-build"
+                onClick={runBuild}
                 disabled={!project || projectAction !== null}
                 title="构建项目"
+                aria-label="构建项目"
               >
-                <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={13} className={projectAction === 'build' ? 'icon-spin' : undefined} />
-                <span className="btn-label">构建</span>
+                <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={15} className={projectAction === 'build' ? 'icon-spin' : undefined} />
               </button>
             </>
           ) : null}
@@ -1583,6 +1685,7 @@ export default function App() {
               {project ? (
                 <FileTree
                   nodes={project.file_tree}
+                  dimensions={projectDimensions}
                   fileTypes={navigationFileTypes}
                   selectedFile={activeFile}
                   selectedType={activeType}
@@ -1780,7 +1883,18 @@ export default function App() {
               )}
             </div>
           )}
-          {currentRoute && activeFileData ? (
+          {currentRoute && activeDimensionData ? (
+            <DimensionTableView
+              data={activeDimensionData}
+              mode={dimensionView}
+              onWrite={(row, variant, expected, next) =>
+                writeDimensionCell(activeDimensionData, row, variant, expected, next)}
+              onExitLeft={focusFileTree}
+              onExitUp={focusDocumentTabs}
+              focusRequest={firstRecordFocusRequest}
+              onFocusRequestConsumed={consumeFirstRecordFocusRequest}
+            />
+          ) : currentRoute && activeFileData ? (
             <>
               {readOnly && (
                 <div className="document-toolbar readonly-only">
@@ -2073,6 +2187,15 @@ function collectSourceFiles(snapshot: ProjectSnapshot): string[] {
   }
   for (const n of snapshot.file_tree) walk(n)
   return out
+}
+
+function dimensionForFile(dimensions: DimensionInfo[], filePath: string): DimensionInfo | undefined {
+  const normalizedFile = filePath.replace(/\\/g, '/')
+  return dimensions.find(dimension => {
+    if (!dimension.out_dir) return false
+    const directory = dimension.out_dir.replace(/\\/g, '/').replace(/\/+$/, '')
+    return normalizedFile.startsWith(`${directory}/`)
+  })
 }
 
 /** True when the user is currently focused inside a text-editing control.

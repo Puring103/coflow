@@ -49,6 +49,7 @@ import {
   collectionShapeForDeclaredType,
   parseFieldValueText,
   plainFieldValueText,
+  referenceKeyText,
   scalarDefaultForDeclaredType,
   summaryOf,
 } from '../value/fieldValue'
@@ -215,9 +216,9 @@ function ValueChip({ value }: { value: FieldValue }) {
       )
     case 'ref':
       return (
-        <span className="vc vc-ref" title={`&${value.value}`}>
+        <span className="vc vc-ref" title={referenceKeyText(value.value)}>
           <Icon name="dot" size={9} />
-          <span className="vc-ref-key">{value.value}</span>
+          <span className="vc-ref-key">{referenceKeyText(value.value)}</span>
         </span>
       )
     case 'object':
@@ -1083,7 +1084,7 @@ export function RefDirectSelect({
   const lookups = useEditorLookups()
   const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const currentKey = value.kind === 'ref' ? value.value : ''
+  const currentKey = value.kind === 'ref' ? referenceKeyText(value.value) : ''
   const selectedValue = value.kind === 'null' ? NULL_SENTINEL : currentKey
   const color = typeColor(targetType ?? 'ref')
 
@@ -1101,7 +1102,7 @@ export function RefDirectSelect({
       if (r.ok) {
         setTargets(r.value.map(target => ({
           key: target.coordinate.key,
-          label: `${target.coordinate.actual_type}.${target.coordinate.key}`,
+          label: target.coordinate.key,
         })))
       } else {
         setTargets([])
@@ -1116,13 +1117,13 @@ export function RefDirectSelect({
       if (value.kind !== 'null') onCommit(nullValue())
       return
     }
-    if (key !== currentKey) {
+    if (value.kind !== 'ref' || key !== referenceKeyText(value.value)) {
       onCommit(refValue(key))
     }
   }
 
   if (targetType && targets !== null && targets.length > 0) {
-    const hasCurrent = value.kind === 'ref' && !!value.value && targets.some(target => target.key === value.value)
+    const hasCurrent = value.kind === 'ref' && !!currentKey && targets.some(target => target.key === currentKey)
     return (
       <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
         <SearchableSelect
@@ -1133,7 +1134,7 @@ export function RefDirectSelect({
           placeholder="选择引用..."
           options={[
             ...(nullable ? [{ value: NULL_SENTINEL }] : []),
-            ...(value.kind === 'ref' && !hasCurrent && value.value ? [{ value: value.value }] : []),
+            ...(value.kind === 'ref' && !hasCurrent && currentKey ? [{ value: currentKey }] : []),
             ...targets.map(target => ({ value: target.key, label: target.label })),
           ]}
           onCommit={commit}
@@ -1314,9 +1315,9 @@ function RefSelect({
   targetType?: string
 }) {
   const lookups = useEditorLookups()
-  const [val, setVal] = useState(value.value)
+  const [val, setVal] = useState(referenceKeyText(value.value))
   const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
-  useEffect(() => { setVal(value.value) }, [value.value])
+  useEffect(() => { setVal(referenceKeyText(value.value)) }, [value.value])
   useEffect(() => {
     if (!targetType) {
       setTargets(null)
@@ -1328,7 +1329,7 @@ function RefSelect({
       if (!alive) return
       setTargets(r.ok ? r.value.map(target => ({
         key: target.coordinate.key,
-        label: `${target.coordinate.actual_type}.${target.coordinate.key}`,
+        label: target.coordinate.key,
       })) : [])
     })
     return () => { alive = false }
@@ -1342,11 +1343,13 @@ function RefSelect({
     return (
       <SearchableSelect
         className="dc-input dc-input-ref-select"
-        value={value.value}
+        value={referenceKeyText(value.value)}
         placeholder="选择..."
         autoFocus
         options={[
-          ...(value.value && !loadedTargets.some(target => target.key === value.value) ? [{ value: value.value }] : []),
+          ...(value.value && !loadedTargets.some(target => target.key === referenceKeyText(value.value))
+            ? [{ value: referenceKeyText(value.value) }]
+            : []),
           ...loadedTargets.map(target => ({ value: target.key, label: target.label })),
         ]}
         onCommit={next => onCommit(refValue(next))}

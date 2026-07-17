@@ -185,6 +185,18 @@ impl SessionStore {
         read_project_settings(&session.project_root)
     }
 
+    pub fn get_project_dimensions(
+        &self,
+        id: u32,
+    ) -> Result<Vec<coflow_runtime::DimensionInfo>, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned during dimension read"))?;
+        Ok(session.queries().dimensions())
+    }
+
     pub fn set_table_column_widths(
         &self,
         id: u32,

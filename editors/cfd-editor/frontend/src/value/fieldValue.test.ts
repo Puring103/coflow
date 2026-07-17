@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFieldValueText, recordMatchesSearch, summaryOf } from './fieldValue'
+import { parseFieldValueText, recordMatchesSearch, referenceKeyText, summaryOf } from './fieldValue'
 import type { RecordRow } from '../bindings/RecordRow'
 
 describe('FieldValue authoring', () => {
@@ -25,6 +25,12 @@ describe('FieldValue authoring', () => {
         { kind: 'int', value: 9007199254740993n },
       ],
     })).toBe('[alpha, 9007199254740993]')
+  })
+
+  it('renders references as keys without type qualifiers', () => {
+    expect(referenceKeyText('&ItemConfig.sword')).toBe('sword')
+    expect(summaryOf({ kind: 'ref', value: 'ItemConfig.sword' })).toBe('sword')
+    expect(referenceKeyText('plain_key')).toBe('plain_key')
   })
 
   it('uses the same key, field-name, and summary search across editor views', () => {

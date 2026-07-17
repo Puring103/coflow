@@ -39,9 +39,15 @@ function scalarText(value: FieldValue): string | null {
     case 'float': return String(value.value)
     case 'string': return value.value
     case 'enum': return enumVariantText(value)
-    case 'ref': return value.value
+    case 'ref': return referenceKeyText(value.value)
     default: return null
   }
+}
+
+export function referenceKeyText(reference: string): string {
+  const withoutPrefix = reference.startsWith('&') ? reference.slice(1) : reference
+  const separator = withoutPrefix.lastIndexOf('.')
+  return separator >= 0 ? withoutPrefix.slice(separator + 1) : withoutPrefix
 }
 
 export function scalarDefaultForDeclaredType(declaredType?: string): FieldValue | null {

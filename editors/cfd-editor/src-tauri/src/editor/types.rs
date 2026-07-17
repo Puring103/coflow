@@ -10,7 +10,7 @@
 
 use coflow_api::{FlatDiagnostic, WriterCapabilities};
 use coflow_data_model::{CfdDictKey, CfdRecord, CfdValue};
-use coflow_runtime::{FileTreeNode, RecordCoordinate};
+use coflow_runtime::{DimensionValueState, FileTreeNode, RecordCoordinate};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -142,6 +142,24 @@ pub struct FileTypeOption {
     pub name: String,
     pub display_name: String,
     pub record_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimensionFileRecords {
+    pub revision: u32,
+    pub file_path: String,
+    pub dimension: String,
+    pub display_name: String,
+    pub field: String,
+    pub variants: Vec<String>,
+    pub rows: Vec<DimensionFileRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimensionFileRow {
+    pub coordinate: RecordCoordinate,
+    pub default_value: CfdValue,
+    pub values: BTreeMap<String, DimensionValueState>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -366,8 +384,8 @@ pub struct WriteFieldOutcome {
 pub struct WriteDimensionValueOutcome {
     pub revision: u32,
     pub coordinate: coflow_runtime::DimensionValueCoordinate,
-    pub old_value: coflow_runtime::DimensionValueState,
-    pub new_value: coflow_runtime::DimensionValueState,
+    pub old_value: DimensionValueState,
+    pub new_value: DimensionValueState,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub affected_files: Vec<String>,
 }

@@ -1,11 +1,13 @@
 import { useRef, useState, useEffect } from 'react'
 import type { FileTreeNode } from '../bindings/FileTreeNode'
 import type { FileTypeOption } from '../bindings/FileTypeOption'
+import type { DimensionInfo } from '../bindings/DimensionInfo'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 
 interface Props {
   nodes: FileTreeNode[]
+  dimensions: DimensionInfo[]
   fileTypes: Record<string, FileTypeOption[] | undefined>
   selectedFile: string | null
   selectedType: string
@@ -40,6 +42,47 @@ function saveCollapsed(set: Set<string>) {
 type FlatItem =
   | { kind: 'node'; node: FileTreeNode; depth: number }
   | { kind: 'type'; filePath: string; type: FileTypeOption; depth: number }
+
+export interface FileTreeGroup {
+  key: string
+  label: string
+  icon: 'data' | 'localization' | 'dimension'
+  nodes: FileTreeNode[]
+}
+
+export function buildFileTreeGroups(nodes: FileTreeNode[], dimensions: DimensionInfo[]): FileTreeGroup[] {
+  const dimensionNodes = new Map(nodes.map(node => [normalizePath(node.path), node]))
+  const dimensionPaths = new Set(
+    dimensions.flatMap(dimension => dimension.out_dir ? [normalizePath(dimension.out_dir)] : []),
+  )
+  const groups: FileTreeGroup[] = [{
+    key: '__data__',
+    label: '数据',
+    icon: 'data',
+    nodes: nodes.filter(node => !dimensionPaths.has(normalizePath(node.path))),
+  }]
+  const orderedDimensions = [...dimensions].sort((left, right) => {
+    if (left.name === 'language') return -1
+    if (right.name === 'language') return 1
+    return 0
+  })
+  for (const dimension of orderedDimensions) {
+    if (!dimension.out_dir) continue
+    const node = dimensionNodes.get(normalizePath(dimension.out_dir))
+    if (!node) continue
+    groups.push({
+      key: `__dimension__:${dimension.name}`,
+      label: dimension.display_name,
+      icon: dimension.name === 'language' ? 'localization' : 'dimension',
+      nodes: node.children,
+    })
+  }
+  return groups
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '')
+}
 
 function visibleFlatItems(
   nodes: FileTreeNode[],
@@ -76,11 +119,12 @@ function countSourceFiles(nodes: FileTreeNode[]): number {
   return count
 }
 
-export function FileTree({ nodes, fileTypes, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile }: Props) {
+export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed())
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const contextReturnPath = useRef<string | null>(null)
+  const groups = buildFileTreeGroups(nodes, dimensions)
 
   const toggle = (path: string) => {
     setCollapsed(prev => {
@@ -112,7 +156,9 @@ export function FileTree({ nodes, fileTypes, selectedFile, selectedType, onSelec
       && e.key !== 'ArrowRight'
       && e.key !== 'Enter'
     ) return
-    const flat = visibleFlatItems(nodes, collapsed, fileTypes, 0)
+    const flat = groups.flatMap(group => collapsed.has(group.key)
+      ? []
+      : visibleFlatItems(group.nodes, collapsed, fileTypes, 0))
     if (flat.length === 0) return
     const cur = document.activeElement as HTMLElement | null
     const idx = flat.findIndex(item => flatItemPath(item) === cur?.dataset.path)
@@ -211,51 +257,51 @@ export function FileTree({ nodes, fileTypes, selectedFile, selectedType, onSelec
     return () => window.removeEventListener('mousedown', close)
   }, [contextMenu])
 
-  const sourceCount = countSourceFiles(nodes)
-
   return (
     <div className="file-tree" role="tree" aria-label="项目文件" onKeyDown={onKeyDown} ref={rootRef}>
-      <div className="tree-section">
-        <button
-          type="button"
-          className="tree-heading"
-          onClick={() => toggle('__files__')}
-          aria-expanded={!collapsed.has('__files__')}
-        >
-          <Icon
-            name={collapsed.has('__files__') ? 'chevron-right' : 'chevron-down'}
-            size={11}
-            className="tree-heading-chev"
-            aria-hidden
-          />
-          <Icon name="folder" size={13} className="tree-heading-folder" aria-hidden />
-          <strong>文件</strong>
-          <span className="tree-heading-count">{sourceCount}</span>
-        </button>
-        {!collapsed.has('__files__') && (
-          <div className="tree-content">
-            {nodes.map(n => (
-              <TreeNode
-                key={n.path}
-                node={n}
-                fileTypes={fileTypes}
-                selectedFile={selectedFile}
-                selectedType={selectedType}
-                onSelectFile={onSelectFile}
-                depth={0}
-                collapsed={collapsed}
-                onToggle={toggle}
-                onContextMenu={(event, path) => {
-                  if (!onOpenSourceFile) return
-                  event.preventDefault()
-                  contextReturnPath.current = path
-                  setContextMenu({ x: event.clientX, y: event.clientY, path })
-                }}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {groups.map(group => (
+        <div className="tree-section" key={group.key}>
+          <button
+            type="button"
+            className="tree-heading"
+            onClick={() => toggle(group.key)}
+            aria-expanded={!collapsed.has(group.key)}
+          >
+            <Icon
+              name={collapsed.has(group.key) ? 'chevron-right' : 'chevron-down'}
+              size={12}
+              className="tree-heading-chev"
+              aria-hidden
+            />
+            <Icon name={group.icon} size={17} className={`tree-heading-icon ${group.icon}`} aria-hidden />
+            <strong>{group.label}</strong>
+            <span className="tree-heading-count">{countSourceFiles(group.nodes)}</span>
+          </button>
+          {!collapsed.has(group.key) && (
+            <div className="tree-content" role="group">
+              {group.nodes.map(n => (
+                <TreeNode
+                  key={n.path}
+                  node={n}
+                  fileTypes={fileTypes}
+                  selectedFile={selectedFile}
+                  selectedType={selectedType}
+                  onSelectFile={onSelectFile}
+                  depth={0}
+                  collapsed={collapsed}
+                  onToggle={toggle}
+                  onContextMenu={(event, path) => {
+                    if (!onOpenSourceFile) return
+                    event.preventDefault()
+                    contextReturnPath.current = path
+                    setContextMenu({ x: event.clientX, y: event.clientY, path })
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
       {contextMenu && onOpenSourceFile && (
         <div
           className="context-menu file-tree-context-menu"
@@ -391,11 +437,11 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
         >
           <Icon
             name={isCollapsed ? 'chevron-right' : 'chevron-down'}
-            size={11}
+            size={12}
             className="tree-dir-chevron"
             aria-hidden
           />
-          <Icon name="folder" size={13} className="icon-folder" aria-hidden />
+          <Icon name="folder" size={16} className="icon-folder" aria-hidden />
           <span>{node.name}</span>
         </div>
         {!isCollapsed && node.children.map(c => (
@@ -439,8 +485,8 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
           onContextMenu={event => onContextMenu(event, node.path)}
           title={node.path}
         >
-          <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={11} className="tree-file-chevron" aria-hidden />
-          <Icon name={isCfd ? 'file-cfd' : 'file'} size={13} className="icon-file" aria-hidden />
+          <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={12} className="tree-file-chevron" aria-hidden />
+          <Icon name={isCfd ? 'file-cfd' : 'file'} size={16} className="icon-file" aria-hidden />
           <span className="tree-item-label">{node.name}</span>
         </div>
         {!isCollapsed && types.map(type => (
@@ -491,7 +537,7 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
       }}
       title={ghost ? '不在 sources 目录内（只读）' : node.path}
     >
-      <Icon name={isCfd ? 'file-cfd' : 'file'} size={13} className="icon-file" aria-hidden />
+      <Icon name={isCfd ? 'file-cfd' : 'file'} size={16} className="icon-file" aria-hidden />
       <span>{node.name}</span>
     </div>
   )

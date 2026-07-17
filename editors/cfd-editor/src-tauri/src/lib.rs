@@ -8,11 +8,13 @@ mod host;
 mod watcher;
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
-use coflow_runtime::{DimensionValueCoordinate, DimensionValueView, RecordCoordinate};
+use coflow_runtime::{
+    DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
+};
 use editor::{
-    CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, EditorError, EditorProjectSettings,
-    FileRecords, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget,
-    RenameRecordOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
+    CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, DimensionFileRecords, EditorError,
+    EditorProjectSettings, FileRecords, GraphData, GraphQuery, InsertRecordOutcome,
+    ProjectSnapshot, RefTarget, RenameRecordOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use host::EditorHost;
 use tauri::{AppHandle, Manager, State};
@@ -54,6 +56,31 @@ async fn get_project_settings(
 ) -> Result<EditorProjectSettings, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.sessions().get_project_settings(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn get_project_dimensions(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<Vec<DimensionInfo>, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().get_project_dimensions(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn get_dimension_file_records(
+    session_id: u32,
+    file_path: String,
+    host: State<'_, EditorHost>,
+) -> Result<DimensionFileRecords, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .get_dimension_file_records(session_id, &file_path)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -362,6 +389,8 @@ pub fn run() -> tauri::Result<()> {
             init_project,
             close_session,
             get_project_settings,
+            get_project_dimensions,
+            get_dimension_file_records,
             set_table_column_widths,
             check_project,
             build_project,

@@ -178,6 +178,38 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
+    pub fn dimension_field_for_file(
+        self,
+        file_path: &str,
+    ) -> Option<(DimensionInfo, String, String)> {
+        let normalized_path = file_path.replace('\\', "/");
+        let stem = std::path::Path::new(&normalized_path)
+            .file_stem()
+            .and_then(|value| value.to_str())?;
+        for info in self.dimensions() {
+            let Some(out_dir) = info.out_dir.as_ref() else {
+                continue;
+            };
+            let out_dir = out_dir.replace('\\', "/");
+            if !normalized_path.starts_with(&format!("{}/", out_dir.trim_end_matches('/'))) {
+                continue;
+            }
+            let field = crate::dimensions::dimension_fields(self.session.schema())
+                .into_iter()
+                .find(|field| {
+                    field.dimension.as_str() == info.name
+                        && format!("{}_{}", field.bucket, field.source_field) == stem
+                })?;
+            return Some((
+                info,
+                field.source_type.to_string(),
+                field.source_field.to_string(),
+            ));
+        }
+        None
+    }
+
+    #[must_use]
     pub fn dimension_value(
         self,
         coordinate: &crate::DimensionValueCoordinate,
