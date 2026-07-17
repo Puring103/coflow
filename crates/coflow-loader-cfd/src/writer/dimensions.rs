@@ -6,8 +6,8 @@ use coflow_api::{
 };
 use coflow_cfd::ast::CfdBlockEntry;
 use coflow_cfd::parse_cfd;
-use coflow_cft::{CftSchemaTypeRef, RecordKey};
-use coflow_data_model::{CfdInputDimensionValue, RecordOrigin, TextSpan};
+use coflow_cft::{CftValueType, RecordKey};
+use coflow_data_model::{DimensionValueDraft, RecordOrigin, TextSpan};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::path::Path;
@@ -52,8 +52,13 @@ impl DimensionSourceManager for CfdWriter {
                     .join("; "),
             )));
         }
-        let nullable_type = CftSchemaTypeRef::Nullable(Box::new(
-            request.schema.source_field.ty_ref.non_nullable().clone(),
+        let nullable_type = CftValueType::Nullable(Box::new(
+            request
+                .schema
+                .source_field
+                .value_type
+                .non_nullable()
+                .clone(),
         ));
         let mut values = Vec::new();
         let mut diagnostics = DiagnosticSet::empty();
@@ -98,7 +103,7 @@ impl DimensionSourceManager for CfdWriter {
                 };
                 let span = field.value.span();
                 let range = byte_range(&text, span.start, span.end);
-                values.push(CfdInputDimensionValue {
+                values.push(DimensionValueDraft {
                     source_type: request.schema.source_type.name.clone(),
                     source_key: source_key.clone(),
                     field: request.schema.source_field.name.clone(),

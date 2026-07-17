@@ -18,6 +18,7 @@ use std::collections::BTreeSet;
 
 use super::{ProjectSession, RecordCoordinate};
 use crate::indexes::RecordRef;
+use crate::IncrementalFallbackReason;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
 use rebuild::{rebuild_session_after_write, MutationRebuild};
 pub(crate) use stage::{
@@ -30,6 +31,7 @@ pub(crate) struct MutationImpact {
     pub(crate) affected_files: BTreeSet<String>,
     pub(crate) changed_records: BTreeSet<RecordCoordinate>,
     pub(crate) structural_change: bool,
+    pub(crate) fallback_reason: Option<IncrementalFallbackReason>,
 }
 
 impl MutationImpact {
@@ -46,14 +48,23 @@ impl MutationImpact {
                 .extend(outcome.touched.iter().cloned());
             if let Some(inserted) = &outcome.inserted {
                 impact.structural_change = true;
+                impact
+                    .fallback_reason
+                    .get_or_insert(IncrementalFallbackReason::RecordInserted);
                 impact.changed_records.insert(inserted.clone());
             }
             if let Some(deleted) = &outcome.deleted {
                 impact.structural_change = true;
+                impact
+                    .fallback_reason
+                    .get_or_insert(IncrementalFallbackReason::RecordDeleted);
                 impact.changed_records.insert(deleted.clone());
             }
             if let Some((old, new)) = &outcome.renamed {
                 impact.structural_change = true;
+                impact
+                    .fallback_reason
+                    .get_or_insert(IncrementalFallbackReason::RecordRenamed);
                 impact.changed_records.insert(old.clone());
                 impact.changed_records.insert(new.clone());
             }

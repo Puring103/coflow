@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftSchemaTypeRef, CftType, EnumName,
+    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftType, CftValueType, EnumName,
     EnumVariantName, TypeName, TypedCheckSchedule, ValueDependencyPlan,
 };
 
@@ -49,36 +49,36 @@ impl CftSchema {
             return;
         }
         for field in &ty.all_fields {
-            self.collect_ref_targets_in_type(&field.ty_ref, out, visited);
+            self.collect_ref_targets_in_type(&field.value_type, out, visited);
         }
     }
 
     fn collect_ref_targets_in_type(
         &self,
-        ty: &CftSchemaTypeRef,
+        ty: &CftValueType,
         out: &mut BTreeSet<TypeName>,
         visited: &mut BTreeSet<TypeName>,
     ) {
         match ty {
-            CftSchemaTypeRef::Object(name) => {
+            CftValueType::Object(name) => {
                 if let Some(meta) = self.types.get(name) {
                     self.collect_ref_targets_for_type(meta, out, visited);
                 }
             }
-            CftSchemaTypeRef::RecordRef(name) => {
+            CftValueType::RecordRef(name) => {
                 out.insert(name.clone());
             }
-            CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
+            CftValueType::Array(inner) | CftValueType::Nullable(inner) => {
                 self.collect_ref_targets_in_type(inner, out, visited);
             }
-            CftSchemaTypeRef::Dict(_, value) => {
+            CftValueType::Dict(_, value) => {
                 self.collect_ref_targets_in_type(value, out, visited);
             }
-            CftSchemaTypeRef::Enum(_)
-            | CftSchemaTypeRef::Int
-            | CftSchemaTypeRef::Float
-            | CftSchemaTypeRef::Bool
-            | CftSchemaTypeRef::String => {}
+            CftValueType::Enum(_)
+            | CftValueType::Int
+            | CftValueType::Float
+            | CftValueType::Bool
+            | CftValueType::String => {}
         }
     }
     #[must_use]
@@ -118,14 +118,23 @@ impl CftSchema {
 
     #[must_use]
     pub fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
-        let mut current = Some(actual_type);
-        while let Some(name) = current {
-            if name == expected_type {
-                return true;
-            }
-            current = self.types.get(name).and_then(|meta| meta.parent.as_deref());
-        }
-        false
+        (actual_type == expected_type && self.types.contains_key(actual_type))
+            || self
+                .ancestor_membership_by_type
+                .get(actual_type)
+                .is_some_and(|ancestors| ancestors.contains(expected_type))
+    }
+
+    /// Returns the root of the inheritance tree containing `type_name`.
+    #[must_use]
+    pub fn inheritance_root(&self, type_name: &str) -> Option<&TypeName> {
+        self.inheritance_root_by_type.get(type_name)
+    }
+
+    /// Returns ancestors from the nearest parent to the inheritance root.
+    #[must_use]
+    pub fn ancestor_type_names(&self, type_name: &str) -> Option<&[TypeName]> {
+        self.ancestors_by_type.get(type_name).map(Vec::as_slice)
     }
 
     #[must_use]
@@ -196,15 +205,22 @@ impl CftSchema {
 
     #[must_use]
     pub fn assignable_target_names(&self, actual_type: &str) -> Vec<TypeName> {
-        let mut out = Vec::new();
-        let mut current = Some(actual_type);
-        while let Some(name) = current {
-            let Some(meta) = self.types.get(name) else {
-                break;
-            };
-            out.push(meta.name.clone());
-            current = meta.parent.as_deref();
-        }
+        let Some(meta) = self.types.get(actual_type) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(
+            self.ancestors_by_type
+                .get(actual_type)
+                .map_or(1, |ancestors| ancestors.len() + 1),
+        );
+        out.push(meta.name.clone());
+        out.extend(
+            self.ancestors_by_type
+                .get(actual_type)
+                .into_iter()
+                .flatten()
+                .cloned(),
+        );
         out
     }
 

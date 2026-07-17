@@ -276,14 +276,16 @@
 
 文件结构：
 
-- compiler 已拆为 `compiler/defaults.rs`、`indexes.rs`、`resolve.rs`、`validate.rs`、`validate/dicts.rs`。
-- model 已拆为 `model/dimensions.rs`、`domain.rs`、`edges.rs`、`ids.rs`、`input.rs`、`tables.rs`、`value.rs`。
-- 还有 `compiler_context.rs`、`edge_index.rs`、`origin.rs`、`value_semantics.rs`、`diagnostic.rs`。
+- `ingest/` 保存来源无关的 loaded draft IR。
+- `build/` 负责 schema 驱动的验证、默认值与 spread materialization。
+- `model/` 只保存成功状态、typed identity、values 和 relation edges。
+- `indexes/` 保存 record/ref/spread 查询结果，`semantics/` 保存共享值语义。
+- `dependencies/` 与 `diagnostics/` 分别保存 materialization 依赖和诊断映射。
 
 核心类型：
 
-- model：`CfdDataModel`, `CfdModelBuilder`, `CfdTable`, `CfdRecord`, `CfdObject`, `CfdRecordId`, `CfdTypeId`, `CfdDomainId`。
-- values：`CfdValue`, `CfdDictKey`, `CfdEnumValue`, `CfdInputRecord`, `CfdInputValue`, `CfdInputDictKey`。
+- model：`CfdDataModel`, `CfdModelBuilder`, `CfdTable`, `CfdRecord`, `CfdObject`, `CfdRecordId`, `RecordCoordinate`。
+- values：`CfdValue`, `CfdDictKey`, `CfdEnumValue`, `LoadedRecordDraft`, `LoadedValueDraft`, `LoadedDictKeyDraft`。
 - graph：`RefSite`, `RefEdge`, `RefEdgeId`, `SpreadSite`, `SpreadEdge`, `SpreadEdgeId`。
 - origin：`RecordOrigin`, `SourceDocument`, `TextSpan`, `SourceLocation`, `MappedDiagnostic`。
 - diagnostics：`CfdDiagnostics`, `CfdDiagnostic`, `CfdErrorCode`, `CfdPath`, `CfdPathSegment`。
@@ -291,7 +293,7 @@
 
 核心入口：
 
-- `CfdDataModel::builder` and `CfdModelBuilder::add_input_record/build`。
+- `CfdDataModel::builder` and `CfdModelBuilder::add_loaded_record/build`。
 - `CfdDataModel::record/table/records/tables/record_by_type_key/record_by_domain_key/lookup_assignable`。
 - `CfdDataModel::direct_ref_edges/spread_edges/resolve_direct_ref/resolve_effective_ref/spread_source_at_path`。
 - `CfdDataModel::dimension_field_value`。

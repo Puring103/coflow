@@ -1,6 +1,6 @@
 use crate::DiagnosticSet;
 use coflow_cft::CftSchema;
-use coflow_data_model::CfdInputRecord;
+use coflow_data_model::LoadedRecordDraft;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -107,7 +107,7 @@ pub struct SourceLoadContext<'a> {
 
 #[derive(Debug, Clone)]
 pub struct LoadedSource {
-    pub records: Vec<CfdInputRecord>,
+    pub records: Vec<LoadedRecordDraft>,
 }
 
 pub trait SourceProvider: Send + Sync {

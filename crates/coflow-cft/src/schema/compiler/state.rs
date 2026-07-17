@@ -1,4 +1,4 @@
-use super::checked_type::CheckedType;
+use super::inferred_type::InferredType;
 use crate::module::ModuleId;
 use crate::schema::CftConstValue;
 use crate::syntax::ast::{ConstDef, EnumDef, TypeDef};
@@ -30,7 +30,7 @@ pub(super) struct EnumInfo<'a> {
 
 #[derive(Debug, Clone)]
 pub(super) struct FieldInfo {
-    pub(super) checked_type: CheckedType,
+    pub(super) inferred_type: InferredType,
 }
 
 #[derive(Debug, Clone)]

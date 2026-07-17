@@ -258,7 +258,7 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
             ..
         } => (
             "insert_record",
-            Some(RecordCoordinate::new(actual_type, key)),
+            Some(RecordCoordinate::new(actual_type.clone(), key.clone())),
             Some(file.clone()),
         ),
         PreparedMutationOp::CancelledInsert { record, write_file } => (
@@ -292,7 +292,10 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
             report_file,
         } => (
             "rename_record",
-            Some(RecordCoordinate::new(&record.actual_type, new_key)),
+            Some(RecordCoordinate::new(
+                record.actual_type.clone(),
+                new_key.clone(),
+            )),
             report_file.clone(),
         ),
         PreparedMutationOp::FoldedRenameRecord {

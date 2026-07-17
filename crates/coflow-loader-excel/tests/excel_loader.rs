@@ -40,7 +40,7 @@ fn build_model_from_excel_records(
     let origins = origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {
-        builder.add_input_record(record);
+        builder.add_loaded_record(record);
     }
     builder
         .build()
@@ -1287,7 +1287,7 @@ fn resolves_direct_reference_shorthand_cells_by_field_type() -> TestResult {
 
     assert_eq!(
         drop.field("item"),
-        Some(&CfdValue::Ref("sword_01".to_string()))
+        Some(&CfdValue::record_ref("sword_01").unwrap())
     );
     let _ = item_id;
     Ok(())

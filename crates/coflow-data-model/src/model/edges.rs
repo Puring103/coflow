@@ -1,6 +1,6 @@
-use super::ids::{CfdDomainId, CfdRecordId, CfdTypeId};
-use crate::diagnostic::{CfdPath, CfdPathSegment};
-use coflow_cft::{DimensionName, FieldName, VariantName};
+use super::ids::CfdRecordId;
+use crate::diagnostics::{CfdPath, CfdPathSegment};
+use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -63,11 +63,11 @@ impl RefEdgeId {
 pub struct RefEdge {
     pub id: RefEdgeId,
     pub site: RefSite,
-    pub expected_type: CfdTypeId,
-    pub domain: CfdDomainId,
-    pub key: String,
+    pub expected_type: TypeName,
+    pub inheritance_root: TypeName,
+    pub key: RecordKey,
     pub target: CfdRecordId,
-    pub target_type: CfdTypeId,
+    pub target_type: TypeName,
 }
 
 /// Logical address of a field value inherited through object/record spread.
@@ -75,12 +75,30 @@ pub struct RefEdge {
 pub struct SpreadSite {
     pub host: CfdRecordId,
     pub path: CfdPath,
+    pub dimension: Option<DimensionRefCoordinate>,
 }
 
 impl SpreadSite {
     #[must_use]
     pub const fn new(host: CfdRecordId, path: CfdPath) -> Self {
-        Self { host, path }
+        Self {
+            host,
+            path,
+            dimension: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn in_dimension(
+        host: CfdRecordId,
+        path: CfdPath,
+        dimension: DimensionRefCoordinate,
+    ) -> Self {
+        Self {
+            host,
+            path,
+            dimension: Some(dimension),
+        }
     }
 }
 
@@ -105,12 +123,12 @@ pub struct SpreadEdge {
     pub site: SpreadSite,
     pub host: CfdRecordId,
     pub path: CfdPath,
-    pub fields: BTreeSet<String>,
-    pub expected_type: CfdTypeId,
-    pub domain: CfdDomainId,
-    pub source_key: String,
+    pub fields: BTreeSet<FieldName>,
+    pub expected_type: TypeName,
+    pub inheritance_root: TypeName,
+    pub source_key: RecordKey,
     pub source: CfdRecordId,
-    pub source_type: CfdTypeId,
+    pub source_type: TypeName,
 }
 
 impl SpreadEdge {
@@ -123,7 +141,7 @@ impl SpreadEdge {
         let Some(CfdPathSegment::Field(field)) = relative.first() else {
             return false;
         };
-        self.fields.contains(field)
+        self.fields.contains(field.as_str())
     }
 
     #[must_use]

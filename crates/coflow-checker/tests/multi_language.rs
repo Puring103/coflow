@@ -5,12 +5,56 @@ use common::*;
 
 use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use coflow_checker::{
-    run_checks, run_checks_for_dimensions, run_checks_for_dimensions_with_deps, DimensionCheckPlan,
-    DimensionCheckRound,
+    CheckRequest, CheckRoot, CheckRound, DependencyCollection, DependencyGraph, DimensionCheckRound,
 };
 
-fn language_plan() -> DimensionCheckPlan {
-    DimensionCheckPlan::from_variants("language", ["zh", "en"])
+fn dimension_rounds(
+    dimension: &str,
+    variants: impl IntoIterator<Item = &'static str>,
+) -> Vec<DimensionCheckRound> {
+    let dimension = DimensionName::new(dimension).expect("dimension name");
+    variants
+        .into_iter()
+        .map(|variant| {
+            DimensionCheckRound::new(
+                dimension.clone(),
+                VariantName::new(variant).expect("variant name"),
+            )
+        })
+        .collect()
+}
+
+fn language_plan() -> Vec<DimensionCheckRound> {
+    dimension_rounds("language", ["zh", "en"])
+}
+
+fn run_checks_for_dimensions(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    rounds: &[DimensionCheckRound],
+) -> Result<(), CfdDiagnostics> {
+    coflow_checker::run_checks(
+        schema,
+        model,
+        CheckRequest::all().with_rounds(rounds.iter().cloned()),
+    )
+    .into_result()
+}
+
+fn run_checks_for_dimensions_with_deps(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    rounds: &[DimensionCheckRound],
+) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
+    let mut output = coflow_checker::run_checks(
+        schema,
+        model,
+        CheckRequest::all()
+            .with_rounds(rounds.iter().cloned())
+            .with_dependency_collection(DependencyCollection::Reads),
+    );
+    let dependencies = std::mem::take(&mut output.dependencies);
+    (output.into_result(), dependencies)
 }
 
 fn add_overlay(
@@ -20,9 +64,9 @@ fn add_overlay(
     field: &str,
     dimension: &str,
     variant: &str,
-    value: CfdInputValue,
+    value: LoadedValueDraft,
 ) {
-    builder.add_input_dimension_value(CfdInputDimensionValue {
+    builder.add_dimension_value_draft(DimensionValueDraft {
         source_type: TypeName::new(source_type).unwrap(),
         source_key: RecordKey::new(source_key).unwrap(),
         field: FieldName::new(field).unwrap(),
@@ -45,10 +89,17 @@ fn simple_schema() -> CftSchema {
     )
 }
 
-fn simple_model(zh: Option<CfdInputValue>, en: Option<CfdInputValue>) -> (CftSchema, CfdDataModel) {
+fn simple_model(
+    zh: Option<LoadedValueDraft>,
+    en: Option<LoadedValueDraft>,
+) -> (CftSchema, CfdDataModel) {
     let schema = simple_schema();
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
+    builder.add_record(
+        "potion",
+        "Item",
+        [("name", LoadedValueDraft::from("Potion"))],
+    );
     if let Some(value) = zh {
         add_overlay(
             &mut builder,
@@ -78,15 +129,15 @@ fn simple_model(zh: Option<CfdInputValue>, en: Option<CfdInputValue>) -> (CftSch
 #[test]
 fn default_round_uses_only_the_owner_field() {
     let (schema, model) = simple_model(None, None);
-    run_checks(&schema, &model).expect("default round passes");
+    run_model_checks(&model, &schema).expect("default round passes");
     assert_eq!(model.record_count(), 1);
 }
 
 #[test]
 fn variant_round_can_fail_at_the_owner_field_path() {
     let (schema, model) = simple_model(
-        Some(CfdInputValue::from("")),
-        Some(CfdInputValue::from("Potion")),
+        Some(LoadedValueDraft::from("")),
+        Some(LoadedValueDraft::from("Potion")),
     );
     let err = run_checks_for_dimensions(&schema, &model, &language_plan())
         .expect_err("empty zh value should fail");
@@ -104,13 +155,13 @@ fn variant_round_can_fail_at_the_owner_field_path() {
 #[test]
 fn explicit_null_skips_while_missing_is_reported() {
     let (schema, null_model) = simple_model(
-        Some(CfdInputValue::Null),
-        Some(CfdInputValue::from("Potion")),
+        Some(LoadedValueDraft::Null),
+        Some(LoadedValueDraft::from("Potion")),
     );
     run_checks_for_dimensions(&schema, &null_model, &language_plan())
         .expect("explicit null skips the zh field check");
 
-    let (schema, missing_model) = simple_model(None, Some(CfdInputValue::from("Potion")));
+    let (schema, missing_model) = simple_model(None, Some(LoadedValueDraft::from("Potion")));
     let err = run_checks_for_dimensions(&schema, &missing_model, &language_plan())
         .expect_err("missing zh value is not a null skip");
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
@@ -137,8 +188,8 @@ fn inherited_dimension_field_checks_child_owner_records() {
         "child",
         "Child",
         [
-            ("name", CfdInputValue::from("Child")),
-            ("value", CfdInputValue::from(1_i64)),
+            ("name", LoadedValueDraft::from("Child")),
+            ("value", LoadedValueDraft::from(1_i64)),
         ],
     );
     add_overlay(
@@ -148,15 +199,11 @@ fn inherited_dimension_field_checks_child_owner_records() {
         "name",
         "language",
         "zh",
-        CfdInputValue::from(""),
+        LoadedValueDraft::from(""),
     );
     let model = builder.build().expect("model builds");
-    let err = run_checks_for_dimensions(
-        &schema,
-        &model,
-        &DimensionCheckPlan::from_variants("language", ["zh"]),
-    )
-    .expect_err("inherited check should fail");
+    let err = run_checks_for_dimensions(&schema, &model, &dimension_rounds("language", ["zh"]))
+        .expect_err("inherited check should fail");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
 }
 
@@ -175,17 +222,17 @@ fn nested_object_array_and_dict_checks_use_overlay_subtrees() {
             }
         "#,
     );
-    let text = |label: &str| CfdInputValue::object("Text", [("label", label.into())]);
+    let text = |label: &str| LoadedValueDraft::object("Text", [("label", label.into())]);
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",
         "Item",
         [
             ("text", text("default")),
-            ("texts", CfdInputValue::Array(vec![text("default")])),
+            ("texts", LoadedValueDraft::Array(vec![text("default")])),
             (
                 "by_slot",
-                CfdInputValue::dict([(CfdInputDictKey::from("main"), text("default"))]),
+                LoadedValueDraft::dict([(LoadedDictKeyDraft::from("main"), text("default"))]),
             ),
         ],
     );
@@ -205,7 +252,7 @@ fn nested_object_array_and_dict_checks_use_overlay_subtrees() {
         "texts",
         "language",
         "zh",
-        CfdInputValue::Array(vec![text("")]),
+        LoadedValueDraft::Array(vec![text("")]),
     );
     add_overlay(
         &mut builder,
@@ -214,15 +261,11 @@ fn nested_object_array_and_dict_checks_use_overlay_subtrees() {
         "by_slot",
         "language",
         "zh",
-        CfdInputValue::dict([(CfdInputDictKey::from("main"), text(""))]),
+        LoadedValueDraft::dict([(LoadedDictKeyDraft::from("main"), text(""))]),
     );
     let model = builder.build().expect("model builds");
-    let err = run_checks_for_dimensions(
-        &schema,
-        &model,
-        &DimensionCheckPlan::from_variants("language", ["zh"]),
-    )
-    .expect_err("nested overlay values should fail");
+    let err = run_checks_for_dimensions(&schema, &model, &dimension_rounds("language", ["zh"]))
+        .expect_err("nested overlay values should fail");
 
     let paths = err
         .diagnostics
@@ -245,21 +288,31 @@ fn overlay_record_refs_resolve_without_storage_records() {
         r"
             type Target { value: int; }
             type Copy {
-                target: &Target;
-                check { target.value > 0; }
+                target: &Target? = null;
+                check { target == null || target.value > 0; }
             }
             type Item { @localized copy: Copy; }
+            type Unrelated { value: int; }
         ",
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("target", "Target", [("value", CfdInputValue::from(0_i64))]);
+    builder.add_record(
+        "target",
+        "Target",
+        [("value", LoadedValueDraft::from(0_i64))],
+    );
     builder.add_record(
         "item",
         "Item",
         [(
             "copy",
-            CfdInputValue::object("Copy", [("target", CfdInputValue::record_ref("target"))]),
+            LoadedValueDraft::object("Copy", [("target", LoadedValueDraft::Null)]),
         )],
+    );
+    builder.add_record(
+        "unrelated",
+        "Unrelated",
+        [("value", LoadedValueDraft::from(1_i64))],
     );
     add_overlay(
         &mut builder,
@@ -268,17 +321,209 @@ fn overlay_record_refs_resolve_without_storage_records() {
         "copy",
         "language",
         "zh",
-        CfdInputValue::object("Copy", [("target", CfdInputValue::record_ref("target"))]),
+        LoadedValueDraft::object("Copy", [("target", LoadedValueDraft::record_ref("target"))]),
     );
     let model = builder.build().expect("overlay refs resolve");
-    let err = run_checks_for_dimensions(
+    let rounds = dimension_rounds("language", ["zh"]);
+    let err = run_checks_for_dimensions(&schema, &model, &rounds)
+        .expect_err("nested ref check should fail");
+    assert_has_code(&err, CfdErrorCode::CheckOrFailed);
+    assert_eq!(model.record_count(), 3);
+
+    let output = coflow_checker::run_checks(
         &schema,
         &model,
-        &DimensionCheckPlan::from_variants("language", ["zh"]),
+        CheckRequest::all()
+            .with_rounds(rounds.iter().cloned())
+            .with_dependency_collection(DependencyCollection::Reads),
+    );
+    let snapshot = output.snapshot.expect("stable dimension snapshot");
+    let target = model
+        .records()
+        .find(|(_, record)| record.key() == "target")
+        .expect("target")
+        .1
+        .coordinate();
+    let item = model
+        .records()
+        .find(|(_, record)| record.key() == "item")
+        .expect("item")
+        .1
+        .coordinate();
+    let default_state = snapshot
+        .roots
+        .get(&CheckRoot {
+            record: item.clone(),
+            round: CheckRound::Default,
+        })
+        .expect("item default state");
+    assert!(!default_state.reads_from.contains(&target));
+    let dimension_state = snapshot
+        .roots
+        .get(&CheckRoot {
+            record: item,
+            round: CheckRound::Dimension(rounds[0].clone()),
+        })
+        .expect("item dimension state");
+    assert!(dimension_state.reads_from.contains(&target));
+
+    let incremental = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::incremental(&snapshot, &std::collections::BTreeSet::from([target]))
+            .with_rounds(rounds),
+    );
+    assert_eq!(incremental.statistics.requested_roots, 2);
+    assert_eq!(incremental.statistics.executed_rounds, 3);
+    assert_eq!(incremental.statistics.dimension_projected_records, 2);
+}
+
+#[test]
+fn incremental_dimension_checks_follow_overlay_ref_target() {
+    let schema = compile_schema(
+        r#"
+            type Item { value: int; }
+            type Offer {
+                @dimension("platform")
+                item: &Item;
+                check { item.value > 0; }
+            }
+        "#,
+    );
+    let build_generation = |pc_value| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "default_item",
+            "Item",
+            [("value", LoadedValueDraft::from(1_i64))],
+        );
+        builder.add_record(
+            "pc_item",
+            "Item",
+            [("value", LoadedValueDraft::from(pc_value))],
+        );
+        builder.add_record(
+            "offer",
+            "Offer",
+            [("item", LoadedValueDraft::record_ref("default_item"))],
+        );
+        add_overlay(
+            &mut builder,
+            "Offer",
+            "offer",
+            "item",
+            "platform",
+            "pc",
+            LoadedValueDraft::record_ref("pc_item"),
+        );
+        builder.build().expect("model builds")
+    };
+
+    assert_incremental_dimension_matches_full(
+        &schema,
+        build_generation,
+        "pc_item",
+        dimension_rounds("platform", ["pc"]),
+    );
+}
+
+#[test]
+fn incremental_dimension_checks_follow_overlay_spread_sources() {
+    let schema = compile_schema(
+        r#"
+            type Stats { value: int; }
+            type Holder {
+                @dimension("platform")
+                stats: Stats;
+                check { stats.value > 0; }
+            }
+        "#,
+    );
+    let build_generation = |source_value| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "base",
+            "Stats",
+            [("value", LoadedValueDraft::from(source_value))],
+        );
+        builder.add_record(
+            "holder",
+            "Holder",
+            [(
+                "stats",
+                LoadedValueDraft::object("Stats", [("value", LoadedValueDraft::from(1_i64))]),
+            )],
+        );
+        add_overlay(
+            &mut builder,
+            "Holder",
+            "holder",
+            "stats",
+            "platform",
+            "pc",
+            LoadedValueDraft::object_spread(
+                [LoadedValueDraft::record_ref("base")],
+                std::iter::empty::<(&str, LoadedValueDraft)>(),
+            ),
+        );
+        builder.build().expect("model builds")
+    };
+
+    assert_incremental_dimension_matches_full(
+        &schema,
+        build_generation,
+        "base",
+        dimension_rounds("platform", ["pc"]),
+    );
+}
+
+fn assert_incremental_dimension_matches_full(
+    schema: &CftSchema,
+    build_generation: impl Fn(i64) -> CfdDataModel,
+    changed_key: &str,
+    rounds: Vec<DimensionCheckRound>,
+) {
+    let previous_model = build_generation(1);
+    let previous = coflow_checker::run_checks(
+        schema,
+        &previous_model,
+        CheckRequest::all()
+            .with_rounds(rounds.iter().cloned())
+            .with_dependency_collection(DependencyCollection::Reads),
     )
-    .expect_err("nested ref check should fail");
-    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
-    assert_eq!(model.record_count(), 2);
+    .snapshot
+    .expect("full snapshot");
+    let changed = previous_model
+        .records()
+        .find(|(_, record)| record.key() == changed_key)
+        .expect("changed record")
+        .1
+        .coordinate();
+
+    let current_model = build_generation(-1);
+    let incremental = coflow_checker::run_checks(
+        schema,
+        &current_model,
+        CheckRequest::incremental(&previous, &std::collections::BTreeSet::from([changed]))
+            .with_rounds(rounds.iter().cloned()),
+    )
+    .snapshot
+    .expect("incremental snapshot")
+    .render_diagnostics(&current_model)
+    .expect("render incremental");
+    let full = coflow_checker::run_checks(
+        schema,
+        &current_model,
+        CheckRequest::all()
+            .with_rounds(rounds)
+            .with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("fresh full snapshot")
+    .render_diagnostics(&current_model)
+    .expect("render full");
+
+    assert_eq!(incremental, full);
 }
 
 #[test]
@@ -297,8 +542,8 @@ fn configured_dimensions_run_independently() {
         "item",
         "Item",
         [
-            ("name", CfdInputValue::from("default")),
-            ("label", CfdInputValue::from("default")),
+            ("name", LoadedValueDraft::from("default")),
+            ("label", LoadedValueDraft::from("default")),
         ],
     );
     add_overlay(
@@ -308,7 +553,7 @@ fn configured_dimensions_run_independently() {
         "name",
         "language",
         "zh",
-        CfdInputValue::from("ok"),
+        LoadedValueDraft::from("ok"),
     );
     add_overlay(
         &mut builder,
@@ -317,13 +562,13 @@ fn configured_dimensions_run_independently() {
         "label",
         "platform",
         "pc",
-        CfdInputValue::from(""),
+        LoadedValueDraft::from(""),
     );
     let model = builder.build().expect("model builds");
-    let plan = DimensionCheckPlan::new([
-        DimensionCheckRound::new("language", "zh"),
-        DimensionCheckRound::new("platform", "pc"),
-    ]);
+    let plan = vec![
+        dimension_rounds("language", ["zh"])[0].clone(),
+        dimension_rounds("platform", ["pc"])[0].clone(),
+    ];
     let err = run_checks_for_dimensions(&schema, &model, &plan)
         .expect_err("platform round should fail independently");
     assert!(err
@@ -333,10 +578,40 @@ fn configured_dimensions_run_independently() {
 }
 
 #[test]
+fn duplicate_dimension_rounds_are_normalized() {
+    let (schema, model) = simple_model(Some(LoadedValueDraft::from("")), None);
+    let round = dimension_rounds("language", ["zh"])
+        .into_iter()
+        .next()
+        .expect("round");
+
+    let output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::all()
+            .with_rounds([round.clone(), round])
+            .with_dependency_collection(DependencyCollection::Reads),
+    );
+
+    assert_eq!(output.statistics.requested_roots, 1);
+    assert_eq!(output.statistics.executed_rounds, 2);
+    assert_eq!(output.diagnostics.len(), 1);
+    assert_eq!(
+        output
+            .snapshot
+            .expect("snapshot")
+            .render_diagnostics(&model)
+            .expect("render snapshot")
+            .len(),
+        1
+    );
+}
+
+#[test]
 fn dependency_graph_has_no_synthetic_record_edges() {
     let (schema, model) = simple_model(
-        Some(CfdInputValue::from("药水")),
-        Some(CfdInputValue::from("Potion")),
+        Some(LoadedValueDraft::from("药水")),
+        Some(LoadedValueDraft::from("Potion")),
     );
     let (result, graph) = run_checks_for_dimensions_with_deps(&schema, &model, &language_plan());
     result.expect("checks pass");

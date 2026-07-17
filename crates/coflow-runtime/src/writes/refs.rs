@@ -193,6 +193,11 @@ pub(super) fn reference_update_actions(
     target_id: CfdRecordId,
     new_key: &str,
 ) -> Result<Vec<ReferenceUpdateAction>, DiagnosticSet> {
+    let new_key = RecordKey::new(new_key.to_string()).map_err(|error| {
+        transaction_invariant(format!(
+            "new record key became invalid before rewrite: {error}"
+        ))
+    })?;
     let mut actions = Vec::new();
     for edge in session.model.direct_ref_edges_to_target(target_id) {
         let Some(host_ref) = session.records.get(edge.site.host) else {
@@ -215,7 +220,7 @@ pub(super) fn reference_update_actions(
                 .segments
                 .strip_prefix(&[CfdPathSegment::Field(dimension.field.to_string())])
                 .unwrap_or(&edge.site.path.segments);
-            if !replace_ref_value(&mut root, relative_path, new_key) {
+            if !replace_ref_value(&mut root, relative_path, &new_key) {
                 continue;
             }
             let field = session
@@ -280,10 +285,10 @@ pub(super) fn reference_update_actions(
                 display_path: host_ref.display_path.clone(),
                 request: OwnedWriteCellRequest {
                     origin: host_ref.origin.clone(),
-                    record_key: host_ref.coordinate.key.clone(),
-                    actual_type: host_ref.coordinate.actual_type.clone(),
+                    record_key: host_ref.coordinate.key.to_string(),
+                    actual_type: host_ref.coordinate.actual_type.to_string(),
                     field_path: edge.site.path.segments.clone(),
-                    new_value: CfdValue::Ref(new_key.to_string()),
+                    new_value: CfdValue::Ref(new_key.clone()),
                     source,
                 },
             });
@@ -300,16 +305,18 @@ fn transaction_invariant(message: impl Into<String>) -> DiagnosticSet {
     ))
 }
 
-fn replace_ref_value(current: &mut CfdValue, path: &[CfdPathSegment], new_key: &str) -> bool {
+fn replace_ref_value(current: &mut CfdValue, path: &[CfdPathSegment], new_key: &RecordKey) -> bool {
     let Some((segment, rest)) = path.split_first() else {
         if matches!(current, CfdValue::Ref(_)) {
-            *current = CfdValue::Ref(new_key.to_string());
+            *current = CfdValue::Ref(new_key.clone());
             return true;
         }
         return false;
     };
     let next = match (current, segment) {
-        (CfdValue::Object(object), CfdPathSegment::Field(field)) => object.fields.get_mut(field),
+        (CfdValue::Object(object), CfdPathSegment::Field(field)) => {
+            object.fields.get_mut(field.as_str())
+        }
         (CfdValue::Array(items), CfdPathSegment::Index(index)) => items.get_mut(*index),
         (CfdValue::Dict(entries), CfdPathSegment::DictKey(key)) => entries
             .iter_mut()
@@ -336,8 +343,8 @@ pub(super) fn source_rewrite_actions(
         let source = source_for_id(session, host_ref.source_id)?;
         let target = SpreadRewriteTarget {
             origin: host_ref.origin.clone(),
-            record_key: host_ref.coordinate.key.clone(),
-            actual_type: host_ref.coordinate.actual_type.clone(),
+            record_key: host_ref.coordinate.key.to_string(),
+            actual_type: host_ref.coordinate.actual_type.to_string(),
             object_path: edge.path.segments.clone(),
         };
         by_file

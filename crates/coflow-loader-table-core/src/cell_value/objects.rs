@@ -1,5 +1,5 @@
 use coflow_cft::CftSchema;
-use coflow_data_model::CfdInputValue;
+use coflow_data_model::LoadedValueDraft;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::diagnostics::{
@@ -16,7 +16,7 @@ pub(super) fn parse_object(
     expected_type: &str,
     text: &str,
     context: ValueContext,
-) -> Result<CfdInputValue, CellValueDiagnostics> {
+) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let expected_fields = full_fields(schema, expected_type)?;
     if text.trim().starts_with('@') {
         return Err(syntax(
@@ -120,7 +120,7 @@ fn parse_named_object(
     fields: &[FieldMeta],
     parts: &[&str],
     colon_positions: &[Option<usize>],
-) -> Result<CfdInputValue, CellValueDiagnostics> {
+) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let fields_by_name = fields
         .iter()
         .map(|field| (field.name.as_str(), field))
@@ -168,7 +168,7 @@ fn parse_positional_object(
     actual_type: Option<String>,
     fields: &[FieldMeta],
     parts: &[&str],
-) -> Result<CfdInputValue, CellValueDiagnostics> {
+) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     if parts.len() > fields.len() {
         return Err(syntax("too many positional object fields"));
     }
@@ -192,12 +192,12 @@ fn parse_positional_object(
 
 fn object_value(
     actual_type: Option<String>,
-    fields: impl IntoIterator<Item = (String, CfdInputValue)>,
-) -> CfdInputValue {
+    fields: impl IntoIterator<Item = (String, LoadedValueDraft)>,
+) -> LoadedValueDraft {
     if let Some(actual_type) = actual_type {
-        CfdInputValue::object(actual_type, fields)
+        LoadedValueDraft::object(actual_type, fields)
     } else {
-        CfdInputValue::object_with_declared_type(fields)
+        LoadedValueDraft::object_with_declared_type(fields)
     }
 }
 

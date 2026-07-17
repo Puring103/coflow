@@ -8,7 +8,9 @@
 )]
 
 mod common;
-use coflow_checker::{run_checks_for_dimensions_subset_with_deps, DimensionCheckPlan};
+use std::collections::BTreeSet;
+
+use coflow_checker::{CheckRequest, CheckRoot, CheckRound, DependencyCollection};
 use common::*;
 
 fn build_model(_schema: &CftSchema, builder: CfdModelBuilder<'_>) -> CfdDataModel {
@@ -48,28 +50,34 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
         "target",
         "Item",
         [
-            ("value", CfdInputValue::from(-1_i64)),
-            ("target", CfdInputValue::Null),
+            ("value", LoadedValueDraft::from(-1_i64)),
+            ("target", LoadedValueDraft::Null),
         ],
     );
     builder.add_record(
         "reader",
         "Item",
         [
-            ("value", CfdInputValue::from(1_i64)),
-            ("target", CfdInputValue::record_ref("target")),
+            ("value", LoadedValueDraft::from(1_i64)),
+            ("target", LoadedValueDraft::record_ref("target")),
         ],
     );
     let model = builder.build().expect("model builds");
-    let target = model.lookup_assignable("Item", "target").expect("target");
-    let reader = model.lookup_assignable("Item", "reader").expect("reader");
+    let target = model
+        .lookup_assignable(&schema, "Item", "target")
+        .expect("target");
+    let reader = model
+        .lookup_assignable(&schema, "Item", "reader")
+        .expect("reader");
 
-    let (diagnostics, graph) = run_checks_for_dimensions_subset_with_deps(
+    let output = coflow_checker::run_checks(
         &schema,
         &model,
-        &DimensionCheckPlan::default(),
-        &[reader],
+        CheckRequest::records(&[reader]).with_dependency_collection(DependencyCollection::Reads),
     );
+    let snapshot = output.snapshot.expect("stable snapshot");
+    let diagnostics = output.diagnostics;
+    let graph = output.dependencies;
 
     assert!(
         diagnostics.iter().all(|rooted| {
@@ -86,6 +94,250 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
         .reads_from
         .get(&reader)
         .is_some_and(|reads| reads.contains(&target)));
+    let reader_coordinate = model.record(reader).expect("reader record").coordinate();
+    let target_coordinate = model.record(target).expect("target record").coordinate();
+    let state = snapshot
+        .roots
+        .get(&CheckRoot {
+            record: reader_coordinate,
+            round: CheckRound::Default,
+        })
+        .expect("reader default root state");
+    assert_eq!(state.reads_from, BTreeSet::from([target_coordinate]));
+}
+
+#[test]
+fn empty_targets_and_empty_incremental_changes_perform_no_work() {
+    let schema = compile_schema("type Item { value: int; check { value > 0; } }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
+    let model = builder.build().expect("model builds");
+
+    let empty = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::records(&[]).with_dependency_collection(DependencyCollection::Reads),
+    );
+    assert_eq!(empty.statistics.requested_roots, 0);
+    assert_eq!(empty.statistics.executed_rounds, 0);
+    assert!(empty.diagnostics.is_empty());
+    assert!(empty.dependencies.reads_from.is_empty());
+    assert!(empty
+        .snapshot
+        .expect("empty stable snapshot")
+        .roots
+        .is_empty());
+
+    let previous = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("full snapshot");
+    let unchanged = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::incremental(&previous, &BTreeSet::new()),
+    );
+    assert_eq!(unchanged.statistics.requested_roots, 0);
+    assert_eq!(unchanged.statistics.executed_rounds, 0);
+    assert_eq!(unchanged.snapshot.expect("reused snapshot"), previous);
+}
+
+#[test]
+fn duplicate_targets_are_normalized_before_snapshot_capture() {
+    let schema = compile_schema("type Item { value: int; check { value > 0; } }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(-1_i64))]);
+    let model = builder.build().expect("model builds");
+    let item = model.records().next().expect("item").0;
+
+    let output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::records(&[item, item])
+            .with_dependency_collection(DependencyCollection::Reads),
+    );
+
+    assert_eq!(output.statistics.requested_roots, 1);
+    assert_eq!(output.statistics.executed_rounds, 1);
+    assert_eq!(output.diagnostics.len(), 1);
+    let rendered = output
+        .snapshot
+        .expect("stable snapshot")
+        .render_diagnostics(&model)
+        .expect("render snapshot");
+    assert_eq!(rendered.len(), 1);
+}
+
+#[test]
+fn incremental_checks_follow_quantified_record_refs() {
+    let schema = compile_schema(
+        r#"
+            type Item { value: int; }
+            type Group {
+                items: [&Item];
+                check { all item in items { item.value > 0; } }
+            }
+        "#,
+    );
+    let build_generation = |value| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record("item", "Item", [("value", LoadedValueDraft::from(value))]);
+        builder.add_record(
+            "group",
+            "Group",
+            [(
+                "items",
+                LoadedValueDraft::Array(vec![LoadedValueDraft::record_ref("item")]),
+            )],
+        );
+        builder.build().expect("model builds")
+    };
+
+    assert_incremental_matches_full(&schema, build_generation, "item");
+}
+
+#[test]
+fn incremental_checks_follow_materialized_spread_sources() {
+    let schema = compile_schema("type Item { value: int; check { value > 0; } }");
+    let build_generation = |value| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record("base", "Item", [("value", LoadedValueDraft::from(value))]);
+        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
+            "middle",
+            "Item",
+            [LoadedValueDraft::record_ref("base")],
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
+        ));
+        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
+            "copy",
+            "Item",
+            [LoadedValueDraft::record_ref("middle")],
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
+        ));
+        builder.build().expect("model builds")
+    };
+
+    assert_incremental_matches_full(&schema, build_generation, "base");
+}
+
+fn assert_incremental_matches_full(
+    schema: &CftSchema,
+    build_generation: impl Fn(i64) -> CfdDataModel,
+    changed_key: &str,
+) {
+    let previous_model = build_generation(1);
+    let previous = coflow_checker::run_checks(
+        schema,
+        &previous_model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("full snapshot");
+    let changed = previous_model
+        .records()
+        .find(|(_, record)| record.key() == changed_key)
+        .expect("changed record")
+        .1
+        .coordinate();
+
+    let current_model = build_generation(-1);
+    let incremental = coflow_checker::run_checks(
+        schema,
+        &current_model,
+        CheckRequest::incremental(&previous, &BTreeSet::from([changed])),
+    )
+    .snapshot
+    .expect("incremental snapshot")
+    .render_diagnostics(&current_model)
+    .expect("render incremental");
+    let full = coflow_checker::run_checks(
+        schema,
+        &current_model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("fresh full snapshot")
+    .render_diagnostics(&current_model)
+    .expect("render full");
+
+    assert_eq!(incremental, full);
+}
+
+#[test]
+fn incremental_snapshot_executes_only_affected_roots_and_matches_fresh_full_output() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                value: int;
+                target: &Item? = null;
+                check {
+                    value > 0;
+                    target == null || target.value > 0;
+                }
+            }
+        "#,
+    );
+    let build_generation = |target_value| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "target",
+            "Item",
+            [
+                ("value", LoadedValueDraft::from(target_value)),
+                ("target", LoadedValueDraft::Null),
+            ],
+        );
+        builder.add_record(
+            "reader",
+            "Item",
+            [
+                ("value", LoadedValueDraft::from(1_i64)),
+                ("target", LoadedValueDraft::record_ref("target")),
+            ],
+        );
+        builder.build().expect("model builds")
+    };
+
+    let previous_model = build_generation(-1_i64);
+    let previous = coflow_checker::run_checks(
+        &schema,
+        &previous_model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("full snapshot");
+    let changed = BTreeSet::from([previous_model
+        .records()
+        .find(|(_, record)| record.key() == "target")
+        .expect("target")
+        .1
+        .coordinate()]);
+
+    let current_model = build_generation(1_i64);
+    let incremental = coflow_checker::run_checks(
+        &schema,
+        &current_model,
+        CheckRequest::incremental(&previous, &changed),
+    );
+    assert_eq!(incremental.statistics.requested_roots, 2);
+    assert_eq!(incremental.statistics.executed_rounds, 2);
+    let incremental_snapshot = incremental.snapshot.expect("incremental snapshot");
+    assert!(incremental_snapshot
+        .render_diagnostics(&current_model)
+        .expect("render incremental")
+        .is_empty());
+
+    let full_snapshot = coflow_checker::run_checks(
+        &schema,
+        &current_model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    )
+    .snapshot
+    .expect("fresh full snapshot");
+    assert_eq!(incremental_snapshot, full_snapshot);
 }
 
 #[test]
@@ -128,37 +380,37 @@ fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
     builder.add_record(
         "item_1",
         "Item",
-        [("rarity", CfdInputValue::enum_variant("Rarity", "Rare"))],
+        [("rarity", LoadedValueDraft::enum_variant("Rarity", "Rare"))],
     );
     builder.add_record(
         "drop_1",
         "Drop",
         [
-            ("item", CfdInputValue::record_ref("item_1")),
+            ("item", LoadedValueDraft::record_ref("item_1")),
             (
                 "weights",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from(40_i64),
-                    CfdInputValue::from(60_i64),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(40_i64),
+                    LoadedValueDraft::from(60_i64),
                 ]),
             ),
             (
                 "resistances",
-                CfdInputValue::dict([
+                LoadedValueDraft::dict([
                     (
-                        CfdInputDictKey::enum_variant("Rarity", "Common"),
-                        CfdInputValue::from(0.5_f64),
+                        LoadedDictKeyDraft::enum_variant("Rarity", "Common"),
+                        LoadedValueDraft::from(0.5_f64),
                     ),
                     (
-                        CfdInputDictKey::enum_variant("Rarity", "Rare"),
-                        CfdInputValue::from(1.0_f64),
+                        LoadedDictKeyDraft::enum_variant("Rarity", "Rare"),
+                        LoadedValueDraft::from(1.0_f64),
                     ),
                 ]),
             ),
         ],
     );
     let model = build_model(&schema, builder);
-    model.run_checks(&schema).expect("checks should pass");
+    run_model_checks(&model, &schema).expect("checks should pass");
 }
 
 #[test]
@@ -199,29 +451,30 @@ fn check_diagnostics_use_specific_codes_for_scalar_false_conditions() {
     builder.add_record(
         "reward_1",
         "ItemReward",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     builder.add_record(
         "item_1",
         "Item",
         [
-            ("level", CfdInputValue::from(0_i64)),
-            ("enabled", CfdInputValue::from(false)),
-            ("negated", CfdInputValue::from(true)),
-            ("left", CfdInputValue::from(false)),
-            ("right", CfdInputValue::from(false)),
-            ("reward", CfdInputValue::record_ref("reward_1")),
+            ("level", LoadedValueDraft::from(0_i64)),
+            ("enabled", LoadedValueDraft::from(false)),
+            ("negated", LoadedValueDraft::from(true)),
+            ("left", LoadedValueDraft::from(false)),
+            ("right", LoadedValueDraft::from(false)),
+            ("reward", LoadedValueDraft::record_ref("reward_1")),
             (
                 "tags",
-                CfdInputValue::Array(vec![CfdInputValue::from("mob"), CfdInputValue::from("mob")]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from("mob"),
+                    LoadedValueDraft::from("mob"),
+                ]),
             ),
-            ("name", CfdInputValue::from("mob_1")),
+            ("name", LoadedValueDraft::from("mob_1")),
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
-        .expect_err("scalar check diagnostics should fail");
+    let err = run_model_checks(&model, &schema).expect_err("scalar check diagnostics should fail");
 
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     assert_has_code(&err, CfdErrorCode::CheckBoolExpectedTrue);
@@ -271,23 +524,31 @@ fn check_diagnostics_use_specific_codes_for_quantifiers_and_when_context() {
         [
             (
                 "any_flags",
-                CfdInputValue::Array(vec![CfdInputValue::from(false), CfdInputValue::from(false)]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(false),
+                    LoadedValueDraft::from(false),
+                ]),
             ),
             (
                 "none_flags",
-                CfdInputValue::Array(vec![CfdInputValue::from(false), CfdInputValue::from(true)]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(false),
+                    LoadedValueDraft::from(true),
+                ]),
             ),
             (
                 "all_flags",
-                CfdInputValue::Array(vec![CfdInputValue::from(true), CfdInputValue::from(false)]),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(true),
+                    LoadedValueDraft::from(false),
+                ]),
             ),
-            ("gated", CfdInputValue::from(true)),
+            ("gated", LoadedValueDraft::from(true)),
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
-        .expect_err("quantifier and when diagnostics should fail");
+    let err =
+        run_model_checks(&model, &schema).expect_err("quantifier and when diagnostics should fail");
 
     assert_first_code(&err, CfdErrorCode::CheckAnyQuantifierFailed);
     assert_has_code(&err, CfdErrorCode::CheckNoneQuantifierFailed);
@@ -313,9 +574,9 @@ fn check_runner_reports_false_conditions_with_paths() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item_1", "Item", [("value", CfdInputValue::from(0_i64))]);
+    builder.add_record("item_1", "Item", [("value", LoadedValueDraft::from(0_i64))]);
     let model = build_model(&schema, builder);
-    let err = model.run_checks(&schema).expect_err("check should fail");
+    let err = run_model_checks(&model, &schema).expect_err("check should fail");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     assert_eq!(
         err.diagnostics[0]
@@ -337,12 +598,10 @@ fn logical_and_binds_tighter_than_or_and_bitwise_precedence_remains_left_associa
     builder.add_record(
         "item_1",
         "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&logical, builder);
-    model
-        .run_checks(&logical)
-        .expect("logical && should bind tighter than ||");
+    run_model_checks(&model, &logical).expect("logical && should bind tighter than ||");
 
     let bitwise = compile_schema(
         r#"
@@ -353,11 +612,10 @@ fn logical_and_binds_tighter_than_or_and_bitwise_precedence_remains_left_associa
     builder.add_record(
         "item_1",
         "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&bitwise, builder);
-    model
-        .run_checks(&bitwise)
+    run_model_checks(&model, &bitwise)
         .expect("same-precedence bitwise operators evaluate left-to-right");
 }
 
@@ -376,12 +634,10 @@ fn short_circuit_nullable_guards_and_null_access_are_reported() {
     builder.add_record(
         "holder_1",
         "Holder",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&guarded, builder);
-    model
-        .run_checks(&guarded)
-        .expect("guarded check should pass");
+    run_model_checks(&model, &guarded).expect("guarded check should pass");
 
     let unguarded = compile_schema(
         r#"
@@ -396,10 +652,10 @@ fn short_circuit_nullable_guards_and_null_access_are_reported() {
     builder.add_record(
         "holder_1",
         "Holder",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&unguarded, builder);
-    let err = model.run_checks(&unguarded).expect_err("null access");
+    let err = run_model_checks(&model, &unguarded).expect_err("null access");
     assert_has_code(&err, CfdErrorCode::CheckNullAccess);
 }
 
@@ -426,15 +682,15 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
         "Holder",
         [(
             "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(1_i64),
-                CfdInputValue::Null,
-                CfdInputValue::from(3_i64),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::from(1_i64),
+                LoadedValueDraft::Null,
+                LoadedValueDraft::from(3_i64),
             ]),
         )],
     );
     let model = build_model(&pass, builder);
-    model.run_checks(&pass).expect("checks should pass");
+    run_model_checks(&model, &pass).expect("checks should pass");
 
     let empty = compile_schema(
         r#"
@@ -448,12 +704,13 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
     builder.add_record(
         "holder_1",
         "Holder",
-        [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
+        [(
+            "nums",
+            LoadedValueDraft::Array(vec![LoadedValueDraft::Null]),
+        )],
     );
     let model = build_model(&empty, builder);
-    let err = model
-        .run_checks(&empty)
-        .expect_err("min over all-null values");
+    let err = run_model_checks(&model, &empty).expect_err("min over all-null values");
     assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
 }
 
@@ -474,23 +731,20 @@ fn contains_reports_runtime_type_errors_for_null_collections() {
         "Holder",
         [(
             "items",
-            CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+            LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
         )],
     );
     let valid = build_model(&schema, valid_builder);
-    valid
-        .run_checks(&schema)
-        .expect("contains should work for a present nullable array");
+    run_model_checks(&valid, &schema).expect("contains should work for a present nullable array");
 
     let mut null_builder = CfdDataModel::builder(&schema);
     null_builder.add_record(
         "holder_null",
         "Holder",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let null = build_model(&schema, null_builder);
-    let err = null
-        .run_checks(&schema)
+    let err = run_model_checks(&null, &schema)
         .expect_err("contains(null, value) should be a runtime type error");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
@@ -524,11 +778,10 @@ fn non_finite_float_comparisons_are_runtime_type_errors() {
     builder.add_record(
         "holder_1",
         "Holder",
-        [("value", CfdInputValue::from(0.0_f64))],
+        [("value", LoadedValueDraft::from(0.0_f64))],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
+    let err = run_model_checks(&model, &schema)
         .expect_err("NaN comparisons should fail as runtime type errors");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
@@ -563,8 +816,8 @@ fn inherited_checks_and_statement_order_are_stable() {
         "",
         "Child",
         [
-            ("first", CfdInputValue::from(0_i64)),
-            ("second", CfdInputValue::from(0_i64)),
+            ("first", LoadedValueDraft::from(0_i64)),
+            ("second", LoadedValueDraft::from(0_i64)),
         ],
     );
     let err = builder
@@ -577,12 +830,12 @@ fn inherited_checks_and_statement_order_are_stable() {
         "child_1",
         "Child",
         [
-            ("first", CfdInputValue::from(0_i64)),
-            ("second", CfdInputValue::from(0_i64)),
+            ("first", LoadedValueDraft::from(0_i64)),
+            ("second", LoadedValueDraft::from(0_i64)),
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model.run_checks(&schema).expect_err("child checks fail");
+    let err = run_model_checks(&model, &schema).expect_err("child checks fail");
     let paths = err
         .diagnostics
         .iter()
@@ -619,12 +872,12 @@ fn hard_stop_in_one_check_block_does_not_skip_later_blocks() {
         "item_1",
         "Item",
         [
-            ("xs", CfdInputValue::Array(Vec::new())),
-            ("value", CfdInputValue::from(0_i64)),
+            ("xs", LoadedValueDraft::Array(Vec::new())),
+            ("value", LoadedValueDraft::from(0_i64)),
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model.run_checks(&schema).expect_err("checks should fail");
+    let err = run_model_checks(&model, &schema).expect_err("checks should fail");
 
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
@@ -646,16 +899,14 @@ fn quantifiers_report_soft_failures_and_preserve_hard_errors() {
         "Item",
         [(
             "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(-1_i64),
-                CfdInputValue::from(-2_i64),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::from(-1_i64),
+                LoadedValueDraft::from(-2_i64),
             ]),
         )],
     );
     let model = build_model(&soft_fail, builder);
-    let err = model
-        .run_checks(&soft_fail)
-        .expect_err("all reports each failing element");
+    let err = run_model_checks(&model, &soft_fail).expect_err("all reports each failing element");
     let soft_fail_paths = err
         .diagnostics
         .iter()
@@ -684,16 +935,15 @@ fn quantifiers_report_soft_failures_and_preserve_hard_errors() {
         "Item",
         [(
             "rows",
-            CfdInputValue::Array(vec![
-                CfdInputValue::Array(Vec::new()),
-                CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::Array(Vec::new()),
+                LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
             ]),
         )],
     );
     let model = build_model(&hard_stop, builder);
-    let err = model
-        .run_checks(&hard_stop)
-        .expect_err("hard eval error should not be swallowed");
+    let err =
+        run_model_checks(&model, &hard_stop).expect_err("hard eval error should not be swallowed");
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
 }
 
@@ -718,11 +968,11 @@ fn inline_object_checks_use_nested_paths() {
         "Monster",
         [(
             "stats",
-            CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(0_i64))]),
+            LoadedValueDraft::object_with_declared_type([("hp", LoadedValueDraft::from(0_i64))]),
         )],
     );
     let model = build_model(&schema, builder);
-    let err = model.run_checks(&schema).expect_err("nested check fails");
+    let err = run_model_checks(&model, &schema).expect_err("nested check fails");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     let diag = err
         .diagnostics
@@ -761,12 +1011,15 @@ fn flag_enum_bitwise_composites_and_int_ops_work() {
         "door_1",
         "Door",
         [
-            ("granted", CfdInputValue::enum_variant("Permission", "Read")),
-            ("value", CfdInputValue::from(7_i64)),
+            (
+                "granted",
+                LoadedValueDraft::enum_variant("Permission", "Read"),
+            ),
+            ("value", LoadedValueDraft::from(7_i64)),
         ],
     );
     let model = build_model(&schema, builder);
-    model.run_checks(&schema).expect("operators should pass");
+    run_model_checks(&model, &schema).expect("operators should pass");
 }
 
 #[test]
@@ -785,13 +1038,11 @@ fn runtime_reports_index_dict_and_regex_edges() {
         "Item",
         [(
             "nums",
-            CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+            LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
         )],
     );
     let model = build_model(&negative_index, builder);
-    let err = model
-        .run_checks(&negative_index)
-        .expect_err("negative index should fail");
+    let err = run_model_checks(&model, &negative_index).expect_err("negative index should fail");
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
 
     let missing_key = compile_schema(
@@ -808,13 +1059,14 @@ fn runtime_reports_index_dict_and_regex_edges() {
         "Item",
         [(
             "attrs",
-            CfdInputValue::dict([(CfdInputDictKey::from("present"), CfdInputValue::from(1_i64))]),
+            LoadedValueDraft::dict([(
+                LoadedDictKeyDraft::from("present"),
+                LoadedValueDraft::from(1_i64),
+            )]),
         )],
     );
     let model = build_model(&missing_key, builder);
-    let err = model
-        .run_checks(&missing_key)
-        .expect_err("missing dict key should fail");
+    let err = run_model_checks(&model, &missing_key).expect_err("missing dict key should fail");
     assert_has_code(&err, CfdErrorCode::CheckMissingDictKey);
 
     let regex = compile_schema(
@@ -829,12 +1081,10 @@ fn runtime_reports_index_dict_and_regex_edges() {
     builder.add_record(
         "item_1",
         "Item",
-        [("label", CfdInputValue::from("怪物配置"))],
+        [("label", LoadedValueDraft::from("怪物配置"))],
     );
     let model = build_model(&regex, builder);
-    model
-        .run_checks(&regex)
-        .expect("matches should use Unicode regex semantics");
+    run_model_checks(&model, &regex).expect("matches should use Unicode regex semantics");
 }
 
 #[test]
@@ -858,20 +1108,18 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
     builder.add_record(
         "target_1",
         "Target",
-        [("value", CfdInputValue::from(0_i64))],
+        [("value", LoadedValueDraft::from(0_i64))],
     );
     builder.add_record(
         "holder_1",
         "Holder",
         [
-            ("first", CfdInputValue::record_ref("target_1")),
-            ("second", CfdInputValue::record_ref("target_1")),
+            ("first", LoadedValueDraft::record_ref("target_1")),
+            ("second", LoadedValueDraft::record_ref("target_1")),
         ],
     );
     let model = build_model(&schema, builder);
-    let err = model
-        .run_checks(&schema)
-        .expect_err("invalid target should fail once");
+    let err = run_model_checks(&model, &schema).expect_err("invalid target should fail once");
 
     let failures = err
         .diagnostics
@@ -897,17 +1145,20 @@ fn checks_through_refs_blame_the_target_value_and_relate_the_ref_source() {
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("target", "Target", [("price", CfdInputValue::from(0_i64))]);
+    builder.add_record(
+        "target",
+        "Target",
+        [("price", LoadedValueDraft::from(0_i64))],
+    );
     builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("target"))],
+        [("item", LoadedValueDraft::record_ref("target"))],
     );
     let model = build_model(&schema, builder);
 
-    let err = model
-        .run_checks(&schema)
-        .expect_err("target price should fail the holder check");
+    let err =
+        run_model_checks(&model, &schema).expect_err("target price should fail the holder check");
     let diagnostic = err
         .diagnostics
         .iter()
@@ -935,22 +1186,20 @@ fn checks_preserve_every_hop_in_a_reference_chain() {
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("leaf", "Leaf", [("value", CfdInputValue::from(0_i64))]);
+    builder.add_record("leaf", "Leaf", [("value", LoadedValueDraft::from(0_i64))]);
     builder.add_record(
         "middle",
         "Middle",
-        [("leaf", CfdInputValue::record_ref("leaf"))],
+        [("leaf", LoadedValueDraft::record_ref("leaf"))],
     );
     builder.add_record(
         "root",
         "Root",
-        [("middle", CfdInputValue::record_ref("middle"))],
+        [("middle", LoadedValueDraft::record_ref("middle"))],
     );
     let model = build_model(&schema, builder);
 
-    let err = model
-        .run_checks(&schema)
-        .expect_err("leaf value should fail the root check");
+    let err = run_model_checks(&model, &schema).expect_err("leaf value should fail the root check");
     let diagnostic = err
         .diagnostics
         .iter()
@@ -987,19 +1236,21 @@ fn checks_keep_target_locations_through_collection_access_and_virtual_ids() {
         "Target",
         [(
             "nums",
-            CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(0_i64)]),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::from(1_i64),
+                LoadedValueDraft::from(0_i64),
+            ]),
         )],
     );
     builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("target"))],
+        [("item", LoadedValueDraft::record_ref("target"))],
     );
     let model = build_model(&schema, builder);
 
-    let err = model
-        .run_checks(&schema)
-        .expect_err("target collection value and id should fail");
+    let err =
+        run_model_checks(&model, &schema).expect_err("target collection value and id should fail");
     let paths = err
         .diagnostics
         .iter()
@@ -1016,10 +1267,10 @@ fn checks_keep_target_locations_through_collection_access_and_virtual_ids() {
             assert_eq!(diagnostic.related[0].path, CfdPath::root().field("item"));
             primary.path.clone()
         })
-        .collect::<std::collections::BTreeSet<_>>();
+        .collect::<BTreeSet<_>>();
     assert_eq!(
         paths,
-        std::collections::BTreeSet::from([
+        BTreeSet::from([
             CfdPath::root().field("id"),
             CfdPath::root().field("nums").index(1),
         ])
@@ -1039,23 +1290,21 @@ fn checks_can_access_ref_fields_inherited_from_spread() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("price", CfdInputValue::from(1_i64))]);
+    builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(1_i64))]);
     builder.add_record(
         "base",
         "Holder",
-        [("item", CfdInputValue::record_ref("sword"))],
+        [("item", LoadedValueDraft::record_ref("sword"))],
     );
-    builder.add_input_record(CfdInputRecord::with_spreads(
+    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "copy",
         "Holder",
-        [CfdInputValue::record_ref("base")],
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        [LoadedValueDraft::record_ref("base")],
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     ));
 
     let model = build_model(&schema, builder);
-    model
-        .run_checks(&schema)
-        .expect("spread-inherited ref should resolve in checks");
+    run_model_checks(&model, &schema).expect("spread-inherited ref should resolve in checks");
 
     let nested_schema = compile_schema(
         r#"
@@ -1069,52 +1318,50 @@ fn checks_can_access_ref_fields_inherited_from_spread() {
     );
 
     let mut nested_builder = CfdDataModel::builder(&nested_schema);
-    nested_builder.add_record("sword", "Item", [("price", CfdInputValue::from(1_i64))]);
+    nested_builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(1_i64))]);
     nested_builder.add_record(
         "base_stats",
         "Stats",
-        [("item", CfdInputValue::record_ref("sword"))],
+        [("item", LoadedValueDraft::record_ref("sword"))],
     );
     nested_builder.add_record(
         "holder",
         "Holder",
         [(
             "stats",
-            CfdInputValue::object_spread(
-                [CfdInputValue::record_ref("base_stats")],
-                std::iter::empty::<(&str, CfdInputValue)>(),
+            LoadedValueDraft::object_spread(
+                [LoadedValueDraft::record_ref("base_stats")],
+                std::iter::empty::<(&str, LoadedValueDraft)>(),
             ),
         )],
     );
 
     let nested_model = build_model(&nested_schema, nested_builder);
-    nested_model
-        .run_checks(&nested_schema)
+    run_model_checks(&nested_model, &nested_schema)
         .expect("nested spread-inherited ref should resolve in checks");
 
     let mut chained_builder = CfdDataModel::builder(&schema);
-    chained_builder.add_record("sword", "Item", [("price", CfdInputValue::from(1_i64))]);
+    chained_builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(1_i64))]);
     chained_builder.add_record(
         "base",
         "Holder",
-        [("item", CfdInputValue::record_ref("sword"))],
+        [("item", LoadedValueDraft::record_ref("sword"))],
     );
-    chained_builder.add_input_record(CfdInputRecord::with_spreads(
+    chained_builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "middle",
         "Holder",
-        [CfdInputValue::record_ref("base")],
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        [LoadedValueDraft::record_ref("base")],
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     ));
-    chained_builder.add_input_record(CfdInputRecord::with_spreads(
+    chained_builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "copy",
         "Holder",
-        [CfdInputValue::record_ref("middle")],
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        [LoadedValueDraft::record_ref("middle")],
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     ));
 
     let chained_model = build_model(&schema, chained_builder);
-    chained_model
-        .run_checks(&schema)
+    run_model_checks(&chained_model, &schema)
         .expect("chained spread-inherited ref should resolve in checks");
 }
 
@@ -1132,12 +1379,10 @@ fn empty_sum_and_float_edge_semantics_are_preserved() {
     builder.add_record(
         "item_1",
         "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let model = build_model(&empty_sum, builder);
-    model
-        .run_checks(&empty_sum)
-        .expect("empty int sum should evaluate as 0");
+    run_model_checks(&model, &empty_sum).expect("empty int sum should evaluate as 0");
 
     let float_div_zero = compile_schema(
         r#"
@@ -1148,9 +1393,12 @@ fn empty_sum_and_float_edge_semantics_are_preserved() {
         "#,
     );
     let mut builder = CfdDataModel::builder(&float_div_zero);
-    builder.add_record("item_1", "Item", [("value", CfdInputValue::from(1.0_f64))]);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [("value", LoadedValueDraft::from(1.0_f64))],
+    );
     let model = build_model(&float_div_zero, builder);
-    model
-        .run_checks(&float_div_zero)
+    run_model_checks(&model, &float_div_zero)
         .expect("float division by zero follows f64 infinity semantics");
 }

@@ -6,6 +6,7 @@
 )]
 
 mod common;
+use coflow_cft::TypeName;
 use coflow_data_model::CfdRecord;
 use common::*;
 
@@ -23,23 +24,23 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
     builder.add_record(
         "reward_1",
         "ItemReward",
-        [("count", CfdInputValue::from(3_i64))],
+        [("count", LoadedValueDraft::from(3_i64))],
     );
     builder.add_record(
         "drop_1",
         "Drop",
-        [("reward", CfdInputValue::record_ref("reward_1"))],
+        [("reward", LoadedValueDraft::record_ref("reward_1"))],
     );
     let model = builder.build().expect("record-key refs should build");
     let reward_id = record_id_at(&model, 0);
     let drop_id = record_id_at(&model, 1);
 
     assert_eq!(
-        model.lookup_assignable("Reward", "reward_1"),
+        model.lookup_assignable(&schema, "Reward", "reward_1"),
         Some(reward_id)
     );
     assert_eq!(
-        model.lookup_assignable("ItemReward", "reward_1"),
+        model.lookup_assignable(&schema, "ItemReward", "reward_1"),
         Some(reward_id)
     );
     assert_eq!(
@@ -50,7 +51,7 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
         model
             .record(drop_id)
             .and_then(|record| record.field("reward")),
-        Some(&CfdValue::Ref("reward_1".to_string()))
+        Some(&CfdValue::record_ref("reward_1").unwrap())
     );
     let _ = reward_id;
 }
@@ -66,11 +67,11 @@ fn parent_records_cannot_satisfy_child_typed_refs() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("base_1", "Base", [("name", CfdInputValue::from("base"))]);
+    builder.add_record("base_1", "Base", [("name", LoadedValueDraft::from("base"))]);
     builder.add_record(
         "holder_1",
         "Holder",
-        [("child", CfdInputValue::record_ref("base_1"))],
+        [("child", LoadedValueDraft::record_ref("base_1"))],
     );
 
     let err = builder
@@ -89,11 +90,15 @@ fn object_typed_fields_do_not_accept_bare_string_refs() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [("name", LoadedValueDraft::from("Sword"))],
+    );
     builder.add_record(
         "holder_1",
         "Holder",
-        [("item", CfdInputValue::from("item_1"))],
+        [("item", LoadedValueDraft::from("item_1"))],
     );
 
     let err = builder
@@ -116,12 +121,12 @@ fn duplicate_keys_are_reported_for_concrete_and_polymorphic_ranges() {
     concrete.add_record(
         "same",
         "ItemReward",
-        [("count", CfdInputValue::from(1_i64))],
+        [("count", LoadedValueDraft::from(1_i64))],
     );
     concrete.add_record(
         "same",
         "ItemReward",
-        [("count", CfdInputValue::from(2_i64))],
+        [("count", LoadedValueDraft::from(2_i64))],
     );
     let err = concrete.build().expect_err("duplicate concrete key");
     assert_has_code(&err, CfdErrorCode::DuplicateId);
@@ -130,12 +135,12 @@ fn duplicate_keys_are_reported_for_concrete_and_polymorphic_ranges() {
     polymorphic.add_record(
         "same",
         "ItemReward",
-        [("count", CfdInputValue::from(1_i64))],
+        [("count", LoadedValueDraft::from(1_i64))],
     );
     polymorphic.add_record(
         "same",
         "CurrencyReward",
-        [("amount", CfdInputValue::from(2_i64))],
+        [("amount", LoadedValueDraft::from(2_i64))],
     );
     let err = polymorphic.build().expect_err("duplicate polymorphic key");
     assert_has_code(&err, CfdErrorCode::DuplicatePolymorphicId);
@@ -151,16 +156,16 @@ fn unrelated_types_can_reuse_record_keys_in_separate_domains() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("value", CfdInputValue::from(1_i64))]);
-    builder.add_record("sword", "Skill", [("value", CfdInputValue::from(2_i64))]);
+    builder.add_record("sword", "Item", [("value", LoadedValueDraft::from(1_i64))]);
+    builder.add_record("sword", "Skill", [("value", LoadedValueDraft::from(2_i64))]);
 
     let model = builder
         .build()
         .expect("unrelated types should keep separate key domains");
     let item_id = record_id_at(&model, 0);
     let skill_id = record_id_at(&model, 1);
-    let item_domain = model.type_domain_id("Item").expect("item domain");
-    let skill_domain = model.type_domain_id("Skill").expect("skill domain");
+    let item_domain = schema.inheritance_root("Item").expect("item domain");
+    let skill_domain = schema.inheritance_root("Skill").expect("skill domain");
 
     assert_ne!(item_domain, skill_domain);
     assert_eq!(model.record_by_type_key("Item", "sword"), Some(item_id));
@@ -189,12 +194,12 @@ fn same_abstract_base_children_reject_duplicate_domain_keys() {
     builder.add_record(
         "same",
         "ItemReward",
-        [("count", CfdInputValue::from(1_i64))],
+        [("count", LoadedValueDraft::from(1_i64))],
     );
     builder.add_record(
         "same",
         "CurrencyReward",
-        [("amount", CfdInputValue::from(2_i64))],
+        [("amount", LoadedValueDraft::from(2_i64))],
     );
 
     let err = builder
@@ -213,13 +218,13 @@ fn plain_parent_and_child_reject_duplicate_domain_keys() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("same", "Base", [("name", CfdInputValue::from("base"))]);
+    builder.add_record("same", "Base", [("name", LoadedValueDraft::from("base"))]);
     builder.add_record(
         "same",
         "Child",
         [
-            ("name", CfdInputValue::from("child")),
-            ("power", CfdInputValue::from(3_i64)),
+            ("name", LoadedValueDraft::from("child")),
+            ("power", LoadedValueDraft::from(3_i64)),
         ],
     );
 
@@ -240,14 +245,18 @@ fn multi_level_inheritance_chain_rejects_duplicate_domain_keys() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("same", "Entity", [("name", CfdInputValue::from("entity"))]);
+    builder.add_record(
+        "same",
+        "Entity",
+        [("name", LoadedValueDraft::from("entity"))],
+    );
     builder.add_record(
         "same",
         "ItemReward",
         [
-            ("name", CfdInputValue::from("item")),
-            ("value", CfdInputValue::from(1_i64)),
-            ("count", CfdInputValue::from(2_i64)),
+            ("name", LoadedValueDraft::from("item")),
+            ("value", LoadedValueDraft::from(1_i64)),
+            ("count", LoadedValueDraft::from(2_i64)),
         ],
     );
 
@@ -268,21 +277,25 @@ fn domain_lookup_finds_any_member_record_but_type_lookup_uses_actual_type() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("base", "Reward", [("name", CfdInputValue::from("reward"))]);
+    builder.add_record(
+        "base",
+        "Reward",
+        [("name", LoadedValueDraft::from("reward"))],
+    );
     builder.add_record(
         "item",
         "ItemReward",
         [
-            ("name", CfdInputValue::from("item")),
-            ("count", CfdInputValue::from(1_i64)),
+            ("name", LoadedValueDraft::from("item")),
+            ("count", LoadedValueDraft::from(1_i64)),
         ],
     );
     builder.add_record(
         "currency",
         "CurrencyReward",
         [
-            ("name", CfdInputValue::from("currency")),
-            ("amount", CfdInputValue::from(2_i64)),
+            ("name", LoadedValueDraft::from("currency")),
+            ("amount", LoadedValueDraft::from(2_i64)),
         ],
     );
 
@@ -290,18 +303,18 @@ fn domain_lookup_finds_any_member_record_but_type_lookup_uses_actual_type() {
     let base_id = record_id_at(&model, 0);
     let item_id = record_id_at(&model, 1);
     let currency_id = record_id_at(&model, 2);
-    let domain = model.type_domain_id("Reward").expect("reward domain");
-    let members = model.domain_members(domain).expect("domain members");
+    let domain = schema.inheritance_root("Reward").expect("reward domain");
 
-    assert_eq!(model.type_domain_id("ItemReward"), Some(domain));
-    assert_eq!(model.type_domain_id("CurrencyReward"), Some(domain));
-    assert!(members.contains(&model.type_id("Reward").expect("Reward type id")));
-    assert!(members.contains(&model.type_id("ItemReward").expect("ItemReward type id")));
-    assert!(members.contains(
-        &model
-            .type_id("CurrencyReward")
-            .expect("CurrencyReward type id")
-    ));
+    assert_eq!(schema.inheritance_root("ItemReward"), Some(domain));
+    assert_eq!(schema.inheritance_root("CurrencyReward"), Some(domain));
+    assert_eq!(
+        schema.concrete_assignable_types("Reward"),
+        Some(vec![
+            TypeName::new("Reward").expect("type name"),
+            TypeName::new("CurrencyReward").expect("type name"),
+            TypeName::new("ItemReward").expect("type name"),
+        ])
+    );
     assert_eq!(model.record_by_domain_key(domain, "base"), Some(base_id));
     assert_eq!(model.record_by_domain_key(domain, "item"), Some(item_id));
     assert_eq!(
@@ -330,27 +343,30 @@ fn lookup_for_middle_type_does_not_return_ancestor_records() {
     builder.add_record(
         "entity",
         "Entity",
-        [("name", CfdInputValue::from("entity"))],
+        [("name", LoadedValueDraft::from("entity"))],
     );
     builder.add_record(
         "item",
         "ItemReward",
         [
-            ("name", CfdInputValue::from("item")),
-            ("value", CfdInputValue::from(1_i64)),
-            ("count", CfdInputValue::from(2_i64)),
+            ("name", LoadedValueDraft::from("item")),
+            ("value", LoadedValueDraft::from(1_i64)),
+            ("count", LoadedValueDraft::from(2_i64)),
         ],
     );
 
     let model = builder.build().expect("domain index should build");
     let item_id = record_id_at(&model, 1);
 
-    assert_eq!(model.lookup_assignable("Reward", "entity"), None);
-    assert_eq!(model.lookup_assignable("Reward", "item"), Some(item_id));
+    assert_eq!(model.lookup_assignable(&schema, "Reward", "entity"), None);
+    assert_eq!(
+        model.lookup_assignable(&schema, "Reward", "item"),
+        Some(item_id)
+    );
 }
 
 #[test]
-fn domain_index_exposes_type_ancestors() {
+fn schema_exposes_type_ancestors_without_a_model_relation_copy() {
     let schema = compile_schema(
         r"
             type Entity { name: string; }
@@ -359,16 +375,18 @@ fn domain_index_exposes_type_ancestors() {
         ",
     );
 
-    let model = CfdDataModel::builder(&schema)
-        .build()
-        .expect("empty model should build");
-    let entity = model.type_id("Entity").expect("Entity type id");
-    let reward = model.type_id("Reward").expect("Reward type id");
-    let item = model.type_id("ItemReward").expect("ItemReward type id");
+    let entity = TypeName::new("Entity").expect("type name");
+    let reward = TypeName::new("Reward").expect("type name");
 
-    assert_eq!(model.type_ancestors(entity), Some(&[][..]));
-    assert_eq!(model.type_ancestors(reward), Some(&[entity][..]));
-    assert_eq!(model.type_ancestors(item), Some(&[reward, entity][..]));
+    assert_eq!(schema.ancestor_type_names("Entity"), Some(&[][..]));
+    assert_eq!(
+        schema.ancestor_type_names("Reward"),
+        Some(&[entity.clone()][..])
+    );
+    assert_eq!(
+        schema.ancestor_type_names("ItemReward"),
+        Some(&[reward, entity][..])
+    );
 }
 
 #[test]
@@ -387,14 +405,14 @@ fn concrete_ref_expected_type_rejects_sibling_and_parent_records_in_same_domain(
         "currency",
         "CurrencyReward",
         [
-            ("name", CfdInputValue::from("currency")),
-            ("amount", CfdInputValue::from(2_i64)),
+            ("name", LoadedValueDraft::from("currency")),
+            ("amount", LoadedValueDraft::from(2_i64)),
         ],
     );
     sibling_builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("currency"))],
+        [("item", LoadedValueDraft::record_ref("currency"))],
     );
 
     let err = sibling_builder
@@ -403,11 +421,15 @@ fn concrete_ref_expected_type_rejects_sibling_and_parent_records_in_same_domain(
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
 
     let mut parent_builder = CfdDataModel::builder(&schema);
-    parent_builder.add_record("base", "Reward", [("name", CfdInputValue::from("reward"))]);
+    parent_builder.add_record(
+        "base",
+        "Reward",
+        [("name", LoadedValueDraft::from("reward"))],
+    );
     parent_builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("base"))],
+        [("item", LoadedValueDraft::record_ref("base"))],
     );
 
     let err = parent_builder

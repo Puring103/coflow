@@ -1,5 +1,5 @@
 use coflow_cft::record_key_ident_error;
-use coflow_data_model::CfdInputValue;
+use coflow_data_model::LoadedValueDraft;
 
 use super::diagnostics::{reference_needs_marker, syntax, type_mismatch, CellValueDiagnostics};
 use super::markers::looks_like_bare_record_key;
@@ -7,7 +7,7 @@ use super::markers::looks_like_bare_record_key;
 pub(super) fn parse_ref(
     expected_type: &str,
     text: &str,
-) -> Result<CfdInputValue, CellValueDiagnostics> {
+) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let text = text.trim();
     let Some(key) = text.strip_prefix('&') else {
         if text.starts_with('@') {
@@ -32,5 +32,5 @@ pub(super) fn parse_ref(
     if let Some(reason) = record_key_ident_error(key) {
         return Err(syntax(format!("invalid reference key `{key}`: {reason}")));
     }
-    Ok(CfdInputValue::record_ref(key))
+    Ok(LoadedValueDraft::record_ref(key))
 }

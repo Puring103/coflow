@@ -4,48 +4,26 @@ use std::sync::Arc;
 
 use coflow_api::{ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet};
 use coflow_cft::{CftModuleSet, CftSchema};
-use coflow_data_model::{CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue};
+use coflow_data_model::{
+    CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RecordCoordinate,
+};
 use coflow_project::{path_to_slash, Project};
-use serde::{Deserialize, Serialize};
 
 use crate::checks::CheckState;
-use crate::dimensions::{self, dimensions_for_project, DimensionInfo};
+use crate::dimensions::{dimensions_for_project, DimensionInfo, DimensionRuntimePlan};
 use crate::files::{self, DimensionGroup, FileTreeNode, FileTreeOptions};
 use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
 use crate::load::SourceDataCache;
 use crate::records::{EffectiveFieldWrite, RecordView, RefTargetInfo};
 use crate::writes::record_value_at_path;
-
-/// Stable, wire-friendly coordinate of a top-level record.
-///
-/// Top-level records always have an `(actual_type, key)` pair that uniquely
-/// identifies them inside a model build.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-pub struct RecordCoordinate {
-    pub actual_type: String,
-    pub key: String,
-}
-
-impl RecordCoordinate {
-    #[must_use]
-    pub fn new(actual_type: impl Into<String>, key: impl Into<String>) -> Self {
-        Self {
-            actual_type: actual_type.into(),
-            key: key.into(),
-        }
-    }
-}
+use crate::ProjectExecutionStats;
 
 #[derive(Debug)]
 pub(crate) struct ProjectSession {
     pub(crate) project: Project,
     pub(crate) modules: Arc<CftModuleSet>,
     pub(crate) schema: Arc<CftSchema>,
+    pub(crate) dimension_plan: Arc<DimensionRuntimePlan>,
     pub(crate) model: CfdDataModel,
     pub(crate) diagnostics: DiagnosticsStore,
     pub(crate) sources: SourceIndex,
@@ -54,6 +32,7 @@ pub(crate) struct ProjectSession {
     pub(crate) loader_extensions: BTreeSet<String>,
     pub(crate) source_data: SourceDataCache,
     pub(crate) check_state: CheckState,
+    pub(crate) execution_stats: ProjectExecutionStats,
 }
 
 impl ProjectSession {
@@ -85,6 +64,11 @@ impl ProjectSession {
     #[must_use]
     pub const fn files(&self) -> &FileIndex {
         &self.files
+    }
+
+    #[must_use]
+    pub const fn execution_stats(&self) -> &ProjectExecutionStats {
+        &self.execution_stats
     }
 
     #[must_use]
@@ -162,9 +146,7 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub fn dimensions(&self) -> Vec<DimensionInfo> {
-        let view = self.schema();
-        let fields = dimensions::dimension_fields(view);
-        dimensions_for_project(&self.project, &fields)
+        dimensions_for_project(&self.project, self.dimension_plan.fields())
     }
 
     /// Lookup a single dimension by name.
@@ -246,26 +228,17 @@ impl ProjectSession {
     pub fn ref_targets(&self, expected_type: &str) -> Vec<RefTargetInfo> {
         let mut targets = Vec::new();
         let schema = self.schema();
-        let Some(domain_id) = self.model.type_domain_id(expected_type) else {
+        let Some(assignable_types) = schema.concrete_assignable_types(expected_type) else {
             return targets;
         };
-        let Some(members) = self.model.domain_members(domain_id) else {
-            return targets;
-        };
-        for type_id in members {
-            let Some(type_name) = self.model.type_name(*type_id) else {
-                continue;
-            };
-            if !schema.is_assignable(type_name, expected_type) {
-                continue;
-            }
-            for (_, record) in self.model.records_of_type(type_name) {
+        for type_name in assignable_types {
+            for (_, record) in self.model.records_of_type(&type_name) {
                 let Some(file_path) = self.file_for_record(record.actual_type(), &record.key)
                 else {
                     continue;
                 };
                 targets.push(RefTargetInfo {
-                    coordinate: RecordCoordinate::new(record.actual_type(), record.key.clone()),
+                    coordinate: record.coordinate(),
                     file_path: file_path.to_string(),
                 });
             }

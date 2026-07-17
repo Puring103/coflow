@@ -25,8 +25,8 @@ mod scan;
 mod strings;
 mod types;
 
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
-use coflow_data_model::CfdInputValue;
+use coflow_cft::{CftSchema, CftValueType};
+use coflow_data_model::LoadedValueDraft;
 use collections::{parse_array, parse_dict};
 use diagnostics::type_mismatch;
 pub use diagnostics::{CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode};
@@ -39,7 +39,7 @@ use types::CellType;
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParsedCell {
     Omitted,
-    Value(CfdInputValue),
+    Value(LoadedValueDraft),
 }
 
 /// Parses one cell value using a CFT declared type as context.
@@ -67,7 +67,7 @@ pub fn parse_cell(
 /// Returns diagnostics when the cell text does not match the declared type.
 pub fn parse_schema_cell(
     schema: &CftSchema,
-    declared_type: &CftSchemaTypeRef,
+    declared_type: &CftValueType,
     text: &str,
 ) -> Result<ParsedCell, CellValueDiagnostics> {
     let declared_type = CellType::from_schema_type(declared_type);
@@ -95,11 +95,11 @@ fn parse_value(
     ty: &CellType,
     text: &str,
     context: ValueContext,
-) -> Result<CfdInputValue, CellValueDiagnostics> {
+) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let text = text.trim();
     if let CellType::Nullable(inner) = ty {
         return if text == "null" {
-            Ok(CfdInputValue::Null)
+            Ok(LoadedValueDraft::Null)
         } else {
             parse_value(schema, inner, text, context)
         };
@@ -108,23 +108,23 @@ fn parse_value(
         return Err(type_mismatch(&ty.display()));
     }
     match ty {
-        CellType::Int => Ok(CfdInputValue::Int(
+        CellType::Int => Ok(LoadedValueDraft::Int(
             text.parse::<i64>().map_err(|_| type_mismatch("int"))?,
         )),
         CellType::Float => {
             let value = text.parse::<f64>().map_err(|_| type_mismatch("float"))?;
             if value.is_finite() {
-                Ok(CfdInputValue::Float(value))
+                Ok(LoadedValueDraft::Float(value))
             } else {
                 Err(type_mismatch("finite float"))
             }
         }
         CellType::Bool => match text.to_ascii_lowercase().as_str() {
-            "true" | "1" | "yes" | "y" => Ok(CfdInputValue::Bool(true)),
-            "false" | "0" | "no" | "n" => Ok(CfdInputValue::Bool(false)),
+            "true" | "1" | "yes" | "y" => Ok(LoadedValueDraft::Bool(true)),
+            "false" | "0" | "no" | "n" => Ok(LoadedValueDraft::Bool(false)),
             _ => Err(type_mismatch("bool")),
         },
-        CellType::String => parse_string(text).map(CfdInputValue::String),
+        CellType::String => parse_string(text).map(LoadedValueDraft::String),
         CellType::Enum(enum_name) => parse_enum(schema, enum_name, text),
         CellType::Ref(type_name) => parse_ref(type_name, text),
         CellType::Type(type_name) => parse_object(schema, type_name, text, context),
@@ -138,7 +138,7 @@ pub(super) fn parse_enum(
     schema: &CftSchema,
     enum_name: &str,
     text: &str,
-) -> Result<CfdInputValue, CellValueDiagnostics> {
+) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let variant = text
         .strip_prefix(enum_name)
         .and_then(|rest| rest.strip_prefix('.'))
@@ -151,7 +151,7 @@ pub(super) fn parse_enum(
         .iter()
         .any(|schema_variant| schema_variant.name.as_str() == variant)
     {
-        Ok(CfdInputValue::enum_variant(enum_name, variant))
+        Ok(LoadedValueDraft::enum_variant(enum_name, variant))
     } else {
         Err(CellValueDiagnostics {
             diagnostics: vec![CellValueDiagnostic {

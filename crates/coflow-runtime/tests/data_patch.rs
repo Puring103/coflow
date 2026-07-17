@@ -1186,7 +1186,7 @@ fn dimension_reference_checks_match_full_diagnostics() {
                 path: Vec::new(),
             },
             expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
-                coflow_data_model::CfdValue::Ref("potion".to_string()),
+                coflow_data_model::CfdValue::record_ref("potion").unwrap(),
             )),
             value: json!({ "$ref": "bad" }),
         }],
@@ -1824,7 +1824,7 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
         .expect("holder");
     assert!(matches!(
         view.record.fields().get("owner"),
-        Some(coflow_data_model::CfdValue::Ref(target_key)) if target_key == "sword"
+        Some(coflow_data_model::CfdValue::Ref(target_key)) if target_key.as_str() == "sword"
     ));
 
     let _ = std::fs::remove_dir_all(root);
@@ -1867,7 +1867,7 @@ fn direct_write_field_rejects_values_that_violate_ref_shapes_before_file_write()
             &[coflow_api::WriteFieldPathSegment::Field(
                 "inline_item".to_string(),
             )],
-            &coflow_data_model::CfdValue::Ref("sword".to_string()),
+            &coflow_data_model::CfdValue::record_ref("sword").unwrap(),
         )
         .expect_err("direct write should fail before writer mutation");
     assert!(err
@@ -1916,7 +1916,7 @@ fn direct_write_field_rejects_missing_ref_target_before_file_write() {
             &[coflow_api::WriteFieldPathSegment::Field(
                 "owner".to_string(),
             )],
-            &coflow_data_model::CfdValue::Ref("ghost".to_string()),
+            &coflow_data_model::CfdValue::record_ref("ghost").unwrap(),
         )
         .expect_err("direct write should reject missing ref target before writer mutation");
     assert!(err.iter().any(|diagnostic| {
@@ -1970,7 +1970,7 @@ holder: Holder { item_reward: &item }
             &[coflow_api::WriteFieldPathSegment::Field(
                 "item_reward".to_string(),
             )],
-            &coflow_data_model::CfdValue::Ref("currency".to_string()),
+            &coflow_data_model::CfdValue::record_ref("currency").unwrap(),
         )
         .expect_err("direct write should reject sibling-type ref target before writer mutation");
     assert!(err.iter().any(|diagnostic| {
@@ -2098,23 +2098,27 @@ fn direct_insert_rejects_missing_ref_target_before_file_write() {
     let fields = std::collections::BTreeMap::from([
         (
             "owner".to_string(),
-            coflow_data_model::CfdValue::Ref("ghost".to_string()),
+            coflow_data_model::CfdValue::record_ref("ghost").unwrap(),
         ),
         (
             "inline_item".to_string(),
-            coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
-                "Item",
-                std::collections::BTreeMap::from([(
-                    "name".to_string(),
-                    coflow_data_model::CfdValue::String("Inline".to_string()),
-                )]),
-            ))),
+            coflow_data_model::CfdValue::Object(Box::new(
+                coflow_data_model::CfdObject::try_new(
+                    "Item",
+                    std::collections::BTreeMap::from([(
+                        "name".to_string(),
+                        coflow_data_model::CfdValue::String("Inline".to_string()),
+                    )]),
+                )
+                .unwrap(),
+            )),
         ),
         (
             "configs".to_string(),
-            coflow_data_model::CfdValue::Array(vec![coflow_data_model::CfdValue::Ref(
-                "main".to_string(),
-            )]),
+            coflow_data_model::CfdValue::Array(vec![coflow_data_model::CfdValue::record_ref(
+                "main",
+            )
+            .unwrap()]),
         ),
     ]);
 
@@ -2236,7 +2240,7 @@ fn direct_insert_allows_self_references() {
     let mut session = session(&root);
     let fields = std::collections::BTreeMap::from([(
         "parent".to_string(),
-        coflow_data_model::CfdValue::Ref("root".to_string()),
+        coflow_data_model::CfdValue::record_ref("root").unwrap(),
     )]);
 
     session
@@ -2249,7 +2253,7 @@ fn direct_insert_allows_self_references() {
         .expect("inserted node");
     assert_eq!(
         view.record.fields().get("parent"),
-        Some(&coflow_data_model::CfdValue::Ref("root".to_string()))
+        Some(&coflow_data_model::CfdValue::record_ref("root").unwrap())
     );
 
     let _ = std::fs::remove_dir_all(root);
@@ -2307,7 +2311,7 @@ fn batch_insert_can_reference_an_earlier_pending_insert() {
         .expect("inserted child");
     assert_eq!(
         child.record.fields().get("parent"),
-        Some(&coflow_data_model::CfdValue::Ref("root".to_string()))
+        Some(&coflow_data_model::CfdValue::record_ref("root").unwrap())
     );
 
     let _ = std::fs::remove_dir_all(root);
@@ -2373,7 +2377,7 @@ fn batch_rename_of_pending_insert_rewrites_self_references() {
         .expect("renamed node");
     assert_eq!(
         tree.record.fields().get("parent"),
-        Some(&coflow_data_model::CfdValue::Ref("tree".to_string()))
+        Some(&coflow_data_model::CfdValue::record_ref("tree").unwrap())
     );
     let child = session
         .queries()
@@ -2381,7 +2385,7 @@ fn batch_rename_of_pending_insert_rewrites_self_references() {
         .expect("dependent node");
     assert_eq!(
         child.record.fields().get("parent"),
-        Some(&coflow_data_model::CfdValue::Ref("tree".to_string()))
+        Some(&coflow_data_model::CfdValue::record_ref("tree").unwrap())
     );
 
     let _ = std::fs::remove_dir_all(root);
@@ -2804,7 +2808,7 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
     let report = session.apply_mutation(MutationRequest {
         stop_on_write_error: true,
         ops: vec![MutationOp::SetField {
-            record: RecordCoordinate::new("Loot", "starter_loot"),
+            record: RecordCoordinate::try_new("Loot", "starter_loot").unwrap(),
             file: None,
             path: vec![PatchPathSegment::Field("owner".to_string())],
             value: MutationValue::Cfd(coflow_data_model::CfdValue::Null),
@@ -2833,7 +2837,7 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
     let report = session.apply_mutation(MutationRequest {
         stop_on_write_error: true,
         ops: vec![MutationOp::SetField {
-            record: RecordCoordinate::new("Loot", "starter_loot"),
+            record: RecordCoordinate::try_new("Loot", "starter_loot").unwrap(),
             file: None,
             path: vec![PatchPathSegment::Field("owner".to_string())],
             value: MutationValue::Cfd(coflow_data_model::CfdValue::Null),
@@ -2864,20 +2868,22 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
     write_project(&root);
     let mut session = session(&root);
 
-    let bad_reward =
-        coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
+    let bad_reward = coflow_data_model::CfdValue::Object(Box::new(
+        coflow_data_model::CfdObject::try_new(
             "ItemReward",
             std::collections::BTreeMap::from([
                 (
                     "item".to_string(),
-                    coflow_data_model::CfdValue::Ref("sword".to_string()),
+                    coflow_data_model::CfdValue::record_ref("sword").unwrap(),
                 ),
                 (
                     "count".to_string(),
                     coflow_data_model::CfdValue::String("bad".to_string()),
                 ),
             ]),
-        )));
+        )
+        .unwrap(),
+    ));
 
     let report = session.apply_data_patch(DataPatchRequest {
         stop_on_write_error: true,
@@ -2895,7 +2901,7 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
     let report = session.apply_mutation(MutationRequest {
         stop_on_write_error: true,
         ops: vec![MutationOp::SetField {
-            record: RecordCoordinate::new("Loot", "starter_loot"),
+            record: RecordCoordinate::try_new("Loot", "starter_loot").unwrap(),
             file: None,
             path: vec![PatchPathSegment::Field("rewards".to_string())],
             value: MutationValue::Cfd(coflow_data_model::CfdValue::Array(vec![bad_reward])),
@@ -2937,18 +2943,20 @@ fn mutation_complete_value_rejects_missing_nested_required_fields_before_write()
     assert!(insert.write_ok);
     let before = std::fs::read_to_string(root.join("data/items.cfd")).expect("read cfd");
 
-    let incomplete_reward =
-        coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
+    let incomplete_reward = coflow_data_model::CfdValue::Object(Box::new(
+        coflow_data_model::CfdObject::try_new(
             "ItemReward",
             std::collections::BTreeMap::from([(
                 "item".to_string(),
-                coflow_data_model::CfdValue::Ref("sword".to_string()),
+                coflow_data_model::CfdValue::record_ref("sword").unwrap(),
             )]),
-        )));
+        )
+        .unwrap(),
+    ));
     let report = session.apply_mutation(MutationRequest {
         stop_on_write_error: true,
         ops: vec![MutationOp::SetField {
-            record: RecordCoordinate::new("Loot", "starter_loot"),
+            record: RecordCoordinate::try_new("Loot", "starter_loot").unwrap(),
             file: None,
             path: vec![PatchPathSegment::Field("rewards".to_string())],
             value: MutationValue::Cfd(coflow_data_model::CfdValue::Array(vec![incomplete_reward])),

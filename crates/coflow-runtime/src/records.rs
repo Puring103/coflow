@@ -197,9 +197,9 @@ pub fn value_summary(value: &CfdValue) -> String {
         CfdValue::String(value) => string_summary(value),
         CfdValue::Enum(value) => value
             .variant
-            .clone()
-            .unwrap_or_else(|| value.value.to_string()),
-        CfdValue::Ref(target_key) => target_key.clone(),
+            .as_ref()
+            .map_or_else(|| value.value.to_string(), ToString::to_string),
+        CfdValue::Ref(target_key) => target_key.to_string(),
         CfdValue::Object(value) => value.actual_type().to_string(),
         CfdValue::Array(items) => {
             if items.is_empty() {

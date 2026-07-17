@@ -14,7 +14,7 @@ use coflow_api::{
     WriterDescriptor,
 };
 use coflow_data_model::{
-    CfdInputRecord, CfdInputValue, CfdPathSegment, CfdValue, RecordOrigin, SourceDocument,
+    CfdPathSegment, CfdValue, LoadedRecordDraft, LoadedValueDraft, RecordOrigin, SourceDocument,
 };
 use coflow_project::Project;
 use coflow_runtime::{MutationOp, MutationRequest, MutationValue, RecordCoordinate, Runtime};
@@ -161,7 +161,7 @@ impl SourceProvider for TestProvider {
                 },
             )
         };
-        let mut fields = BTreeMap::from([("value", CfdInputValue::Int(value))]);
+        let mut fields = BTreeMap::from([("value", LoadedValueDraft::Int(value))]);
         if ctx.schema.resolve_type("Item").is_some_and(|item| {
             item.own_fields()
                 .any(|field| field.name.as_str() == "target")
@@ -169,14 +169,14 @@ impl SourceProvider for TestProvider {
             fields.insert(
                 "target",
                 if key == "two" {
-                    CfdInputValue::record_ref("one")
+                    LoadedValueDraft::record_ref("one")
                 } else {
-                    CfdInputValue::Null
+                    LoadedValueDraft::Null
                 },
             );
         }
         Ok(LoadedSource {
-            records: vec![CfdInputRecord::new(key, "Item", fields).with_origin(origin)],
+            records: vec![LoadedRecordDraft::new(key, "Item", fields).with_origin(origin)],
         })
     }
 }
@@ -406,7 +406,7 @@ fn same_key_rename_does_not_open_a_provider_transaction() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
     let mut session = fixture.open();
     let initial_revision = session.revision();
-    let coordinate = RecordCoordinate::new("Item", "one");
+    let coordinate = RecordCoordinate::try_new("Item", "one").expect("valid record coordinate");
 
     let report = session.apply_mutation(mutation_request(vec![MutationOp::RenameRecord {
         record: coordinate.clone(),
@@ -507,6 +507,14 @@ fn mutation_rebuild_reloads_only_affected_sources() {
     assert!(report.write_ok, "diagnostics: {:?}", report.diagnostics);
     assert_eq!(session_value(&session, "one"), 3);
     assert_eq!(session_value(&session, "two"), 2);
+    let execution = session.queries().execution_stats();
+    assert_eq!(execution.sources_resolved, 0);
+    assert_eq!(execution.sources_reloaded, 1);
+    assert_eq!(execution.draft_records_collected, 2);
+    assert_eq!(execution.records_validated, 2);
+    assert_eq!(execution.records_materialized, 2);
+    assert_eq!(execution.records_reused, 0);
+    assert!(!execution.full_fallback);
     let state = fixture.state.lock().expect("lock fixture state");
     assert_eq!(state.counts.loads, 3);
     drop(state);
@@ -537,6 +545,7 @@ fn incremental_checks_match_full_checks_for_dependent_records() {
     assert!(report.write_ok, "diagnostics: {:?}", report.diagnostics);
     assert!(report.check_ok, "diagnostics: {:?}", report.diagnostics);
     assert!(session.queries().diagnostics().by_stage("CHECK").is_empty());
+    assert_eq!(session.queries().execution_stats().check_roots_executed, 2);
     let full = fixture.open();
     assert_eq!(
         session.queries().diagnostics().flat_diagnostics(),
@@ -844,7 +853,7 @@ const fn mutation_request(ops: Vec<MutationOp>) -> MutationRequest {
 
 fn set_value(key: &str, value: i64) -> MutationOp {
     MutationOp::SetField {
-        record: RecordCoordinate::new("Item", key),
+        record: RecordCoordinate::try_new("Item", key).expect("valid record coordinate"),
         file: None,
         path: vec![CfdPathSegment::Field("value".to_string())],
         value: MutationValue::Cfd(CfdValue::Int(value)),

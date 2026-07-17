@@ -33,6 +33,7 @@ mod schema_inspect;
 mod session;
 mod session_build;
 mod source_resolution;
+mod statistics;
 mod write_rules;
 mod writes;
 
@@ -56,6 +57,7 @@ pub use files::{DimensionGroup, FileTreeNode, FileTreeOptions};
 pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef};
 // Re-export helpers that hosts (tauri editor, CLI) call when translating
 // engine data to a wire format so they don't diverge in path formatting.
+pub use coflow_data_model::RecordCoordinate;
 pub use load::format_cfd_path as format_field_path;
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
@@ -78,5 +80,6 @@ pub use schema_inspect::{
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,
 };
+pub use session::ProjectSchemaSession;
 pub(crate) use session::ProjectSession;
-pub use session::{ProjectSchemaSession, RecordCoordinate};
+pub use statistics::{IncrementalFallbackReason, ProjectExecutionStats};

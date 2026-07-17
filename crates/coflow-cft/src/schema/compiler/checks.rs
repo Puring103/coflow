@@ -3,10 +3,11 @@ mod functions;
 #[path = "check_operators.rs"]
 mod operators;
 
-use super::checked_type::{types_comparable, unwrap_nullable, unwrap_reference, CheckedType};
+use super::inferred_type::{types_comparable, unwrap_nullable, unwrap_reference, InferredType};
 use super::state::{SymbolKind, TypeInfo};
 use super::SchemaCompiler;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
+use crate::schema::CftValueType;
 use crate::syntax::ast::{CheckExpr, CheckExprKind, CheckStmt, NameRef, TypePredicate};
 use crate::syntax::Span;
 use std::collections::HashMap;
@@ -14,7 +15,7 @@ use std::collections::HashMap;
 pub(super) struct CheckTypeAnalyzer<'a, 'b> {
     compiler: &'a mut SchemaCompiler<'b>,
     type_info: &'a TypeInfo<'b>,
-    locals: Vec<HashMap<String, CheckedType>>,
+    locals: Vec<HashMap<String, InferredType>>,
 }
 
 impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
@@ -60,17 +61,21 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                     );
                 }
                 let col_ty = self.check_expr_value(collection);
-                let item_ty = match unwrap_nullable(&col_ty) {
-                    CheckedType::Array(inner) => *inner.clone(),
-                    CheckedType::Dict(key, value) => CheckedType::Entry(key.clone(), value.clone()),
-                    CheckedType::Unknown => CheckedType::Unknown,
+                let col_ty = unwrap_nullable(&col_ty);
+                let item_ty = match col_ty {
+                    InferredType::Value(CftValueType::Array(inner)) => InferredType::Value(*inner),
+                    InferredType::Value(CftValueType::Dict(key, value)) => InferredType::Entry(
+                        Box::new(InferredType::Value(*key)),
+                        Box::new(InferredType::Value(*value)),
+                    ),
+                    InferredType::Unknown => InferredType::Unknown,
                     _ => {
                         self.diag(
                             CftErrorCode::QuantifierRequiresCollection,
                             *span,
                             "quantifier target must be an array or dict",
                         );
-                        CheckedType::Unknown
+                        InferredType::Unknown
                     }
                 };
                 self.locals
@@ -81,13 +86,13 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
     }
 
-    fn check_expr(&mut self, expr: &CheckExpr) -> CheckedType {
+    fn check_expr(&mut self, expr: &CheckExpr) -> InferredType {
         match &expr.kind {
-            CheckExprKind::Int(_) => CheckedType::Int,
-            CheckExprKind::Float(_) => CheckedType::Float,
-            CheckExprKind::Bool(_) => CheckedType::Bool,
-            CheckExprKind::Null => CheckedType::Null,
-            CheckExprKind::String(_) => CheckedType::String,
+            CheckExprKind::Int(_) => InferredType::int(),
+            CheckExprKind::Float(_) => InferredType::float(),
+            CheckExprKind::Bool(_) => InferredType::bool(),
+            CheckExprKind::Null => InferredType::Null,
+            CheckExprKind::String(_) => InferredType::string(),
             CheckExprKind::Name(name) => self.resolve_value_name(name, expr.span),
             CheckExprKind::Unary { op, expr: inner } => {
                 let ty = self.check_expr_value(inner);
@@ -105,7 +110,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                     self.check_comparison(*op, &lhs_ty, &rhs_ty, rhs.span);
                     lhs_ty = rhs_ty;
                 }
-                CheckedType::Bool
+                InferredType::bool()
             }
             CheckExprKind::Field { expr: inner, name } => self.check_field(inner, name, expr.span),
             CheckExprKind::Index { expr: inner, index } => {
@@ -117,7 +122,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             } => {
                 let inner_ty = self.check_expr_value(inner);
                 self.check_is(&inner_ty, predicate, expr.span);
-                CheckedType::Bool
+                InferredType::bool()
             }
             CheckExprKind::Call { name, args } => self.check_call(name, args, expr.span),
             CheckExprKind::MethodCall {
@@ -132,9 +137,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     /// positions (e.g. `Rarity > 5`). Without this guard, the plain
     /// `OperatorTypeMismatch` diagnostic would obscure the real mistake of
     /// using the enum type itself as a value.
-    fn check_expr_value(&mut self, expr: &CheckExpr) -> CheckedType {
+    fn check_expr_value(&mut self, expr: &CheckExpr) -> InferredType {
         let ty = self.check_expr(expr);
-        if let CheckedType::EnumNamespace(name) = &ty {
+        if let InferredType::EnumNamespace(name) = &ty {
             self.diag(
                 CftErrorCode::OperatorTypeMismatch,
                 expr.span,
@@ -142,12 +147,12 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                     "enum type `{name}` cannot be used as a value; use `{name}.Variant` or `{name}(0)` instead",
                 ),
             );
-            return CheckedType::Unknown;
+            return InferredType::Unknown;
         }
         ty
     }
 
-    fn resolve_value_name(&mut self, name: &str, span: Span) -> CheckedType {
+    fn resolve_value_name(&mut self, name: &str, span: Span) -> InferredType {
         for scope in self.locals.iter().rev() {
             if let Some(ty) = scope.get(name) {
                 return ty.clone();
@@ -155,38 +160,40 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
         if let Some(fields) = self.compiler.full_fields.get(&self.type_info.def.name) {
             if let Some(field) = fields.get(name) {
-                return field.checked_type.clone();
+                return field.inferred_type.clone();
             }
         }
         if name == "id" {
-            return CheckedType::String;
+            return InferredType::string();
         }
         if let Some(info) = self.compiler.consts.get(name) {
-            return CheckedType::from_const(&info.value);
+            return InferredType::from_const(&info.value);
         }
         if self.compiler.enums.contains_key(name) {
-            return CheckedType::EnumNamespace(name.to_string());
+            return InferredType::EnumNamespace(crate::EnumName::from_validated(name.to_string()));
         }
         self.diag(
             CftErrorCode::UnknownValueName,
             span,
             format!("unknown value `{name}`"),
         );
-        CheckedType::Unknown
+        InferredType::Unknown
     }
 
-    fn check_field(&mut self, inner: &CheckExpr, name: &NameRef, span: Span) -> CheckedType {
+    fn check_field(&mut self, inner: &CheckExpr, name: &NameRef, span: Span) -> InferredType {
         if let CheckExprKind::Name(enum_name) = &inner.kind {
             if let Some(enum_info) = self.compiler.enums.get(enum_name) {
                 if enum_info.variants.contains(&name.name) {
-                    return CheckedType::Enum(enum_name.clone());
+                    return InferredType::enum_value(crate::EnumName::from_validated(
+                        enum_name.clone(),
+                    ));
                 }
                 self.diag(
                     CftErrorCode::TypeUnknownEnumVariant,
                     name.span,
                     format!("unknown enum variant `{}`", name.name),
                 );
-                return CheckedType::Unknown;
+                return InferredType::Unknown;
             }
             if let Some(symbol) = self.compiler.symbols.get(enum_name) {
                 if symbol.kind != SymbolKind::Enum {
@@ -195,24 +202,24 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                         inner.span,
                         "enum variant access used on a non-enum name",
                     );
-                    return CheckedType::Unknown;
+                    return InferredType::Unknown;
                 }
             }
         }
 
         let inner_ty = self.check_expr_value(inner);
-        match unwrap_reference(unwrap_nullable(&inner_ty)) {
-            CheckedType::Type(type_name) => {
+        match unwrap_reference(&unwrap_nullable(&inner_ty)) {
+            InferredType::Value(CftValueType::Object(type_name)) => {
                 if name.name == "id" {
-                    return CheckedType::String;
+                    return InferredType::string();
                 }
-                let type_known = self.compiler.full_fields.contains_key(type_name);
+                let type_known = self.compiler.full_fields.contains_key(type_name.as_str());
                 let field_ty = self
                     .compiler
                     .full_fields
-                    .get(type_name)
+                    .get(type_name.as_str())
                     .and_then(|fields| fields.get(&name.name))
-                    .map(|field| field.checked_type.clone());
+                    .map(|field| field.inferred_type.clone());
                 if let Some(ty) = field_ty {
                     return ty;
                 }
@@ -223,74 +230,70 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                         format!("unknown field `{}`", name.name),
                     );
                 }
-                CheckedType::Unknown
+                InferredType::Unknown
             }
-            CheckedType::Entry(key, value) => match name.name.as_str() {
-                "key" => *key.clone(),
-                "value" => *value.clone(),
+            InferredType::Entry(key, value) => match name.name.as_str() {
+                "key" => *key,
+                "value" => *value,
                 _ => {
                     self.diag(
                         CftErrorCode::UnknownField,
                         name.span,
                         "dict entry only has key and value fields",
                     );
-                    CheckedType::Unknown
+                    InferredType::Unknown
                 }
             },
-            CheckedType::Unknown => CheckedType::Unknown,
+            InferredType::Unknown => InferredType::Unknown,
             _ => {
                 self.diag(
                     CftErrorCode::FieldAccessOnNonObject,
                     span,
                     "field access requires an object",
                 );
-                CheckedType::Unknown
+                InferredType::Unknown
             }
         }
     }
 
-    fn check_index(&mut self, inner: &CheckExpr, index: &CheckExpr, span: Span) -> CheckedType {
+    fn check_index(&mut self, inner: &CheckExpr, index: &CheckExpr, span: Span) -> InferredType {
         let inner_ty = self.check_expr_value(inner);
         let index_ty = self.check_expr_value(index);
-        match unwrap_nullable(&inner_ty) {
-            CheckedType::Array(elem) => {
-                if !types_comparable(&index_ty, &CheckedType::Int)
-                    && index_ty != CheckedType::Unknown
-                {
-                    self.diag(
-                        CftErrorCode::IndexTypeMismatch,
-                        index.span,
-                        "array index must be int",
-                    );
-                }
-                *elem.clone()
-            }
-            CheckedType::Dict(key, value) => {
-                if !types_comparable(key, &index_ty) && index_ty != CheckedType::Unknown {
-                    self.diag(
-                        CftErrorCode::IndexTypeMismatch,
-                        index.span,
-                        "dict index type does not match key type",
-                    );
-                }
-                *value.clone()
-            }
-            CheckedType::Unknown => CheckedType::Unknown,
-            _ => {
+        let inner_ty = unwrap_nullable(&inner_ty);
+        if let Some(elem) = inner_ty.array_element() {
+            if !types_comparable(&index_ty, &InferredType::int()) && !index_ty.is_unknown() {
                 self.diag(
-                    CftErrorCode::IndexOnNonIndexable,
-                    span,
-                    "index access requires an array or dict",
+                    CftErrorCode::IndexTypeMismatch,
+                    index.span,
+                    "array index must be int",
                 );
-                CheckedType::Unknown
             }
+            elem
+        } else if let Some((key, value)) = inner_ty.dict_types() {
+            if !types_comparable(&key, &index_ty) && !index_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::IndexTypeMismatch,
+                    index.span,
+                    "dict index type does not match key type",
+                );
+            }
+            value
+        } else if inner_ty.is_unknown() {
+            InferredType::Unknown
+        } else {
+            self.diag(
+                CftErrorCode::IndexOnNonIndexable,
+                span,
+                "index access requires an array or dict",
+            );
+            InferredType::Unknown
         }
     }
 
-    fn check_is(&mut self, lhs: &CheckedType, predicate: &TypePredicate, span: Span) {
+    fn check_is(&mut self, lhs: &InferredType, predicate: &TypePredicate, span: Span) {
         match predicate {
             TypePredicate::Null(_) => {
-                if !matches!(lhs, CheckedType::Nullable(_) | CheckedType::Unknown) {
+                if !lhs.is_nullable() && !lhs.is_unknown() {
                     self.diag(
                         CftErrorCode::OperatorTypeMismatch,
                         span,
@@ -310,10 +313,8 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                         return;
                     }
                 }
-                if !matches!(
-                    unwrap_reference(unwrap_nullable(lhs)),
-                    CheckedType::Type(_) | CheckedType::Unknown
-                ) {
+                let operand = unwrap_reference(&unwrap_nullable(lhs));
+                if operand.object_name().is_none() && !operand.is_unknown() {
                     self.diag(
                         CftErrorCode::OperatorTypeMismatch,
                         span,
@@ -324,8 +325,8 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
     }
 
-    fn expect_bool(&mut self, ty: &CheckedType, span: Span) {
-        if !types_comparable(ty, &CheckedType::Bool) && *ty != CheckedType::Unknown {
+    fn expect_bool(&mut self, ty: &InferredType, span: Span) {
+        if !types_comparable(ty, &InferredType::bool()) && !ty.is_unknown() {
             self.diag(
                 CftErrorCode::ConditionMustBeBool,
                 span,

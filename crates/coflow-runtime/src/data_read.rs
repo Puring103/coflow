@@ -83,6 +83,7 @@ pub fn data_sources(queries: ProjectQueries<'_>, registry: &ProviderRegistry) ->
                 .map(|record_ref| record_ref.coordinate.actual_type.clone())
                 .collect::<BTreeSet<_>>()
                 .into_iter()
+                .map(|name| name.to_string())
                 .collect::<Vec<_>>();
             DataSourceInfo {
                 file: entry.display_path.clone(),
@@ -149,7 +150,12 @@ pub fn data_get(
                 record: summary.record,
                 file: summary.file,
                 provider: summary.provider,
-                fields: view.record.fields().clone(),
+                fields: view
+                    .record
+                    .fields()
+                    .iter()
+                    .map(|(name, value)| (name.to_string(), value.clone()))
+                    .collect(),
             })
         })
         .collect::<Result<Vec<_>, DiagnosticSet>>()?;
@@ -189,7 +195,7 @@ fn matches_query_filters(coordinate: &RecordCoordinate, file: &str, query: &Data
     query
         .actual_type
         .as_ref()
-        .is_none_or(|actual_type| coordinate.actual_type == *actual_type)
+        .is_none_or(|actual_type| coordinate.actual_type.as_str() == actual_type)
         && query
             .file
             .as_ref()
@@ -223,7 +229,9 @@ fn record_summaries_in_file(
         .ids_in_file(file)
         .iter()
         .filter_map(|id| queries.records().get(*id))
-        .filter(|record_ref| actual_type.is_none_or(|ty| record_ref.coordinate.actual_type == ty))
+        .filter(|record_ref| {
+            actual_type.is_none_or(|ty| record_ref.coordinate.actual_type.as_str() == ty)
+        })
         .map(|record_ref| DataRecordSummary {
             record: record_ref.coordinate.clone(),
             file: record_ref.display_path.clone(),

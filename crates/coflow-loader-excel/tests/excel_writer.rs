@@ -17,7 +17,8 @@ use coflow_api::{
 };
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
-    CfdDataModel, CfdInputRecord, CfdInputValue, CfdObject, CfdValue, RecordOrigin, SourceDocument,
+    CfdDataModel, CfdObject, CfdValue, LoadedRecordDraft, LoadedValueDraft, RecordOrigin,
+    SourceDocument,
 };
 use coflow_loader_excel::{ExcelLoader, ExcelWriter};
 use rust_xlsxwriter::{Workbook, XlsxError};
@@ -351,14 +352,17 @@ fn write_terrain_workbook_with_expand(path: &PathBuf) -> Result<(), XlsxError> {
 }
 
 fn expanded_env_value(shc: f64, temperature: f64, diffusion: f64) -> CfdValue {
-    CfdValue::Object(Box::new(CfdObject::new(
-        "EnvCfg",
-        BTreeMap::from([
-            ("shc".to_string(), CfdValue::Float(shc)),
-            ("temperature".to_string(), CfdValue::Float(temperature)),
-            ("diffusion".to_string(), CfdValue::Float(diffusion)),
-        ]),
-    )))
+    CfdValue::Object(Box::new(
+        CfdObject::try_new(
+            "EnvCfg",
+            BTreeMap::from([
+                ("shc".to_string(), CfdValue::Float(shc)),
+                ("temperature".to_string(), CfdValue::Float(temperature)),
+                ("diffusion".to_string(), CfdValue::Float(diffusion)),
+            ]),
+        )
+        .unwrap(),
+    ))
 }
 
 #[test]
@@ -492,20 +496,20 @@ fn writes_collection_element_by_rewriting_owning_cell() {
         id_column: 1,
         field_columns: BTreeMap::from([(vec!["tags".to_string()], 2)]),
     };
-    let input = CfdInputRecord::new(
+    let input = LoadedRecordDraft::new(
         "sword",
         "Item",
         [(
             "tags",
-            CfdInputValue::Array(vec![
-                CfdInputValue::String("old".to_string()),
-                CfdInputValue::String("keep".to_string()),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::String("old".to_string()),
+                LoadedValueDraft::String("keep".to_string()),
             ]),
         )],
     )
     .with_origin(origin.clone());
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(input);
+    builder.add_loaded_record(input);
     let model = builder.build().expect("model");
 
     let new_value = CfdValue::String("new".to_string());

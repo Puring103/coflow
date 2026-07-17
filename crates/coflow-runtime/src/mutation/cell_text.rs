@@ -1,4 +1,4 @@
-use coflow_data_model::{CfdInputDictKey, CfdInputValue, CfdPathSegment, CfdValue};
+use coflow_data_model::{CfdPathSegment, CfdValue, LoadedDictKeyDraft, LoadedValueDraft};
 use coflow_loader_table_core::cell_value::{parse_cell, render_cell_value, ParsedCell};
 use serde_json::{Map, Number, Value};
 
@@ -48,22 +48,22 @@ pub(crate) fn render_cell_text_value(
     render_cell_value(value).map_err(|error| one_value_error(error.to_string()))
 }
 
-fn input_value_to_json(value: CfdInputValue) -> Result<Value, coflow_api::DiagnosticSet> {
+fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::DiagnosticSet> {
     match value {
-        CfdInputValue::Null => Ok(Value::Null),
-        CfdInputValue::Bool(value) => Ok(Value::Bool(value)),
-        CfdInputValue::Int(value) => Ok(Value::Number(Number::from(value))),
-        CfdInputValue::Float(value) => Number::from_f64(value)
+        LoadedValueDraft::Null => Ok(Value::Null),
+        LoadedValueDraft::Bool(value) => Ok(Value::Bool(value)),
+        LoadedValueDraft::Int(value) => Ok(Value::Number(Number::from(value))),
+        LoadedValueDraft::Float(value) => Number::from_f64(value)
             .map(Value::Number)
             .ok_or_else(|| one_value_error("cell float must be finite")),
-        CfdInputValue::String(value) => Ok(Value::String(value)),
-        CfdInputValue::EnumVariant { variant, .. } => Ok(Value::String(variant)),
-        CfdInputValue::RecordRef(key) => {
+        LoadedValueDraft::String(value) => Ok(Value::String(value)),
+        LoadedValueDraft::EnumVariant { variant, .. } => Ok(Value::String(variant)),
+        LoadedValueDraft::RecordRef(key) => {
             let mut object = Map::new();
             object.insert("$ref".to_string(), Value::String(key));
             Ok(Value::Object(object))
         }
-        CfdInputValue::Object {
+        LoadedValueDraft::Object {
             actual_type,
             fields,
         } => {
@@ -76,12 +76,12 @@ fn input_value_to_json(value: CfdInputValue) -> Result<Value, coflow_api::Diagno
             }
             Ok(Value::Object(object))
         }
-        CfdInputValue::Array(items) => items
+        LoadedValueDraft::Array(items) => items
             .into_iter()
             .map(input_value_to_json)
             .collect::<Result<Vec<_>, _>>()
             .map(Value::Array),
-        CfdInputValue::Dict(entries) => {
+        LoadedValueDraft::Dict(entries) => {
             let entries = entries
                 .into_iter()
                 .map(|(key, value)| {
@@ -95,17 +95,17 @@ fn input_value_to_json(value: CfdInputValue) -> Result<Value, coflow_api::Diagno
             object.insert("$dict".to_string(), Value::Array(entries));
             Ok(Value::Object(object))
         }
-        CfdInputValue::ObjectSpread { .. } | CfdInputValue::DictSpread { .. } => Err(
+        LoadedValueDraft::ObjectSpread { .. } | LoadedValueDraft::DictSpread { .. } => Err(
             one_value_error("spread cell values cannot be pasted into an effective field value"),
         ),
     }
 }
 
-fn input_dict_key_to_json(key: CfdInputDictKey) -> Value {
+fn input_dict_key_to_json(key: LoadedDictKeyDraft) -> Value {
     match key {
-        CfdInputDictKey::String(value) => Value::String(value),
-        CfdInputDictKey::Int(value) => Value::Number(Number::from(value)),
-        CfdInputDictKey::EnumVariant { variant, .. } => Value::String(variant),
+        LoadedDictKeyDraft::String(value) => Value::String(value),
+        LoadedDictKeyDraft::Int(value) => Value::Number(Number::from(value)),
+        LoadedDictKeyDraft::EnumVariant { variant, .. } => Value::String(variant),
     }
 }
 
@@ -114,20 +114,20 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::input_value_to_json;
-    use coflow_data_model::{CfdInputDictKey, CfdInputValue};
+    use coflow_data_model::{LoadedDictKeyDraft, LoadedValueDraft};
     use serde_json::json;
 
     #[test]
     fn converts_nested_cell_input_to_runtime_mutation_json() {
-        let value = CfdInputValue::object(
+        let value = LoadedValueDraft::object(
             "Stats",
             [
-                ("owner", CfdInputValue::record_ref("hero")),
+                ("owner", LoadedValueDraft::record_ref("hero")),
                 (
                     "labels",
-                    CfdInputValue::dict([(
-                        CfdInputDictKey::Int(2),
-                        CfdInputValue::String("rare".to_string()),
+                    LoadedValueDraft::dict([(
+                        LoadedDictKeyDraft::Int(2),
+                        LoadedValueDraft::String("rare".to_string()),
                     )]),
                 ),
             ],

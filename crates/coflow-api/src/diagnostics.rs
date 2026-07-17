@@ -1,4 +1,4 @@
-use coflow_data_model::{CfdDiagnostics, CfdInputRecord, RecordOrigin};
+use coflow_data_model::{CfdDiagnostics, LoadedRecordDraft, RecordOrigin};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
@@ -305,7 +305,7 @@ impl From<coflow_data_model::SourceLocation> for SourceLocation {
 /// Map [`CfdDiagnostics`] to [`DiagnosticSet`] using a record-to-origin lookup.
 ///
 /// Loaders no longer maintain a separate [`coflow_data_model::origin::RecordOrigin`]
-/// map: each [`CfdInputRecord`] carries its own origin. Callers that need to
+/// map: each [`LoadedRecordDraft`] carries its own origin. Callers that need to
 /// produce wire diagnostics from compiler/check failures pass either a slice
 /// of records (or their extracted origins) and let this helper resolve labels.
 #[must_use]
@@ -342,7 +342,7 @@ pub fn map_diagnostics_with_origins(
 
 /// Convenience helper: extract origins from a slice of input records.
 #[must_use]
-pub fn origins_of(records: &[CfdInputRecord]) -> Vec<RecordOrigin> {
+pub fn origins_of(records: &[LoadedRecordDraft]) -> Vec<RecordOrigin> {
     records.iter().map(|r| r.origin.clone()).collect()
 }
 

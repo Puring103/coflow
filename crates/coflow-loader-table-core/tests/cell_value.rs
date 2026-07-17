@@ -9,7 +9,7 @@
 
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
-    CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputValue, CfdValue,
+    CfdDataModel, CfdDictKey, CfdEnumValue, CfdValue, LoadedDictKeyDraft, LoadedValueDraft,
 };
 use coflow_loader_table_core::cell_value::{
     parse_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
@@ -33,7 +33,7 @@ fn parse_value(
     schema: &CftSchema,
     declared_type: &str,
     text: &str,
-) -> Result<CfdInputValue, String> {
+) -> Result<LoadedValueDraft, String> {
     match parse_ok(schema, declared_type, text)? {
         ParsedCell::Value(value) => Ok(value),
         ParsedCell::Omitted => Err(format!(
@@ -246,46 +246,46 @@ fn parses_schema_guided_scalar_values() -> TestResult {
 
     assert_eq!(
         parse_ok(&schema, "int", "42")?,
-        ParsedCell::Value(CfdInputValue::Int(42))
+        ParsedCell::Value(LoadedValueDraft::Int(42))
     );
     assert_eq!(
         parse_ok(&schema, "float", "2.5")?,
-        ParsedCell::Value(CfdInputValue::Float(2.5))
+        ParsedCell::Value(LoadedValueDraft::Float(2.5))
     );
     assert_eq!(
         parse_ok(&schema, "bool", "true")?,
-        ParsedCell::Value(CfdInputValue::Bool(true))
+        ParsedCell::Value(LoadedValueDraft::Bool(true))
     );
     for accepted in ["TRUE", "True", "1", "yes", "Y"] {
         assert_eq!(
             parse_ok(&schema, "bool", accepted)?,
-            ParsedCell::Value(CfdInputValue::Bool(true)),
+            ParsedCell::Value(LoadedValueDraft::Bool(true)),
             "{accepted} should parse as true",
         );
     }
     for accepted in ["FALSE", "False", "0", "no", "N"] {
         assert_eq!(
             parse_ok(&schema, "bool", accepted)?,
-            ParsedCell::Value(CfdInputValue::Bool(false)),
+            ParsedCell::Value(LoadedValueDraft::Bool(false)),
             "{accepted} should parse as false",
         );
     }
     assert_eq!(
         parse_ok(&schema, "string", "hello world")?,
-        ParsedCell::Value(CfdInputValue::String("hello world".to_string()))
+        ParsedCell::Value(LoadedValueDraft::String("hello world".to_string()))
     );
     // string context should NOT coerce these as booleans
     assert_eq!(
         parse_ok(&schema, "string", "1")?,
-        ParsedCell::Value(CfdInputValue::String("1".to_string()))
+        ParsedCell::Value(LoadedValueDraft::String("1".to_string()))
     );
     assert_eq!(
         parse_ok(&schema, "string", "yes")?,
-        ParsedCell::Value(CfdInputValue::String("yes".to_string()))
+        ParsedCell::Value(LoadedValueDraft::String("yes".to_string()))
     );
     assert_eq!(
         parse_ok(&schema, "string", r#""hello, world""#)?,
-        ParsedCell::Value(CfdInputValue::String("hello, world".to_string()))
+        ParsedCell::Value(LoadedValueDraft::String("hello, world".to_string()))
     );
     Ok(())
 }
@@ -300,11 +300,11 @@ fn parses_enum_values_with_or_without_type_prefix() -> TestResult {
 
     assert_eq!(
         parse_ok(&schema, "Rarity", "Rare")?,
-        ParsedCell::Value(CfdInputValue::enum_variant("Rarity", "Rare"))
+        ParsedCell::Value(LoadedValueDraft::enum_variant("Rarity", "Rare"))
     );
     assert_eq!(
         parse_ok(&schema, "Rarity", "Rarity.Rare")?,
-        ParsedCell::Value(CfdInputValue::enum_variant("Rarity", "Rare"))
+        ParsedCell::Value(LoadedValueDraft::enum_variant("Rarity", "Rare"))
     );
     Ok(())
 }
@@ -474,7 +474,7 @@ fn parses_omitted_and_nullable_cells() -> TestResult {
     assert_eq!(parse_ok(&schema, "int", "_")?, ParsedCell::Omitted);
     assert_eq!(
         parse_ok(&schema, "int?", "null")?,
-        ParsedCell::Value(CfdInputValue::Null)
+        ParsedCell::Value(LoadedValueDraft::Null)
     );
     let non_nullable_null = parse_err(&schema, "int", "null")?;
     assert_has_code(&non_nullable_null, CellValueErrorCode::TypeMismatch);
@@ -487,10 +487,10 @@ fn parses_array_cells_with_pipe_delimiters() -> TestResult {
 
     assert_eq!(
         parse_ok(&schema, "[int]", "1 | 2 | 3")?,
-        ParsedCell::Value(CfdInputValue::Array(vec![
-            CfdInputValue::Int(1),
-            CfdInputValue::Int(2),
-            CfdInputValue::Int(3),
+        ParsedCell::Value(LoadedValueDraft::Array(vec![
+            LoadedValueDraft::Int(1),
+            LoadedValueDraft::Int(2),
+            LoadedValueDraft::Int(3),
         ]))
     );
     Ok(())
@@ -518,26 +518,26 @@ fn parses_nested_objects_inside_array_cells() -> TestResult {
             "[Monster]",
             "{slime, 5, {100, 50}} | {goblin, 10, {200, 80}}"
         )?,
-        ParsedCell::Value(CfdInputValue::Array(vec![
-            CfdInputValue::object_with_declared_type([
-                ("key", CfdInputValue::String("slime".to_string())),
-                ("level", CfdInputValue::Int(5)),
+        ParsedCell::Value(LoadedValueDraft::Array(vec![
+            LoadedValueDraft::object_with_declared_type([
+                ("key", LoadedValueDraft::String("slime".to_string())),
+                ("level", LoadedValueDraft::Int(5)),
                 (
                     "stats",
-                    CfdInputValue::object_with_declared_type([
-                        ("hp", CfdInputValue::Int(100)),
-                        ("attack", CfdInputValue::Int(50)),
+                    LoadedValueDraft::object_with_declared_type([
+                        ("hp", LoadedValueDraft::Int(100)),
+                        ("attack", LoadedValueDraft::Int(50)),
                     ]),
                 ),
             ]),
-            CfdInputValue::object_with_declared_type([
-                ("key", CfdInputValue::String("goblin".to_string())),
-                ("level", CfdInputValue::Int(10)),
+            LoadedValueDraft::object_with_declared_type([
+                ("key", LoadedValueDraft::String("goblin".to_string())),
+                ("level", LoadedValueDraft::Int(10)),
                 (
                     "stats",
-                    CfdInputValue::object_with_declared_type([
-                        ("hp", CfdInputValue::Int(200)),
-                        ("attack", CfdInputValue::Int(80)),
+                    LoadedValueDraft::object_with_declared_type([
+                        ("hp", LoadedValueDraft::Int(200)),
+                        ("attack", LoadedValueDraft::Int(80)),
                     ]),
                 ),
             ]),
@@ -604,11 +604,11 @@ fn rejects_comma_arrays_and_bare_special_strings() -> TestResult {
 
     assert_eq!(
         parse_ok(&schema, "string", r#""_""#)?,
-        ParsedCell::Value(CfdInputValue::String("_".to_string()))
+        ParsedCell::Value(LoadedValueDraft::String("_".to_string()))
     );
     assert_eq!(
         parse_ok(&schema, "string", r#""null""#)?,
-        ParsedCell::Value(CfdInputValue::String("null".to_string()))
+        ParsedCell::Value(LoadedValueDraft::String("null".to_string()))
     );
     Ok(())
 }
@@ -670,16 +670,16 @@ fn parses_empty_arrays_dicts_and_objects_with_explicit_boundaries() -> TestResul
 
     assert_eq!(
         parse_ok(&schema, "[int]", "[]")?,
-        ParsedCell::Value(CfdInputValue::Array(Vec::new()))
+        ParsedCell::Value(LoadedValueDraft::Array(Vec::new()))
     );
     assert_eq!(
         parse_ok(&schema, "{string: int}", "{}")?,
-        ParsedCell::Value(CfdInputValue::dict(std::iter::empty()))
+        ParsedCell::Value(LoadedValueDraft::dict(std::iter::empty()))
     );
     assert_eq!(
         parse_ok(&schema, "Stats", "{}")?,
-        ParsedCell::Value(CfdInputValue::object_with_declared_type(
-            std::iter::empty::<(&str, CfdInputValue)>()
+        ParsedCell::Value(LoadedValueDraft::object_with_declared_type(
+            std::iter::empty::<(&str, LoadedValueDraft)>()
         ))
     );
     Ok(())
@@ -703,25 +703,25 @@ fn keeps_delimiters_inside_quotes_and_nested_boundaries() -> TestResult {
             "Payload",
             r#"name: "hello, world", notes: ["a|b" | "c,d"], attrs: {"x:y": "v|1", plain: "a,b"}"#,
         )?,
-        ParsedCell::Value(CfdInputValue::object_with_declared_type([
-            ("name", CfdInputValue::String("hello, world".to_string())),
+        ParsedCell::Value(LoadedValueDraft::object_with_declared_type([
+            ("name", LoadedValueDraft::String("hello, world".to_string())),
             (
                 "notes",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::String("a|b".to_string()),
-                    CfdInputValue::String("c,d".to_string()),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::String("a|b".to_string()),
+                    LoadedValueDraft::String("c,d".to_string()),
                 ]),
             ),
             (
                 "attrs",
-                CfdInputValue::dict([
+                LoadedValueDraft::dict([
                     (
-                        CfdInputDictKey::from("x:y"),
-                        CfdInputValue::String("v|1".to_string()),
+                        LoadedDictKeyDraft::from("x:y"),
+                        LoadedValueDraft::String("v|1".to_string()),
                     ),
                     (
-                        CfdInputDictKey::from("plain"),
-                        CfdInputValue::String("a,b".to_string()),
+                        LoadedDictKeyDraft::from("plain"),
+                        LoadedValueDraft::String("a,b".to_string()),
                     ),
                 ]),
             ),
@@ -820,7 +820,7 @@ fn quoted_strings_require_internal_quotes_to_be_escaped() -> TestResult {
 
     assert_eq!(
         parse_ok(&schema, "string", r#""a\"b""#)?,
-        ParsedCell::Value(CfdInputValue::String("a\"b".to_string()))
+        ParsedCell::Value(LoadedValueDraft::String("a\"b".to_string()))
     );
 
     let err = parse_err(&schema, "string", r#""a"b""#)?;
@@ -892,7 +892,7 @@ fn string_values_accept_standard_escapes_and_reject_bare_boundaries() -> TestRes
 
     assert_eq!(
         parse_ok(&schema, "string", r#""line\nnext\t\\\"""#)?,
-        ParsedCell::Value(CfdInputValue::String("line\nnext\t\\\"".to_string()))
+        ParsedCell::Value(LoadedValueDraft::String("line\nnext\t\\\"".to_string()))
     );
 
     let null_err = parse_err(&schema, "string", "null")?;
@@ -941,30 +941,30 @@ fn parses_full_nested_root_object_example() -> TestResult {
             "DropTable",
             "rewards: [CurrencyReward{r1, 100} | ItemReward{r2, sword_01, 1}], weights: [60 | 40]",
         )?,
-        ParsedCell::Value(CfdInputValue::object_with_declared_type([
+        ParsedCell::Value(LoadedValueDraft::object_with_declared_type([
             (
                 "rewards",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::object(
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::object(
                         "CurrencyReward",
                         [
-                            ("key", CfdInputValue::String("r1".to_string())),
-                            ("amount", CfdInputValue::Int(100)),
+                            ("key", LoadedValueDraft::String("r1".to_string())),
+                            ("amount", LoadedValueDraft::Int(100)),
                         ],
                     ),
-                    CfdInputValue::object(
+                    LoadedValueDraft::object(
                         "ItemReward",
                         [
-                            ("key", CfdInputValue::String("r2".to_string())),
-                            ("item_id", CfdInputValue::String("sword_01".to_string())),
-                            ("count", CfdInputValue::Int(1)),
+                            ("key", LoadedValueDraft::String("r2".to_string())),
+                            ("item_id", LoadedValueDraft::String("sword_01".to_string())),
+                            ("count", LoadedValueDraft::Int(1)),
                         ],
                     ),
                 ]),
             ),
             (
                 "weights",
-                CfdInputValue::Array(vec![CfdInputValue::Int(60), CfdInputValue::Int(40)]),
+                LoadedValueDraft::Array(vec![LoadedValueDraft::Int(60), LoadedValueDraft::Int(40)]),
             ),
         ]))
     );
@@ -996,18 +996,18 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     assert_eq!(rendered_names, r#"[weapon | "melee, close"]"#);
     assert_eq!(
         parse_value(&schema, "[string]", &rendered_names)?,
-        CfdInputValue::Array(vec![
-            CfdInputValue::String("weapon".to_string()),
-            CfdInputValue::String("melee, close".to_string()),
+        LoadedValueDraft::Array(vec![
+            LoadedValueDraft::String("weapon".to_string()),
+            LoadedValueDraft::String("melee, close".to_string()),
         ])
     );
 
-    let reference = CfdValue::Ref("sword_01".to_string());
+    let reference = CfdValue::record_ref("sword_01").map_err(|err| err.to_string())?;
     let rendered_reference = render_cell_value(&reference).map_err(|err| err.to_string())?;
     assert_eq!(rendered_reference, "&sword_01");
     assert_eq!(
         parse_value(&schema, "&Item", &rendered_reference)?,
-        CfdInputValue::record_ref("sword_01")
+        LoadedValueDraft::record_ref("sword_01")
     );
 
     let dict = CfdValue::Dict(vec![(
@@ -1018,29 +1018,30 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     assert_eq!(rendered_dict, r#"{"rare:drop": 10}"#);
     assert_eq!(
         parse_value(&schema, "{string: int}", &rendered_dict)?,
-        CfdInputValue::dict([(
-            CfdInputDictKey::String("rare:drop".to_string()),
-            CfdInputValue::Int(10),
+        LoadedValueDraft::dict([(
+            LoadedDictKeyDraft::String("rare:drop".to_string()),
+            LoadedValueDraft::Int(10),
         )])
     );
 
-    let enum_value = CfdValue::Enum(CfdEnumValue {
-        enum_name: "Rarity".to_string(),
-        variant: Some("Rare".to_string()),
-        value: 10,
-    });
+    let enum_value = CfdValue::Enum(
+        CfdEnumValue::try_new("Rarity", Some("Rare"), 10).map_err(|err| err.to_string())?,
+    );
     assert_eq!(
         render_cell_value(&enum_value).map_err(|err| err.to_string())?,
         "Rare"
     );
 
-    let stats = CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
-        "Stats",
-        std::collections::BTreeMap::from([
-            ("attack".to_string(), CfdValue::Int(20)),
-            ("hp".to_string(), CfdValue::Int(100)),
-        ]),
-    )));
+    let stats = CfdValue::Object(Box::new(
+        coflow_data_model::CfdObject::try_new(
+            "Stats",
+            std::collections::BTreeMap::from([
+                ("attack".to_string(), CfdValue::Int(20)),
+                ("hp".to_string(), CfdValue::Int(100)),
+            ]),
+        )
+        .map_err(|err| err.to_string())?,
+    ));
     let rendered_stats = render_cell_value(&stats).map_err(|err| err.to_string())?;
     assert_eq!(rendered_stats, "Stats{attack: 20, hp: 100}");
     let parsed_stats = parse_value(&schema, "Stats", &rendered_stats)?;
@@ -1048,7 +1049,7 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     builder.add_record("drop_1", "Drop", [("stats", parsed_stats)]);
     let model = build_model(builder)?;
     let drop = model
-        .lookup_assignable("Drop", "drop_1")
+        .lookup_assignable(&schema, "Drop", "drop_1")
         .and_then(|id| model.record(id))
         .ok_or_else(|| "expected drop record".to_string())?;
     let Some(CfdValue::Object(parsed)) = drop.field("stats") else {
@@ -1061,13 +1062,19 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
 
 #[test]
 fn renders_polymorphic_object_values_with_type_marker() -> TestResult {
-    let nested = CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
-        "ItemReward",
-        std::collections::BTreeMap::from([
-            ("count".to_string(), CfdValue::Int(1)),
-            ("item".to_string(), CfdValue::Ref("sword".to_string())),
-        ]),
-    )));
+    let nested = CfdValue::Object(Box::new(
+        coflow_data_model::CfdObject::try_new(
+            "ItemReward",
+            std::collections::BTreeMap::from([
+                ("count".to_string(), CfdValue::Int(1)),
+                (
+                    "item".to_string(),
+                    CfdValue::record_ref("sword").map_err(|err| err.to_string())?,
+                ),
+            ]),
+        )
+        .map_err(|err| err.to_string())?,
+    ));
     let rendered = render_cell_value(&nested).map_err(|err| err.to_string())?;
 
     assert_eq!(rendered, "ItemReward{count: 1, item: &sword}".to_string());
@@ -1089,11 +1096,11 @@ fn parses_polymorphic_object_type_markers() -> TestResult {
 
     assert_eq!(
         parse_ok(&schema, "Reward", "CurrencyReward{r1, 100}")?,
-        ParsedCell::Value(CfdInputValue::object(
+        ParsedCell::Value(LoadedValueDraft::object(
             "CurrencyReward",
             [
-                ("key", CfdInputValue::String("r1".to_string())),
-                ("amount", CfdInputValue::Int(100)),
+                ("key", LoadedValueDraft::String("r1".to_string())),
+                ("amount", LoadedValueDraft::Int(100)),
             ],
         ))
     );
@@ -1115,11 +1122,11 @@ fn parses_unicode_polymorphic_object_type_markers() -> TestResult {
 
     assert_eq!(
         parse_ok(&schema, "奖励", "金币奖励{r1, 100}")?,
-        ParsedCell::Value(CfdInputValue::object(
+        ParsedCell::Value(LoadedValueDraft::object(
             "金币奖励",
             [
-                ("key", CfdInputValue::String("r1".to_string())),
-                ("数量", CfdInputValue::Int(100)),
+                ("key", LoadedValueDraft::String("r1".to_string())),
+                ("数量", LoadedValueDraft::Int(100)),
             ],
         ))
     );
@@ -1166,33 +1173,36 @@ fn ref_cells_parse_direct_record_ref_shorthand_from_expected_type() -> TestResul
 
     assert_eq!(
         parse_value(&schema, "&Item", "&item_1")?,
-        CfdInputValue::record_ref("item_1")
+        LoadedValueDraft::record_ref("item_1")
     );
     assert_eq!(
         parse_value(&schema, "&Item?", "&item_1")?,
-        CfdInputValue::record_ref("item_1")
+        LoadedValueDraft::record_ref("item_1")
     );
     assert_eq!(
         parse_value(&schema, "[&Item]", "&item_1 | &item_2")?,
-        CfdInputValue::Array(vec![
-            CfdInputValue::record_ref("item_1"),
-            CfdInputValue::record_ref("item_2"),
+        LoadedValueDraft::Array(vec![
+            LoadedValueDraft::record_ref("item_1"),
+            LoadedValueDraft::record_ref("item_2"),
         ])
     );
     assert_eq!(
         parse_value(&schema, "{string: &Item}", "main: &item_1")?,
-        CfdInputValue::dict([(
-            CfdInputDictKey::from("main"),
-            CfdInputValue::record_ref("item_1"),
+        LoadedValueDraft::dict([(
+            LoadedDictKeyDraft::from("main"),
+            LoadedValueDraft::record_ref("item_1"),
         )])
     );
     assert_eq!(
         parse_value(&schema, "&Reward", "&reward_1")?,
-        CfdInputValue::record_ref("reward_1")
+        LoadedValueDraft::record_ref("reward_1")
     );
     assert_eq!(
         parse_value(&schema, "ItemReward", "item: &item_1")?,
-        CfdInputValue::object_with_declared_type([("item", CfdInputValue::record_ref("item_1"),)])
+        LoadedValueDraft::object_with_declared_type([(
+            "item",
+            LoadedValueDraft::record_ref("item_1"),
+        )])
     );
     assert_has_code(
         &parse_err(&schema, "Item", "&item_1")?,
@@ -1232,7 +1242,7 @@ fn direct_record_ref_shorthand_rejects_paths_and_invalid_keys() -> TestResult {
 
     assert_eq!(
         parse_ok(&schema, "string", "&item_1.name")?,
-        ParsedCell::Value(CfdInputValue::String("&item_1.name".to_string()))
+        ParsedCell::Value(LoadedValueDraft::String("&item_1.name".to_string()))
     );
     Ok(())
 }
@@ -1243,7 +1253,7 @@ fn string_cells_keep_at_prefixed_text_as_plain_strings() -> TestResult {
 
     assert_eq!(
         parse_ok(&schema, "string", "@item_1")?,
-        ParsedCell::Value(CfdInputValue::String("@item_1".to_string()))
+        ParsedCell::Value(LoadedValueDraft::String("@item_1".to_string()))
     );
     Ok(())
 }
@@ -1313,7 +1323,11 @@ fn explicit_record_refs_resolve_to_cfd_refs() -> TestResult {
 
     let parsed = parse_value(&schema, "&Item", "&item_1")?;
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [("name", LoadedValueDraft::from("Sword"))],
+    );
     builder.add_record("drop_1", "Drop", [("item", parsed)]);
     let model = build_model(builder)?;
     let Some(item_record_id) = model.records().next().map(|(id, _)| id) else {
@@ -1325,7 +1339,7 @@ fn explicit_record_refs_resolve_to_cfd_refs() -> TestResult {
 
     assert_eq!(
         drop_record.field("item"),
-        Some(&CfdValue::Ref("item_1".into()))
+        Some(&CfdValue::record_ref("item_1").unwrap())
     );
     let _ = item_record_id;
     Ok(())
@@ -1350,7 +1364,7 @@ fn direct_record_ref_shorthand_resolves_to_cfd_refs_by_expected_type() -> TestRe
     builder.add_record(
         "reward_1",
         "ItemReward",
-        [("count", CfdInputValue::from(3_i64))],
+        [("count", LoadedValueDraft::from(3_i64))],
     );
     builder.add_record("drop_1", "Drop", [("reward", parsed)]);
     let model = build_model(builder)?;
@@ -1363,7 +1377,7 @@ fn direct_record_ref_shorthand_resolves_to_cfd_refs_by_expected_type() -> TestRe
 
     assert_eq!(
         drop_record.field("reward"),
-        Some(&CfdValue::Ref("reward_1".into()))
+        Some(&CfdValue::record_ref("reward_1").unwrap())
     );
     let _ = reward_record_id;
     Ok(())
@@ -1375,9 +1389,9 @@ fn parses_dict_cells_with_schema_guided_keys() -> TestResult {
 
     assert_eq!(
         parse_ok(&schema, "{string: int}", "alice: 10, bob: 20")?,
-        ParsedCell::Value(CfdInputValue::dict([
-            (CfdInputDictKey::from("alice"), CfdInputValue::Int(10)),
-            (CfdInputDictKey::from("bob"), CfdInputValue::Int(20)),
+        ParsedCell::Value(LoadedValueDraft::dict([
+            (LoadedDictKeyDraft::from("alice"), LoadedValueDraft::Int(10)),
+            (LoadedDictKeyDraft::from("bob"), LoadedValueDraft::Int(20)),
         ]))
     );
     Ok(())

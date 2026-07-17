@@ -90,7 +90,7 @@ fn render_object(record: &coflow_data_model::CfdObject) -> Result<String, CellRe
         if idx > 0 {
             out.push_str(", ");
         }
-        out.push_str(field);
+        out.push_str(field.as_str());
         out.push_str(": ");
         out.push_str(&render_cell_value(value)?);
     }
@@ -99,7 +99,11 @@ fn render_object(record: &coflow_data_model::CfdObject) -> Result<String, CellRe
 }
 
 fn render_enum_value(value: &CfdEnumValue) -> Result<String, CellRenderError> {
-    value.variant.clone().ok_or(CellRenderError::AnonymousEnum)
+    value
+        .variant
+        .as_ref()
+        .map(ToString::to_string)
+        .ok_or(CellRenderError::AnonymousEnum)
 }
 
 pub(super) fn render_string(value: &str) -> String {

@@ -62,7 +62,7 @@ fn validate_module(
             Item::Const(definition) => {
                 charge_annotations(budget, module, &definition.annotations)?;
                 if let Some(ty) = &definition.ty {
-                    walk_type_ref(budget, module, ty)?;
+                    walk_value_type(budget, module, ty)?;
                 }
             }
             Item::Enum(definition) => {
@@ -79,7 +79,7 @@ fn validate_module(
                 for field in &definition.fields {
                     charge_flat(budget, module, field.span, 1)?;
                     charge_annotations(budget, module, &field.annotations)?;
-                    walk_type_ref(budget, module, &field.ty)?;
+                    walk_value_type(budget, module, &field.ty)?;
                     if let Some(default) = &field.default {
                         walk_default(budget, module, default)?;
                     }
@@ -148,7 +148,7 @@ fn enter(
         })
 }
 
-fn walk_type_ref(
+fn walk_value_type(
     budget: &mut StructuralBudget,
     module: &ModuleId,
     root: &TypeRef,

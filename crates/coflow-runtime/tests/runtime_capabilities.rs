@@ -1,8 +1,10 @@
 #![allow(clippy::expect_used)]
 
+use std::collections::BTreeMap;
+
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
-use coflow_runtime::{ProjectQueries, ProjectRuntime, Runtime};
+use coflow_runtime::{IncrementalFallbackReason, ProjectQueries, ProjectRuntime, Runtime};
 
 struct TempProject {
     root: std::path::PathBuf,
@@ -10,19 +12,22 @@ struct TempProject {
 
 impl TempProject {
     fn new(name: &str) -> Self {
+        Self::with_data(
+            name,
+            "type Item { name: string; }\n",
+            "sword: Item { name: \"Sword\" }\n",
+        )
+    }
+
+    fn with_data(name: &str, schema: &str, data: &str) -> Self {
         let root = std::env::temp_dir().join(format!(
             "coflow-runtime-capabilities-{name}-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("data")).expect("create data directory");
-        std::fs::write(root.join("schema.cft"), "type Item { name: string; }\n")
-            .expect("write schema");
-        std::fs::write(
-            root.join("data/items.cfd"),
-            "sword: Item { name: \"Sword\" }\n",
-        )
-        .expect("write data");
+        std::fs::write(root.join("schema.cft"), schema).expect("write schema");
+        std::fs::write(root.join("data/items.cfd"), data).expect("write data");
         std::fs::write(
             root.join("coflow.yaml"),
             "schema: schema.cft\nsources:\n  - path: data\n",
@@ -72,6 +77,18 @@ fn read_and_build_sessions_expose_generation_queries() {
         .record_view("Item", "sword")
         .is_some());
     assert_same_generation_corpus(read_session.queries(), read_session.queries());
+    let read_stats = read_session.queries().execution_stats();
+    assert_eq!(read_stats.sources_resolved, 1);
+    assert_eq!(read_stats.sources_reloaded, 0);
+    assert_eq!(read_stats.draft_records_collected, 1);
+    assert_eq!(read_stats.records_validated, 1);
+    assert_eq!(read_stats.records_materialized, 1);
+    assert_eq!(read_stats.records_reused, 0);
+    assert_eq!(read_stats.ref_edges_rebuilt, 0);
+    assert_eq!(read_stats.spread_edges_rebuilt, 0);
+    assert_eq!(read_stats.check_roots_executed, 1);
+    assert!(!read_stats.full_fallback);
+    assert_eq!(read_stats.fallback_reason, None);
 
     let build_session = runtime()
         .build_project_session(fixture.open())
@@ -82,6 +99,10 @@ fn read_and_build_sessions_expose_generation_queries() {
         .record_view("Item", "sword")
         .is_some());
     assert_same_generation_corpus(build_session.queries(), build_session.queries());
+    assert_eq!(
+        build_session.queries().execution_stats(),
+        read_session.queries().execution_stats()
+    );
 }
 
 #[test]
@@ -119,6 +140,79 @@ fn write_session_owns_registry_and_publishes_successful_generation() {
             .queries()
             .field_value("Item", "sword", &[CfdPathSegment::Field("name".into())]),
         Some(&CfdValue::String("Blade".into()))
+    );
+    let stats = session.queries().execution_stats();
+    assert_eq!(stats.sources_resolved, 0);
+    assert_eq!(stats.sources_reloaded, 1);
+    assert_eq!(stats.draft_records_collected, 1);
+    assert_eq!(stats.records_validated, 1);
+    assert_eq!(stats.records_materialized, 1);
+    assert_eq!(stats.records_reused, 0);
+    assert_eq!(stats.check_roots_executed, 1);
+    assert!(!stats.full_fallback);
+    assert_eq!(stats.fallback_reason, None);
+}
+
+#[test]
+fn execution_stats_count_rebuilt_relation_edges() {
+    let fixture = TempProject::with_data(
+        "relation-stats",
+        "type Item { name: string; target: &Item? = null; }\n",
+        r#"base: Item { name: "Base" }
+copy: Item { ...&base, name: "Copy", target: &base }
+"#,
+    );
+    let session = runtime()
+        .open_read_only_session(fixture.open())
+        .expect("open read session");
+
+    let statistics = session.queries().execution_stats();
+    assert_eq!(statistics.draft_records_collected, 2);
+    assert_eq!(statistics.records_materialized, 2);
+    assert_eq!(statistics.ref_edges_rebuilt, 1);
+    assert_eq!(statistics.spread_edges_rebuilt, 1);
+}
+
+#[test]
+fn structural_mutations_report_specific_full_fallback_reasons() {
+    let fixture = TempProject::new("structural-fallback");
+    let mut session = runtime()
+        .open_write_session(fixture.open())
+        .expect("open write session");
+
+    session
+        .rename_record_key("Item", "sword", "blade")
+        .expect("rename record");
+
+    let stats = session.queries().execution_stats();
+    assert_eq!(stats.sources_reloaded, 1);
+    assert!(stats.full_fallback);
+    assert_eq!(
+        stats.fallback_reason,
+        Some(IncrementalFallbackReason::RecordRenamed)
+    );
+    assert!(session.queries().record_view("Item", "blade").is_some());
+
+    session
+        .insert_record(
+            "data/items.cfd",
+            None,
+            "shield",
+            "Item",
+            &BTreeMap::from([("name".to_string(), CfdValue::String("Shield".into()))]),
+        )
+        .expect("insert record");
+    assert_eq!(
+        session.queries().execution_stats().fallback_reason,
+        Some(IncrementalFallbackReason::RecordInserted)
+    );
+
+    session
+        .delete_record("Item", "shield")
+        .expect("delete record");
+    assert_eq!(
+        session.queries().execution_stats().fallback_reason,
+        Some(IncrementalFallbackReason::RecordDeleted)
     );
 }
 

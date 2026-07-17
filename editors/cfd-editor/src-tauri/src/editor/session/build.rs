@@ -14,6 +14,9 @@ pub(super) struct SessionSnapshotParts {
     pub(super) file_tree: Vec<FileTreeNode>,
 }
 
+type FileTypeNames = BTreeMap<String, Vec<String>>;
+type TypeDisplayNames = BTreeMap<(String, String), String>;
+
 pub(super) fn default_provider_registry() -> Result<ProviderRegistry, EditorError> {
     coflow_builtins::default_provider_registry()
         .map_err(|err| EditorError::project(format!("failed to register default providers: {err}")))
@@ -47,7 +50,8 @@ pub(super) fn build_session(
             EditorError::project(prefixed_diagnostics("failed to build project", &err))
         })?;
     let file_tree = engine.queries().file_tree();
-    let (file_type_names, type_display_names) = type_navigation(engine.queries(), registry, &file_tree);
+    let (file_type_names, type_display_names) =
+        type_navigation(engine.queries(), registry, &file_tree);
     let diagnostics = diagnostics_from_store(engine.queries().diagnostics(), &project_root);
 
     Ok((
@@ -69,10 +73,7 @@ fn type_navigation(
     queries: ProjectQueries<'_>,
     registry: &ProviderRegistry,
     file_tree: &[FileTreeNode],
-) -> (
-    BTreeMap<String, Vec<String>>,
-    BTreeMap<(String, String), String>,
-) {
+) -> (FileTypeNames, TypeDisplayNames) {
     let mut files = Vec::new();
     collect_source_files(file_tree, &mut files);
     let mut display_names = BTreeMap::new();
@@ -82,13 +83,13 @@ fn type_navigation(
         let mut type_names = Vec::new();
         let mut type_seen = HashSet::new();
         for view in queries.record_views_in_file(&file_path) {
-            let type_name = view.coordinate.actual_type.clone();
+            let type_name = view.coordinate.actual_type.to_string();
             if type_seen.insert(type_name.clone()) {
                 type_names.push(type_name);
             }
         }
         for type_name in &schema_type_names {
-            let Ok(Some(sheet)) = queries.table_sheet_for_type(registry, &file_path, &type_name)
+            let Ok(Some(sheet)) = queries.table_sheet_for_type(registry, &file_path, type_name)
             else {
                 continue;
             };

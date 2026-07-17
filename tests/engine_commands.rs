@@ -7,7 +7,7 @@ use coflow_api::{
     SourceProviderDescriptor, SourceWriter, WriteCellRequest, WriteContext, WriteOutcome,
     WriterCapabilities, WriterDescriptor,
 };
-use coflow_data_model::{CfdInputRecord, CfdInputValue, RecordOrigin, SourceDocument};
+use coflow_data_model::{LoadedRecordDraft, LoadedValueDraft, RecordOrigin, SourceDocument};
 use coflow_project::Project;
 use coflow_runtime::{RecordCoordinate, Runtime, WriteProjectSession};
 use std::collections::BTreeMap;
@@ -102,8 +102,8 @@ fn rename_record_key_updates_cross_source_references() {
     assert_eq!(
         outcome.renamed,
         Some((
-            RecordCoordinate::new("Item", "sword"),
-            RecordCoordinate::new("Item", "blade")
+            RecordCoordinate::try_new("Item", "sword").unwrap(),
+            RecordCoordinate::try_new("Item", "blade").unwrap()
         ))
     );
     assert_eq!(
@@ -346,10 +346,10 @@ impl SourceProvider for FakeLocalFailLoader {
         let mut field_columns = BTreeMap::new();
         field_columns.insert(vec!["item".to_string()], 2);
         Ok(LoadedSource {
-            records: vec![CfdInputRecord::new(
+            records: vec![LoadedRecordDraft::new(
                 "starter",
                 "Bundle",
-                [("item", CfdInputValue::record_ref("sword"))],
+                [("item", LoadedValueDraft::record_ref("sword"))],
             )
             .with_origin(RecordOrigin::Table {
                 document: SourceDocument::Local(path.clone()),

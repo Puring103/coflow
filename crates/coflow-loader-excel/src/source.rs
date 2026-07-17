@@ -1,6 +1,6 @@
 use calamine::{open_workbook_auto, Data, Reader, Sheets};
 use coflow_cft::CftSchema;
-use coflow_data_model::CfdInputRecord;
+use coflow_data_model::LoadedRecordDraft;
 use coflow_loader_table_core::{
     collect_table_input_records as collect_shared_table_input_records, TableSheet,
     TableSheetConfig, TableSource,
@@ -111,7 +111,7 @@ impl From<TableSheetConfig> for ExcelSheet {
 
 #[derive(Debug, Clone)]
 pub struct ExcelInputRecords {
-    pub records: Vec<CfdInputRecord>,
+    pub records: Vec<LoadedRecordDraft>,
 }
 
 /// Loads configured Excel sources into input records without building a data model.

@@ -2,7 +2,7 @@
 //!
 //! This crate is deliberately below every concrete loader. Excel, JSON, tests,
 //! and editor integrations should all translate their input into
-//! [`CfdInputRecord`] / [`CfdInputValue`] and then build a [`CfdDataModel`].
+//! [`LoadedRecordDraft`] / [`LoadedValueDraft`] and then build a [`CfdDataModel`].
 //! Runtime `check` execution lives in the `coflow-checker` crate so this crate
 //! stays focused on data construction and reference resolution.
 
@@ -27,33 +27,31 @@
     clippy::use_self
 )]
 
-mod compiler;
-mod compiler_context;
-mod diagnostic;
-mod edge_index;
+mod build;
+mod dependencies;
+mod diagnostics;
+mod indexes;
+mod ingest;
 mod model;
-mod origin;
+mod semantics;
 pub mod serde_i64;
-mod value_semantics;
 
+pub use build::CfdModelBuilder;
 pub use coflow_structure::StructuralLimits;
-pub use diagnostic::{
-    format_cfd_dict_key, CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdLabel, CfdPath,
-    CfdPathSegment, CfdSeverity, CfdStage,
+pub use diagnostics::{
+    format_cfd_dict_key, label_to_location, map_diagnostics, CfdDiagnostic, CfdDiagnostics,
+    CfdErrorCode, CfdLabel, CfdPath, CfdPathSegment, CfdSeverity, CfdStage, MappedDiagnostic,
+    MappedLabel, RecordOrigin, SourceDocument, SourceLocation, TextSpan,
 };
+pub use ingest::{DimensionValueDraft, LoadedDictKeyDraft, LoadedRecordDraft, LoadedValueDraft};
 pub use model::{
-    CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdDomainId,
-    CfdDomainIndex, CfdEnumValue, CfdInputDictKey, CfdInputDimensionValue, CfdInputRecord,
-    CfdInputValue, CfdModelBuilder, CfdObject, CfdPolymorphicIndex, CfdRecord, CfdRecordId,
-    CfdTable, CfdTypeId, CfdValue, DimensionFieldLookupError, DimensionRefCoordinate,
-    DimensionValueLookup, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
+    CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdObject,
+    CfdRecord, CfdRecordId, CfdTable, CfdValue, DimensionFieldLookupError, DimensionRefCoordinate,
+    DimensionValueLookup, RecordCoordinate, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId,
+    SpreadSite,
 };
-pub use origin::{
-    label_to_location, map_diagnostics, MappedDiagnostic, MappedLabel, RecordOrigin,
-    SourceDocument, SourceLocation, TextSpan,
-};
-pub use value_semantics::{
-    validate_complete_value_for_schema, validate_fragment_value_for_schema,
-    validate_object_type_assignable, CfdValueSemanticContext, CfdValueSemanticError,
-    PendingInsertRef,
+pub use semantics::{
+    validate_object_type_assignable, validate_value_for_schema, CfdValueSemanticContext,
+    CfdValueSemanticError, CfdValueSemanticErrorKind, PendingInsertRef, ValueValidationMode,
+    ValueValidationRequest,
 };

@@ -369,8 +369,7 @@ fn stage_rename_record_key(
         diagnostics.extend(outcome.diagnostics);
         affected_files.insert(action.display_path().to_string());
     }
-    let old_key = RecordKey::new(plan.old_coordinate.key.clone())
-        .map_err(|_| plan_mismatch("record key became invalid before dimension staging"))?;
+    let old_key = plan.old_coordinate.key.clone();
     let new_dimension_key = RecordKey::new(new_key.to_string())
         .map_err(|_| plan_mismatch("new record key became invalid before dimension staging"))?;
     rewrite_dimension_records(
@@ -381,7 +380,8 @@ fn stage_rename_record_key(
         &mut affected_files,
     )?;
 
-    let new_coordinate = RecordCoordinate::new(&plan.old_coordinate.actual_type, new_key);
+    let new_coordinate =
+        RecordCoordinate::new(plan.old_coordinate.actual_type.clone(), new_dimension_key);
     let mut touched = vec![plan.old_coordinate.clone(), new_coordinate.clone()];
     if host_record != &plan.old_coordinate {
         touched.insert(0, host_record.clone());
@@ -419,7 +419,8 @@ fn stage_insert_record(
         model: Some(&session.model),
     };
     let provider_outcome = plan.writer.insert_record(ctx, &request)?;
-    let inserted = RecordCoordinate::new(actual_type, record_key);
+    let inserted = RecordCoordinate::try_new(actual_type, record_key)
+        .map_err(|_| plan_mismatch("insert coordinate became invalid before staging"))?;
     Ok(WriteOutcome {
         touched: vec![inserted.clone()],
         inserted: Some(inserted),
@@ -448,8 +449,7 @@ fn stage_delete_record(
         model: Some(&session.model),
     };
     let provider_outcome = plan.writer.delete_record(ctx, &request)?;
-    let old_key = RecordKey::new(record.key.clone())
-        .map_err(|_| plan_mismatch("record key became invalid before dimension staging"))?;
+    let old_key = record.key.clone();
     let mut affected_files = BTreeSet::from([plan.display_path.clone()]);
     rewrite_dimension_records(
         session,

@@ -147,14 +147,14 @@ Loader 负责把具体来源读成 input records：
 ResolvedSource
   -> provider.preflight
   -> provider.load
-  -> CfdInputRecord[]
+  -> LoadedRecordDraft[]
 ```
 
 Input record 保留来源定位，但不执行最终业务规则。不同 Provider 输出相同的来源无关结构，后续统一交给 DataModel。
 
 CFD 使用唯一的两阶段前端：`coflow-cfd` 先把文本解析成带 source span 的
 canonical AST，`coflow-loader-cfd` 再根据已编译 schema 将 AST lowering 为
-`CfdInputRecord`。LSP、writer 和 loader 共享同一套 CFD syntax parser；loader
+`LoadedRecordDraft`。LSP、writer 和 loader 共享同一套 CFD syntax parser；loader
 不维护第二套 lexer/parser，也不在 syntax 阶段执行 schema 语义。
 
 表格 create/sync operation 使用同一条本地文件 runtime 路径。项目 path 按扩展名

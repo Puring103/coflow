@@ -1,5 +1,5 @@
 use super::annotations::has_annotation;
-use super::checked_type::{is_valid_dict_key, CheckedType};
+use super::inferred_type::{is_valid_dict_key, InferredType};
 use super::state::{FieldInfo, SymbolKind};
 use super::SchemaCompiler;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
@@ -93,7 +93,7 @@ impl SchemaCompiler<'_> {
                     map.insert(
                         field.name.clone(),
                         FieldInfo {
-                            checked_type: declared_ty,
+                            inferred_type: declared_ty,
                         },
                     );
                 }
@@ -102,43 +102,42 @@ impl SchemaCompiler<'_> {
         }
     }
 
-    /// Resolves a `TypeRef` to a `CheckedType` without emitting diagnostics. Errors
+    /// Resolves a `TypeRef` to an `InferredType` without emitting diagnostics. Errors
     /// (unknown names, invalid dict keys) are reported once by
     /// [`Self::validate_field_type`] during `validate_field_shapes`; later
     /// passes that need the resolved type just consume the result here.
-    pub(super) fn resolve_field_type(&self, ty: &TypeRef) -> CheckedType {
+    pub(super) fn resolve_field_type(&self, ty: &TypeRef) -> InferredType {
         match &ty.kind {
-            TypeRefKind::Int => CheckedType::Int,
-            TypeRefKind::Float => CheckedType::Float,
-            TypeRefKind::Bool => CheckedType::Bool,
-            TypeRefKind::String => CheckedType::String,
+            TypeRefKind::Int => InferredType::int(),
+            TypeRefKind::Float => InferredType::float(),
+            TypeRefKind::Bool => InferredType::bool(),
+            TypeRefKind::String => InferredType::string(),
             TypeRefKind::Named(name) => match self.symbols.get(name) {
-                Some(symbol) if symbol.kind == SymbolKind::Type => CheckedType::Type(name.clone()),
-                Some(symbol) if symbol.kind == SymbolKind::Enum => CheckedType::Enum(name.clone()),
-                _ => CheckedType::Unknown,
+                Some(symbol) if symbol.kind == SymbolKind::Type => {
+                    InferredType::object(crate::TypeName::from_validated(name.clone()))
+                }
+                Some(symbol) if symbol.kind == SymbolKind::Enum => {
+                    InferredType::enum_value(crate::EnumName::from_validated(name.clone()))
+                }
+                _ => InferredType::Unknown,
             },
-            TypeRefKind::Ref(inner) => CheckedType::Ref(Box::new(self.resolve_field_type(inner))),
-            TypeRefKind::Array(inner) => {
-                CheckedType::Array(Box::new(self.resolve_field_type(inner)))
+            TypeRefKind::Ref(inner) => InferredType::record_ref(self.resolve_field_type(inner)),
+            TypeRefKind::Array(inner) => InferredType::array(self.resolve_field_type(inner)),
+            TypeRefKind::Dict(key, value) => {
+                InferredType::dict(self.resolve_field_type(key), self.resolve_field_type(value))
             }
-            TypeRefKind::Dict(key, value) => CheckedType::Dict(
-                Box::new(self.resolve_field_type(key)),
-                Box::new(self.resolve_field_type(value)),
-            ),
-            TypeRefKind::Nullable(inner) => {
-                CheckedType::Nullable(Box::new(self.resolve_field_type(inner)))
-            }
+            TypeRefKind::Nullable(inner) => InferredType::nullable(self.resolve_field_type(inner)),
         }
     }
 
     /// Walks a `TypeRef` once, emitting `UnknownNamedType` / `InvalidDictKeyType`
     /// diagnostics and returning the resolved type.
-    fn validate_field_type(&mut self, module: &ModuleId, ty: &TypeRef) -> CheckedType {
+    fn validate_field_type(&mut self, module: &ModuleId, ty: &TypeRef) -> InferredType {
         match &ty.kind {
-            TypeRefKind::Int => CheckedType::Int,
-            TypeRefKind::Float => CheckedType::Float,
-            TypeRefKind::Bool => CheckedType::Bool,
-            TypeRefKind::String => CheckedType::String,
+            TypeRefKind::Int => InferredType::int(),
+            TypeRefKind::Float => InferredType::float(),
+            TypeRefKind::Bool => InferredType::bool(),
+            TypeRefKind::String => InferredType::string(),
             TypeRefKind::Named(name) => match self.symbols.get(name) {
                 Some(symbol) if symbol.kind == SymbolKind::Type => {
                     if self.type_is_singleton(name) {
@@ -149,9 +148,11 @@ impl SchemaCompiler<'_> {
                             "singleton type cannot be used as a field type",
                         );
                     }
-                    CheckedType::Type(name.clone())
+                    InferredType::object(crate::TypeName::from_validated(name.clone()))
                 }
-                Some(symbol) if symbol.kind == SymbolKind::Enum => CheckedType::Enum(name.clone()),
+                Some(symbol) if symbol.kind == SymbolKind::Enum => {
+                    InferredType::enum_value(crate::EnumName::from_validated(name.clone()))
+                }
                 Some(symbol) => {
                     self.diagnostics.push(
                         CftDiagnostic::error(
@@ -166,7 +167,7 @@ impl SchemaCompiler<'_> {
                             "name is defined here",
                         ),
                     );
-                    CheckedType::Unknown
+                    InferredType::Unknown
                 }
                 None => {
                     self.push_diag(
@@ -175,13 +176,13 @@ impl SchemaCompiler<'_> {
                         ty.span,
                         format!("unknown field type `{name}`"),
                     );
-                    CheckedType::Unknown
+                    InferredType::Unknown
                 }
             },
             TypeRefKind::Ref(inner) => {
                 let inner_ty = self.validate_field_type(module, inner);
-                match &inner_ty {
-                    CheckedType::Type(name) if self.type_is_singleton(name) => {
+                match inner_ty.object_name() {
+                    Some(name) if self.type_is_singleton(name) => {
                         self.push_diag(
                             CftErrorCode::InvalidAnnotatedFieldType,
                             module,
@@ -189,8 +190,9 @@ impl SchemaCompiler<'_> {
                             "reference target type must not be a singleton type",
                         );
                     }
-                    CheckedType::Type(_) | CheckedType::Unknown => {}
-                    _ => {
+                    Some(_) => {}
+                    None if inner_ty.is_unknown() => {}
+                    None => {
                         self.push_diag(
                             CftErrorCode::InvalidAnnotatedFieldType,
                             module,
@@ -199,11 +201,11 @@ impl SchemaCompiler<'_> {
                         );
                     }
                 }
-                CheckedType::Ref(Box::new(inner_ty))
+                InferredType::record_ref(inner_ty)
             }
             TypeRefKind::Array(inner) => {
                 let inner = self.validate_field_type(module, inner);
-                CheckedType::Array(Box::new(inner))
+                InferredType::array(inner)
             }
             TypeRefKind::Dict(key, value) => {
                 let key_ty = self.validate_field_type(module, key);
@@ -216,11 +218,11 @@ impl SchemaCompiler<'_> {
                     );
                 }
                 let value_ty = self.validate_field_type(module, value);
-                CheckedType::Dict(Box::new(key_ty), Box::new(value_ty))
+                InferredType::dict(key_ty, value_ty)
             }
             TypeRefKind::Nullable(inner) => {
                 let inner = self.validate_field_type(module, inner);
-                CheckedType::Nullable(Box::new(inner))
+                InferredType::nullable(inner)
             }
         }
     }

@@ -7,9 +7,9 @@ const fn limits(max_depth: u64, max_nodes: u64, max_work: u64) -> StructuralLimi
     StructuralLimits::new(max_depth, max_nodes, max_work)
 }
 
-fn nested_array(depth: usize) -> CfdInputValue {
-    (0..depth).fold(CfdInputValue::from(1_i64), |value, _| {
-        CfdInputValue::Array(vec![value])
+fn nested_array(depth: usize) -> LoadedValueDraft {
+    (0..depth).fold(LoadedValueDraft::from(1_i64), |value, _| {
+        LoadedValueDraft::Array(vec![value])
     })
 }
 
@@ -52,7 +52,7 @@ fn materialized_node_limit_reports_the_first_rejected_array_item() {
             "Item",
             [(
                 "nums",
-                CfdInputValue::Array(vec![1_i64.into(), 2_i64.into()]),
+                LoadedValueDraft::Array(vec![1_i64.into(), 2_i64.into()]),
             )],
         );
         builder.build()
@@ -71,8 +71,8 @@ fn materialized_node_limit_reports_the_first_rejected_array_item() {
 fn structural_budget_is_independent_for_each_top_level_record() {
     let schema = compile_schema("type Item { value: int; }");
     let mut builder = CfdDataModel::builder(&schema).with_structural_limits(limits(2, 2, 4));
-    builder.add_record("first", "Item", [("value", CfdInputValue::from(1_i64))]);
-    builder.add_record("second", "Item", [("value", CfdInputValue::from(2_i64))]);
+    builder.add_record("first", "Item", [("value", LoadedValueDraft::from(1_i64))]);
+    builder.add_record("second", "Item", [("value", LoadedValueDraft::from(2_i64))]);
 
     let model = builder
         .build()
@@ -83,13 +83,13 @@ fn structural_budget_is_independent_for_each_top_level_record() {
 fn spread_chain_model(schema: &CftSchema, max_work: u64) -> Result<CfdDataModel, CfdDiagnostics> {
     let mut builder =
         CfdDataModel::builder(schema).with_structural_limits(limits(100, 100, max_work));
-    builder.add_record("base", "Stats", [("hp", CfdInputValue::from(1_i64))]);
+    builder.add_record("base", "Stats", [("hp", LoadedValueDraft::from(1_i64))]);
     for (key, source) in [("mid1", "base"), ("mid2", "mid1"), ("leaf", "mid2")] {
-        builder.add_input_record(CfdInputRecord::with_spreads(
+        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
             key,
             "Stats",
-            [CfdInputValue::record_ref(source)],
-            std::iter::empty::<(&str, CfdInputValue)>(),
+            [LoadedValueDraft::record_ref(source)],
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
         ));
     }
     builder.build()
@@ -118,17 +118,17 @@ fn short_spread_and_default_cycles_keep_domain_cycle_diagnostics() {
     let spread_schema = compile_schema("type Stats { hp: int; }");
     let mut spread_builder =
         CfdDataModel::builder(&spread_schema).with_structural_limits(limits(3, 100, 100));
-    spread_builder.add_input_record(CfdInputRecord::with_spreads(
+    spread_builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "a",
         "Stats",
-        [CfdInputValue::record_ref("b")],
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        [LoadedValueDraft::record_ref("b")],
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     ));
-    spread_builder.add_input_record(CfdInputRecord::with_spreads(
+    spread_builder.add_loaded_record(LoadedRecordDraft::with_spreads(
         "b",
         "Stats",
-        [CfdInputValue::record_ref("a")],
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        [LoadedValueDraft::record_ref("a")],
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     ));
     let spread_diagnostics = spread_builder.build().expect_err("spread cycle must fail");
     assert_has_code(&spread_diagnostics, CfdErrorCode::ValueDependencyCycle);
@@ -140,7 +140,11 @@ fn short_spread_and_default_cycles_keep_domain_cycle_diagnostics() {
     let default_schema = compile_schema("type Node { child: Node = {}; }");
     let mut default_builder =
         CfdDataModel::builder(&default_schema).with_structural_limits(limits(1, 100, 100));
-    default_builder.add_record("node", "Node", std::iter::empty::<(&str, CfdInputValue)>());
+    default_builder.add_record(
+        "node",
+        "Node",
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
+    );
     let default_diagnostics = default_builder
         .build()
         .expect_err("known default cycle must fail before recursive expansion");
@@ -159,7 +163,11 @@ fn cached_default_subtree_is_charged_before_it_is_cloned() {
     let build = |max_nodes| {
         let mut builder =
             CfdDataModel::builder(&schema).with_structural_limits(limits(10, max_nodes, 100));
-        builder.add_record("root", "Root", std::iter::empty::<(&str, CfdInputValue)>());
+        builder.add_record(
+            "root",
+            "Root",
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
+        );
         builder.build()
     };
 

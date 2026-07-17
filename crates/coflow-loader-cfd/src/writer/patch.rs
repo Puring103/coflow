@@ -121,10 +121,6 @@ pub(super) fn find_record<'a>(
 
 fn validate_value(v: &CfdValue) -> Result<(), DiagnosticSet> {
     match v {
-        CfdValue::Ref(target_key) if target_key.is_empty() => Err(DiagnosticSet::one(diag(
-            "CFD-WRITE",
-            "cannot write empty reference; pick a target key first",
-        ))),
         CfdValue::Object(record) => {
             for v in record.fields.values() {
                 validate_value(v)?;

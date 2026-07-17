@@ -1,7 +1,10 @@
-use super::ids::CfdRecordId;
-use crate::diagnostic::{format_cfd_dict_key, CfdPath, CfdPathSegment};
-use crate::origin::RecordOrigin;
-use coflow_cft::{CftEnumValue, DimensionName, VariantName};
+use super::ids::{CfdRecordId, RecordCoordinate};
+use crate::diagnostics::RecordOrigin;
+use crate::diagnostics::{format_cfd_dict_key, CfdPath, CfdPathSegment};
+use coflow_cft::{
+    CftEnumValue, CftNameError, DimensionName, EnumName, EnumVariantName, FieldName, RecordKey,
+    TypeName, VariantName,
+};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -14,7 +17,8 @@ use std::hash::{Hash, Hasher};
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct CfdRecord {
-    pub key: String,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub key: RecordKey,
     pub object: CfdObject,
     /// Where this record came from in its original source. Used by writers to
     /// dispatch edits back to the right source and by diagnostics to map
@@ -28,27 +32,42 @@ pub struct CfdRecord {
     pub origin: RecordOrigin,
     #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub dimension_fields: BTreeMap<String, CfdDimensionFieldValues>,
+    pub dimension_fields: BTreeMap<FieldName, CfdDimensionFieldValues>,
 }
 
 impl CfdRecord {
     #[must_use]
     pub fn key(&self) -> &str {
+        self.key.as_str()
+    }
+
+    #[must_use]
+    pub const fn record_key(&self) -> &RecordKey {
         &self.key
     }
 
     #[must_use]
     pub fn actual_type(&self) -> &str {
+        self.object.actual_type.as_str()
+    }
+
+    #[must_use]
+    pub const fn actual_type_name(&self) -> &TypeName {
         &self.object.actual_type
     }
 
     #[must_use]
-    pub fn fields(&self) -> &BTreeMap<String, CfdValue> {
+    pub fn coordinate(&self) -> RecordCoordinate {
+        RecordCoordinate::new(self.actual_type_name().clone(), self.record_key().clone())
+    }
+
+    #[must_use]
+    pub fn fields(&self) -> &BTreeMap<FieldName, CfdValue> {
         &self.object.fields
     }
 
     #[must_use]
-    pub fn fields_mut(&mut self) -> &mut BTreeMap<String, CfdValue> {
+    pub fn fields_mut(&mut self) -> &mut BTreeMap<FieldName, CfdValue> {
         &mut self.object.fields
     }
 
@@ -69,11 +88,11 @@ impl CfdRecord {
         let CfdPathSegment::Field(field) = segments.next()? else {
             return None;
         };
-        let mut current = self.fields().get(field)?;
+        let mut current = self.fields().get(field.as_str())?;
         for segment in segments {
             current = match (segment, current) {
                 (CfdPathSegment::Field(field), CfdValue::Object(record)) => {
-                    record.fields().get(field)?
+                    record.fields().get(field.as_str())?
                 }
                 (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
                 (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => entries
@@ -106,31 +125,55 @@ pub struct CfdDimensionValue {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct CfdObject {
-    pub actual_type: String,
-    pub fields: BTreeMap<String, CfdValue>,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub actual_type: TypeName,
+    #[cfg_attr(feature = "ts-export", ts(type = "Record<string, CfdValue>"))]
+    pub fields: BTreeMap<FieldName, CfdValue>,
 }
 
 impl CfdObject {
     #[must_use]
-    pub fn new(actual_type: impl Into<String>, fields: BTreeMap<String, CfdValue>) -> Self {
+    pub const fn new(actual_type: TypeName, fields: BTreeMap<FieldName, CfdValue>) -> Self {
         Self {
-            actual_type: actual_type.into(),
+            actual_type,
             fields,
         }
     }
 
+    /// Validates raw object and field names before constructing a successful
+    /// model object.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the type name or any field name is invalid.
+    pub fn try_new(
+        actual_type: impl Into<String>,
+        fields: BTreeMap<String, CfdValue>,
+    ) -> Result<Self, CftNameError> {
+        let fields = fields
+            .into_iter()
+            .map(|(name, value)| Ok((FieldName::new(name)?, value)))
+            .collect::<Result<_, CftNameError>>()?;
+        Ok(Self::new(TypeName::new(actual_type)?, fields))
+    }
+
     #[must_use]
     pub fn actual_type(&self) -> &str {
+        self.actual_type.as_str()
+    }
+
+    #[must_use]
+    pub const fn actual_type_name(&self) -> &TypeName {
         &self.actual_type
     }
 
     #[must_use]
-    pub fn fields(&self) -> &BTreeMap<String, CfdValue> {
+    pub fn fields(&self) -> &BTreeMap<FieldName, CfdValue> {
         &self.fields
     }
 
     #[must_use]
-    pub fn fields_mut(&mut self) -> &mut BTreeMap<String, CfdValue> {
+    pub fn fields_mut(&mut self) -> &mut BTreeMap<FieldName, CfdValue> {
         &mut self.fields
     }
 
@@ -159,9 +202,20 @@ pub enum CfdValue {
     String(String),
     Enum(CfdEnumValue),
     Object(Box<CfdObject>),
-    Ref(String),
+    Ref(#[cfg_attr(feature = "ts-export", ts(type = "string"))] RecordKey),
     Array(Vec<CfdValue>),
     Dict(Vec<(CfdDictKey, CfdValue)>),
+}
+
+impl CfdValue {
+    /// Validates a raw reference key before constructing a successful value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `key` is not a valid record key.
+    pub fn record_ref(key: impl Into<String>) -> Result<Self, CftNameError> {
+        RecordKey::new(key).map(Self::Ref)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -197,11 +251,32 @@ pub enum CfdDictKey {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct CfdEnumValue {
-    pub enum_name: String,
-    pub variant: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
+    pub enum_name: EnumName,
+    #[cfg_attr(feature = "ts-export", ts(type = "string | null"))]
+    pub variant: Option<EnumVariantName>,
     #[serde(with = "crate::serde_i64")]
     #[cfg_attr(feature = "ts-export", ts(type = "bigint"))]
     pub value: i64,
+}
+
+impl CfdEnumValue {
+    /// Validates raw enum identity before constructing a successful value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the enum or optional variant name is invalid.
+    pub fn try_new(
+        enum_name: impl Into<String>,
+        variant: Option<impl Into<String>>,
+        value: i64,
+    ) -> Result<Self, CftNameError> {
+        Ok(Self {
+            enum_name: EnumName::new(enum_name)?,
+            variant: variant.map(EnumVariantName::new).transpose()?,
+            value,
+        })
+    }
 }
 
 impl PartialEq for CfdEnumValue {
@@ -236,8 +311,8 @@ impl Hash for CfdEnumValue {
 impl From<CftEnumValue> for CfdEnumValue {
     fn from(meta: CftEnumValue) -> Self {
         Self {
-            enum_name: meta.enum_name.to_string(),
-            variant: meta.variant.map(|variant| variant.to_string()),
+            enum_name: meta.enum_name,
+            variant: meta.variant,
             value: meta.value,
         }
     }

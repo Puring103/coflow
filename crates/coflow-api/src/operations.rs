@@ -1,6 +1,6 @@
 use crate::{DecodedSourceOptions, Diagnostic, DiagnosticSet, ResolvedSource};
 use coflow_cft::{CftDimension, CftField, CftSchema, CftType, RecordKey, VariantName};
-use coflow_data_model::{CfdInputDimensionValue, CfdValue};
+use coflow_data_model::{CfdValue, DimensionValueDraft};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -206,7 +206,7 @@ pub struct DimensionSourceLoadRequest<'a> {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DimensionSourceLoadResult {
-    pub values: Vec<CfdInputDimensionValue>,
+    pub values: Vec<DimensionValueDraft>,
 }
 
 #[derive(Debug, Clone)]

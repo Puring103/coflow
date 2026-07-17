@@ -13,7 +13,7 @@ use coflow_api::{
 };
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::CfdDataModel;
-use coflow_data_model::{CfdInputValue, CfdValue};
+use coflow_data_model::{CfdValue, LoadedValueDraft};
 use coflow_loader_cfd::{
     load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextErrorCode, CfdTextLoadError,
 };
@@ -51,7 +51,7 @@ fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
     assert_eq!(records[0].actual_type, "Item");
     assert_eq!(
         records[0].fields.get("name"),
-        Some(&CfdInputValue::from("Iron Sword"))
+        Some(&LoadedValueDraft::from("Iron Sword"))
     );
     assert!(!records[0].fields.contains_key("id"));
     Ok(())
@@ -81,7 +81,7 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
 
     assert_eq!(
         records[1].fields.get("item"),
-        Some(&CfdInputValue::record_ref("sword"))
+        Some(&LoadedValueDraft::record_ref("sword"))
     );
 
     let model = load_cfd_model(
@@ -95,15 +95,15 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
     )?;
 
     let _item_id = model
-        .lookup_assignable("Item", "sword")
+        .lookup_assignable(&schema, "Item", "sword")
         .expect("item record");
     let holder_id = model
-        .lookup_assignable("Holder", "holder")
+        .lookup_assignable(&schema, "Holder", "holder")
         .expect("holder record");
     let holder = model.record(holder_id).expect("holder");
     assert_eq!(
         holder.field("item"),
-        Some(&CfdValue::Ref("sword".to_string()))
+        Some(&CfdValue::record_ref("sword").unwrap())
     );
     Ok(())
 }
@@ -297,13 +297,19 @@ fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
     )?;
 
     let coin_id = model
-        .lookup_assignable("CurrencyReward", "coin")
+        .lookup_assignable(&schema, "CurrencyReward", "coin")
         .expect("currency reward");
     let item_id = model
-        .lookup_assignable("ItemReward", "item")
+        .lookup_assignable(&schema, "ItemReward", "item")
         .expect("item reward");
-    assert_eq!(model.lookup_assignable("Reward", "coin"), Some(coin_id));
-    assert_eq!(model.lookup_assignable("Reward", "item"), Some(item_id));
+    assert_eq!(
+        model.lookup_assignable(&schema, "Reward", "coin"),
+        Some(coin_id)
+    );
+    assert_eq!(
+        model.lookup_assignable(&schema, "Reward", "item"),
+        Some(item_id)
+    );
     Ok(())
 }
 
@@ -380,7 +386,7 @@ fn cfd_object_and_dict_spreads_merge_before_local_overrides() -> TestResult {
     )?;
 
     let elite_id = model
-        .lookup_assignable("Monster", "elite")
+        .lookup_assignable(&schema, "Monster", "elite")
         .expect("elite record");
     let elite = model.record(elite_id).expect("elite");
     assert_eq!(
@@ -444,15 +450,19 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
         "#,
     )?;
 
-    let a_id = model.lookup_assignable("Node", "a").expect("a record");
-    let b_id = model.lookup_assignable("Node", "b").expect("b record");
+    let a_id = model
+        .lookup_assignable(&schema, "Node", "a")
+        .expect("a record");
+    let b_id = model
+        .lookup_assignable(&schema, "Node", "b")
+        .expect("b record");
     assert_eq!(
         model.record(a_id).and_then(|record| record.field("next")),
-        Some(&CfdValue::Ref("b".to_string()))
+        Some(&CfdValue::record_ref("b").unwrap())
     );
     assert_eq!(
         model.record(b_id).and_then(|record| record.field("next")),
-        Some(&CfdValue::Ref("a".to_string()))
+        Some(&CfdValue::record_ref("a").unwrap())
     );
     Ok(())
 }
@@ -581,7 +591,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let origins = coflow_api::origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(&schema);
     for record in loaded.records {
-        builder.add_input_record(record);
+        builder.add_loaded_record(record);
     }
     let err = builder.build().expect_err("second record is missing value");
     let mapped = coflow_api::map_diagnostics_with_origins(err, &origins);
@@ -730,7 +740,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     let model = load_cfd_model(&schema, &source)?;
 
     let elite_id = model
-        .lookup_assignable("Monster", "elite_monster")
+        .lookup_assignable(&schema, "Monster", "elite_monster")
         .expect("elite monster");
     let elite = model.record(elite_id).expect("elite monster record");
     assert_eq!(
@@ -745,7 +755,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     assert_eq!(stats.field("attack"), Some(&CfdValue::Int(5)));
 
     let encounter_id = model
-        .lookup_assignable("Encounter", "elite_encounter")
+        .lookup_assignable(&schema, "Encounter", "elite_encounter")
         .expect("elite encounter");
     let encounter = model.record(encounter_id).expect("encounter record");
     assert_eq!(
@@ -754,7 +764,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     );
     assert!(matches!(
         encounter.field("featured_item"),
-        Some(CfdValue::Ref(target_key)) if target_key == "sword_fire"
+        Some(CfdValue::Ref(target_key)) if target_key.as_str() == "sword_fire"
     ));
     Ok(())
 }

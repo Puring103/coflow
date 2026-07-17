@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::DiagnosticSet;
 use coflow_api::WriteFieldPathSegment;
-use coflow_cft::CftSchemaTypeRef;
+use coflow_cft::{CftValueType, RecordKey};
 use coflow_data_model::{CfdPathSegment, CfdValue, PendingInsertRef};
 
 use crate::write_rules;
@@ -11,11 +11,11 @@ use crate::{ProjectSession, RecordCoordinate};
 
 use super::coercion::{coerce_cfd_field_value, coerce_json_field_value, coerce_mutation_value};
 use super::defaults::{
-    create_record_draft_for_type, default_missing_fields_for_type, default_record_for_type,
-    default_value_for_type_ref,
+    create_record_draft_for_type, default_missing_fields_for_type, default_object_for_type,
+    default_value_for_value_type,
 };
 use super::types::PreparedMutationOp;
-use super::{one_mutation_error, one_path_error, schema_field};
+use super::{one_mutation_error, one_path_error, schema_field, validated_record_coordinate};
 use super::{CreateRecordDraft, DefaultMaterialization, MutationFields, MutationOp};
 
 impl ProjectSession {
@@ -30,8 +30,8 @@ impl ProjectSession {
         type_name: &str,
         materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
-        let record = default_record_for_type(self.schema(), type_name, materialization)?;
-        Ok(CfdValue::Object(Box::new(record.object)))
+        let object = default_object_for_type(self.schema(), type_name, materialization)?;
+        Ok(CfdValue::Object(Box::new(object)))
     }
 
     /// Build a field-by-field draft for creating a new top-level record.
@@ -68,7 +68,7 @@ impl ProjectSession {
             "MUTATION",
         )?;
         let item_ty = match ty.non_nullable() {
-            CftSchemaTypeRef::Array(item) | CftSchemaTypeRef::Dict(_, item) => item.as_ref(),
+            CftValueType::Array(item) | CftValueType::Dict(_, item) => item.as_ref(),
             _ => {
                 return Err(one_path_error(
                     "mutation path does not point to a collection",
@@ -76,7 +76,7 @@ impl ProjectSession {
             }
         };
         match item_ty.non_nullable() {
-            CftSchemaTypeRef::RecordRef(target_type) => self
+            CftValueType::RecordRef(target_type) => self
                 .ref_targets(target_type)
                 .into_iter()
                 .next()
@@ -89,7 +89,7 @@ impl ProjectSession {
                         ),
                     )
                 }),
-            _ => default_value_for_type_ref(
+            _ => default_value_for_value_type(
                 self.schema(),
                 item_ty,
                 DefaultMaterialization::EditableShape,
@@ -131,11 +131,12 @@ pub(super) fn prepare_one(
                 materialization,
                 pending_records,
             )?;
+            let coordinate = validated_record_coordinate(actual_type, key)?;
             Ok(PreparedMutationOp::InsertRecord {
                 file,
                 sheet,
-                actual_type,
-                key,
+                actual_type: coordinate.actual_type,
+                key: coordinate.key,
                 fields,
             })
         }
@@ -206,6 +207,8 @@ pub(super) fn prepare_one(
                 "MUTATION-RENAME",
                 "MUTATION-RENAME-CONFLICT",
             )?;
+            let new_key = RecordKey::new(new_key)
+                .map_err(|error| one_mutation_error("MUTATION-RENAME", error.to_string()))?;
             let report_file = file.or_else(|| record_file(session, &record).map(ToOwned::to_owned));
             Ok(PreparedMutationOp::RenameRecord {
                 record,
@@ -250,7 +253,7 @@ pub(super) fn prepare_set_on_pending_insert(
         pending_records,
     } = request;
     ensure_file_guard_for_file(
-        &RecordCoordinate::new(actual_type, key),
+        &validated_record_coordinate(actual_type, key)?,
         insert_file,
         file_guard,
     )?;
@@ -265,7 +268,7 @@ pub(super) fn prepare_set_on_pending_insert(
     let value = coerce_mutation_value(session, &expected, value, pending_records)?;
     set_pending_insert_value(fields, &path, value)?;
     Ok(PreparedMutationOp::FoldedSetField {
-        record: RecordCoordinate::new(actual_type, key),
+        record: validated_record_coordinate(actual_type, key)?,
         write_file: insert_file.to_string(),
     })
 }
@@ -286,9 +289,11 @@ pub(super) fn prepare_rename_on_pending_insert(
         "MUTATION-RENAME",
         "MUTATION-RENAME-CONFLICT",
     )?;
+    let new_key = RecordKey::new(new_key)
+        .map_err(|error| one_mutation_error("MUTATION-RENAME", error.to_string()))?;
     Ok(PreparedMutationOp::FoldedRenameRecord {
         old_record: record.clone(),
-        new_record: RecordCoordinate::new(&record.actual_type, new_key),
+        new_record: RecordCoordinate::new(record.actual_type.clone(), new_key),
         write_file: insert_file.to_string(),
     })
 }
@@ -311,7 +316,7 @@ pub(super) fn rename_pending_insert_references(
     host_actual_type: &str,
     fields: &mut BTreeMap<String, CfdValue>,
     old_key: &str,
-    new_key: &str,
+    new_key: &RecordKey,
 ) -> Result<(), DiagnosticSet> {
     let schema = session.schema();
     for (name, value) in fields {
@@ -319,7 +324,7 @@ pub(super) fn rename_pending_insert_references(
         rename_pending_value_references(
             schema,
             target_actual_type,
-            &field.ty_ref,
+            &field.value_type,
             value,
             old_key,
             new_key,
@@ -335,7 +340,7 @@ pub(super) fn rename_prepared_field_references(
     path: &[WriteFieldPathSegment],
     value: &mut CfdValue,
     old_key: &str,
-    new_key: &str,
+    new_key: &RecordKey,
 ) -> Result<(), DiagnosticSet> {
     let schema = session.schema();
     let expected = write_rules::expected_type_for_cfd_path(
@@ -359,13 +364,13 @@ pub(super) fn rename_prepared_field_references(
 fn rename_pending_value_references(
     schema: &coflow_cft::CftSchema,
     target_actual_type: &str,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: &mut CfdValue,
     old_key: &str,
-    new_key: &str,
+    new_key: &RecordKey,
 ) {
     match (expected, value) {
-        (CftSchemaTypeRef::Nullable(inner), value) => rename_pending_value_references(
+        (CftValueType::Nullable(inner), value) => rename_pending_value_references(
             schema,
             target_actual_type,
             inner,
@@ -373,12 +378,12 @@ fn rename_pending_value_references(
             old_key,
             new_key,
         ),
-        (CftSchemaTypeRef::RecordRef(target_type), CfdValue::Ref(key))
-            if key == old_key && schema.is_assignable(target_actual_type, target_type) =>
+        (CftValueType::RecordRef(target_type), CfdValue::Ref(key))
+            if key.as_str() == old_key && schema.is_assignable(target_actual_type, target_type) =>
         {
-            *key = new_key.to_string();
+            *key = new_key.clone();
         }
-        (CftSchemaTypeRef::Array(inner), CfdValue::Array(items)) => {
+        (CftValueType::Array(inner), CfdValue::Array(items)) => {
             for item in items {
                 rename_pending_value_references(
                     schema,
@@ -390,7 +395,7 @@ fn rename_pending_value_references(
                 );
             }
         }
-        (CftSchemaTypeRef::Dict(_, item_type), CfdValue::Dict(entries)) => {
+        (CftValueType::Dict(_, item_type), CfdValue::Dict(entries)) => {
             for (_, item) in entries {
                 rename_pending_value_references(
                     schema,
@@ -402,16 +407,16 @@ fn rename_pending_value_references(
                 );
             }
         }
-        (CftSchemaTypeRef::Object(_), CfdValue::Object(object)) => {
+        (CftValueType::Object(_), CfdValue::Object(object)) => {
             let actual_type = object.actual_type().to_string();
             for (name, field_value) in object.fields_mut() {
-                let Some(field) = schema.field(&actual_type, name) else {
+                let Some(field) = schema.field(&actual_type, name.as_str()) else {
                     continue;
                 };
                 rename_pending_value_references(
                     schema,
                     target_actual_type,
-                    &field.ty_ref,
+                    &field.value_type,
                     field_value,
                     old_key,
                     new_key,
@@ -454,7 +459,9 @@ pub(super) fn set_nested_value(
         return Ok(());
     };
     let next = match (current, segment) {
-        (CfdValue::Object(object), CfdPathSegment::Field(field)) => object.fields.get_mut(field),
+        (CfdValue::Object(object), CfdPathSegment::Field(field)) => {
+            object.fields.get_mut(field.as_str())
+        }
         (CfdValue::Array(items), CfdPathSegment::Index(index)) => items.get_mut(*index),
         (CfdValue::Dict(entries), CfdPathSegment::DictKey(key)) => entries
             .iter_mut()
@@ -489,14 +496,16 @@ fn prepare_insert_fields(
         write_rules::validate_value_semantics(
             session,
             schema,
-            &write_rules::ValueValidationRequest {
-                expected: &field.ty_ref,
+            coflow_data_model::ValueValidationRequest::new(
+                &field.value_type,
                 value,
-                pending_records: Some(pending_records),
-                pending_insert: Some(PendingInsertRef { actual_type, key }),
-                code: "MUTATION-SHAPE",
-                stage: "MUTATION",
-            },
+                coflow_data_model::ValueValidationMode::Mutation,
+            )
+            .with_pending_insert(PendingInsertRef { actual_type, key }),
+            Some(pending_records),
+            "MUTATION-VALUE",
+            "MUTATION-SHAPE",
+            "MUTATION",
         )?;
     }
     Ok(out)
@@ -516,14 +525,14 @@ fn prepare_provided_insert_fields(
                 let field = schema_field(schema, actual_type, &name)?;
                 out.insert(
                     name,
-                    coerce_json_field_value(session, &field.ty_ref, &value)?,
+                    coerce_json_field_value(session, &field.value_type, &value)?,
                 );
             }
         }
         MutationFields::Cfd(fields) => {
             for (name, value) in fields {
-                let field = schema_field(schema, actual_type, &name)?;
-                out.insert(name, coerce_cfd_field_value(session, &field.ty_ref, value)?);
+                schema_field(schema, actual_type, &name)?;
+                out.insert(name, coerce_cfd_field_value(session, value)?);
             }
         }
     }
@@ -532,7 +541,7 @@ fn prepare_provided_insert_fields(
 
 #[derive(Debug, Clone)]
 struct ExpectedValue {
-    ty: CftSchemaTypeRef,
+    ty: CftValueType,
 }
 
 fn expected_value_for_path(

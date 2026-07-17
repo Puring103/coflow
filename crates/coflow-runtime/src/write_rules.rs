@@ -1,8 +1,8 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType, TypeName};
 use coflow_data_model::{
-    CfdDomainId, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext,
-    PendingInsertRef,
+    CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext, ValueValidationMode,
+    ValueValidationRequest,
 };
 use std::collections::BTreeMap;
 
@@ -33,14 +33,14 @@ pub fn ensure_record_key_available_with_conflict_code(
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
     validate_record_key_for_stage(key, code, stage)?;
-    let Some(domain) = session.model.type_domain_id(actual_type) else {
+    let Some(inheritance_root) = session.schema.inheritance_root(actual_type) else {
         return Err(one_error(
             code,
             stage,
             format!("unknown type `{actual_type}`"),
         ));
     };
-    let Some(existing_id) = session.model.record_by_domain_key(domain, key) else {
+    let Some(existing_id) = session.model.record_by_domain_key(inheritance_root, key) else {
         return Ok(());
     };
     if current_record == Some(existing_id) {
@@ -70,7 +70,7 @@ pub(crate) fn expected_type_for_write_path(
     path: &[WriteFieldPathSegment],
     code: &'static str,
     stage: &'static str,
-) -> Result<CftSchemaTypeRef, DiagnosticSet> {
+) -> Result<CftValueType, DiagnosticSet> {
     let cfd_path = write_path_to_cfd_path(path, code, stage)?;
     expected_type_for_cfd_path(schema, actual_type, &cfd_path.segments, code, stage)
 }
@@ -94,7 +94,7 @@ pub(crate) fn expected_type_for_cfd_path(
     path: &[CfdPathSegment],
     code: &'static str,
     stage: &'static str,
-) -> Result<CftSchemaTypeRef, DiagnosticSet> {
+) -> Result<CftValueType, DiagnosticSet> {
     if path.is_empty() {
         return Err(one_error(code, stage, "field path must not be empty"));
     }
@@ -105,11 +105,11 @@ pub(crate) fn expected_type_for_cfd_path(
             format!("unknown type `{actual_type}`"),
         ));
     };
-    let mut current = CftSchemaTypeRef::Object(root_type.name.clone());
+    let mut current = CftValueType::Object(root_type.name.clone());
     for segment in path {
         current = match segment {
             CfdPathSegment::Field(field) => {
-                let CftSchemaTypeRef::Object(type_name) = non_nullable(&current) else {
+                let CftValueType::Object(type_name) = non_nullable(&current) else {
                     return Err(one_error(
                         code,
                         stage,
@@ -118,7 +118,7 @@ pub(crate) fn expected_type_for_cfd_path(
                 };
                 schema
                     .field(type_name, field)
-                    .map(|field| field.ty_ref.clone())
+                    .map(|field| field.value_type.clone())
                     .ok_or_else(|| {
                         if schema.resolve_type(type_name).is_none() {
                             return one_error(code, stage, format!("unknown type `{type_name}`"));
@@ -131,7 +131,7 @@ pub(crate) fn expected_type_for_cfd_path(
                     })?
             }
             CfdPathSegment::Index(index) => {
-                let CftSchemaTypeRef::Array(inner) = non_nullable(&current) else {
+                let CftValueType::Array(inner) = non_nullable(&current) else {
                     return Err(one_error(
                         code,
                         stage,
@@ -141,7 +141,7 @@ pub(crate) fn expected_type_for_cfd_path(
                 (**inner).clone()
             }
             CfdPathSegment::DictKey(key) => {
-                let CftSchemaTypeRef::Dict(_, item) = non_nullable(&current) else {
+                let CftValueType::Dict(_, item) = non_nullable(&current) else {
                     return Err(one_error(
                         code,
                         stage,
@@ -158,7 +158,7 @@ pub(crate) fn expected_type_for_cfd_path(
 pub(crate) fn validate_value_for_write(
     session: &ProjectSession,
     schema: &CftSchema,
-    expected: &CftSchemaTypeRef,
+    expected: &CftValueType,
     value: &CfdValue,
     code: &'static str,
     stage: &'static str,
@@ -166,66 +166,51 @@ pub(crate) fn validate_value_for_write(
     validate_value_semantics(
         session,
         schema,
-        &ValueValidationRequest {
-            expected,
-            value,
-            pending_records: None,
-            pending_insert: None,
-            code,
-            stage,
-        },
+        ValueValidationRequest::new(expected, value, ValueValidationMode::Mutation),
+        None,
+        code,
+        code,
+        stage,
     )
-}
-
-pub(crate) fn validate_value_for_write_with_pending(
-    session: &ProjectSession,
-    schema: &CftSchema,
-    expected: &CftSchemaTypeRef,
-    value: &CfdValue,
-    pending_records: &BTreeMap<crate::RecordCoordinate, usize>,
-    code: &'static str,
-    stage: &'static str,
-) -> Result<(), DiagnosticSet> {
-    validate_value_semantics(
-        session,
-        schema,
-        &ValueValidationRequest {
-            expected,
-            value,
-            pending_records: Some(pending_records),
-            pending_insert: None,
-            code,
-            stage,
-        },
-    )
-}
-
-pub(crate) struct ValueValidationRequest<'a> {
-    pub(crate) expected: &'a CftSchemaTypeRef,
-    pub(crate) value: &'a CfdValue,
-    pub(crate) pending_records: Option<&'a BTreeMap<crate::RecordCoordinate, usize>>,
-    pub(crate) pending_insert: Option<PendingInsertRef<'a>>,
-    pub(crate) code: &'static str,
-    pub(crate) stage: &'static str,
 }
 
 pub(crate) fn validate_value_semantics(
     session: &ProjectSession,
     schema: &CftSchema,
-    request: &ValueValidationRequest<'_>,
+    request: ValueValidationRequest<'_>,
+    pending_records: Option<&BTreeMap<crate::RecordCoordinate, usize>>,
+    value_code: &'static str,
+    reference_code: &'static str,
+    stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
     let context = ProjectValueSemanticContext {
         session,
-        pending_records: request.pending_records,
+        pending_records,
     };
-    coflow_data_model::validate_complete_value_for_schema(
-        schema,
-        &context,
-        request.expected,
-        request.value,
-        request.pending_insert,
-    )
-    .map_err(|err| one_error(request.code, request.stage, err.message()))
+    coflow_data_model::validate_value_for_schema(schema, &context, request).map_err(|err| {
+        let reference_error = matches!(
+            err.kind(),
+            coflow_data_model::CfdValueSemanticErrorKind::RefTargetNotFound
+                | coflow_data_model::CfdValueSemanticErrorKind::RefTargetTypeMismatch
+                | coflow_data_model::CfdValueSemanticErrorKind::MissingRequiredField
+        );
+        let code = if reference_error {
+            reference_code
+        } else {
+            value_code
+        };
+        let message = if code == "MUTATION-VALUE"
+            && err.kind() == coflow_data_model::CfdValueSemanticErrorKind::TypeMismatch
+        {
+            format!(
+                "value does not match expected schema type: {}",
+                err.message()
+            )
+        } else {
+            err.message().to_string()
+        };
+        one_error(code, stage, message)
+    })
 }
 
 pub(crate) fn ensure_object_type_assignable(
@@ -245,12 +230,10 @@ struct ProjectValueSemanticContext<'a> {
 }
 
 impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
-    fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId> {
-        self.session.model.type_domain_id(type_name)
-    }
-
-    fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId> {
-        self.session.model.record_by_domain_key(domain_id, key)
+    fn record_by_domain_key(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordId> {
+        self.session
+            .model
+            .record_by_domain_key(inheritance_root, key)
     }
 
     fn record_actual_type(&self, id: CfdRecordId) -> Option<&str> {
@@ -260,12 +243,13 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
             .map(coflow_data_model::CfdRecord::actual_type)
     }
 
-    fn pending_record_actual_type(&self, domain_id: CfdDomainId, key: &str) -> Option<&str> {
+    fn pending_record_actual_type(&self, inheritance_root: &TypeName, key: &str) -> Option<&str> {
         self.pending_records?
             .keys()
             .find(|record| {
-                record.key == key
-                    && self.session.model.type_domain_id(&record.actual_type) == Some(domain_id)
+                record.key() == key
+                    && self.session.schema.inheritance_root(&record.actual_type)
+                        == Some(inheritance_root)
             })
             .map(|record| record.actual_type.as_str())
     }
@@ -284,9 +268,9 @@ pub fn write_path_to_cfd_path(
     })
 }
 
-fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+fn non_nullable(ty: &CftValueType) -> &CftValueType {
     match ty {
-        CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
+        CftValueType::Nullable(inner) => non_nullable(inner),
         other => other,
     }
 }

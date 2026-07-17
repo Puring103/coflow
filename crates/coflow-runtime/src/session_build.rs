@@ -9,7 +9,7 @@ use coflow_project::Project;
 
 use crate::checks::CheckState;
 use crate::dimensions;
-use crate::dimensions::{DimensionField, DimensionGenerationTransaction};
+use crate::dimensions::{DimensionGenerationTransaction, DimensionRuntimePlan};
 use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
 use crate::load::{
     empty_load_output, empty_model, load_project_data, reload_project_data_from_cache,
@@ -18,6 +18,7 @@ use crate::load::{
 use crate::project_schema::open_project_schema_attempt;
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::writes::MutationImpact;
+use crate::ProjectExecutionStats;
 
 /// Opens a project into a reusable runtime session using explicit side-effect
 /// intent.
@@ -103,14 +104,13 @@ pub(crate) fn rebuild_project_session_from_generation(
     registry: &ProviderRegistry,
     impact: &MutationImpact,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
-    let dimension_fields = dimensions::dimension_fields(session.schema());
     let ctx = SessionBuildContext {
         project: session.project.clone(),
         modules: Arc::clone(&session.modules),
         schema: session.schema.clone(),
         registry,
         dimension_mode: DimensionBuildMode::Generate,
-        dimension_fields,
+        dimension_plan: Arc::clone(&session.dimension_plan),
     };
     let mut diagnostics = DiagnosticsStore::empty();
     let LoadedSessionData {
@@ -119,9 +119,18 @@ pub(crate) fn rebuild_project_session_from_generation(
         source_data,
         check_state,
         changed_dimension_paths,
+        execution_stats,
     } = rebuild_data_pipeline(&ctx, session, impact, &mut diagnostics)?;
     Ok(SessionBuildOutput {
-        session: assemble_session(ctx, model, diagnostics, indexes, source_data, check_state),
+        session: assemble_session(
+            ctx,
+            model,
+            diagnostics,
+            indexes,
+            source_data,
+            check_state,
+            execution_stats,
+        ),
         changed_dimension_paths,
     })
 }
@@ -142,14 +151,14 @@ fn finish_project_session(
         return Err(diagnostics.into_set());
     };
 
-    let dimension_fields = dimensions::dimension_fields(&schema);
+    let dimension_plan = Arc::new(DimensionRuntimePlan::compile(&schema, &project));
     let ctx = SessionBuildContext {
         project,
         modules,
         schema,
         registry,
         dimension_mode: options.dimension_mode(),
-        dimension_fields,
+        dimension_plan,
     };
 
     let LoadedSessionData {
@@ -158,6 +167,7 @@ fn finish_project_session(
         source_data,
         check_state,
         changed_dimension_paths,
+        execution_stats,
     } = if diagnostics.is_empty() {
         build_data_pipeline(&ctx, &mut diagnostics)?
     } else {
@@ -165,7 +175,15 @@ fn finish_project_session(
     };
 
     Ok(SessionBuildOutput {
-        session: assemble_session(ctx, model, diagnostics, indexes, source_data, check_state),
+        session: assemble_session(
+            ctx,
+            model,
+            diagnostics,
+            indexes,
+            source_data,
+            check_state,
+            execution_stats,
+        ),
         changed_dimension_paths,
     })
 }
@@ -182,12 +200,12 @@ struct SessionBuildContext<'a> {
     schema: Arc<CftSchema>,
     registry: &'a ProviderRegistry,
     dimension_mode: DimensionBuildMode,
-    dimension_fields: Vec<DimensionField>,
+    dimension_plan: Arc<DimensionRuntimePlan>,
 }
 
 impl SessionBuildContext<'_> {
-    const fn has_dimension_fields(&self) -> bool {
-        !self.dimension_fields.is_empty()
+    fn has_dimension_fields(&self) -> bool {
+        !self.dimension_plan.is_empty()
     }
 
     fn should_generate_dimensions(&self) -> bool {
@@ -202,6 +220,7 @@ struct LoadedSessionData {
     source_data: SourceDataCache,
     check_state: CheckState,
     changed_dimension_paths: Vec<PathBuf>,
+    execution_stats: ProjectExecutionStats,
 }
 
 impl LoadedSessionData {
@@ -212,6 +231,7 @@ impl LoadedSessionData {
             source_data: SourceDataCache::default(),
             check_state: CheckState::default(),
             changed_dimension_paths: Vec::new(),
+            execution_stats: ProjectExecutionStats::default(),
         })
     }
 }
@@ -236,13 +256,19 @@ fn build_data_pipeline(
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
                 changed_dimension_paths: Vec::new(),
+                execution_stats: ProjectExecutionStats::default(),
             });
         }
     };
 
-    let mut dimensions = commit_dimensions_if_needed(ctx, &output, diagnostics);
+    let mut execution_stats = output.statistics;
+    let mut dimensions = commit_dimensions_if_needed(ctx, &output, None, diagnostics);
+    record_dimension_work(&mut execution_stats, &dimensions);
     if diagnostics.is_empty() && ctx.has_dimension_fields() {
-        (output, indexes) = reload_with_dimensions(ctx, diagnostics)?;
+        let (reloaded, reloaded_indexes) = reload_with_dimensions(ctx, diagnostics)?;
+        execution_stats.merge(reloaded.statistics);
+        output = reloaded;
+        indexes = reloaded_indexes;
     }
 
     let indexes = indexes.finalize_with_model(&output.model);
@@ -258,6 +284,7 @@ fn build_data_pipeline(
         source_data: output.source_data,
         check_state: output.check_state,
         changed_dimension_paths: dimensions.changed_paths,
+        execution_stats,
     })
 }
 
@@ -289,11 +316,19 @@ fn rebuild_data_pipeline(
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
                 changed_dimension_paths: Vec::new(),
+                execution_stats: ProjectExecutionStats::default(),
             });
         }
     };
 
-    let mut dimensions = commit_dimensions_if_needed(ctx, &output, diagnostics);
+    let mut execution_stats = rebuild_execution_stats(&output, impact);
+    let mut dimensions = commit_dimensions_if_needed(
+        ctx,
+        &output,
+        (!impact.structural_change).then_some(&impact.changed_records),
+        diagnostics,
+    );
+    record_dimension_work(&mut execution_stats, &dimensions);
     if diagnostics.is_empty() && ctx.has_dimension_fields() {
         let cache = output
             .source_data
@@ -305,22 +340,37 @@ fn rebuild_data_pipeline(
             .cloned()
             .collect::<BTreeSet<_>>();
         dimension_reload_paths.extend(
+            impact
+                .affected_files
+                .iter()
+                .filter(|path| {
+                    ctx.dimension_plan
+                        .is_managed_source_path(&ctx.project, path)
+                })
+                .cloned(),
+        );
+        dimension_reload_paths.extend(
             dimensions
                 .changed_paths
                 .iter()
                 .map(|path| project_display_path(&ctx.project, path)),
         );
+        let refresh_dimension_topology = !dimension_reload_paths.is_empty();
         match load_cached_data(
             ctx,
             &cache,
             &dimension_reload_paths,
-            true,
+            refresh_dimension_topology,
             true,
             true,
             (!impact.structural_change).then_some(&previous.check_state),
             &impact.changed_records,
         ) {
-            Ok(loaded) => (output, indexes) = loaded,
+            Ok((reloaded, reloaded_indexes)) => {
+                execution_stats.merge(reloaded.statistics);
+                output = reloaded;
+                indexes = reloaded_indexes;
+            }
             Err(load_failure) => {
                 diagnostics.extend_with_logical_locations(
                     load_failure.diagnostics.diagnostics,
@@ -344,6 +394,7 @@ fn rebuild_data_pipeline(
         source_data: output.source_data,
         check_state: output.check_state,
         changed_dimension_paths: dimensions.changed_paths,
+        execution_stats,
     })
 }
 
@@ -388,6 +439,7 @@ fn load_data(
     let output = match load_project_data(
         &ctx.project,
         &ctx.schema,
+        &ctx.dimension_plan,
         ctx.registry,
         &mut indexes,
         LoadProjectDataOptions {
@@ -421,6 +473,7 @@ fn load_cached_data(
     let output = match reload_project_data_from_cache(
         &ctx.project,
         &ctx.schema,
+        &ctx.dimension_plan,
         ctx.registry,
         &mut indexes,
         previous,
@@ -460,6 +513,8 @@ struct DataLoadFailure {
 struct CommittedDimensions {
     transaction: Option<DimensionGenerationTransaction>,
     changed_paths: Vec<PathBuf>,
+    planned_sources: usize,
+    written_sources: usize,
 }
 
 fn build_read_only_data(
@@ -479,6 +534,7 @@ fn build_read_only_data(
                 source_data: SourceDataCache::default(),
                 check_state: CheckState::default(),
                 changed_dimension_paths: Vec::new(),
+                execution_stats: ProjectExecutionStats::default(),
             });
         }
     };
@@ -490,22 +546,33 @@ fn build_read_only_data(
         source_data: output.source_data,
         check_state: output.check_state,
         changed_dimension_paths: Vec::new(),
+        execution_stats: output.statistics,
     })
 }
 
 fn commit_dimensions_if_needed(
     ctx: &SessionBuildContext<'_>,
     output: &ProjectLoadOutput,
+    changed_records: Option<&BTreeSet<crate::RecordCoordinate>>,
     diagnostics: &mut DiagnosticsStore,
 ) -> CommittedDimensions {
     if !ctx.should_generate_dimensions() {
         return CommittedDimensions::default();
     }
 
-    let dimension_result = dimensions::regenerate_dimension_sources(
+    let affected_fields = changed_records.map(|changed| {
+        ctx.dimension_plan
+            .affected_field_indices(&ctx.schema, changed)
+    });
+    if affected_fields.as_ref().is_some_and(BTreeSet::is_empty) {
+        return CommittedDimensions::default();
+    }
+    let dimension_result = dimensions::regenerate_dimension_sources_scoped(
         &ctx.project,
+        &ctx.schema,
         &output.model,
-        &ctx.dimension_fields,
+        ctx.dimension_plan.fields(),
+        affected_fields.as_ref(),
         ctx.registry,
     );
     diagnostics.extend(dimension_result.diagnostics);
@@ -513,7 +580,32 @@ fn commit_dimensions_if_needed(
         transaction: (!dimension_result.transaction.is_empty())
             .then_some(dimension_result.transaction),
         changed_paths: dimension_result.changed_paths,
+        planned_sources: dimension_result.planned_sources,
+        written_sources: dimension_result.written_sources,
     }
+}
+
+const fn record_dimension_work(
+    statistics: &mut ProjectExecutionStats,
+    dimensions: &CommittedDimensions,
+) {
+    statistics.dimension_sources_planned = statistics
+        .dimension_sources_planned
+        .saturating_add(dimensions.planned_sources);
+    statistics.dimension_sources_written = statistics
+        .dimension_sources_written
+        .saturating_add(dimensions.written_sources);
+}
+
+fn rebuild_execution_stats(
+    output: &ProjectLoadOutput,
+    impact: &MutationImpact,
+) -> ProjectExecutionStats {
+    let mut statistics = output.statistics;
+    if let Some(reason) = impact.fallback_reason {
+        statistics.mark_full_fallback(reason);
+    }
+    statistics
 }
 
 fn rollback_dimensions_after_failed_pipeline(
@@ -536,11 +628,13 @@ fn assemble_session(
     indexes: SessionIndexes,
     source_data: SourceDataCache,
     check_state: CheckState,
+    execution_stats: ProjectExecutionStats,
 ) -> ProjectSession {
     ProjectSession {
         project: ctx.project,
         modules: ctx.modules,
         schema: ctx.schema,
+        dimension_plan: ctx.dimension_plan,
         model,
         diagnostics,
         sources: indexes.sources,
@@ -549,6 +643,7 @@ fn assemble_session(
         loader_extensions: loader_extensions(ctx.registry),
         source_data,
         check_state,
+        execution_stats,
     }
 }
 
