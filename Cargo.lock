@@ -454,7 +454,7 @@ dependencies = [
 
 [[package]]
 name = "cfd-editor"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "atomicwrites",
  "coflow",
@@ -589,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "coflow"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "atomicwrites",
  "calamine",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-api"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-cft",
  "coflow-data-model",
@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-builtins"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-api",
  "coflow-codegen-csharp",
@@ -640,14 +640,14 @@ dependencies = [
 
 [[package]]
 name = "coflow-cfd"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-cft",
 ]
 
 [[package]]
 name = "coflow-cft"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-structure",
  "regex",
@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-checker"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-cft",
  "coflow-data-model",
@@ -667,7 +667,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-codegen-csharp"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-api",
  "coflow-cft",
@@ -679,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-data-model"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-cft",
  "coflow-structure",
@@ -690,7 +690,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-exporter-core"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-cft",
  "coflow-data-model",
@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-exporter-json"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-api",
  "coflow-cft",
@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-exporter-messagepack"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-api",
  "coflow-cft",
@@ -722,7 +722,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-loader-cfd"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-api",
  "coflow-cfd",
@@ -733,7 +733,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-loader-csv"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-api",
  "coflow-cft",
@@ -744,7 +744,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-loader-excel"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "calamine",
  "coflow-api",
@@ -759,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-loader-table-core"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-cft",
  "coflow-data-model",
@@ -769,7 +769,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-lsp"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-api",
  "coflow-cfd",
@@ -781,7 +781,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-project"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-api",
  "coflow-cft",
@@ -793,7 +793,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-runtime"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "coflow-api",
  "coflow-builtins",
@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-structure"
-version = "0.7.1"
+version = "0.7.2"
 
 [[package]]
 name = "colorchoice"

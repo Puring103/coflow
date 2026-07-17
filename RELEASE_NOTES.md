@@ -1,3 +1,20 @@
+# Coflow 0.7.2
+
+## Highlights
+
+### Readable Complex Values In Tables
+
+- Added bounded, Markdown-style tree previews for object, array, and dictionary values in table and dimension views.
+- Kept references, enums, booleans, and other scalar values visually consistent with their existing editor rendering.
+- Used field names for nested complex branches, ordering only for complex array elements, and keys for dictionary entries.
+- Added dynamic row measurement and wider complex columns while keeping complex table cells read-only and keyboard navigation stable.
+
+## Included Changes Since v0.7.1
+
+- Refined complex-value table previews and their focused selection styling.
+
+---
+
 # Coflow 0.7.1
 
 ## Highlights
