@@ -15,9 +15,7 @@ use std::path::Path;
 
 use super::render::serialize_value;
 use super::target::spread_entries_in_value_at_path;
-use super::{
-    collect_spread_ref_key_spans, diag, raw_span, replace_spans, CfdWriter,
-};
+use super::{collect_spread_ref_key_spans, diag, raw_span, replace_spans, CfdWriter};
 
 pub(super) static CFD_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: DimensionSourceManagerDescriptor =
     DimensionSourceManagerDescriptor {

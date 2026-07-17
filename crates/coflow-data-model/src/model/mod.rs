@@ -5,9 +5,8 @@ mod tables;
 mod value;
 
 pub use dimensions::{DimensionFieldLookupError, DimensionValueLookup};
-pub use edges::{
-    DimensionRefCoordinate, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
-};
+pub use edges::{DimensionRefCoordinate, RefEdge, RefSite, SpreadEdge};
+pub(crate) use edges::{RefEdgeId, SpreadEdgeId};
 pub use ids::{CfdRecordId, RecordCoordinate};
 pub use tables::CfdTable;
 pub use value::{
@@ -31,7 +30,6 @@ pub struct CfdDataModel {
     pub(crate) ref_by_host: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
     pub(crate) ref_by_target: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
     pub(crate) spread_edges: Vec<SpreadEdge>,
-    pub(crate) spread_by_site: BTreeMap<SpreadSite, Vec<SpreadEdgeId>>,
     pub(crate) spread_by_host: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
     pub(crate) spread_by_source: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
 }
@@ -148,52 +146,20 @@ impl CfdDataModel {
     /// Look up the direct target id for the `CfdValue::Ref` at `site`.
     ///
     /// Returns `None` when no direct ref lives at that path. This does not
-    /// follow spread provenance; use [`Self::resolve_effective_ref`] for that.
+    /// follow spread provenance; use [`Self::resolve_ref`] for that.
     #[must_use]
     pub fn resolve_direct_ref(&self, site: &RefSite) -> Option<CfdRecordId> {
-        self.direct_ref_edge_at(site)
-            .and_then(|edge_id| self.direct_ref_edge(edge_id))
+        self.ref_by_site
+            .get(site)
+            .and_then(|edge_id| self.ref_edges.get(edge_id.index()))
             .map(|edge| edge.target)
     }
 
-    /// Convenience for the common case "I have a host id and a path; tell me
-    /// where the direct Ref at that path resolves to". Equivalent to
-    /// [`CfdDataModel::resolve_direct_ref`] with a freshly constructed
-    /// `RefSite`.
+    /// Resolves a ref at `site`, following default or dimension-overlay spread
+    /// provenance when the value was inherited from another record.
     #[must_use]
-    pub fn resolve_direct_ref_at(&self, host: CfdRecordId, path: &CfdPath) -> Option<CfdRecordId> {
-        self.resolve_direct_ref(&RefSite::new(host, path.clone()))
-    }
-
-    /// Resolves a ref at `site`, following spread provenance when the value at
-    /// that site was inherited from another record.
-    #[must_use]
-    pub fn resolve_effective_ref(&self, site: &RefSite) -> Option<CfdRecordId> {
-        self.resolve_effective_ref_inner(site, &mut BTreeSet::new())
-    }
-
-    #[must_use]
-    pub fn resolve_effective_ref_at(
-        &self,
-        host: CfdRecordId,
-        path: &CfdPath,
-    ) -> Option<CfdRecordId> {
-        self.resolve_effective_ref(&RefSite::new(host, path.clone()))
-    }
-
-    /// Iterate every resolved `CfdValue::Ref` site in the model.
-    pub fn direct_ref_sites(&self) -> impl Iterator<Item = (&RefSite, CfdRecordId)> {
-        self.ref_edges.iter().map(|edge| (&edge.site, edge.target))
-    }
-
-    #[must_use]
-    pub fn direct_ref_edge(&self, id: RefEdgeId) -> Option<&RefEdge> {
-        self.ref_edges.get(id.index())
-    }
-
-    #[must_use]
-    pub fn direct_ref_edge_at(&self, site: &RefSite) -> Option<RefEdgeId> {
-        self.ref_by_site.get(site).copied()
+    pub fn resolve_ref(&self, site: &RefSite) -> Option<CfdRecordId> {
+        self.resolve_ref_inner(site, &mut BTreeSet::new())
     }
 
     pub fn direct_ref_edges(&self) -> impl Iterator<Item = &RefEdge> {
@@ -208,7 +174,7 @@ impl CfdDataModel {
             .get(&host)
             .into_iter()
             .flat_map(|ids| ids.iter())
-            .filter_map(|id| self.direct_ref_edge(*id))
+            .filter_map(|id| self.ref_edges.get(id.index()))
     }
 
     pub fn direct_ref_edges_to_target(
@@ -219,28 +185,7 @@ impl CfdDataModel {
             .get(&target)
             .into_iter()
             .flat_map(|ids| ids.iter())
-            .filter_map(|id| self.direct_ref_edge(*id))
-    }
-
-    #[must_use]
-    pub fn spread_edge(&self, id: SpreadEdgeId) -> Option<&SpreadEdge> {
-        self.spread_edges.get(id.index())
-    }
-
-    #[must_use]
-    pub fn spread_edge_at(&self, site: &SpreadSite) -> Option<SpreadEdgeId> {
-        self.spread_by_site
-            .get(site)
-            .and_then(|ids| ids.first())
-            .copied()
-    }
-
-    pub fn spread_edges_at(&self, site: &SpreadSite) -> impl Iterator<Item = &SpreadEdge> + '_ {
-        self.spread_by_site
-            .get(site)
-            .into_iter()
-            .flat_map(|ids| ids.iter())
-            .filter_map(|id| self.spread_edge(*id))
+            .filter_map(|id| self.ref_edges.get(id.index()))
     }
 
     pub fn spread_edges(&self) -> impl Iterator<Item = &SpreadEdge> {
@@ -255,18 +200,15 @@ impl CfdDataModel {
             .get(&source)
             .into_iter()
             .flat_map(|ids| ids.iter())
-            .filter_map(|id| self.spread_edge(*id))
+            .filter_map(|id| self.spread_edges.get(id.index()))
     }
 
-    pub fn spread_edges_from_host(
-        &self,
-        host: CfdRecordId,
-    ) -> impl Iterator<Item = &SpreadEdge> + '_ {
+    fn spread_edges_from_host(&self, host: CfdRecordId) -> impl Iterator<Item = &SpreadEdge> + '_ {
         self.spread_by_host
             .get(&host)
             .into_iter()
             .flat_map(|ids| ids.iter())
-            .filter_map(|id| self.spread_edge(*id))
+            .filter_map(|id| self.spread_edges.get(id.index()))
     }
 
     /// Returns the transitive spread-materialization closure, including the
@@ -288,14 +230,6 @@ impl CfdDataModel {
         visited
     }
 
-    /// Returns the source record whose spread supplied the value at `site`.
-    #[must_use]
-    pub fn spread_source_at(&self, site: &SpreadSite) -> Option<CfdRecordId> {
-        self.spread_edge_at(site)
-            .and_then(|edge_id| self.spread_edge(edge_id))
-            .map(|edge| edge.source)
-    }
-
     /// Returns the source record whose spread supplied the value at `path`.
     ///
     /// `SpreadEdge` sites are object-level. A field is inherited from a spread
@@ -307,9 +241,9 @@ impl CfdDataModel {
     }
 
     #[must_use]
-    pub fn spread_edge_at_path(&self, host: CfdRecordId, path: &CfdPath) -> Option<&SpreadEdge> {
+    fn spread_edge_at_path(&self, host: CfdRecordId, path: &CfdPath) -> Option<&SpreadEdge> {
         self.spread_edges_from_host(host)
-            .find(|edge| edge.site.dimension.is_none() && edge.covers_path(path))
+            .find(|edge| edge.dimension.is_none() && edge.covers_path(path))
     }
 
     #[must_use]
@@ -321,7 +255,7 @@ impl CfdDataModel {
         self.spread_source_path_inner(host, path, &mut BTreeSet::new())
     }
 
-    fn resolve_effective_ref_inner(
+    fn resolve_ref_inner(
         &self,
         site: &RefSite,
         visited: &mut BTreeSet<RefSite>,
@@ -330,10 +264,33 @@ impl CfdDataModel {
             return None;
         }
         self.resolve_direct_ref(site).or_else(|| {
-            let (source, source_path) =
-                self.spread_source_path_inner(site.host, &site.path, &mut BTreeSet::new())?;
-            self.resolve_effective_ref_inner(&RefSite::new(source, source_path), visited)
+            let (source, source_path) = self.spread_source_path_for_site(
+                site.host,
+                &site.path,
+                site.dimension.as_ref(),
+                &mut BTreeSet::new(),
+            )?;
+            self.resolve_ref_inner(&RefSite::new(source, source_path), visited)
         })
+    }
+
+    fn spread_source_path_for_site(
+        &self,
+        host: CfdRecordId,
+        path: &CfdPath,
+        dimension: Option<&DimensionRefCoordinate>,
+        visited: &mut BTreeSet<(CfdRecordId, CfdPath, Option<DimensionRefCoordinate>)>,
+    ) -> Option<(CfdRecordId, CfdPath)> {
+        let key = (host, path.clone(), dimension.cloned());
+        if !visited.insert(key) {
+            return None;
+        }
+        let edge = self
+            .spread_edges_from_host(host)
+            .find(|edge| edge.dimension.as_ref() == dimension && edge.covers_path(path))?;
+        let source_path = edge.source_path_for(path)?;
+        self.spread_source_path_for_site(edge.source, &source_path, None, visited)
+            .or(Some((edge.source, source_path)))
     }
 
     fn spread_source_path_inner(

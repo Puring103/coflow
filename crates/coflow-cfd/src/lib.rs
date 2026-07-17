@@ -24,6 +24,12 @@ mod parser;
 
 pub use ast::{CfdAst, CfdBlock, CfdBlockEntry, CfdField, CfdRecord, CfdRef, CfdValue};
 use coflow_cft::Span;
+pub use coflow_structure::StructuralLimits;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CfdParseOptions {
+    pub structural_limits: StructuralLimits,
+}
 
 /// A syntax-level diagnostic produced during CFD parsing.
 ///
@@ -42,5 +48,14 @@ pub struct CfdSyntaxDiagnostic {
 /// Parsing continues after errors using best-effort recovery.
 #[must_use]
 pub fn parse_cfd(source: &str) -> (CfdAst, Vec<CfdSyntaxDiagnostic>) {
-    parser::parse(source)
+    parse_cfd_with_options(source, CfdParseOptions::default())
+}
+
+/// Parse `.cfd` source text with explicit structural resource limits.
+#[must_use]
+pub fn parse_cfd_with_options(
+    source: &str,
+    options: CfdParseOptions,
+) -> (CfdAst, Vec<CfdSyntaxDiagnostic>) {
+    parser::parse(source, options)
 }

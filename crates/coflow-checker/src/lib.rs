@@ -47,9 +47,8 @@ pub use dependencies::DependencyGraph;
 pub use dimensions::DimensionCheckRound;
 pub use output::{CheckExecutionStats, CheckOutput, RootedCheckDiagnostic};
 pub use request::{CheckRequest, CheckTargets, DependencyCollection};
-pub use snapshot::{
-    CheckRoot, CheckRound, CheckSnapshot, LogicalCheckDiagnostic, LogicalCheckLabel, RootCheckState,
-};
+pub(crate) use snapshot::CheckRound;
+pub use snapshot::CheckSnapshot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DimensionCheckContext {

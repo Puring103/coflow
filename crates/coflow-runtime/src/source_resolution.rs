@@ -46,10 +46,8 @@ impl<'a> SourceResolver<'a> {
         source: &SourceConfig,
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        if source.source_type.is_none()
-            && matches!(configured.location, SourceLocationSpec::Path(ref path) if path.is_dir())
-        {
-            return self.resolve_directory(configured);
+        if matches!(configured.location, SourceLocationSpec::Path(ref path) if path.is_dir()) {
+            return self.resolve_directory(configured, source.source_type.as_deref());
         }
         let provider = self.select(configured, source.source_type.as_deref())?;
         self.decode_and_expand(&provider, configured)
@@ -61,6 +59,9 @@ impl<'a> SourceResolver<'a> {
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let source_type =
             (!configured.provider_id.is_empty()).then_some(configured.provider_id.as_str());
+        if matches!(configured.location, SourceLocationSpec::Path(ref path) if path.is_dir()) {
+            return self.resolve_directory(configured, source_type);
+        }
         let provider = self.select(configured, source_type)?;
         self.decode_and_expand(&provider, configured)
     }
@@ -132,8 +133,18 @@ impl<'a> SourceResolver<'a> {
     fn resolve_directory(
         &self,
         configured: &ConfiguredSource,
+        forced_provider: Option<&str>,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let SourceLocationSpec::Path(directory) = &configured.location;
+        let selected_provider = forced_provider
+            .map(|provider_id| self.select(configured, Some(provider_id)))
+            .transpose()?;
+        let decoded_directory = selected_provider
+            .as_ref()
+            .map(|provider| {
+                decode_configured_source(provider.as_ref(), configured, &self.project.config_path)
+            })
+            .transpose()?;
         let files = discover_directory_files(directory).map_err(|error| {
             DiagnosticSet::one(project_diagnostic(
                 &self.project.config_path,
@@ -161,29 +172,53 @@ impl<'a> SourceResolver<'a> {
                 options: configured.options.clone(),
                 source_index: configured.source_index,
             };
-            let Some(provider) = self.select_optional(&file_source)? else {
-                continue;
+            let provider = if let Some(provider) = &selected_provider {
+                let extensions = provider.descriptor().extensions;
+                let matches_extension = path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extensions.contains(&extension));
+                if !extensions.is_empty() && !matches_extension {
+                    continue;
+                }
+                Arc::clone(provider)
+            } else {
+                let Some(provider) = self.select_optional(&file_source)? else {
+                    continue;
+                };
+                provider
             };
             selected.push((path, provider));
         }
-        validate_directory_options(
-            &configured.options,
-            selected.iter().map(|(_, provider)| provider.as_ref()),
-            &self.project.config_path,
-            configured.source_index,
-        )?;
+        if selected_provider.is_none() {
+            validate_directory_options(
+                &configured.options,
+                selected.iter().map(|(_, provider)| provider.as_ref()),
+                &self.project.config_path,
+                configured.source_index,
+            )?;
+        }
 
         let mut resolved = Vec::new();
         for (path, provider) in selected {
+            if let Some(template) = &decoded_directory {
+                let mut source = template.clone();
+                source.display_name = path.display().to_string();
+                source.location = SourceLocationSpec::Path(path);
+                resolved.extend(self.expand_decoded(&provider, &source)?);
+                continue;
+            }
             let mut file_source = ConfiguredSource {
-                provider_id: String::new(),
+                provider_id: provider.descriptor().id.to_string(),
                 display_name: path.display().to_string(),
                 location: SourceLocationSpec::Path(path),
                 options: configured.options.clone(),
                 source_index: configured.source_index,
             };
-            file_source.options =
-                options_for_provider(&file_source.options, provider.descriptor().option_keys);
+            if forced_provider.is_none() {
+                file_source.options =
+                    options_for_provider(&file_source.options, provider.descriptor().option_keys);
+            }
             resolved.extend(self.decode_and_expand(&provider, &file_source)?);
         }
         Ok(resolved)
@@ -232,11 +267,19 @@ impl<'a> SourceResolver<'a> {
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let decoded =
             decode_configured_source(provider.as_ref(), configured, &self.project.config_path)?;
+        self.expand_decoded(provider, &decoded)
+    }
+
+    fn expand_decoded(
+        &self,
+        provider: &Arc<dyn SourceProvider>,
+        decoded: &ResolvedSource,
+    ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let context = SourceResolveContext {
             project_root: &self.project.root_dir,
         };
         provider
-            .resolve(context, &decoded)?
+            .resolve(context, decoded)?
             .into_iter()
             .map(|source| {
                 validate_resolved_source(provider.as_ref(), &source)?;

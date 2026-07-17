@@ -279,7 +279,7 @@ impl<'a> ProjectQueries<'a> {
         let target = self
             .session
             .model()
-            .resolve_effective_ref(&RefSite::new(host, path.clone()))?;
+            .resolve_ref(&RefSite::new(host, path.clone()))?;
         self.coordinate_of(target)
     }
 

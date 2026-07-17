@@ -724,6 +724,34 @@ fn cfd_text_error_codes_have_negative_and_adjacent_valid_cases() {
 }
 
 #[test]
+fn lowering_collects_independent_errors_across_fields_and_records() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                count: int;
+                enabled: bool;
+            }
+        "#,
+    );
+    let error = parse_cfd_input_records(
+        &schema,
+        r#"
+            first: Item { count: nope, enabled: maybe }
+            second: Item { count: still_nope, enabled: perhaps }
+        "#,
+    )
+    .expect_err("all four values are invalid");
+    let CfdTextLoadError::Text(diagnostics) = error else {
+        panic!("expected text diagnostics");
+    };
+    assert_eq!(diagnostics.diagnostics.len(), 4, "{diagnostics:?}");
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.code == CfdTextErrorCode::TypeMismatch));
+}
+
+#[test]
 fn examples_cfd_files_load_together() -> TestResult {
     let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd");
     let schema = compile_schema(&fs::read_to_string(examples_dir.join("schema.cft"))?);

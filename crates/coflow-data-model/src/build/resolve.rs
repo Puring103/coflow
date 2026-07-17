@@ -118,6 +118,10 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         self.resolve_fields(fields, &root, cursor)
     }
 
+    pub(super) fn diagnostic_count(&self) -> usize {
+        self.diagnostics.len()
+    }
+
     pub(super) fn resolve_dimension_value(
         &mut self,
         record: CfdRecordId,

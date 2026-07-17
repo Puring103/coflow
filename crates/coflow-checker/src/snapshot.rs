@@ -8,44 +8,44 @@ use coflow_data_model::{
 use crate::{DependencyGraph, DimensionCheckRound, RootedCheckDiagnostic};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CheckRound {
+pub(crate) enum CheckRound {
     Default,
     Dimension(DimensionCheckRound),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CheckRoot {
-    pub record: RecordCoordinate,
-    pub round: CheckRound,
+pub(crate) struct CheckRoot {
+    pub(crate) record: RecordCoordinate,
+    pub(crate) round: CheckRound,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LogicalCheckDiagnostic {
-    pub code: coflow_data_model::CfdErrorCode,
-    pub stage: CfdStage,
-    pub severity: CfdSeverity,
-    pub message: String,
-    pub primary: Option<LogicalCheckLabel>,
-    pub related: Vec<LogicalCheckLabel>,
+pub(crate) struct LogicalCheckDiagnostic {
+    pub(crate) code: coflow_data_model::CfdErrorCode,
+    pub(crate) stage: CfdStage,
+    pub(crate) severity: CfdSeverity,
+    pub(crate) message: String,
+    pub(crate) primary: Option<LogicalCheckLabel>,
+    pub(crate) related: Vec<LogicalCheckLabel>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LogicalCheckLabel {
-    pub record: Option<RecordCoordinate>,
-    pub path: CfdPath,
-    pub message: Option<String>,
-    pub origin: Option<RecordOrigin>,
+pub(crate) struct LogicalCheckLabel {
+    pub(crate) record: Option<RecordCoordinate>,
+    pub(crate) path: CfdPath,
+    pub(crate) message: Option<String>,
+    pub(crate) origin: Option<RecordOrigin>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RootCheckState {
-    pub diagnostics: Vec<LogicalCheckDiagnostic>,
-    pub reads_from: BTreeSet<RecordCoordinate>,
+pub(crate) struct RootCheckState {
+    pub(crate) diagnostics: Vec<LogicalCheckDiagnostic>,
+    pub(crate) reads_from: BTreeSet<RecordCoordinate>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CheckSnapshot {
-    pub roots: BTreeMap<CheckRoot, RootCheckState>,
+    roots: BTreeMap<CheckRoot, RootCheckState>,
     reusable: bool,
 }
 
@@ -116,7 +116,7 @@ impl CheckSnapshot {
     }
 
     #[must_use]
-    pub fn affected_roots(
+    pub(crate) fn affected_roots(
         &self,
         changed: &BTreeSet<RecordCoordinate>,
         rounds: &[DimensionCheckRound],

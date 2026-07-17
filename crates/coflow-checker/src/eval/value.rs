@@ -80,13 +80,10 @@ impl<'a> EvalValue<'a> {
             | CfdValue::Enum(_) => Self::Model(value),
             CfdValue::Object(_) => Self::Record(EvalRecordRef::Resolved(location)),
             CfdValue::Ref(_key) => {
-                let resolved = location.storage.ref_site(model).and_then(|site| {
-                    if site.dimension.is_some() {
-                        model.resolve_direct_ref(&site)
-                    } else {
-                        model.resolve_effective_ref(&site)
-                    }
-                });
+                let resolved = location
+                    .storage
+                    .ref_site(model)
+                    .and_then(|site| model.resolve_ref(&site));
                 resolved.map_or_else(
                     || Self::Record(EvalRecordRef::Unresolved),
                     |id| {
@@ -219,13 +216,23 @@ impl<'a> LocatedEvalValue<'a> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub(crate) enum EvalRecordRef {
     Resolved(ValueLocation),
     /// A `CfdValue::Ref` whose target could not be resolved (target type/key
     /// missing from the model). Reads through this ref return `None`, so
     /// callers surface a check diagnostic instead of crashing.
     Unresolved,
+}
+
+impl PartialEq for EvalRecordRef {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Resolved(lhs), Self::Resolved(rhs)) => lhs.storage == rhs.storage,
+            (Self::Unresolved, Self::Unresolved) => true,
+            (Self::Resolved(_), Self::Unresolved) | (Self::Unresolved, Self::Resolved(_)) => false,
+        }
+    }
 }
 
 impl EvalRecordRef {

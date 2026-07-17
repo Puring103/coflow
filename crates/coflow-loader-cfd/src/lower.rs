@@ -15,10 +15,15 @@ pub(super) fn lower_records(
     schema: &CftSchema,
     ast: &CfdAst,
 ) -> Result<Vec<ParsedLoadedRecordDraft>, CfdTextDiagnostics> {
-    ast.records
-        .iter()
-        .map(|record| lower_record(schema, record))
-        .collect()
+    let mut records = Vec::with_capacity(ast.records.len());
+    let mut diagnostics = Vec::new();
+    for record in &ast.records {
+        match lower_record(schema, record) {
+            Ok(record) => records.push(record),
+            Err(error) => diagnostics.extend(error.diagnostics),
+        }
+    }
+    finish(records, diagnostics)
 }
 
 fn lower_record(
@@ -68,46 +73,67 @@ fn lower_object_entries(
     let mut spreads = Vec::new();
     let mut values = BTreeMap::new();
     let mut seen = BTreeSet::new();
+    let mut diagnostics = Vec::new();
     for entry in entries {
         match entry {
-            CfdBlockEntry::Spread(value, _) => spreads.push(lower_spread(
+            CfdBlockEntry::Spread(value, _) => match lower_spread(
                 schema,
                 value,
                 &CftValueType::Object(schema_type.name.clone()),
-            )?),
+            ) {
+                Ok(value) => spreads.push(value),
+                Err(error) => diagnostics.extend(error.diagnostics),
+            },
             CfdBlockEntry::Field(field) => {
                 if field.name == "id" {
-                    return Err(error(
-                        CfdTextErrorCode::ReservedIdField,
-                        "`id` is reserved for the record key",
-                        field.name_span,
-                    ));
+                    diagnostics.extend(
+                        error(
+                            CfdTextErrorCode::ReservedIdField,
+                            "`id` is reserved for the record key",
+                            field.name_span,
+                        )
+                        .diagnostics,
+                    );
+                    continue;
                 }
                 if !seen.insert(field.name.clone()) {
-                    return Err(error(
-                        CfdTextErrorCode::DuplicateField,
-                        format!("duplicate field `{}`", field.name),
-                        field.name_span,
-                    ));
+                    diagnostics.extend(
+                        error(
+                            CfdTextErrorCode::DuplicateField,
+                            format!("duplicate field `{}`", field.name),
+                            field.name_span,
+                        )
+                        .diagnostics,
+                    );
+                    continue;
                 }
                 let Some(meta) = fields_by_name.get(field.name.as_str()) else {
-                    return Err(error(
-                        CfdTextErrorCode::UnknownField,
-                        format!("unknown field `{}` on type `{type_name}`", field.name),
-                        field.name_span,
-                    ));
+                    diagnostics.extend(
+                        error(
+                            CfdTextErrorCode::UnknownField,
+                            format!("unknown field `{}` on type `{type_name}`", field.name),
+                            field.name_span,
+                        )
+                        .diagnostics,
+                    );
+                    continue;
                 };
-                values.insert(
-                    field.name.clone(),
-                    lower_value(schema, &field.value, &meta.value_type)?,
-                );
+                match lower_value(schema, &field.value, &meta.value_type) {
+                    Ok(value) => {
+                        values.insert(field.name.clone(), value);
+                    }
+                    Err(error) => diagnostics.extend(error.diagnostics),
+                }
             }
         }
     }
-    Ok(ObjectFields {
-        spreads,
-        fields: values,
-    })
+    finish(
+        ObjectFields {
+            spreads,
+            fields: values,
+        },
+        diagnostics,
+    )
 }
 
 pub(crate) fn lower_value(
@@ -293,21 +319,24 @@ fn lower_array(
             value.span(),
         ));
     };
-    let items = items
-        .iter()
-        .map(|item| {
-            if matches!(item, CfdValue::Spread(_, _)) {
-                Err(error(
-                    CfdTextErrorCode::Syntax,
-                    "array spreads are not supported",
-                    item.span(),
-                ))
-            } else {
-                lower_value(schema, item, inner)
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(LoadedValueDraft::Array(items))
+    let mut lowered = Vec::with_capacity(items.len());
+    let mut diagnostics = Vec::new();
+    for item in items {
+        let result = if matches!(item, CfdValue::Spread(_, _)) {
+            Err(error(
+                CfdTextErrorCode::Syntax,
+                "array spreads are not supported",
+                item.span(),
+            ))
+        } else {
+            lower_value(schema, item, inner)
+        };
+        match result {
+            Ok(value) => lowered.push(value),
+            Err(error) => diagnostics.extend(error.diagnostics),
+        }
+    }
+    finish(LoadedValueDraft::Array(lowered), diagnostics)
 }
 
 fn lower_dict(
@@ -333,22 +362,36 @@ fn lower_dict(
     let dict_type = CftValueType::Dict(Box::new(key_type.clone()), Box::new(value_type.clone()));
     let mut spreads = Vec::new();
     let mut entries = Vec::new();
+    let mut diagnostics = Vec::new();
     for entry in &block.entries {
         match entry {
-            CfdBlockEntry::Spread(value, _) => {
-                spreads.push(lower_spread(schema, value, &dict_type)?);
+            CfdBlockEntry::Spread(value, _) => match lower_spread(schema, value, &dict_type) {
+                Ok(value) => spreads.push(value),
+                Err(error) => diagnostics.extend(error.diagnostics),
+            },
+            CfdBlockEntry::Field(field) => {
+                let key = lower_dict_key(schema, &field.name, field.name_span, key_type);
+                let value = lower_value(schema, &field.value, value_type);
+                match (key, value) {
+                    (Ok(key), Ok(value)) => entries.push((key, value)),
+                    (key, value) => {
+                        if let Err(error) = key {
+                            diagnostics.extend(error.diagnostics);
+                        }
+                        if let Err(error) = value {
+                            diagnostics.extend(error.diagnostics);
+                        }
+                    }
+                }
             }
-            CfdBlockEntry::Field(field) => entries.push((
-                lower_dict_key(schema, &field.name, field.name_span, key_type)?,
-                lower_value(schema, &field.value, value_type)?,
-            )),
         }
     }
-    Ok(if spreads.is_empty() {
+    let value = if spreads.is_empty() {
         LoadedValueDraft::dict(entries)
     } else {
         LoadedValueDraft::dict_spread(spreads, entries)
-    })
+    };
+    finish(value, diagnostics)
 }
 
 fn lower_dict_key(
@@ -497,6 +540,14 @@ pub(super) fn syntax_diagnostics(
 
 fn error(code: CfdTextErrorCode, message: impl Into<String>, span: Span) -> CfdTextDiagnostics {
     CfdTextDiagnostics::one(CfdTextDiagnostic::error(code, message, text_span(span)))
+}
+
+fn finish<T>(value: T, diagnostics: Vec<CfdTextDiagnostic>) -> Result<T, CfdTextDiagnostics> {
+    if diagnostics.is_empty() {
+        Ok(value)
+    } else {
+        Err(CfdTextDiagnostics { diagnostics })
+    }
 }
 
 const fn text_span(span: Span) -> CfdTextSpan {

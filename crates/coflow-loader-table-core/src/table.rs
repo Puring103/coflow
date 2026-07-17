@@ -311,6 +311,11 @@ pub fn map_table_diagnostics(
 pub fn map_label_to_table(label: &CfdLabel, origins: &[RecordOrigin]) -> Option<TableLabel> {
     let record = label.record?;
     let origin = origins.get(record.index())?;
+    map_label_to_table_origin(label, origin)
+}
+
+#[must_use]
+pub fn map_label_to_table_origin(label: &CfdLabel, origin: &RecordOrigin) -> Option<TableLabel> {
     let RecordOrigin::Table {
         document,
         sheet,

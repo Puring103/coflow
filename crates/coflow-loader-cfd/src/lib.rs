@@ -154,9 +154,6 @@ impl SourceProvider for CfdLoader {
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
         let SourceLocationSpec::Path(path) = &source.location;
-        if path.is_dir() {
-            return collect_cfd_sources(path, source);
-        }
         if is_cfd_path(path) {
             return Ok(vec![source.clone()]);
         }
@@ -199,45 +196,6 @@ impl SourceProvider for CfdLoader {
             })
             .map_err(|err| cfd_error_to_diagnostics(file, &contents, err))
     }
-}
-
-fn collect_cfd_sources(
-    dir: &Path,
-    source: &ResolvedSource,
-) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-    let mut entries = fs::read_dir(dir)
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "CFD-SOURCE",
-                "CFD",
-                format!("failed to read data source dir `{}`: {err}", dir.display()),
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "CFD-SOURCE",
-                "CFD",
-                format!("failed to read data source dir `{}`: {err}", dir.display()),
-            ))
-        })?;
-    entries.sort_by_key(fs::DirEntry::path);
-
-    let mut sources = Vec::new();
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            sources.extend(collect_cfd_sources(&path, source)?);
-        } else if is_cfd_path(&path) {
-            sources.push(ResolvedSource {
-                provider_id: CFD_LOADER_DESCRIPTOR.id.to_string(),
-                display_name: path.display().to_string(),
-                location: SourceLocationSpec::Path(path),
-                options: source.options.clone(),
-            });
-        }
-    }
-    Ok(sources)
 }
 
 fn is_cfd_path(path: &Path) -> bool {

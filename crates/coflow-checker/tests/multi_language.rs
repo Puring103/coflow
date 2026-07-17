@@ -4,9 +4,7 @@ mod common;
 use common::*;
 
 use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
-use coflow_checker::{
-    CheckRequest, CheckRoot, CheckRound, DependencyCollection, DependencyGraph, DimensionCheckRound,
-};
+use coflow_checker::{CheckRequest, DependencyCollection, DependencyGraph, DimensionCheckRound};
 
 fn dimension_rounds(
     dimension: &str,
@@ -344,29 +342,6 @@ fn overlay_record_refs_resolve_without_storage_records() {
         .expect("target")
         .1
         .coordinate();
-    let item = model
-        .records()
-        .find(|(_, record)| record.key() == "item")
-        .expect("item")
-        .1
-        .coordinate();
-    let default_state = snapshot
-        .roots
-        .get(&CheckRoot {
-            record: item.clone(),
-            round: CheckRound::Default,
-        })
-        .expect("item default state");
-    assert!(!default_state.reads_from.contains(&target));
-    let dimension_state = snapshot
-        .roots
-        .get(&CheckRoot {
-            record: item,
-            round: CheckRound::Dimension(rounds[0].clone()),
-        })
-        .expect("item dimension state");
-    assert!(dimension_state.reads_from.contains(&target));
-
     let incremental = coflow_checker::run_checks(
         &schema,
         &model,
@@ -475,6 +450,52 @@ fn incremental_dimension_checks_follow_overlay_spread_sources() {
         "base",
         dimension_rounds("platform", ["pc"]),
     );
+}
+
+#[test]
+fn dimension_overlay_spread_inherits_resolvable_record_refs() {
+    let schema = compile_schema(
+        r#"
+            type Item { value: int; }
+            type Bundle { item: &Item; }
+            type Holder {
+                @dimension("platform")
+                bundle: Bundle;
+                check { bundle.item.value > 0; }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
+    builder.add_record(
+        "base",
+        "Bundle",
+        [("item", LoadedValueDraft::record_ref("item"))],
+    );
+    builder.add_record(
+        "holder",
+        "Holder",
+        [(
+            "bundle",
+            LoadedValueDraft::object("Bundle", [("item", LoadedValueDraft::record_ref("item"))]),
+        )],
+    );
+    add_overlay(
+        &mut builder,
+        "Holder",
+        "holder",
+        "bundle",
+        "platform",
+        "pc",
+        LoadedValueDraft::object_spread(
+            [LoadedValueDraft::record_ref("base")],
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
+        ),
+    );
+    let model = builder.build().expect("model builds");
+
+    run_checks_for_dimensions(&schema, &model, &dimension_rounds("platform", ["pc"]))
+        .expect("spread-inherited overlay refs resolve through their source record");
 }
 
 fn assert_incremental_dimension_matches_full(

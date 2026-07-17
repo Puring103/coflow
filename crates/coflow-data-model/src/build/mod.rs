@@ -7,9 +7,10 @@ mod validate;
 pub(crate) use context::BuildSchema;
 pub(crate) use draft::{RecordDraft, SpreadFieldSource, ValueDraft};
 
-use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdPath};
+use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, RecordOrigin};
 use crate::indexes::{
     self, build_ref_indexes, build_spread_indexes, extend_dimension_spread_indexes,
+    SpreadIndexContext,
 };
 use crate::ingest::{DimensionValueDraft, LoadedRecordDraft, LoadedValueDraft};
 use crate::model::{
@@ -218,7 +219,10 @@ impl<'a> ModelCompiler<'a> {
                 let Some(inheritance_root) =
                     self.schema.inheritance_root(input.source_type.as_str())
                 else {
-                    self.diagnostics.push(CfdDiagnostic::error(
+                    self.diagnostics.push(dimension_diagnostic(
+                        input,
+                        None,
+                        CfdPath::root().field(input.field.as_str()),
                         crate::CfdErrorCode::UnknownType,
                         format!("unknown dimension source type `{}`", input.source_type),
                     ));
@@ -230,7 +234,10 @@ impl<'a> ModelCompiler<'a> {
                     .and_then(|records| records.get(input.source_key.as_str()))
                     .copied()
                 else {
-                    self.diagnostics.push(CfdDiagnostic::error(
+                    self.diagnostics.push(dimension_diagnostic(
+                        input,
+                        None,
+                        CfdPath::root().field(input.field.as_str()),
                         crate::CfdErrorCode::RefTargetNotFound,
                         format!(
                             "dimension owner `{}:{}` was not found",
@@ -246,7 +253,10 @@ impl<'a> ModelCompiler<'a> {
                     .schema
                     .is_assignable(record.actual_type(), input.source_type.as_str())
                 {
-                    self.diagnostics.push(CfdDiagnostic::error(
+                    self.diagnostics.push(dimension_diagnostic(
+                        input,
+                        Some(record_id),
+                        CfdPath::root().field(input.field.as_str()),
                         crate::CfdErrorCode::ObjectTypeMismatch,
                         format!(
                             "dimension owner type `{}` is not assignable to `{}`",
@@ -261,7 +271,10 @@ impl<'a> ModelCompiler<'a> {
                     .full_fields(record.actual_type())
                     .find(|field| field.name == input.field)
                 else {
-                    self.diagnostics.push(CfdDiagnostic::error(
+                    self.diagnostics.push(dimension_diagnostic(
+                        input,
+                        Some(record_id),
+                        CfdPath::root().field(input.field.as_str()),
                         crate::CfdErrorCode::UnknownField,
                         format!(
                             "unknown dimension field `{}.{}`",
@@ -272,7 +285,10 @@ impl<'a> ModelCompiler<'a> {
                     continue;
                 };
                 let Some(binding) = &field.dimension else {
-                    self.diagnostics.push(CfdDiagnostic::error(
+                    self.diagnostics.push(dimension_diagnostic(
+                        input,
+                        Some(record_id),
+                        CfdPath::root().field(input.field.as_str()),
                         crate::CfdErrorCode::TypeMismatch,
                         format!(
                             "field `{}.{}` is not dimensional",
@@ -283,7 +299,10 @@ impl<'a> ModelCompiler<'a> {
                     continue;
                 };
                 if binding.dimension != input.dimension {
-                    self.diagnostics.push(CfdDiagnostic::error(
+                    self.diagnostics.push(dimension_diagnostic(
+                        input,
+                        Some(record_id),
+                        CfdPath::root().field(input.field.as_str()),
                         crate::CfdErrorCode::TypeMismatch,
                         format!(
                             "field `{}.{}` uses dimension `{}`, not `{}`",
@@ -302,7 +321,10 @@ impl<'a> ModelCompiler<'a> {
                     .and_then(|dimension| dimension.variant(input.variant.as_str()))
                     .is_none()
                 {
-                    self.diagnostics.push(CfdDiagnostic::error(
+                    self.diagnostics.push(dimension_diagnostic(
+                        input,
+                        Some(record_id),
+                        CfdPath::root().field(input.field.as_str()),
                         crate::CfdErrorCode::TypeMismatch,
                         format!(
                             "unknown variant `{}` for dimension `{}`",
@@ -313,7 +335,10 @@ impl<'a> ModelCompiler<'a> {
                 }
                 let coordinate = (record_id, input.field.clone(), input.variant.clone());
                 if !seen.insert(coordinate) {
-                    self.diagnostics.push(CfdDiagnostic::error(
+                    self.diagnostics.push(dimension_diagnostic(
+                        input,
+                        Some(record_id),
+                        CfdPath::root().field(input.field.as_str()),
                         crate::CfdErrorCode::DuplicateId,
                         format!(
                             "duplicate dimension value `{}:{}.{}/{}`",
@@ -325,6 +350,7 @@ impl<'a> ModelCompiler<'a> {
                 let nullable_ty =
                     CftValueType::Nullable(Box::new(field.value_type.non_nullable().clone()));
                 let path = CfdPath::root().field(input.field.as_str());
+                let diagnostic_start = self.diagnostics.len();
                 let draft = {
                     let mut validator =
                         Validator::new(&self.schema, &mut self.diagnostics, self.structural_limits);
@@ -336,6 +362,12 @@ impl<'a> ModelCompiler<'a> {
                         coflow_structure::TraversalCursor::root(),
                     )
                 };
+                attach_dimension_origins(
+                    &mut self.diagnostics[diagnostic_start..],
+                    input,
+                    Some(record_id),
+                    &path,
+                );
                 if let Some(draft) = draft {
                     resolved_dimension_values.push((record_id, input, draft, path));
                 }
@@ -346,8 +378,9 @@ impl<'a> ModelCompiler<'a> {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
 
-        let mut spread_indexes =
-            build_spread_indexes(&drafts, &indexes.record_by_domain_key, self.schema);
+        let spread_context =
+            SpreadIndexContext::new(&drafts, &indexes.record_by_domain_key, self.schema);
+        let mut spread_indexes = build_spread_indexes(spread_context);
         for (record_id, input, draft, path) in &resolved_dimension_values {
             let coordinate = DimensionRefCoordinate {
                 field: input.field.clone(),
@@ -360,13 +393,12 @@ impl<'a> ModelCompiler<'a> {
                 *record_id,
                 path,
                 &coordinate,
-                &drafts,
-                &indexes.record_by_domain_key,
-                self.schema,
+                spread_context,
             );
         }
 
         let mut dimension_values = Vec::with_capacity(resolved_dimension_values.len());
+        let mut dimension_diagnostic_origins = Vec::new();
         {
             let mut resolver = ValueResolver::new(
                 &self.schema,
@@ -376,10 +408,27 @@ impl<'a> ModelCompiler<'a> {
                 self.structural_limits,
             );
             for (record_id, input, draft, path) in resolved_dimension_values {
+                let diagnostic_start = resolver.diagnostic_count();
                 if let Some(value) = resolver.resolve_dimension_value(record_id, &draft, path) {
                     dimension_values.push((record_id, input, value));
                 }
+                let diagnostic_end = resolver.diagnostic_count();
+                dimension_diagnostic_origins.push((
+                    diagnostic_start,
+                    diagnostic_end,
+                    input.origin.clone(),
+                    record_id,
+                    CfdPath::root().field(input.field.as_str()),
+                ));
             }
+        }
+        for (start, end, origin, record_id, path) in dimension_diagnostic_origins {
+            attach_origin_to_diagnostics(
+                &mut self.diagnostics[start..end],
+                &origin,
+                Some(record_id),
+                &path,
+            );
         }
 
         if !self.diagnostics.is_empty() {
@@ -423,10 +472,51 @@ impl<'a> ModelCompiler<'a> {
             ref_by_host: ref_indexes.by_host,
             ref_by_target: ref_indexes.by_target,
             spread_edges: spread_indexes.edges,
-            spread_by_site: spread_indexes.by_site,
             spread_by_host: spread_indexes.by_host,
             spread_by_source: spread_indexes.by_source,
         })
+    }
+}
+
+fn dimension_diagnostic(
+    input: &DimensionValueDraft,
+    record: Option<CfdRecordId>,
+    path: CfdPath,
+    code: crate::CfdErrorCode,
+    message: impl Into<String>,
+) -> CfdDiagnostic {
+    CfdDiagnostic::error(code, message)
+        .with_primary(record, path)
+        .with_primary_origin(input.origin.clone())
+}
+
+fn attach_dimension_origins(
+    diagnostics: &mut [CfdDiagnostic],
+    input: &DimensionValueDraft,
+    record: Option<CfdRecordId>,
+    path: &CfdPath,
+) {
+    attach_origin_to_diagnostics(diagnostics, &input.origin, record, path);
+}
+
+fn attach_origin_to_diagnostics(
+    diagnostics: &mut [CfdDiagnostic],
+    origin: &RecordOrigin,
+    record: Option<CfdRecordId>,
+    path: &CfdPath,
+) {
+    for diagnostic in diagnostics {
+        match &mut diagnostic.primary {
+            Some(primary) => primary.origin = Some(origin.clone()),
+            None => {
+                diagnostic.primary = Some(CfdLabel {
+                    record,
+                    path: path.clone(),
+                    message: None,
+                    origin: Some(origin.clone()),
+                });
+            }
+        }
     }
 }
 

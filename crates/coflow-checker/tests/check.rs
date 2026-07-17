@@ -10,7 +10,7 @@
 mod common;
 use std::collections::BTreeSet;
 
-use coflow_checker::{CheckRequest, CheckRoot, CheckRound, DependencyCollection};
+use coflow_checker::{CheckRequest, DependencyCollection};
 use common::*;
 
 fn build_model(_schema: &CftSchema, builder: CfdModelBuilder<'_>) -> CfdDataModel {
@@ -94,16 +94,34 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
         .reads_from
         .get(&reader)
         .is_some_and(|reads| reads.contains(&target)));
-    let reader_coordinate = model.record(reader).expect("reader record").coordinate();
-    let target_coordinate = model.record(target).expect("target record").coordinate();
-    let state = snapshot
-        .roots
-        .get(&CheckRoot {
-            record: reader_coordinate,
-            round: CheckRound::Default,
-        })
-        .expect("reader default root state");
-    assert_eq!(state.reads_from, BTreeSet::from([target_coordinate]));
+    assert!(snapshot.is_reusable());
+}
+
+#[test]
+fn references_to_the_same_record_compare_equal_independent_of_provenance() {
+    let schema = compile_schema(
+        r#"
+            type Item { value: int; }
+            type Holder {
+                left: &Item;
+                right: &Item;
+                check { left == right; }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
+    builder.add_record(
+        "holder",
+        "Holder",
+        [
+            ("left", LoadedValueDraft::record_ref("item")),
+            ("right", LoadedValueDraft::record_ref("item")),
+        ],
+    );
+    let model = builder.build().expect("model builds");
+
+    run_model_checks(&model, &schema).expect("the same target has one semantic identity");
 }
 
 #[test]
@@ -125,8 +143,8 @@ fn empty_targets_and_empty_incremental_changes_perform_no_work() {
     assert!(empty
         .snapshot
         .expect("empty stable snapshot")
-        .roots
-        .is_empty());
+        .render_diagnostics(&model)
+        .is_some_and(|diagnostics| diagnostics.is_empty()));
 
     let previous = coflow_checker::run_checks(
         &schema,
@@ -791,6 +809,28 @@ fn non_finite_float_comparisons_are_runtime_type_errors() {
             .any(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed),
         "NaN comparisons must not be downgraded into false comparisons: {err:?}"
     );
+}
+
+#[test]
+fn nan_is_rejected_by_every_comparison_operator() {
+    for operator in ["==", "!=", "<", "<=", ">", ">="] {
+        let schema = compile_schema(&format!(
+            r#"
+                type Holder {{
+                    check {{ ((0.0 - 1.0) ** 0.5) {operator} 0.0; }}
+                }}
+            "#
+        ));
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "holder",
+            "Holder",
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
+        );
+        let model = builder.build().expect("model builds");
+        let error = run_model_checks(&model, &schema).expect_err("NaN comparison must fail");
+        assert_has_code(&error, CfdErrorCode::CheckEvalTypeError);
+    }
 }
 
 #[test]

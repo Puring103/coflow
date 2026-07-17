@@ -12,3 +12,4 @@ workspace = true
 
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
+coflow-structure = { path = "../coflow-structure" }

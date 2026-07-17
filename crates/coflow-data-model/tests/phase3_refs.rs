@@ -209,25 +209,15 @@ fn direct_refs_populate_ref_edge_indexes() {
     let item_site = RefSite::new(holder_id, CfdPath::root().field("item"));
     let array_site = RefSite::new(holder_id, CfdPath::root().field("items").index(0));
 
-    let item_edge_id = model.direct_ref_edge_at(&item_site).expect("item edge");
-    let array_edge_id = model.direct_ref_edge_at(&array_site).expect("array edge");
     assert_eq!(model.resolve_direct_ref(&item_site), Some(item_id));
     assert_eq!(model.resolve_direct_ref(&array_site), Some(item_id));
-    assert_eq!(
-        model.direct_ref_edge(item_edge_id).map(|edge| edge.target),
-        Some(item_id)
-    );
-    assert_eq!(
-        model.direct_ref_edge(array_edge_id).map(|edge| edge.target),
-        Some(item_id)
-    );
 
     let host_edges = model
         .direct_ref_edges_from_host(holder_id)
         .collect::<Vec<_>>();
     assert_eq!(host_edges.len(), 2);
-    assert!(host_edges.iter().any(|edge| edge.id == item_edge_id));
-    assert!(host_edges.iter().any(|edge| edge.id == array_edge_id));
+    assert!(host_edges.iter().any(|edge| edge.site == item_site));
+    assert!(host_edges.iter().any(|edge| edge.site == array_site));
 
     let target_edges = model
         .direct_ref_edges_to_target(item_id)
@@ -291,21 +281,15 @@ fn object_spread_source_is_not_a_direct_ref_edge() {
     let inherited_item_site = RefSite::new(copy_id, CfdPath::root().field("item"));
     let inherited_nested_item_site =
         RefSite::new(copy_id, CfdPath::root().field("nested").field("item"));
-    let spread_site = SpreadSite::new(copy_id, CfdPath::root());
-
     assert!(model.direct_ref_edges_to_target(base_id).next().is_none());
-    assert!(model.direct_ref_edge_at(&inherited_item_site).is_none());
     assert!(model.resolve_direct_ref(&inherited_item_site).is_none());
-    assert!(model
-        .direct_ref_edge_at(&inherited_nested_item_site)
-        .is_none());
     assert!(model
         .resolve_direct_ref(&inherited_nested_item_site)
         .is_none());
 
     let spread_edge = model
-        .spread_edge_at(&spread_site)
-        .and_then(|id| model.spread_edge(id))
+        .spread_edges_from_source(base_id)
+        .find(|edge| edge.host == copy_id && edge.path == CfdPath::root())
         .expect("copy root spread edge");
     assert_eq!(spread_edge.source, base_id);
     assert!(spread_edge.fields.contains("item"));
@@ -326,11 +310,14 @@ fn object_spread_source_is_not_a_direct_ref_edge() {
     );
 
     assert_eq!(
-        model.resolve_direct_ref_at(base_id, &CfdPath::root().field("item")),
+        model.resolve_direct_ref(&RefSite::new(base_id, CfdPath::root().field("item"))),
         Some(item_id)
     );
     assert_eq!(
-        model.resolve_direct_ref_at(base_id, &CfdPath::root().field("nested").field("item")),
+        model.resolve_direct_ref(&RefSite::new(
+            base_id,
+            CfdPath::root().field("nested").field("item")
+        )),
         Some(item_id)
     );
 }
@@ -375,8 +362,8 @@ fn fully_overridden_spread_still_records_object_level_edge() {
         .lookup_assignable(&schema, "Item", "copy")
         .expect("copy");
     let edge = model
-        .spread_edge_at(&SpreadSite::new(copy_id, CfdPath::root()))
-        .and_then(|id| model.spread_edge(id))
+        .spread_edges_from_source(base_id)
+        .find(|edge| edge.host == copy_id && edge.path == CfdPath::root())
         .expect("copy root spread edge");
 
     assert_eq!(edge.source, base_id);
@@ -436,8 +423,10 @@ fn multiple_spreads_at_same_object_site_keep_all_edges() {
     let mp_base_id = model
         .lookup_assignable(&schema, "Stats", "mp_base")
         .expect("mp base");
-    let site = SpreadSite::new(copy_id, CfdPath::root());
-    let edges = model.spread_edges_at(&site).collect::<Vec<_>>();
+    let edges = model
+        .spread_edges()
+        .filter(|edge| edge.host == copy_id && edge.path == CfdPath::root())
+        .collect::<Vec<_>>();
 
     assert_eq!(edges.len(), 2);
     assert!(edges.iter().any(|edge| edge.source == hp_base_id));

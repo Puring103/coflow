@@ -1,4 +1,4 @@
-use super::ids::{CfdRecordId, RecordCoordinate};
+use super::ids::RecordCoordinate;
 use crate::diagnostics::RecordOrigin;
 use crate::diagnostics::{format_cfd_dict_key, CfdPath, CfdPathSegment};
 use coflow_cft::{
@@ -105,7 +105,6 @@ impl CfdRecord {
         Some(current)
     }
 }
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDimensionFieldValues {
     pub dimension: DimensionName,
@@ -317,6 +316,3 @@ impl From<CftEnumValue> for CfdEnumValue {
         }
     }
 }
-
-#[allow(dead_code)]
-fn _record_id_is_part_of_public_value_model(_: CfdRecordId) {}

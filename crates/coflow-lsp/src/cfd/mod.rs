@@ -65,8 +65,7 @@ pub fn document_symbols(source: &str, ast: &CfdAst) -> Value {
 
 fn field_symbols(source: &str, record: &CfdRecord) -> Vec<Value> {
     record
-        .fields
-        .iter()
+        .fields()
         .map(|field| {
             let name_range = byte_range(source, field.name_span.start, field.name_span.end);
             let full_range = byte_range(source, field.span.start, field.span.end);
@@ -212,7 +211,7 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usi
                 "range": byte_range(source, record.type_span.start, record.type_span.end),
             });
         }
-        for field in &record.fields {
+        for field in record.fields() {
             if span_contains(field.name_span, offset) {
                 let detail = schema
                     .and_then(|s| s.resolve_type(&record.type_name))
@@ -245,7 +244,7 @@ pub fn completion(_source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offse
             continue;
         };
         let existing: std::collections::BTreeSet<&str> =
-            record.fields.iter().map(|f| f.name.as_str()).collect();
+            record.fields().map(|f| f.name.as_str()).collect();
         let items: Vec<Value> = schema_type
             .all_fields()
             .filter(|f| !existing.contains(f.name.as_str()))

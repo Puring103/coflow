@@ -7,7 +7,9 @@
 )]
 
 mod common;
+use coflow_cft::CftDimensionInputs;
 use common::*;
+use std::path::PathBuf;
 
 #[test]
 fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_check() {
@@ -56,6 +58,50 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
     );
     assert_eq!(record.field("tags"), Some(&CfdValue::Array(Vec::new())));
     assert_eq!(record.field("attrs"), Some(&CfdValue::Dict(Vec::new())));
+}
+
+#[test]
+fn invalid_dimension_values_preserve_the_overlay_origin() {
+    let schema = compile_schema_with_dimensions(
+        r#"
+            type Item {
+                @dimension("platform")
+                value: int;
+            }
+        "#,
+        CftDimensionInputs::try_new([("platform", vec!["pc".to_string()])])
+            .expect("valid dimension fixture"),
+    );
+    let origin = RecordOrigin::File {
+        path: PathBuf::from("dimensions/platform.cfd"),
+        span: Some(TextSpan {
+            start_line: 4,
+            start_character: 2,
+            end_line: 4,
+            end_character: 12,
+        }),
+    };
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
+    builder.add_dimension_value_draft(DimensionValueDraft {
+        source_type: coflow_cft::TypeName::new("Item").unwrap(),
+        source_key: coflow_cft::RecordKey::new("item").unwrap(),
+        field: coflow_cft::FieldName::new("value").unwrap(),
+        dimension: coflow_cft::DimensionName::new("platform").unwrap(),
+        variant: coflow_cft::VariantName::new("pc").unwrap(),
+        value: LoadedValueDraft::from("not-an-int"),
+        origin: origin.clone(),
+    });
+
+    let diagnostics = builder.build().expect_err("invalid overlay value");
+    let diagnostic = diagnostic_with_code(&diagnostics, CfdErrorCode::TypeMismatch);
+    assert_eq!(
+        diagnostic
+            .primary
+            .as_ref()
+            .and_then(|primary| primary.origin.as_ref()),
+        Some(&origin)
+    );
 }
 
 #[test]
@@ -210,15 +256,22 @@ fn data_model_resolves_shared_spread_source_for_multiple_consumers() {
             record.and_then(|record| record.field("hp")),
             Some(&CfdValue::Int(7))
         );
-        assert_eq!(model.spread_edges_from_host(id).count(), 1);
         assert_eq!(
-            model
-                .spread_edge_at_path(id, &CfdPath::root().field("hp"))
-                .map(|edge| edge.source),
+            model.spread_edges().filter(|edge| edge.host == id).count(),
+            1
+        );
+        assert_eq!(
+            model.spread_source_at_path(id, &CfdPath::root().field("hp")),
             Some(base)
         );
     }
-    assert_eq!(model.spread_edges_from_host(base).count(), 0);
+    assert_eq!(
+        model
+            .spread_edges()
+            .filter(|edge| edge.host == base)
+            .count(),
+        0
+    );
 }
 
 #[test]
@@ -338,11 +391,7 @@ fn dimension_spreads_are_precomputed_with_typed_coordinates() {
             .expect("valid dimension fixture"),
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "base",
-        "Stats",
-        [("value", LoadedValueDraft::from(1_i64))],
-    );
+    builder.add_record("base", "Stats", [("value", LoadedValueDraft::from(1_i64))]);
     builder.add_record(
         "holder",
         "Holder",
@@ -375,7 +424,7 @@ fn dimension_spreads_are_precomputed_with_typed_coordinates() {
         .spread_edges_from_source(base)
         .find(|edge| edge.host == holder)
         .expect("dimension spread edge");
-    let coordinate = edge.site.dimension.as_ref().expect("dimension coordinate");
+    let coordinate = edge.dimension.as_ref().expect("dimension coordinate");
 
     assert_eq!(edge.path, CfdPath::root().field("stats"));
     assert_eq!(coordinate.field.as_str(), "stats");

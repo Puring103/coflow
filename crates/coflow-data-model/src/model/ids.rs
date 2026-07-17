@@ -49,21 +49,12 @@ impl RecordCoordinate {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CfdRecordId(usize);
 
 impl CfdRecordId {
     #[must_use]
     pub(crate) fn new(index: usize) -> Self {
-        Self(index)
-    }
-
-    /// Build a record id from its raw index. Mostly useful for diagnostic
-    /// rewriting where the caller knows the absolute index in a flattened
-    /// record stream. Construction does not validate that any record exists
-    /// at that index.
-    #[must_use]
-    pub fn from_index(index: usize) -> Self {
         Self(index)
     }
 

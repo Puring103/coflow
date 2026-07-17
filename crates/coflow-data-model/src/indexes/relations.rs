@@ -2,7 +2,7 @@ use crate::build::{BuildSchema, RecordDraft, ValueDraft};
 use crate::diagnostics::CfdPath;
 use crate::model::{
     CfdRecord, CfdRecordId, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId, RefSite,
-    SpreadEdge, SpreadEdgeId, SpreadSite,
+    SpreadEdge, SpreadEdgeId,
 };
 use coflow_cft::{CftValueType, RecordKey, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,28 +18,41 @@ pub(crate) struct RefIndexes {
 #[derive(Default)]
 pub(crate) struct SpreadIndexes {
     pub(crate) edges: Vec<SpreadEdge>,
-    pub(crate) by_site: BTreeMap<SpreadSite, Vec<SpreadEdgeId>>,
     pub(crate) by_host: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
     pub(crate) by_source: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
 }
 
-pub(crate) fn build_spread_indexes(
-    drafts: &[RecordDraft],
-    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: BuildSchema<'_>,
-) -> SpreadIndexes {
-    let mut out = SpreadIndexes::default();
-    for (index, draft) in drafts.iter().enumerate() {
-        collect_spread_edges(
-            draft,
-            CfdRecordId::from_index(index),
-            &CfdPath::root(),
-            None,
+#[derive(Clone, Copy)]
+pub(crate) struct SpreadIndexContext<'a, 'schema> {
+    drafts: &'a [RecordDraft],
+    record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+    schema: BuildSchema<'schema>,
+}
+
+impl<'a, 'schema> SpreadIndexContext<'a, 'schema> {
+    pub(crate) const fn new(
+        drafts: &'a [RecordDraft],
+        record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+        schema: BuildSchema<'schema>,
+    ) -> Self {
+        Self {
             drafts,
             record_by_domain_key,
             schema,
-            &mut out,
-        );
+        }
+    }
+}
+
+pub(crate) fn build_spread_indexes(context: SpreadIndexContext<'_, '_>) -> SpreadIndexes {
+    let mut out = SpreadIndexes::default();
+    {
+        let mut builder = SpreadEdgeBuilder {
+            context,
+            out: &mut out,
+        };
+        for (index, draft) in context.drafts.iter().enumerate() {
+            builder.collect_record(draft, CfdRecordId::new(index), &CfdPath::root(), None);
+        }
     }
     out
 }
@@ -50,188 +63,95 @@ pub(crate) fn extend_dimension_spread_indexes(
     host: CfdRecordId,
     path: &CfdPath,
     dimension: &DimensionRefCoordinate,
-    drafts: &[RecordDraft],
-    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: BuildSchema<'_>,
+    context: SpreadIndexContext<'_, '_>,
 ) {
-    collect_nested_spread_edges(
-        value,
-        host,
-        path,
-        Some(dimension),
-        drafts,
-        record_by_domain_key,
-        schema,
-        out,
-    );
+    SpreadEdgeBuilder { context, out }.collect_value(value, host, path, Some(dimension));
 }
 
-fn collect_spread_edges(
-    draft: &RecordDraft,
-    host: CfdRecordId,
-    path: &CfdPath,
-    dimension: Option<&DimensionRefCoordinate>,
-    drafts: &[RecordDraft],
-    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: BuildSchema<'_>,
-    out: &mut SpreadIndexes,
-) {
-    let mut fields_by_source = draft
-        .spread_sources
-        .iter()
-        .cloned()
-        .map(|source| (source, BTreeSet::new()))
-        .collect::<BTreeMap<_, _>>();
-    for (field, source) in &draft.spread_field_sources {
-        fields_by_source
-            .entry(source.clone())
-            .or_default()
-            .insert(field.clone());
-    }
-
-    for (source, fields) in fields_by_source {
-        let Some(expected_type) = schema
-            .resolve_type(&source.expected_type)
-            .map(|ty| ty.name.clone())
-        else {
-            continue;
-        };
-        let Some(inheritance_root) = schema.inheritance_root(&source.expected_type).cloned() else {
-            continue;
-        };
-        let Some((source_id, source_key)) = lookup_domain_ref(
-            schema,
-            record_by_domain_key,
-            &source.expected_type,
-            &source.key,
-        ) else {
-            continue;
-        };
-        let Some(source_draft) = drafts.get(source_id.index()) else {
-            continue;
-        };
-        let Some(source_type) = schema
-            .resolve_type(&source_draft.actual_type)
-            .map(|ty| ty.name.clone())
-        else {
-            continue;
-        };
-        let site = dimension.map_or_else(
-            || SpreadSite::new(host, path.clone()),
-            |dimension| SpreadSite::in_dimension(host, path.clone(), dimension.clone()),
-        );
-        let id = SpreadEdgeId::new(out.edges.len());
-        out.edges.push(SpreadEdge {
-            id,
-            site: site.clone(),
-            host,
-            path: path.clone(),
-            fields,
-            expected_type,
-            inheritance_root,
-            source_key,
-            source: source_id,
-            source_type,
-        });
-        out.by_site.entry(site).or_default().push(id);
-        out.by_host.entry(host).or_default().push(id);
-        out.by_source.entry(source_id).or_default().push(id);
-    }
-
-    for (field, value) in &draft.fields {
-        collect_nested_spread_edges(
-            value,
-            host,
-            &path.clone().field(field.as_str()),
-            dimension,
-            drafts,
-            record_by_domain_key,
-            schema,
-            out,
-        );
-    }
+struct SpreadEdgeBuilder<'a, 'context, 'schema> {
+    context: SpreadIndexContext<'context, 'schema>,
+    out: &'a mut SpreadIndexes,
 }
 
-fn collect_nested_spread_edges(
-    value: &ValueDraft,
-    host: CfdRecordId,
-    path: &CfdPath,
-    dimension: Option<&DimensionRefCoordinate>,
-    drafts: &[RecordDraft],
-    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
-    schema: BuildSchema<'_>,
-    out: &mut SpreadIndexes,
-) {
-    match value {
-        ValueDraft::Object(draft) => {
-            collect_spread_edges(
-                draft,
-                host,
-                path,
-                dimension,
-                drafts,
-                record_by_domain_key,
+impl SpreadEdgeBuilder<'_, '_, '_> {
+    fn collect_record(
+        &mut self,
+        draft: &RecordDraft,
+        host: CfdRecordId,
+        path: &CfdPath,
+        dimension: Option<&DimensionRefCoordinate>,
+    ) {
+        let mut fields_by_source = draft
+            .spread_sources
+            .iter()
+            .cloned()
+            .map(|source| (source, BTreeSet::new()))
+            .collect::<BTreeMap<_, _>>();
+        for (field, source) in &draft.spread_field_sources {
+            fields_by_source
+                .entry(source.clone())
+                .or_default()
+                .insert(field.clone());
+        }
+
+        for (source, fields) in fields_by_source {
+            let schema = self.context.schema;
+            let Some(source_id) = lookup_domain_ref(
                 schema,
-                out,
-            );
+                self.context.record_by_domain_key,
+                &source.expected_type,
+                &source.key,
+            ) else {
+                continue;
+            };
+            let id = SpreadEdgeId::new(self.out.edges.len());
+            self.out.edges.push(SpreadEdge {
+                host,
+                path: path.clone(),
+                dimension: dimension.cloned(),
+                fields,
+                source: source_id,
+            });
+            self.out.by_host.entry(host).or_default().push(id);
+            self.out.by_source.entry(source_id).or_default().push(id);
         }
-        ValueDraft::Array(items) => {
-            for (index, item) in items.iter().enumerate() {
-                collect_nested_spread_edges(
-                    item,
-                    host,
-                    &path.clone().index(index),
-                    dimension,
-                    drafts,
-                    record_by_domain_key,
-                    schema,
-                    out,
-                );
-            }
+
+        for (field, value) in &draft.fields {
+            self.collect_value(value, host, &path.clone().field(field.as_str()), dimension);
         }
-        ValueDraft::Dict(entries) => {
-            for (key, item) in entries {
-                collect_nested_spread_edges(
-                    item,
-                    host,
-                    &path.clone().dict_key_value(key),
-                    dimension,
-                    drafts,
-                    record_by_domain_key,
-                    schema,
-                    out,
-                );
+    }
+
+    fn collect_value(
+        &mut self,
+        value: &ValueDraft,
+        host: CfdRecordId,
+        path: &CfdPath,
+        dimension: Option<&DimensionRefCoordinate>,
+    ) {
+        match value {
+            ValueDraft::Object(draft) => self.collect_record(draft, host, path, dimension),
+            ValueDraft::Array(items) => {
+                for (index, item) in items.iter().enumerate() {
+                    self.collect_value(item, host, &path.clone().index(index), dimension);
+                }
             }
+            ValueDraft::Dict(entries) => {
+                for (key, item) in entries {
+                    self.collect_value(item, host, &path.clone().dict_key_value(key), dimension);
+                }
+            }
+            ValueDraft::DictSpread { spreads, entries } => {
+                for item in spreads {
+                    self.collect_value(item, host, path, dimension);
+                }
+                for (key, item) in entries {
+                    self.collect_value(item, host, &path.clone().dict_key_value(key), dimension);
+                }
+            }
+            ValueDraft::Value(_)
+            | ValueDraft::PendingRef { .. }
+            | ValueDraft::PendingSpreadField { .. } => {}
         }
-        ValueDraft::DictSpread { spreads, entries } => {
-            for item in spreads {
-                collect_nested_spread_edges(
-                    item,
-                    host,
-                    path,
-                    dimension,
-                    drafts,
-                    record_by_domain_key,
-                    schema,
-                    out,
-                );
-            }
-            for (key, item) in entries {
-                collect_nested_spread_edges(
-                    item,
-                    host,
-                    &path.clone().dict_key_value(key),
-                    dimension,
-                    drafts,
-                    record_by_domain_key,
-                    schema,
-                    out,
-                );
-            }
-        }
-        ValueDraft::Value(_)
-        | ValueDraft::PendingRef { .. }
-        | ValueDraft::PendingSpreadField { .. } => {}
     }
 }
 
@@ -250,13 +170,12 @@ pub(crate) fn build_ref_indexes(
             .push(edge);
     }
     let context = RefEdgeBuildContext {
-        records,
         record_by_domain_key,
         schema,
         spread_edges_by_host,
     };
     for (index, record) in records.iter().enumerate() {
-        let host = CfdRecordId::from_index(index);
+        let host = CfdRecordId::new(index);
         let root = CfdPath::root();
         for (name, value) in record.fields() {
             let Some(field) = context
@@ -306,7 +225,6 @@ pub(crate) fn build_ref_indexes(
 }
 
 struct RefEdgeBuildContext<'a, 'schema> {
-    records: &'a [CfdRecord],
     record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     schema: BuildSchema<'schema>,
     spread_edges_by_host: BTreeMap<CfdRecordId, Vec<&'a SpreadEdge>>,
@@ -319,13 +237,11 @@ impl RefEdgeBuildContext<'_, '_> {
         path: &CfdPath,
         dimension: Option<&DimensionRefCoordinate>,
     ) -> bool {
-        self.spread_edges_by_host
-            .get(&host)
-            .is_some_and(|edges| {
-                edges.iter().any(|edge| {
-                    edge.site.dimension.as_ref() == dimension && edge.covers_path(path)
-                })
-            })
+        self.spread_edges_by_host.get(&host).is_some_and(|edges| {
+            edges
+                .iter()
+                .any(|edge| edge.dimension.as_ref() == dimension && edge.covers_path(path))
+        })
     }
 }
 
@@ -343,33 +259,12 @@ fn collect_ref_edges(
     }
     match (value, ty.non_nullable()) {
         (CfdValue::Ref(key), CftValueType::RecordRef(expected_type)) => {
-            let Some(expected_type_name) = context
-                .schema
-                .resolve_type(expected_type)
-                .map(|ty| ty.name.clone())
-            else {
-                return;
-            };
-            let Some(inheritance_root) = context.schema.inheritance_root(expected_type).cloned()
-            else {
-                return;
-            };
-            let Some((target, _)) = lookup_domain_ref(
+            let Some(target) = lookup_domain_ref(
                 context.schema,
                 context.record_by_domain_key,
                 expected_type,
                 key,
             ) else {
-                return;
-            };
-            let Some(target_record) = context.records.get(target.index()) else {
-                return;
-            };
-            let Some(target_type) = context
-                .schema
-                .resolve_type(target_record.actual_type())
-                .map(|ty| ty.name.clone())
-            else {
                 return;
             };
             let site = dimension.map_or_else(
@@ -378,13 +273,8 @@ fn collect_ref_edges(
             );
             let id = RefEdgeId::new(out.edges.len());
             out.edges.push(RefEdge {
-                id,
                 site: site.clone(),
-                expected_type: expected_type_name,
-                inheritance_root,
-                key: key.clone(),
                 target,
-                target_type,
             });
             out.by_site.insert(site, id);
             out.by_host.entry(host).or_default().push(id);
@@ -445,10 +335,10 @@ fn lookup_domain_ref(
     record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     target_type: &str,
     key: &str,
-) -> Option<(CfdRecordId, RecordKey)> {
+) -> Option<CfdRecordId> {
     schema
         .inheritance_root(target_type)
         .and_then(|inheritance_root| record_by_domain_key.get(inheritance_root))
-        .and_then(|records| records.get_key_value(key))
-        .map(|(key, id)| (*id, key.clone()))
+        .and_then(|records| records.get(key))
+        .copied()
 }

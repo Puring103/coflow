@@ -88,6 +88,19 @@ pub(crate) fn compare(
     rhs: &EvalValue<'_>,
     location: Option<ValueLocation>,
 ) -> OpsResult<bool> {
+    if matches!(lhs.scalar(), Some(ScalarValue::Float(value)) if value.is_nan())
+        || matches!(rhs.scalar(), Some(ScalarValue::Float(value)) if value.is_nan())
+    {
+        return Err(OpsError::new(
+            CfdErrorCode::CheckEvalTypeError,
+            location,
+            format!(
+                "float 比较失败: {} cmp {}",
+                format_value_for_message(lhs),
+                format_value_for_message(rhs)
+            ),
+        ));
+    }
     Ok(match op {
         CftSchemaCmpOp::Eq => values_equal(lhs, rhs),
         CftSchemaCmpOp::Ne => !values_equal(lhs, rhs),

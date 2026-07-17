@@ -15,8 +15,16 @@ pub struct CfdRecord {
     pub type_name: String,
     pub type_span: Span,
     pub entries: Vec<CfdBlockEntry>,
-    pub fields: Vec<CfdField>,
     pub span: Span,
+}
+
+impl CfdRecord {
+    pub fn fields(&self) -> impl Iterator<Item = &CfdField> {
+        self.entries.iter().filter_map(|entry| match entry {
+            CfdBlockEntry::Field(field) => Some(field),
+            CfdBlockEntry::Spread(_, _) => None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

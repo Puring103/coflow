@@ -47,8 +47,7 @@ pub use ingest::{DimensionValueDraft, LoadedDictKeyDraft, LoadedRecordDraft, Loa
 pub use model::{
     CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdObject,
     CfdRecord, CfdRecordId, CfdTable, CfdValue, DimensionFieldLookupError, DimensionRefCoordinate,
-    DimensionValueLookup, RecordCoordinate, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId,
-    SpreadSite,
+    DimensionValueLookup, RecordCoordinate, RefEdge, RefSite, SpreadEdge,
 };
 pub use semantics::{
     validate_object_type_assignable, validate_value_for_schema, CfdValueSemanticContext,

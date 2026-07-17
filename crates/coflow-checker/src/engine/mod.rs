@@ -236,7 +236,11 @@ fn expand_materialization_changes(
         model
             .materialization_dependents(source_ids)
             .into_iter()
-            .filter_map(|id| model.record(id).map(coflow_data_model::CfdRecord::coordinate)),
+            .filter_map(|id| {
+                model
+                    .record(id)
+                    .map(coflow_data_model::CfdRecord::coordinate)
+            }),
     );
     expanded
 }

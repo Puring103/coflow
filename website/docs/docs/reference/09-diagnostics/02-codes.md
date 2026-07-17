@@ -224,9 +224,11 @@ provider 专属阶段；需要跨 provider 保持稳定语义的诊断会保留 
 | `CFD-DIMENSION` | `CFD` | CFD 维度文件生成/同步失败，例如维度表存在重复或未管理的 id |
 | `CFD-TEXT-Syntax` | `CFD` | CFD 文本语法错误 |
 | `CFD-TEXT-UnknownType` | `CFD` | 文本记录或对象使用未知类型 |
+| `CFD-TEXT-AbstractObjectType` | `CFD` | 尝试实例化抽象对象类型 |
 | `CFD-TEXT-UnknownField` | `CFD` | 字段名不存在 |
 | `CFD-TEXT-ObjectTypeMismatch` | `CFD` | 多态对象实际类型不能赋给目标类型 |
-| `CFD-TEXT-MissingObjectType` | `CFD` | 需要具体对象类型但未提供 |
+| `CFD-TEXT-DuplicateField` | `CFD` | 同一对象重复声明字段 |
+| `CFD-TEXT-ReservedIdField` | `CFD` | CFD 记录显式声明保留字段 `id` |
 | `CFD-TEXT-TypeMismatch` | `CFD` | 值不能按目标类型解析 |
 | `CFD-TEXT-InvalidEnumVariant` | `CFD` | enum variant 不存在 |
 | `CFD-TEXT-ReferenceNeedsMarker` | `CFD` | 对象引用缺少 `&key` 标记 |

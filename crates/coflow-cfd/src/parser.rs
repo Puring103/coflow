@@ -1,12 +1,13 @@
 mod tokens;
 
 use crate::ast::{CfdAst, CfdBlock, CfdBlockEntry, CfdField, CfdRecord, CfdRef, CfdValue};
-use crate::CfdSyntaxDiagnostic;
+use crate::{CfdParseOptions, CfdSyntaxDiagnostic};
 use coflow_cft::Span;
+use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use tokens::Token;
 
-pub fn parse(source: &str) -> (CfdAst, Vec<CfdSyntaxDiagnostic>) {
-    let mut p = Parser::new(source);
+pub(crate) fn parse(source: &str, options: CfdParseOptions) -> (CfdAst, Vec<CfdSyntaxDiagnostic>) {
+    let mut p = Parser::new(source, options);
     let ast = p.parse_root();
     (ast, p.diagnostics)
 }
@@ -15,14 +16,18 @@ struct Parser<'a> {
     source: &'a str,
     pos: usize,
     pub diagnostics: Vec<CfdSyntaxDiagnostic>,
+    budget: StructuralBudget,
+    open_nesting: u64,
 }
 
 impl<'a> Parser<'a> {
-    fn new(source: &'a str) -> Self {
+    fn new(source: &'a str, options: CfdParseOptions) -> Self {
         Self {
             source,
             pos: 0,
             diagnostics: Vec::new(),
+            budget: StructuralBudget::new(options.structural_limits),
+            open_nesting: 0,
         }
     }
 
@@ -77,17 +82,17 @@ impl<'a> Parser<'a> {
             let type_span = Span::new(type_start, self.pos);
             let block = self.parse_block()?;
             let span = Span::new(first.span.start, block.span.end);
-            let (entries, fields) = block.into_entries_and_fields();
-            Ok(vec![CfdRecord {
+            let record = CfdRecord {
                 key: first.text,
                 key_span: first.span,
                 group_type: None,
                 type_name,
                 type_span,
-                entries,
-                fields,
+                entries: block.entries,
                 span,
-            }])
+            };
+            self.charge_node(span)?;
+            Ok(vec![record])
         } else if self.peek_char() == Some('{') {
             // `GroupType { ... }`
             self.parse_group(&first)
@@ -121,17 +126,17 @@ impl<'a> Parser<'a> {
 
             let block = self.parse_block()?;
             let span = Span::new(key.span.start, block.span.end);
-            let (entries, fields) = block.into_entries_and_fields();
-            records.push(CfdRecord {
+            let record = CfdRecord {
                 key: key.text,
                 key_span: key.span,
                 group_type: Some((group_token.text.clone(), group_token.span)),
                 type_name,
                 type_span,
-                entries,
-                fields,
+                entries: block.entries,
                 span,
-            });
+            };
+            self.charge_node(span)?;
+            records.push(record);
 
             self.skip_ws_and_comments();
             let _ = self.eat_char(',');
@@ -140,6 +145,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_block(&mut self) -> Result<CfdBlock, CfdSyntaxDiagnostic> {
+        self.enter_nesting()?;
+        let result = self.parse_block_inner();
+        self.open_nesting = self.open_nesting.saturating_sub(1);
+        let block = result?;
+        self.charge_node(block.span)?;
+        Ok(block)
+    }
+
+    fn parse_block_inner(&mut self) -> Result<CfdBlock, CfdSyntaxDiagnostic> {
         self.skip_ws_and_comments();
         // Optional type marker before `{`
         let type_marker = if self.peek_char() == Some('{') {
@@ -173,6 +187,7 @@ impl<'a> Parser<'a> {
                 let value = self.parse_value()?;
                 let span = Span::new(spread_start, value.span().end);
                 entries.push(CfdBlockEntry::Spread(value, span));
+                self.charge_node(span)?;
             } else {
                 let field = self.parse_field()?;
                 entries.push(CfdBlockEntry::Field(field));
@@ -208,15 +223,23 @@ impl<'a> Parser<'a> {
         self.expect_char(':', "field separator `:`")?;
         let value = self.parse_value()?;
         let span = Span::new(name_start, value.span().end);
-        Ok(CfdField {
+        let field = CfdField {
             name: name.text,
             name_span,
             value,
             span,
-        })
+        };
+        self.charge_node(span)?;
+        Ok(field)
     }
 
     fn parse_value(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
+        let value = self.parse_value_inner()?;
+        self.charge_node(value.span())?;
+        Ok(value)
+    }
+
+    fn parse_value_inner(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
         self.skip_ws_and_comments();
         match self.peek_char() {
             Some('"') => {
@@ -261,6 +284,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_array(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
+        self.enter_nesting()?;
+        let result = self.parse_array_inner();
+        self.open_nesting = self.open_nesting.saturating_sub(1);
+        result
+    }
+
+    fn parse_array_inner(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
         let start = self.pos;
         self.expect_char('[', "array `[`")?;
         let mut items = Vec::new();
@@ -277,6 +307,7 @@ impl<'a> Parser<'a> {
                 let value = self.parse_value()?;
                 let span = Span::new(spread_start, value.span().end);
                 items.push(CfdValue::Spread(Box::new(value), span));
+                self.charge_node(span)?;
             } else {
                 items.push(self.parse_value()?);
             }
@@ -319,18 +350,28 @@ impl<'a> Parser<'a> {
             span: Span::new(self.pos, self.pos),
         }
     }
-}
 
-impl CfdBlock {
-    fn into_entries_and_fields(self) -> (Vec<CfdBlockEntry>, Vec<CfdField>) {
-        let fields = self
-            .entries
-            .iter()
-            .filter_map(|entry| match entry {
-                CfdBlockEntry::Field(f) => Some(f.clone()),
-                CfdBlockEntry::Spread(_, _) => None,
+    fn enter_nesting(&mut self) -> Result<(), CfdSyntaxDiagnostic> {
+        let observed = self.open_nesting.saturating_add(1);
+        self.budget
+            .check_additional_depth(TraversalCursor::root(), StructureKind::SyntaxAst, observed)
+            .map_err(|error| self.error(error.to_string()))?;
+        self.open_nesting = observed;
+        Ok(())
+    }
+
+    fn charge_node(&mut self, span: Span) -> Result<(), CfdSyntaxDiagnostic> {
+        self.budget
+            .charge_nodes(StructureKind::SyntaxAst, 1)
+            .map_err(|error| CfdSyntaxDiagnostic {
+                message: error.to_string(),
+                span,
+            })?;
+        self.budget
+            .charge_work(StructureKind::SyntaxAst, 1)
+            .map_err(|error| CfdSyntaxDiagnostic {
+                message: error.to_string(),
+                span,
             })
-            .collect();
-        (self.entries, fields)
     }
 }

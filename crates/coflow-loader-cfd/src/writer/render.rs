@@ -13,7 +13,7 @@ pub(super) fn cfd_top_level_fields(records: &[AstRecord], actual_type: &str) -> 
         .iter()
         .filter(|record| record.type_name == actual_type)
     {
-        for field in &record.fields {
+        for field in record.fields() {
             fields.insert(field.name.clone());
         }
     }
@@ -58,8 +58,7 @@ fn render_cfd_record(
     fields: &BTreeMap<String, &CftField>,
 ) -> String {
     let existing = record
-        .fields
-        .iter()
+        .fields()
         .map(|field| (field.name.clone(), raw_span(source, field.value.span())))
         .collect::<BTreeMap<_, _>>();
     let mut out = format!(
