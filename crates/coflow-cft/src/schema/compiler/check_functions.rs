@@ -3,7 +3,7 @@ use crate::diagnostics::CftErrorCode;
 use crate::schema::compiler::inferred_type::{
     min_max_supported, types_comparable, unique_supported, unwrap_nullable, InferredType,
 };
-use crate::schema::CftValueType;
+use crate::schema::{CftCheckBuiltin, CftValueType};
 use crate::syntax::ast::{CheckExpr, CheckExprKind, NameRef};
 use crate::syntax::Span;
 use regex::Regex;
@@ -54,16 +54,28 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
     ) -> InferredType {
         let receiver_ty = self.check_expr_value(receiver);
-        match name.name.as_str() {
-            "len" => self.check_len_method(receiver, args, span, &receiver_ty),
-            "contains" => self.check_contains_method(receiver, args, span, &receiver_ty),
-            "isUnique" => self.check_unique_method(receiver, args, span, &receiver_ty),
-            "min" | "max" => self.check_min_max_method(receiver, args, span, &receiver_ty),
-            "sum" => self.check_sum_method(receiver, args, span, &receiver_ty),
-            "keys" => self.check_keys_method(receiver, args, span, &receiver_ty),
-            "values" => self.check_values_method(receiver, args, span, &receiver_ty),
-            "matches" => self.check_matches_method(receiver, args, span, &receiver_ty),
-            _ => {
+        match CftCheckBuiltin::by_name(&name.name) {
+            Some(CftCheckBuiltin::Len) => self.check_len_method(receiver, args, span, &receiver_ty),
+            Some(CftCheckBuiltin::Contains) => {
+                self.check_contains_method(receiver, args, span, &receiver_ty)
+            }
+            Some(CftCheckBuiltin::Unique) => {
+                self.check_unique_method(receiver, args, span, &receiver_ty)
+            }
+            Some(CftCheckBuiltin::Min | CftCheckBuiltin::Max) => {
+                self.check_min_max_method(receiver, args, span, &receiver_ty)
+            }
+            Some(CftCheckBuiltin::Sum) => self.check_sum_method(receiver, args, span, &receiver_ty),
+            Some(CftCheckBuiltin::Keys) => {
+                self.check_keys_method(receiver, args, span, &receiver_ty)
+            }
+            Some(CftCheckBuiltin::Values) => {
+                self.check_values_method(receiver, args, span, &receiver_ty)
+            }
+            Some(CftCheckBuiltin::Matches) => {
+                self.check_matches_method(receiver, args, span, &receiver_ty)
+            }
+            None => {
                 self.diag(
                     CftErrorCode::UnknownFunction,
                     name.span,
@@ -84,7 +96,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
         receiver_ty: &InferredType,
     ) -> InferredType {
-        if self.expect_arity(args, 0, span).is_err() {
+        if self
+            .expect_arity(args, CftCheckBuiltin::Len.method_arity(), span)
+            .is_err()
+        {
             return InferredType::Unknown;
         }
         let receiver_ty = unwrap_nullable(receiver_ty);
@@ -108,7 +123,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
         receiver_ty: &InferredType,
     ) -> InferredType {
-        if self.expect_arity(args, 1, span).is_err() {
+        if self
+            .expect_arity(args, CftCheckBuiltin::Contains.method_arity(), span)
+            .is_err()
+        {
             return InferredType::bool();
         }
         let value_ty = self.check_expr_value(&args[0]);
@@ -146,7 +164,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
         receiver_ty: &InferredType,
     ) -> InferredType {
-        if self.expect_arity(args, 0, span).is_err() {
+        if self
+            .expect_arity(args, CftCheckBuiltin::Unique.method_arity(), span)
+            .is_err()
+        {
             return InferredType::bool();
         }
         let receiver_ty = unwrap_nullable(receiver_ty);
@@ -175,7 +196,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
         receiver_ty: &InferredType,
     ) -> InferredType {
-        if self.expect_arity(args, 0, span).is_err() {
+        if self
+            .expect_arity(args, CftCheckBuiltin::Min.method_arity(), span)
+            .is_err()
+        {
             return InferredType::Unknown;
         }
         let receiver_ty = unwrap_nullable(receiver_ty);
@@ -209,7 +233,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
         receiver_ty: &InferredType,
     ) -> InferredType {
-        if self.expect_arity(args, 0, span).is_err() {
+        if self
+            .expect_arity(args, CftCheckBuiltin::Sum.method_arity(), span)
+            .is_err()
+        {
             return InferredType::Unknown;
         }
         let receiver_ty = unwrap_nullable(receiver_ty);
@@ -244,7 +271,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
         receiver_ty: &InferredType,
     ) -> InferredType {
-        if self.expect_arity(args, 0, span).is_err() {
+        if self
+            .expect_arity(args, CftCheckBuiltin::Keys.method_arity(), span)
+            .is_err()
+        {
             return InferredType::Unknown;
         }
         let receiver_ty = unwrap_nullable(receiver_ty);
@@ -269,7 +299,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
         receiver_ty: &InferredType,
     ) -> InferredType {
-        if self.expect_arity(args, 0, span).is_err() {
+        if self
+            .expect_arity(args, CftCheckBuiltin::Values.method_arity(), span)
+            .is_err()
+        {
             return InferredType::Unknown;
         }
         let receiver_ty = unwrap_nullable(receiver_ty);
@@ -294,7 +327,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
         receiver_ty: &InferredType,
     ) -> InferredType {
-        if self.expect_arity(args, 1, span).is_err() {
+        if self
+            .expect_arity(args, CftCheckBuiltin::Matches.method_arity(), span)
+            .is_err()
+        {
             return InferredType::bool();
         }
         if !types_comparable(receiver_ty, &InferredType::string()) && !receiver_ty.is_unknown() {

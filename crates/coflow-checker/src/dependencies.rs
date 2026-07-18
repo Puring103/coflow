@@ -63,7 +63,7 @@ impl DependencyGraphBuilder {
         Self::default()
     }
 
-    pub(super) fn collector_for(&self, root_record: Option<CfdRecordId>) -> DependencyCollector {
+    pub(super) fn collector_for(root_record: Option<CfdRecordId>) -> DependencyCollector {
         DependencyCollector::enabled(root_record)
     }
 

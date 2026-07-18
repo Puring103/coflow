@@ -20,13 +20,9 @@
     clippy::float_cmp,
     clippy::match_same_arms,
     clippy::missing_const_for_fn,
-    clippy::needless_pass_by_ref_mut,
-    clippy::needless_pass_by_value,
     clippy::option_if_let_else,
     clippy::redundant_pub_crate,
     clippy::single_match_else,
-    clippy::too_many_lines,
-    clippy::unused_self,
     clippy::use_self
 )]
 
@@ -44,7 +40,7 @@ use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 pub use coflow_structure::StructuralLimits;
 pub use dependencies::DependencyGraph;
-pub use dimensions::DimensionCheckRound;
+pub use dimensions::{DimensionCheckRound, DimensionCheckRoundError};
 pub use output::{CheckExecutionStats, CheckOutput, RootedCheckDiagnostic};
 pub use request::{CheckRequest, CheckTargets, DependencyCollection};
 pub(crate) use snapshot::CheckRound;

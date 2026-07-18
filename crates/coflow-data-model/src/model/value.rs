@@ -67,11 +67,6 @@ impl CfdRecord {
     }
 
     #[must_use]
-    pub fn fields_mut(&mut self) -> &mut BTreeMap<FieldName, CfdValue> {
-        &mut self.object.fields
-    }
-
-    #[must_use]
     pub fn field(&self, name: &str) -> Option<&CfdValue> {
         self.object.field(name)
     }

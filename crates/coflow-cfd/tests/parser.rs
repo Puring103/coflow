@@ -275,6 +275,26 @@ fn error_recovery_continues_after_bad_record() {
 }
 
 #[test]
+fn error_recovery_does_not_promote_nested_fields_to_records() {
+    let source = r"
+bad: Item {
+  invalid
+  nested: Item { value: 1 }
+}
+good: Item { value: 2 }
+";
+    let (ast, errors) = parse_cfd(source);
+    assert!(!errors.is_empty(), "expected malformed record diagnostic");
+    assert_eq!(
+        ast.records
+            .iter()
+            .map(|record| record.key.as_str())
+            .collect::<Vec<_>>(),
+        vec!["good"]
+    );
+}
+
+#[test]
 fn structural_depth_accepts_boundary_and_rejects_next_wrapper() {
     let options = CfdParseOptions {
         structural_limits: StructuralLimits::new(4, 100, 100),

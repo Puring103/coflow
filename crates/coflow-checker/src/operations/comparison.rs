@@ -7,6 +7,7 @@ use super::builtins;
 use super::diagnostics::{bin_op_str, format_value_for_message, unary_op_str};
 use super::value::{values_equal, EvalValue, LocatedEvalValue, ScalarValue, ValueLocation};
 
+#[derive(Debug)]
 pub(crate) struct OpsError {
     code: CfdErrorCode,
     location: Box<Option<ValueLocation>>,
@@ -65,7 +66,7 @@ pub(crate) fn checked_shift<'model>(
 }
 
 pub(crate) fn expect_bool_operand(
-    value: LocatedEvalValue<'_>,
+    value: &LocatedEvalValue<'_>,
     side: &str,
 ) -> OpsResult<(bool, Option<ValueLocation>)> {
     let location = value.location.clone();
@@ -197,11 +198,12 @@ pub(crate) fn unary_op<'model>(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn eager_bin_op<'model>(
     schema: &CftSchema,
     op: CftSchemaBinOp,
-    lhs: EvalValue<'model>,
-    rhs: EvalValue<'model>,
+    lhs: &EvalValue<'model>,
+    rhs: &EvalValue<'model>,
     location: Option<ValueLocation>,
 ) -> OpsResult<LocatedEvalValue<'model>> {
     if matches!(lhs.scalar(), Some(ScalarValue::Null))
@@ -212,9 +214,9 @@ pub(crate) fn eager_bin_op<'model>(
             location,
             format!(
                 "不能对 null 执行二元运算: {} {} {}",
-                format_value_for_message(&lhs),
+                format_value_for_message(lhs),
                 bin_op_str(op),
-                format_value_for_message(&rhs)
+                format_value_for_message(rhs)
             ),
         ));
     }
@@ -338,9 +340,9 @@ pub(crate) fn eager_bin_op<'model>(
             location,
             format!(
                 "不支持的二元运算: {} {} {}",
-                format_value_for_message(&lhs),
+                format_value_for_message(lhs),
                 bin_op_str(op),
-                format_value_for_message(&rhs)
+                format_value_for_message(rhs)
             ),
         )),
     }

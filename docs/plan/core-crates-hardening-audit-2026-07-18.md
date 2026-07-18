@@ -316,3 +316,28 @@ mutation transaction 失败继续依赖既有 compensation 与旧 generation pub
 
 后续计划必须提供基线、目标指标、兼容范围、差分测试与回滚策略，不能以“减少类型数量”或
 “合并 crate”本身作为完成目标。
+
+## 11. 第二轮复查补充
+
+在第一轮完整门禁通过后，又对 CFT、CFD、Checker 和 DataModel 的依赖、公开 API、错误恢复、
+执行流程与内部索引进行了一次逐项复查。本次补充修改不改变语法、配置、导出或 wire format：
+
+1. 将 CFT/CFD 共用的 `Span` 下沉到 `coflow-structure`，保留 CFT re-export 兼容面，并解除
+   `coflow-cfd -> coflow-cft` 的非必要依赖。
+2. 加固 CFD parser 错误恢复，使其跟踪字符串、转义、注释、花括号和方括号，只在结构顶层
+   识别下一条 record，避免把损坏 record 内的嵌套字段提升为新 record。
+3. 为 `DimensionCheckRound` 增加 schema-aware 构造校验，拒绝未知 dimension/variant；字段改为
+   crate 内可见，避免外部构造无效轮次。
+4. 删除 DataModel 重复的 `(actual type, key)` 存储索引，精确查询复用 table `primary_index`；
+   删除未使用的 `fields_mut`。
+5. 删除 CFT 未使用查询与类型面，将 `TypedCheckPlan` 收回 crate 内；CFT 静态检查和 Checker
+   运行期分发共用同一 builtin contract。
+6. Checker 为每次 runner 执行复用 regex cache；拆分目标选择、默认/维度轮次执行和快照记录，
+   并收窄不必要的传值、可变引用、`unused_self` 与全局 `too_many_lines` lint 豁免。
+7. DataModel build 明确拆为输入验证、record 解析、dimension 验证/解析和挂载阶段，同时保持
+   原有诊断短路点、singleton 聚合顺序和 immutable-success-model 语义。
+
+新增或扩展的回归覆盖包括：CFD 嵌套错误恢复、无效 dimension/variant、跨语言维度检查、
+regex 编译复用、Checker 增量快照/维度轮次，以及 DataModel 引用、spread、默认值和结构预算。
+除完整 repository gate 外，本轮还执行 all-features workspace check、严格 Rustdoc 和
+`git diff --check`；CFD editor 未启动、停止或重启。

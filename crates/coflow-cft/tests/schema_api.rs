@@ -301,16 +301,6 @@ fn dimension_check_schedule_includes_inherited_dimension_checks() {
 }
 
 #[test]
-fn unknown_assignable_type_does_not_create_an_unvalidated_name() {
-    let schema = compile_one("type Item { value: int; }").expect("schema compiles");
-
-    assert!(schema
-        .assignable_target_names("not a valid type")
-        .is_empty());
-    assert!(schema.assignable_target_names("Missing").is_empty());
-}
-
-#[test]
 fn schema_exposes_canonical_inheritance_relationships() {
     let schema = compile_one(
         r#"

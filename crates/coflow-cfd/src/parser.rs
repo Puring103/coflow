@@ -1,8 +1,7 @@
 mod tokens;
 
 use crate::ast::{CfdAst, CfdBlock, CfdBlockEntry, CfdField, CfdRecord, CfdRef, CfdValue};
-use crate::{CfdParseOptions, CfdSyntaxDiagnostic};
-use coflow_cft::Span;
+use crate::{CfdParseOptions, CfdSyntaxDiagnostic, Span};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use tokens::Token;
 
@@ -47,26 +46,28 @@ impl<'a> Parser<'a> {
         CfdAst { records }
     }
 
-    /// Skip tokens until we find something that looks like the start of a new
-    /// top-level record (an identifier at column 0 context, or EOF).
+    /// Skip to a record candidate only after malformed nested syntax has
+    /// returned to the structural top level.
     fn recover_to_next_record(&mut self) {
+        let mut state = RecoveryState::from_prefix(&self.source[..self.pos]);
+        let mut at_line_start = false;
         while !self.is_eof() {
-            // Consume until end of line or `}` that could close a group block.
-            while let Some(ch) = self.peek_char() {
-                if ch == '\n' {
-                    self.pos += 1;
-                    break;
-                }
+            let Some(ch) = self.peek_char() else {
+                break;
+            };
+            if at_line_start && matches!(ch, ' ' | '\t' | '\r') {
                 self.pos += ch.len_utf8();
+                continue;
             }
-            self.skip_ws_and_comments();
-            // Stop recovering when the next char starts an identifier (new record).
-            if self
-                .peek_char()
-                .is_some_and(|ch| ch.is_alphabetic() || ch == '"' || ch == '_')
+            if at_line_start
+                && state.is_top_level()
+                && (ch.is_alphabetic() || ch == '"' || ch == '_')
             {
                 break;
             }
+            at_line_start = ch == '\n';
+            state.consume(ch, self.source[self.pos..].starts_with("//"));
+            self.pos += ch.len_utf8();
         }
     }
 
@@ -373,5 +374,60 @@ impl<'a> Parser<'a> {
                 message: error.to_string(),
                 span,
             })
+    }
+}
+
+#[derive(Default)]
+struct RecoveryState {
+    braces: u64,
+    brackets: u64,
+    in_string: bool,
+    escaped: bool,
+    line_comment: bool,
+}
+
+impl RecoveryState {
+    fn from_prefix(source: &str) -> Self {
+        let mut state = Self::default();
+        let mut chars = source.chars().peekable();
+        while let Some(ch) = chars.next() {
+            state.consume(ch, ch == '/' && chars.peek() == Some(&'/'));
+        }
+        state
+    }
+
+    const fn is_top_level(&self) -> bool {
+        self.braces == 0 && self.brackets == 0 && !self.in_string && !self.line_comment
+    }
+
+    fn consume(&mut self, ch: char, starts_line_comment: bool) {
+        if self.line_comment {
+            if ch == '\n' {
+                self.line_comment = false;
+            }
+            return;
+        }
+        if self.in_string {
+            if self.escaped {
+                self.escaped = false;
+            } else if ch == '\\' {
+                self.escaped = true;
+            } else if ch == '"' {
+                self.in_string = false;
+            }
+            return;
+        }
+        if starts_line_comment || ch == '#' {
+            self.line_comment = true;
+            return;
+        }
+        match ch {
+            '"' => self.in_string = true,
+            '{' => self.braces = self.braces.saturating_add(1),
+            '}' => self.braces = self.braces.saturating_sub(1),
+            '[' => self.brackets = self.brackets.saturating_add(1),
+            ']' => self.brackets = self.brackets.saturating_sub(1),
+            _ => {}
+        }
     }
 }

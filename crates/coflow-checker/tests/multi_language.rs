@@ -7,6 +7,7 @@ use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use coflow_checker::{CheckRequest, DependencyCollection, DependencyGraph, DimensionCheckRound};
 
 fn dimension_rounds(
+    schema: &CftSchema,
     dimension: &str,
     variants: impl IntoIterator<Item = &'static str>,
 ) -> Vec<DimensionCheckRound> {
@@ -14,16 +15,44 @@ fn dimension_rounds(
     variants
         .into_iter()
         .map(|variant| {
-            DimensionCheckRound::new(
+            DimensionCheckRound::try_new(
+                schema,
                 dimension.clone(),
                 VariantName::new(variant).expect("variant name"),
             )
+            .expect("schema dimension round")
         })
         .collect()
 }
 
-fn language_plan() -> Vec<DimensionCheckRound> {
-    dimension_rounds("language", ["zh", "en"])
+fn language_plan(schema: &CftSchema) -> Vec<DimensionCheckRound> {
+    dimension_rounds(schema, "language", ["zh", "en"])
+}
+
+#[test]
+fn dimension_rounds_reject_unknown_schema_coordinates() {
+    let schema = simple_schema();
+    let unknown_dimension = DimensionCheckRound::try_new(
+        &schema,
+        DimensionName::new("missing").expect("dimension name"),
+        VariantName::new("zh").expect("variant name"),
+    )
+    .expect_err("unknown dimension must be rejected");
+    assert_eq!(
+        unknown_dimension.to_string(),
+        "unknown check dimension `missing`"
+    );
+
+    let unknown_variant = DimensionCheckRound::try_new(
+        &schema,
+        DimensionName::new("language").expect("dimension name"),
+        VariantName::new("missing").expect("variant name"),
+    )
+    .expect_err("unknown variant must be rejected");
+    assert_eq!(
+        unknown_variant.to_string(),
+        "unknown check variant `missing` for dimension `language`"
+    );
 }
 
 fn run_checks_for_dimensions(
@@ -137,7 +166,7 @@ fn variant_round_can_fail_at_the_owner_field_path() {
         Some(LoadedValueDraft::from("")),
         Some(LoadedValueDraft::from("Potion")),
     );
-    let err = run_checks_for_dimensions(&schema, &model, &language_plan())
+    let err = run_checks_for_dimensions(&schema, &model, &language_plan(&schema))
         .expect_err("empty zh value should fail");
 
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
@@ -156,11 +185,11 @@ fn explicit_null_skips_while_missing_is_reported() {
         Some(LoadedValueDraft::Null),
         Some(LoadedValueDraft::from("Potion")),
     );
-    run_checks_for_dimensions(&schema, &null_model, &language_plan())
+    run_checks_for_dimensions(&schema, &null_model, &language_plan(&schema))
         .expect("explicit null skips the zh field check");
 
     let (schema, missing_model) = simple_model(None, Some(LoadedValueDraft::from("Potion")));
-    let err = run_checks_for_dimensions(&schema, &missing_model, &language_plan())
+    let err = run_checks_for_dimensions(&schema, &missing_model, &language_plan(&schema))
         .expect_err("missing zh value is not a null skip");
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
     assert!(err
@@ -200,8 +229,12 @@ fn inherited_dimension_field_checks_child_owner_records() {
         LoadedValueDraft::from(""),
     );
     let model = builder.build().expect("model builds");
-    let err = run_checks_for_dimensions(&schema, &model, &dimension_rounds("language", ["zh"]))
-        .expect_err("inherited check should fail");
+    let err = run_checks_for_dimensions(
+        &schema,
+        &model,
+        &dimension_rounds(&schema, "language", ["zh"]),
+    )
+    .expect_err("inherited check should fail");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
 }
 
@@ -262,8 +295,12 @@ fn nested_object_array_and_dict_checks_use_overlay_subtrees() {
         LoadedValueDraft::dict([(LoadedDictKeyDraft::from("main"), text(""))]),
     );
     let model = builder.build().expect("model builds");
-    let err = run_checks_for_dimensions(&schema, &model, &dimension_rounds("language", ["zh"]))
-        .expect_err("nested overlay values should fail");
+    let err = run_checks_for_dimensions(
+        &schema,
+        &model,
+        &dimension_rounds(&schema, "language", ["zh"]),
+    )
+    .expect_err("nested overlay values should fail");
 
     let paths = err
         .diagnostics
@@ -322,7 +359,7 @@ fn overlay_record_refs_resolve_without_storage_records() {
         LoadedValueDraft::object("Copy", [("target", LoadedValueDraft::record_ref("target"))]),
     );
     let model = builder.build().expect("overlay refs resolve");
-    let rounds = dimension_rounds("language", ["zh"]);
+    let rounds = dimension_rounds(&schema, "language", ["zh"]);
     let err = run_checks_for_dimensions(&schema, &model, &rounds)
         .expect_err("nested ref check should fail");
     assert_has_code(&err, CfdErrorCode::CheckOrFailed);
@@ -398,7 +435,7 @@ fn incremental_dimension_checks_follow_overlay_ref_target() {
         &schema,
         build_generation,
         "pc_item",
-        dimension_rounds("platform", ["pc"]),
+        dimension_rounds(&schema, "platform", ["pc"]),
     );
 }
 
@@ -448,7 +485,7 @@ fn incremental_dimension_checks_follow_overlay_spread_sources() {
         &schema,
         build_generation,
         "base",
-        dimension_rounds("platform", ["pc"]),
+        dimension_rounds(&schema, "platform", ["pc"]),
     );
 }
 
@@ -494,8 +531,12 @@ fn dimension_overlay_spread_inherits_resolvable_record_refs() {
     );
     let model = builder.build().expect("model builds");
 
-    run_checks_for_dimensions(&schema, &model, &dimension_rounds("platform", ["pc"]))
-        .expect("spread-inherited overlay refs resolve through their source record");
+    run_checks_for_dimensions(
+        &schema,
+        &model,
+        &dimension_rounds(&schema, "platform", ["pc"]),
+    )
+    .expect("spread-inherited overlay refs resolve through their source record");
 }
 
 fn assert_incremental_dimension_matches_full(
@@ -587,8 +628,8 @@ fn configured_dimensions_run_independently() {
     );
     let model = builder.build().expect("model builds");
     let plan = vec![
-        dimension_rounds("language", ["zh"])[0].clone(),
-        dimension_rounds("platform", ["pc"])[0].clone(),
+        dimension_rounds(&schema, "language", ["zh"])[0].clone(),
+        dimension_rounds(&schema, "platform", ["pc"])[0].clone(),
     ];
     let err = run_checks_for_dimensions(&schema, &model, &plan)
         .expect_err("platform round should fail independently");
@@ -601,7 +642,7 @@ fn configured_dimensions_run_independently() {
 #[test]
 fn duplicate_dimension_rounds_are_normalized() {
     let (schema, model) = simple_model(Some(LoadedValueDraft::from("")), None);
-    let round = dimension_rounds("language", ["zh"])
+    let round = dimension_rounds(&schema, "language", ["zh"])
         .into_iter()
         .next()
         .expect("round");
@@ -634,7 +675,8 @@ fn dependency_graph_has_no_synthetic_record_edges() {
         Some(LoadedValueDraft::from("药水")),
         Some(LoadedValueDraft::from("Potion")),
     );
-    let (result, graph) = run_checks_for_dimensions_with_deps(&schema, &model, &language_plan());
+    let (result, graph) =
+        run_checks_for_dimensions_with_deps(&schema, &model, &language_plan(&schema));
     result.expect("checks pass");
     assert_eq!(model.record_count(), 1);
     assert!(graph.reads_from.values().all(|targets| targets

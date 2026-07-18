@@ -7,7 +7,9 @@ use crate::{DependencyGraph, DimensionCheckContext};
 use coflow_cft::{CftSchema, FieldName};
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 pub(crate) struct CheckRunner<'a> {
     schema: &'a CftSchema,
@@ -19,6 +21,7 @@ pub(crate) struct CheckRunner<'a> {
     deps: Option<DependencyGraphBuilder>,
     dimension_context: Option<DimensionCheckContext>,
     dimension_round: Option<DimensionRoundView>,
+    regex_cache: Rc<RefCell<super::builtins::RegexCache>>,
     structural_limits: StructuralLimits,
 }
 
@@ -52,6 +55,7 @@ impl<'a> CheckRunner<'a> {
             deps: None,
             dimension_context: None,
             dimension_round: None,
+            regex_cache: Rc::new(RefCell::new(super::builtins::RegexCache::new())),
             structural_limits,
         }
     }
@@ -71,6 +75,7 @@ impl<'a> CheckRunner<'a> {
             deps: None,
             dimension_context: Some(dimension_context),
             dimension_round: Some(dimension_round),
+            regex_cache: Rc::new(RefCell::new(super::builtins::RegexCache::new())),
             structural_limits,
         }
     }
@@ -138,13 +143,13 @@ impl<'a> CheckRunner<'a> {
         if self.dimension_round.is_some() {
             self.run_dimension_nested_checks(
                 record_id,
-                location,
+                &location,
                 &mut traversal_budget,
                 root_cursor,
             );
         } else {
             self.run_nested_field_checks(
-                NestedFieldChecks {
+                &NestedFieldChecks {
                     root_record: Some(record_id),
                     actual_type: record.actual_type(),
                     fields: record.fields(),
@@ -176,16 +181,18 @@ impl<'a> CheckRunner<'a> {
         };
         let checks = self.schema.check_schedule(&actual_type, dimension);
         let root = EvalValue::Record(record);
-        let deps = self.deps.as_ref().map_or_else(
-            || DependencyCollector::disabled(root_record),
-            |deps| deps.collector_for(root_record),
-        );
+        let deps = if self.deps.is_some() {
+            DependencyGraphBuilder::collector_for(root_record)
+        } else {
+            DependencyCollector::disabled(root_record)
+        };
         let mut evaluator = CheckEvaluator::new(
             self.schema,
             self.model,
             root_location,
             root,
             deps,
+            Rc::clone(&self.regex_cache),
             self.structural_limits,
         );
         if matches!(selection, CheckSelection::DimensionRelevant) {
@@ -203,7 +210,7 @@ impl<'a> CheckRunner<'a> {
 
     fn run_nested_field_checks(
         &mut self,
-        request: NestedFieldChecks<'_>,
+        request: &NestedFieldChecks<'_>,
         traversal_budget: &mut Option<StructuralBudget>,
     ) {
         for (name, value) in request.fields {
@@ -227,7 +234,7 @@ impl<'a> CheckRunner<'a> {
     fn run_dimension_nested_checks(
         &mut self,
         root_record: CfdRecordId,
-        root_location: ValueLocation,
+        root_location: &ValueLocation,
         traversal_budget: &mut Option<StructuralBudget>,
         cursor: TraversalCursor,
     ) {
@@ -237,10 +244,8 @@ impl<'a> CheckRunner<'a> {
         for (field, error) in round.nested_fields(self.schema, self.model, root_record) {
             if let Some(message) = error {
                 self.diagnostics.push(
-                    CfdDiagnostic::error(CfdErrorCode::CheckEvalTypeError, message).with_primary(
-                        Some(root_record),
-                        root_location.clone().field(&field).blame.path,
-                    ),
+                    CfdDiagnostic::error(CfdErrorCode::CheckEvalTypeError, message)
+                        .with_primary(Some(root_record), root_location.field(&field).blame.path),
                 );
                 continue;
             }
@@ -334,7 +339,7 @@ impl<'a> CheckRunner<'a> {
                     selection,
                 );
                 self.run_nested_field_checks(
-                    NestedFieldChecks {
+                    &NestedFieldChecks {
                         root_record,
                         actual_type: record.actual_type(),
                         fields: record.fields(),

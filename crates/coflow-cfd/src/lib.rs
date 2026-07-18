@@ -23,8 +23,7 @@ pub mod ast;
 mod parser;
 
 pub use ast::{CfdAst, CfdBlock, CfdBlockEntry, CfdField, CfdRecord, CfdRef, CfdValue};
-use coflow_cft::Span;
-pub use coflow_structure::StructuralLimits;
+pub use coflow_structure::{Span, StructuralLimits};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CfdParseOptions {

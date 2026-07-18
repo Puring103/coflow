@@ -22,7 +22,6 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDataModel {
     pub(crate) tables: BTreeMap<TypeName, CfdTable>,
-    pub(crate) record_by_type_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     pub(crate) record_by_domain_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     pub(crate) records: Vec<CfdRecord>,
     pub(crate) ref_edges: Vec<RefEdge>,
@@ -89,7 +88,7 @@ impl CfdDataModel {
     /// Looks up a record by its actual type and key.
     #[must_use]
     pub fn record_by_type_key(&self, type_name: &str, key: &str) -> Option<CfdRecordId> {
-        self.record_by_type_key.get(type_name)?.get(key).copied()
+        self.tables.get(type_name)?.primary_index.get(key).copied()
     }
 
     /// Looks up a record by canonical inheritance root and key.

@@ -11,7 +11,6 @@ Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Exce
 ```text
 CfdDataModel
   tables              # TypeName -> CfdTable
-  record_by_type_key  # (actual TypeName, RecordKey) -> RecordId
   record_by_domain_key # (inheritance root TypeName, RecordKey) -> RecordId
   records             # 所有顶层 records
   ref_edges           # 直接 &Type 引用边
@@ -32,7 +31,7 @@ CfdObject
   dimension_fields     # FieldName -> DimensionName -> VariantName -> value/origin
 ```
 
-`records` 是集中存储。table 和记录索引只保存 `CfdRecordId`，消费者通过 model 查询记录，而不是复制记录内容。
+`records` 是集中存储。table 和记录索引只保存 `CfdRecordId`，消费者通过 model 查询记录，而不是复制记录内容。按“实际类型 + key”精确查找时，DataModel 直接读取对应 `CfdTable.primary_index`，不再维护内容相同的第二张全局 map；跨继承命名域的唯一性与引用查找继续由 `record_by_domain_key` 负责。
 
 类型声明、继承根、祖先、后代和 assignability 只由 `CftSchema` 维护。DataModel 的索引使用 canonical `TypeName`，不复制第二套 type/domain/ancestor 关系模型。
 

@@ -62,8 +62,8 @@ flowchart TD
 | `coflow-builtins` | 注册默认 Provider registry |
 | 根 `coflow` crate | CLI 参数解析、命令编排、human/JSON 输出、artifact generation staging 和 manifest publication |
 | `coflow-cft` | CFT parser、schema compiler、check 表达式静态类型检查 |
-| `coflow-cfd` | 唯一 CFD syntax parser、canonical AST 和 source spans |
-| `coflow-structure` | parser/compiler/evaluator 共用的递归深度、节点数和工作量预算 |
+| `coflow-cfd` | 唯一 CFD syntax parser、canonical AST；基于共享 `Span` 标记源码范围 |
+| `coflow-structure` | CFT/CFD 共用的 source `Span`，以及 parser/compiler/evaluator 共用的递归深度、节点数和工作量预算 |
 | `coflow-data-model` | record/object/value 模型、默认值、引用、索引和 DataModel 诊断 |
 | `coflow-loader-table-core` | Excel/CSV 共享表格加载、表头协调和单元格值解析 |
 | `coflow-loader-*` | 具体数据源 loader/writer |
@@ -73,6 +73,8 @@ flowchart TD
 | `coflow-checker` | CFT `check {}` 运行期执行 |
 | `coflow-lsp` | CFT/CFD language server |
 | `editors/cfd-editor/src-tauri` | 编辑器后端宿主，复用 runtime 和 writer |
+
+`coflow-cft` 与 `coflow-cfd` 是并列的语法库。二者都依赖 `coflow-structure` 的 `Span`，但 CFD 不依赖 CFT；schema-aware CFD lowering 仍只位于 `coflow-loader-cfd`。
 
 ## 关键模块
 

@@ -78,7 +78,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     pub(super) fn validate_record(
         &mut self,
         expected_type: Option<&str>,
@@ -240,6 +240,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         self.validate_value_inner(ty, value, record, path, cursor)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn validate_value_inner(
         &mut self,
         ty: &CftValueType,

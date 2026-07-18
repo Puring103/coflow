@@ -93,11 +93,9 @@ fn dimension_check_rounds(schema: &CftSchema) -> Vec<DimensionCheckRound> {
     schema
         .all_dimensions()
         .flat_map(|dimension| {
-            dimension
-                .variants
-                .iter()
-                .cloned()
-                .map(|variant| DimensionCheckRound::new(dimension.name.clone(), variant))
+            dimension.variants.iter().cloned().filter_map(|variant| {
+                DimensionCheckRound::try_new(schema, dimension.name.clone(), variant).ok()
+            })
         })
         .collect()
 }

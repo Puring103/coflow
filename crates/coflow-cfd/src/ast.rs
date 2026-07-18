@@ -1,4 +1,4 @@
-use coflow_cft::Span;
+use crate::Span;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdAst {

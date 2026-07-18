@@ -23,7 +23,6 @@
     clippy::derive_partial_eq_without_eq,
     clippy::missing_const_for_fn,
     clippy::redundant_pub_crate,
-    clippy::too_many_lines,
     clippy::use_self
 )]
 

@@ -65,7 +65,7 @@ impl CheckSnapshot {
     pub(crate) fn insert_execution(
         &mut self,
         model: &CfdDataModel,
-        round: CheckRound,
+        round: &CheckRound,
         targets: &[CfdRecordId],
         diagnostics: Vec<RootedCheckDiagnostic>,
         dependencies: &DependencyGraph,
