@@ -389,6 +389,48 @@ pub struct WriteFieldOutcome {
     pub renamed: Option<RecordCoordinate>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct BatchWriteFieldEditOutcome {
+    pub coordinate: RecordCoordinate,
+    pub final_coordinate: RecordCoordinate,
+    pub field_path: Vec<coflow_data_model::CfdPathSegment>,
+    #[serde(default)]
+    pub old_value: Option<CfdValue>,
+    #[serde(default)]
+    pub new_value: Option<CfdValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct BatchWriteFieldInput {
+    pub coordinate: RecordCoordinate,
+    pub field_path: Vec<coflow_data_model::CfdPathSegment>,
+    pub new_value: CfdValue,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct BatchWriteFieldOutcome {
+    pub revision: u32,
+    pub edits: Vec<BatchWriteFieldEditOutcome>,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    #[serde(default)]
+    pub affected_files: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(

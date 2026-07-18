@@ -194,32 +194,26 @@ export function DataCardCompact({ value, label }: { value: FieldValue; label?: s
     : <ValueChip value={value} />
 }
 
-const TREE_MAX_DEPTH = 3
-const TREE_MAX_ITEMS = 4
-
 function MarkdownValueTree({ value, label, depth }: {
   value: FieldValue & { kind: 'object' | 'array' | 'dict' }
   label?: string
   depth: number
 }) {
   const entries = treeEntries(value)
-  const visible = entries.slice(0, TREE_MAX_ITEMS)
-  const hiddenCount = entries.length - visible.length
   const depthClass = `markdown-tree-depth-${Math.min(depth, 2)}`
+  const inlineScalarArray = value.kind === 'array'
+    && entries.every(entry => !isComplexValue(entry.value))
 
   return (
-    <div className={`markdown-value-tree ${depthClass}${label ? ' has-branch-label' : ''}`}>
+    <div className={`markdown-value-tree ${depthClass}${label ? ' has-branch-label' : ''}${inlineScalarArray ? ' inline-scalar-array' : ''}`}>
       {label && <div className="markdown-tree-branch-label">{label}</div>}
-      {depth >= TREE_MAX_DEPTH ? (
-        <div className="markdown-tree-more">…</div>
-      ) : entries.length === 0 ? (
+      {entries.length === 0 ? (
         <div className="markdown-tree-empty">—</div>
       ) : (
         <div className="markdown-tree-items">
-          {visible.map((entry, index) => (
+          {entries.map((entry, index) => (
             <MarkdownTreeItem key={`${entry.marker}:${index}`} entry={entry} depth={depth} />
           ))}
-          {hiddenCount > 0 && <div className="markdown-tree-more">… +{hiddenCount}</div>}
         </div>
       )}
     </div>

@@ -45,9 +45,11 @@ import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import {
   recordSelection,
+  recordSelectionCoordinates,
   selectionMatchesRecord,
   selectionMatchesValue,
   type EditorSelection,
+  type RecordSelectionMode,
 } from '../state/editorSelection'
 import {
   moveTableSelection,
@@ -72,14 +74,18 @@ interface Props {
   recordGroups?: readonly EditorRecordGroup[]
   collapsedGroupKeys?: ReadonlySet<string>
   onToggleGroup?: (groupKey: string) => void
-  onDropRecordOntoRecord?: (source: RecordCoordinate, target: RecordCoordinate) => void
-  onDropRecordIntoGroup?: (source: RecordCoordinate, groupId: string) => void
-  onDropRecordIntoUngrouped?: (source: RecordCoordinate) => void
+  onDropRecordOntoRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
+  onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
+  onDropRecordIntoUngrouped?: (sources: readonly RecordCoordinate[]) => void
   onRenameGroup?: (groupId: string, name: string) => void
   /** Current record/value selection, lifted so it can drive the inspector. */
   selection?: EditorSelection | null
   /** Click on the Key cell: select the record. */
-  onSelectRecord?: (coordinate: RecordCoordinate) => void
+  onSelectRecord?: (
+    coordinate: RecordCoordinate,
+    mode: RecordSelectionMode,
+    visibleCoordinates: readonly RecordCoordinate[],
+  ) => void
   /** Click on a field cell: select that value. */
   onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => void
   onRenderCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => Promise<string>
@@ -114,7 +120,7 @@ const MIN_COLUMN_WIDTH = 48
 
 type TableDisplayItem =
   | { kind: 'group'; view: RecordGroupView }
-  | { kind: 'ungrouped'; count: number }
+  | { kind: 'ungrouped'; records: RecordRow[] }
   | { kind: 'row'; row: TanStackRow<RecordRow> }
 
 export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
@@ -127,13 +133,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const [globalFilter, setGlobalFilter] = useState(searchQuery ?? '')
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
-  const recordPointerDrag = useRecordPointerDrag({
-    rootRef: tableScrollRef,
-    records: data.records,
-    onDropRecordOntoRecord,
-    onDropRecordIntoGroup,
-    onDropRecordIntoUngrouped,
-  })
   const columnSizingRef = useRef(columnSizing)
   const columnResizeRef = useRef<{
     pointerId: number
@@ -524,7 +523,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         })))
       }
     }
-    items.push({ kind: 'ungrouped', count: organized.ungrouped.length })
+    items.push({ kind: 'ungrouped', records: organized.ungrouped })
     items.push(...organized.ungrouped.map(record => ({
         kind: 'row' as const,
         row: rowsById.get(coordinateId(record.coordinate))!,
@@ -535,6 +534,21 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     () => displayItems.flatMap(item => item.kind === 'row' ? [item.row] : []),
     [displayItems],
   )
+  const visibleCoordinates = useMemo(
+    () => visibleRows.map(row => row.original.coordinate),
+    [visibleRows],
+  )
+  const recordPointerDrag = useRecordPointerDrag({
+    rootRef: tableScrollRef,
+    records: data.records,
+    selectedCoordinates: selection?.filePath === data.file_path
+      ? recordSelectionCoordinates(selection)
+      : [],
+    onSelectDragSource: coordinate => onSelectRecord?.(coordinate, 'replace', visibleCoordinates),
+    onDropRecordOntoRecord,
+    onDropRecordIntoGroup,
+    onDropRecordIntoUngrouped,
+  })
   const rowVirtualizer = useVirtualizer({
     count: displayItems.length,
     getScrollElement: () => tableScrollRef.current,
@@ -619,7 +633,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     tableScrollRef.current?.focus({ preventScroll: true })
     const first = visibleRows[0]?.original.coordinate
     if (first) {
-      onSelectRecord?.(first)
+      onSelectRecord?.(first, 'replace', visibleCoordinates)
       revealTableSelection(recordSelection(data.file_path, first))
     }
     onFirstRecordFocusConsumed?.(firstRecordFocusRequest)
@@ -664,15 +678,39 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           onClickCapture={recordPointerDrag.onClickCapture}
           onFocus={e => {
             if (e.target !== e.currentTarget || selection || visibleRows.length === 0) return
-            onSelectRecord?.(visibleRows[0].original.coordinate)
+            onSelectRecord?.(visibleRows[0].original.coordinate, 'replace', visibleCoordinates)
           }}
           onKeyDown={async e => {
             if (isNativeEditingTarget(e.target)) return
             if (!selection || selection.filePath !== data.file_path) return
 
-            const visibleCoordinates = visibleRows.map(row => row.original.coordinate)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && visibleCoordinates.length > 0) {
+              e.preventDefault()
+              const first = visibleCoordinates[0]
+              const last = visibleCoordinates[visibleCoordinates.length - 1]
+              onSelectRecord?.(first, 'replace', visibleCoordinates)
+              onSelectRecord?.(last, 'range', visibleCoordinates)
+              return
+            }
             if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
               e.preventDefault()
+              if (
+                selection.kind === 'record'
+                && e.shiftKey
+                && (e.key === 'ArrowUp' || e.key === 'ArrowDown')
+              ) {
+                const currentIndex = visibleCoordinates.findIndex(item => sameCoordinate(item, selection.coordinate))
+                const nextIndex = Math.max(0, Math.min(
+                  visibleCoordinates.length - 1,
+                  currentIndex + (e.key === 'ArrowDown' ? 1 : -1),
+                ))
+                const nextCoordinate = visibleCoordinates[nextIndex]
+                if (currentIndex >= 0 && nextCoordinate) {
+                  onSelectRecord?.(nextCoordinate, 'range', visibleCoordinates)
+                  revealTableSelection(recordSelection(data.file_path, nextCoordinate))
+                }
+                return
+              }
               const next = moveTableSelection(
                 selection,
                 e.key as TableDirection,
@@ -681,7 +719,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               )
               if (next !== selection) {
                 setSyntaxEdit(null)
-                if (next.kind === 'record') onSelectRecord?.(next.coordinate)
+                if (next.kind === 'record') onSelectRecord?.(next.coordinate, 'replace', visibleCoordinates)
                 else onSelectValue?.(next.coordinate, next.fieldPath)
                 revealTableSelection(next)
               } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'ArrowRight') {
@@ -874,6 +912,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 const item = displayItems[vr.index]
                 if (item.kind === 'group') {
                   const collapsed = collapsedGroupKeys?.has(item.view.group.id) ?? false
+                  const containsSelection = item.view.records.some(record => (
+                    selectionMatchesRecord(selection ?? null, data.file_path, record.coordinate)
+                  ))
                   return (
                     <tr key={`group:${item.view.group.id}`} className="table-group-row">
                       <td colSpan={columns.length}>
@@ -882,7 +923,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           groupId={item.view.group.id}
                           count={item.view.records.length}
                           collapsed={collapsed}
-                          className="table-record-group-header"
+                          className={`table-record-group-header${containsSelection ? ' contains-selection' : ''}`}
                           onToggle={() => onToggleGroup?.(item.view.group.id)}
                           onRename={name => onRenameGroup?.(item.view.group.id, name)}
                         />
@@ -891,12 +932,15 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   )
                 }
                 if (item.kind === 'ungrouped') {
+                  const containsSelection = item.records.some(record => (
+                    selectionMatchesRecord(selection ?? null, data.file_path, record.coordinate)
+                  ))
                   return (
                     <tr key="group:ungrouped" className="table-group-row">
                       <td colSpan={columns.length}>
                         <RecordUngroupedHeader
-                          count={item.count}
-                          className="table-record-group-header"
+                          count={item.records.length}
+                          className={`table-record-group-header${containsSelection ? ' contains-selection' : ''}`}
                         />
                       </td>
                     </tr>
@@ -949,7 +993,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                               tableScrollRef.current?.focus({ preventScroll: true })
                             }
                             if (fieldPath) onSelectValue?.(row.original.coordinate, fieldPath)
-                            else onSelectRecord?.(row.original.coordinate)
+                            else {
+                              const mode: RecordSelectionMode = e.shiftKey
+                                ? 'range'
+                                : (e.ctrlKey || e.metaKey ? 'toggle' : 'replace')
+                              onSelectRecord?.(row.original.coordinate, mode, visibleCoordinates)
+                            }
                           }}
                         >
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -1375,11 +1424,11 @@ function EditableKeyCell({
   return (
     <span
       className={`cell-key${editable ? ' editable' : ''}`}
-      onClick={editable ? e => {
+      onDoubleClick={editable ? e => {
         e.stopPropagation()
         setEditing(true)
       } : undefined}
-      title={editable ? '点击重命名 Key' : undefined}
+      title={editable ? '双击重命名 Key' : undefined}
     >
       {value}
     </span>

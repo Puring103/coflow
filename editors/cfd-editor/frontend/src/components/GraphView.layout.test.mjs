@@ -163,7 +163,7 @@ test('shows cross-type relationships when their field is enabled', async () => {
   )
 })
 
-test('defaults enabled fields to active-type relationships only', () => {
+test('defaults enabled fields to relationships originating from the active type', () => {
   const graph = {
     nodes: [
       graphNode('A'),
@@ -178,7 +178,7 @@ test('defaults enabled fields to active-type relationships only', () => {
 
   assert.deepEqual(
     defaultEnabledFields(graph, ['next', 'quest'], 'Item'),
-    ['next'],
+    ['next', 'quest'],
   )
 })
 

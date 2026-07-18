@@ -30,11 +30,17 @@ import {
   buildRecordDiagnosticIndex,
   diagnosticsForRecord,
 } from '../state/recordDiagnostics'
-import type { EditorSelection } from '../state/editorSelection'
+import {
+  recordSelectionCoordinates,
+  selectionMatchesRecord,
+  type EditorSelection,
+  type RecordSelectionMode,
+} from '../state/editorSelection'
 import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
 import { useRecordPointerDrag } from '../hooks/useRecordPointerDrag'
 import { organizeRecordRows } from '../state/manualRecordGroups'
 import { RecordGroupHeader, RecordUngroupedHeader } from './RecordGroupHeader'
+import { BatchRecordEditor } from './BatchRecordEditor'
 
 interface Props {
   data: FileRecords
@@ -47,18 +53,24 @@ interface Props {
   recordGroups?: readonly EditorRecordGroup[]
   collapsedGroupKeys?: ReadonlySet<string>
   onToggleGroup?: (groupKey: string) => void
-  onDropRecordOntoRecord?: (source: RecordCoordinate, target: RecordCoordinate) => void
-  onDropRecordIntoGroup?: (source: RecordCoordinate, groupId: string) => void
-  onDropRecordIntoUngrouped?: (source: RecordCoordinate) => void
+  onDropRecordOntoRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
+  onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
+  onDropRecordIntoUngrouped?: (sources: readonly RecordCoordinate[]) => void
   onRenameGroup?: (groupId: string, name: string) => void
   highlightField?: string | null
   onHighlightConsumed?: () => void
   onOpenRecord: (coordinate: RecordCoordinate) => void
+  onSelectRecord?: (
+    coordinate: RecordCoordinate,
+    mode: RecordSelectionMode,
+    visibleCoordinates: readonly RecordCoordinate[],
+  ) => void
   selection?: EditorSelection | null
   onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => void
   onRenderCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => Promise<string>
   onParseCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], text: string) => Promise<FieldValue>
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
+  onWriteFields?: (coordinates: readonly RecordCoordinate[], fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<void>
   onCollectionEdit?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], edit: CollectionEdit) => Promise<RecordRow | void>
   onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
   onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
@@ -73,7 +85,7 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, highlightField, onHighlightConsumed, onOpenRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -83,13 +95,6 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const mainRef = useRef<HTMLDivElement>(null)
-  const recordPointerDrag = useRecordPointerDrag({
-    rootRef: sidebarRef,
-    records: data.records,
-    onDropRecordOntoRecord,
-    onDropRecordIntoGroup,
-    onDropRecordIntoUngrouped,
-  })
 
   const activeId = coordinateId(coordinate)
   const expansionOwner = `${data.file_path}:${activeId}`
@@ -133,12 +138,32 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     ...organizedRecords.groups.flatMap(view => collapsedGroupKeys?.has(view.group.id) ? [] : view.records),
     ...organizedRecords.ungrouped,
   ]
+  const visibleCoordinates = visibleSidebarRecords.map(row => row.coordinate)
+  const selectedRecords = selection?.kind === 'record' && selection.filePath === data.file_path
+    ? selection.coordinates.flatMap(selected => {
+        const row = data.records.find(item => sameCoordinate(item.coordinate, selected))
+        return row ? [row] : []
+      })
+    : []
+  const batchRecords = selectedRecords.length > 1 ? selectedRecords : null
+  const recordPointerDrag = useRecordPointerDrag({
+    rootRef: sidebarRef,
+    records: data.records,
+    selectedCoordinates: selection?.filePath === data.file_path
+      ? recordSelectionCoordinates(selection)
+      : [],
+    onSelectDragSource: source => onSelectRecord?.(source, 'replace', visibleCoordinates),
+    onDropRecordOntoRecord,
+    onDropRecordIntoGroup,
+    onDropRecordIntoUngrouped,
+  })
 
   useEffect(() => {
     if (!firstRecordFocusRequest) return
     const first = visibleSidebarRecords[0]
     if (first) {
       onOpenRecord(first.coordinate)
+      onSelectRecord?.(first.coordinate, 'replace', visibleCoordinates)
       requestAnimationFrame(() => {
         sidebarRef.current?.querySelector<HTMLElement>(
           `[data-coordinate-id="${cssEscape(coordinateId(first.coordinate))}"]`,
@@ -204,6 +229,12 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   })
 
   const onSidebarKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && visibleCoordinates.length > 0) {
+      e.preventDefault()
+      onSelectRecord?.(visibleCoordinates[0], 'replace', visibleCoordinates)
+      onSelectRecord?.(visibleCoordinates[visibleCoordinates.length - 1], 'range', visibleCoordinates)
+      return
+    }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Enter') return
     const ids = visibleSidebarRecords.map(r => coordinateId(r.coordinate))
     if (ids.length === 0) return
@@ -224,7 +255,10 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       e.preventDefault()
       const next = ids[Math.min(idx + 1, ids.length - 1)]
       const nextRecord = visibleSidebarRecords.find(r => coordinateId(r.coordinate) === next)
-      if (nextRecord && next !== activeId) onOpenRecord(nextRecord.coordinate)
+      if (nextRecord && next !== activeId) {
+        onOpenRecord(nextRecord.coordinate)
+        onSelectRecord?.(nextRecord.coordinate, e.shiftKey ? 'range' : 'replace', visibleCoordinates)
+      }
       requestAnimationFrame(() => sidebarRef.current?.querySelector<HTMLElement>(`[data-coordinate-id="${cssEscape(next)}"]`)?.focus())
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
@@ -234,7 +268,10 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       }
       const prev = ids[Math.max(idx - 1, 0)]
       const previousRecord = visibleSidebarRecords.find(r => coordinateId(r.coordinate) === prev)
-      if (previousRecord && prev !== activeId) onOpenRecord(previousRecord.coordinate)
+      if (previousRecord && prev !== activeId) {
+        onOpenRecord(previousRecord.coordinate)
+        onSelectRecord?.(previousRecord.coordinate, e.shiftKey ? 'range' : 'replace', visibleCoordinates)
+      }
       requestAnimationFrame(() => sidebarRef.current?.querySelector<HTMLElement>(`[data-coordinate-id="${cssEscape(prev)}"]`)?.focus())
     } else if (e.key === 'Enter') {
       const id = cur?.dataset.coordinateId
@@ -242,6 +279,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       if (next) {
         e.preventDefault()
         onOpenRecord(next.coordinate)
+        onSelectRecord?.(next.coordinate, 'replace', visibleCoordinates)
       }
     }
   }
@@ -256,23 +294,31 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   const renderSidebarRecord = (row: RecordRow) => {
     const sev = rowSeverity(row)
     const id = coordinateId(row.coordinate)
+    const selected = selectionMatchesRecord(selection ?? null, data.file_path, row.coordinate)
     return (
       <div
         key={id}
-        className={`rv-sidebar-item${id === activeId ? ' selected' : ''}${sev ? ' rv-sidebar-' + sev : ''}`}
+        className={`rv-sidebar-item${selected ? ' selected' : ''}${sev ? ' rv-sidebar-' + sev : ''}`}
         role="option"
-        aria-selected={id === activeId}
+        aria-selected={selected}
         tabIndex={id === activeId ? 0 : -1}
         data-coordinate-id={id}
         data-record-draggable="true"
         data-record-drop-kind="record"
         data-record-label={recordKey(row)}
         style={{ '--type-color': typeColor(recordActualType(row)) } as React.CSSProperties}
-        onClick={() => onOpenRecord(row.coordinate)}
+        onClick={event => {
+          const mode: RecordSelectionMode = event.shiftKey
+            ? 'range'
+            : (event.ctrlKey || event.metaKey ? 'toggle' : 'replace')
+          onSelectRecord?.(row.coordinate, mode, visibleCoordinates)
+          onOpenRecord(row.coordinate)
+        }}
         onKeyDown={event => {
           if (event.key === 'Enter') {
             event.preventDefault()
             event.stopPropagation()
+            onSelectRecord?.(row.coordinate, 'replace', visibleCoordinates)
             onOpenRecord(row.coordinate)
           }
         }}
@@ -300,6 +346,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         <div
           className="rv-sidebar"
           role="listbox"
+          aria-multiselectable="true"
           aria-label="记录列表"
           onKeyDown={onSidebarKeyDown}
           onPointerDown={recordPointerDrag.onPointerDown}
@@ -345,7 +392,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         className="rv-main"
         ref={mainRef}
         tabIndex={0}
-        onKeyDown={recordKeyboard.onKeyDown}
+        onKeyDown={batchRecords ? undefined : recordKeyboard.onKeyDown}
         onMouseDownCapture={e => {
           const target = e.target as HTMLElement
           const addRow = target.closest('.dc-row-add[data-add-path-wire]')
@@ -355,6 +402,19 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           }
         }}
       >
+        {batchRecords ? (
+          <BatchRecordEditor
+            records={batchRecords}
+            readOnly={readOnly}
+            onWriteFields={!onWriteFields
+              ? undefined
+              : (path, value) => onWriteFields(
+                  batchRecords.map(item => item.coordinate),
+                  path,
+                  value,
+                )}
+          />
+        ) : <>
         <CardHeader
           recordKey={recordKey(record)}
           actualType={recordActualType(record)}
@@ -426,6 +486,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
             : undefined}
         />
         {keyboardNotice && <span className="table-cell-notice" role="status">{keyboardNotice}</span>}
+        </>}
       </div>
       {showNewRecord && onInsertRecord && onCreateRecordDraft && (
         <CreateRecordDialog

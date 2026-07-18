@@ -146,7 +146,7 @@ export async function publishMutationGeneration(
   return committed(undefined)
 }
 
-export type EditEntry = FieldEditEntry | DimensionEditEntry | InsertEditEntry | DeleteEditEntry
+export type EditEntry = FieldEditEntry | BatchFieldEditEntry | DimensionEditEntry | InsertEditEntry | DeleteEditEntry
 
 export interface FieldEditEntry {
   kind: 'field'
@@ -156,6 +156,12 @@ export interface FieldEditEntry {
   fieldPath: FieldPathSegment[]
   oldValue: FieldValue
   newValue: FieldValue
+}
+
+export interface BatchFieldEditEntry {
+  kind: 'batch-field'
+  revision: number
+  edits: Array<Omit<FieldEditEntry, 'kind' | 'revision'>>
 }
 
 export interface DimensionEditEntry {
@@ -291,6 +297,14 @@ function rebindEntry(
   oldCoordinate: RecordCoordinate,
   newCoordinate: RecordCoordinate,
 ): EditEntry {
+  if (entry.kind === 'batch-field') {
+    return {
+      ...entry,
+      edits: entry.edits.map(edit => sameCoordinate(edit.coordinate, oldCoordinate)
+        ? { ...edit, coordinate: newCoordinate }
+        : edit),
+    }
+  }
   if (entry.kind === 'dimension') {
     if (
       entry.coordinate.actual_type !== oldCoordinate.actual_type

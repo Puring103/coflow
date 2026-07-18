@@ -54,13 +54,26 @@ export function moveRecordOntoRecord(
   newGroupId: string,
   newGroupName: string,
 ): EditorRecordGroup[] {
-  if (sameCoordinate(source, target)) return [...groups]
+  return moveRecordsOntoRecord(groups, [source], target, newGroupId, newGroupName)
+}
+
+export function moveRecordsOntoRecord(
+  groups: readonly EditorRecordGroup[],
+  sources: readonly RecordCoordinate[],
+  target: RecordCoordinate,
+  newGroupId: string,
+  newGroupName: string,
+): EditorRecordGroup[] {
+  const uniqueSources = uniqueCoordinates(sources)
+  if (uniqueSources.length === 0 || uniqueSources.some(source => sameCoordinate(source, target))) {
+    return [...groups]
+  }
   const targetGroup = groupContaining(groups, target)
-  if (targetGroup) return moveRecordToGroup(groups, source, targetGroup.id)
+  if (targetGroup) return moveRecordsToGroup(groups, uniqueSources, targetGroup.id)
 
   return [
-    ...removeRecordFromGroups(groups, source),
-    { id: newGroupId, name: newGroupName, records: [target, source] },
+    ...removeRecordsFromGroups(groups, uniqueSources),
+    { id: newGroupId, name: newGroupName, records: [target, ...uniqueSources] },
   ]
 }
 
@@ -69,19 +82,49 @@ export function moveRecordToGroup(
   source: RecordCoordinate,
   targetGroupId: string,
 ): EditorRecordGroup[] {
-  if (groupContaining(groups, source)?.id === targetGroupId) return [...groups]
-  const withoutSource = removeRecordFromGroups(groups, source)
-  return withoutSource.map(group => group.id === targetGroupId
-    ? { ...group, records: [...group.records, source] }
-    : group)
+  return moveRecordsToGroup(groups, [source], targetGroupId)
+}
+
+export function moveRecordsToGroup(
+  groups: readonly EditorRecordGroup[],
+  sources: readonly RecordCoordinate[],
+  targetGroupId: string,
+): EditorRecordGroup[] {
+  const uniqueSources = uniqueCoordinates(sources)
+  const target = groups.find(group => group.id === targetGroupId)
+  if (!target || uniqueSources.length === 0) return [...groups]
+  const alreadyAllMembers = uniqueSources.every(source => (
+    target.records.some(member => sameCoordinate(member, source))
+  ))
+  if (alreadyAllMembers) return [...groups]
+
+  return groups.flatMap(group => {
+    const remaining = group.records.filter(member => (
+      !uniqueSources.some(source => sameCoordinate(member, source))
+    ))
+    const records = group.id === targetGroupId
+      ? [...remaining, ...uniqueSources]
+      : remaining
+    return records.length >= 2 ? [{ ...group, records }] : []
+  })
 }
 
 export function removeRecordFromGroups(
   groups: readonly EditorRecordGroup[],
   coordinate: RecordCoordinate,
 ): EditorRecordGroup[] {
+  return removeRecordsFromGroups(groups, [coordinate])
+}
+
+export function removeRecordsFromGroups(
+  groups: readonly EditorRecordGroup[],
+  coordinates: readonly RecordCoordinate[],
+): EditorRecordGroup[] {
+  const unique = uniqueCoordinates(coordinates)
   return groups.flatMap(group => {
-    const records = group.records.filter(member => !sameCoordinate(member, coordinate))
+    const records = group.records.filter(member => (
+      !unique.some(coordinate => sameCoordinate(member, coordinate))
+    ))
     return records.length >= 2 ? [{ ...group, records }] : []
   })
 }
@@ -120,4 +163,12 @@ function groupContaining(
   coordinate: RecordCoordinate,
 ): EditorRecordGroup | undefined {
   return groups.find(group => group.records.some(member => sameCoordinate(member, coordinate)))
+}
+
+function uniqueCoordinates(coordinates: readonly RecordCoordinate[]): RecordCoordinate[] {
+  const unique: RecordCoordinate[] = []
+  for (const coordinate of coordinates) {
+    if (!unique.some(item => sameCoordinate(item, coordinate))) unique.push(coordinate)
+  }
+  return unique
 }

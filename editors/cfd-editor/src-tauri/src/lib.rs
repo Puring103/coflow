@@ -12,7 +12,7 @@ use coflow_runtime::{
     DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
 };
 use editor::{
-    CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, DimensionFileRecords, EditorError,
+    BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, DimensionFileRecords, EditorError,
     EditorProjectSettings, EditorRecordGroup, FileRecords, GraphData, GraphQuery,
     InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome,
     WriteDimensionValueOutcome, WriteFieldOutcome,
@@ -287,6 +287,21 @@ async fn write_field(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn write_fields(
+    session_id: u32,
+    writes: Vec<BatchWriteFieldInput>,
+    host: State<'_, EditorHost>,
+) -> Result<BatchWriteFieldOutcome, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .write_fields(session_id, &writes)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn get_dimension_value(
     session_id: u32,
     coordinate: DimensionValueCoordinate,
@@ -423,6 +438,7 @@ pub fn run() -> tauri::Result<()> {
             render_cell_text,
             parse_cell_text,
             write_field,
+            write_fields,
             get_dimension_value,
             write_dimension_value,
             edit_collection,

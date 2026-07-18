@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, mem
 import {
   ReactFlow, Background, Controls, MiniMap,
   Handle, Position, useUpdateNodeInternals, type NodeProps,
-  type Node, type Edge,
+  type Node, type Edge, type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { GraphData } from '../bindings/GraphData'
@@ -459,6 +459,21 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
     ),
     [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, measureHandles, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities, selectedCoordinate, diagnosticIndex, onDiagnosticBadgeClick]
   )
+  const reactFlowRef = useRef<ReactFlowInstance<Node, Edge> | null>(null)
+
+  useEffect(() => {
+    if (rfNodes.length === 0) return
+    let fitFrame = 0
+    const measureFrame = requestAnimationFrame(() => {
+      fitFrame = requestAnimationFrame(() => {
+        void reactFlowRef.current?.fitView({ padding: 0.25, minZoom: 0.2, maxZoom: 1.2 })
+      })
+    })
+    return () => {
+      cancelAnimationFrame(measureFrame)
+      cancelAnimationFrame(fitFrame)
+    }
+  }, [positions, rfNodes.length])
 
   const rfEdges: Edge[] = useMemo(() => {
     const fwdEdges: Edge[] = forwardEdges
@@ -646,8 +661,14 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
             }}
             onPaneClick={() => onClearSelection?.()}
             onViewportChange={handleViewportChange}
-            fitView
-            fitViewOptions={{ padding: 0.15, minZoom: 0.2, maxZoom: 1.2 }}
+            onInit={instance => {
+              reactFlowRef.current = instance
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  void instance.fitView({ padding: 0.25, minZoom: 0.2, maxZoom: 1.2 })
+                })
+              })
+            }}
             proOptions={{ hideAttribution: true }}
             minZoom={0.1}
             maxZoom={2}
@@ -655,6 +676,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
             <Background color="var(--graph-bg-grid)" gap={24} size={1} />
             <Controls showInteractive={false} />
             <MiniMap
+              style={{ width: 88, height: 60 }}
               nodeColor={n => {
                 const { graphNode } = n.data as NodeData
                 return graphNode.in_focus_file ? '#8a93a3' : '#3a3f48'

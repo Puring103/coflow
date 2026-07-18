@@ -6,11 +6,69 @@
 )]
 
 use cfd_editor_lib::editor::{
-    CollectionEdit, CreateFieldSource, CreateRequiredInput, SessionStore,
+    BatchWriteFieldInput, CollectionEdit, CreateFieldSource, CreateRequiredInput, SessionStore,
 };
 use coflow_data_model::{CfdObject, CfdPathSegment, CfdValue};
 use coflow_runtime::RecordCoordinate;
 use std::collections::BTreeMap;
+
+#[test]
+fn batch_field_write_updates_records_in_one_revision() {
+    let root = temp_project_dir("cfd-editor-batch-write");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_project(&root, "Sword");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        r#"sword: Item { name: "Sword" }
+shield: Item { name: "Shield" }"#,
+    )
+    .expect("write batch data");
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let path = vec![CfdPathSegment::Field("name".to_string())];
+
+    let outcome = store
+        .write_fields(
+            snapshot.session_id,
+            &[
+                BatchWriteFieldInput {
+                    coordinate: RecordCoordinate::new("Item", "sword"),
+                    field_path: path.clone(),
+                    new_value: CfdValue::String("Shared".to_string()),
+                },
+                BatchWriteFieldInput {
+                    coordinate: RecordCoordinate::new("Item", "shield"),
+                    field_path: path,
+                    new_value: CfdValue::String("Shared".to_string()),
+                },
+            ],
+        )
+        .expect("batch write fields");
+
+    assert_eq!(outcome.revision, snapshot.revision + 1);
+    assert_eq!(outcome.edits.len(), 2);
+    assert_eq!(
+        outcome
+            .edits
+            .iter()
+            .map(|edit| edit.old_value.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            Some(CfdValue::String("Sword".to_string())),
+            Some(CfdValue::String("Shield".to_string())),
+        ]
+    );
+    let records = store
+        .get_file_records(snapshot.session_id, "data/items.cfd")
+        .expect("read records after batch");
+    assert!(records.records.iter().all(|record| {
+        record.fields.iter().any(|field| {
+            field.name == "name" && field.value == CfdValue::String("Shared".to_string())
+        })
+    }));
+}
 
 #[test]
 fn reload_session_rebuilds_from_changed_project_files() {

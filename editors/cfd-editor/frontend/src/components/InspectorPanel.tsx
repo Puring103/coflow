@@ -26,6 +26,7 @@ import {
 } from '../state/recordDiagnostics'
 import type { EditorSelection } from '../state/editorSelection'
 import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
+import { BatchRecordEditor } from './BatchRecordEditor'
 
 interface Props {
   open: boolean
@@ -44,6 +45,12 @@ interface Props {
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
   ) => Promise<RecordRow | void>
+  onWriteFields?: (
+    filePath: string,
+    coordinates: readonly RecordCoordinate[],
+    fieldPath: FieldPathSegment[],
+    newValue: FieldValue,
+  ) => Promise<void>
   onRenderCellText?: (
     filePath: string,
     coordinate: RecordCoordinate,
@@ -86,6 +93,7 @@ export function InspectorPanel({
   onWidthChange,
   onClose,
   onWriteField,
+  onWriteFields,
   onRenderCellText,
   onParseCellText,
   onCollectionEdit,
@@ -125,6 +133,13 @@ export function InspectorPanel({
   const record = data && coordinate
     ? data.records.find(r => sameCoordinate(r.coordinate, coordinate))
     : null
+  const selectedRecords = data && selection?.kind === 'record'
+    ? selection.coordinates.flatMap(selected => {
+        const row = data.records.find(item => sameCoordinate(item.coordinate, selected))
+        return row ? [row] : []
+      })
+    : []
+  const batchRecords = selectedRecords.length > 1 ? selectedRecords : null
 
   const diagnosticIndex = useMemo(
     () => buildRecordDiagnosticIndex(
@@ -282,7 +297,20 @@ export function InspectorPanel({
             bodyRef.current?.focus({ preventScroll: true })
           }}
         >
-          {record && data ? (
+          {batchRecords && data ? (
+            <BatchRecordEditor
+              records={batchRecords}
+              readOnly={readOnly}
+              onWriteFields={!onWriteFields
+                ? undefined
+                : (path, value) => onWriteFields(
+                    data.file_path,
+                    batchRecords.map(item => item.coordinate),
+                    path,
+                    value,
+                  )}
+            />
+          ) : record && data ? (
             <>
               {!inspectingValue && (
                 <CardHeader

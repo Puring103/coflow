@@ -4,9 +4,12 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import {
   moveRecordOntoRecord,
+  moveRecordsOntoRecord,
+  moveRecordsToGroup,
   moveRecordToGroup,
   organizeRecordRows,
   removeRecordFromGroups,
+  removeRecordsFromGroups,
   renameRecordGroup,
   replaceGroupedCoordinate,
 } from './manualRecordGroups'
@@ -55,6 +58,31 @@ describe('manual record groups', () => {
 
   it('removes a record and dissolves a group that no longer has two members', () => {
     expect(removeRecordFromGroups([group('g1', 'a', 'b')], coordinate('a'))).toEqual([])
+  })
+
+  it('moves multiple records in one operation and dissolves the source remainder', () => {
+    expect(moveRecordsToGroup(
+      [group('source', 'a', 'b', 'c'), group('target', 'd', 'e')],
+      [coordinate('a'), coordinate('b')],
+      'target',
+    )).toEqual([group('target', 'd', 'e', 'a', 'b')])
+  })
+
+  it('creates one group when multiple records are dropped onto an ungrouped record', () => {
+    expect(moveRecordsOntoRecord(
+      [group('source', 'a', 'b', 'c')],
+      [coordinate('a'), coordinate('b')],
+      coordinate('d'),
+      'new',
+      'New',
+    )).toEqual([{ id: 'new', name: 'New', records: [coordinate('d'), coordinate('a'), coordinate('b')] }])
+  })
+
+  it('removes multiple records atomically', () => {
+    expect(removeRecordsFromGroups(
+      [group('source', 'a', 'b', 'c'), group('other', 'd', 'e')],
+      [coordinate('a'), coordinate('b')],
+    )).toEqual([group('other', 'd', 'e')])
   })
 
   it('organizes valid members and leaves stale or duplicate members ungrouped', () => {

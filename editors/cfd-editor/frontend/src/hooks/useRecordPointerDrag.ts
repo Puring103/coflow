@@ -7,9 +7,11 @@ import { coordinateId } from '../wire'
 interface Options {
   rootRef: RefObject<HTMLElement | null>
   records: readonly RecordRow[]
-  onDropRecordOntoRecord?: (source: RecordCoordinate, target: RecordCoordinate) => void
-  onDropRecordIntoGroup?: (source: RecordCoordinate, groupId: string) => void
-  onDropRecordIntoUngrouped?: (source: RecordCoordinate) => void
+  selectedCoordinates?: readonly RecordCoordinate[]
+  onSelectDragSource?: (source: RecordCoordinate) => void
+  onDropRecordOntoRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
+  onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
+  onDropRecordIntoUngrouped?: (sources: readonly RecordCoordinate[]) => void
 }
 
 const DRAG_THRESHOLD = 5
@@ -33,6 +35,13 @@ export function useRecordPointerDrag(options: Options) {
 
     const sourceId = sourceElement.dataset.coordinateId
     if (!sourceId) return
+    const source = optionsRef.current.records.find(record => coordinateId(record.coordinate) === sourceId)
+    if (!source) return
+    const selected = optionsRef.current.selectedCoordinates ?? []
+    const sources = selected.some(item => coordinateId(item) === sourceId)
+      ? selected
+      : [source.coordinate]
+    const selectSourceOnDrag = sources.length === 1 && sources[0] === source.coordinate
     const startX = event.clientX
     const startY = event.clientY
     let dragging = false
@@ -57,11 +66,13 @@ export function useRecordPointerDrag(options: Options) {
     const beginDrag = () => {
       dragging = true
       suppressClickRef.current = true
+      if (selectSourceOnDrag) optionsRef.current.onSelectDragSource?.(source.coordinate)
       sourceElement.classList.add('record-dragging')
       document.body.classList.add('record-drag-active')
       preview = document.createElement('div')
       preview.className = 'record-drag-preview'
-      preview.textContent = sourceElement.dataset.recordLabel || sourceId
+      const label = sourceElement.dataset.recordLabel || sourceId
+      preview.textContent = sources.length > 1 ? `${label} 等 ${sources.length} 条记录` : label
       document.body.appendChild(preview)
     }
     const updateDropTarget = (clientX: number, clientY: number) => {
@@ -69,7 +80,7 @@ export function useRecordPointerDrag(options: Options) {
         ?.closest<HTMLElement>('[data-record-drop-kind]') ?? null
       const next = hit && root.contains(hit) ? hit : null
       const sameRecord = next?.dataset.recordDropKind === 'record'
-        && next.dataset.coordinateId === sourceId
+        && sources.some(item => coordinateId(item) === next.dataset.coordinateId)
       const valid = sameRecord ? null : next
       if (valid === dropTarget) return
       clearDropTarget()
@@ -92,18 +103,16 @@ export function useRecordPointerDrag(options: Options) {
     const finishDrop = () => {
       if (!dragging || !dropTarget) return
       const current = optionsRef.current
-      const source = current.records.find(record => coordinateId(record.coordinate) === sourceId)
-      if (!source) return
       const kind = dropTarget.dataset.recordDropKind
       if (kind === 'record') {
         const targetId = dropTarget.dataset.coordinateId
         const targetRecord = current.records.find(record => coordinateId(record.coordinate) === targetId)
-        if (targetRecord) current.onDropRecordOntoRecord?.(source.coordinate, targetRecord.coordinate)
+        if (targetRecord) current.onDropRecordOntoRecord?.(sources, targetRecord.coordinate)
       } else if (kind === 'group') {
         const groupId = dropTarget.dataset.recordGroupId
-        if (groupId) current.onDropRecordIntoGroup?.(source.coordinate, groupId)
+        if (groupId) current.onDropRecordIntoGroup?.(sources, groupId)
       } else if (kind === 'ungrouped') {
-        current.onDropRecordIntoUngrouped?.(source.coordinate)
+        current.onDropRecordIntoUngrouped?.(sources)
       }
     }
     const onPointerUp = () => {

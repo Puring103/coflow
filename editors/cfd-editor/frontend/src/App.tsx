@@ -19,7 +19,6 @@ import {
   MOCK_EDITOR_SETTINGS,
 } from './mock'
 import * as api from './api'
-import type { FieldAnnotation } from './bindings/FieldAnnotation'
 import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordinate'
 import type { DimensionValueState } from './bindings/DimensionValueState'
@@ -37,7 +36,6 @@ import {
   diagnosticMatchesAnchor,
   errorDiagnostics,
   errorMessage,
-  annotationChildren,
   cloneValue,
   recordActualType,
   recordKey,
@@ -64,17 +62,21 @@ import {
   recordSelection,
   rebindSelection,
   removeSelection,
+  updateRecordSelection,
   valueSelection,
   type EditorSelection,
+  type RecordSelectionMode,
 } from './state/editorSelection'
 import {
-  moveRecordOntoRecord,
-  moveRecordToGroup,
+  moveRecordsOntoRecord,
+  moveRecordsToGroup,
   nextRecordGroupName,
   removeRecordFromGroups,
+  removeRecordsFromGroups,
   renameRecordGroup,
   replaceGroupedCoordinate,
 } from './state/manualRecordGroups'
+import { recordsSupportGraph } from './state/graphSupport'
 import './style.css'
 
 const GRAPH_DEPTH = 3
@@ -1177,6 +1179,30 @@ export default function App() {
   const recordGroups = projectSettings?.record_groups[activeFile ?? '']?.[activeType] ?? []
 
   useEffect(() => {
+    setInspectorSelection(current => {
+      if (!current) return current
+      if (!activeFileData || current.filePath !== activeFileData.file_path) return null
+      const inActiveType = (coordinate: RecordCoordinate) => activeFileData.records.some(record => (
+        sameCoordinate(record.coordinate, coordinate)
+        && (!activeType || recordActualType(record) === activeType)
+      ))
+      if (current.kind === 'value') return inActiveType(current.coordinate) ? current : null
+      const coordinates = current.coordinates.filter(inActiveType)
+      if (coordinates.length === 0) return null
+      return {
+        ...current,
+        coordinates,
+        coordinate: coordinates.some(item => sameCoordinate(item, current.coordinate))
+          ? current.coordinate
+          : coordinates[coordinates.length - 1],
+        anchor: coordinates.some(item => sameCoordinate(item, current.anchor))
+          ? current.anchor
+          : coordinates[0],
+      }
+    })
+  }, [activeFileData?.file_path, activeType])
+
+  useEffect(() => {
     setCollapsedRecordGroups(new Set())
   }, [activeFileData?.file_path, activeType])
 
@@ -1188,28 +1214,49 @@ export default function App() {
       return next
     })
   }, [])
-  const dropRecordOntoRecord = useCallback((source: RecordCoordinate, target: RecordCoordinate) => {
+  const selectRecords = useCallback((
+    file: string,
+    coordinate: RecordCoordinate,
+    visibleCoordinates: readonly RecordCoordinate[],
+    mode: RecordSelectionMode,
+  ) => {
+    setInspectorCollapsed(false)
+    setInspectorSelection(current => updateRecordSelection(
+      current,
+      file,
+      coordinate,
+      visibleCoordinates,
+      mode,
+    ))
+  }, [])
+  const dropRecordOntoRecord = useCallback((sources: readonly RecordCoordinate[], target: RecordCoordinate) => {
     if (!activeFile || !activeType) return
     recordGroupIdSequence.current += 1
     saveRecordGroups(
       activeFile,
       activeType,
-      moveRecordOntoRecord(
+      moveRecordsOntoRecord(
         recordGroups,
-        source,
+        sources,
         target,
         `record-group-${Date.now().toString(36)}-${recordGroupIdSequence.current.toString(36)}`,
         nextRecordGroupName(recordGroups),
       ),
     )
   }, [activeFile, activeType, recordGroups, saveRecordGroups])
-  const dropRecordIntoGroup = useCallback((source: RecordCoordinate, groupId: string) => {
+  const dropRecordIntoGroup = useCallback((sources: readonly RecordCoordinate[], groupId: string) => {
     if (!activeFile || !activeType) return
-    saveRecordGroups(activeFile, activeType, moveRecordToGroup(recordGroups, source, groupId))
+    saveRecordGroups(activeFile, activeType, moveRecordsToGroup(recordGroups, sources, groupId))
+    setCollapsedRecordGroups(current => {
+      if (!current.has(groupId)) return current
+      const next = new Set(current)
+      next.delete(groupId)
+      return next
+    })
   }, [activeFile, activeType, recordGroups, saveRecordGroups])
-  const dropRecordIntoUngrouped = useCallback((source: RecordCoordinate) => {
+  const dropRecordIntoUngrouped = useCallback((sources: readonly RecordCoordinate[]) => {
     if (!activeFile || !activeType) return
-    saveRecordGroups(activeFile, activeType, removeRecordFromGroups(recordGroups, source))
+    saveRecordGroups(activeFile, activeType, removeRecordsFromGroups(recordGroups, sources))
   }, [activeFile, activeType, recordGroups, saveRecordGroups])
   const renameManualRecordGroup = useCallback((groupId: string, name: string) => {
     if (!activeFile || !activeType) return
@@ -1246,26 +1293,11 @@ export default function App() {
     () => activeFile && project ? project.diagnostics.filter(d => d.file_path === activeFile) : [],
     [activeFile, project?.diagnostics],
   )
-  // Graph view is only meaningful for files with ref-typed fields. Scan cell
-  // annotations once per file so the topbar can hide the 图谱 tab up-front —
-  // otherwise the loaded graph would be empty.
+  // Prefer schema annotations, but also inspect values because older sessions
+  // and browser mocks may contain refs without derived annotation metadata.
   const graphSupported = useMemo(() => {
     if (!activeFileData) return false
-    const hasRef = (a: FieldAnnotation | null | undefined): boolean => {
-      if (!a) return false
-      if (a.ref_target_type) return true
-      if (hasRef(a.item_annotation)) return true
-      for (const child of annotationChildren(a)) {
-        if (hasRef(child)) return true
-      }
-      return false
-    }
-    for (const record of activeFileData.records) {
-      for (const cell of record.fields) {
-        if (hasRef(cell.annotation)) return true
-      }
-    }
-    return false
+    return recordsSupportGraph(activeFileData.records)
   }, [activeFileData])
   // Set of file paths that can be opened via the record/table views. Used by
   // the diagnostics panel to decide whether "跳转" is available for a row —
@@ -1303,9 +1335,25 @@ export default function App() {
     ))
     setInspectorSelection(current => {
       if (!current || current.filePath !== currentRoute.file) return current
-      return visible.some(record => sameCoordinate(record.coordinate, current.coordinate))
-        ? current
-        : null
+      if (current.kind === 'value') {
+        return visible.some(record => sameCoordinate(record.coordinate, current.coordinate))
+          ? current
+          : null
+      }
+      const coordinates = current.coordinates.filter(coordinate => (
+        visible.some(record => sameCoordinate(record.coordinate, coordinate))
+      ))
+      if (coordinates.length === 0) return null
+      return {
+        ...current,
+        coordinates,
+        coordinate: coordinates.some(item => sameCoordinate(item, current.coordinate))
+          ? current.coordinate
+          : coordinates[coordinates.length - 1],
+        anchor: coordinates.some(item => sameCoordinate(item, current.anchor))
+          ? current.anchor
+          : coordinates[0],
+      }
     })
     if (
       currentRoute.view === 'record'
@@ -1319,10 +1367,21 @@ export default function App() {
   // Stable callbacks for TableView so React.memo can bail out on re-renders
   // caused by inspector panel state changes (collapsed, open, width).
   const tableOnSelectRecord = useCallback(
-    (coordinate: RecordCoordinate) => {
-      if (currentRoute?.view === 'table') openInspector(currentRoute.file, coordinate)
+    (coordinate: RecordCoordinate, mode: RecordSelectionMode, visible: readonly RecordCoordinate[]) => {
+      if (currentRoute?.view === 'table') selectRecords(currentRoute.file, coordinate, visible, mode)
     },
-    [currentRoute?.view, currentRoute?.file, openInspector],
+    [currentRoute?.view, currentRoute?.file, selectRecords],
+  )
+  const writeFields = useCallback(
+    async (
+      filePath: string,
+      coordinates: readonly RecordCoordinate[],
+      fieldPath: FieldPathSegment[],
+      newValue: FieldValue,
+    ) => {
+      await mutations.writeFields(filePath, coordinates, fieldPath, newValue)
+    },
+    [mutations],
   )
   const tableOnSelectValue = useCallback(
     (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => {
@@ -2118,6 +2177,9 @@ export default function App() {
                     highlightField={highlightField}
                     onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
+                    onSelectRecord={(coordinate, mode, visible) => (
+                      selectRecords(currentRoute.file, coordinate, visible, mode)
+                    )}
                     selection={inspectorSelection}
                     onSelectValue={(coordinate, path) => {
                       setInspectorSelection(valueSelection(currentRoute.file, coordinate, path))
@@ -2125,6 +2187,7 @@ export default function App() {
                     onRenderCellText={tableOnRenderCellText}
                     onParseCellText={tableOnParseCellText}
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
+                    onWriteFields={(coordinates, path, val) => writeFields(currentRoute.file, coordinates, path, val)}
                     onCollectionEdit={(coordinate, path, edit) => editCollection(currentRoute.file, coordinate, path, edit)}
                     onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
                     onInsertRecord={(rk, type, fields) => insertRecord(currentRoute.file, rk, type, fields)}
@@ -2204,6 +2267,7 @@ export default function App() {
           onWidthChange={setInspectorW}
           onClose={closeInspector}
           onWriteField={writeField}
+          onWriteFields={writeFields}
           onRenderCellText={(_filePath, coordinate, path) => tableOnRenderCellText(coordinate, path)}
           onParseCellText={(_filePath, coordinate, path, text) => tableOnParseCellText(coordinate, path, text)}
           onCollectionEdit={editCollection}

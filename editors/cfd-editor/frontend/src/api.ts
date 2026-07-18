@@ -2,6 +2,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { CfdValue } from './bindings/CfdValue'
+import type { BatchWriteFieldOutcome } from './bindings/BatchWriteFieldOutcome'
+import type { BatchWriteFieldInput } from './bindings/BatchWriteFieldInput'
 import type { CollectionEdit } from './bindings/CollectionEdit'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { DeleteRecordOutcome } from './bindings/DeleteRecordOutcome'
@@ -208,6 +210,16 @@ export async function writeField(
     coordinate,
     fieldPath,
     newValue,
+  })
+}
+
+export async function writeFields(
+  sessionId: number,
+  writes: BatchWriteFieldInput[],
+): Promise<BatchWriteFieldOutcome> {
+  return invokeCommand<BatchWriteFieldOutcome>('write_fields', {
+    sessionId,
+    writes,
   })
 }
 
