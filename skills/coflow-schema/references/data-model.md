@@ -11,7 +11,6 @@ Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Exce
 ```text
 CfdDataModel
   tables              # TypeName -> CfdTable
-  record_by_type_key  # (actual TypeName, RecordKey) -> RecordId
   record_by_domain_key # (inheritance root TypeName, RecordKey) -> RecordId
   records             # 所有顶层 records
   ref_edges           # 直接 &Type 引用边
@@ -32,7 +31,7 @@ CfdObject
   dimension_fields     # FieldName -> DimensionName -> VariantName -> value/origin
 ```
 
-`records` 是集中存储。table 和记录索引只保存 `CfdRecordId`，消费者通过 model 查询记录，而不是复制记录内容。
+`records` 是集中存储。table 和记录索引只保存 `CfdRecordId`，消费者通过 model 查询记录，而不是复制记录内容。按“实际类型 + key”精确查找时，DataModel 直接读取对应 `CfdTable.primary_index`，不再维护内容相同的第二张全局 map；跨继承命名域的唯一性与引用查找继续由 `record_by_domain_key` 负责。
 
 类型声明、继承根、祖先、后代和 assignability 只由 `CftSchema` 维护。DataModel 的索引使用 canonical `TypeName`，不复制第二套 type/domain/ancestor 关系模型。
 
@@ -104,7 +103,8 @@ CfdObject
 
 ## 引用索引
 
-直接 `&Type` 引用会生成 `RefEdge`。`RefEdge` 记录 host record、字段路径、canonical 期望 type、继承根、目标 key、目标实际 type 和目标 record id。
+直接 `&Type` 引用会生成 `RefEdge`。edge 只保存引用位置 `RefSite` 和目标 record id；
+期望类型、继承范围和目标 key 继续由 canonical schema 与字段值提供，不在关系索引中复制。
 
 ```text
 RefSite(host_record, field_path) -> RefEdge
@@ -115,7 +115,11 @@ DataModel 同时维护：
 - `ref_by_site`：按字段位置查目标。
 - `ref_by_host`：按 record 枚举直接出边，供图视图使用。
 - `ref_by_target`：按目标 record 枚举入边，供 rename 和删除检查使用。
-- `spread_by_site` / `spread_by_host` / `spread_by_source`：独立描述 `...&key` 来源，不进入直接引用图。
+- `spread_by_host`：按 materialized host 限定 spread provenance 查询，不扫描全部 edge。
+- `spread_by_source`：按 source record 枚举依赖 host，供增量失效和 rename rewrite 使用。
+
+`SpreadEdge` 只保存 host、object path、可选 dimension coordinate、实际继承字段和 source record id。
+spread provenance 与直接引用图、checker read dependency 保持独立，因为三者的失效规则不同。
 
 ## 数据源顺序
 

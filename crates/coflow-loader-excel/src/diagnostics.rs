@@ -1,7 +1,7 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
-use coflow_data_model::{CfdDiagnostic, CfdLabel, CfdRecordId, RecordOrigin};
+use coflow_data_model::{CfdDiagnostic, CfdLabel, RecordOrigin};
 use coflow_loader_table_core::{
-    map_label_to_table, TableDiagnostic, TableDiagnosticKind, TableDiagnostics, TableLabel,
+    map_label_to_table_origin, TableDiagnostic, TableDiagnosticKind, TableDiagnostics, TableLabel,
     TableLocation,
 };
 use std::path::PathBuf;
@@ -153,17 +153,7 @@ pub fn map_label_with_record_offset(
 ) -> Option<ExcelLabel> {
     let record = label.record?;
     let local_record = record.index().checked_sub(record_offset)?;
-    let shifted = label_shifted(label, local_record);
-    map_label_to_table(&shifted, origins).map(ExcelLabel::from)
-}
-
-fn label_shifted(label: &CfdLabel, new_index: usize) -> CfdLabel {
-    CfdLabel {
-        record: Some(CfdRecordId::from_index(new_index)),
-        path: label.path.clone(),
-        message: label.message.clone(),
-        origin: label.origin.clone(),
-    }
+    map_label_to_table_origin(label, origins.get(local_record)?).map(ExcelLabel::from)
 }
 
 pub(crate) fn excel_diagnostics_to_api(err: ExcelDiagnostics) -> DiagnosticSet {

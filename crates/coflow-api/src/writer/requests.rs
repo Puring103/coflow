@@ -62,7 +62,8 @@ pub struct RenameRecordRequest<'a> {
 ///
 /// Engines use this for source syntax that compiles away before the runtime
 /// model is built, such as provider-local spread entries. Direct refs are
-/// rewritten through [`crate::SourceWriter::write_field`] at the exact [`RefEdge`]
+/// rewritten through [`crate::SourceWriter::write_field`] at the exact
+/// [`coflow_data_model::RefEdge`]
 /// site.
 #[derive(Debug, Clone)]
 pub struct RewriteRecordReferencesRequest<'a> {
@@ -104,7 +105,8 @@ pub struct WriteBatchFailure {
 pub struct WriteContext<'a> {
     pub project_root: &'a Path,
     pub schema: &'a CftSchema,
-    /// The current data model. Writers use it to resolve [`CfdRecordId`]s
+    /// The current data model. Writers use it to resolve
+    /// [`coflow_data_model::CfdRecordId`]s
     /// inside the request value (e.g. for ref serialization). May be `None`
     /// when running pre-flight on a value that hasn't been merged into the
     /// model yet.

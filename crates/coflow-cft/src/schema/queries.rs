@@ -1,8 +1,6 @@
-use std::collections::BTreeSet;
-
 use crate::{
-    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftType, CftValueType, EnumName,
-    EnumVariantName, TypeName, TypedCheckSchedule, ValueDependencyPlan,
+    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftType, EnumName, EnumVariantName,
+    TypeName, TypedCheckSchedule, ValueDependencyPlan,
 };
 
 impl CftSchema {
@@ -19,68 +17,6 @@ impl CftSchema {
         None
     }
 
-    #[must_use]
-    pub fn is_id_as_enum(&self, enum_name: &str) -> bool {
-        self.type_by_id_as_enum.contains_key(enum_name)
-    }
-
-    #[must_use]
-    pub fn id_as_enum_names(&self) -> BTreeSet<EnumName> {
-        self.type_by_id_as_enum.keys().cloned().collect()
-    }
-
-    #[must_use]
-    pub fn ref_target_names(&self) -> Vec<TypeName> {
-        let mut out = BTreeSet::new();
-        for ty in self.types.values() {
-            let mut visited = BTreeSet::new();
-            self.collect_ref_targets_for_type(ty, &mut out, &mut visited);
-        }
-        out.into_iter().collect()
-    }
-
-    fn collect_ref_targets_for_type(
-        &self,
-        ty: &CftType,
-        out: &mut BTreeSet<TypeName>,
-        visited: &mut BTreeSet<TypeName>,
-    ) {
-        if !visited.insert(ty.name.clone()) {
-            return;
-        }
-        for field in &ty.all_fields {
-            self.collect_ref_targets_in_type(&field.value_type, out, visited);
-        }
-    }
-
-    fn collect_ref_targets_in_type(
-        &self,
-        ty: &CftValueType,
-        out: &mut BTreeSet<TypeName>,
-        visited: &mut BTreeSet<TypeName>,
-    ) {
-        match ty {
-            CftValueType::Object(name) => {
-                if let Some(meta) = self.types.get(name) {
-                    self.collect_ref_targets_for_type(meta, out, visited);
-                }
-            }
-            CftValueType::RecordRef(name) => {
-                out.insert(name.clone());
-            }
-            CftValueType::Array(inner) | CftValueType::Nullable(inner) => {
-                self.collect_ref_targets_in_type(inner, out, visited);
-            }
-            CftValueType::Dict(_, value) => {
-                self.collect_ref_targets_in_type(value, out, visited);
-            }
-            CftValueType::Enum(_)
-            | CftValueType::Int
-            | CftValueType::Float
-            | CftValueType::Bool
-            | CftValueType::String => {}
-        }
-    }
     #[must_use]
     pub const fn value_dependencies(&self) -> &ValueDependencyPlan {
         &self.value_dependencies
@@ -201,27 +137,6 @@ impl CftSchema {
         self.types
             .get(type_name)
             .is_some_and(|meta| meta.is_abstract || !self.children(&meta.name).is_empty())
-    }
-
-    #[must_use]
-    pub fn assignable_target_names(&self, actual_type: &str) -> Vec<TypeName> {
-        let Some(meta) = self.types.get(actual_type) else {
-            return Vec::new();
-        };
-        let mut out = Vec::with_capacity(
-            self.ancestors_by_type
-                .get(actual_type)
-                .map_or(1, |ancestors| ancestors.len() + 1),
-        );
-        out.push(meta.name.clone());
-        out.extend(
-            self.ancestors_by_type
-                .get(actual_type)
-                .into_iter()
-                .flatten()
-                .cloned(),
-        );
-        out
     }
 
     pub fn singleton_types(&self) -> impl Iterator<Item = &CftType> {

@@ -1,3 +1,4 @@
+mod check_builtins;
 mod compiler;
 mod declarations;
 mod dimensions;
@@ -6,13 +7,15 @@ mod plans;
 mod queries;
 mod value_type;
 
+pub use check_builtins::CftCheckBuiltin;
 pub use compiler::build_schema;
 pub use declarations::*;
 pub use dimensions::{CftDimensionInput, CftDimensionInputError, CftDimensionInputs};
 pub use names::*;
+use plans::TypedCheckPlan;
 pub use plans::{
-    ScheduledCheckBlock, TypedCheckPlan, TypedCheckSchedule, ValueDependencyCycle,
-    ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
+    ScheduledCheckBlock, TypedCheckSchedule, ValueDependencyCycle, ValueDependencyMode,
+    ValueDependencyPlan, ValueDependencyStep,
 };
 pub use queries::CftEnumValue;
 pub use value_type::CftValueType;

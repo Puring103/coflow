@@ -23,7 +23,6 @@ use coflow_api::{
     ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext,
     SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceResolveContext,
 };
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -97,9 +96,6 @@ impl SourceProvider for ExcelLoader {
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
         let SourceLocationSpec::Path(path) = &source.location;
-        if path.is_dir() {
-            return collect_excel_sources(path, source);
-        }
         if is_excel_path(path) {
             return Ok(vec![source.clone()]);
         }
@@ -127,45 +123,6 @@ impl SourceProvider for ExcelLoader {
             })
             .map_err(excel_diagnostics_to_api)
     }
-}
-
-fn collect_excel_sources(
-    dir: &Path,
-    source: &ResolvedSource,
-) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-    let mut entries = fs::read_dir(dir)
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "EXCEL-SOURCE",
-                "EXCEL",
-                format!("failed to read data source dir `{}`: {err}", dir.display()),
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "EXCEL-SOURCE",
-                "EXCEL",
-                format!("failed to read data source dir `{}`: {err}", dir.display()),
-            ))
-        })?;
-    entries.sort_by_key(fs::DirEntry::path);
-
-    let mut sources = Vec::new();
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            sources.extend(collect_excel_sources(&path, source)?);
-        } else if is_excel_path(&path) {
-            sources.push(ResolvedSource {
-                provider_id: EXCEL_LOADER_DESCRIPTOR.id.to_string(),
-                display_name: path.display().to_string(),
-                location: SourceLocationSpec::Path(path),
-                options: source.options.clone(),
-            });
-        }
-    }
-    Ok(sources)
 }
 
 fn is_excel_path(path: &Path) -> bool {

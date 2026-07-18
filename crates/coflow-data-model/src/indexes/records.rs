@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 
 pub(crate) struct ModelIndexes {
     pub(crate) tables: BTreeMap<TypeName, CfdTable>,
-    pub(crate) record_by_type_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     pub(crate) record_by_domain_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
 }
 
@@ -16,7 +15,6 @@ pub(crate) fn build_indexes(
     diagnostics: &mut Vec<CfdDiagnostic>,
 ) -> ModelIndexes {
     let mut tables = BTreeMap::<TypeName, CfdTable>::new();
-    let mut record_by_type_key = BTreeMap::<TypeName, BTreeMap<RecordKey, CfdRecordId>>::new();
     let mut record_by_domain_key = BTreeMap::<TypeName, BTreeMap<RecordKey, CfdRecordId>>::new();
 
     for (index, draft) in drafts.iter().enumerate() {
@@ -71,10 +69,6 @@ pub(crate) fn build_indexes(
                 ),
             );
         }
-        record_by_type_key
-            .entry(draft.actual_type.clone())
-            .or_default()
-            .insert(key.clone(), record_id);
         if let Some(first) = record_by_domain_key
             .entry(inheritance_root.clone())
             .or_default()
@@ -102,7 +96,6 @@ pub(crate) fn build_indexes(
 
     ModelIndexes {
         tables,
-        record_by_type_key,
         record_by_domain_key,
     }
 }

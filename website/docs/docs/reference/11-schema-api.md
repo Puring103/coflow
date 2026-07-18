@@ -99,10 +99,12 @@ Dimension schema 不包含 `out_dir`、display name 或 Provider 选项，这些
 
 `CftSchema` 内部保留两个预编译执行计划：
 
-- `TypedCheckPlan`：继承 check 顺序、维度相关语句和可到达嵌套 check 的字段。
+- 内部 check 执行计划（实现类型为 `TypedCheckPlan`，不属于 public API）：继承 check 顺序、维度相关语句和可到达嵌套 check 的字段。
 - `ValueDependencyPlan`：默认值、嵌套对象和物化依赖顺序。
 
 执行计划只引用 canonical typed names 和 check 节点，不复制声明对象，也不出现在 schema inspect 或 wire 数据中。结构预算只作用于本次编译，不存入 schema。
+
+check 内置函数的名称和参数数量由 `coflow-cft` 的共享 builtin contract 定义。schema 静态检查与 `coflow-checker` 运行期分发使用同一份 contract，避免两套注册表在新增或调整 builtin 时产生偏差。
 
 ## Runtime 关系
 

@@ -7,7 +7,9 @@ use coflow_api::{
     WriteFieldPathSegment,
 };
 use coflow_cft::{CftSchema, RecordKey};
-use coflow_data_model::{CfdPathSegment, CfdRecordId, CfdValue, RecordOrigin};
+use coflow_data_model::{
+    CfdPathSegment, CfdRecord, CfdRecordId, CfdValue, RecordOrigin, SpreadEdge,
+};
 
 use super::writer::{lookup_source_writer, source_for_id};
 use crate::ProjectSession;
@@ -179,7 +181,9 @@ impl SourceRewriteAction {
 
     pub(super) fn display_path(&self) -> &str {
         match self {
-            Self::Source { display_path, .. } | Self::Dimension { display_path, .. } => display_path,
+            Self::Source { display_path, .. } | Self::Dimension { display_path, .. } => {
+                display_path
+            }
         }
     }
 
@@ -439,10 +443,14 @@ pub(super) fn source_rewrite_actions(
     new_key: &str,
 ) -> Result<Vec<SourceRewriteAction>, DiagnosticSet> {
     let old_key = RecordKey::new(old_key.to_string()).map_err(|error| {
-        transaction_invariant(format!("old record key became invalid before rewrite: {error}"))
+        transaction_invariant(format!(
+            "old record key became invalid before rewrite: {error}"
+        ))
     })?;
     let new_key = RecordKey::new(new_key.to_string()).map_err(|error| {
-        transaction_invariant(format!("new record key became invalid before rewrite: {error}"))
+        transaction_invariant(format!(
+            "new record key became invalid before rewrite: {error}"
+        ))
     })?;
     let mut by_file =
         std::collections::BTreeMap::<String, (ResolvedSource, Vec<SpreadRewriteTarget>)>::new();
@@ -454,63 +462,15 @@ pub(super) fn source_rewrite_actions(
         let Some(host_record) = session.model.record(edge.host) else {
             continue;
         };
-        if let Some(dimension) = &edge.site.dimension {
-            let field = session
-                .schema()
-                .field(host_record.actual_type(), &dimension.field)
-                .ok_or_else(|| {
-                    transaction_invariant(format!(
-                        "dimension host field `{}.{}` disappeared before spread rewrite",
-                        host_record.actual_type(),
-                        dimension.field
-                    ))
-                })?;
-            let source_entry = session
-                .source_data
-                .dimension_source(
-                    field.declaring_type.as_str(),
-                    field.name.as_str(),
-                    dimension.dimension.as_str(),
-                )
-                .ok_or_else(|| {
-                    transaction_invariant(format!(
-                        "dimension field `{}.{}` lost its managed source before spread rewrite",
-                        field.declaring_type, field.name
-                    ))
-                })?;
-            let manager = registry
-                .dimension_source_manager(&source_entry.provider_id)
-                .ok_or_else(|| {
-                    transaction_invariant(format!(
-                        "dimension source provider `{}` disappeared before spread rewrite",
-                        source_entry.provider_id
-                    ))
-                })?;
-            let object_path = edge
-                .path
-                .segments
-                .strip_prefix(&[CfdPathSegment::Field(dimension.field.to_string())])
-                .unwrap_or(&edge.path.segments)
-                .to_vec();
-            dimension_actions.push(SourceRewriteAction::Dimension {
-                manager,
-                display_path: source_entry.display_path.clone(),
-                request: OwnedRewriteDimensionReferencesRequest {
-                    source: source_entry.source.clone(),
-                    source_type: field.declaring_type.clone(),
-                    source_field: field.name.clone(),
-                    dimension: dimension.dimension.clone(),
-                    variant: dimension.variant.clone(),
-                    source_key: RecordKey::new(host_record.key().to_string()).map_err(|error| {
-                        transaction_invariant(format!(
-                            "validated host key became invalid before spread rewrite: {error}"
-                        ))
-                    })?,
-                    object_path,
-                    old_key: old_key.clone(),
-                    new_key: new_key.clone(),
-                },
-            });
+        if edge.dimension.is_some() {
+            dimension_actions.push(dimension_spread_rewrite_action(
+                session,
+                registry,
+                edge,
+                host_record,
+                &old_key,
+                &new_key,
+            )?);
             continue;
         }
         let source = source_for_id(session, host_ref.source_id)?;
@@ -543,4 +503,74 @@ pub(super) fn source_rewrite_actions(
         .collect::<Result<Vec<_>, DiagnosticSet>>()?;
     actions.extend(dimension_actions);
     Ok(actions)
+}
+
+fn dimension_spread_rewrite_action(
+    session: &ProjectSession,
+    registry: &ProviderRegistry,
+    edge: &SpreadEdge,
+    host_record: &CfdRecord,
+    old_key: &RecordKey,
+    new_key: &RecordKey,
+) -> Result<SourceRewriteAction, DiagnosticSet> {
+    let dimension = edge.dimension.as_ref().ok_or_else(|| {
+        transaction_invariant("dimension spread rewrite lost its dimension coordinate")
+    })?;
+    let field = session
+        .schema()
+        .field(host_record.actual_type(), &dimension.field)
+        .ok_or_else(|| {
+            transaction_invariant(format!(
+                "dimension host field `{}.{}` disappeared before spread rewrite",
+                host_record.actual_type(),
+                dimension.field
+            ))
+        })?;
+    let source_entry = session
+        .source_data
+        .dimension_source(
+            field.declaring_type.as_str(),
+            field.name.as_str(),
+            dimension.dimension.as_str(),
+        )
+        .ok_or_else(|| {
+            transaction_invariant(format!(
+                "dimension field `{}.{}` lost its managed source before spread rewrite",
+                field.declaring_type, field.name
+            ))
+        })?;
+    let manager = registry
+        .dimension_source_manager(&source_entry.provider_id)
+        .ok_or_else(|| {
+            transaction_invariant(format!(
+                "dimension source provider `{}` disappeared before spread rewrite",
+                source_entry.provider_id
+            ))
+        })?;
+    let object_path = edge
+        .path
+        .segments
+        .strip_prefix(&[CfdPathSegment::Field(dimension.field.to_string())])
+        .unwrap_or(&edge.path.segments)
+        .to_vec();
+    let source_key = RecordKey::new(host_record.key().to_string()).map_err(|error| {
+        transaction_invariant(format!(
+            "validated host key became invalid before spread rewrite: {error}"
+        ))
+    })?;
+    Ok(SourceRewriteAction::Dimension {
+        manager,
+        display_path: source_entry.display_path.clone(),
+        request: OwnedRewriteDimensionReferencesRequest {
+            source: source_entry.source.clone(),
+            source_type: field.declaring_type.clone(),
+            source_field: field.name.clone(),
+            dimension: dimension.dimension.clone(),
+            variant: dimension.variant.clone(),
+            source_key,
+            object_path,
+            old_key: old_key.clone(),
+            new_key: new_key.clone(),
+        },
+    })
 }

@@ -642,7 +642,7 @@ dependencies = [
 name = "coflow-cfd"
 version = "0.7.0"
 dependencies = [
- "coflow-cft",
+ "coflow-structure",
 ]
 
 [[package]]

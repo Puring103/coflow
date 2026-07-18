@@ -10,6 +10,7 @@ use super::value::{
     LocatedEvalValue, ScalarValue, ValueLocation,
 };
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn index_value<'model>(
     target: LocatedEvalValue<'model>,
     index: LocatedEvalValue<'model>,

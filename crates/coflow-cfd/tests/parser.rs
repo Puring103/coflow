@@ -1,6 +1,9 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
-use coflow_cfd::{parse_cfd, CfdAst, CfdBlockEntry, CfdValue};
+use coflow_cfd::{
+    parse_cfd, parse_cfd_with_options, CfdAst, CfdBlockEntry, CfdParseOptions, CfdValue,
+    StructuralLimits,
+};
 
 fn parse_ok(source: &str) -> CfdAst {
     let (ast, errors) = parse_cfd(source);
@@ -23,9 +26,10 @@ fn simple_record_with_scalar_field() {
     let r = &ast.records[0];
     assert_eq!(r.key, "sword");
     assert_eq!(r.type_name, "Item");
-    assert_eq!(r.fields.len(), 1);
-    assert_eq!(r.fields[0].name, "damage");
-    match &r.fields[0].value {
+    let fields = r.fields().collect::<Vec<_>>();
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].name, "damage");
+    match &fields[0].value {
         CfdValue::Scalar(s, _) => assert_eq!(s, "42"),
         other => panic!("expected Scalar, got {other:?}"),
     }
@@ -73,7 +77,7 @@ fn group_record_commas_are_optional() {
 fn nested_block_as_field_value() {
     let ast = parse_ok("hero: Player { stats: Stats { hp: 100, }, }");
     assert_eq!(ast.records.len(), 1);
-    let field = &ast.records[0].fields[0];
+    let field = ast.records[0].fields().next().expect("field");
     assert_eq!(field.name, "stats");
     match &field.value {
         CfdValue::Block(b) => {
@@ -86,7 +90,8 @@ fn nested_block_as_field_value() {
 #[test]
 fn array_field_value() {
     let ast = parse_ok("r: T { items: [1, 2, 3] }");
-    match &ast.records[0].fields[0].value {
+    let field = ast.records[0].fields().next().expect("field");
+    match &field.value {
         CfdValue::Array(items, _) => assert_eq!(items.len(), 3),
         other => panic!("expected Array, got {other:?}"),
     }
@@ -95,7 +100,8 @@ fn array_field_value() {
 #[test]
 fn trailing_comma_in_array() {
     let ast = parse_ok("r: T { items: [1, 2, 3,] }");
-    match &ast.records[0].fields[0].value {
+    let field = ast.records[0].fields().next().expect("field");
+    match &field.value {
         CfdValue::Array(items, _) => assert_eq!(items.len(), 3),
         other => panic!("expected Array, got {other:?}"),
     }
@@ -104,7 +110,8 @@ fn trailing_comma_in_array() {
 #[test]
 fn direct_ref_value() {
     let ast = parse_ok("r: T { target: &boss, }");
-    match &ast.records[0].fields[0].value {
+    let field = ast.records[0].fields().next().expect("field");
+    match &field.value {
         CfdValue::Ref(r) => assert_eq!(r.key.0, "boss"),
         other => panic!("expected Ref, got {other:?}"),
     }
@@ -113,7 +120,7 @@ fn direct_ref_value() {
 #[test]
 fn negative_numeric_scalar() {
     let ast = parse_ok("r: T { x: -42, y: -3.14 }");
-    let fields = &ast.records[0].fields;
+    let fields = ast.records[0].fields().collect::<Vec<_>>();
     match &fields[0].value {
         CfdValue::Scalar(s, _) => assert_eq!(s, "-42"),
         other => panic!("expected Scalar, got {other:?}"),
@@ -150,7 +157,10 @@ fn semicolon_field_separator_is_rejected() {
 #[test]
 fn null_literal() {
     let ast = parse_ok("r: T { x: null, }");
-    assert!(matches!(ast.records[0].fields[0].value, CfdValue::Null(_)));
+    assert!(matches!(
+        ast.records[0].fields().next().expect("field").value,
+        CfdValue::Null(_)
+    ));
 }
 
 // ── Span accuracy ─────────────────────────────────────────────────────────────
@@ -159,7 +169,7 @@ fn null_literal() {
 fn scalar_span_excludes_trailing_whitespace() {
     let source = "r: T { x: 42   , }";
     let (ast, _) = parse_cfd(source);
-    let span = match &ast.records[0].fields[0].value {
+    let span = match &ast.records[0].fields().next().expect("field").value {
         CfdValue::Scalar(_, s) => *s,
         other => panic!("expected Scalar, got {other:?}"),
     };
@@ -171,7 +181,7 @@ fn scalar_span_excludes_trailing_whitespace() {
 fn block_type_marker_span_excludes_whitespace() {
     let source = "r: T { sub: Sub   { }, }";
     let (ast, _) = parse_cfd(source);
-    let marker_span = match &ast.records[0].fields[0].value {
+    let marker_span = match &ast.records[0].fields().next().expect("field").value {
         CfdValue::Block(b) => b.type_marker.as_ref().unwrap().1,
         other => panic!("expected Block, got {other:?}"),
     };
@@ -264,6 +274,108 @@ fn error_recovery_continues_after_bad_record() {
     );
 }
 
+#[test]
+fn error_recovery_does_not_promote_nested_fields_to_records() {
+    let source = r"
+bad: Item {
+  invalid
+  nested: Item { value: 1 }
+}
+good: Item { value: 2 }
+";
+    let (ast, errors) = parse_cfd(source);
+    assert!(!errors.is_empty(), "expected malformed record diagnostic");
+    assert_eq!(
+        ast.records
+            .iter()
+            .map(|record| record.key.as_str())
+            .collect::<Vec<_>>(),
+        vec!["good"]
+    );
+}
+
+#[test]
+fn structural_depth_accepts_boundary_and_rejects_next_wrapper() {
+    let options = CfdParseOptions {
+        structural_limits: StructuralLimits::new(4, 100, 100),
+    };
+    let (at_limit, diagnostics) = parse_cfd_with_options("r: T { value: [[[0]]] }", options);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert_eq!(at_limit.records.len(), 1);
+
+    let (_, diagnostics) = parse_cfd_with_options("r: T { value: [[[[0]]]] }", options);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("depth limit 4")),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn structural_node_budget_accepts_boundary_and_rejects_next_node() {
+    let source = "r: T { value: 0 }";
+    let (at_limit, diagnostics) = parse_cfd_with_options(
+        source,
+        CfdParseOptions {
+            structural_limits: StructuralLimits::new(10, 4, 100),
+        },
+    );
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert_eq!(at_limit.records.len(), 1);
+
+    let (_, diagnostics) = parse_cfd_with_options(
+        source,
+        CfdParseOptions {
+            structural_limits: StructuralLimits::new(10, 3, 100),
+        },
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("nodes limit 3")),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn structural_work_budget_accepts_boundary_and_rejects_next_unit() {
+    let source = "r: T { value: 0 }";
+    let (at_limit, diagnostics) = parse_cfd_with_options(
+        source,
+        CfdParseOptions {
+            structural_limits: StructuralLimits::new(10, 100, 4),
+        },
+    );
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert_eq!(at_limit.records.len(), 1);
+
+    let (_, diagnostics) = parse_cfd_with_options(
+        source,
+        CfdParseOptions {
+            structural_limits: StructuralLimits::new(10, 100, 3),
+        },
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("work limit 3")),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn default_limits_reject_deep_input_without_recursing_unboundedly() {
+    let source = format!("r: T {{ value: {}0{} }}", "[".repeat(300), "]".repeat(300));
+    let (_, diagnostics) = parse_cfd(&source);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("depth limit")),
+        "{diagnostics:?}"
+    );
+}
+
 // ── Spread syntax ─────────────────────────────────────────────────────────────
 
 #[test]
@@ -272,6 +384,7 @@ fn spread_in_block() {
     let r = &ast.records[0];
     assert_eq!(r.entries.len(), 2);
     assert!(matches!(r.entries[0], CfdBlockEntry::Spread(_, _)));
-    assert_eq!(r.fields.len(), 1);
-    assert_eq!(r.fields[0].name, "x");
+    let fields = r.fields().collect::<Vec<_>>();
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].name, "x");
 }

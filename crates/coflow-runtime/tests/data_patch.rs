@@ -1223,7 +1223,10 @@ fn dimension_spread_rewrite_failure_compensates_every_source() {
     });
 
     assert!(!report.write_ok, "report: {report:#?}");
-    assert_eq!(std::fs::read(&main_file).expect("read restored main"), original_main);
+    assert_eq!(
+        std::fs::read(&main_file).expect("read restored main"),
+        original_main
+    );
     assert_eq!(
         std::fs::read(&dimension_file).expect("read restored dimension"),
         corrupted_dimension

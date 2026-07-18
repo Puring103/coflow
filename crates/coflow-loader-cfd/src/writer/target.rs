@@ -77,12 +77,7 @@ fn full_value_span(value: &AstValue) -> Span {
 }
 
 fn find_field_in_record<'a>(record: &'a AstRecord, name: &str) -> Option<&'a coflow_cfd::CfdField> {
-    record.fields.iter().find(|f| f.name == name).or_else(|| {
-        record.entries.iter().find_map(|e| match e {
-            CfdBlockEntry::Field(f) if f.name == name => Some(f),
-            _ => None,
-        })
-    })
+    record.fields().find(|field| field.name == name)
 }
 
 fn locate_target_in_value(

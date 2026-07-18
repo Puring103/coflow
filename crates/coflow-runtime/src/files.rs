@@ -27,7 +27,7 @@ pub struct FileTreeNode {
     pub children: Vec<Self>,
 }
 
-/// Options for [`super::ProjectSession::file_tree_with`].
+/// Options for [`crate::ProjectQueries::file_tree_with`].
 ///
 /// Defaults mirror what the editor needs: walk every loader-registered
 /// extension and pull dimension output directories into a sibling virtual

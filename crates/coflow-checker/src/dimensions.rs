@@ -11,16 +11,66 @@ use crate::DimensionCheckContext;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DimensionCheckRound {
-    pub dimension: DimensionName,
-    pub variant: VariantName,
+    pub(crate) dimension: DimensionName,
+    pub(crate) variant: VariantName,
 }
 
 impl DimensionCheckRound {
+    /// Creates a round only when the dimension and variant belong to `schema`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DimensionCheckRoundError`] for an unknown dimension or a
+    /// variant that is not declared by that dimension.
+    pub fn try_new(
+        schema: &CftSchema,
+        dimension: DimensionName,
+        variant: VariantName,
+    ) -> Result<Self, DimensionCheckRoundError> {
+        let Some(schema_dimension) = schema.resolve_dimension(&dimension) else {
+            return Err(DimensionCheckRoundError::UnknownDimension(dimension));
+        };
+        if schema_dimension.variant(&variant).is_none() {
+            return Err(DimensionCheckRoundError::UnknownVariant { dimension, variant });
+        }
+        Ok(Self { dimension, variant })
+    }
+
     #[must_use]
-    pub const fn new(dimension: DimensionName, variant: VariantName) -> Self {
-        Self { dimension, variant }
+    pub const fn dimension(&self) -> &DimensionName {
+        &self.dimension
+    }
+
+    #[must_use]
+    pub const fn variant(&self) -> &VariantName {
+        &self.variant
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DimensionCheckRoundError {
+    UnknownDimension(DimensionName),
+    UnknownVariant {
+        dimension: DimensionName,
+        variant: VariantName,
+    },
+}
+
+impl std::fmt::Display for DimensionCheckRoundError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownDimension(dimension) => {
+                write!(formatter, "unknown check dimension `{dimension}`")
+            }
+            Self::UnknownVariant { dimension, variant } => write!(
+                formatter,
+                "unknown check variant `{variant}` for dimension `{dimension}`"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DimensionCheckRoundError {}
 
 pub(crate) fn attach_dimension_origins(
     model: &CfdDataModel,

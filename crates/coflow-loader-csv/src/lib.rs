@@ -37,7 +37,6 @@ use coflow_api::{
 };
 use options::{csv_sheets, csv_source_options, decode_csv_source_options};
 use serde_json::Value;
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -99,9 +98,6 @@ impl SourceProvider for CsvLoader {
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
         let SourceLocationSpec::Path(path) = &source.location;
-        if path.is_dir() {
-            return collect_csv_sources(path, source);
-        }
         if is_csv_path(path) {
             let mut resolved = source.clone();
             resolved.provider_id = CSV_LOADER_DESCRIPTOR.id.to_string();
@@ -131,45 +127,6 @@ impl SourceProvider for CsvLoader {
             })
             .map_err(csv_diagnostics_to_api)
     }
-}
-
-fn collect_csv_sources(
-    dir: &Path,
-    source: &ResolvedSource,
-) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-    let mut entries = fs::read_dir(dir)
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "CSV-SOURCE",
-                "CSV",
-                format!("failed to read data source dir `{}`: {err}", dir.display()),
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "CSV-SOURCE",
-                "CSV",
-                format!("failed to read data source dir `{}`: {err}", dir.display()),
-            ))
-        })?;
-    entries.sort_by_key(fs::DirEntry::path);
-
-    let mut sources = Vec::new();
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            sources.extend(collect_csv_sources(&path, source)?);
-        } else if is_csv_path(&path) {
-            sources.push(ResolvedSource {
-                provider_id: CSV_LOADER_DESCRIPTOR.id.to_string(),
-                display_name: path.display().to_string(),
-                location: SourceLocationSpec::Path(path),
-                options: source.options.clone(),
-            });
-        }
-    }
-    Ok(sources)
 }
 
 fn is_csv_path(path: &Path) -> bool {

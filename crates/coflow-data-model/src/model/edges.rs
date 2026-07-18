@@ -1,7 +1,6 @@
 use super::ids::CfdRecordId;
 use crate::diagnostics::{CfdPath, CfdPathSegment};
-use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
-use serde::{Deserialize, Serialize};
+use coflow_cft::{DimensionName, FieldName, VariantName};
 use std::collections::BTreeSet;
 
 /// Logical address of a `CfdValue::Ref` instance inside the model: the host
@@ -44,8 +43,8 @@ pub struct DimensionRefCoordinate {
     pub variant: VariantName,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct RefEdgeId(usize);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct RefEdgeId(usize);
 
 impl RefEdgeId {
     #[must_use]
@@ -54,56 +53,19 @@ impl RefEdgeId {
     }
 
     #[must_use]
-    pub fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         self.0
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefEdge {
-    pub id: RefEdgeId,
     pub site: RefSite,
-    pub expected_type: TypeName,
-    pub inheritance_root: TypeName,
-    pub key: RecordKey,
     pub target: CfdRecordId,
-    pub target_type: TypeName,
 }
 
-/// Logical address of a field value inherited through object/record spread.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SpreadSite {
-    pub host: CfdRecordId,
-    pub path: CfdPath,
-    pub dimension: Option<DimensionRefCoordinate>,
-}
-
-impl SpreadSite {
-    #[must_use]
-    pub const fn new(host: CfdRecordId, path: CfdPath) -> Self {
-        Self {
-            host,
-            path,
-            dimension: None,
-        }
-    }
-
-    #[must_use]
-    pub const fn in_dimension(
-        host: CfdRecordId,
-        path: CfdPath,
-        dimension: DimensionRefCoordinate,
-    ) -> Self {
-        Self {
-            host,
-            path,
-            dimension: Some(dimension),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct SpreadEdgeId(usize);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct SpreadEdgeId(usize);
 
 impl SpreadEdgeId {
     #[must_use]
@@ -112,28 +74,23 @@ impl SpreadEdgeId {
     }
 
     #[must_use]
-    pub fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         self.0
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpreadEdge {
-    pub id: SpreadEdgeId,
-    pub site: SpreadSite,
     pub host: CfdRecordId,
     pub path: CfdPath,
+    pub dimension: Option<DimensionRefCoordinate>,
     pub fields: BTreeSet<FieldName>,
-    pub expected_type: TypeName,
-    pub inheritance_root: TypeName,
-    pub source_key: RecordKey,
     pub source: CfdRecordId,
-    pub source_type: TypeName,
 }
 
 impl SpreadEdge {
     #[must_use]
-    pub fn covers_path(&self, path: &CfdPath) -> bool {
+    pub(crate) fn covers_path(&self, path: &CfdPath) -> bool {
         if !path.segments.starts_with(&self.path.segments) {
             return false;
         }
@@ -145,7 +102,7 @@ impl SpreadEdge {
     }
 
     #[must_use]
-    pub fn source_path_for(&self, host_path: &CfdPath) -> Option<CfdPath> {
+    pub(crate) fn source_path_for(&self, host_path: &CfdPath) -> Option<CfdPath> {
         if !self.covers_path(host_path) {
             return None;
         }

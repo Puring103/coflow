@@ -175,6 +175,7 @@ fn eval_quantifier_stmt(
     )
 }
 
+#[derive(Clone, Copy)]
 struct QuantifierExecution<'a, 'model> {
     kind: CftSchemaQuantifierKind,
     binding: &'a str,

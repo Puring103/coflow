@@ -518,6 +518,138 @@ fn directory_source_rejects_options_unknown_to_every_selected_provider() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[test]
+fn explicit_provider_directory_uses_cycle_safe_discovery() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-explicit-directory-cycle-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - type: cfd\n    path: data\n",
+    )
+    .expect("write explicit config");
+    std::fs::write(root.join("data").join("ignored.txt"), "not CFD").expect("write ignored file");
+    let alias = root.join("data").join("root-alias");
+    create_directory_alias(&alias, &root.join("data"));
+
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let session = build_session(project, &registry()).expect("session");
+    assert_eq!(
+        data_list(session.queries(), &DataListQuery::default())
+            .records
+            .len(),
+        2
+    );
+
+    remove_directory_alias(&alias).expect("remove directory alias");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn explicit_provider_directory_rejects_aliases_outside_its_root() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-explicit-directory-root-{}",
+        std::process::id()
+    ));
+    let external = std::env::temp_dir().join(format!(
+        "coflow-explicit-directory-external-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&external);
+    write_project(&root);
+    std::fs::create_dir_all(&external).expect("create external dir");
+    std::fs::write(
+        external.join("outside.cfd"),
+        "outside: Item { name: x, price: 1 }",
+    )
+    .expect("write external source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - type: cfd\n    path: data\n",
+    )
+    .expect("write explicit config");
+    let alias = root.join("data").join("outside-alias");
+    create_directory_alias(&alias, &external);
+
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let session = build_session(project, &registry()).expect("diagnostic session");
+    assert!(session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic
+            .message
+            .contains("resolves outside declared root")));
+
+    remove_directory_alias(&alias).expect("remove directory alias");
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(external);
+}
+
+#[test]
+fn explicit_empty_provider_directory_still_validates_typed_options() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-explicit-empty-directory-options-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create empty data dir");
+    std::fs::write(root.join("schema.cft"), "type Item {}\n").expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - type: csv\n    path: data\n    sheets: invalid\n",
+    )
+    .expect("write explicit config");
+
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let session = build_session(project, &registry()).expect("diagnostic session");
+    assert!(session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("sheets")));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+fn create_directory_alias(alias: &std::path::Path, target: &std::path::Path) {
+    std::os::unix::fs::symlink(target, alias).expect("create directory symlink");
+}
+
+#[cfg(windows)]
+fn create_directory_alias(alias: &std::path::Path, target: &std::path::Path) {
+    let output = std::process::Command::new("cmd")
+        .args(["/c", "mklink", "/J"])
+        .arg(alias)
+        .arg(target)
+        .output()
+        .expect("create directory junction");
+    assert!(
+        output.status.success(),
+        "failed to create junction: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[cfg(unix)]
+fn remove_directory_alias(alias: &std::path::Path) -> std::io::Result<()> {
+    std::fs::remove_file(alias)
+}
+
+#[cfg(windows)]
+fn remove_directory_alias(alias: &std::path::Path) -> std::io::Result<()> {
+    std::fs::remove_dir(alias)
+}
+
 #[derive(Debug)]
 struct TestTableOptions {
     token: String,

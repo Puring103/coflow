@@ -1,6 +1,6 @@
 //! Writer that persists field edits back to local `.xlsx` workbooks.
 //!
-//! `ExcelWriter` is the [`SourceWriter`] for [`RecordOrigin::Table`] origins
+//! `ExcelWriter` is the [`SourceWriter`] for [`coflow_data_model::RecordOrigin::Table`] origins
 //! whose document is `SourceDocument::Local`. It uses
 //! [`umya-spreadsheet`](https://docs.rs/umya-spreadsheet) so existing styles,
 //! merged cells, and column widths survive round-trips.

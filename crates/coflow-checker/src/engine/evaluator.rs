@@ -10,7 +10,9 @@ use super::value::{EvalValue, LocatedEvalValue, ScalarValue, ValueLocation};
 use coflow_cft::{CftSchema, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp};
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use super::value::EvalRecordRef;
 
@@ -25,6 +27,7 @@ pub(super) struct CheckEvaluator<'model> {
     deps: DependencyCollector,
     pub(super) dimension_round: Option<dimensions::DimensionRoundView>,
     trace: Option<EvaluationTrace>,
+    regex_cache: Rc<RefCell<builtins::RegexCache>>,
     budget: StructuralBudget,
     eval_stack: Vec<TraversalCursor>,
 }
@@ -51,6 +54,7 @@ impl<'model> CheckEvaluator<'model> {
         check_origin: ValueLocation,
         current: EvalValue<'model>,
         mut deps: DependencyCollector,
+        regex_cache: Rc<RefCell<builtins::RegexCache>>,
         structural_limits: StructuralLimits,
     ) -> Self {
         let initial_top = match &current {
@@ -71,6 +75,7 @@ impl<'model> CheckEvaluator<'model> {
             deps,
             dimension_round: None,
             trace: None,
+            regex_cache,
             budget: StructuralBudget::new(structural_limits),
             eval_stack: Vec::new(),
         }
@@ -375,7 +380,11 @@ impl<'model> CheckEvaluator<'model> {
                 let value = self.eval_expr(&args[0])?;
                 let pattern =
                     self.resolve_call_signature(builtins::matches_pattern_arg(&args[1]))?;
-                self.eval_ops(builtins::matches_value(value, pattern))
+                let result = {
+                    let mut cache = self.regex_cache.borrow_mut();
+                    builtins::matches_value(value, pattern, &mut cache)
+                };
+                self.eval_ops(result)
             }
         }
     }
@@ -414,7 +423,7 @@ impl<'model> CheckEvaluator<'model> {
                 ))
             }
             Builtin::Unique => self.eval_unique(receiver, receiver_value),
-            Builtin::Min | Builtin::Max => self.eval_min_max_value(builtin, receiver_value),
+            Builtin::Min | Builtin::Max => self.eval_min_max_value(builtin, &receiver_value),
             Builtin::Sum => self.eval_sum_value(receiver_value),
             Builtin::Keys => {
                 self.charge_collection_work(&receiver_value)?;
@@ -427,7 +436,11 @@ impl<'model> CheckEvaluator<'model> {
             Builtin::Matches => {
                 let pattern =
                     self.resolve_call_signature(builtins::matches_pattern_arg(&args[0]))?;
-                self.eval_ops(builtins::matches_value(receiver_value, pattern))
+                let result = {
+                    let mut cache = self.regex_cache.borrow_mut();
+                    builtins::matches_value(receiver_value, pattern, &mut cache)
+                };
+                self.eval_ops(result)
             }
         }
     }
@@ -458,15 +471,15 @@ impl<'model> CheckEvaluator<'model> {
         args: &[CftSchemaCheckExpr],
     ) -> EvalResult<LocatedEvalValue<'model>> {
         let arg_value = self.eval_expr(&args[0])?;
-        self.eval_min_max_value(builtin, arg_value)
+        self.eval_min_max_value(builtin, &arg_value)
     }
 
     pub(super) fn eval_min_max_value(
         &mut self,
         builtin: Builtin,
-        arg_value: LocatedEvalValue<'model>,
+        arg_value: &LocatedEvalValue<'model>,
     ) -> EvalResult<LocatedEvalValue<'model>> {
-        self.charge_collection_work(&arg_value)?;
+        self.charge_collection_work(arg_value)?;
         let result = builtins::min_max_value(builtin, arg_value, self.model, &mut self.budget);
         self.eval_ops(result)
     }
@@ -506,22 +519,22 @@ impl<'model> CheckEvaluator<'model> {
         match op {
             CftSchemaBinOp::Or => {
                 let lhs = self.eval_expr(lhs)?;
-                let (lhs, lhs_path) = self.eval_ops(ops::expect_bool_operand(lhs, "左"))?;
+                let (lhs, lhs_path) = self.eval_ops(ops::expect_bool_operand(&lhs, "左"))?;
                 if lhs {
                     return Ok(LocatedEvalValue::new(EvalValue::bool(true), lhs_path));
                 }
                 let rhs = self.eval_expr(rhs)?;
-                let (rhs, rhs_path) = self.eval_ops(ops::expect_bool_operand(rhs, "右"))?;
+                let (rhs, rhs_path) = self.eval_ops(ops::expect_bool_operand(&rhs, "右"))?;
                 Ok(LocatedEvalValue::new(EvalValue::bool(rhs), rhs_path))
             }
             CftSchemaBinOp::And => {
                 let lhs = self.eval_expr(lhs)?;
-                let (lhs, lhs_path) = self.eval_ops(ops::expect_bool_operand(lhs, "左"))?;
+                let (lhs, lhs_path) = self.eval_ops(ops::expect_bool_operand(&lhs, "左"))?;
                 if !lhs {
                     return Ok(LocatedEvalValue::new(EvalValue::bool(false), lhs_path));
                 }
                 let rhs = self.eval_expr(rhs)?;
-                let (rhs, rhs_path) = self.eval_ops(ops::expect_bool_operand(rhs, "右"))?;
+                let (rhs, rhs_path) = self.eval_ops(ops::expect_bool_operand(&rhs, "右"))?;
                 Ok(LocatedEvalValue::new(EvalValue::bool(rhs), rhs_path))
             }
             _ => {
@@ -531,8 +544,8 @@ impl<'model> CheckEvaluator<'model> {
                 self.eval_ops(ops::eager_bin_op(
                     self.schema,
                     op,
-                    lhs.value,
-                    rhs.value,
+                    &lhs.value,
+                    &rhs.value,
                     location,
                 ))
             }

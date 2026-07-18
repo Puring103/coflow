@@ -118,11 +118,15 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         self.resolve_fields(fields, &root, cursor)
     }
 
+    pub(super) fn diagnostic_count(&self) -> usize {
+        self.diagnostics.len()
+    }
+
     pub(super) fn resolve_dimension_value(
         &mut self,
         record: CfdRecordId,
         value: &ValueDraft,
-        path: CfdPath,
+        path: &CfdPath,
     ) -> Option<CfdValue> {
         self.budget = StructuralBudget::new(self.structural_limits);
         self.budget_exhausted = false;
@@ -131,7 +135,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         self.stack.clear();
         let node = ValueNode {
             record,
-            path,
+            path: path.clone(),
             branch: Vec::new(),
         };
         self.resolve_node(value, node, TraversalCursor::root(), false)

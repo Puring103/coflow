@@ -1,94 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Builtin {
-    Len,
-    Contains,
-    Unique,
-    Min,
-    Max,
-    Sum,
-    Keys,
-    Values,
-    Matches,
-}
-
-impl Builtin {
-    pub(crate) fn by_name(name: &str) -> Option<Self> {
-        BUILTINS
-            .iter()
-            .copied()
-            .find(|builtin| builtin.name() == name)
-    }
-
-    pub(crate) const fn name(self) -> &'static str {
-        match self {
-            Self::Len => "len",
-            Self::Contains => "contains",
-            Self::Unique => "isUnique",
-            Self::Min => "min",
-            Self::Max => "max",
-            Self::Sum => "sum",
-            Self::Keys => "keys",
-            Self::Values => "values",
-            Self::Matches => "matches",
-        }
-    }
-
-    pub(crate) const fn arity(self) -> usize {
-        match self {
-            Self::Contains | Self::Matches => 2,
-            Self::Len
-            | Self::Unique
-            | Self::Min
-            | Self::Max
-            | Self::Sum
-            | Self::Keys
-            | Self::Values => 1,
-        }
-    }
-}
-
-pub(crate) const BUILTINS: &[Builtin] = &[
-    Builtin::Len,
-    Builtin::Contains,
-    Builtin::Unique,
-    Builtin::Min,
-    Builtin::Max,
-    Builtin::Sum,
-    Builtin::Keys,
-    Builtin::Values,
-    Builtin::Matches,
-];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn builtin_registry_keeps_names_and_arities_together() {
-        let entries = BUILTINS
-            .iter()
-            .map(|builtin| (builtin.name(), builtin.arity()))
-            .collect::<Vec<_>>();
-        assert_eq!(
-            entries,
-            vec![
-                ("len", 1),
-                ("contains", 2),
-                ("isUnique", 1),
-                ("min", 1),
-                ("max", 1),
-                ("sum", 1),
-                ("keys", 1),
-                ("values", 1),
-                ("matches", 2),
-            ]
-        );
-        for (name, _) in entries {
-            assert!(Builtin::by_name(name).is_some());
-        }
-        assert_eq!(Builtin::by_name("missing"), None);
-    }
-}
+pub(crate) use coflow_cft::CftCheckBuiltin as Builtin;
 
 use coflow_cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind};
 
@@ -135,7 +45,7 @@ impl CallSignature {
                 name: name.to_string(),
             });
         };
-        let expected_args = builtin.arity().saturating_sub(1);
+        let expected_args = builtin.method_arity();
         require_arity(builtin, arg_count, expected_args)?;
         Ok(Self {
             target: CallTarget::Builtin(builtin),
@@ -205,6 +115,8 @@ use super::value::{
     comparable_key, dict_key_from_check_value, dict_key_matches, values_equal, EvalItems,
     EvalValue, LocatedBudgetExceeded, LocatedEvalValue, ScalarValue,
 };
+
+pub(crate) type RegexCache = BTreeMap<String, Regex>;
 
 pub(crate) fn len_value(value: LocatedEvalValue<'_>) -> OpsResult<LocatedEvalValue<'_>> {
     match value.value {
@@ -381,6 +293,7 @@ pub(crate) fn values_value(value: LocatedEvalValue<'_>) -> OpsResult<LocatedEval
 pub(crate) fn matches_value<'model>(
     value: LocatedEvalValue<'model>,
     pattern: &str,
+    cache: &mut RegexCache,
 ) -> OpsResult<LocatedEvalValue<'model>> {
     let location = value.location.clone();
     let value_kind = value.value.clone();
@@ -393,18 +306,22 @@ pub(crate) fn matches_value<'model>(
             ),
         ));
     };
-    let regex = Regex::new(pattern).map_err(|err| {
-        OpsError::eval_type(None, format!("正则 pattern `{pattern}` 无法编译: {err}"))
-    })?;
+    if !cache.contains_key(pattern) {
+        let regex = Regex::new(pattern).map_err(|err| {
+            OpsError::eval_type(None, format!("正则 pattern `{pattern}` 无法编译: {err}"))
+        })?;
+        cache.insert(pattern.to_string(), regex);
+    }
+    let matches = cache.get(pattern).is_some_and(|regex| regex.is_match(text));
     Ok(LocatedEvalValue::new(
-        EvalValue::bool(regex.is_match(text)),
+        EvalValue::bool(matches),
         value.location,
     ))
 }
 
 pub(crate) fn min_max_value<'model>(
     builtin: Builtin,
-    value: LocatedEvalValue<'model>,
+    value: &LocatedEvalValue<'model>,
     model: &'model CfdDataModel,
     budget: &mut StructuralBudget,
 ) -> OpsResult<LocatedEvalValue<'model>> {
@@ -557,4 +474,26 @@ fn budget_error(exceeded: LocatedBudgetExceeded) -> OpsError {
         *exceeded.location,
         exceeded.error.to_string(),
     )
+}
+
+#[cfg(test)]
+mod regex_cache_tests {
+    #![allow(clippy::expect_used)]
+
+    use super::*;
+
+    #[test]
+    fn repeated_matches_reuse_one_compiled_regex() {
+        let mut cache = RegexCache::new();
+        for _ in 0..2 {
+            let value = LocatedEvalValue::new(EvalValue::string("item_42"), None);
+            let matched = matches_value(value, r"^item_\d+$", &mut cache)
+                .expect("validated regex should execute");
+            assert!(matches!(
+                matched.value.scalar(),
+                Some(ScalarValue::Bool(true))
+            ));
+        }
+        assert_eq!(cache.len(), 1);
+    }
 }

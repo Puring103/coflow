@@ -123,7 +123,8 @@ pub struct TableDiagnostics {
 
 #[derive(Debug, Clone)]
 pub struct TableInputRecords {
-    /// Each record carries its own [`RecordOrigin`] (a [`RecordOrigin::Table`]
+    /// Each record carries its own [`coflow_data_model::RecordOrigin`] (a
+    /// [`coflow_data_model::RecordOrigin::Table`]
     /// variant). Diagnostics produced before data-model diagnostics are mapped
     /// can use the records' origins to resolve labels back to source cells.
     pub records: Vec<LoadedRecordDraft>,

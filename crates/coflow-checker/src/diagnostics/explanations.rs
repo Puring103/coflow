@@ -72,6 +72,7 @@ pub(crate) fn explain_false_value_expr(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn explain_false_expr(
     trace: &EvaluationTrace,
     expr: &CftSchemaCheckExpr,

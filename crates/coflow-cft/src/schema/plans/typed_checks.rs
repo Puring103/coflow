@@ -5,7 +5,7 @@ use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Debug, Clone, Default)]
-pub struct TypedCheckPlan {
+pub(crate) struct TypedCheckPlan {
     owners_by_actual: BTreeMap<TypeName, Vec<TypeName>>,
     nested_fields_by_actual: BTreeMap<TypeName, BTreeSet<FieldName>>,
     dimension_statements_by_owner: BTreeMap<TypeName, BTreeMap<DimensionName, Vec<usize>>>,

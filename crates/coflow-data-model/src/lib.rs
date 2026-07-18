@@ -23,7 +23,6 @@
     clippy::derive_partial_eq_without_eq,
     clippy::missing_const_for_fn,
     clippy::redundant_pub_crate,
-    clippy::too_many_lines,
     clippy::use_self
 )]
 
@@ -47,8 +46,7 @@ pub use ingest::{DimensionValueDraft, LoadedDictKeyDraft, LoadedRecordDraft, Loa
 pub use model::{
     CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdObject,
     CfdRecord, CfdRecordId, CfdTable, CfdValue, DimensionFieldLookupError, DimensionRefCoordinate,
-    DimensionValueLookup, RecordCoordinate, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId,
-    SpreadSite,
+    DimensionValueLookup, RecordCoordinate, RefEdge, RefSite, SpreadEdge,
 };
 pub use semantics::{
     validate_object_type_assignable, validate_value_for_schema, CfdValueSemanticContext,
