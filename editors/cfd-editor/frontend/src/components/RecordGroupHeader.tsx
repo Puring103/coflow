@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
 
 export const RECORD_GROUP_COLORS = [
@@ -37,7 +38,7 @@ export function RecordGroupHeader({ name, groupId, count, collapsed, color, clas
   useEffect(() => {
     if (!menu) return
     const close = (event: PointerEvent) => {
-      if (event.target instanceof Element && event.target.closest('.record-group-color-menu')) return
+      if (event.target instanceof Element && event.target.closest('.record-group-menu')) return
       setMenu(null)
     }
     const closeOnBlur = () => setMenu(null)
@@ -104,26 +105,32 @@ export function RecordGroupHeader({ name, groupId, count, collapsed, color, clas
           }}
         />
       ) : (
-        <span
-          className="record-group-name"
-          onDoubleClick={event => {
-            event.stopPropagation()
-            setDraft(name)
-            setEditing(true)
-          }}
-        >
-          {name}
-        </span>
+        <span className="record-group-name">{name}</span>
       )}
       <span className="record-group-count">{count}</span>
-      {menu && onColorChange && (
+      {menu && createPortal(
         <div
-          className="context-menu record-group-color-menu"
+          className="context-menu record-group-menu"
           style={{ left: menu.x, top: menu.y }}
           role="menu"
           onPointerDown={event => event.stopPropagation()}
           onClick={event => event.stopPropagation()}
         >
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              setMenu(null)
+              setDraft(name)
+              setEditing(true)
+            }}
+          >
+            <Icon name="edit" size={13} aria-hidden />
+            重命名
+          </button>
+          {onColorChange && <div className="ctx-sep" />}
+          {onColorChange && <>
           <button
             type="button"
             className={`ctx-item${color ? '' : ' active'}`}
@@ -146,8 +153,9 @@ export function RecordGroupHeader({ name, groupId, count, collapsed, color, clas
               />
             ))}
           </div>
+          </>}
         </div>
-      )}
+      , document.body)}
     </div>
   )
 }

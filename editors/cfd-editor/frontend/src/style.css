@@ -867,6 +867,13 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   background: color-mix(in srgb, var(--accent) 14%, var(--bg-1));
   box-shadow: inset 0 0 0 1px var(--accent);
 }
+.dimension-table tbody tr.has-group-color .keyboard-selected {
+  background: color-mix(
+    in srgb,
+    var(--accent) 14%,
+    color-mix(in srgb, var(--record-group-color) 9%, var(--bg-1))
+  );
+}
 .dimension-value-missing {
   width: 100%;
   height: 24px;
@@ -937,6 +944,13 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 .dimension-record-list > button.selected {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--text);
+}
+.dimension-record-list > button.has-group-color.selected {
+  background: color-mix(
+    in srgb,
+    var(--accent) 16%,
+    color-mix(in srgb, var(--record-group-color) 9%, var(--bg-2))
+  );
 }
 .dimension-record-main { flex: 1; min-width: 0; overflow: auto; padding: 14px 18px; }
 .dimension-record-card { max-width: 760px; border-top: 1px solid var(--border); }
@@ -1262,8 +1276,11 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   text-align: center;
 }
 .record-group-header .record-group-count { margin-left: 0; }
-.record-group-color-menu { width: 184px; }
-.record-group-color-menu .ctx-item {
+.context-menu.record-group-menu {
+  width: 184px;
+  z-index: 300;
+}
+.record-group-menu .ctx-item {
   width: 100%;
   border: 0;
   background: transparent;
@@ -1602,7 +1619,8 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 .table-record-group-header {
   position: sticky;
   left: 0;
-  max-width: min(420px, 70vw);
+  width: 100%;
+  max-width: none;
   box-shadow: inset 2px 0 0 transparent;
 }
 .table-record-group-header.contains-selection {
@@ -1616,8 +1634,13 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 .table-row.has-group-color:hover td.sticky-key-column {
   background: color-mix(in srgb, var(--record-group-color) 14%, var(--bg-2)) !important;
 }
-.table-row.selected td.sticky-key-column {
-  background: color-mix(in srgb, var(--accent) 7%, var(--bg-1)) !important;
+.table-row.has-group-color.selected td,
+.table-row.has-group-color.selected td.sticky-key-column {
+  background: color-mix(
+    in srgb,
+    var(--accent) 7%,
+    color-mix(in srgb, var(--record-group-color) 9%, var(--bg-1))
+  ) !important;
 }
 .data-table td > .dc-compact,
 .data-table td > .vc {
@@ -1733,6 +1756,20 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 .table-row td.complex-cell.selected-cell {
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-1)) !important;
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+.table-row.has-group-color td.selected-cell {
+  background: color-mix(
+    in srgb,
+    var(--accent) 13%,
+    color-mix(in srgb, var(--record-group-color) 9%, var(--bg-1))
+  ) !important;
+}
+.table-row.has-group-color td.complex-cell.selected-cell {
+  background: color-mix(
+    in srgb,
+    var(--accent) 8%,
+    color-mix(in srgb, var(--record-group-color) 9%, var(--bg-1))
+  ) !important;
 }
 .table-row-error td:first-child   { box-shadow: inset 2px 0 0 var(--red); }
 .table-row-warning td:first-child { box-shadow: inset 2px 0 0 var(--yellow); }
@@ -2139,6 +2176,13 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 .rv-sidebar-item.selected {
   background: var(--bg-4);
   border-left-color: var(--type-color, var(--accent));
+}
+.rv-sidebar-item.has-group-color.selected {
+  background: color-mix(
+    in srgb,
+    var(--accent) 14%,
+    color-mix(in srgb, var(--record-group-color) 9%, var(--bg-2))
+  );
 }
 .rv-sidebar-item.selected .rv-item-type {
   color: var(--type-color, var(--accent));
