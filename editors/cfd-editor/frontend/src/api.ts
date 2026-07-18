@@ -97,6 +97,7 @@ export async function closeSession(sessionId: number): Promise<void> {
 
 export interface DimensionFileRow {
   coordinate: RecordCoordinate
+  owner_file_path: string
   default_value: FieldValue
   values: Record<string, DimensionValueState | undefined>
 }
@@ -151,6 +152,20 @@ export async function setRecordGroups(
     filePath,
     actualType,
     groups,
+  })
+}
+
+export async function setGraphEnabledFields(
+  sessionId: number,
+  filePath: string,
+  actualType: string,
+  fields: string[],
+): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('set_graph_enabled_fields', {
+    sessionId,
+    filePath,
+    actualType,
+    fields,
   })
 }
 

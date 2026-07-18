@@ -158,6 +158,7 @@ pub struct DimensionFileRecords {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DimensionFileRow {
     pub coordinate: RecordCoordinate,
+    pub owner_file_path: String,
     pub default_value: CfdValue,
     pub values: BTreeMap<String, DimensionValueState>,
 }
@@ -173,6 +174,8 @@ pub struct EditorProjectSettings {
     pub table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
     #[serde(default)]
     pub record_groups: BTreeMap<String, BTreeMap<String, Vec<EditorRecordGroup>>>,
+    #[serde(default)]
+    pub graph_enabled_fields: BTreeMap<String, BTreeMap<String, Vec<String>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,6 +187,8 @@ pub struct EditorProjectSettings {
 pub struct EditorRecordGroup {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub color: Option<String>,
     pub records: Vec<RecordCoordinate>,
 }
 

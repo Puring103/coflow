@@ -73,7 +73,7 @@ export function moveRecordsOntoRecord(
 
   return [
     ...removeRecordsFromGroups(groups, uniqueSources),
-    { id: newGroupId, name: newGroupName, records: [target, ...uniqueSources] },
+    { id: newGroupId, name: newGroupName, color: null, records: [target, ...uniqueSources] },
   ]
 }
 
@@ -137,6 +137,14 @@ export function renameRecordGroup(
   const trimmed = name.trim().slice(0, 80)
   if (!trimmed) return [...groups]
   return groups.map(group => group.id === groupId ? { ...group, name: trimmed } : group)
+}
+
+export function colorRecordGroup(
+  groups: readonly EditorRecordGroup[],
+  groupId: string,
+  color: string | null,
+): EditorRecordGroup[] {
+  return groups.map(group => group.id === groupId ? { ...group, color } : group)
 }
 
 export function replaceGroupedCoordinate(

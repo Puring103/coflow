@@ -1,13 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DimensionFileRecords, DimensionFileRow } from '../api'
 import type { DimensionValueState } from '../bindings/DimensionValueState'
+import type { EditorProjectSettings } from '../bindings/EditorProjectSettings'
+import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { FieldValue } from '../wire'
+import { coordinateId, sameCoordinate } from '../wire'
 import { DataCardCompact, DirectEditor, InlineEditor } from './DataCard'
 import { Icon } from './Icon'
+import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
 
 interface Props {
   data: DimensionFileRecords
   mode: 'table' | 'record'
+  recordGroupsByFile?: EditorProjectSettings['record_groups']
+  onRenameGroup?: (filePath: string, actualType: string, groupId: string, name: string) => void
+  onColorGroup?: (filePath: string, actualType: string, groupId: string, color: string | null) => void
   onWrite: (
     row: DimensionFileRow,
     variant: string,
@@ -21,6 +28,56 @@ interface Props {
 }
 
 export interface DimensionCellSelection { row: number; column: number }
+
+export interface DimensionRecordGroupView {
+  key: string
+  ownerFilePath: string
+  settingsType: string
+  group: EditorRecordGroup
+  rows: DimensionFileRow[]
+}
+
+export type DimensionDisplayItem =
+  | { kind: 'group'; view: DimensionRecordGroupView }
+  | { kind: 'ungrouped'; rows: DimensionFileRow[] }
+  | { kind: 'row'; row: DimensionFileRow; group?: EditorRecordGroup }
+
+export function organizeDimensionRows(
+  rows: readonly DimensionFileRow[],
+  groupsByFile: EditorProjectSettings['record_groups'],
+  collapsed: ReadonlySet<string>,
+): DimensionDisplayItem[] {
+  const views = new Map<string, DimensionRecordGroupView>()
+  const ungrouped: DimensionFileRow[] = []
+  for (const row of rows) {
+    const typeGroups = groupsByFile[row.owner_file_path] ?? {}
+    let match: DimensionRecordGroupView | undefined
+    for (const [settingsType, groups] of Object.entries(typeGroups)) {
+      const group = groups?.find(candidate => candidate.records.some(member => sameCoordinate(member, row.coordinate)))
+      if (!group) continue
+      const key = `${row.owner_file_path}\u001f${settingsType}\u001f${group.id}`
+      match = views.get(key) ?? { key, ownerFilePath: row.owner_file_path, settingsType, group, rows: [] }
+      if (!views.has(key)) views.set(key, match)
+      break
+    }
+    if (!match) {
+      ungrouped.push(row)
+      continue
+    }
+    match.rows.push(row)
+  }
+
+  const items: DimensionDisplayItem[] = []
+  for (const view of views.values()) {
+    items.push({ kind: 'group', view })
+    if (!collapsed.has(view.key)) {
+      items.push(...view.rows.map(row => ({ kind: 'row' as const, row, group: view.group })))
+    }
+  }
+  if (views.size > 0) items.push({ kind: 'ungrouped', rows: ungrouped })
+  items.push(...ungrouped.map(row => ({ kind: 'row' as const, row })))
+  return items
+}
 
 export function moveDimensionCell(
   selection: DimensionCellSelection,
@@ -39,23 +96,40 @@ export function moveDimensionCell(
 export function DimensionTableView({
   data,
   mode,
+  recordGroupsByFile = {},
+  onRenameGroup,
+  onColorGroup,
   onWrite,
   onExitLeft,
   onExitUp,
   focusRequest = 0,
   onFocusRequestConsumed,
 }: Props) {
-  const [selectedKey, setSelectedKey] = useState(data.rows[0]?.coordinate.key ?? '')
+  const [selectedKey, setSelectedKey] = useState(data.rows[0] ? coordinateId(data.rows[0].coordinate) : '')
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
   const [recordField, setRecordField] = useState(0)
   const tableRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLElement>(null)
   const recordRef = useRef<HTMLElement>(null)
   useEffect(() => {
-    if (!data.rows.some(row => row.coordinate.key === selectedKey)) {
-      setSelectedKey(data.rows[0]?.coordinate.key ?? '')
+    if (!data.rows.some(row => coordinateId(row.coordinate) === selectedKey)) {
+      setSelectedKey(data.rows[0] ? coordinateId(data.rows[0].coordinate) : '')
     }
   }, [data, selectedKey])
-  const selected = data.rows.find(row => row.coordinate.key === selectedKey) ?? data.rows[0]
+  const items = useMemo(
+    () => organizeDimensionRows(data.rows, recordGroupsByFile, collapsedGroups),
+    [data.rows, recordGroupsByFile, collapsedGroups],
+  )
+  const visibleRows = useMemo(
+    () => items.flatMap(item => item.kind === 'row' ? [item.row] : []),
+    [items],
+  )
+  const selected = data.rows.find(row => coordinateId(row.coordinate) === selectedKey) ?? data.rows[0]
+  const toggleGroup = (key: string) => setCollapsedGroups(current => {
+    const next = new Set(current)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
 
   useEffect(() => {
     if (!focusRequest) return
@@ -75,6 +149,11 @@ export function DimensionTableView({
           data={data}
           onWrite={onWrite}
           rootRef={tableRef}
+          items={items}
+          collapsedGroups={collapsedGroups}
+          onToggleGroup={toggleGroup}
+          onRenameGroup={onRenameGroup}
+          onColorGroup={onColorGroup}
           onExitLeft={onExitLeft}
           onExitUp={onExitUp}
         />
@@ -86,7 +165,7 @@ export function DimensionTableView({
             ref={listRef}
             onKeyDown={event => {
               if (!isDirection(event.key)) return
-              const index = Math.max(0, data.rows.findIndex(row => row.coordinate.key === selectedKey))
+              const index = Math.max(0, visibleRows.findIndex(row => coordinateId(row.coordinate) === selectedKey))
               if (event.key === 'ArrowLeft') {
                 event.preventDefault()
                 onExitLeft?.()
@@ -104,24 +183,40 @@ export function DimensionTableView({
               }
               if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
               event.preventDefault()
-              const next = Math.max(0, Math.min(data.rows.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))
-              const row = data.rows[next]
+              const next = Math.max(0, Math.min(visibleRows.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))
+              const row = visibleRows[next]
               if (!row) return
-              setSelectedKey(row.coordinate.key)
+              setSelectedKey(coordinateId(row.coordinate))
               requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>(
                 `[data-record-index="${next}"]`,
               )?.focus({ preventScroll: true }))
             }}
           >
-            {data.rows.map(row => (
+            {items.map(item => item.kind === 'group' ? (
+              <RecordGroupHeader
+                key={`group:${item.view.key}`}
+                name={item.view.group.name}
+                groupId={item.view.key}
+                count={item.view.rows.length}
+                collapsed={collapsedGroups.has(item.view.key)}
+                color={item.view.group.color}
+                className="dimension-record-group-header"
+                onToggle={() => toggleGroup(item.view.key)}
+                onRename={name => onRenameGroup?.(item.view.ownerFilePath, item.view.settingsType, item.view.group.id, name)}
+                onColorChange={color => onColorGroup?.(item.view.ownerFilePath, item.view.settingsType, item.view.group.id, color)}
+              />
+            ) : item.kind === 'ungrouped' ? (
+              <RecordUngroupedHeader key="ungrouped" count={item.rows.length} className="dimension-record-group-header" />
+            ) : (
               <button
-                key={`${row.coordinate.actual_type}\u001f${row.coordinate.key}`}
+                key={coordinateId(item.row.coordinate)}
                 type="button"
-                className={row.coordinate.key === selected?.coordinate.key ? 'selected' : ''}
-                data-record-index={data.rows.indexOf(row)}
-                onClick={() => { setSelectedKey(row.coordinate.key); setRecordField(0) }}
+                className={`${coordinateId(item.row.coordinate) === selectedKey ? 'selected' : ''}${item.group?.color ? ' has-group-color' : ''}`}
+                style={recordGroupColorStyle(item.group?.color)}
+                data-record-index={visibleRows.indexOf(item.row)}
+                onClick={() => { setSelectedKey(coordinateId(item.row.coordinate)); setRecordField(0) }}
               >
-                {row.coordinate.key}
+                {item.row.coordinate.key}
               </button>
             ))}
           </aside>
@@ -160,11 +255,15 @@ export function DimensionTableView({
   )
 }
 
-function DimensionGrid({ data, onWrite, rootRef, onExitLeft, onExitUp }: Pick<Props, 'data' | 'onWrite' | 'onExitLeft' | 'onExitUp'> & {
+function DimensionGrid({ data, onWrite, rootRef, onExitLeft, onExitUp, items, collapsedGroups, onToggleGroup, onRenameGroup, onColorGroup }: Pick<Props, 'data' | 'onWrite' | 'onExitLeft' | 'onExitUp' | 'onRenameGroup' | 'onColorGroup'> & {
   rootRef: React.RefObject<HTMLDivElement | null>
+  items: DimensionDisplayItem[]
+  collapsedGroups: ReadonlySet<string>
+  onToggleGroup: (key: string) => void
 }) {
   const [selection, setSelection] = useState<DimensionCellSelection>({ row: 0, column: 0 })
   const columnCount = data.variants.length + 2
+  const visibleRows = items.flatMap(item => item.kind === 'row' ? [item.row] : [])
   const select = (next: DimensionCellSelection) => {
     setSelection(next)
     requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>(
@@ -195,7 +294,7 @@ function DimensionGrid({ data, onWrite, rootRef, onExitLeft, onExitUp }: Pick<Pr
           return
         }
         event.preventDefault()
-        select(moveDimensionCell(selection, event.key, data.rows.length, columnCount))
+        select(moveDimensionCell(selection, event.key, visibleRows.length, columnCount))
       }}
     >
       <table className="dimension-table">
@@ -207,17 +306,43 @@ function DimensionGrid({ data, onWrite, rootRef, onExitLeft, onExitUp }: Pick<Pr
           </tr>
         </thead>
         <tbody>
-          {data.rows.map(row => (
-            <tr key={`${row.coordinate.actual_type}\u001f${row.coordinate.key}`}>
-              <th scope="row" {...cellProps(data.rows.indexOf(row), 0, selection, select)}>{row.coordinate.key}</th>
-              <td {...cellProps(data.rows.indexOf(row), 1, selection, select)}><DataCardCompact value={row.default_value} label="default" /></td>
-              {data.variants.map((variant, variantIndex) => (
-                <td key={variant} {...cellProps(data.rows.indexOf(row), variantIndex + 2, selection, select)}>
-                  <DimensionCellEditor row={row} variant={variant} onWrite={onWrite} />
-                </td>
-              ))}
+          {items.map(item => item.kind === 'group' ? (
+            <tr key={`group:${item.view.key}`} className="dimension-group-row">
+              <th colSpan={columnCount}>
+                <RecordGroupHeader
+                  name={item.view.group.name}
+                  groupId={item.view.key}
+                  count={item.view.rows.length}
+                  collapsed={collapsedGroups.has(item.view.key)}
+                  color={item.view.group.color}
+                  onToggle={() => onToggleGroup(item.view.key)}
+                  onRename={name => onRenameGroup?.(item.view.ownerFilePath, item.view.settingsType, item.view.group.id, name)}
+                  onColorChange={color => onColorGroup?.(item.view.ownerFilePath, item.view.settingsType, item.view.group.id, color)}
+                />
+              </th>
             </tr>
-          ))}
+          ) : item.kind === 'ungrouped' ? (
+            <tr key="ungrouped" className="dimension-group-row">
+              <th colSpan={columnCount}><RecordUngroupedHeader count={item.rows.length} /></th>
+            </tr>
+          ) : (() => {
+            const rowIndex = visibleRows.indexOf(item.row)
+            return (
+              <tr
+                key={coordinateId(item.row.coordinate)}
+                className={item.group?.color ? 'has-group-color' : undefined}
+                style={recordGroupColorStyle(item.group?.color)}
+              >
+                <th scope="row" {...cellProps(rowIndex, 0, selection, select)}>{item.row.coordinate.key}</th>
+                <td {...cellProps(rowIndex, 1, selection, select)}><DataCardCompact value={item.row.default_value} label="default" /></td>
+                {data.variants.map((variant, variantIndex) => (
+                  <td key={variant} {...cellProps(rowIndex, variantIndex + 2, selection, select)}>
+                    <DimensionCellEditor row={item.row} variant={variant} onWrite={onWrite} />
+                  </td>
+                ))}
+              </tr>
+            )
+          })())}
         </tbody>
       </table>
       {data.rows.length === 0 && <div className="empty-hint">没有可显示的记录</div>}

@@ -62,7 +62,7 @@ import {
   type RecordGroupView,
 } from '../state/manualRecordGroups'
 import { useRecordPointerDrag } from '../hooks/useRecordPointerDrag'
-import { RecordGroupHeader, RecordUngroupedHeader } from './RecordGroupHeader'
+import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
 
 interface Props {
   data: FileRecords
@@ -78,6 +78,7 @@ interface Props {
   onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
   onDropRecordIntoUngrouped?: (sources: readonly RecordCoordinate[]) => void
   onRenameGroup?: (groupId: string, name: string) => void
+  onColorGroup?: (groupId: string, color: string | null) => void
   /** Current record/value selection, lifted so it can drive the inspector. */
   selection?: EditorSelection | null
   /** Click on the Key cell: select the record. */
@@ -121,9 +122,9 @@ const MIN_COLUMN_WIDTH = 48
 type TableDisplayItem =
   | { kind: 'group'; view: RecordGroupView }
   | { kind: 'ungrouped'; records: RecordRow[] }
-  | { kind: 'row'; row: TanStackRow<RecordRow> }
+  | { kind: 'row'; row: TanStackRow<RecordRow>; group?: EditorRecordGroup }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
@@ -131,6 +132,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => columnWidths ?? {})
   const [globalFilter, setGlobalFilter] = useState(searchQuery ?? '')
+  const [tableZoom, setTableZoom] = useState(1)
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const columnSizingRef = useRef(columnSizing)
@@ -520,6 +522,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         items.push(...view.records.map(record => ({
           kind: 'row' as const,
           row: rowsById.get(coordinateId(record.coordinate))!,
+          group: view.group,
         })))
       }
     }
@@ -552,7 +555,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const rowVirtualizer = useVirtualizer({
     count: displayItems.length,
     getScrollElement: () => tableScrollRef.current,
-    estimateSize: index => displayItems[index]?.kind === 'row' ? ROW_H : GROUP_ROW_H,
+    estimateSize: index => (displayItems[index]?.kind === 'row' ? ROW_H : GROUP_ROW_H) * tableZoom,
     getItemKey: index => {
       const item = displayItems[index]
       if (item?.kind === 'group') return `group:${item.view.group.id}`
@@ -561,6 +564,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     },
     overscan: 12,
   })
+  useEffect(() => rowVirtualizer.measure(), [rowVirtualizer, tableZoom])
   const virtualRows = rowVirtualizer.getVirtualItems()
   const totalHeight = rowVirtualizer.getTotalSize()
   const padBefore = virtualRows.length > 0 ? virtualRows[0].start : 0
@@ -673,6 +677,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         <div
           className="table-scroll"
           ref={tableScrollRef}
+          onWheel={event => {
+            if (!event.ctrlKey) return
+            event.preventDefault()
+            setTableZoom(current => Math.max(0.7, Math.min(1.6,
+              Math.round((current + (event.deltaY < 0 ? 0.1 : -0.1)) * 10) / 10,
+            )))
+          }}
           tabIndex={0}
           onPointerDown={recordPointerDrag.onPointerDown}
           onClickCapture={recordPointerDrag.onClickCapture}
@@ -828,7 +839,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             }
           }}
         >
-          <table className="data-table" style={{ width: table.getTotalSize() }}>
+          <table className="data-table" style={{ width: table.getTotalSize(), zoom: tableZoom }}>
             <thead>
               {table.getHeaderGroups().map(hg => (
                 <tr key={hg.id}>
@@ -913,7 +924,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 if (item.kind === 'group') {
                   const collapsed = collapsedGroupKeys?.has(item.view.group.id) ?? false
                   const containsSelection = item.view.records.some(record => (
-                    selectionMatchesRecord(selection ?? null, data.file_path, record.coordinate)
+                    selectionOwnsRow(selection, data.file_path, record.coordinate)
                   ))
                   return (
                     <tr key={`group:${item.view.group.id}`} className="table-group-row">
@@ -923,9 +934,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           groupId={item.view.group.id}
                           count={item.view.records.length}
                           collapsed={collapsed}
+                          color={item.view.group.color}
                           className={`table-record-group-header${containsSelection ? ' contains-selection' : ''}`}
                           onToggle={() => onToggleGroup?.(item.view.group.id)}
                           onRename={name => onRenameGroup?.(item.view.group.id, name)}
+                          onColorChange={color => onColorGroup?.(item.view.group.id, color)}
                         />
                       </td>
                     </tr>
@@ -957,7 +970,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     data-record-drop-kind="record"
                     data-record-label={recordKey(row.original)}
                     ref={rowVirtualizer.measureElement}
-                    className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
+                    className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${item.group?.color ? ' has-group-color' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
+                    data-contains-selection={selectionOwnsRow(selection, data.file_path, row.original.coordinate) || undefined}
+                    style={recordGroupColorStyle(item.group?.color)}
                     onContextMenu={e => {
                       e.preventDefault()
                       setContextMenu({ x: e.clientX, y: e.clientY, row: row.original })
@@ -1346,6 +1361,18 @@ function EditableCell({
       <DataCardCompact value={value} label={label} />
     </div>
   )
+}
+
+function selectionOwnsRow(
+  selection: EditorSelection | null | undefined,
+  filePath: string,
+  coordinate: RecordCoordinate,
+): boolean {
+  return !!selection
+    && selection.filePath === filePath
+    && (selection.kind === 'value'
+      ? sameCoordinate(selection.coordinate, coordinate)
+      : selection.coordinates.some(item => sameCoordinate(item, coordinate)))
 }
 
 function CellTextEditor({

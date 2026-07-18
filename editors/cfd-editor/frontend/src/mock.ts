@@ -175,11 +175,13 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
 
 export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
   table_column_widths: {},
+  graph_enabled_fields: {},
   record_groups: {
     'data/item.cfd': {
       Item: [{
         id: 'mock-potions',
         name: '药水',
+        color: null,
         records: [
           { actual_type: 'Item', key: 'Item_001' },
           { actual_type: 'Item', key: 'Item_002' },
@@ -200,6 +202,7 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
     rows: [
       {
         coordinate: { actual_type: 'Item', key: 'Item_001' },
+        owner_file_path: 'data/item.cfd',
         default_value: stringValue('初级药水'),
         values: {
           'zh-CN': { kind: 'value', value: stringValue('初级药水') },
@@ -208,6 +211,7 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
       },
       {
         coordinate: { actual_type: 'Item', key: 'Item_002' },
+        owner_file_path: 'data/item.cfd',
         default_value: stringValue('中级药水'),
         values: {
           'zh-CN': { kind: 'value', value: stringValue('中级药水') },

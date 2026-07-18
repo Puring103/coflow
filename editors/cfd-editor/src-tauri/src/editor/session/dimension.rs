@@ -61,6 +61,10 @@ impl SessionStore {
                 values.insert(variant.clone(), state);
             }
             rows.push(DimensionFileRow {
+                owner_file_path: queries
+                    .file_for_record(&target.coordinate.actual_type, &target.coordinate.key)
+                    .unwrap_or_default()
+                    .to_string(),
                 coordinate: target.coordinate,
                 default_value,
                 values,

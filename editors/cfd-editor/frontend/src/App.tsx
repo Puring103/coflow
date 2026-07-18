@@ -71,6 +71,7 @@ import {
   moveRecordsOntoRecord,
   moveRecordsToGroup,
   nextRecordGroupName,
+  colorRecordGroup,
   removeRecordFromGroups,
   removeRecordsFromGroups,
   renameRecordGroup,
@@ -100,11 +101,31 @@ function settingsWithRecordGroups(
 ): EditorProjectSettings {
   return {
     table_column_widths: settings?.table_column_widths ?? {},
+    graph_enabled_fields: settings?.graph_enabled_fields ?? {},
     record_groups: {
       ...(settings?.record_groups ?? {}),
       [filePath]: {
         ...(settings?.record_groups?.[filePath] ?? {}),
         [actualType]: groups,
+      },
+    },
+  }
+}
+
+function settingsWithGraphFields(
+  settings: EditorProjectSettings | null,
+  filePath: string,
+  actualType: string,
+  fields: string[],
+): EditorProjectSettings {
+  return {
+    table_column_widths: settings?.table_column_widths ?? {},
+    record_groups: settings?.record_groups ?? {},
+    graph_enabled_fields: {
+      ...(settings?.graph_enabled_fields ?? {}),
+      [filePath]: {
+        ...(settings?.graph_enabled_fields?.[filePath] ?? {}),
+        [actualType]: fields,
       },
     },
   }
@@ -160,6 +181,11 @@ function projectGraphRows(
 
 export default function App() {
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
+  useEffect(() => {
+    const suppressBrowserMenu = (event: MouseEvent) => event.preventDefault()
+    window.addEventListener('contextmenu', suppressBrowserMenu)
+    return () => window.removeEventListener('contextmenu', suppressBrowserMenu)
+  }, [])
   const [generation] = useState(() => new ProjectGenerationController())
   const [history] = useState(() => new MutationHistoryController())
   const [lookups] = useState(() => new EditorLookupController(api))
@@ -250,6 +276,7 @@ export default function App() {
   const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
   const recordGroupIdSequence = useRef(0)
   const recordGroupSaveSequence = useRef(0)
+  const graphFieldsSaveSequence = useRef(0)
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
@@ -288,6 +315,30 @@ export default function App() {
       .catch(error => {
         if (generation.currentSession() === identity.sessionId) {
           setErrorMsg(`保存记录分组失败: ${errorMessage(error)}`)
+        }
+      })
+  }, [generation])
+
+  const saveGraphEnabledFields = useCallback((
+    filePath: string,
+    actualType: string,
+    fields: string[],
+  ) => {
+    const sequence = ++graphFieldsSaveSequence.current
+    setProjectSettings(current => settingsWithGraphFields(current, filePath, actualType, fields))
+    if (!api.isTauri) return
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    api.setGraphEnabledFields(identity.sessionId, filePath, actualType, fields)
+      .then(settings => {
+        if (generation.currentSession() === identity.sessionId
+          && graphFieldsSaveSequence.current === sequence) {
+          setProjectSettings(settings)
+        }
+      })
+      .catch(error => {
+        if (generation.currentSession() === identity.sessionId) {
+          setErrorMsg(`保存图谱字段失败: ${errorMessage(error)}`)
         }
       })
   }, [generation])
@@ -1262,6 +1313,18 @@ export default function App() {
     if (!activeFile || !activeType) return
     saveRecordGroups(activeFile, activeType, renameRecordGroup(recordGroups, groupId, name))
   }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const colorManualRecordGroup = useCallback((groupId: string, color: string | null) => {
+    if (!activeFile || !activeType) return
+    saveRecordGroups(activeFile, activeType, colorRecordGroup(recordGroups, groupId, color))
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const renameDimensionRecordGroup = useCallback((filePath: string, actualType: string, groupId: string, name: string) => {
+    const groups = projectSettings?.record_groups[filePath]?.[actualType] ?? []
+    saveRecordGroups(filePath, actualType, renameRecordGroup(groups, groupId, name))
+  }, [projectSettings, saveRecordGroups])
+  const colorDimensionRecordGroup = useCallback((filePath: string, actualType: string, groupId: string, color: string | null) => {
+    const groups = projectSettings?.record_groups[filePath]?.[actualType] ?? []
+    saveRecordGroups(filePath, actualType, colorRecordGroup(groups, groupId, color))
+  }, [projectSettings, saveRecordGroups])
   const activeGraphKey = activeFile
     ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
     : null
@@ -2064,6 +2127,9 @@ export default function App() {
             <DimensionTableView
               data={activeDimensionData}
               mode={dimensionView}
+              recordGroupsByFile={projectSettings?.record_groups}
+              onRenameGroup={renameDimensionRecordGroup}
+              onColorGroup={colorDimensionRecordGroup}
               onWrite={(row, variant, expected, next) =>
                 writeDimensionCell(activeDimensionData, row, variant, expected, next)}
               onExitLeft={focusFileTree}
@@ -2130,6 +2196,7 @@ export default function App() {
                     onDropRecordIntoGroup={dropRecordIntoGroup}
                     onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
                     onRenameGroup={renameManualRecordGroup}
+                    onColorGroup={colorManualRecordGroup}
                     selection={inspectorSelection?.filePath === currentRoute.file
                       ? inspectorSelection
                       : null}
@@ -2174,6 +2241,7 @@ export default function App() {
                     onDropRecordIntoGroup={dropRecordIntoGroup}
                     onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
                     onRenameGroup={renameManualRecordGroup}
+                    onColorGroup={colorManualRecordGroup}
                     highlightField={highlightField}
                     onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
@@ -2206,6 +2274,10 @@ export default function App() {
                     <GraphView
                       graphData={activeGraph}
                       activeType={activeType}
+                      enabledFieldsOverride={projectSettings?.graph_enabled_fields[activeFile ?? '']?.[activeType]}
+                      onEnabledFieldsChange={fields => {
+                        if (activeFile && activeType) saveGraphEnabledFields(activeFile, activeType, fields)
+                      }}
                       fileCapabilities={fileCapabilities}
                       diagnostics={project?.diagnostics}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}

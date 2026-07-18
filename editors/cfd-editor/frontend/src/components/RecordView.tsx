@@ -7,6 +7,7 @@ import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import {
   coordinateId,
+  errorMessage,
   recordActualType,
   recordKey,
   sameCoordinate,
@@ -39,7 +40,7 @@ import {
 import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
 import { useRecordPointerDrag } from '../hooks/useRecordPointerDrag'
 import { organizeRecordRows } from '../state/manualRecordGroups'
-import { RecordGroupHeader, RecordUngroupedHeader } from './RecordGroupHeader'
+import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
 import { BatchRecordEditor } from './BatchRecordEditor'
 
 interface Props {
@@ -57,6 +58,7 @@ interface Props {
   onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
   onDropRecordIntoUngrouped?: (sources: readonly RecordCoordinate[]) => void
   onRenameGroup?: (groupId: string, name: string) => void
+  onColorGroup?: (groupId: string, color: string | null) => void
   highlightField?: string | null
   onHighlightConsumed?: () => void
   onOpenRecord: (coordinate: RecordCoordinate) => void
@@ -85,16 +87,37 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [expandedByRecord, setExpandedByRecord] = useState<ExpandedPathMap>(() => new Map())
   const [selectedActionPathWire, setSelectedActionPathWire] = useState<string | null>(null)
   const [keyboardNotice, setKeyboardNotice] = useState<string | null>(null)
+  const [recordTreeMenu, setRecordTreeMenu] = useState<{
+    x: number
+    y: number
+    path: FieldPathSegment[]
+    editable: boolean
+  } | null>(null)
   const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const mainRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!recordTreeMenu) return
+    const close = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest('.record-tree-context-menu')) return
+      setRecordTreeMenu(null)
+    }
+    const closeOnBlur = () => setRecordTreeMenu(null)
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('blur', closeOnBlur)
+    return () => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('blur', closeOnBlur)
+    }
+  }, [recordTreeMenu])
 
   const activeId = coordinateId(coordinate)
   const expansionOwner = `${data.file_path}:${activeId}`
@@ -291,14 +314,14 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     && !!onCreateRecordDraft
     && !!newRecordType
 
-  const renderSidebarRecord = (row: RecordRow) => {
+  const renderSidebarRecord = (row: RecordRow, group?: EditorRecordGroup) => {
     const sev = rowSeverity(row)
     const id = coordinateId(row.coordinate)
     const selected = selectionMatchesRecord(selection ?? null, data.file_path, row.coordinate)
     return (
       <div
         key={id}
-        className={`rv-sidebar-item${selected ? ' selected' : ''}${sev ? ' rv-sidebar-' + sev : ''}`}
+        className={`rv-sidebar-item${selected ? ' selected' : ''}${group?.color ? ' has-group-color' : ''}${sev ? ' rv-sidebar-' + sev : ''}`}
         role="option"
         aria-selected={selected}
         tabIndex={id === activeId ? 0 : -1}
@@ -306,7 +329,10 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         data-record-draggable="true"
         data-record-drop-kind="record"
         data-record-label={recordKey(row)}
-        style={{ '--type-color': typeColor(recordActualType(row)) } as React.CSSProperties}
+        style={{
+          '--type-color': typeColor(recordActualType(row)),
+          ...recordGroupColorStyle(group?.color),
+        } as React.CSSProperties}
         onClick={event => {
           const mode: RecordSelectionMode = event.shiftKey
             ? 'range'
@@ -362,11 +388,13 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
                       groupId={view.group.id}
                       count={view.records.length}
                       collapsed={collapsed}
+                      color={view.group.color}
                       className="rv-record-group-header"
                       onToggle={() => onToggleGroup?.(view.group.id)}
                       onRename={name => onRenameGroup?.(view.group.id, name)}
+                      onColorChange={color => onColorGroup?.(view.group.id, color)}
                     />
-                    {!collapsed && view.records.map(renderSidebarRecord)}
+                    {!collapsed && view.records.map(row => renderSidebarRecord(row, view.group))}
                   </div>
                 )
               })}
@@ -376,7 +404,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
               className="rv-record-group-header"
             />
           )}
-          {organizedRecords.ungrouped.map(renderSidebarRecord)}
+          {organizedRecords.ungrouped.map(row => renderSidebarRecord(row))}
         </div>
         {canCreate && (
           <div className="rv-sidebar-footer">
@@ -393,6 +421,23 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         ref={mainRef}
         tabIndex={0}
         onKeyDown={batchRecords ? undefined : recordKeyboard.onKeyDown}
+        onContextMenu={event => {
+          if (batchRecords) return
+          const row = (event.target as HTMLElement).closest<HTMLElement>('.dc-row[data-field-path-wire]')
+          if (!row || !mainRef.current?.contains(row)) return
+          const path = parseWireFieldPath(row.dataset.fieldPathWire)
+          if (!path) return
+          event.preventDefault()
+          event.stopPropagation()
+          setSelectedActionPathWire(null)
+          onSelectValue?.(record.coordinate, path)
+          setRecordTreeMenu({
+            x: event.clientX,
+            y: event.clientY,
+            path,
+            editable: row.dataset.keyboardEditable === 'true',
+          })
+        }}
         onMouseDownCapture={e => {
           const target = e.target as HTMLElement
           const addRow = target.closest('.dc-row-add[data-add-path-wire]')
@@ -488,6 +533,61 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         {keyboardNotice && <span className="table-cell-notice" role="status">{keyboardNotice}</span>}
         </>}
       </div>
+      {recordTreeMenu && (
+        <div
+          className="context-menu record-tree-context-menu"
+          style={{ left: recordTreeMenu.x, top: recordTreeMenu.y }}
+          role="menu"
+          onPointerDown={event => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            disabled={!onRenderCellText}
+            onClick={async () => {
+              const path = recordTreeMenu.path
+              setRecordTreeMenu(null)
+              try {
+                if (!onRenderCellText) return
+                await navigator.clipboard.writeText(await onRenderCellText(record.coordinate, path))
+                setKeyboardNotice(null)
+              } catch (error) {
+                setKeyboardNotice(`复制失败：${errorMessage(error)}`)
+              }
+            }}
+          >
+            <Icon name="copy" size={13} aria-hidden />
+            复制
+            <span className="ctx-shortcut">Ctrl+C</span>
+          </button>
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            disabled={!recordTreeMenu.editable || !onParseCellText || !onWriteField}
+            onClick={async () => {
+              const path = recordTreeMenu.path
+              setRecordTreeMenu(null)
+              try {
+                if (!onParseCellText || !onWriteField) return
+                const text = await navigator.clipboard.readText()
+                const next = await onParseCellText(record.coordinate, path, text)
+                await onWriteField(record.coordinate, path, next)
+                setKeyboardNotice(null)
+              } catch (error) {
+                setKeyboardNotice(`粘贴格式不正确：${errorMessage(error)}`)
+              } finally {
+                requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }))
+              }
+            }}
+          >
+            <Icon name="paste" size={13} aria-hidden />
+            粘贴
+            <span className="ctx-shortcut">Ctrl+V</span>
+          </button>
+        </div>
+      )}
       {showNewRecord && onInsertRecord && onCreateRecordDraft && (
         <CreateRecordDialog
           actualType={newRecordType}

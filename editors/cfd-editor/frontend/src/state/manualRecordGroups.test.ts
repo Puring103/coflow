@@ -27,13 +27,14 @@ const row = (key: string): RecordRow => ({
 const group = (id: string, ...keys: string[]): EditorRecordGroup => ({
   id,
   name: id,
+  color: null,
   records: keys.map(coordinate),
 })
 
 describe('manual record groups', () => {
   it('creates a group by dropping one ungrouped record onto another', () => {
     expect(moveRecordOntoRecord([], coordinate('b'), coordinate('a'), 'g1', '新分组')).toEqual([
-      { id: 'g1', name: '新分组', records: [coordinate('a'), coordinate('b')] },
+      { id: 'g1', name: '新分组', color: null, records: [coordinate('a'), coordinate('b')] },
     ])
   })
 
@@ -75,7 +76,7 @@ describe('manual record groups', () => {
       coordinate('d'),
       'new',
       'New',
-    )).toEqual([{ id: 'new', name: 'New', records: [coordinate('d'), coordinate('a'), coordinate('b')] }])
+    )).toEqual([{ id: 'new', name: 'New', color: null, records: [coordinate('d'), coordinate('a'), coordinate('b')] }])
   })
 
   it('removes multiple records atomically', () => {

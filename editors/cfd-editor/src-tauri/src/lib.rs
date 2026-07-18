@@ -120,6 +120,23 @@ async fn set_record_groups(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn set_graph_enabled_fields(
+    session_id: u32,
+    file_path: String,
+    actual_type: String,
+    fields: Vec<String>,
+    host: State<'_, EditorHost>,
+) -> Result<EditorProjectSettings, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .set_graph_enabled_fields(session_id, file_path, actual_type, fields)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn check_project(
     session_id: u32,
     host: State<'_, EditorHost>,
@@ -426,6 +443,7 @@ pub fn run() -> tauri::Result<()> {
             get_dimension_file_records,
             set_table_column_widths,
             set_record_groups,
+            set_graph_enabled_fields,
             check_project,
             build_project,
             open_source_file,

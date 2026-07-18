@@ -7,7 +7,7 @@ interface IconProps {
     | 'error' | 'warning' | 'info' | 'check'
     | 'jump' | 'open' | 'dot' | 'edit'
     | 'table' | 'record' | 'graph' | 'filter' | 'sun' | 'moon' | 'lock'
-    | 'download' | 'refresh' | 'build'
+    | 'download' | 'refresh' | 'build' | 'copy' | 'paste'
     | 'sparkles' | 'settings' | 'data' | 'localization' | 'dimension' | 'grip'
   size?: number
   className?: string
@@ -44,6 +44,8 @@ const PATHS: Record<IconProps['name'], string> = {
   'download':      'M12 3v12M7 10l5 5 5-5M5 21h14',
   'refresh':       'M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 006.7 6.7L4 11M5.5 15A7 7 0 0017.3 17.3L20 13',
   'build':         'M14 4l6 6-3 3-2-2-8.5 8.5-2-2L13 9l-2-2 3-3zM5 17l2 2',
+  'copy':          'M8 8h11v11H8zM5 16H4V5h11v1',
+  'paste':         'M9 5h6M9 3h6v4H9zM7 5H5v16h14V5h-2',
   'sparkles':      'M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3zM19 14l.75 2.25L22 17l-2.25.75L19 20l-.75-2.25L16 17l2.25-.75L19 14z',
   'settings':      'M4 6h10M18 6h2M14 4v4M4 12h3M11 12h9M7 10v4M4 18h10M18 18h2M14 16v4',
   'data':          'M4 6c0 1.66 3.58 3 8 3s8-1.34 8-3-3.58-3-8-3-8 1.34-8 3zM4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6',
