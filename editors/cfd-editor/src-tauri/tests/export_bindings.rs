@@ -43,6 +43,7 @@ fn export_bindings() {
     t::CreateFieldSource::export_all().expect("export CreateFieldSource");
     t::CreateRequiredInput::export_all().expect("export CreateRequiredInput");
     t::DeleteRecordOutcome::export_all().expect("export DeleteRecordOutcome");
+    t::ReorderRecordsOutcome::export_all().expect("export ReorderRecordsOutcome");
     t::DeletedRecordSnapshot::export_all().expect("export DeletedRecordSnapshot");
     t::GraphData::export_all().expect("export GraphData");
     t::GraphQuery::export_all().expect("export GraphQuery");

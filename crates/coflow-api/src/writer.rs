@@ -4,9 +4,9 @@ mod transaction;
 
 pub use capabilities::{WriterCapabilities, WriterDescriptor};
 pub use requests::{
-    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest,
-    SpreadRewriteTarget, WriteBatchFailure, WriteCellRequest, WriteContext, WriteFieldPathSegment,
-    WriteOutcome,
+    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
+    ReorderRecordsRequest, RewriteRecordReferencesRequest, SpreadRewriteTarget, WriteBatchFailure,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriteRecordRef,
 };
 pub use transaction::{SourceTransaction, SourceTransactionCompensation};
 
@@ -155,6 +155,24 @@ pub trait SourceWriter: Send + Sync {
             "WRITE-UNSUPPORTED",
             "WRITE",
             "writer does not support deleting records",
+        )))
+    }
+
+    /// Atomically reorder top-level records inside one physical source container.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the records do not share a container or the
+    /// source no longer matches their recorded origins.
+    fn reorder_records(
+        &self,
+        _ctx: WriteContext<'_>,
+        _request: &ReorderRecordsRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-UNSUPPORTED",
+            "WRITE",
+            "writer does not support reordering records",
         )))
     }
 }

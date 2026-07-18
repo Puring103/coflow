@@ -29,7 +29,7 @@ use std::path::PathBuf as StdPathBuf;
 use std::sync::{Arc, RwLock};
 
 use coflow_api::ProviderRegistry;
-use coflow_data_model::CfdValue;
+use coflow_data_model::{CfdValue, RecordOrigin};
 use coflow_runtime::{
     DefaultMaterialization, MutationFields, MutationOp, MutationRequest, MutationValue,
     ProjectQueries, RecordCoordinate, WriteProjectSession,
@@ -43,7 +43,8 @@ use crate::editor::types::{
     CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
     CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError,
     EditorProjectSettings, FileRecords, FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome,
-    ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
+    ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome,
+    WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -695,6 +696,115 @@ impl SessionStore {
         })
     }
 
+    pub fn swap_records(
+        &self,
+        id: u32,
+        first: &RecordCoordinate,
+        second: &RecordCoordinate,
+    ) -> Result<ReorderRecordsOutcome, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let file_path = reorder_file_path(&session, first)?;
+        let report = session.engine.apply_mutation(MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![MutationOp::SwapRecords {
+                first: first.clone(),
+                second: second.clone(),
+                file: Some(file_path.clone()),
+            }],
+        });
+        let report = finalize_mutation(&mut session, report, "swap records failed")?;
+        Ok(ReorderRecordsOutcome {
+            revision: session.revisions.current(),
+            file_records: file_records_for_session(&session, &file_path),
+            diagnostics: report.diagnostics,
+            affected_files: report.affected_files,
+            old_index: None,
+            new_index: None,
+        })
+    }
+
+    pub fn move_record(
+        &self,
+        id: u32,
+        coordinate: &RecordCoordinate,
+        target_index: usize,
+    ) -> Result<ReorderRecordsOutcome, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let file_path = reorder_file_path(&session, coordinate)?;
+        let old_index = record_container_index(&session, coordinate).ok_or_else(|| {
+            EditorError::not_found(format!(
+                "record `{}.{}` not found in source order",
+                coordinate.actual_type, coordinate.key
+            ))
+        })?;
+        let report = session.engine.apply_mutation(MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![MutationOp::MoveRecord {
+                record: coordinate.clone(),
+                target_index,
+                file: Some(file_path.clone()),
+            }],
+        });
+        let report = finalize_mutation(&mut session, report, "move record failed")?;
+        Ok(ReorderRecordsOutcome {
+            revision: session.revisions.current(),
+            file_records: file_records_for_session(&session, &file_path),
+            diagnostics: report.diagnostics,
+            affected_files: report.affected_files,
+            old_index: Some(old_index),
+            new_index: Some(target_index),
+        })
+    }
+
+    pub fn transfer_record(
+        &self,
+        id: u32,
+        coordinate: &RecordCoordinate,
+        destination_file: &str,
+        destination_sheet: Option<&str>,
+        target_index: usize,
+    ) -> Result<ReorderRecordsOutcome, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let source_file = reorder_file_path(&session, coordinate)?;
+        let old_index = record_type_index(&session, coordinate).ok_or_else(|| {
+            EditorError::not_found(format!(
+                "record `{}.{}` not found in source type order",
+                coordinate.actual_type, coordinate.key
+            ))
+        })?;
+        let report = session.engine.apply_mutation(MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![MutationOp::TransferRecord {
+                record: coordinate.clone(),
+                destination_file: destination_file.to_string(),
+                destination_sheet: destination_sheet.map(ToOwned::to_owned),
+                target_index,
+                source_file: Some(source_file),
+            }],
+        });
+        let report = finalize_mutation(&mut session, report, "transfer record failed")?;
+        Ok(ReorderRecordsOutcome {
+            revision: session.revisions.current(),
+            file_records: file_records_for_session(&session, destination_file),
+            diagnostics: report.diagnostics,
+            affected_files: report.affected_files,
+            old_index: Some(old_index),
+            new_index: Some(target_index),
+        })
+    }
+
     fn registry(&self) -> Result<Arc<ProviderRegistry>, EditorError> {
         let inner = self
             .inner
@@ -740,11 +850,18 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
     let mut column_index = BTreeMap::<String, usize>::new();
     let mut type_seen = Vec::new();
     let mut type_set = HashSet::new();
+    let mut container_counts = BTreeMap::<String, usize>::new();
+    let mut row_containers = Vec::new();
     for view in queries.record_views_in_file(file_path) {
         if type_set.insert(view.coordinate.actual_type.to_string()) {
             type_seen.push(view.coordinate.actual_type.to_string());
         }
-        let row = record_view_to_row(&view, &ctx);
+        let container = record_container_key(view.origin);
+        let container_index = container_counts.entry(container.clone()).or_default();
+        let mut row = record_view_to_row(&view, &ctx);
+        row.container_index = *container_index;
+        *container_index += 1;
+        row_containers.push(container);
         for field in &row.fields {
             let index = column_index.get(&field.name).copied().unwrap_or_else(|| {
                 let index = columns.len();
@@ -761,6 +878,9 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
         }
         records.push(row);
     }
+    for (row, container) in records.iter_mut().zip(row_containers) {
+        row.container_size = container_counts.get(&container).copied().unwrap_or(1);
+    }
     let columns = columns
         .into_iter()
         .map(|(name, stats)| RecordColumn {
@@ -776,6 +896,67 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
         columns,
         records,
         capabilities: session_capabilities_for_file(session, file_path),
+    }
+}
+
+fn reorder_file_path(
+    session: &EditorSession,
+    coordinate: &RecordCoordinate,
+) -> Result<String, EditorError> {
+    session
+        .queries()
+        .file_for_record(&coordinate.actual_type, &coordinate.key)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            EditorError::not_found(format!(
+                "record `{}.{}` not found",
+                coordinate.actual_type, coordinate.key
+            ))
+        })
+}
+
+fn record_container_index(session: &EditorSession, coordinate: &RecordCoordinate) -> Option<usize> {
+    let file = session
+        .queries()
+        .file_for_record(&coordinate.actual_type, &coordinate.key)?;
+    let views = session
+        .queries()
+        .record_views_in_file(file)
+        .collect::<Vec<_>>();
+    let target = views.iter().find(|view| view.coordinate == *coordinate)?;
+    let container = record_container_key(target.origin);
+    views
+        .iter()
+        .filter(|view| record_container_key(view.origin) == container)
+        .position(|view| view.coordinate == *coordinate)
+}
+
+fn record_type_index(session: &EditorSession, coordinate: &RecordCoordinate) -> Option<usize> {
+    let file = session
+        .queries()
+        .file_for_record(&coordinate.actual_type, &coordinate.key)?;
+    let views = session
+        .queries()
+        .record_views_in_file(file)
+        .collect::<Vec<_>>();
+    let target = views.iter().find(|view| view.coordinate == *coordinate)?;
+    let container = record_container_key(target.origin);
+    views
+        .iter()
+        .filter(|view| {
+            view.coordinate.actual_type == coordinate.actual_type
+                && record_container_key(view.origin) == container
+        })
+        .position(|view| view.coordinate == *coordinate)
+}
+
+fn record_container_key(origin: &RecordOrigin) -> String {
+    match origin {
+        RecordOrigin::File { path, .. } => format!("file:{}", path.display()),
+        RecordOrigin::Table {
+            document, sheet, ..
+        } => format!("table:{}:{sheet}", document.path().display()),
+        RecordOrigin::None => "none".to_string(),
     }
 }
 

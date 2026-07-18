@@ -40,6 +40,8 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
     RecordRow {
         coordinate: view.coordinate.clone(),
         display_path: view.display_path.to_string(),
+        container_index: 0,
+        container_size: 1,
         fields,
         field_index,
         field_summaries,
@@ -59,6 +61,8 @@ pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'
     RecordRow {
         coordinate,
         display_path: display_path.to_string(),
+        container_index: 0,
+        container_size: 1,
         fields,
         field_index,
         field_summaries,

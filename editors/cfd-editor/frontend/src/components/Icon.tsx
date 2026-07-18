@@ -1,7 +1,7 @@
 interface IconProps {
   name:
     | 'folder' | 'file' | 'file-cfd'
-    | 'arrow-left' | 'arrow-right'
+    | 'arrow-left' | 'arrow-right' | 'arrow-up' | 'arrow-down'
     | 'plus' | 'close' | 'search' | 'help'
     | 'chevron-right' | 'chevron-down'
     | 'error' | 'warning' | 'info' | 'check'
@@ -18,6 +18,8 @@ const PATHS: Record<IconProps['name'], string> = {
   'file-cfd':      'M6 3h7l5 5v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2zm7 0v5h5M9 14h6M9 17h4',
   'arrow-left':    'M14 6l-6 6 6 6',
   'arrow-right':   'M10 6l6 6-6 6',
+  'arrow-up':      'M12 19V5M5 12l7-7 7 7',
+  'arrow-down':    'M12 5v14M5 12l7 7 7-7',
   'plus':          'M12 5v14M5 12h14',
   'close':         'M6 6l12 12M6 18L18 6',
   'search':        'M11 4a7 7 0 105.196 11.804L21 20.5M11 4a7 7 0 016.196 10.196',

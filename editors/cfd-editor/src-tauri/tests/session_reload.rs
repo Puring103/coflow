@@ -941,6 +941,67 @@ fn assert_record_name(store: &SessionStore, session_id: u32, expected: &str) {
     assert_eq!(cell.value, CfdValue::String(expected.to_string()));
 }
 
+#[test]
+fn transfer_record_refreshes_both_files_and_reports_authoritative_indexes() {
+    let root = temp_project_dir("cfd-editor-transfer-record");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(root.join("schema.cft"), "type Item { value: int; }").expect("write schema");
+    std::fs::write(
+        root.join("data/a.cfd"),
+        "a: Item { value: 1 }\nb: Item { value: 2 }\n",
+    )
+    .expect("write source");
+    std::fs::write(root.join("data/b.cfd"), "x: Item { value: 3 }\n").expect("write destination");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/a.cfd\n  - path: data/b.cfd\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let coordinate = RecordCoordinate::try_new("Item", "b").expect("coordinate");
+    let outcome = store
+        .transfer_record(snapshot.session_id, &coordinate, "data/b.cfd", None, 0)
+        .expect("transfer record");
+
+    assert_eq!(outcome.old_index, Some(1));
+    assert_eq!(outcome.new_index, Some(0));
+    assert_eq!(
+        outcome
+            .file_records
+            .records
+            .iter()
+            .map(|row| row.coordinate.key.as_str())
+            .collect::<Vec<_>>(),
+        ["b", "x"]
+    );
+    assert!(store
+        .get_file_records(snapshot.session_id, "data/a.cfd")
+        .expect("source records")
+        .records
+        .iter()
+        .all(|row| row.coordinate.key.as_str() != "b"));
+
+    let restored = store
+        .transfer_record(snapshot.session_id, &coordinate, "data/a.cfd", None, 1)
+        .expect("restore record");
+    assert_eq!(restored.old_index, Some(0));
+    assert_eq!(restored.new_index, Some(1));
+    assert_eq!(
+        restored
+            .file_records
+            .records
+            .iter()
+            .map(|row| row.coordinate.key.as_str())
+            .collect::<Vec<_>>(),
+        ["a", "b"]
+    );
+}
+
 fn temp_project_dir(name: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("coflow-{name}-{}", unique_suffix()));
     if root.exists() {

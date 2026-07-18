@@ -10,8 +10,9 @@ use coflow_data_model::{
     CfdDataModel, CfdValue, LoadedRecordDraft, LoadedValueDraft, RecordOrigin, SourceDocument,
 };
 use coflow_loader_table_core::writer::{
-    plan_field_write, plan_insert_record, HeaderReconciliationPlan, TableFieldWrite,
-    TableInsertRecord, TableSetCell, TableWritePlan, WriteFieldPathSegment,
+    plan_field_write, plan_insert_record, plan_reorder_records, HeaderReconciliationPlan,
+    TableFieldWrite, TableInsertRecord, TableMoveRowBefore, TableRecordRef, TableReorderOperation,
+    TableSetCell, TableWritePlan, WriteFieldPathSegment,
 };
 use coflow_loader_table_core::{resolve_table_write_layout, TableSheetConfig};
 use std::collections::BTreeMap;
@@ -30,6 +31,47 @@ fn table_origin(field_columns: BTreeMap<Vec<String>, usize>) -> RecordOrigin {
         id_column: 1,
         field_columns,
     }
+}
+
+fn table_origin_at(row: usize) -> RecordOrigin {
+    RecordOrigin::Table {
+        document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+        sheet: "Items".to_string(),
+        row,
+        id_column: 1,
+        field_columns: BTreeMap::new(),
+    }
+}
+
+#[test]
+fn move_record_plan_preserves_source_and_anchor_guards() {
+    let source = table_origin_at(2);
+    let before = table_origin_at(4);
+    let plan = plan_reorder_records(TableReorderOperation::MoveBefore {
+        record: TableRecordRef {
+            origin: &source,
+            record_key: "sword",
+        },
+        before: Some(TableRecordRef {
+            origin: &before,
+            record_key: "potion",
+        }),
+    })
+    .expect("move plan");
+
+    assert_eq!(
+        plan,
+        TableWritePlan::MoveRowBefore(TableMoveRowBefore {
+            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            sheet: "Items".to_string(),
+            row: 2,
+            id_column: 1,
+            expected_key: "sword".to_string(),
+            before_row: Some(4),
+            before_id_column: Some(1),
+            expected_before_key: Some("potion".to_string()),
+        })
+    );
 }
 
 fn field_path(name: &str) -> Vec<WriteFieldPathSegment> {
@@ -414,6 +456,7 @@ fn insert_record_plan_renders_id_and_known_fields() {
         fields: &fields,
         field_columns: &field_columns,
         id_column: 1,
+        before: None,
     })
     .expect("insert plan");
 
@@ -427,6 +470,9 @@ fn insert_record_plan_renders_id_and_known_fields() {
                 (2, "Sword".to_string()),
                 (3, "7".to_string()),
             ],
+            before_row: None,
+            before_id_column: None,
+            expected_before_key: None,
         })
     );
 }

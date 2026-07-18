@@ -311,6 +311,31 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
             record,
             report_file,
         } => ("delete_record", Some(record.clone()), report_file.clone()),
+        PreparedMutationOp::SwapRecords {
+            first, report_file, ..
+        } => (
+            "swap_records",
+            Some(first.clone()),
+            Some(report_file.clone()),
+        ),
+        PreparedMutationOp::MoveRecord {
+            record,
+            report_file,
+            ..
+        } => (
+            "move_record",
+            Some(record.clone()),
+            Some(report_file.clone()),
+        ),
+        PreparedMutationOp::TransferRecord {
+            record,
+            destination_file,
+            ..
+        } => (
+            "transfer_record",
+            Some(record.clone()),
+            Some(destination_file.clone()),
+        ),
         PreparedMutationOp::FoldedDeleteRecord { record, write_file } => (
             "delete_record",
             Some(record.clone()),
@@ -368,5 +393,8 @@ const fn prepared_op_name(op: &PreparedMutationOp) -> &'static str {
         PreparedMutationOp::DeleteRecord { .. } | PreparedMutationOp::FoldedDeleteRecord { .. } => {
             "delete_record"
         }
+        PreparedMutationOp::SwapRecords { .. } => "swap_records",
+        PreparedMutationOp::MoveRecord { .. } => "move_record",
+        PreparedMutationOp::TransferRecord { .. } => "transfer_record",
     }
 }

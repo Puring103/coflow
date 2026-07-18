@@ -26,6 +26,32 @@ pub(super) fn plan_mutations(
         stop_on_write_error,
         ops,
     } = request;
+    if ops.len() > 1 {
+        if let Some((index, op)) = ops.iter().enumerate().find(|(_, op)| {
+            matches!(
+                op,
+                MutationOp::SwapRecords { .. }
+                    | MutationOp::MoveRecord { .. }
+                    | MutationOp::TransferRecord { .. }
+            )
+        }) {
+            let diagnostics = DiagnosticSet::one(Diagnostic::error(
+                "MUTATION-REORDER-BATCH",
+                "MUTATION",
+                "record reorder or transfer must be the only operation in a mutation request",
+            ));
+            return (
+                Vec::new(),
+                vec![MutationFailedOp::from_diagnostics(
+                    index,
+                    mutation_op_name(op),
+                    diagnostics,
+                )],
+                false,
+                true,
+            );
+        }
+    }
     let mut planned = Vec::<PlannedMutationOp>::new();
     let mut pending_inserts = BTreeMap::<RecordCoordinate, usize>::new();
     let mut failed = Vec::new();
@@ -143,6 +169,9 @@ fn prepare_planned_op(
                 file.as_deref(),
             )
         }
+        op @ (MutationOp::SwapRecords { .. }
+        | MutationOp::MoveRecord { .. }
+        | MutationOp::TransferRecord { .. }) => prepare_one(session, op, pending_inserts),
     }
 }
 
@@ -381,6 +410,9 @@ pub(super) const fn mutation_op_name(op: &MutationOp) -> &'static str {
         MutationOp::ClearDimensionValue { .. } => "clear_dimension_value",
         MutationOp::RenameRecord { .. } => "rename_record",
         MutationOp::DeleteRecord { .. } => "delete_record",
+        MutationOp::SwapRecords { .. } => "swap_records",
+        MutationOp::MoveRecord { .. } => "move_record",
+        MutationOp::TransferRecord { .. } => "transfer_record",
     }
 }
 

@@ -1222,6 +1222,53 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   margin-top: auto;
 }
 
+.transfer-record-dialog {
+  width: min(520px, calc(100vw - 48px));
+}
+
+.transfer-record-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.transfer-record-fields {
+  display: grid;
+  gap: 12px;
+  padding: 16px 14px;
+}
+
+.transfer-record-fields label {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.transfer-record-fields select,
+.transfer-record-fields input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  font: inherit;
+}
+
+.transfer-record-fields select:focus,
+.transfer-record-fields input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
 @media (max-width: 720px) {
   .create-record-backdrop { padding: 12px; }
   .create-record-dialog {

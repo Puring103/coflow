@@ -196,6 +196,9 @@ pub struct RecordColumn {
 pub struct RecordRow {
     pub coordinate: RecordCoordinate,
     pub display_path: String,
+    /// Zero-based position inside the record's physical file or table sheet.
+    pub container_index: usize,
+    pub container_size: usize,
     pub fields: Vec<FieldCell>,
     pub field_index: BTreeMap<String, usize>,
     pub field_summaries: BTreeMap<String, String>,
@@ -510,6 +513,23 @@ pub struct DeleteRecordOutcome {
     /// deletion (defensive — should not happen in normal flows).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deleted_snapshot: Option<DeletedRecordSnapshot>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct ReorderRecordsOutcome {
+    pub revision: u32,
+    pub file_records: FileRecords,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    pub affected_files: Vec<String>,
+    #[serde(default)]
+    pub old_index: Option<usize>,
+    #[serde(default)]
+    pub new_index: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

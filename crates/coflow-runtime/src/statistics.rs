@@ -5,6 +5,7 @@ pub enum IncrementalFallbackReason {
     RecordInserted,
     RecordDeleted,
     RecordRenamed,
+    RecordReordered,
     SourceTopologyChanged,
     DimensionConfigurationChanged,
     ProviderConfigurationChanged,

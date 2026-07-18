@@ -7,6 +7,7 @@ import type { InsertRecordOutcome } from '../bindings/InsertRecordOutcome'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { RenameRecordOutcome } from '../bindings/RenameRecordOutcome'
+import type { ReorderRecordsOutcome } from '../bindings/ReorderRecordsOutcome'
 import type { WriteFieldOutcome } from '../bindings/WriteFieldOutcome'
 import type { WriteDimensionValueOutcome } from '../bindings/WriteDimensionValueOutcome'
 import {
@@ -61,6 +62,23 @@ export interface EditorMutationBackend {
     sessionId: number,
     coordinate: RecordCoordinate,
   ) => Promise<DeleteRecordOutcome>
+  swapRecords: (
+    sessionId: number,
+    first: RecordCoordinate,
+    second: RecordCoordinate,
+  ) => Promise<ReorderRecordsOutcome>
+  moveRecord: (
+    sessionId: number,
+    coordinate: RecordCoordinate,
+    targetIndex: number,
+  ) => Promise<ReorderRecordsOutcome>
+  transferRecord: (
+    sessionId: number,
+    coordinate: RecordCoordinate,
+    destinationFile: string,
+    destinationSheet: string | null,
+    targetIndex: number,
+  ) => Promise<ReorderRecordsOutcome>
 }
 
 export interface EditorMutationPort {
@@ -356,6 +374,47 @@ export class EditorMutationController {
     ))
   }
 
+  async swapRecords(
+    filePath: string,
+    first: RecordCoordinate,
+    second: RecordCoordinate,
+  ): Promise<void> {
+    await this.enqueueMutation(undefined, () => this.swapRecordsInternal(
+      filePath,
+      first,
+      second,
+      { recordHistory: true },
+    ))
+  }
+
+  async moveRecord(
+    filePath: string,
+    coordinate: RecordCoordinate,
+    targetIndex: number,
+  ): Promise<void> {
+    await this.enqueueMutation(undefined, () => this.moveRecordInternal(
+      filePath,
+      coordinate,
+      targetIndex,
+      { recordHistory: true },
+    ))
+  }
+
+  async transferRecord(
+    sourceFile: string,
+    destinationFile: string,
+    coordinate: RecordCoordinate,
+    targetIndex: number,
+  ): Promise<void> {
+    await this.enqueueMutation(undefined, () => this.transferRecordInternal(
+      sourceFile,
+      destinationFile,
+      coordinate,
+      targetIndex,
+      { recordHistory: true },
+    ))
+  }
+
   async undo(): Promise<void> {
     await this.history.undo(entry => this.executeWithPendingFieldReplay<MutationResult<unknown>>(
       () => {
@@ -381,6 +440,31 @@ export class EditorMutationController {
           return this.deleteRecordInternal(
             entry.filePath,
             entry.coordinate,
+            { recordHistory: false },
+          )
+        }
+        if (entry.kind === 'swap-records') {
+          return this.swapRecordsInternal(
+            entry.filePath,
+            entry.first,
+            entry.second,
+            { recordHistory: false },
+          )
+        }
+        if (entry.kind === 'move-record') {
+          return this.moveRecordInternal(
+            entry.filePath,
+            entry.coordinate,
+            entry.oldIndex,
+            { recordHistory: false },
+          )
+        }
+        if (entry.kind === 'transfer-record') {
+          return this.transferRecordInternal(
+            entry.destinationFile,
+            entry.filePath,
+            entry.coordinate,
+            entry.sourceIndex,
             { recordHistory: false },
           )
         }
@@ -422,6 +506,31 @@ export class EditorMutationController {
             entry.coordinate.key,
             entry.coordinate.actual_type,
             entry.fields,
+            { recordHistory: false },
+          )
+        }
+        if (entry.kind === 'swap-records') {
+          return this.swapRecordsInternal(
+            entry.filePath,
+            entry.first,
+            entry.second,
+            { recordHistory: false },
+          )
+        }
+        if (entry.kind === 'move-record') {
+          return this.moveRecordInternal(
+            entry.filePath,
+            entry.coordinate,
+            entry.newIndex,
+            { recordHistory: false },
+          )
+        }
+        if (entry.kind === 'transfer-record') {
+          return this.transferRecordInternal(
+            entry.filePath,
+            entry.destinationFile,
+            entry.coordinate,
+            entry.targetIndex,
             { recordHistory: false },
           )
         }
@@ -596,6 +705,103 @@ export class EditorMutationController {
           })
         }
       },
+    )
+  }
+
+  private swapRecordsInternal(
+    filePath: string,
+    first: RecordCoordinate,
+    second: RecordCoordinate,
+    options: MutationOptions,
+  ): Promise<MutationResult<void>> {
+    return this.execute(
+      '交换记录失败',
+      filePath,
+      sessionId => this.backend.swapRecords(sessionId, first, second),
+      outcome => outcome.file_records,
+      outcome => {
+        if (options.recordHistory) {
+          this.history.record({
+            kind: 'swap-records',
+            revision: outcome.revision,
+            filePath,
+            first,
+            second,
+          })
+        }
+      },
+      () => false,
+    )
+  }
+
+  private moveRecordInternal(
+    filePath: string,
+    coordinate: RecordCoordinate,
+    targetIndex: number,
+    options: MutationOptions,
+  ): Promise<MutationResult<void>> {
+    return this.execute(
+      '移动记录失败',
+      filePath,
+      sessionId => this.backend.moveRecord(sessionId, coordinate, targetIndex),
+      outcome => outcome.file_records,
+      outcome => {
+        if (
+          options.recordHistory
+          && outcome.old_index !== null
+          && outcome.new_index !== null
+          && outcome.old_index !== outcome.new_index
+        ) {
+          this.history.record({
+            kind: 'move-record',
+            revision: outcome.revision,
+            filePath,
+            coordinate,
+            oldIndex: outcome.old_index,
+            newIndex: outcome.new_index,
+          })
+        }
+      },
+      () => false,
+    )
+  }
+
+  private transferRecordInternal(
+    sourceFile: string,
+    destinationFile: string,
+    coordinate: RecordCoordinate,
+    targetIndex: number,
+    options: MutationOptions,
+  ): Promise<MutationResult<void>> {
+    return this.execute(
+      '跨文件移动记录失败',
+      destinationFile,
+      sessionId => this.backend.transferRecord(
+        sessionId,
+        coordinate,
+        destinationFile,
+        null,
+        targetIndex,
+      ),
+      outcome => outcome.file_records,
+      outcome => {
+        if (
+          options.recordHistory
+          && outcome.old_index !== null
+          && outcome.new_index !== null
+        ) {
+          this.history.record({
+            kind: 'transfer-record',
+            revision: outcome.revision,
+            filePath: sourceFile,
+            destinationFile,
+            coordinate,
+            sourceIndex: outcome.old_index,
+            targetIndex: outcome.new_index,
+          })
+        }
+      },
+      () => false,
     )
   }
 

@@ -12,7 +12,7 @@ use coflow_runtime::{DimensionValueCoordinate, DimensionValueView, RecordCoordin
 use editor::{
     CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, EditorError, EditorProjectSettings,
     FileRecords, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RefTarget,
-    RenameRecordOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
+    RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use host::EditorHost;
 use tauri::{AppHandle, Manager, State};
@@ -330,6 +330,57 @@ async fn delete_record(
     run_blocking(move || host.sessions().delete_record(session_id, &coordinate)).await
 }
 
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn swap_records(
+    session_id: u32,
+    first: RecordCoordinate,
+    second: RecordCoordinate,
+    host: State<'_, EditorHost>,
+) -> Result<ReorderRecordsOutcome, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().swap_records(session_id, &first, &second)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn move_record(
+    session_id: u32,
+    coordinate: RecordCoordinate,
+    target_index: usize,
+    host: State<'_, EditorHost>,
+) -> Result<ReorderRecordsOutcome, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .move_record(session_id, &coordinate, target_index)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn transfer_record(
+    session_id: u32,
+    coordinate: RecordCoordinate,
+    destination_file: String,
+    destination_sheet: Option<String>,
+    target_index: usize,
+    host: State<'_, EditorHost>,
+) -> Result<ReorderRecordsOutcome, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions().transfer_record(
+            session_id,
+            &coordinate,
+            &destination_file,
+            destination_sheet.as_deref(),
+            target_index,
+        )
+    })
+    .await
+}
+
 async fn run_blocking<T>(
     work: impl FnOnce() -> Result<T, EditorError> + Send + 'static,
 ) -> Result<T, EditorError>
@@ -381,6 +432,9 @@ pub fn run() -> tauri::Result<()> {
             insert_record,
             rename_record_key,
             delete_record,
+            swap_records,
+            move_record,
+            transfer_record,
         ])
         .run(tauri::generate_context!())
 }

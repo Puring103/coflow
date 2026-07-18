@@ -613,6 +613,65 @@ impl WriteProjectSession {
         })
     }
 
+    /// Atomically exchange two records inside the same physical source container.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when either record is missing, the records belong
+    /// to different containers, or the provider cannot persist record order.
+    pub fn swap_records(
+        &mut self,
+        first: &RecordCoordinate,
+        second: &RecordCoordinate,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::SwapRecords {
+            first: first.clone(),
+            second: second.clone(),
+            file: None,
+        })
+    }
+
+    /// Move one record to a zero-based final index in its physical container.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the record is missing, the index is outside
+    /// the container, or the provider cannot persist record order.
+    pub fn move_record(
+        &mut self,
+        record: &RecordCoordinate,
+        target_index: usize,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::MoveRecord {
+            record: record.clone(),
+            target_index,
+            file: None,
+        })
+    }
+
+    /// Move a record to a zero-based insertion index in another source file.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the destination cannot host the record type,
+    /// the insertion index is invalid, or either source cannot participate in
+    /// the atomic transfer transaction.
+    pub fn transfer_record(
+        &mut self,
+        record: &RecordCoordinate,
+        destination_file: &str,
+        destination_sheet: Option<&str>,
+        target_index: usize,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::TransferRecord {
+            record: record.clone(),
+            destination_file: destination_file.to_string(),
+            destination_sheet: destination_sheet.map(ToOwned::to_owned),
+            target_index,
+            source_file: None,
+        })
+    }
+
     fn apply_one(&mut self, op: MutationOp) -> Result<WriteOutcome, DiagnosticSet> {
         let report = self.apply_mutation(MutationRequest {
             stop_on_write_error: true,

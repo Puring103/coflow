@@ -11,9 +11,10 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
-    CreateTableRequest, DeleteRecordRequest, InsertRecordRequest, ResolvedSource,
-    SourceLocationSpec, SourceProvider, SourceWriter, SyncHeaderRequest, TableContext,
-    TableManager, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    CreateTableRequest, DeleteRecordRequest, InsertRecordRequest, ReorderRecordsOperation,
+    ReorderRecordsRequest, ResolvedSource, SourceLocationSpec, SourceProvider, SourceWriter,
+    SyncHeaderRequest, TableContext, TableManager, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteRecordRef,
 };
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
@@ -692,6 +693,7 @@ fn inserts_record_row_and_loader_can_read_it() {
                 actual_type: "Item",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert succeeds");
@@ -742,6 +744,7 @@ fn inserts_record_with_expanded_object_into_child_columns() {
                 actual_type: "Terrain",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert expanded record succeeds");
@@ -820,5 +823,104 @@ fn refuses_delete_when_row_key_changed() {
     assert!(diag
         .iter()
         .any(|d| d.message.contains("expected key `sword`")));
+    assert_eq!(read_cell(&path, "Items", 3, 1), "shield");
+}
+
+#[test]
+fn inserts_record_before_guarded_excel_anchor() {
+    let path = temp_xlsx("insert-before");
+    write_seed_workbook(&path).expect("seed");
+    let schema = schema_for_items();
+    let source = empty_source(&path);
+    let shield = origin_for_shield(&path);
+    let fields = BTreeMap::from([
+        ("name".to_string(), CfdValue::String("Potion".to_string())),
+        ("value".to_string(), CfdValue::Int(3)),
+    ]);
+
+    ExcelWriter::new()
+        .insert_record(
+            WriteContext {
+                project_root: &std::env::temp_dir(),
+                schema: &schema,
+                model: None,
+            },
+            &InsertRecordRequest {
+                source: &source,
+                sheet: Some("Items"),
+                record_key: "potion",
+                actual_type: "Item",
+                fields: &fields,
+                schema: &schema,
+                before: Some(WriteRecordRef {
+                    origin: &shield,
+                    record_key: "shield",
+                    actual_type: "Item",
+                }),
+            },
+        )
+        .expect("insert before shield");
+
+    assert_eq!(read_cell(&path, "Items", 2, 1), "sword");
+    assert_eq!(read_cell(&path, "Items", 3, 1), "potion");
+    assert_eq!(read_cell(&path, "Items", 4, 1), "shield");
+}
+
+#[test]
+fn swaps_and_moves_excel_rows_with_values() {
+    let path = temp_xlsx("reorder");
+    write_seed_workbook(&path).expect("seed");
+    let schema = empty_schema();
+    let source = empty_source(&path);
+    let sword = origin_for_sword(&path);
+    let shield = origin_for_shield(&path);
+    let writer = ExcelWriter::new();
+    let project_root = std::env::temp_dir();
+    let ctx = WriteContext {
+        project_root: &project_root,
+        schema: &schema,
+        model: None,
+    };
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::Swap {
+                    first: WriteRecordRef {
+                        origin: &sword,
+                        record_key: "sword",
+                        actual_type: "Item",
+                    },
+                    second: WriteRecordRef {
+                        origin: &shield,
+                        record_key: "shield",
+                        actual_type: "Item",
+                    },
+                },
+            },
+        )
+        .expect("swap rows");
+    assert_eq!(read_cell(&path, "Items", 2, 1), "shield");
+    assert_eq!(read_cell(&path, "Items", 2, 2), "Round");
+    assert_eq!(read_cell(&path, "Items", 3, 1), "sword");
+
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::MoveBefore {
+                    record: WriteRecordRef {
+                        origin: &sword,
+                        record_key: "shield",
+                        actual_type: "Item",
+                    },
+                    before: None,
+                },
+            },
+        )
+        .expect("move row to end");
+    assert_eq!(read_cell(&path, "Items", 2, 1), "sword");
     assert_eq!(read_cell(&path, "Items", 3, 1), "shield");
 }

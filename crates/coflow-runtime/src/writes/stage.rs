@@ -1,7 +1,8 @@
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, DimensionSourceSchema, InsertRecordRequest,
-    RenameRecordRequest, RewriteDimensionRecordRequest, WriteCellRequest, WriteContext,
-    WriteDimensionValueRequest,
+    RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
+    RewriteDimensionRecordRequest, WriteCellRequest, WriteContext, WriteDimensionValueRequest,
+    WriteRecordRef,
 };
 use coflow_cft::RecordKey;
 use coflow_data_model::CfdValue;
@@ -12,7 +13,7 @@ use crate::{ProjectSession, RecordCoordinate, WriteOutcome};
 
 use super::plan::{
     DeletePlan, DimensionRecordAction, DimensionWritePlan, InsertPlan, MutationExecutionPlan,
-    RenamePlan, RenameWritePlan, WriteFieldPlan,
+    RenamePlan, RenameWritePlan, ReorderOperation, ReorderPlan, TransferPlan, WriteFieldPlan,
 };
 
 pub(crate) fn preflight_mutation_op(
@@ -104,6 +105,13 @@ pub(crate) fn stage_mutation_op(
         (PreparedMutationOp::DeleteRecord { record, .. }, MutationExecutionPlan::Delete(plan)) => {
             stage_delete_record(session, plan, record)
         }
+        (
+            PreparedMutationOp::SwapRecords { .. } | PreparedMutationOp::MoveRecord { .. },
+            MutationExecutionPlan::Reorder(plan),
+        ) => stage_reorder_records(session, plan),
+        (PreparedMutationOp::TransferRecord { .. }, MutationExecutionPlan::Transfer(plan)) => {
+            stage_transfer_record(session, plan)
+        }
         (PreparedMutationOp::SetField { .. }, MutationExecutionPlan::Noop { coordinate }) => {
             Ok(WriteOutcome::touch(coordinate.clone()))
         }
@@ -122,6 +130,7 @@ pub(crate) fn stage_mutation_op(
             inserted: None,
             deleted: None,
             renamed: Some((old_record.clone(), new_record.clone())),
+            reordered: false,
             affected_files: Vec::new(),
             diagnostics: DiagnosticSet::empty(),
         }),
@@ -131,6 +140,7 @@ pub(crate) fn stage_mutation_op(
                 inserted: None,
                 deleted: Some(record.clone()),
                 renamed: None,
+                reordered: false,
                 affected_files: Vec::new(),
                 diagnostics: DiagnosticSet::empty(),
             })
@@ -141,6 +151,7 @@ pub(crate) fn stage_mutation_op(
                 inserted: Some(record.clone()),
                 deleted: None,
                 renamed: None,
+                reordered: false,
                 affected_files: Vec::new(),
                 diagnostics: DiagnosticSet::empty(),
             })
@@ -297,6 +308,7 @@ fn stage_write_dimension_value(
         inserted: None,
         deleted: None,
         renamed: None,
+        reordered: false,
         affected_files: result
             .changed
             .then(|| write_file.to_string())
@@ -320,6 +332,7 @@ fn field_write_outcome(
         inserted: None,
         deleted: None,
         renamed: None,
+        reordered: false,
         affected_files: vec![plan.target.display_path.clone()],
         diagnostics: provider_outcome.diagnostics,
     }
@@ -388,6 +401,7 @@ fn stage_rename_record_key(
         inserted: None,
         deleted: None,
         renamed: Some((plan.old_coordinate.clone(), new_coordinate)),
+        reordered: false,
         affected_files: affected_files.into_iter().collect(),
         diagnostics,
     })
@@ -409,6 +423,7 @@ fn stage_insert_record(
         actual_type,
         fields,
         schema,
+        before: None,
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
@@ -423,6 +438,7 @@ fn stage_insert_record(
         inserted: Some(inserted),
         deleted: None,
         renamed: None,
+        reordered: false,
         affected_files: vec![file.to_string()],
         diagnostics: provider_outcome.diagnostics,
     })
@@ -460,9 +476,111 @@ fn stage_delete_record(
         inserted: None,
         deleted: Some(plan.coordinate.clone()),
         renamed: None,
+        reordered: false,
         affected_files: affected_files.into_iter().collect(),
         diagnostics: provider_outcome.diagnostics,
     })
+}
+
+fn stage_reorder_records(
+    session: &ProjectSession,
+    plan: &ReorderPlan,
+) -> Result<WriteOutcome, DiagnosticSet> {
+    let (operation, touched) = match &plan.operation {
+        ReorderOperation::Swap { first, second } => (
+            ReorderRecordsOperation::Swap {
+                first: write_record_ref(first),
+                second: write_record_ref(second),
+            },
+            vec![first.coordinate.clone(), second.coordinate.clone()],
+        ),
+        ReorderOperation::MoveBefore { record, before } => (
+            ReorderRecordsOperation::MoveBefore {
+                record: write_record_ref(record),
+                before: before.as_ref().map(write_record_ref),
+            },
+            std::iter::once(record.coordinate.clone())
+                .chain(before.iter().map(|position| position.coordinate.clone()))
+                .collect(),
+        ),
+    };
+    let ctx = WriteContext {
+        project_root: &session.project.root_dir,
+        schema: session.schema(),
+        model: Some(&session.model),
+    };
+    let provider_outcome = plan.writer.reorder_records(
+        ctx,
+        &ReorderRecordsRequest {
+            source: &plan.source,
+            operation,
+        },
+    )?;
+    Ok(WriteOutcome {
+        touched,
+        inserted: None,
+        deleted: None,
+        renamed: None,
+        reordered: true,
+        affected_files: vec![plan.display_path.clone()],
+        diagnostics: provider_outcome.diagnostics,
+    })
+}
+
+fn stage_transfer_record(
+    session: &ProjectSession,
+    plan: &TransferPlan,
+) -> Result<WriteOutcome, DiagnosticSet> {
+    let schema = session.schema();
+    let ctx = WriteContext {
+        project_root: &session.project.root_dir,
+        schema,
+        model: Some(&session.model),
+    };
+    let before = plan.before.as_ref().map(write_record_ref);
+    let inserted = plan.destination_writer.insert_record(
+        ctx,
+        &InsertRecordRequest {
+            source: &plan.destination,
+            sheet: plan.destination_sheet.as_deref(),
+            record_key: &plan.coordinate.key,
+            actual_type: &plan.coordinate.actual_type,
+            fields: &plan.fields,
+            schema,
+            before,
+        },
+    )?;
+    let deleted = plan.source_writer.delete_record(
+        ctx,
+        &DeleteRecordRequest {
+            origin: &plan.source_origin,
+            record_key: &plan.coordinate.key,
+            actual_type: &plan.coordinate.actual_type,
+            source: &plan.source,
+        },
+    )?;
+    let mut diagnostics = inserted.diagnostics;
+    diagnostics.extend(deleted.diagnostics);
+    Ok(WriteOutcome {
+        touched: vec![plan.coordinate.clone()],
+        inserted: None,
+        deleted: None,
+        renamed: None,
+        reordered: true,
+        affected_files: vec![
+            plan.source_display_path.clone(),
+            plan.destination_display_path.clone(),
+        ],
+        diagnostics,
+    })
+}
+
+fn write_record_ref(position: &super::plan::ResolvedRecordPosition) -> WriteRecordRef<'_> {
+    WriteRecordRef {
+        origin: &position.origin,
+        record_key: &position.coordinate.key,
+        actual_type: &position.coordinate.actual_type,
+    }
 }
 
 fn rewrite_dimension_records(

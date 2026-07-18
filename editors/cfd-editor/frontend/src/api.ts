@@ -15,6 +15,7 @@ import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
 import type { RefTarget } from './bindings/RefTarget'
 import type { RenameRecordOutcome } from './bindings/RenameRecordOutcome'
+import type { ReorderRecordsOutcome } from './bindings/ReorderRecordsOutcome'
 import type { WriteFieldOutcome } from './bindings/WriteFieldOutcome'
 import type { WriteDimensionValueOutcome } from './bindings/WriteDimensionValueOutcome'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
@@ -238,6 +239,42 @@ export async function deleteRecord(
   return invokeCommand<DeleteRecordOutcome>('delete_record', {
     sessionId,
     coordinate,
+  })
+}
+
+export async function swapRecords(
+  sessionId: number,
+  first: RecordCoordinate,
+  second: RecordCoordinate,
+): Promise<ReorderRecordsOutcome> {
+  return invokeCommand<ReorderRecordsOutcome>('swap_records', { sessionId, first, second })
+}
+
+export async function moveRecord(
+  sessionId: number,
+  coordinate: RecordCoordinate,
+  targetIndex: number,
+): Promise<ReorderRecordsOutcome> {
+  return invokeCommand<ReorderRecordsOutcome>('move_record', {
+    sessionId,
+    coordinate,
+    targetIndex,
+  })
+}
+
+export async function transferRecord(
+  sessionId: number,
+  coordinate: RecordCoordinate,
+  destinationFile: string,
+  destinationSheet: string | null,
+  targetIndex: number,
+): Promise<ReorderRecordsOutcome> {
+  return invokeCommand<ReorderRecordsOutcome>('transfer_record', {
+    sessionId,
+    coordinate,
+    destinationFile,
+    destinationSheet,
+    targetIndex,
   })
 }
 

@@ -12,12 +12,14 @@ mod table_manager;
 
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, WriteCellRequest,
-    WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    ReorderRecordsOperation, ReorderRecordsRequest, RewriteRecordReferencesRequest,
+    SourceLocationSpec, SourceWriter, WriteCellRequest, WriteContext, WriteOutcome,
+    WriterCapabilities, WriterDescriptor,
 };
-use coflow_data_model::{CfdValue, SourceDocument};
+use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{
-    plan_delete_record, plan_field_write, plan_insert_record, TableFieldWrite, TableInsertRecord,
+    plan_delete_record, plan_field_write, plan_insert_record, plan_reorder_records,
+    TableFieldWrite, TableInsertRecord, TableRecordRef, TableReorderOperation,
     TableWriteDiagnostics,
 };
 use coflow_loader_table_core::{resolve_table_write_layout, TableDiagnostics};
@@ -38,6 +40,7 @@ pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         can_edit_key: true,
         can_insert_record: true,
         can_delete_record: true,
+        can_reorder_records: true,
         requires_full_refresh_after_write: true,
     },
 };
@@ -102,6 +105,10 @@ impl SourceWriter for CsvWriter {
             fields: request.fields,
             field_columns: &layout.field_columns,
             id_column: layout.id_column,
+            before: request.before.map(|before| TableRecordRef {
+                origin: before.origin,
+                record_key: before.record_key,
+            }),
         })
         .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
@@ -134,6 +141,8 @@ impl SourceWriter for CsvWriter {
         _ctx: WriteContext<'_>,
         request: &DeleteRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        ensure_table_origin_path(request.origin, path)?;
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
@@ -146,6 +155,79 @@ impl SourceWriter for CsvWriter {
         _request: &RewriteRecordReferencesRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         Ok(WriteOutcome::default())
+    }
+
+    fn reorder_records(
+        &self,
+        _ctx: WriteContext<'_>,
+        request: &ReorderRecordsRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        let operation = match request.operation {
+            ReorderRecordsOperation::Swap { first, second } => {
+                if first.actual_type != second.actual_type {
+                    return Err(DiagnosticSet::one(diag(
+                        "CSV-WRITE",
+                        "records must have the same type to exchange positions",
+                    )));
+                }
+                ensure_table_origin_path(first.origin, path)?;
+                ensure_table_origin_path(second.origin, path)?;
+                TableReorderOperation::Swap {
+                    first: TableRecordRef {
+                        origin: first.origin,
+                        record_key: first.record_key,
+                    },
+                    second: TableRecordRef {
+                        origin: second.origin,
+                        record_key: second.record_key,
+                    },
+                }
+            }
+            ReorderRecordsOperation::MoveBefore { record, before } => {
+                ensure_table_origin_path(record.origin, path)?;
+                if let Some(before) = before {
+                    ensure_table_origin_path(before.origin, path)?;
+                }
+                TableReorderOperation::MoveBefore {
+                    record: TableRecordRef {
+                        origin: record.origin,
+                        record_key: record.record_key,
+                    },
+                    before: before.map(|before| TableRecordRef {
+                        origin: before.origin,
+                        record_key: before.record_key,
+                    }),
+                }
+            }
+        };
+        let plan = plan_reorder_records(operation).map_err(table_write_diagnostics_to_api)?;
+        apply_plan(&plan)?;
+        Ok(WriteOutcome::default())
+    }
+}
+
+fn ensure_table_origin_path(origin: &RecordOrigin, expected: &Path) -> Result<(), DiagnosticSet> {
+    match origin {
+        RecordOrigin::Table {
+            document: SourceDocument::Local(path),
+            ..
+        } if path == expected => Ok(()),
+        RecordOrigin::Table {
+            document: SourceDocument::Local(path),
+            ..
+        } => Err(DiagnosticSet::one(diag(
+            "CSV-WRITE",
+            format!(
+                "record origin `{}` does not match source `{}`",
+                path.display(),
+                expected.display()
+            ),
+        ))),
+        _ => Err(DiagnosticSet::one(diag(
+            "CSV-WRITE",
+            "csv write requires a local table origin",
+        ))),
     }
 }
 

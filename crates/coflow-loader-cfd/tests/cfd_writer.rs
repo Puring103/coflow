@@ -11,9 +11,10 @@
 )]
 
 use coflow_api::{
-    DeleteRecordRequest, InsertRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
-    SourceLocationSpec, SourceProvider, SourceWriter, SpreadRewriteTarget, WriteCellRequest,
-    WriteContext, WriteFieldPathSegment,
+    DeleteRecordRequest, InsertRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
+    ResolvedSource, RewriteRecordReferencesRequest, SourceLocationSpec, SourceProvider,
+    SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    WriteRecordRef,
 };
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdObject, CfdValue, RecordOrigin, TextSpan};
@@ -60,6 +61,69 @@ fn origin_for(path: &Path) -> RecordOrigin {
             end_character: 0,
         }),
     }
+}
+
+#[test]
+fn reorders_records_without_changing_document_slots() {
+    let dir = temp_dir("reorder");
+    let file = dir.join("items.cfd");
+    fs::write(
+        &file,
+        "a: Item { value: 1 }\n\nb: Item { value: 2 }\n\nc: Item { value: 3 }\n",
+    )
+    .expect("write seed");
+    let schema = compile_schema("type Item { value: int; }");
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let writer = CfdWriter::new();
+    let ctx = WriteContext {
+        project_root: &dir,
+        schema: &schema,
+        model: None,
+    };
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::Swap {
+                    first: WriteRecordRef {
+                        origin: &origin,
+                        record_key: "a",
+                        actual_type: "Item",
+                    },
+                    second: WriteRecordRef {
+                        origin: &origin,
+                        record_key: "c",
+                        actual_type: "Item",
+                    },
+                },
+            },
+        )
+        .expect("swap records");
+    let swapped = fs::read_to_string(&file).expect("read swapped");
+    assert!(swapped.find("c: Item").unwrap() < swapped.find("b: Item").unwrap());
+    assert!(swapped.find("b: Item").unwrap() < swapped.find("a: Item").unwrap());
+
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::MoveBefore {
+                    record: WriteRecordRef {
+                        origin: &origin,
+                        record_key: "c",
+                        actual_type: "Item",
+                    },
+                    before: None,
+                },
+            },
+        )
+        .expect("move record");
+    let moved = fs::read_to_string(&file).expect("read moved");
+    assert!(moved.find("b: Item").unwrap() < moved.find("a: Item").unwrap());
+    assert!(moved.find("a: Item").unwrap() < moved.find("c: Item").unwrap());
 }
 
 #[test]
@@ -459,6 +523,7 @@ fn inserts_record_at_end_of_cfd_file() {
                 actual_type: "Item",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert succeeds");
@@ -512,6 +577,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
                 actual_type: "Skill",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert unrelated same-key skill");
@@ -581,6 +647,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
                 actual_type: "Loot",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert succeeds");

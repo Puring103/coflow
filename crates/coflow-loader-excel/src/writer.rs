@@ -14,13 +14,15 @@ use crate::options::{
 use calamine::Reader;
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, WriteBatchFailure,
-    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    ReorderRecordsOperation, ReorderRecordsRequest, RewriteRecordReferencesRequest,
+    SourceLocationSpec, SourceWriter, WriteBatchFailure, WriteCellRequest, WriteContext,
+    WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
-use coflow_data_model::{CfdValue, SourceDocument};
+use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{
-    plan_delete_record, plan_field_write, plan_insert_record, TableAppendRow, TableDeleteRow,
-    TableFieldWrite, TableInsertRecord, TableSetCell, TableWriteDiagnostics, TableWritePlan,
+    plan_delete_record, plan_field_write, plan_insert_record, plan_reorder_records, TableAppendRow,
+    TableDeleteRow, TableFieldWrite, TableInsertRecord, TableMoveRowBefore, TableRecordRef,
+    TableReorderOperation, TableSetCell, TableSwapRows, TableWriteDiagnostics, TableWritePlan,
 };
 use coflow_loader_table_core::{resolve_table_write_layout, TableDiagnostics};
 use format::{ensure_writable_excel_path, excel_writer_capabilities};
@@ -36,6 +38,7 @@ pub static EXCEL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         can_edit_key: true,
         can_insert_record: true,
         can_delete_record: true,
+        can_reorder_records: true,
         requires_full_refresh_after_write: true,
     },
 };
@@ -148,6 +151,10 @@ impl SourceWriter for ExcelWriter {
             fields: request.fields,
             field_columns: &layout.field_columns,
             id_column: layout.id_column,
+            before: request.before.map(|before| TableRecordRef {
+                origin: before.origin,
+                record_key: before.record_key,
+            }),
         })
         .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
@@ -182,6 +189,7 @@ impl SourceWriter for ExcelWriter {
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let SourceLocationSpec::Path(path) = &request.source.location;
         ensure_writable_excel_path(path, "delete records")?;
+        ensure_table_origin_path(request.origin, path)?;
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
@@ -194,6 +202,80 @@ impl SourceWriter for ExcelWriter {
         _request: &RewriteRecordReferencesRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         Ok(WriteOutcome::default())
+    }
+
+    fn reorder_records(
+        &self,
+        _ctx: WriteContext<'_>,
+        request: &ReorderRecordsRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        ensure_writable_excel_path(path, "reorder records")?;
+        let operation = match request.operation {
+            ReorderRecordsOperation::Swap { first, second } => {
+                if first.actual_type != second.actual_type {
+                    return Err(DiagnosticSet::one(diag(
+                        "EXCEL-WRITE",
+                        "records must have the same type to exchange positions",
+                    )));
+                }
+                ensure_table_origin_path(first.origin, path)?;
+                ensure_table_origin_path(second.origin, path)?;
+                TableReorderOperation::Swap {
+                    first: TableRecordRef {
+                        origin: first.origin,
+                        record_key: first.record_key,
+                    },
+                    second: TableRecordRef {
+                        origin: second.origin,
+                        record_key: second.record_key,
+                    },
+                }
+            }
+            ReorderRecordsOperation::MoveBefore { record, before } => {
+                ensure_table_origin_path(record.origin, path)?;
+                if let Some(before) = before {
+                    ensure_table_origin_path(before.origin, path)?;
+                }
+                TableReorderOperation::MoveBefore {
+                    record: TableRecordRef {
+                        origin: record.origin,
+                        record_key: record.record_key,
+                    },
+                    before: before.map(|before| TableRecordRef {
+                        origin: before.origin,
+                        record_key: before.record_key,
+                    }),
+                }
+            }
+        };
+        let plan = plan_reorder_records(operation).map_err(table_write_diagnostics_to_api)?;
+        apply_plan(&plan)?;
+        Ok(WriteOutcome::default())
+    }
+}
+
+fn ensure_table_origin_path(origin: &RecordOrigin, expected: &Path) -> Result<(), DiagnosticSet> {
+    match origin {
+        RecordOrigin::Table {
+            document: SourceDocument::Local(path),
+            ..
+        } if path == expected => Ok(()),
+        RecordOrigin::Table {
+            document: SourceDocument::Local(path),
+            ..
+        } => Err(DiagnosticSet::one(diag(
+            "EXCEL-WRITE",
+            format!(
+                "record origin `{}` does not match source `{}`",
+                path.display(),
+                expected.display()
+            ),
+        ))),
+        _ => Err(DiagnosticSet::one(diag(
+            "EXCEL-WRITE",
+            "excel write requires a local table origin",
+        ))),
     }
 }
 
@@ -233,7 +315,9 @@ fn local_plan_path(plan: &TableWritePlan) -> &Path {
     match plan {
         TableWritePlan::SetCells { document, .. }
         | TableWritePlan::AppendRow(TableAppendRow { document, .. })
-        | TableWritePlan::DeleteRow(TableDeleteRow { document, .. }) => {
+        | TableWritePlan::DeleteRow(TableDeleteRow { document, .. })
+        | TableWritePlan::SwapRows(TableSwapRows { document, .. })
+        | TableWritePlan::MoveRowBefore(TableMoveRowBefore { document, .. }) => {
             let SourceDocument::Local(path) = document;
             path
         }
@@ -263,9 +347,30 @@ fn apply_plan_to_workbook(
             }
             Ok(())
         }
-        TableWritePlan::AppendRow(TableAppendRow { sheet, values, .. }) => {
+        TableWritePlan::AppendRow(TableAppendRow {
+            sheet,
+            values,
+            before_row,
+            before_id_column,
+            expected_before_key,
+            ..
+        }) => {
             let sheet_ref = mutable_sheet(book, path, sheet)?;
-            let row = excel_usize(sheet_ref.get_highest_row(), "row")? + 1;
+            if let (Some(before_row), Some(before_id_column), Some(expected_before_key)) =
+                (before_row, before_id_column, expected_before_key)
+            {
+                ensure_expected_key(
+                    sheet_ref,
+                    path,
+                    sheet,
+                    *before_row,
+                    *before_id_column,
+                    expected_before_key,
+                )?;
+            }
+            let row = (*before_row).unwrap_or(excel_usize(sheet_ref.get_highest_row(), "row")? + 1);
+            let row_index = excel_index(row, "row")?;
+            sheet_ref.insert_new_row(&row_index, &1);
             for (column, value) in values {
                 let coord = excel_coord(*column, row)?;
                 sheet_ref.get_cell_mut(coord).set_value(value);
@@ -285,7 +390,156 @@ fn apply_plan_to_workbook(
             sheet_ref.remove_row(&row, &1);
             Ok(())
         }
+        TableWritePlan::SwapRows(TableSwapRows {
+            sheet,
+            first_row,
+            first_id_column,
+            expected_first_key,
+            second_row,
+            second_id_column,
+            expected_second_key,
+            ..
+        }) => {
+            let sheet_ref = mutable_sheet(book, path, sheet)?;
+            ensure_expected_key(
+                sheet_ref,
+                path,
+                sheet,
+                *first_row,
+                *first_id_column,
+                expected_first_key,
+            )?;
+            ensure_expected_key(
+                sheet_ref,
+                path,
+                sheet,
+                *second_row,
+                *second_id_column,
+                expected_second_key,
+            )?;
+            swap_excel_rows(sheet_ref, *first_row, *second_row)
+        }
+        TableWritePlan::MoveRowBefore(TableMoveRowBefore {
+            sheet,
+            row,
+            id_column,
+            expected_key,
+            before_row,
+            before_id_column,
+            expected_before_key,
+            ..
+        }) => {
+            let sheet_ref = mutable_sheet(book, path, sheet)?;
+            ensure_expected_key(sheet_ref, path, sheet, *row, *id_column, expected_key)?;
+            if let (Some(before_row), Some(before_id_column), Some(expected_before_key)) =
+                (before_row, before_id_column, expected_before_key)
+            {
+                ensure_expected_key(
+                    sheet_ref,
+                    path,
+                    sheet,
+                    *before_row,
+                    *before_id_column,
+                    expected_before_key,
+                )?;
+            }
+            move_excel_row_before(sheet_ref, *row, *before_row)
+        }
     }
+}
+
+#[derive(Clone)]
+struct ExcelRowSnapshot {
+    cells: Vec<umya_spreadsheet::structs::Cell>,
+    dimension: Option<umya_spreadsheet::structs::Row>,
+}
+
+fn snapshot_excel_row(
+    sheet: &umya_spreadsheet::Worksheet,
+    row: usize,
+) -> Result<ExcelRowSnapshot, DiagnosticSet> {
+    let row = excel_index(row, "row")?;
+    Ok(ExcelRowSnapshot {
+        cells: sheet
+            .get_cell_collection()
+            .into_iter()
+            .filter(|cell| *cell.get_coordinate().get_row_num() == row)
+            .cloned()
+            .collect(),
+        dimension: sheet.get_row_dimension(&row).cloned(),
+    })
+}
+
+fn clear_excel_row(sheet: &mut umya_spreadsheet::Worksheet, row: u32) {
+    let columns = sheet
+        .get_cell_collection()
+        .into_iter()
+        .filter(|cell| *cell.get_coordinate().get_row_num() == row)
+        .map(|cell| *cell.get_coordinate().get_col_num())
+        .collect::<Vec<_>>();
+    for column in columns {
+        sheet.remove_cell((column, row));
+    }
+}
+
+fn restore_excel_row(
+    sheet: &mut umya_spreadsheet::Worksheet,
+    row: u32,
+    snapshot: ExcelRowSnapshot,
+) {
+    clear_excel_row(sheet, row);
+    sheet.get_row_dimensions_to_hashmap_mut().remove(&row);
+    for mut cell in snapshot.cells {
+        let column = *cell.get_coordinate().get_col_num();
+        cell.set_coordinate((column, row));
+        sheet.set_cell(cell);
+    }
+    if let Some(source) = snapshot.dimension {
+        let target = sheet.get_row_dimension_mut(&row);
+        target
+            .set_height(*source.get_height())
+            .set_descent(*source.get_descent())
+            .set_thick_bot(*source.get_thick_bot())
+            .set_custom_height(*source.get_custom_height())
+            .set_hidden(*source.get_hidden())
+            .set_style(source.get_style().clone());
+    }
+}
+
+fn swap_excel_rows(
+    sheet: &mut umya_spreadsheet::Worksheet,
+    first: usize,
+    second: usize,
+) -> Result<(), DiagnosticSet> {
+    let first_snapshot = snapshot_excel_row(sheet, first)?;
+    let second_snapshot = snapshot_excel_row(sheet, second)?;
+    restore_excel_row(sheet, excel_index(first, "row")?, second_snapshot);
+    restore_excel_row(sheet, excel_index(second, "row")?, first_snapshot);
+    Ok(())
+}
+
+fn move_excel_row_before(
+    sheet: &mut umya_spreadsheet::Worksheet,
+    source: usize,
+    before: Option<usize>,
+) -> Result<(), DiagnosticSet> {
+    let snapshot = snapshot_excel_row(sheet, source)?;
+    let source = excel_index(source, "row")?;
+    sheet.remove_row(&source, &1);
+    let destination = match before {
+        Some(before) => {
+            let before = excel_index(before, "row")?;
+            if source < before {
+                before.saturating_sub(1)
+            } else {
+                before
+            }
+        }
+        None => sheet.get_highest_row().saturating_add(1),
+    };
+    sheet.insert_new_row(&destination, &1);
+    restore_excel_row(sheet, destination, snapshot);
+    Ok(())
 }
 
 fn mutate_workbook(

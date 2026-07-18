@@ -60,6 +60,27 @@ pub enum MutationOp {
         #[serde(default)]
         file: Option<String>,
     },
+    SwapRecords {
+        first: RecordCoordinate,
+        second: RecordCoordinate,
+        #[serde(default)]
+        file: Option<String>,
+    },
+    MoveRecord {
+        record: RecordCoordinate,
+        target_index: usize,
+        #[serde(default)]
+        file: Option<String>,
+    },
+    TransferRecord {
+        record: RecordCoordinate,
+        destination_file: String,
+        #[serde(default)]
+        destination_sheet: Option<String>,
+        target_index: usize,
+        #[serde(default)]
+        source_file: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,6 +219,22 @@ pub(crate) enum PreparedMutationOp {
     DeleteRecord {
         record: RecordCoordinate,
         report_file: Option<String>,
+    },
+    SwapRecords {
+        first: RecordCoordinate,
+        second: RecordCoordinate,
+        report_file: String,
+    },
+    MoveRecord {
+        record: RecordCoordinate,
+        target_index: usize,
+        report_file: String,
+    },
+    TransferRecord {
+        record: RecordCoordinate,
+        destination_file: String,
+        destination_sheet: Option<String>,
+        target_index: usize,
     },
     FoldedSetField {
         record: RecordCoordinate,
