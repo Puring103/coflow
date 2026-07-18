@@ -40,6 +40,8 @@ pub struct WriteOutcome {
     pub inserted: Option<RecordCoordinate>,
     pub deleted: Option<RecordCoordinate>,
     pub renamed: Option<(RecordCoordinate, RecordCoordinate)>,
+    #[serde(default)]
+    pub reordered: bool,
     /// Project-facing source paths actually changed by this operation.
     pub affected_files: Vec<String>,
     // Skip from TS: `DiagnosticSet` references concrete `Diagnostic` types

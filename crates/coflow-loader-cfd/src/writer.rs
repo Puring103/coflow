@@ -13,17 +13,18 @@ mod target;
 
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
-    RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter,
-    SyncHeaderRequest, TableAddressing, TableContext, TableManager, TableManagerDescriptor,
-    TableOperationResult, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
-    WriterDescriptor,
+    RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
+    RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, SyncHeaderRequest,
+    TableAddressing, TableContext, TableManager, TableManagerDescriptor, TableOperationResult,
+    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
 use coflow_cft::Span;
 use coflow_data_model::RecordOrigin;
 use patch::{
     append_record_source, apply_patch, collect_spread_ref_key_spans, delete_record_span,
-    find_record, replace_spans, serialize_record, validate_record_key, validate_values,
+    find_record, reorder_record_spans, replace_spans, serialize_record, validate_record_key,
+    validate_values,
 };
 use render::{added_columns, cfd_top_level_fields, removed_columns, rewrite_cfd_records};
 use std::path::Path;
@@ -38,6 +39,7 @@ pub static CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         can_edit_key: true,
         can_insert_record: true,
         can_delete_record: true,
+        can_reorder_records: true,
         requires_full_refresh_after_write: true,
     },
 };
@@ -270,6 +272,79 @@ impl SourceWriter for CfdWriter {
         let new_source = replace_spans(&source, &replacements)?;
         Self::write_source(path, &new_source)?;
         Ok(WriteOutcome::default())
+    }
+
+    fn reorder_records(
+        &self,
+        _ctx: WriteContext<'_>,
+        request: &ReorderRecordsRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location;
+        let (source, ast) = Self::read_or_parse(path)?;
+        let mut order = (0..ast.records.len()).collect::<Vec<_>>();
+        match request.operation {
+            ReorderRecordsOperation::Swap { first, second } => {
+                ensure_cfd_origin_path(first.origin, path)?;
+                ensure_cfd_origin_path(second.origin, path)?;
+                let first = record_index(&ast, first.actual_type, first.record_key)?;
+                let second = record_index(&ast, second.actual_type, second.record_key)?;
+                order.swap(first, second);
+            }
+            ReorderRecordsOperation::MoveBefore { record, before } => {
+                ensure_cfd_origin_path(record.origin, path)?;
+                let record = record_index(&ast, record.actual_type, record.record_key)?;
+                let before = before
+                    .map(|before| {
+                        ensure_cfd_origin_path(before.origin, path)?;
+                        record_index(&ast, before.actual_type, before.record_key)
+                    })
+                    .transpose()?;
+                let moved = order.remove(record);
+                let destination = before
+                    .map(|before| if record < before { before - 1 } else { before })
+                    .unwrap_or(order.len());
+                if destination > order.len() {
+                    return Err(DiagnosticSet::one(diag(
+                        "CFD-WRITE",
+                        "record reorder destination is outside the document",
+                    )));
+                }
+                order.insert(destination, moved);
+            }
+        }
+        let new_source = reorder_record_spans(&source, &ast.records, &order)?;
+        Self::write_source(path, &new_source)?;
+        Ok(WriteOutcome::default())
+    }
+}
+
+fn record_index(ast: &CfdAst, actual_type: &str, key: &str) -> Result<usize, DiagnosticSet> {
+    ast.records
+        .iter()
+        .position(|record| record.type_name == actual_type && record.key == key)
+        .ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                format!("record `{actual_type}.{key}` not found in AST"),
+            ))
+        })
+}
+
+fn ensure_cfd_origin_path(origin: &RecordOrigin, expected: &Path) -> Result<(), DiagnosticSet> {
+    match origin {
+        RecordOrigin::File { path, .. } if path == expected => Ok(()),
+        RecordOrigin::File { path, .. } => Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!(
+                "record origin `{}` does not match source `{}`",
+                path.display(),
+                expected.display()
+            ),
+        ))),
+        _ => Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            "cfd reorder requires File origins",
+        ))),
     }
 }
 

@@ -68,6 +68,12 @@ impl MutationImpact {
                 impact.changed_records.insert(old.clone());
                 impact.changed_records.insert(new.clone());
             }
+            if outcome.reordered {
+                impact.structural_change = true;
+                impact
+                    .fallback_reason
+                    .get_or_insert(IncrementalFallbackReason::RecordReordered);
+            }
         }
         impact
     }

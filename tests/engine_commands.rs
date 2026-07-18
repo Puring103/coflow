@@ -374,6 +374,7 @@ static FAKE_LOCAL_FAIL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         can_edit_key: false,
         can_insert_record: false,
         can_delete_record: false,
+        can_reorder_records: false,
         requires_full_refresh_after_write: true,
     },
 };

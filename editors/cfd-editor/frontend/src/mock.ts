@@ -20,6 +20,7 @@ const MOCK_CFD_CAPS: WriterCapabilities = {
   can_edit_key: true,
   can_insert_record: true,
   can_delete_record: true,
+  can_reorder_records: true,
   requires_full_refresh_after_write: true,
 }
 
@@ -187,6 +188,8 @@ function row(actualType: string, key: string, fields: RecordRow['fields']): Reco
   return {
     coordinate: { actual_type: actualType, key },
     display_path: `${actualType}.${key}`,
+    container_index: 0,
+    container_size: 1,
     fields,
     field_index,
     field_summaries,

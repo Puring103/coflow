@@ -146,7 +146,7 @@ export async function publishMutationGeneration(
   return committed(undefined)
 }
 
-export type EditEntry = FieldEditEntry | DimensionEditEntry | InsertEditEntry | DeleteEditEntry
+export type EditEntry = FieldEditEntry | DimensionEditEntry | InsertEditEntry | DeleteEditEntry | ReorderEditEntry
 
 export interface FieldEditEntry {
   kind: 'field'
@@ -181,6 +181,25 @@ export interface DeleteEditEntry {
   filePath: string
   coordinate: RecordCoordinate
   snapshot: FieldValue
+}
+
+export type ReorderEditEntry = SwapRecordsEditEntry | MoveRecordEditEntry
+
+export interface SwapRecordsEditEntry {
+  kind: 'swap-records'
+  revision: number
+  filePath: string
+  first: RecordCoordinate
+  second: RecordCoordinate
+}
+
+export interface MoveRecordEditEntry {
+  kind: 'move-record'
+  revision: number
+  filePath: string
+  coordinate: RecordCoordinate
+  oldIndex: number
+  newIndex: number
 }
 
 export interface MutationHistorySnapshot {
@@ -303,6 +322,13 @@ function rebindEntry(
         actual_type: newCoordinate.actual_type,
         record_key: newCoordinate.key,
       },
+    }
+  }
+  if (entry.kind === 'swap-records') {
+    return {
+      ...entry,
+      first: sameCoordinate(entry.first, oldCoordinate) ? newCoordinate : entry.first,
+      second: sameCoordinate(entry.second, oldCoordinate) ? newCoordinate : entry.second,
     }
   }
   if (!sameCoordinate(entry.coordinate, oldCoordinate)) return entry

@@ -218,6 +218,50 @@ pub(super) fn delete_record_span(source: &str, span: Span) -> Span {
     Span::new(start, end)
 }
 
+pub(super) fn reorder_record_spans(
+    source: &str,
+    records: &[AstRecord],
+    order: &[usize],
+) -> Result<String, DiagnosticSet> {
+    if order.len() != records.len() {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            "record reorder does not cover every document record",
+        )));
+    }
+    let fragments = records
+        .iter()
+        .map(|record| {
+            source
+                .get(record.span.start..record.span.end)
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    DiagnosticSet::one(diag(
+                        "CFD-WRITE",
+                        "record span is outside the source document",
+                    ))
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let replacements = records
+        .iter()
+        .zip(order)
+        .map(|(slot, source_index)| {
+            fragments
+                .get(*source_index)
+                .cloned()
+                .map(|fragment| (slot.span, fragment))
+                .ok_or_else(|| {
+                    DiagnosticSet::one(diag(
+                        "CFD-WRITE",
+                        "record reorder index is outside the document",
+                    ))
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    replace_spans(source, &replacements)
+}
+
 fn find_closing_brace(source: &str, near: usize) -> Result<usize, DiagnosticSet> {
     let end = near.min(source.len());
     let bytes = source.as_bytes();

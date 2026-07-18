@@ -46,6 +46,36 @@ pub struct DeleteRecordRequest<'a> {
     pub source: &'a ResolvedSource,
 }
 
+/// A stable record identity paired with its provider-owned physical origin.
+#[derive(Debug, Clone, Copy)]
+pub struct WriteRecordRef<'a> {
+    pub origin: &'a RecordOrigin,
+    pub record_key: &'a str,
+    pub actual_type: &'a str,
+}
+
+/// One atomic record-order change inside a physical source container.
+#[derive(Debug, Clone, Copy)]
+pub enum ReorderRecordsOperation<'a> {
+    Swap {
+        first: WriteRecordRef<'a>,
+        second: WriteRecordRef<'a>,
+    },
+    /// Move `record` immediately before `before`, or to the end when the
+    /// anchor is absent.
+    MoveBefore {
+        record: WriteRecordRef<'a>,
+        before: Option<WriteRecordRef<'a>>,
+    },
+}
+
+/// Request describing one atomic top-level record reorder.
+#[derive(Debug, Clone, Copy)]
+pub struct ReorderRecordsRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub operation: ReorderRecordsOperation<'a>,
+}
+
 /// Request describing a top-level record key rename.
 #[derive(Debug, Clone)]
 pub struct RenameRecordRequest<'a> {

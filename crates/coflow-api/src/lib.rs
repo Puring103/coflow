@@ -51,8 +51,9 @@ pub use registry::{
     ProviderBundle, ProviderRegistrationError, ProviderRegistry, SourceProviderSelectionError,
 };
 pub use writer::{
-    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest,
-    SourceTransaction, SourceTransactionCompensation, SourceWriter, SpreadRewriteTarget,
-    WriteBatchFailure, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
+    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
+    ReorderRecordsRequest, RewriteRecordReferencesRequest, SourceTransaction,
+    SourceTransactionCompensation, SourceWriter, SpreadRewriteTarget, WriteBatchFailure,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriteRecordRef,
     WriterCapabilities, WriterDescriptor,
 };

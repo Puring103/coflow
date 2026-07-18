@@ -1,7 +1,7 @@
 use coflow_api::DiagnosticSet;
 use coflow_data_model::SourceDocument;
 use coflow_loader_table_core::writer::{
-    TableAppendRow, TableDeleteRow, TableSetCell, TableWritePlan,
+    TableAppendRow, TableDeleteRow, TableMoveRowBefore, TableSetCell, TableSwapRows, TableWritePlan,
 };
 use std::fs;
 use std::path::Path;
@@ -74,7 +74,95 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
                 Ok(())
             })
         }
+        TableWritePlan::SwapRows(TableSwapRows {
+            document,
+            sheet: _,
+            first_row,
+            first_id_column,
+            expected_first_key,
+            second_row,
+            second_id_column,
+            expected_second_key,
+        }) => {
+            let path = local_path(document);
+            mutate_csv(path, |rows| {
+                ensure_expected_key(rows, path, *first_row, *first_id_column, expected_first_key)?;
+                ensure_expected_key(
+                    rows,
+                    path,
+                    *second_row,
+                    *second_id_column,
+                    expected_second_key,
+                )?;
+                let first = row_index(*first_row)?;
+                let second = row_index(*second_row)?;
+                if first >= rows.len() || second >= rows.len() {
+                    return Err(row_out_of_bounds(path));
+                }
+                rows.swap(first, second);
+                Ok(())
+            })
+        }
+        TableWritePlan::MoveRowBefore(TableMoveRowBefore {
+            document,
+            sheet: _,
+            row,
+            id_column,
+            expected_key,
+            before_row,
+            before_id_column,
+            expected_before_key,
+        }) => {
+            let path = local_path(document);
+            mutate_csv(path, |rows| {
+                ensure_expected_key(rows, path, *row, *id_column, expected_key)?;
+                if let (Some(before_row), Some(before_id_column), Some(expected_before_key)) =
+                    (before_row, before_id_column, expected_before_key)
+                {
+                    ensure_expected_key(
+                        rows,
+                        path,
+                        *before_row,
+                        *before_id_column,
+                        expected_before_key,
+                    )?;
+                }
+                let source = row_index(*row)?;
+                if source >= rows.len() {
+                    return Err(row_out_of_bounds(path));
+                }
+                let moved = rows.remove(source);
+                let destination = match before_row {
+                    Some(before_row) => {
+                        let before = row_index(*before_row)?;
+                        if source < before {
+                            before.saturating_sub(1)
+                        } else {
+                            before
+                        }
+                    }
+                    None => rows.len(),
+                };
+                if destination > rows.len() {
+                    return Err(row_out_of_bounds(path));
+                }
+                rows.insert(destination, moved);
+                Ok(())
+            })
+        }
     }
+}
+
+fn row_index(row: usize) -> Result<usize, DiagnosticSet> {
+    row.checked_sub(1)
+        .ok_or_else(|| DiagnosticSet::one(diag("CSV-WRITE", "csv row index must be at least 1")))
+}
+
+fn row_out_of_bounds(path: &Path) -> DiagnosticSet {
+    DiagnosticSet::one(diag(
+        "CSV-WRITE",
+        format!("record row is outside `{}`", path.display()),
+    ))
 }
 
 fn local_path(document: &SourceDocument) -> &Path {

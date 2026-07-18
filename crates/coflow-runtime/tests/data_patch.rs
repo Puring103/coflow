@@ -494,6 +494,49 @@ fn assert_incremental_diagnostics_match_fresh(
 }
 
 #[test]
+fn runtime_moves_and_swaps_records_then_rebuilds_source_order() {
+    let root = std::env::temp_dir().join(format!("coflow-record-reorder-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data");
+    std::fs::write(root.join("schema.cft"), "type Item { value: int; }").expect("write schema");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        "a: Item { value: 1 }\nb: Item { value: 2 }\nc: Item { value: 3 }\n",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/items.cfd\n",
+    )
+    .expect("write config");
+    let mut session = session(&root);
+    let a = RecordCoordinate::try_new("Item", "a").expect("coordinate a");
+    let b = RecordCoordinate::try_new("Item", "b").expect("coordinate b");
+
+    let moved = session.move_record(&a, 2).expect("move a to end");
+    assert!(moved.reordered);
+    let order = session
+        .queries()
+        .record_views_in_file("data/items.cfd")
+        .map(|view| view.coordinate.key.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(order, ["b", "c", "a"]);
+
+    session.swap_records(&b, &a).expect("swap first and last");
+    let order = session
+        .queries()
+        .record_views_in_file("data/items.cfd")
+        .map(|view| view.coordinate.key.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(order, ["a", "c", "b"]);
+
+    let before = std::fs::read_to_string(root.join("data/items.cfd")).expect("read before");
+    assert!(session.move_record(&a, 3).is_err());
+    let after = std::fs::read_to_string(root.join("data/items.cfd")).expect("read after");
+    assert_eq!(before, after, "out-of-range move must not write the source");
+}
+
+#[test]
 fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     let root = std::env::temp_dir().join(format!("coflow-data-patch-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);

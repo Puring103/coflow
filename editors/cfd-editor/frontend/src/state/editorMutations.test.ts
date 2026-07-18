@@ -43,6 +43,8 @@ function backend(
     renameRecordKey: vi.fn(),
     insertRecord: vi.fn(),
     deleteRecord: vi.fn(),
+    swapRecords: vi.fn(),
+    moveRecord: vi.fn(),
   }
 }
 
@@ -75,6 +77,96 @@ function dimensionOutcome(
 }
 
 describe('EditorMutationController', () => {
+  it('records authoritative move indexes and replays move undo and redo', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const mutationBackend = backend(vi.fn())
+    mutationBackend.moveRecord = vi.fn()
+      .mockResolvedValueOnce({
+        revision: 2,
+        file_records: { revision: 2, file_path: 'data/items.cfd' } as FileRecords,
+        diagnostics: [],
+        affected_files: ['data/items.cfd'],
+        old_index: 0,
+        new_index: 2,
+      })
+      .mockResolvedValueOnce({
+        revision: 3,
+        file_records: { revision: 3, file_path: 'data/items.cfd' } as FileRecords,
+        diagnostics: [],
+        affected_files: ['data/items.cfd'],
+        old_index: 2,
+        new_index: 0,
+      })
+      .mockResolvedValueOnce({
+        revision: 4,
+        file_records: { revision: 4, file_path: 'data/items.cfd' } as FileRecords,
+        diagnostics: [],
+        affected_files: ['data/items.cfd'],
+        old_index: 0,
+        new_index: 2,
+      })
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(mutationBackend, port, history)
+
+    await mutations.moveRecord('data/items.cfd', coordinate, 2)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    await mutations.undo()
+    await mutations.redo()
+
+    expect(mutationBackend.moveRecord).toHaveBeenNthCalledWith(1, 1, coordinate, 2)
+    expect(mutationBackend.moveRecord).toHaveBeenNthCalledWith(2, 1, coordinate, 0)
+    expect(mutationBackend.moveRecord).toHaveBeenNthCalledWith(3, 1, coordinate, 2)
+  })
+
+  it('uses the same swap operation for undo and redo', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const other = { actual_type: 'Item', key: 'shield' }
+    const mutationBackend = backend(vi.fn())
+    mutationBackend.swapRecords = vi.fn(async () => {
+      generation = { ...generation, revision: generation.revision + 1 }
+      return {
+        revision: generation.revision,
+        file_records: {
+          revision: generation.revision,
+          file_path: 'data/items.cfd',
+        } as FileRecords,
+        diagnostics: [],
+        affected_files: ['data/items.cfd'],
+        old_index: null,
+        new_index: null,
+      }
+    })
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const mutations = new EditorMutationController(
+      mutationBackend,
+      port,
+      new MutationHistoryController(),
+    )
+
+    await mutations.swapRecords('data/items.cfd', coordinate, other)
+    await mutations.undo()
+    await mutations.redo()
+
+    expect(mutationBackend.swapRecords).toHaveBeenCalledTimes(3)
+    expect(mutationBackend.swapRecords).toHaveBeenLastCalledWith(1, coordinate, other)
+  })
+
   it('coalesces dimension writes and uses authoritative states for undo and redo', async () => {
     const writeDimensionValue = vi.fn()
       .mockResolvedValueOnce(dimensionOutcome(2, null, '最终值'))

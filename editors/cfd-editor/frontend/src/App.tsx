@@ -903,6 +903,18 @@ export default function App() {
     },
     [mutations],
   )
+  const swapRecords = useCallback(
+    async (filePath: string, first: RecordCoordinate, second: RecordCoordinate) => {
+      await mutations.swapRecords(filePath, first, second)
+    },
+    [mutations],
+  )
+  const moveRecord = useCallback(
+    async (filePath: string, coordinate: RecordCoordinate, targetIndex: number) => {
+      await mutations.moveRecord(filePath, coordinate, targetIndex)
+    },
+    [mutations],
+  )
 
   const undo = useCallback(async () => {
     await mutations.undo()
@@ -1222,6 +1234,20 @@ export default function App() {
       return Promise.resolve()
     },
     [currentRoute?.view, currentRoute?.file, deleteRecord],
+  )
+  const tableOnSwapRecords = useCallback(
+    (first: RecordCoordinate, second: RecordCoordinate): Promise<void> => {
+      if (currentRoute?.view === 'table') return swapRecords(currentRoute.file, first, second)
+      return Promise.resolve()
+    },
+    [currentRoute?.view, currentRoute?.file, swapRecords],
+  )
+  const tableOnMoveRecord = useCallback(
+    (coordinate: RecordCoordinate, targetIndex: number): Promise<void> => {
+      if (currentRoute?.view === 'table') return moveRecord(currentRoute.file, coordinate, targetIndex)
+      return Promise.resolve()
+    },
+    [currentRoute?.view, currentRoute?.file, moveRecord],
   )
   const tableOnBadgeClick = useCallback(
     (coordinate: RecordCoordinate, fieldPath: string | null) => {
@@ -1623,6 +1649,8 @@ export default function App() {
                     onInsertRecord={tableOnInsertRecord}
                     onCreateRecordDraft={tableOnCreateRecordDraft}
                     onDeleteRecord={tableOnDeleteRecord}
+                    onSwapRecords={tableOnSwapRecords}
+                    onMoveRecord={tableOnMoveRecord}
                     onDiagnosticBadgeClick={tableOnBadgeClick}
                     columnWidths={tableColumnWidths}
                     onColumnWidthsChange={tableOnColumnWidthsChange}

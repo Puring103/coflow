@@ -4,9 +4,12 @@
 mod table_conformance;
 
 use coflow_api::{
-    ResolvedSource, SourceLocationSpec, SourceProvider, SyncHeaderRequest, TableContext,
-    TableManager,
+    ReorderRecordsOperation, ReorderRecordsRequest, ResolvedSource, SourceLocationSpec,
+    SourceProvider, SourceWriter, SyncHeaderRequest, TableContext, TableManager, WriteContext,
+    WriteRecordRef,
 };
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs};
+use coflow_data_model::{RecordOrigin, SourceDocument};
 use coflow_loader_csv::{parse, write, CsvLoader, CsvWriter};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -31,6 +34,85 @@ fn csv_source(path: &Path) -> ResolvedSource {
             .expect("decode csv options"),
         display_name: path.display().to_string(),
     }
+}
+
+fn csv_origin(path: &Path, row: usize) -> RecordOrigin {
+    RecordOrigin::Table {
+        document: SourceDocument::Local(path.to_path_buf()),
+        sheet: "Items".to_string(),
+        row,
+        id_column: 1,
+        field_columns: Default::default(),
+    }
+}
+
+#[test]
+fn csv_writer_swaps_and_moves_complete_rows() {
+    let path = temp_csv("reorder");
+    std::fs::write(&path, "id,name\na,Alpha\nb,Beta\nc,Gamma\n").expect("seed csv");
+    let source = csv_source(&path);
+    let schema =
+        build_schema(&parse_modules([]), &CftDimensionInputs::default()).expect("empty schema");
+    let a = csv_origin(&path, 2);
+    let c = csv_origin(&path, 4);
+    let writer = CsvWriter::new();
+    let project_root = std::env::temp_dir();
+    let ctx = WriteContext {
+        project_root: project_root.as_path(),
+        schema: &schema,
+        model: None,
+    };
+
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::Swap {
+                    first: WriteRecordRef {
+                        origin: &a,
+                        record_key: "a",
+                        actual_type: "Item",
+                    },
+                    second: WriteRecordRef {
+                        origin: &c,
+                        record_key: "c",
+                        actual_type: "Item",
+                    },
+                },
+            },
+        )
+        .expect("swap csv rows");
+    assert_eq!(
+        parse(&std::fs::read_to_string(&path).expect("read swapped")).expect("parse swapped"),
+        vec![
+            vec!["id".to_string(), "name".to_string()],
+            vec!["c".to_string(), "Gamma".to_string()],
+            vec!["b".to_string(), "Beta".to_string()],
+            vec!["a".to_string(), "Alpha".to_string()],
+        ]
+    );
+
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::MoveBefore {
+                    record: WriteRecordRef {
+                        origin: &a,
+                        record_key: "c",
+                        actual_type: "Item",
+                    },
+                    before: None,
+                },
+            },
+        )
+        .expect("move csv row to end");
+    let rows = parse(&std::fs::read_to_string(&path).expect("read moved")).expect("parse moved");
+    assert_eq!(rows[1][0], "b");
+    assert_eq!(rows[2][0], "a");
+    assert_eq!(rows[3][0], "c");
 }
 
 #[test]

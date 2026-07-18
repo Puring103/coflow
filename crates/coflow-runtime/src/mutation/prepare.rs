@@ -224,6 +224,40 @@ pub(super) fn prepare_one(
                 report_file,
             })
         }
+        MutationOp::SwapRecords {
+            first,
+            second,
+            file,
+        } => {
+            ensure_file_guard(session, &first, file.as_deref())?;
+            ensure_file_guard(session, &second, file.as_deref())?;
+            let first_file = required_record_file(session, &first, "MUTATION-REORDER")?;
+            let second_file = required_record_file(session, &second, "MUTATION-REORDER")?;
+            if first_file != second_file {
+                return Err(one_mutation_error(
+                    "MUTATION-REORDER-CONTAINER",
+                    "records must belong to the same source file",
+                ));
+            }
+            Ok(PreparedMutationOp::SwapRecords {
+                first,
+                second,
+                report_file: first_file.to_string(),
+            })
+        }
+        MutationOp::MoveRecord {
+            record,
+            target_index,
+            file,
+        } => {
+            ensure_file_guard(session, &record, file.as_deref())?;
+            let report_file = required_record_file(session, &record, "MUTATION-REORDER")?;
+            Ok(PreparedMutationOp::MoveRecord {
+                record,
+                target_index,
+                report_file: report_file.to_string(),
+            })
+        }
     }
 }
 
@@ -697,4 +731,20 @@ fn ensure_record_key_available(
 
 fn record_file<'a>(session: &'a ProjectSession, coordinate: &RecordCoordinate) -> Option<&'a str> {
     session.file_for_record(&coordinate.actual_type, &coordinate.key)
+}
+
+fn required_record_file<'a>(
+    session: &'a ProjectSession,
+    coordinate: &RecordCoordinate,
+    code: &'static str,
+) -> Result<&'a str, DiagnosticSet> {
+    record_file(session, coordinate).ok_or_else(|| {
+        one_mutation_error(
+            code,
+            format!(
+                "record `{}.{}` was not found",
+                coordinate.actual_type, coordinate.key
+            ),
+        )
+    })
 }
