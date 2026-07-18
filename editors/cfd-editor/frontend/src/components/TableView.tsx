@@ -726,13 +726,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             const lower = e.key.toLowerCase()
 
             if (e.key === 'Enter') {
-              const dropdown = tableScrollRef.current?.querySelector<HTMLSelectElement>(
-                `[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] select.searchable-select`,
+              const dropdown = tableScrollRef.current?.querySelector<HTMLInputElement>(
+                `[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] input.searchable-select`,
               )
               if (dropdown) {
                 e.preventDefault()
                 dropdown.focus({ preventScroll: true })
-                try { dropdown.showPicker() } catch { /* typing still searches the datalist */ }
                 return
               }
             }

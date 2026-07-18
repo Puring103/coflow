@@ -2971,7 +2971,9 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 
 /* Inline select (enum / bool / ref) — hide OS chrome, show unified chevron */
 select.dc-input-flat,
-select.dc-input {
+select.dc-input,
+input.searchable-select.dc-input-flat,
+input.searchable-select.dc-input {
   appearance: none;
   -webkit-appearance: none;
   outline: none;
@@ -2983,7 +2985,9 @@ select.dc-input {
 }
 /* light theme: darker chevron */
 [data-theme="light"] select.dc-input-flat,
-[data-theme="light"] select.dc-input {
+[data-theme="light"] select.dc-input,
+[data-theme="light"] input.searchable-select.dc-input-flat,
+[data-theme="light"] input.searchable-select.dc-input {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5l3 3 3-3' stroke='%234a5260' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
@@ -3017,6 +3021,74 @@ select.dc-pill-select {
   /* Reserve chevron space so text never sits under the arrow, even when
    * the arrow itself is invisible. */
   padding-right: 22px;
+}
+
+input.searchable-select.dc-pill-select {
+  padding-right: 22px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5l3 3 3-3' stroke='%23969ba6' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+[data-theme="light"] input.searchable-select.dc-pill-select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5l3 3 3-3' stroke='%234a5260' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+input.searchable-select.searchable-select-open {
+  cursor: text;
+}
+input.searchable-select.searchable-select-open::placeholder {
+  color: var(--text-mute);
+  opacity: 1;
+}
+
+.searchable-select-menu {
+  position: fixed;
+  z-index: 5400;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 32%);
+}
+.searchable-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 28px;
+  padding: 5px 8px;
+  gap: 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  font: 12px/1.4 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
+  text-align: left;
+  cursor: pointer;
+}
+.searchable-select-option > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.searchable-select-option.active {
+  background: var(--bg-4);
+}
+.searchable-select-option.selected {
+  color: var(--text-key);
+}
+.searchable-select-check {
+  flex: none;
+  color: var(--accent);
+}
+.searchable-select-empty {
+  padding: 12px 8px;
+  color: var(--text-mute);
+  font-size: var(--fs-ui);
+  text-align: center;
 }
 
 /* Chevron only appears when the user hovers/focuses the pill or its row.
