@@ -30,13 +30,15 @@ pub(super) fn plan_mutations(
         if let Some((index, op)) = ops.iter().enumerate().find(|(_, op)| {
             matches!(
                 op,
-                MutationOp::SwapRecords { .. } | MutationOp::MoveRecord { .. }
+                MutationOp::SwapRecords { .. }
+                    | MutationOp::MoveRecord { .. }
+                    | MutationOp::TransferRecord { .. }
             )
         }) {
             let diagnostics = DiagnosticSet::one(Diagnostic::error(
                 "MUTATION-REORDER-BATCH",
                 "MUTATION",
-                "record reorder must be the only operation in a mutation request",
+                "record reorder or transfer must be the only operation in a mutation request",
             ));
             return (
                 Vec::new(),
@@ -167,9 +169,9 @@ fn prepare_planned_op(
                 file.as_deref(),
             )
         }
-        op @ (MutationOp::SwapRecords { .. } | MutationOp::MoveRecord { .. }) => {
-            prepare_one(session, op, pending_inserts)
-        }
+        op @ (MutationOp::SwapRecords { .. }
+        | MutationOp::MoveRecord { .. }
+        | MutationOp::TransferRecord { .. }) => prepare_one(session, op, pending_inserts),
     }
 }
 
@@ -410,6 +412,7 @@ pub(super) const fn mutation_op_name(op: &MutationOp) -> &'static str {
         MutationOp::DeleteRecord { .. } => "delete_record",
         MutationOp::SwapRecords { .. } => "swap_records",
         MutationOp::MoveRecord { .. } => "move_record",
+        MutationOp::TransferRecord { .. } => "transfer_record",
     }
 }
 

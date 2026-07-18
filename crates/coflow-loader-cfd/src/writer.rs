@@ -161,7 +161,27 @@ impl SourceWriter for CfdWriter {
             request.actual_type,
             request.fields,
         );
-        let new_source = append_record_source(&source, &fragment);
+        let new_source = if let Some(before) = request.before {
+            ensure_cfd_origin_path(before.origin, path)?;
+            let anchor = ast
+                .records
+                .iter()
+                .find(|record| {
+                    record.type_name == before.actual_type && record.key == before.record_key
+                })
+                .ok_or_else(|| {
+                    DiagnosticSet::one(diag(
+                        "CFD-WRITE",
+                        format!(
+                            "insert anchor `{}.{}` not found in AST",
+                            before.actual_type, before.record_key
+                        ),
+                    ))
+                })?;
+            insert_record_before(&source, &fragment, anchor.span.start)?
+        } else {
+            append_record_source(&source, &fragment)
+        };
         Self::write_source(path, &new_source)?;
         Ok(WriteOutcome::default())
     }
@@ -284,6 +304,12 @@ impl SourceWriter for CfdWriter {
         let mut order = (0..ast.records.len()).collect::<Vec<_>>();
         match request.operation {
             ReorderRecordsOperation::Swap { first, second } => {
+                if first.actual_type != second.actual_type {
+                    return Err(DiagnosticSet::one(diag(
+                        "CFD-WRITE",
+                        "records must have the same type to exchange positions",
+                    )));
+                }
                 ensure_cfd_origin_path(first.origin, path)?;
                 ensure_cfd_origin_path(second.origin, path)?;
                 let first = record_index(&ast, first.actual_type, first.record_key)?;
@@ -316,6 +342,20 @@ impl SourceWriter for CfdWriter {
         Self::write_source(path, &new_source)?;
         Ok(WriteOutcome::default())
     }
+}
+
+fn insert_record_before(
+    source: &str,
+    fragment: &str,
+    position: usize,
+) -> Result<String, DiagnosticSet> {
+    let Some((prefix, suffix)) = source.get(..position).zip(source.get(position..)) else {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            "insert anchor span is outside the source document",
+        )));
+    };
+    Ok(format!("{prefix}{fragment}\n{suffix}"))
 }
 
 fn record_index(ast: &CfdAst, actual_type: &str, key: &str) -> Result<usize, DiagnosticSet> {

@@ -45,6 +45,7 @@ function backend(
     deleteRecord: vi.fn(),
     swapRecords: vi.fn(),
     moveRecord: vi.fn(),
+    transferRecord: vi.fn(),
   }
 }
 
@@ -126,6 +127,65 @@ describe('EditorMutationController', () => {
     expect(mutationBackend.moveRecord).toHaveBeenNthCalledWith(1, 1, coordinate, 2)
     expect(mutationBackend.moveRecord).toHaveBeenNthCalledWith(2, 1, coordinate, 0)
     expect(mutationBackend.moveRecord).toHaveBeenNthCalledWith(3, 1, coordinate, 2)
+  })
+
+  it('transfers records back to the source index on undo', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const mutationBackend = backend(vi.fn())
+    mutationBackend.transferRecord = vi.fn()
+      .mockResolvedValueOnce({
+        revision: 2,
+        file_records: { revision: 2, file_path: 'data/b.cfd' } as FileRecords,
+        diagnostics: [],
+        affected_files: ['data/a.cfd', 'data/b.cfd'],
+        old_index: 1,
+        new_index: 2,
+      })
+      .mockResolvedValueOnce({
+        revision: 3,
+        file_records: { revision: 3, file_path: 'data/a.cfd' } as FileRecords,
+        diagnostics: [],
+        affected_files: ['data/a.cfd', 'data/b.cfd'],
+        old_index: 2,
+        new_index: 1,
+      })
+      .mockResolvedValueOnce({
+        revision: 4,
+        file_records: { revision: 4, file_path: 'data/b.cfd' } as FileRecords,
+        diagnostics: [],
+        affected_files: ['data/a.cfd', 'data/b.cfd'],
+        old_index: 1,
+        new_index: 2,
+      })
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const mutations = new EditorMutationController(
+      mutationBackend,
+      port,
+      new MutationHistoryController(),
+    )
+
+    await mutations.transferRecord('data/a.cfd', 'data/b.cfd', coordinate, 2)
+    await mutations.undo()
+    await mutations.redo()
+
+    expect(mutationBackend.transferRecord).toHaveBeenNthCalledWith(
+      1, 1, coordinate, 'data/b.cfd', null, 2,
+    )
+    expect(mutationBackend.transferRecord).toHaveBeenNthCalledWith(
+      2, 1, coordinate, 'data/a.cfd', null, 1,
+    )
+    expect(mutationBackend.transferRecord).toHaveBeenNthCalledWith(
+      3, 1, coordinate, 'data/b.cfd', null, 2,
+    )
   })
 
   it('uses the same swap operation for undo and redo', async () => {

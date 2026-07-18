@@ -183,7 +183,7 @@ export interface DeleteEditEntry {
   snapshot: FieldValue
 }
 
-export type ReorderEditEntry = SwapRecordsEditEntry | MoveRecordEditEntry
+export type ReorderEditEntry = SwapRecordsEditEntry | MoveRecordEditEntry | TransferRecordEditEntry
 
 export interface SwapRecordsEditEntry {
   kind: 'swap-records'
@@ -200,6 +200,16 @@ export interface MoveRecordEditEntry {
   coordinate: RecordCoordinate
   oldIndex: number
   newIndex: number
+}
+
+export interface TransferRecordEditEntry {
+  kind: 'transfer-record'
+  revision: number
+  filePath: string
+  destinationFile: string
+  coordinate: RecordCoordinate
+  sourceIndex: number
+  targetIndex: number
 }
 
 export interface MutationHistorySnapshot {

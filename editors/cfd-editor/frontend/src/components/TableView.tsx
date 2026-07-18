@@ -39,6 +39,7 @@ import {
   summaryOf as valueSummary,
 } from '../value/fieldValue'
 import { CreateRecordDialog } from './CreateRecordDialog'
+import { TransferRecordDialog, type RecordTransferTarget } from './TransferRecordDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import {
@@ -83,6 +84,12 @@ interface Props {
   onDeleteRecord?: (coordinate: RecordCoordinate) => Promise<void>
   onSwapRecords?: (first: RecordCoordinate, second: RecordCoordinate) => Promise<void>
   onMoveRecord?: (coordinate: RecordCoordinate, targetIndex: number) => Promise<void>
+  transferTargets?: RecordTransferTarget[]
+  onTransferRecord?: (
+    coordinate: RecordCoordinate,
+    destinationFile: string,
+    targetIndex: number,
+  ) => Promise<void>
   /** Click on a corner badge on a row or cell. `fieldPath` is null for
    *  record-level (the Key column badge), otherwise the column name. */
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
@@ -97,9 +104,10 @@ interface Props {
 
 const ROW_H = 30
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onSwapRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onSwapRecords, onMoveRecord, transferTargets = [], onTransferRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
+  const [transferRow, setTransferRow] = useState<RecordRow | null>(null)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
   const [cellNotice, setCellNotice] = useState<string | null>(null)
   const [sorting, setSorting] = useState<SortingState>([])
@@ -798,6 +806,17 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         />
       )}
 
+      {transferRow && onTransferRecord && (
+        <TransferRecordDialog
+          recordKey={transferRow.coordinate.key}
+          targets={transferTargets}
+          onConfirm={(destinationFile, targetIndex) => (
+            onTransferRecord(transferRow.coordinate, destinationFile, targetIndex)
+          )}
+          onClose={() => setTransferRow(null)}
+        />
+      )}
+
       {contextMenu && (
         <div
           className="context-menu"
@@ -874,6 +893,16 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             }}>
               <Icon name="refresh" size={13} aria-hidden />
               交换位置…
+            </div>
+          )}
+          {!readOnly && onTransferRecord && transferTargets.length > 0 && sorting.length === 0 && !globalFilter.trim() && (
+            <div className="ctx-item" role="menuitem" onClick={() => {
+              const row = contextMenu.row
+              setContextMenu(null)
+              setTransferRow(row)
+            }}>
+              <Icon name="record" size={13} aria-hidden />
+              移动到其他文件…
             </div>
           )}
           {!readOnly && data.capabilities.can_delete_record && onDeleteRecord && (

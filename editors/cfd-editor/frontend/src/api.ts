@@ -262,6 +262,22 @@ export async function moveRecord(
   })
 }
 
+export async function transferRecord(
+  sessionId: number,
+  coordinate: RecordCoordinate,
+  destinationFile: string,
+  destinationSheet: string | null,
+  targetIndex: number,
+): Promise<ReorderRecordsOutcome> {
+  return invokeCommand<ReorderRecordsOutcome>('transfer_record', {
+    sessionId,
+    coordinate,
+    destinationFile,
+    destinationSheet,
+    targetIndex,
+  })
+}
+
 export async function onProjectChanged(handler: (event: ProjectChangedEvent) => void): Promise<() => void> {
   return listen<ProjectChangedEvent>('project_changed', event => handler(fromIpc(event.payload) as ProjectChangedEvent))
 }

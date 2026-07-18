@@ -116,6 +116,49 @@ fn csv_writer_swaps_and_moves_complete_rows() {
 }
 
 #[test]
+fn csv_reorder_rejects_origins_from_a_different_source_file() {
+    let source_path = temp_csv("reorder-source-guard");
+    let other_path = temp_csv("reorder-other");
+    std::fs::write(&source_path, "id,name\na,Alpha\nb,Beta\n").expect("seed source");
+    std::fs::write(&other_path, "id,name\na,Other A\nb,Other B\n").expect("seed other");
+    let source = csv_source(&source_path);
+    let schema =
+        build_schema(&parse_modules([]), &CftDimensionInputs::default()).expect("empty schema");
+    let first = csv_origin(&other_path, 2);
+    let second = csv_origin(&other_path, 3);
+    let before = std::fs::read(&other_path).expect("read other before");
+
+    let result = CsvWriter::new().reorder_records(
+        WriteContext {
+            project_root: std::env::temp_dir().as_path(),
+            schema: &schema,
+            model: None,
+        },
+        &ReorderRecordsRequest {
+            source: &source,
+            operation: ReorderRecordsOperation::Swap {
+                first: WriteRecordRef {
+                    origin: &first,
+                    record_key: "a",
+                    actual_type: "Item",
+                },
+                second: WriteRecordRef {
+                    origin: &second,
+                    record_key: "b",
+                    actual_type: "Item",
+                },
+            },
+        },
+    );
+
+    assert!(result.is_err());
+    assert_eq!(
+        std::fs::read(&other_path).expect("read other after"),
+        before
+    );
+}
+
+#[test]
 fn csv_table_manager_passes_shared_header_conformance() {
     for case in table_conformance_cases() {
         let path = temp_csv(case.name);

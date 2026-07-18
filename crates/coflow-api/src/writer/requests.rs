@@ -35,6 +35,8 @@ pub struct InsertRecordRequest<'a> {
     pub actual_type: &'a str,
     pub fields: &'a BTreeMap<String, CfdValue>,
     pub schema: &'a CftSchema,
+    /// Insert immediately before this existing record, or append when absent.
+    pub before: Option<WriteRecordRef<'a>>,
 }
 
 /// Request describing a top-level record deletion.

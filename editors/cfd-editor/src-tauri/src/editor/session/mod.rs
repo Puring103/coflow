@@ -764,6 +764,47 @@ impl SessionStore {
         })
     }
 
+    pub fn transfer_record(
+        &self,
+        id: u32,
+        coordinate: &RecordCoordinate,
+        destination_file: &str,
+        destination_sheet: Option<&str>,
+        target_index: usize,
+    ) -> Result<ReorderRecordsOutcome, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let source_file = reorder_file_path(&session, coordinate)?;
+        let old_index = record_type_index(&session, coordinate).ok_or_else(|| {
+            EditorError::not_found(format!(
+                "record `{}.{}` not found in source type order",
+                coordinate.actual_type, coordinate.key
+            ))
+        })?;
+        let report = session.engine.apply_mutation(MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![MutationOp::TransferRecord {
+                record: coordinate.clone(),
+                destination_file: destination_file.to_string(),
+                destination_sheet: destination_sheet.map(ToOwned::to_owned),
+                target_index,
+                source_file: Some(source_file),
+            }],
+        });
+        let report = finalize_mutation(&mut session, report, "transfer record failed")?;
+        Ok(ReorderRecordsOutcome {
+            revision: session.revisions.current(),
+            file_records: file_records_for_session(&session, destination_file),
+            diagnostics: report.diagnostics,
+            affected_files: report.affected_files,
+            old_index: Some(old_index),
+            new_index: Some(target_index),
+        })
+    }
+
     fn registry(&self) -> Result<Arc<ProviderRegistry>, EditorError> {
         let inner = self
             .inner
@@ -887,6 +928,25 @@ fn record_container_index(session: &EditorSession, coordinate: &RecordCoordinate
     views
         .iter()
         .filter(|view| record_container_key(view.origin) == container)
+        .position(|view| view.coordinate == *coordinate)
+}
+
+fn record_type_index(session: &EditorSession, coordinate: &RecordCoordinate) -> Option<usize> {
+    let file = session
+        .queries()
+        .file_for_record(&coordinate.actual_type, &coordinate.key)?;
+    let views = session
+        .queries()
+        .record_views_in_file(file)
+        .collect::<Vec<_>>();
+    let target = views.iter().find(|view| view.coordinate == *coordinate)?;
+    let container = record_container_key(target.origin);
+    views
+        .iter()
+        .filter(|view| {
+            view.coordinate.actual_type == coordinate.actual_type
+                && record_container_key(view.origin) == container
+        })
         .position(|view| view.coordinate == *coordinate)
 }
 

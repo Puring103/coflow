@@ -18,7 +18,7 @@ use coflow_api::{
     SourceLocationSpec, SourceWriter, WriteBatchFailure, WriteCellRequest, WriteContext,
     WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
-use coflow_data_model::{CfdValue, SourceDocument};
+use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{
     plan_delete_record, plan_field_write, plan_insert_record, plan_reorder_records, TableAppendRow,
     TableDeleteRow, TableFieldWrite, TableInsertRecord, TableMoveRowBefore, TableRecordRef,
@@ -151,6 +151,10 @@ impl SourceWriter for ExcelWriter {
             fields: request.fields,
             field_columns: &layout.field_columns,
             id_column: layout.id_column,
+            before: request.before.map(|before| TableRecordRef {
+                origin: before.origin,
+                record_key: before.record_key,
+            }),
         })
         .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
@@ -185,6 +189,7 @@ impl SourceWriter for ExcelWriter {
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let SourceLocationSpec::Path(path) = &request.source.location;
         ensure_writable_excel_path(path, "delete records")?;
+        ensure_table_origin_path(request.origin, path)?;
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
@@ -207,17 +212,31 @@ impl SourceWriter for ExcelWriter {
         let SourceLocationSpec::Path(path) = &request.source.location;
         ensure_writable_excel_path(path, "reorder records")?;
         let operation = match request.operation {
-            ReorderRecordsOperation::Swap { first, second } => TableReorderOperation::Swap {
-                first: TableRecordRef {
-                    origin: first.origin,
-                    record_key: first.record_key,
-                },
-                second: TableRecordRef {
-                    origin: second.origin,
-                    record_key: second.record_key,
-                },
-            },
+            ReorderRecordsOperation::Swap { first, second } => {
+                if first.actual_type != second.actual_type {
+                    return Err(DiagnosticSet::one(diag(
+                        "EXCEL-WRITE",
+                        "records must have the same type to exchange positions",
+                    )));
+                }
+                ensure_table_origin_path(first.origin, path)?;
+                ensure_table_origin_path(second.origin, path)?;
+                TableReorderOperation::Swap {
+                    first: TableRecordRef {
+                        origin: first.origin,
+                        record_key: first.record_key,
+                    },
+                    second: TableRecordRef {
+                        origin: second.origin,
+                        record_key: second.record_key,
+                    },
+                }
+            }
             ReorderRecordsOperation::MoveBefore { record, before } => {
+                ensure_table_origin_path(record.origin, path)?;
+                if let Some(before) = before {
+                    ensure_table_origin_path(before.origin, path)?;
+                }
                 TableReorderOperation::MoveBefore {
                     record: TableRecordRef {
                         origin: record.origin,
@@ -233,6 +252,30 @@ impl SourceWriter for ExcelWriter {
         let plan = plan_reorder_records(operation).map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
         Ok(WriteOutcome::default())
+    }
+}
+
+fn ensure_table_origin_path(origin: &RecordOrigin, expected: &Path) -> Result<(), DiagnosticSet> {
+    match origin {
+        RecordOrigin::Table {
+            document: SourceDocument::Local(path),
+            ..
+        } if path == expected => Ok(()),
+        RecordOrigin::Table {
+            document: SourceDocument::Local(path),
+            ..
+        } => Err(DiagnosticSet::one(diag(
+            "EXCEL-WRITE",
+            format!(
+                "record origin `{}` does not match source `{}`",
+                path.display(),
+                expected.display()
+            ),
+        ))),
+        _ => Err(DiagnosticSet::one(diag(
+            "EXCEL-WRITE",
+            "excel write requires a local table origin",
+        ))),
     }
 }
 
@@ -304,9 +347,30 @@ fn apply_plan_to_workbook(
             }
             Ok(())
         }
-        TableWritePlan::AppendRow(TableAppendRow { sheet, values, .. }) => {
+        TableWritePlan::AppendRow(TableAppendRow {
+            sheet,
+            values,
+            before_row,
+            before_id_column,
+            expected_before_key,
+            ..
+        }) => {
             let sheet_ref = mutable_sheet(book, path, sheet)?;
-            let row = excel_usize(sheet_ref.get_highest_row(), "row")? + 1;
+            if let (Some(before_row), Some(before_id_column), Some(expected_before_key)) =
+                (before_row, before_id_column, expected_before_key)
+            {
+                ensure_expected_key(
+                    sheet_ref,
+                    path,
+                    sheet,
+                    *before_row,
+                    *before_id_column,
+                    expected_before_key,
+                )?;
+            }
+            let row = (*before_row).unwrap_or(excel_usize(sheet_ref.get_highest_row(), "row")? + 1);
+            let row_index = excel_index(row, "row")?;
+            sheet_ref.insert_new_row(&row_index, &1);
             for (column, value) in values {
                 let coord = excel_coord(*column, row)?;
                 sheet_ref.get_cell_mut(coord).set_value(value);

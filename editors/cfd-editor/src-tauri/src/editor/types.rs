@@ -526,9 +526,9 @@ pub struct ReorderRecordsOutcome {
     pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub affected_files: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub old_index: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub new_index: Option<usize>,
 }
 

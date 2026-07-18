@@ -34,11 +34,30 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
             document,
             sheet: _,
             values,
+            before_row,
+            before_id_column,
+            expected_before_key,
         }) => {
             let path = local_path(document);
             mutate_csv(path, |rows| {
+                if let (Some(before_row), Some(before_id_column), Some(expected_before_key)) =
+                    (before_row, before_id_column, expected_before_key)
+                {
+                    ensure_expected_key(
+                        rows,
+                        path,
+                        *before_row,
+                        *before_id_column,
+                        expected_before_key,
+                    )?;
+                }
                 // 1-based row index of the new row.
-                let row = rows.len() + 1;
+                let row = before_row.unwrap_or(rows.len() + 1);
+                let row_index = row_index(row)?;
+                if row_index > rows.len() {
+                    return Err(row_out_of_bounds(path));
+                }
+                rows.insert(row_index, Vec::new());
                 for (column, value) in values {
                     set_csv_cell(
                         rows,

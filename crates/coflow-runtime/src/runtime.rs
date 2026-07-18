@@ -649,6 +649,29 @@ impl WriteProjectSession {
         })
     }
 
+    /// Move a record to a zero-based insertion index in another source file.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the destination cannot host the record type,
+    /// the insertion index is invalid, or either source cannot participate in
+    /// the atomic transfer transaction.
+    pub fn transfer_record(
+        &mut self,
+        record: &RecordCoordinate,
+        destination_file: &str,
+        destination_sheet: Option<&str>,
+        target_index: usize,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::TransferRecord {
+            record: record.clone(),
+            destination_file: destination_file.to_string(),
+            destination_sheet: destination_sheet.map(ToOwned::to_owned),
+            target_index,
+            source_file: None,
+        })
+    }
+
     fn apply_one(&mut self, op: MutationOp) -> Result<WriteOutcome, DiagnosticSet> {
         let report = self.apply_mutation(MutationRequest {
             stop_on_write_error: true,

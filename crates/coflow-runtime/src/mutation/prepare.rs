@@ -258,6 +258,28 @@ pub(super) fn prepare_one(
                 report_file: report_file.to_string(),
             })
         }
+        MutationOp::TransferRecord {
+            record,
+            destination_file,
+            destination_sheet,
+            target_index,
+            source_file,
+        } => {
+            ensure_file_guard(session, &record, source_file.as_deref())?;
+            let source_file = required_record_file(session, &record, "MUTATION-TRANSFER")?;
+            if source_file == destination_file {
+                return Err(one_mutation_error(
+                    "MUTATION-TRANSFER-FILE",
+                    "record transfer requires different source and destination files",
+                ));
+            }
+            Ok(PreparedMutationOp::TransferRecord {
+                record,
+                destination_file,
+                destination_sheet,
+                target_index,
+            })
+        }
     }
 }
 

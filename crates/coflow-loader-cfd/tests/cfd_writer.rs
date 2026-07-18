@@ -523,6 +523,7 @@ fn inserts_record_at_end_of_cfd_file() {
                 actual_type: "Item",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert succeeds");
@@ -576,6 +577,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
                 actual_type: "Skill",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert unrelated same-key skill");
@@ -645,6 +647,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
                 actual_type: "Loot",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert succeeds");

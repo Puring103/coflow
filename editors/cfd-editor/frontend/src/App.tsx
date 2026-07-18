@@ -915,6 +915,17 @@ export default function App() {
     },
     [mutations],
   )
+  const transferRecord = useCallback(
+    async (
+      sourceFile: string,
+      destinationFile: string,
+      coordinate: RecordCoordinate,
+      targetIndex: number,
+    ) => {
+      await mutations.transferRecord(sourceFile, destinationFile, coordinate, targetIndex)
+    },
+    [mutations],
+  )
 
   const undo = useCallback(async () => {
     await mutations.undo()
@@ -964,6 +975,22 @@ export default function App() {
     if (typeName) setActiveType(typeName)
   }, [currentRoute, workspaceTabs])
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
+  const transferTargets = useMemo(() => {
+    if (!project || !activeFile || !activeType) return []
+    return Object.entries(project.file_types)
+      .filter(([filePath, types]) => (
+        filePath !== activeFile
+        && types?.some(type => type.name === activeType)
+      ))
+      .map(([filePath, types]) => {
+        const loaded = fileDataCache[filePath]
+        const recordCount = loaded
+          ? loaded.records.filter(record => recordActualType(record) === activeType).length
+          : types?.find(type => type.name === activeType)?.record_count ?? 0
+        return { filePath, recordCount }
+      })
+      .sort((left, right) => left.filePath.localeCompare(right.filePath))
+  }, [project, activeFile, activeType, fileDataCache])
   const activeGraphKey = activeFile
     ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
     : null
@@ -1248,6 +1275,19 @@ export default function App() {
       return Promise.resolve()
     },
     [currentRoute?.view, currentRoute?.file, moveRecord],
+  )
+  const tableOnTransferRecord = useCallback(
+    (
+      coordinate: RecordCoordinate,
+      destinationFile: string,
+      targetIndex: number,
+    ): Promise<void> => {
+      if (currentRoute?.view === 'table') {
+        return transferRecord(currentRoute.file, destinationFile, coordinate, targetIndex)
+      }
+      return Promise.resolve()
+    },
+    [currentRoute?.view, currentRoute?.file, transferRecord],
   )
   const tableOnBadgeClick = useCallback(
     (coordinate: RecordCoordinate, fieldPath: string | null) => {
@@ -1651,6 +1691,8 @@ export default function App() {
                     onDeleteRecord={tableOnDeleteRecord}
                     onSwapRecords={tableOnSwapRecords}
                     onMoveRecord={tableOnMoveRecord}
+                    transferTargets={transferTargets}
+                    onTransferRecord={tableOnTransferRecord}
                     onDiagnosticBadgeClick={tableOnBadgeClick}
                     columnWidths={tableColumnWidths}
                     onColumnWidthsChange={tableOnColumnWidthsChange}

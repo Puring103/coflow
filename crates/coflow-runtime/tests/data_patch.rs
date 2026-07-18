@@ -537,6 +537,135 @@ fn runtime_moves_and_swaps_records_then_rebuilds_source_order() {
 }
 
 #[test]
+fn runtime_rejects_swapping_different_record_types_in_one_file() {
+    let root =
+        std::env::temp_dir().join(format!("coflow-record-reorder-type-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { value: int; } type Skill { value: int; }",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/records.cfd"),
+        "a: Item { value: 1 }\ns: Skill { value: 2 }\n",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/records.cfd\n",
+    )
+    .expect("write config");
+    let mut session = session(&root);
+    let item = RecordCoordinate::try_new("Item", "a").expect("item coordinate");
+    let skill = RecordCoordinate::try_new("Skill", "s").expect("skill coordinate");
+    let before = std::fs::read(root.join("data/records.cfd")).expect("read before");
+
+    assert!(session.swap_records(&item, &skill).is_err());
+    assert_eq!(
+        std::fs::read(root.join("data/records.cfd")).expect("read after"),
+        before
+    );
+}
+
+#[test]
+fn runtime_transfers_record_between_cfd_and_csv_at_type_index() {
+    let root = std::env::temp_dir().join(format!("coflow-record-transfer-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { name: string; value: int; }",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/source.cfd"),
+        "a: Item { name: \"Alpha\", value: 1 }\n",
+    )
+    .expect("write cfd source");
+    std::fs::write(
+        root.join("data/destination.csv"),
+        "id,name,value\nx,Ex,10\nz,Zed,30\n",
+    )
+    .expect("write csv destination");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/source.cfd
+  - path: data/destination.csv
+    type: csv
+    sheets:
+      - sheet: Items
+        type: Item
+"#,
+    )
+    .expect("write config");
+    let mut session = session(&root);
+    let a = RecordCoordinate::try_new("Item", "a").expect("coordinate a");
+
+    let outcome = session
+        .transfer_record(&a, "data/destination.csv", Some("Items"), 1)
+        .expect("transfer cfd record into csv");
+    assert!(outcome.reordered);
+    assert_eq!(
+        outcome.affected_files,
+        ["data/source.cfd", "data/destination.csv"]
+    );
+    let destination_order = session
+        .queries()
+        .record_views_in_file("data/destination.csv")
+        .map(|view| view.coordinate.key.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(destination_order, ["x", "a", "z"]);
+    assert!(std::fs::read_to_string(root.join("data/source.cfd"))
+        .expect("read source")
+        .trim()
+        .is_empty());
+
+    session
+        .transfer_record(&a, "data/source.cfd", None, 0)
+        .expect("transfer csv record back into cfd");
+    assert_eq!(
+        session
+            .queries()
+            .record_views_in_file("data/source.cfd")
+            .map(|view| view.coordinate.key.to_string())
+            .collect::<Vec<_>>(),
+        ["a"]
+    );
+
+    let before = std::fs::read(root.join("data/source.cfd")).expect("source before failure");
+    assert!(session
+        .transfer_record(&a, "data/destination.csv", Some("Items"), 3)
+        .is_err());
+    assert_eq!(
+        std::fs::read(root.join("data/source.cfd")).expect("source after failure"),
+        before
+    );
+
+    let destination_before =
+        std::fs::read(root.join("data/destination.csv")).expect("destination before rollback");
+    std::fs::write(
+        root.join("data/source.cfd"),
+        "external: Item { name: \"External\", value: 99 }\n",
+    )
+    .expect("externally replace source record");
+    assert!(session
+        .transfer_record(&a, "data/destination.csv", Some("Items"), 1)
+        .is_err());
+    assert_eq!(
+        std::fs::read(root.join("data/destination.csv")).expect("destination after rollback"),
+        destination_before,
+        "destination insert must roll back when source deletion fails"
+    );
+    assert!(std::fs::read_to_string(root.join("data/source.cfd"))
+        .expect("source after rollback")
+        .contains("external: Item"));
+}
+
+#[test]
 fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     let root = std::env::temp_dir().join(format!("coflow-data-patch-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);

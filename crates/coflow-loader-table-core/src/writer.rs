@@ -30,6 +30,9 @@ pub struct TableAppendRow {
     pub document: SourceDocument,
     pub sheet: String,
     pub values: Vec<(usize, String)>,
+    pub before_row: Option<usize>,
+    pub before_id_column: Option<usize>,
+    pub expected_before_key: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,6 +92,7 @@ pub struct TableInsertRecord<'a> {
     pub fields: &'a BTreeMap<String, CfdValue>,
     pub field_columns: &'a BTreeMap<Vec<String>, usize>,
     pub id_column: usize,
+    pub before: Option<TableRecordRef<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -184,10 +188,24 @@ pub fn plan_insert_record(
     }
     values.sort_by_key(|(column, _)| *column);
     values.dedup_by_key(|(column, _)| *column);
+    let before = request.before.map(table_position).transpose()?;
+    if let Some(before) = &before {
+        if before.document != &request.document || before.sheet != request.sheet {
+            return Err(one_error(
+                "TABLE-WRITE",
+                "insert anchor must belong to the target table document and sheet",
+            ));
+        }
+    }
     Ok(TableWritePlan::AppendRow(TableAppendRow {
         document: request.document.clone(),
         sheet: request.sheet.to_string(),
         values,
+        before_row: before.as_ref().map(|position| position.row),
+        before_id_column: before.as_ref().map(|position| position.id_column),
+        expected_before_key: before
+            .as_ref()
+            .map(|position| position.expected_key.to_string()),
     }))
 }
 

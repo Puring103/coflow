@@ -25,6 +25,7 @@ pub(crate) enum MutationExecutionPlan {
     Rename(RenamePlan),
     Delete(DeletePlan),
     Reorder(ReorderPlan),
+    Transfer(TransferPlan),
     Noop { coordinate: RecordCoordinate },
     Folded,
 }
@@ -84,6 +85,20 @@ pub(crate) struct ReorderPlan {
     pub(super) display_path: String,
 }
 
+pub(crate) struct TransferPlan {
+    pub(super) coordinate: RecordCoordinate,
+    pub(super) fields: std::collections::BTreeMap<String, CfdValue>,
+    pub(super) source_origin: RecordOrigin,
+    pub(super) source_display_path: String,
+    pub(super) source: ResolvedSource,
+    pub(super) source_writer: Arc<dyn SourceWriter>,
+    pub(super) destination_display_path: String,
+    pub(super) destination: ResolvedSource,
+    pub(super) destination_writer: Arc<dyn SourceWriter>,
+    pub(super) destination_sheet: Option<String>,
+    pub(super) before: Option<ResolvedRecordPosition>,
+}
+
 pub(crate) enum ReorderOperation {
     Swap {
         first: ResolvedRecordPosition,
@@ -136,6 +151,10 @@ impl MutationExecutionPlan {
                 }
             }
             Self::Reorder(plan) => visit(&plan.source, Some(&plan.writer))?,
+            Self::Transfer(plan) => {
+                visit(&plan.source, Some(&plan.source_writer))?;
+                visit(&plan.destination, Some(&plan.destination_writer))?;
+            }
         }
         Ok(())
     }
@@ -240,10 +259,162 @@ pub(crate) fn prepare_mutation_execution(
             target_index,
             ..
         } => prepare_move_record(session, registry, record, *target_index),
+        PreparedMutationOp::TransferRecord {
+            record,
+            destination_file,
+            destination_sheet,
+            target_index,
+            ..
+        } => prepare_transfer_record(
+            session,
+            registry,
+            record,
+            destination_file,
+            destination_sheet.as_deref(),
+            *target_index,
+        ),
         PreparedMutationOp::FoldedSetField { .. }
         | PreparedMutationOp::FoldedRenameRecord { .. }
         | PreparedMutationOp::FoldedDeleteRecord { .. }
         | PreparedMutationOp::CancelledInsert { .. } => Ok(MutationExecutionPlan::Folded),
+    }
+}
+
+fn prepare_transfer_record(
+    session: &ProjectSession,
+    registry: &ProviderRegistry,
+    record: &RecordCoordinate,
+    destination_file: &str,
+    requested_sheet: Option<&str>,
+    target_index: usize,
+) -> Result<MutationExecutionPlan, DiagnosticSet> {
+    let record_ref = required_record_ref(session, record)?;
+    if record_ref.display_path == destination_file {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-TRANSFER-FILE",
+            "WRITE",
+            "record transfer requires different source and destination files",
+        )));
+    }
+    if matches!(record_ref.origin, RecordOrigin::None) {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-TRANSFER-ORIGIN",
+            "WRITE",
+            "record has no writable source origin",
+        )));
+    }
+    let model_record = session
+        .model
+        .record(record_ref.id)
+        .ok_or_else(|| reorder_invariant("record is missing from the data model"))?;
+    let source = source_for_id(session, record_ref.source_id)?;
+    let source_writer = lookup_source_writer(registry, &source)?;
+    if !source_writer.capabilities(&source).can_delete_record {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-UNSUPPORTED",
+            "WRITE",
+            "source writer does not support transferring records out",
+        )));
+    }
+    let destination = source_for_file(session, destination_file)?;
+    let destination_writer = lookup_source_writer(registry, &destination)?;
+    if !destination_writer
+        .capabilities(&destination)
+        .can_insert_record
+    {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-UNSUPPORTED",
+            "WRITE",
+            "destination writer does not support transferring records in",
+        )));
+    }
+
+    let destination_sheet = resolve_transfer_sheet(
+        session,
+        destination_file,
+        &record.actual_type,
+        requested_sheet,
+    )?;
+    let order = session
+        .records
+        .ids_in_file(destination_file)
+        .iter()
+        .filter_map(|id| session.records.get(*id))
+        .filter(|candidate| {
+            candidate.coordinate.actual_type == record.actual_type
+                && record_matches_sheet(candidate, destination_sheet.as_deref())
+        })
+        .collect::<Vec<_>>();
+    if target_index > order.len() {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-TRANSFER-INDEX",
+            "WRITE",
+            format!(
+                "target index {target_index} is outside destination type length {}",
+                order.len()
+            ),
+        )));
+    }
+    let before = order.get(target_index).copied().map(resolved_position);
+    let fields = model_record
+        .fields()
+        .iter()
+        .map(|(name, value)| (name.as_str().to_string(), value.clone()))
+        .collect();
+    Ok(MutationExecutionPlan::Transfer(TransferPlan {
+        coordinate: record_ref.coordinate.clone(),
+        fields,
+        source_origin: record_ref.origin.clone(),
+        source_display_path: record_ref.display_path.clone(),
+        source,
+        source_writer,
+        destination_display_path: destination_file.to_string(),
+        destination,
+        destination_writer,
+        destination_sheet,
+        before,
+    }))
+}
+
+fn resolve_transfer_sheet(
+    session: &ProjectSession,
+    file: &str,
+    actual_type: &str,
+    requested: Option<&str>,
+) -> Result<Option<String>, DiagnosticSet> {
+    if let Some(sheet) = requested {
+        return Ok(Some(sheet.to_string()));
+    }
+    let sheets = session
+        .records
+        .ids_in_file(file)
+        .iter()
+        .filter_map(|id| session.records.get(*id))
+        .filter(|record| record.coordinate.actual_type.as_str() == actual_type)
+        .filter_map(|record| match &record.origin {
+            RecordOrigin::Table { sheet, .. } => Some(sheet.clone()),
+            RecordOrigin::File { .. } | RecordOrigin::None => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    match sheets.len() {
+        0 => Ok(None),
+        1 => Ok(sheets.into_iter().next()),
+        _ => Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-TRANSFER-SHEET",
+            "WRITE",
+            "destination file maps this type to multiple sheets; specify destination_sheet",
+        ))),
+    }
+}
+
+fn record_matches_sheet(record: &RecordRef, sheet: Option<&str>) -> bool {
+    match (&record.origin, sheet) {
+        (RecordOrigin::Table { sheet: actual, .. }, Some(expected)) => actual == expected,
+        (RecordOrigin::Table { .. }, None) => true,
+        (RecordOrigin::File { .. }, None) => true,
+        (RecordOrigin::File { .. } | RecordOrigin::None, Some(_)) | (RecordOrigin::None, None) => {
+            false
+        }
     }
 }
 
@@ -255,6 +426,13 @@ fn prepare_swap_records(
 ) -> Result<MutationExecutionPlan, DiagnosticSet> {
     let first_ref = required_record_ref(session, first)?;
     let second_ref = required_record_ref(session, second)?;
+    if first_ref.coordinate.actual_type != second_ref.coordinate.actual_type {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-REORDER-TYPE",
+            "WRITE",
+            "records must have the same actual type to exchange positions",
+        )));
+    }
     ensure_same_container(first_ref, second_ref)?;
     if first_ref.id == second_ref.id {
         return Ok(MutationExecutionPlan::Noop {

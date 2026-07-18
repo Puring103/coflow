@@ -456,6 +456,7 @@ fn insert_record_plan_renders_id_and_known_fields() {
         fields: &fields,
         field_columns: &field_columns,
         id_column: 1,
+        before: None,
     })
     .expect("insert plan");
 
@@ -469,6 +470,9 @@ fn insert_record_plan_renders_id_and_known_fields() {
                 (2, "Sword".to_string()),
                 (3, "7".to_string()),
             ],
+            before_row: None,
+            before_id_column: None,
+            expected_before_key: None,
         })
     );
 }

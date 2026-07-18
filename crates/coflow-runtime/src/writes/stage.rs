@@ -13,7 +13,7 @@ use crate::{ProjectSession, RecordCoordinate, WriteOutcome};
 
 use super::plan::{
     DeletePlan, DimensionRecordAction, DimensionWritePlan, InsertPlan, MutationExecutionPlan,
-    RenamePlan, RenameWritePlan, ReorderOperation, ReorderPlan, WriteFieldPlan,
+    RenamePlan, RenameWritePlan, ReorderOperation, ReorderPlan, TransferPlan, WriteFieldPlan,
 };
 
 pub(crate) fn preflight_mutation_op(
@@ -109,6 +109,9 @@ pub(crate) fn stage_mutation_op(
             PreparedMutationOp::SwapRecords { .. } | PreparedMutationOp::MoveRecord { .. },
             MutationExecutionPlan::Reorder(plan),
         ) => stage_reorder_records(session, plan),
+        (PreparedMutationOp::TransferRecord { .. }, MutationExecutionPlan::Transfer(plan)) => {
+            stage_transfer_record(session, plan)
+        }
         (PreparedMutationOp::SetField { .. }, MutationExecutionPlan::Noop { coordinate }) => {
             Ok(WriteOutcome::touch(coordinate.clone()))
         }
@@ -420,6 +423,7 @@ fn stage_insert_record(
         actual_type,
         fields,
         schema,
+        before: None,
     };
     let ctx = WriteContext {
         project_root: &session.project.root_dir,
@@ -520,6 +524,54 @@ fn stage_reorder_records(
         reordered: true,
         affected_files: vec![plan.display_path.clone()],
         diagnostics: provider_outcome.diagnostics,
+    })
+}
+
+fn stage_transfer_record(
+    session: &ProjectSession,
+    plan: &TransferPlan,
+) -> Result<WriteOutcome, DiagnosticSet> {
+    let schema = session.schema();
+    let ctx = WriteContext {
+        project_root: &session.project.root_dir,
+        schema,
+        model: Some(&session.model),
+    };
+    let before = plan.before.as_ref().map(write_record_ref);
+    let inserted = plan.destination_writer.insert_record(
+        ctx,
+        &InsertRecordRequest {
+            source: &plan.destination,
+            sheet: plan.destination_sheet.as_deref(),
+            record_key: &plan.coordinate.key,
+            actual_type: &plan.coordinate.actual_type,
+            fields: &plan.fields,
+            schema,
+            before,
+        },
+    )?;
+    let deleted = plan.source_writer.delete_record(
+        ctx,
+        &DeleteRecordRequest {
+            origin: &plan.source_origin,
+            record_key: &plan.coordinate.key,
+            actual_type: &plan.coordinate.actual_type,
+            source: &plan.source,
+        },
+    )?;
+    let mut diagnostics = inserted.diagnostics;
+    diagnostics.extend(deleted.diagnostics);
+    Ok(WriteOutcome {
+        touched: vec![plan.coordinate.clone()],
+        inserted: None,
+        deleted: None,
+        renamed: None,
+        reordered: true,
+        affected_files: vec![
+            plan.source_display_path.clone(),
+            plan.destination_display_path.clone(),
+        ],
+        diagnostics,
     })
 }
 
