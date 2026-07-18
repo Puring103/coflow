@@ -13,8 +13,9 @@ use coflow_runtime::{
 };
 use editor::{
     CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, DimensionFileRecords, EditorError,
-    EditorProjectSettings, FileRecords, GraphData, GraphQuery, InsertRecordOutcome,
-    ProjectSnapshot, RefTarget, RenameRecordOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
+    EditorProjectSettings, EditorRecordGroup, FileRecords, GraphData, GraphQuery,
+    InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome,
+    WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use host::EditorHost;
 use tauri::{AppHandle, Manager, State};
@@ -96,6 +97,23 @@ async fn set_table_column_widths(
     run_blocking(move || {
         host.sessions()
             .set_table_column_widths(session_id, file_path, actual_type, widths)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn set_record_groups(
+    session_id: u32,
+    file_path: String,
+    actual_type: String,
+    groups: Vec<EditorRecordGroup>,
+    host: State<'_, EditorHost>,
+) -> Result<EditorProjectSettings, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .set_record_groups(session_id, file_path, actual_type, groups)
     })
     .await
 }
@@ -392,6 +410,7 @@ pub fn run() -> tauri::Result<()> {
             get_project_dimensions,
             get_dimension_file_records,
             set_table_column_widths,
+            set_record_groups,
             check_project,
             build_project,
             open_source_file,

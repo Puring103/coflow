@@ -11,7 +11,13 @@ import { UpdateControl } from './components/UpdateControl'
 import { DimensionTableView } from './components/DimensionTableView'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
-import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH, MOCK_DIMENSION_FILE_RECORDS } from './mock'
+import {
+  MOCK_PROJECT,
+  MOCK_FILE_RECORDS,
+  MOCK_GRAPH,
+  MOCK_DIMENSION_FILE_RECORDS,
+  MOCK_EDITOR_SETTINGS,
+} from './mock'
 import * as api from './api'
 import type { FieldAnnotation } from './bindings/FieldAnnotation'
 import type { DimensionInfo } from './bindings/DimensionInfo'
@@ -19,6 +25,7 @@ import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordina
 import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
+import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
@@ -60,6 +67,14 @@ import {
   valueSelection,
   type EditorSelection,
 } from './state/editorSelection'
+import {
+  moveRecordOntoRecord,
+  moveRecordToGroup,
+  nextRecordGroupName,
+  removeRecordFromGroups,
+  renameRecordGroup,
+  replaceGroupedCoordinate,
+} from './state/manualRecordGroups'
 import './style.css'
 
 const GRAPH_DEPTH = 3
@@ -73,6 +88,24 @@ interface WorkspaceTab {
 }
 function workspaceTabId(filePath: string, typeName: string): string {
   return `${filePath}\u001f${typeName}`
+}
+
+function settingsWithRecordGroups(
+  settings: EditorProjectSettings | null,
+  filePath: string,
+  actualType: string,
+  groups: EditorRecordGroup[],
+): EditorProjectSettings {
+  return {
+    table_column_widths: settings?.table_column_widths ?? {},
+    record_groups: {
+      ...(settings?.record_groups ?? {}),
+      [filePath]: {
+        ...(settings?.record_groups?.[filePath] ?? {}),
+        [actualType]: groups,
+      },
+    },
+  }
 }
 
 /** Passed as `highlightField` when a record-level (no field path) jump lands
@@ -212,6 +245,9 @@ export default function App() {
     return () => ro.disconnect()
   }, [workspaceTabs])
   const [globalSearch, setGlobalSearch] = useState('')
+  const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
+  const recordGroupIdSequence = useRef(0)
+  const recordGroupSaveSequence = useRef(0)
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
@@ -229,6 +265,30 @@ export default function App() {
   // record/field corner badge click. Consumed by DiagnosticsPanel; we bump
   // `diagFocusTick` so repeat clicks on the same badge re-flash the item.
   const [diagFocus, setDiagFocus] = useState<{ key: string; tick: number } | null>(null)
+
+  const saveRecordGroups = useCallback((
+    filePath: string,
+    actualType: string,
+    groups: EditorRecordGroup[],
+  ) => {
+    const sequence = ++recordGroupSaveSequence.current
+    setProjectSettings(current => settingsWithRecordGroups(current, filePath, actualType, groups))
+    if (!api.isTauri) return
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    api.setRecordGroups(identity.sessionId, filePath, actualType, groups)
+      .then(settings => {
+        if (generation.currentSession() === identity.sessionId
+          && recordGroupSaveSequence.current === sequence) {
+          setProjectSettings(settings)
+        }
+      })
+      .catch(error => {
+        if (generation.currentSession() === identity.sessionId) {
+          setErrorMsg(`保存记录分组失败: ${errorMessage(error)}`)
+        }
+      })
+  }, [generation])
 
   // Resizable sidebar width, persisted to localStorage.
   const [sidebarW, setSidebarW] = useState<number>(() => {
@@ -277,6 +337,7 @@ export default function App() {
       lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision })
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
+      setProjectSettings(MOCK_EDITOR_SETTINGS)
       setProjectDimensions(MOCK_PROJECT.dimensions)
       setGraphCache({ [graphCacheKey('data/npc.cfd', GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
       if (MOCK_PROJECT.first_source_file) {
@@ -311,7 +372,7 @@ export default function App() {
       setFileDataCache({})
       setDimensionFileCache({})
       setGraphCache({})
-      setProjectSettings(null)
+      setProjectSettings(api.isTauri ? null : MOCK_EDITOR_SETTINGS)
       setProjectDimensions(api.isTauri ? [] : MOCK_PROJECT.dimensions)
       setWorkspaceTabs([])
       setActiveWorkspaceTabId(null)
@@ -393,6 +454,7 @@ export default function App() {
       history.clear()
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
+      setProjectSettings(MOCK_EDITOR_SETTINGS)
       return
     }
     const request = generation.beginProjectRequest()
@@ -1029,9 +1091,18 @@ export default function App() {
 
   const renameRecord = useCallback(
     async (filePath: string, coordinate: RecordCoordinate, newKey: string) => {
-      return mutations.renameRecord(filePath, coordinate, newKey)
+      const groups = projectSettings?.record_groups[filePath]?.[coordinate.actual_type] ?? []
+      const result = await mutations.renameRecord(filePath, coordinate, newKey)
+      if (result) {
+        saveRecordGroups(
+          filePath,
+          coordinate.actual_type,
+          replaceGroupedCoordinate(groups, coordinate, result.coordinate),
+        )
+      }
+      return result
     },
-    [mutations],
+    [mutations, projectSettings, saveRecordGroups],
   )
 
   const insertRecord = useCallback(
@@ -1042,9 +1113,15 @@ export default function App() {
   )
   const deleteRecord = useCallback(
     async (filePath: string, coordinate: RecordCoordinate) => {
+      const groups = projectSettings?.record_groups[filePath]?.[coordinate.actual_type] ?? []
       await mutations.deleteRecord(filePath, coordinate)
+      saveRecordGroups(
+        filePath,
+        coordinate.actual_type,
+        removeRecordFromGroups(groups, coordinate),
+      )
     },
-    [mutations],
+    [mutations, projectSettings, saveRecordGroups],
   )
 
   const undo = useCallback(async () => {
@@ -1097,6 +1174,47 @@ export default function App() {
   }, [currentRoute, workspaceTabs])
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeDimensionData = activeFile ? dimensionFileCache[activeFile] : null
+  const recordGroups = projectSettings?.record_groups[activeFile ?? '']?.[activeType] ?? []
+
+  useEffect(() => {
+    setCollapsedRecordGroups(new Set())
+  }, [activeFileData?.file_path, activeType])
+
+  const toggleRecordGroup = useCallback((groupKey: string) => {
+    setCollapsedRecordGroups(current => {
+      const next = new Set(current)
+      if (next.has(groupKey)) next.delete(groupKey)
+      else next.add(groupKey)
+      return next
+    })
+  }, [])
+  const dropRecordOntoRecord = useCallback((source: RecordCoordinate, target: RecordCoordinate) => {
+    if (!activeFile || !activeType) return
+    recordGroupIdSequence.current += 1
+    saveRecordGroups(
+      activeFile,
+      activeType,
+      moveRecordOntoRecord(
+        recordGroups,
+        source,
+        target,
+        `record-group-${Date.now().toString(36)}-${recordGroupIdSequence.current.toString(36)}`,
+        nextRecordGroupName(recordGroups),
+      ),
+    )
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const dropRecordIntoGroup = useCallback((source: RecordCoordinate, groupId: string) => {
+    if (!activeFile || !activeType) return
+    saveRecordGroups(activeFile, activeType, moveRecordToGroup(recordGroups, source, groupId))
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const dropRecordIntoUngrouped = useCallback((source: RecordCoordinate) => {
+    if (!activeFile || !activeType) return
+    saveRecordGroups(activeFile, activeType, removeRecordFromGroups(recordGroups, source))
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const renameManualRecordGroup = useCallback((groupId: string, name: string) => {
+    if (!activeFile || !activeType) return
+    saveRecordGroups(activeFile, activeType, renameRecordGroup(recordGroups, groupId, name))
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
   const activeGraphKey = activeFile
     ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
     : null
@@ -1946,6 +2064,13 @@ export default function App() {
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     searchQuery={globalSearch}
+                    recordGroups={recordGroups}
+                    collapsedGroupKeys={collapsedRecordGroups}
+                    onToggleGroup={toggleRecordGroup}
+                    onDropRecordOntoRecord={dropRecordOntoRecord}
+                    onDropRecordIntoGroup={dropRecordIntoGroup}
+                    onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
+                    onRenameGroup={renameManualRecordGroup}
                     selection={inspectorSelection?.filePath === currentRoute.file
                       ? inspectorSelection
                       : null}
@@ -1983,6 +2108,13 @@ export default function App() {
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     recordSearch={globalSearch}
+                    recordGroups={recordGroups}
+                    collapsedGroupKeys={collapsedRecordGroups}
+                    onToggleGroup={toggleRecordGroup}
+                    onDropRecordOntoRecord={dropRecordOntoRecord}
+                    onDropRecordIntoGroup={dropRecordIntoGroup}
+                    onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
+                    onRenameGroup={renameManualRecordGroup}
                     highlightField={highlightField}
                     onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}

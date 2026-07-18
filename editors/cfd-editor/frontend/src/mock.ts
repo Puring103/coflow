@@ -3,6 +3,7 @@ import type { FileRecords } from './bindings/FileRecords'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
 import type { DimensionInfo } from './bindings/DimensionInfo'
+import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
 import type { DimensionFileRecords } from './api'
@@ -170,6 +171,22 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
       ]),
     ],
   }),
+}
+
+export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
+  table_column_widths: {},
+  record_groups: {
+    'data/item.cfd': {
+      Item: [{
+        id: 'mock-potions',
+        name: '药水',
+        records: [
+          { actual_type: 'Item', key: 'Item_001' },
+          { actual_type: 'Item', key: 'Item_002' },
+        ],
+      }],
+    },
+  },
 }
 
 export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> = {

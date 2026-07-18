@@ -11,6 +11,7 @@ import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { DimensionValueView } from './bindings/DimensionValueView'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
+import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
 import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
@@ -134,6 +135,20 @@ export async function setTableColumnWidths(
     filePath,
     actualType,
     widths,
+  })
+}
+
+export async function setRecordGroups(
+  sessionId: number,
+  filePath: string,
+  actualType: string,
+  groups: EditorRecordGroup[],
+): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('set_record_groups', {
+    sessionId,
+    filePath,
+    actualType,
+    groups,
   })
 }
 

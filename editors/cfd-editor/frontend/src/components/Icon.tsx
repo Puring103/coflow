@@ -8,7 +8,7 @@ interface IconProps {
     | 'jump' | 'open' | 'dot' | 'edit'
     | 'table' | 'record' | 'graph' | 'filter' | 'sun' | 'moon' | 'lock'
     | 'download' | 'refresh' | 'build'
-    | 'sparkles' | 'settings' | 'data' | 'localization' | 'dimension'
+    | 'sparkles' | 'settings' | 'data' | 'localization' | 'dimension' | 'grip'
   size?: number
   className?: string
 }
@@ -49,6 +49,7 @@ const PATHS: Record<IconProps['name'], string> = {
   'data':          'M4 6c0 1.66 3.58 3 8 3s8-1.34 8-3-3.58-3-8-3-8 1.34-8 3zM4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6',
   'localization':  'M3 5h12M9 3v2M5 9c1.5 3 4 5 7 6M12 9c-1.5 3-4 5-7 6M14 21l4-10 4 10M15.5 17h5',
   'dimension':     'M4 19V5M4 19h14M4 19l6-6M10 13h7M10 13V6M10 13l7-7',
+  'grip':          'M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01',
 }
 
 export function Icon({ name, size = 14, className }: IconProps) {

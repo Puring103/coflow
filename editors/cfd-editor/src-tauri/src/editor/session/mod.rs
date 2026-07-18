@@ -37,13 +37,15 @@ use coflow_runtime::{
 
 use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
 use crate::editor::settings::{
-    read_project_settings, sanitized_column_widths, write_project_settings,
+    read_project_settings, sanitized_column_widths, sanitized_record_groups,
+    write_project_settings,
 };
 use crate::editor::types::{
     CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
     CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError,
-    EditorProjectSettings, FileRecords, FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome,
-    ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
+    EditorProjectSettings, EditorRecordGroup, FileRecords, FileTypeOption, GraphData, GraphQuery,
+    InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome,
+    WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -215,6 +217,29 @@ impl SessionStore {
             .entry(file_path)
             .or_default()
             .insert(actual_type, sanitized_column_widths(widths));
+        write_project_settings(&session.project_root, &settings)?;
+        drop(session);
+        Ok(settings)
+    }
+
+    pub fn set_record_groups(
+        &self,
+        id: u32,
+        file_path: String,
+        actual_type: String,
+        groups: Vec<EditorRecordGroup>,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned during settings write"))?;
+        let mut settings = read_project_settings(&session.project_root)?;
+        settings
+            .record_groups
+            .entry(file_path)
+            .or_default()
+            .insert(actual_type, sanitized_record_groups(groups));
         write_project_settings(&session.project_root, &settings)?;
         drop(session);
         Ok(settings)

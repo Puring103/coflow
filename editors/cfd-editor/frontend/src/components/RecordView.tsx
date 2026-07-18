@@ -3,6 +3,7 @@ import type { FileRecords } from '../bindings/FileRecords'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
+import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import {
   coordinateId,
@@ -31,6 +32,9 @@ import {
 } from '../state/recordDiagnostics'
 import type { EditorSelection } from '../state/editorSelection'
 import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
+import { useRecordPointerDrag } from '../hooks/useRecordPointerDrag'
+import { organizeRecordRows } from '../state/manualRecordGroups'
+import { RecordGroupHeader, RecordUngroupedHeader } from './RecordGroupHeader'
 
 interface Props {
   data: FileRecords
@@ -40,6 +44,13 @@ interface Props {
   diagnostics?: DiagnosticItem[]
   /** Filters the sidebar record list (shared global search). */
   recordSearch?: string
+  recordGroups?: readonly EditorRecordGroup[]
+  collapsedGroupKeys?: ReadonlySet<string>
+  onToggleGroup?: (groupKey: string) => void
+  onDropRecordOntoRecord?: (source: RecordCoordinate, target: RecordCoordinate) => void
+  onDropRecordIntoGroup?: (source: RecordCoordinate, groupId: string) => void
+  onDropRecordIntoUngrouped?: (source: RecordCoordinate) => void
+  onRenameGroup?: (groupId: string, name: string) => void
   highlightField?: string | null
   onHighlightConsumed?: () => void
   onOpenRecord: (coordinate: RecordCoordinate) => void
@@ -62,7 +73,7 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, highlightField, onHighlightConsumed, onOpenRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -72,6 +83,13 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const mainRef = useRef<HTMLDivElement>(null)
+  const recordPointerDrag = useRecordPointerDrag({
+    rootRef: sidebarRef,
+    records: data.records,
+    onDropRecordOntoRecord,
+    onDropRecordIntoGroup,
+    onDropRecordIntoUngrouped,
+  })
 
   const activeId = coordinateId(coordinate)
   const expansionOwner = `${data.file_path}:${activeId}`
@@ -107,10 +125,18 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   const sidebarRecords = recordSearch
     ? allSidebarRecords.filter(record => recordMatchesSearch(record, recordSearch))
     : allSidebarRecords
+  const organizedRecords = useMemo(
+    () => organizeRecordRows(sidebarRecords, recordGroups ?? []),
+    [recordGroups, sidebarRecords],
+  )
+  const visibleSidebarRecords = [
+    ...organizedRecords.groups.flatMap(view => collapsedGroupKeys?.has(view.group.id) ? [] : view.records),
+    ...organizedRecords.ungrouped,
+  ]
 
   useEffect(() => {
     if (!firstRecordFocusRequest) return
-    const first = sidebarRecords[0]
+    const first = visibleSidebarRecords[0]
     if (first) {
       onOpenRecord(first.coordinate)
       requestAnimationFrame(() => {
@@ -179,7 +205,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
 
   const onSidebarKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Enter') return
-    const ids = sidebarRecords.map(r => coordinateId(r.coordinate))
+    const ids = visibleSidebarRecords.map(r => coordinateId(r.coordinate))
     if (ids.length === 0) return
     const cur = document.activeElement as HTMLElement | null
     const idx = Math.max(0, ids.indexOf(activeId))
@@ -197,7 +223,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       const next = ids[Math.min(idx + 1, ids.length - 1)]
-      const nextRecord = sidebarRecords.find(r => coordinateId(r.coordinate) === next)
+      const nextRecord = visibleSidebarRecords.find(r => coordinateId(r.coordinate) === next)
       if (nextRecord && next !== activeId) onOpenRecord(nextRecord.coordinate)
       requestAnimationFrame(() => sidebarRef.current?.querySelector<HTMLElement>(`[data-coordinate-id="${cssEscape(next)}"]`)?.focus())
     } else if (e.key === 'ArrowUp') {
@@ -207,12 +233,12 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         return
       }
       const prev = ids[Math.max(idx - 1, 0)]
-      const previousRecord = sidebarRecords.find(r => coordinateId(r.coordinate) === prev)
+      const previousRecord = visibleSidebarRecords.find(r => coordinateId(r.coordinate) === prev)
       if (previousRecord && prev !== activeId) onOpenRecord(previousRecord.coordinate)
       requestAnimationFrame(() => sidebarRef.current?.querySelector<HTMLElement>(`[data-coordinate-id="${cssEscape(prev)}"]`)?.focus())
     } else if (e.key === 'Enter') {
       const id = cur?.dataset.coordinateId
-      const next = id ? sidebarRecords.find(r => coordinateId(r.coordinate) === id) : null
+      const next = id ? visibleSidebarRecords.find(r => coordinateId(r.coordinate) === id) : null
       if (next) {
         e.preventDefault()
         onOpenRecord(next.coordinate)
@@ -227,46 +253,83 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     && !!onCreateRecordDraft
     && !!newRecordType
 
+  const renderSidebarRecord = (row: RecordRow) => {
+    const sev = rowSeverity(row)
+    const id = coordinateId(row.coordinate)
+    return (
+      <div
+        key={id}
+        className={`rv-sidebar-item${id === activeId ? ' selected' : ''}${sev ? ' rv-sidebar-' + sev : ''}`}
+        role="option"
+        aria-selected={id === activeId}
+        tabIndex={id === activeId ? 0 : -1}
+        data-coordinate-id={id}
+        data-record-draggable="true"
+        data-record-drop-kind="record"
+        data-record-label={recordKey(row)}
+        style={{ '--type-color': typeColor(recordActualType(row)) } as React.CSSProperties}
+        onClick={() => onOpenRecord(row.coordinate)}
+        onKeyDown={event => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            event.stopPropagation()
+            onOpenRecord(row.coordinate)
+          }
+        }}
+      >
+        <Icon name="grip" size={13} className="record-drag-handle rv-record-drag-handle" aria-hidden />
+        <span className="rv-item-key">{recordKey(row)}</span>
+        {firstScalarSummary(row) && (
+          <span className="rv-item-subtitle">{firstScalarSummary(row)}</span>
+        )}
+        {(sev === 'error' || sev === 'warning') && (
+          <DiagBadge
+            severity={sev}
+            onClick={onDiagnosticBadgeClick
+              ? () => { onOpenRecord(row.coordinate); onDiagnosticBadgeClick(row.coordinate, null) }
+              : undefined}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="record-view">
       <div className="rv-sidebar-wrap">
-        <div className="rv-sidebar" role="listbox" aria-label="记录列表" onKeyDown={onSidebarKeyDown} ref={sidebarRef}>
-          {sidebarRecords.map(r => {
-            const sev = rowSeverity(r)
-            const id = coordinateId(r.coordinate)
-            return (
-              <div
-                key={id}
-                className={`rv-sidebar-item${id === activeId ? ' selected' : ''}${sev ? ' rv-sidebar-' + sev : ''}`}
-                role="option"
-                aria-selected={id === activeId}
-                tabIndex={id === activeId ? 0 : -1}
-                data-coordinate-id={id}
-                style={{ '--type-color': typeColor(recordActualType(r)) } as React.CSSProperties}
-                onClick={() => onOpenRecord(r.coordinate)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    onOpenRecord(r.coordinate)
-                  }
-                }}
-              >
-                <span className="rv-item-key">{recordKey(r)}</span>
-                {firstScalarSummary(r) && (
-                  <span className="rv-item-subtitle">{firstScalarSummary(r)}</span>
-                )}
-                {(sev === 'error' || sev === 'warning') && (
-                  <DiagBadge
-                    severity={sev}
-                    onClick={onDiagnosticBadgeClick
-                      ? () => { onOpenRecord(r.coordinate); onDiagnosticBadgeClick(r.coordinate, null) }
-                      : undefined}
-                  />
-                )}
-              </div>
-            )
-          })}
+        <div
+          className="rv-sidebar"
+          role="listbox"
+          aria-label="记录列表"
+          onKeyDown={onSidebarKeyDown}
+          onPointerDown={recordPointerDrag.onPointerDown}
+          onClickCapture={recordPointerDrag.onClickCapture}
+          ref={sidebarRef}
+        >
+          {organizedRecords.groups.map(view => {
+                const collapsed = collapsedGroupKeys?.has(view.group.id) ?? false
+                return (
+                  <div className="record-group" key={view.group.id} role="group" aria-label={view.group.name}>
+                    <RecordGroupHeader
+                      name={view.group.name}
+                      groupId={view.group.id}
+                      count={view.records.length}
+                      collapsed={collapsed}
+                      className="rv-record-group-header"
+                      onToggle={() => onToggleGroup?.(view.group.id)}
+                      onRename={name => onRenameGroup?.(view.group.id, name)}
+                    />
+                    {!collapsed && view.records.map(renderSidebarRecord)}
+                  </div>
+                )
+              })}
+          {organizedRecords.groups.length > 0 && (
+            <RecordUngroupedHeader
+              count={organizedRecords.ungrouped.length}
+              className="rv-record-group-header"
+            />
+          )}
+          {organizedRecords.ungrouped.map(renderSidebarRecord)}
         </div>
         {canCreate && (
           <div className="rv-sidebar-footer">
