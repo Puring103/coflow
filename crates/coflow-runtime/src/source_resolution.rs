@@ -215,10 +215,8 @@ impl<'a> SourceResolver<'a> {
                 options: configured.options.clone(),
                 source_index: configured.source_index,
             };
-            if forced_provider.is_none() {
-                file_source.options =
-                    options_for_provider(&file_source.options, provider.descriptor().option_keys);
-            }
+            file_source.options =
+                options_for_provider(&file_source.options, provider.descriptor().option_keys);
             resolved.extend(self.decode_and_expand(&provider, &file_source)?);
         }
         Ok(resolved)

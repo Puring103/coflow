@@ -14,7 +14,7 @@ use crate::{Diagnostic, DiagnosticSet, ResolvedSource};
 
 /// Trait for source-specific writers that persist field edits.
 ///
-/// Implementations dispatch on [`RecordOrigin`] to locate the cell/span and
+/// Implementations dispatch on [`coflow_data_model::RecordOrigin`] to locate the cell/span and
 /// write the new value to the source file. The runtime owns
 /// transaction-level mutation reporting and generation rebuilds.
 pub trait SourceWriter: Send + Sync {

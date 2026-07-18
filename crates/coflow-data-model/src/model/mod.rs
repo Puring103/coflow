@@ -237,13 +237,8 @@ impl CfdDataModel {
     /// relative segment is one of that edge's inherited fields.
     #[must_use]
     pub fn spread_source_at_path(&self, host: CfdRecordId, path: &CfdPath) -> Option<CfdRecordId> {
-        self.spread_edge_at_path(host, path).map(|edge| edge.source)
-    }
-
-    #[must_use]
-    fn spread_edge_at_path(&self, host: CfdRecordId, path: &CfdPath) -> Option<&SpreadEdge> {
-        self.spread_edges_from_host(host)
-            .find(|edge| edge.dimension.is_none() && edge.covers_path(path))
+        self.spread_edge_for_site(host, path, None)
+            .map(|edge| edge.source)
     }
 
     #[must_use]
@@ -252,7 +247,7 @@ impl CfdDataModel {
         host: CfdRecordId,
         path: &CfdPath,
     ) -> Option<(CfdRecordId, CfdPath)> {
-        self.spread_source_path_inner(host, path, &mut BTreeSet::new())
+        self.spread_source_path_for_site(host, path, None, &mut BTreeSet::new())
     }
 
     fn resolve_ref_inner(
@@ -285,26 +280,19 @@ impl CfdDataModel {
         if !visited.insert(key) {
             return None;
         }
-        let edge = self
-            .spread_edges_from_host(host)
-            .find(|edge| edge.dimension.as_ref() == dimension && edge.covers_path(path))?;
+        let edge = self.spread_edge_for_site(host, path, dimension)?;
         let source_path = edge.source_path_for(path)?;
         self.spread_source_path_for_site(edge.source, &source_path, None, visited)
             .or(Some((edge.source, source_path)))
     }
 
-    fn spread_source_path_inner(
+    fn spread_edge_for_site(
         &self,
         host: CfdRecordId,
         path: &CfdPath,
-        visited: &mut BTreeSet<(CfdRecordId, CfdPath)>,
-    ) -> Option<(CfdRecordId, CfdPath)> {
-        if !visited.insert((host, path.clone())) {
-            return None;
-        }
-        let edge = self.spread_edge_at_path(host, path)?;
-        let source_path = edge.source_path_for(path)?;
-        self.spread_source_path_inner(edge.source, &source_path, visited)
-            .or(Some((edge.source, source_path)))
+        dimension: Option<&DimensionRefCoordinate>,
+    ) -> Option<&SpreadEdge> {
+        self.spread_edges_from_host(host)
+            .find(|edge| edge.dimension.as_ref() == dimension && edge.covers_path(path))
     }
 }

@@ -1,6 +1,6 @@
 //! Writer that persists field edits back to local `.csv` files.
 //!
-//! `CsvWriter` is the [`SourceWriter`] for [`RecordOrigin::Table`] origins whose
+//! `CsvWriter` is the [`SourceWriter`] for [`coflow_data_model::RecordOrigin::Table`] origins whose
 //! document is `SourceDocument::Local` and whose backing file is a CSV. Each
 //! call re-reads the file, applies the planned mutation in-memory, and writes
 //! the whole document back. The CSV format has no sheet concept, so the plan's

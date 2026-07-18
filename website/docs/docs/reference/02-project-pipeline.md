@@ -124,7 +124,7 @@ Source resolve 由 `coflow-runtime` 通过 `ProviderRegistry` 执行。
 
 - source 显式写 `type` 时，使用对应 Provider。
 - 本地单文件未写 `type` 时，通过扩展名和 Provider probe 选择。
-- 本地目录未写 `type` 时，目录交给各 loader 的 resolve 阶段发现可处理文件。
+- 本地目录未写 `type` 时，runtime 统一安全遍历目录，再对每个文件执行 Provider probe。
 - 远端 URL 未写 `type` 时，通过 URI scheme 或 Provider probe 选择。
 - 多个 Provider 同等匹配时，应显式设置 `type`。
 

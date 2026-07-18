@@ -362,9 +362,9 @@ impl<'a> ModelCompiler<'a> {
                         coflow_structure::TraversalCursor::root(),
                     )
                 };
-                attach_dimension_origins(
+                attach_origin_to_diagnostics(
                     &mut self.diagnostics[diagnostic_start..],
-                    input,
+                    &input.origin,
                     Some(record_id),
                     &path,
                 );
@@ -488,15 +488,6 @@ fn dimension_diagnostic(
     CfdDiagnostic::error(code, message)
         .with_primary(record, path)
         .with_primary_origin(input.origin.clone())
-}
-
-fn attach_dimension_origins(
-    diagnostics: &mut [CfdDiagnostic],
-    input: &DimensionValueDraft,
-    record: Option<CfdRecordId>,
-    path: &CfdPath,
-) {
-    attach_origin_to_diagnostics(diagnostics, &input.origin, record, path);
 }
 
 fn attach_origin_to_diagnostics(

@@ -271,9 +271,8 @@ fn build_record_origin(
     }
 }
 
-/// Map [`CfdDiagnostics`] to per-row [`TableDiagnostic`] using a slice of
-/// record origins (typically extracted from the input records via
-/// [`crate::origins_of`]).
+/// Map [`CfdDiagnostics`] to per-row [`TableDiagnostic`] using the record
+/// origins carried by the provider's input records.
 #[must_use]
 pub fn map_table_diagnostics(
     diagnostics: CfdDiagnostics,

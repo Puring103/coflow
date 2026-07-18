@@ -304,7 +304,7 @@ impl From<coflow_data_model::SourceLocation> for SourceLocation {
 
 /// Map [`CfdDiagnostics`] to [`DiagnosticSet`] using a record-to-origin lookup.
 ///
-/// Loaders no longer maintain a separate [`coflow_data_model::origin::RecordOrigin`]
+/// Loaders no longer maintain a separate [`coflow_data_model::RecordOrigin`]
 /// map: each [`LoadedRecordDraft`] carries its own origin. Callers that need to
 /// produce wire diagnostics from compiler/check failures pass either a slice
 /// of records (or their extracted origins) and let this helper resolve labels.

@@ -181,6 +181,16 @@ flowchart LR
 
 退出条件：文档与实现一致，完整 gate 通过，无本轮范围内未关闭的高/中优先级问题。
 
+### 阶段 5：PR 复审与质量收口（已完成）
+
+1. 修正 DataModel edge/index 与 source directory ownership 的公开文档，并同步 skill references。
+2. 修复 workspace 严格 rustdoc 构建发现的全部 broken/private intra-doc links。
+3. 合并 default/dimension spread source path 的重复递归和 edge 选择逻辑。
+4. 删除单调用 dimension-origin wrapper 与 directory resolver 冗余条件。
+
+退出条件：定向行为测试通过，`cargo check --workspace --all-features` 和严格 rustdoc 构建通过，
+再重新执行完整 repository gate。
+
 ## 6. 删除、精简与保留清单
 
 ### 6.1 已删除或收敛
@@ -243,6 +253,7 @@ flowchart LR
 - DataModel representative benchmark 若长期显著超过当前约 9.7 ms/build，再评估增量构建；
   不能只根据代码体量启动复杂缓存设计。
 - 查询热点必须用 benchmark 证明，不能通过删除私有索引换取表面上的类型减少。
+- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` 必须通过，避免公开 API 链接失效。
 
 ### 7.4 Repository gate
 
