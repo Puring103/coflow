@@ -1,3 +1,25 @@
+# Coflow 0.7.3
+
+## Highlights
+
+### CFD Editor Extensions
+
+- Added a local extension host with a dedicated Extensions view for installing,
+  enabling, disabling, and removing frontend plugins stored in Coflow's app-data
+  directory.
+- Added a first field-value rendering API. Extensions target a declared CFD type
+  and can render table cells or complex-value foldout headers while native field
+  editing remains available.
+- Added the external ChemicalExpression renderer example, including a chemical
+  equation schema and sample data.
+
+### Record Grouping
+
+- Added multi-record group creation and group assignment through the table
+  context menu.
+
+---
+
 # Coflow 0.7.2
 
 ## Highlights

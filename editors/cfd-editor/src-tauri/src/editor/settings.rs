@@ -88,7 +88,9 @@ pub(super) fn sanitized_record_groups(groups: Vec<EditorRecordGroup>) -> Vec<Edi
                 } else {
                     name
                 },
-                color: group.color.filter(|color| RECORD_GROUP_COLORS.contains(&color.as_str())),
+                color: group
+                    .color
+                    .filter(|color| RECORD_GROUP_COLORS.contains(&color.as_str())),
                 records,
             })
         })
@@ -148,7 +150,10 @@ mod tests {
             .graph_enabled_fields
             .entry("data/items.cfd".to_string())
             .or_default()
-            .insert("Item".to_string(), vec!["name".to_string(), "price".to_string()]);
+            .insert(
+                "Item".to_string(),
+                vec!["name".to_string(), "price".to_string()],
+            );
 
         write_project_settings(&root, &settings).expect("write settings");
         let loaded = read_project_settings(&root).expect("read settings");

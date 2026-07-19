@@ -1,24 +1,24 @@
 #![allow(clippy::multiple_crate_versions, clippy::unreachable)]
 
 use std::collections::BTreeMap;
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 pub mod editor;
 mod host;
 mod watcher;
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
+use coflow_extension_api::ExtensionManifest;
 use coflow_runtime::{
     DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
 };
 use editor::{
-    BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft, DeleteRecordOutcome, DimensionFileRecords, EditorError,
-    EditorProjectSettings, EditorRecordGroup, FileRecords, GraphData, GraphQuery,
-    InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome,
-    WriteDimensionValueOutcome, WriteFieldOutcome,
+    BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
+    DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
+    EditorRecordGroup, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot,
+    RefTarget, RenameRecordOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use host::EditorHost;
-use coflow_extension_api::ExtensionManifest;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -38,7 +38,11 @@ async fn install_frontend_plugin(
     manifest_path: String,
     app: AppHandle,
 ) -> Result<FrontendPluginBundle, EditorError> {
-    run_blocking(move || install_frontend_plugin_bundle(PathBuf::from(manifest_path), &app)).await
+    run_blocking(move || {
+        let manifest_path = PathBuf::from(manifest_path);
+        install_frontend_plugin_bundle(&manifest_path, &app)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -52,36 +56,56 @@ async fn uninstall_frontend_plugin(id: String, app: AppHandle) -> Result<(), Edi
     run_blocking(move || uninstall_frontend_plugin_bundle(&id, &app)).await
 }
 
-fn load_frontend_plugin_bundle(manifest_path: PathBuf) -> Result<FrontendPluginBundle, EditorError> {
-    if manifest_path.extension().is_none_or(|extension| extension != "json") {
+fn load_frontend_plugin_bundle(manifest_path: &Path) -> Result<FrontendPluginBundle, EditorError> {
+    if manifest_path
+        .extension()
+        .is_none_or(|extension| extension != "json")
+    {
         return Err(EditorError::other("plugin manifest must be a .json file"));
     }
-    let manifest_path = std::fs::canonicalize(&manifest_path).map_err(|error| {
-        EditorError::other(format!("failed to read plugin manifest: {error}"))
-    })?;
-    let manifest_text = std::fs::read_to_string(&manifest_path).map_err(|error| {
-        EditorError::other(format!("failed to read plugin manifest: {error}"))
-    })?;
-    let manifest: ExtensionManifest = serde_json::from_str(&manifest_text).map_err(|error| {
-        EditorError::other(format!("invalid plugin manifest: {error}"))
-    })?;
-    if manifest.id.trim().is_empty() || manifest.name.trim().is_empty() || manifest.entry.trim().is_empty() {
-        return Err(EditorError::other("plugin manifest requires non-empty id, name, and entry"));
+    let manifest_path = std::fs::canonicalize(manifest_path)
+        .map_err(|error| EditorError::other(format!("failed to read plugin manifest: {error}")))?;
+    let manifest_text = std::fs::read_to_string(&manifest_path)
+        .map_err(|error| EditorError::other(format!("failed to read plugin manifest: {error}")))?;
+    let manifest: ExtensionManifest = serde_json::from_str(&manifest_text)
+        .map_err(|error| EditorError::other(format!("invalid plugin manifest: {error}")))?;
+    if manifest.id.trim().is_empty()
+        || manifest.name.trim().is_empty()
+        || manifest.entry.trim().is_empty()
+    {
+        return Err(EditorError::other(
+            "plugin manifest requires non-empty id, name, and entry",
+        ));
     }
     let entry = PathBuf::from(&manifest.entry);
-    if entry.is_absolute() || entry.components().any(|part| matches!(part, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
-        return Err(EditorError::other("plugin entry must be a relative path inside the plugin directory"));
+    if entry.is_absolute()
+        || entry.components().any(|part| {
+            matches!(
+                part,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(EditorError::other(
+            "plugin entry must be a relative path inside the plugin directory",
+        ));
     }
-    let plugin_dir = manifest_path.parent().ok_or_else(|| EditorError::other("plugin manifest has no parent directory"))?;
-    let entry_path = std::fs::canonicalize(plugin_dir.join(entry)).map_err(|error| {
-        EditorError::other(format!("failed to read plugin entry: {error}"))
-    })?;
-    if !entry_path.starts_with(plugin_dir) || entry_path.extension().is_none_or(|extension| extension != "js") {
-        return Err(EditorError::other("plugin entry must be a .js file inside the plugin directory"));
+    let plugin_dir = manifest_path
+        .parent()
+        .ok_or_else(|| EditorError::other("plugin manifest has no parent directory"))?;
+    let entry_path = std::fs::canonicalize(plugin_dir.join(entry))
+        .map_err(|error| EditorError::other(format!("failed to read plugin entry: {error}")))?;
+    if !entry_path.starts_with(plugin_dir)
+        || entry_path
+            .extension()
+            .is_none_or(|extension| extension != "js")
+    {
+        return Err(EditorError::other(
+            "plugin entry must be a .js file inside the plugin directory",
+        ));
     }
-    let source = std::fs::read_to_string(entry_path).map_err(|error| {
-        EditorError::other(format!("failed to read plugin bundle: {error}"))
-    })?;
+    let source = std::fs::read_to_string(entry_path)
+        .map_err(|error| EditorError::other(format!("failed to read plugin bundle: {error}")))?;
     Ok(FrontendPluginBundle {
         manifest_path: manifest_path.display().to_string(),
         id: manifest.id,
@@ -96,21 +120,27 @@ fn plugin_data_dir(app: &AppHandle) -> Result<PathBuf, EditorError> {
     app.path()
         .app_data_dir()
         .map(|path| path.join("plugins"))
-        .map_err(|error| EditorError::other(format!("failed to resolve plugin data directory: {error}")))
+        .map_err(|error| {
+            EditorError::other(format!("failed to resolve plugin data directory: {error}"))
+        })
 }
 
 fn valid_plugin_id(id: &str) -> bool {
     !id.is_empty()
-        && id.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+        && id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
 }
 
 fn install_frontend_plugin_bundle(
-    manifest_path: PathBuf,
+    manifest_path: &Path,
     app: &AppHandle,
 ) -> Result<FrontendPluginBundle, EditorError> {
     let bundle = load_frontend_plugin_bundle(manifest_path)?;
     if !valid_plugin_id(&bundle.id) {
-        return Err(EditorError::other("plugin id may only contain ASCII letters, digits, hyphens, and underscores"));
+        return Err(EditorError::other(
+            "plugin id may only contain ASCII letters, digits, hyphens, and underscores",
+        ));
     }
     let plugin_dir = plugin_data_dir(app)?.join(&bundle.id);
     std::fs::create_dir_all(&plugin_dir).map_err(|error| {
@@ -124,15 +154,16 @@ fn install_frontend_plugin_bundle(
         entry: "plugin.js".to_string(),
     };
     let manifest_text = serde_json::to_string_pretty(&manifest).map_err(|error| {
-        EditorError::other(format!("failed to serialize installed plugin manifest: {error}"))
+        EditorError::other(format!(
+            "failed to serialize installed plugin manifest: {error}"
+        ))
     })?;
     std::fs::write(plugin_dir.join("plugin.json"), manifest_text).map_err(|error| {
         EditorError::other(format!("failed to install plugin manifest: {error}"))
     })?;
-    std::fs::write(plugin_dir.join("plugin.js"), bundle.source).map_err(|error| {
-        EditorError::other(format!("failed to install plugin bundle: {error}"))
-    })?;
-    load_frontend_plugin_bundle(plugin_dir.join("plugin.json"))
+    std::fs::write(plugin_dir.join("plugin.js"), bundle.source)
+        .map_err(|error| EditorError::other(format!("failed to install plugin bundle: {error}")))?;
+    load_frontend_plugin_bundle(&plugin_dir.join("plugin.json"))
 }
 
 fn list_frontend_plugin_bundles(app: &AppHandle) -> Result<Vec<FrontendPluginBundle>, EditorError> {
@@ -147,7 +178,7 @@ fn list_frontend_plugin_bundles(app: &AppHandle) -> Result<Vec<FrontendPluginBun
         .filter_map(Result::ok)
         .map(|entry| entry.path().join("plugin.json"))
         .filter(|manifest| manifest.is_file())
-        .map(load_frontend_plugin_bundle)
+        .map(|manifest| load_frontend_plugin_bundle(&manifest))
         .collect::<Result<Vec<_>, _>>()?;
     bundles.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(bundles)
@@ -159,9 +190,8 @@ fn uninstall_frontend_plugin_bundle(id: &str, app: &AppHandle) -> Result<(), Edi
     }
     let path = plugin_data_dir(app)?.join(id);
     if path.exists() {
-        std::fs::remove_dir_all(path).map_err(|error| {
-            EditorError::other(format!("failed to uninstall plugin: {error}"))
-        })?;
+        std::fs::remove_dir_all(path)
+            .map_err(|error| EditorError::other(format!("failed to uninstall plugin: {error}")))?;
     }
     Ok(())
 }
@@ -456,11 +486,7 @@ async fn write_fields(
     host: State<'_, EditorHost>,
 ) -> Result<BatchWriteFieldOutcome, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || {
-        host.sessions()
-            .write_fields(session_id, &writes)
-    })
-    .await
+    run_blocking(move || host.sessions().write_fields(session_id, &writes)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -616,7 +642,7 @@ pub fn run() -> tauri::Result<()> {
         .run(tauri::generate_context!())
 }
 
-fn open_with_default_application(path: &std::path::Path) -> Result<(), EditorError> {
+fn open_with_default_application(path: &Path) -> Result<(), EditorError> {
     #[cfg(target_os = "windows")]
     let mut command = {
         let mut command = std::process::Command::new("rundll32.exe");
@@ -641,6 +667,7 @@ fn open_with_default_application(path: &std::path::Path) -> Result<(), EditorErr
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod frontend_plugin_tests {
     use std::fs;
 
@@ -666,10 +693,13 @@ mod frontend_plugin_tests {
             r#"{"id":"sample","name":"Sample","entry":"dist/plugin.js"}"#,
         )
         .expect("write manifest");
-        fs::write(dir.join("dist/plugin.js"), "window.CfdEditorPlugins.register({ id: 'sample' })")
-            .expect("write bundle");
+        fs::write(
+            dir.join("dist/plugin.js"),
+            "window.CfdEditorPlugins.register({ id: 'sample' })",
+        )
+        .expect("write bundle");
 
-        let bundle = load_frontend_plugin_bundle(manifest).expect("load plugin");
+        let bundle = load_frontend_plugin_bundle(&manifest).expect("load plugin");
         assert_eq!(bundle.id, "sample");
         assert!(bundle.source.contains("register"));
         fs::remove_dir_all(dir).expect("remove plugin directory");
@@ -686,7 +716,7 @@ mod frontend_plugin_tests {
         )
         .expect("write manifest");
 
-        let error = load_frontend_plugin_bundle(manifest).expect_err("reject traversal entry");
+        let error = load_frontend_plugin_bundle(&manifest).expect_err("reject traversal entry");
         assert!(error.message.contains("relative path"));
         fs::remove_dir_all(dir).expect("remove plugin directory");
     }

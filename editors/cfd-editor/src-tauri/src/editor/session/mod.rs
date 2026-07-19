@@ -37,15 +37,15 @@ use coflow_runtime::{
 
 use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
 use crate::editor::settings::{
-    read_project_settings, sanitized_column_widths, sanitized_graph_fields, sanitized_record_groups,
-    write_project_settings,
+    read_project_settings, sanitized_column_widths, sanitized_graph_fields,
+    sanitized_record_groups, write_project_settings,
 };
 use crate::editor::types::{
-    BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
-    CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError,
-    EditorProjectSettings, EditorRecordGroup, FileRecords, FileTypeOption, GraphData, GraphQuery,
-    InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome,
-    WriteFieldOutcome,
+    BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit,
+    CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
+    DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, EditorProjectSettings,
+    EditorRecordGroup, FileRecords, FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome,
+    ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -598,8 +598,7 @@ impl SessionStore {
                     .queries()
                     .effective_field_write(&write.coordinate, &write.field_path)
                     .and_then(|preview| preview.old_value);
-                (old_value.as_ref() != Some(&write.new_value))
-                    .then(|| (write.clone(), old_value))
+                (old_value.as_ref() != Some(&write.new_value)).then(|| (write.clone(), old_value))
             })
             .collect::<Vec<_>>();
         if targets.is_empty() {
@@ -630,11 +629,14 @@ impl SessionStore {
                     .and_then(|applied| applied.outcome.renamed.as_ref())
                     .and_then(|(old, new)| (old == &write.coordinate).then(|| new.clone()))
                     .unwrap_or_else(|| write.coordinate.clone());
-                let new_value = session.queries().field_value(
-                    &final_coordinate.actual_type,
-                    &final_coordinate.key,
-                    &write.field_path,
-                ).cloned();
+                let new_value = session
+                    .queries()
+                    .field_value(
+                        &final_coordinate.actual_type,
+                        &final_coordinate.key,
+                        &write.field_path,
+                    )
+                    .cloned();
                 BatchWriteFieldEditOutcome {
                     coordinate: write.coordinate,
                     final_coordinate,
