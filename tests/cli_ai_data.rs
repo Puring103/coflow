@@ -36,6 +36,164 @@ fn write_project(root: &std::path::Path) {
     .expect("write config");
 }
 
+fn write_dimension_read_project(root: &std::path::Path) -> std::path::PathBuf {
+    std::fs::create_dir_all(root.join("data/dimensions/language"))
+        .expect("create dimension data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"
+            type Item {
+                @localized name: string;
+                @localized description: string;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.csv"),
+        "id,name,description\npotion,Potion,Restores health\n",
+    )
+    .expect("write records");
+    let existing_dimension = root.join("data/dimensions/language/Item_name.csv");
+    std::fs::write(
+        &existing_dimension,
+        "id,default,zh\npotion,Potion,Healing Potion\n",
+    )
+    .expect("write existing dimension source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: Item
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+    existing_dimension
+}
+
+#[test]
+fn read_only_project_commands_do_not_generate_or_rewrite_dimension_sources() {
+    let commands: &[(&str, &[&str])] = &[
+        ("check", &["check"]),
+        ("data-sources", &["data", "sources"]),
+        ("data-list", &["data", "list"]),
+        ("data-get", &["data", "get"]),
+    ];
+
+    for (name, command) in commands {
+        let root = temp_project_dir(name);
+        let _cleanup = TempDirCleanup(root.clone());
+        let existing_dimension = write_dimension_read_project(&root);
+        let before = std::fs::read(&existing_dimension).expect("read dimension source before");
+        let missing_dimension = root.join("data/dimensions/language/Item_description.csv");
+        let mut args = command
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect::<Vec<_>>();
+        args.push(root.display().to_string());
+        if *name == "data-get" {
+            args.push("Item.potion".to_string());
+        }
+
+        let output = coflow()
+            .args(&args)
+            .output()
+            .expect("run read-only command");
+        assert!(
+            output.status.success(),
+            "command {args:?}\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            std::fs::read(&existing_dimension).expect("read dimension source after"),
+            before,
+            "command {args:?} rewrote an existing dimension source"
+        );
+        assert!(
+            !missing_dimension.exists(),
+            "command {args:?} generated a missing dimension source"
+        );
+    }
+}
+
+#[test]
+fn data_write_file_check_does_not_modify_managed_dimension_sources() {
+    let root = temp_project_dir("data-write-file-dimension-check");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data/dimensions/language"))
+        .expect("create dimension data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"
+            type Item {
+                @localized name: string;
+                @localized description: string;
+            }
+        "#,
+    )
+    .expect("write schema");
+    let source = "potion: Item { name: \"Potion\", description: \"Restores health\" }\n";
+    std::fs::write(root.join("data/items.cfd"), source).expect("write records");
+    let existing_dimension = root.join("data/dimensions/language/Item_name.cfd");
+    std::fs::write(
+        &existing_dimension,
+        "potion: Item { default: \"Potion\", zh: \"Healing Potion\" }\n",
+    )
+    .expect("write existing dimension source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/items.cfd
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+    let before = std::fs::read(&existing_dimension).expect("read dimension source before");
+    let missing_dimension = root.join("data/dimensions/language/Item_description.cfd");
+
+    let output = run_stdin_command(
+        &[
+            "data",
+            "write-file",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/items.cfd",
+            "--stdin",
+            "--check",
+        ],
+        source,
+    );
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read(&existing_dimension).expect("read dimension source after"),
+        before,
+        "data write-file --check rewrote an existing dimension source"
+    );
+    assert!(
+        !missing_dimension.exists(),
+        "data write-file --check generated a missing dimension source"
+    );
+}
+
 fn write_table_project(root: &std::path::Path, fields: &str, source: &str) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
