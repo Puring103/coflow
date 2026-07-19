@@ -643,7 +643,7 @@ fn dimension_resolved_source(
     );
     ResolvedSource {
         provider_id: provider_id.to_string(),
-        location: SourceLocationSpec::Path(path.to_path_buf()),
+        location: SourceLocationSpec::new(path.to_path_buf()),
         options,
         display_name,
     }

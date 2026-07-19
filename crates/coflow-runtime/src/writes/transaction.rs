@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use coflow_api::{
-    Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec, SourceTransaction,
-    SourceTransactionCompensation, WriteContext,
+    Diagnostic, DiagnosticSet, ResolvedSource, SourceTransaction, SourceTransactionCompensation,
+    WriteContext,
 };
 
 use super::plan::MutationExecutionPlan;
@@ -49,7 +49,7 @@ impl MutationTransaction {
     ) -> Result<(), DiagnosticSet> {
         match declared {
             SourceTransaction::RuntimeSnapshot => {
-                let SourceLocationSpec::Path(path) = &source.location;
+                let path = (&source.location).path();
                 self.local.snapshot_file(path)?;
             }
             SourceTransaction::Compensation(compensation) => {
@@ -133,7 +133,7 @@ impl std::fmt::Debug for ProviderTransaction {
 }
 
 fn source_key(source: &ResolvedSource) -> String {
-    let SourceLocationSpec::Path(path) = &source.location;
+    let path = (&source.location).path();
     format!("{}:path:{}", source.provider_id, path.display())
 }
 

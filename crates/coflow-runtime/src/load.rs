@@ -1,7 +1,7 @@
 use coflow_api::{
     map_diagnostics_with_origins, origins_of, Diagnostic, DiagnosticSet,
     DimensionSourceLoadRequest, DimensionSourceSchema, ProviderRegistry, ResolvedSource,
-    SourceLoadContext, SourceLocationSpec, TableContext,
+    SourceLoadContext, TableContext,
 };
 use coflow_cft::{CftSchema, RecordKey};
 use coflow_data_model::{
@@ -781,14 +781,11 @@ fn runtime_invariant(message: impl Into<String>) -> DiagnosticSet {
 }
 
 fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
-    match &source.location {
-        SourceLocationSpec::Path(path) => {
-            let relative = path
-                .strip_prefix(&project.root_dir)
-                .unwrap_or(path.as_path());
-            path_to_slash(relative)
-        }
-    }
+    let path = source.location.path();
+    let relative = path
+        .strip_prefix(&project.root_dir)
+        .unwrap_or(path.as_path());
+    path_to_slash(relative)
 }
 
 pub(crate) fn logical_locations_from_cfd(

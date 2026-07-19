@@ -185,8 +185,7 @@ fn row_out_of_bounds(path: &Path) -> DiagnosticSet {
 }
 
 fn local_path(document: &SourceDocument) -> &Path {
-    let SourceDocument::Local(path) = document;
-    path
+    document.path()
 }
 
 /// Read the CSV, hand the mutable rows to `mutate`, then write the result

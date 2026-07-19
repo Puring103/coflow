@@ -33,7 +33,7 @@ sources:
 
 | 字段 | 说明 |
 | --- | --- |
-| `sheet` | Excel worksheet、飞书 sheet 名，或表格 provider 的逻辑表名 |
+| `sheet` | Excel worksheet 或表格 provider 的逻辑表名 |
 | `type` | CFT type 名；省略时使用 sheet 名 |
 | `key` | record key 表头列名；省略时使用 `id` / `Id` / `ID` |
 | `columns` | 表头文本到 CFT 字段名的映射 |

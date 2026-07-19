@@ -8,10 +8,9 @@ use std::sync::{Arc, Mutex};
 
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    ProviderRegistry, ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
-    SourceProviderDescriptor, SourceTransaction, SourceTransactionCompensation, SourceWriter,
-    WriteBatchFailure, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
-    WriterDescriptor,
+    ProviderRegistry, ResolvedSource, SourceLoadContext, SourceProvider, SourceProviderDescriptor,
+    SourceTransaction, SourceTransactionCompensation, SourceWriter, WriteBatchFailure,
+    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{
     CfdPathSegment, CfdValue, LoadedRecordDraft, LoadedValueDraft, RecordOrigin, SourceDocument,
@@ -115,7 +114,7 @@ impl SourceProvider for TestProvider {
             .expect("lock test provider state")
             .counts
             .loads += 1;
-        let SourceLocationSpec::Path(path) = &source.location;
+        let path = (&source.location).path();
         let key = source_record_key(source);
         let (value, origin) = if key == "local" {
             let value = std::fs::read_to_string(path)
@@ -154,7 +153,7 @@ impl SourceProvider for TestProvider {
             (
                 value,
                 RecordOrigin::Table {
-                    document: SourceDocument::Local(path.clone()),
+                    document: SourceDocument::new(path.clone()),
                     sheet: "items".to_string(),
                     row: 2,
                     id_column: 1,
@@ -262,7 +261,7 @@ impl SourceWriter for TestWriter {
             let mut state = self.state.lock().expect("lock test writer state");
             state.counts.writes += 1;
             let call = state.counts.writes;
-            let SourceLocationSpec::Path(path) = &request.source.location;
+            let path = (&request.source.location).path();
             if source_record_key(request.source) == "local" {
                 std::fs::write(path, value.to_string())
                     .map_err(|error| test_error("TEST-WRITE", error.to_string()))?;
@@ -895,7 +894,7 @@ fn has_diagnostic(report: &coflow_runtime::MutationReport, code: &str) -> bool {
 }
 
 fn source_record_key(source: &ResolvedSource) -> String {
-    let SourceLocationSpec::Path(path) = &source.location;
+    let path = (&source.location).path();
     path.file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or_default()
@@ -903,7 +902,7 @@ fn source_record_key(source: &ResolvedSource) -> String {
 }
 
 fn source_name(source: &ResolvedSource) -> String {
-    let SourceLocationSpec::Path(path) = &source.location;
+    let path = (&source.location).path();
     let key = source_record_key(source);
     if key == "local" {
         path.display().to_string()

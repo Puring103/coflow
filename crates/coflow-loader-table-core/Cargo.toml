@@ -4,7 +4,7 @@ version = "0.7.0"
 edition = "2021"
 description = "Shared schema-guided table loading core for Coflow data sources."
 license = "Apache-2.0"
-repository = "https://github.com/wtlll/ScriptForGame"
+repository = "https://github.com/Puring103/coflow"
 readme = "../../README.md"
 keywords = ["config", "game-data", "table"]
 categories = ["config", "game-development"]
@@ -17,4 +17,3 @@ workspace = true
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
 serde_json = "1"
-unicode-ident = "1"

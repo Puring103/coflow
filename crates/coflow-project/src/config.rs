@@ -137,7 +137,7 @@ impl<'de> Deserialize<'de> for SourceConfig {
             .map_err(de::Error::custom)?;
         let path = fields.remove("path");
         let path = path.ok_or_else(|| de::Error::custom("source must set `path`"))?;
-        let location = SourceLocationSpec::Path(path_value(path).map_err(de::Error::custom)?);
+        let location = SourceLocationSpec::new(path_value(path).map_err(de::Error::custom)?);
         let options = Value::Object(fields);
         Ok(Self {
             source_type,

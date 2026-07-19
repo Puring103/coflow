@@ -14,9 +14,9 @@ mod target;
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
     RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
-    RewriteRecordReferencesRequest, SourceLocationSpec, SourceWriter, SyncHeaderRequest,
-    TableAddressing, TableContext, TableManager, TableManagerDescriptor, TableOperationResult,
-    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    RewriteRecordReferencesRequest, SourceWriter, SyncHeaderRequest, TableAddressing, TableContext,
+    TableManager, TableManagerDescriptor, TableOperationResult, WriteCellRequest, WriteContext,
+    WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
 use coflow_cft::Span;
@@ -139,7 +139,7 @@ impl SourceWriter for CfdWriter {
         _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         validate_record_key(request.record_key)?;
         validate_values(request.fields.values())?;
 
@@ -246,7 +246,7 @@ impl SourceWriter for CfdWriter {
         _ctx: WriteContext<'_>,
         request: &RewriteRecordReferencesRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let (source, ast) = Self::read_or_parse(path)?;
         let mut spans = Vec::new();
         for target in request.targets {
@@ -299,7 +299,7 @@ impl SourceWriter for CfdWriter {
         _ctx: WriteContext<'_>,
         request: &ReorderRecordsRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let (source, ast) = Self::read_or_parse(path)?;
         let mut order = (0..ast.records.len()).collect::<Vec<_>>();
         match request.operation {
@@ -398,7 +398,7 @@ impl TableManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &CreateTableRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         if path.exists() {
             return Err(DiagnosticSet::one(diag(
                 "CFD-TABLE",
@@ -427,7 +427,7 @@ impl TableManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &SyncHeaderRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let (source, ast) = Self::read_or_parse(path)?;
         let old_fields = cfd_top_level_fields(&ast.records, request.actual_type);
         let added = added_columns(request.headers, &old_fields);

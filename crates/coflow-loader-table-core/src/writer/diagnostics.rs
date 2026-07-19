@@ -1,4 +1,4 @@
-use crate::cell_value::CellRenderError;
+use coflow_data_model::cell_value::CellRenderError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableWriteDiagnostics {

@@ -4,7 +4,7 @@ version = "0.7.0"
 edition = "2021"
 description = "Domain-neutral structural resource accounting for Coflow."
 license = "Apache-2.0"
-repository = "https://github.com/wtlll/ScriptForGame"
+repository = "https://github.com/Puring103/coflow"
 publish = false
 
 [lints]

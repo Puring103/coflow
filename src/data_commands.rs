@@ -1,4 +1,5 @@
 use crate::diagnostics::{cli_error, cli_file_error};
+use crate::write_file::write_report_human;
 use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
 use coflow_project::Project;
 use coflow_runtime::{
@@ -7,10 +8,9 @@ use coflow_runtime::{
     WriteProjectSession,
 };
 use output::{
-    file_error_report, write_data_write_file_human, write_file_report_human, write_get_human,
-    write_json, write_list_human, write_patch_human, write_sources_human,
+    file_error_report, write_file_report_human, write_get_human, write_json, write_list_human,
+    write_patch_human, write_sources_human,
 };
-use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -31,48 +31,11 @@ pub struct DataGetOptions {
     pub human: bool,
 }
 
-#[derive(Debug)]
-pub struct DataWriteFileOptions {
-    pub file: String,
-    pub input: DataWriteInput,
-    pub mode: DataWriteMode,
-    pub check: DataWriteCheck,
-    pub output: DataWriteOutput,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DataWriteInput {
-    Stdin,
-    Missing,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DataWriteMode {
-    Write,
-    DryRun,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DataWriteCheck {
-    Run,
-    Skip,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DataWriteOutput {
-    Json,
-    Human,
-}
-
-#[derive(Debug, Serialize)]
-pub struct DataWriteFileReport {
-    pub file: String,
-    pub written: bool,
-    pub dry_run: bool,
-    pub changed: bool,
-    pub check_ok: Option<bool>,
-    pub diagnostics: Vec<FlatDiagnostic>,
-}
+pub(crate) use crate::write_file::{
+    WriteCheck as DataWriteCheck, WriteFileOptions as DataWriteFileOptions,
+    WriteFileReport as DataWriteFileReport, WriteInput as DataWriteInput,
+    WriteMode as DataWriteMode, WriteOutput as DataWriteOutput,
+};
 
 #[derive(Debug)]
 pub struct DataPatchInput {
@@ -372,7 +335,7 @@ pub fn write_file(
     let ok = report.check_ok.unwrap_or(true);
     match options.output {
         DataWriteOutput::Json => write_json(&report)?,
-        DataWriteOutput::Human => write_data_write_file_human(&report)?,
+        DataWriteOutput::Human => write_report_human(&report)?,
     }
     Ok(ok)
 }

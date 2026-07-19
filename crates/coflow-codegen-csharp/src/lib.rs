@@ -98,24 +98,6 @@ pub fn generate_csharp(
     data_format: CsharpDataFormat,
     database_templates: &CsharpDatabaseTemplates,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_database_templates(schema, options, data_format, database_templates)
-}
-
-/// Generates C# files using a caller-provided database loader template set.
-///
-/// Format-specific crates use this to keep JSON and `MessagePack` templates out
-/// of the shared C# codegen core.
-///
-/// # Errors
-///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
-pub fn generate_csharp_with_database_templates(
-    schema: &CftSchema,
-    options: &CsharpCodegenOptions,
-    data_format: CsharpDataFormat,
-    database_templates: &CsharpDatabaseTemplates,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     generate_csharp_with_id_as_enum_variants(
         schema,
         options,
@@ -167,24 +149,6 @@ const MESSAGEPACK_DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTe
     partials: &[],
 };
 
-/// Generates C# type definitions and a Newtonsoft.Json based folder loader.
-///
-/// # Errors
-///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
-pub fn generate_csharp_json(
-    schema: &CftSchema,
-    options: &CsharpCodegenOptions,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_database_templates(
-        schema,
-        options,
-        CsharpDataFormat::Json,
-        &JSON_DATABASE_TEMPLATES,
-    )
-}
-
 /// Generates C# JSON loader files and includes data-driven `@idAsEnum`
 /// variants.
 ///
@@ -205,24 +169,6 @@ pub fn generate_csharp_json_with_id_as_enum_variants(
         &JSON_DATABASE_TEMPLATES,
         id_as_enum_variants,
         non_empty_tables,
-    )
-}
-
-/// Generates C# type definitions and a `MessagePack` based folder loader.
-///
-/// # Errors
-///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
-pub fn generate_csharp_messagepack(
-    schema: &CftSchema,
-    options: &CsharpCodegenOptions,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_database_templates(
-        schema,
-        options,
-        CsharpDataFormat::MessagePack,
-        &MESSAGEPACK_DATABASE_TEMPLATES,
     )
 }
 

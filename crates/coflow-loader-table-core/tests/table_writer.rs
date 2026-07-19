@@ -25,7 +25,7 @@ fn compile_schema(source: &str) -> CftSchema {
 
 fn table_origin(field_columns: BTreeMap<Vec<String>, usize>) -> RecordOrigin {
     RecordOrigin::Table {
-        document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+        document: SourceDocument::new(PathBuf::from("data.xlsx")),
         sheet: "Items".to_string(),
         row: 2,
         id_column: 1,
@@ -35,7 +35,7 @@ fn table_origin(field_columns: BTreeMap<Vec<String>, usize>) -> RecordOrigin {
 
 fn table_origin_at(row: usize) -> RecordOrigin {
     RecordOrigin::Table {
-        document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+        document: SourceDocument::new(PathBuf::from("data.xlsx")),
         sheet: "Items".to_string(),
         row,
         id_column: 1,
@@ -62,7 +62,7 @@ fn move_record_plan_preserves_source_and_anchor_guards() {
     assert_eq!(
         plan,
         TableWritePlan::MoveRowBefore(TableMoveRowBefore {
-            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            document: SourceDocument::new(PathBuf::from("data.xlsx")),
             sheet: "Items".to_string(),
             row: 2,
             id_column: 1,
@@ -204,7 +204,7 @@ fn nested_collection_edit_rewrites_owning_cell_value() {
     assert_eq!(
         plan,
         TableWritePlan::SetCells {
-            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            document: SourceDocument::new(PathBuf::from("data.xlsx")),
             sheet: "Items".to_string(),
             id_column: 1,
             expected_key: "sword".to_string(),
@@ -270,7 +270,7 @@ fn nested_dict_entry_edit_rewrites_owning_cell_value() {
     assert_eq!(
         plan,
         TableWritePlan::SetCells {
-            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            document: SourceDocument::new(PathBuf::from("data.xlsx")),
             sheet: "Items".to_string(),
             id_column: 1,
             expected_key: "sword".to_string(),
@@ -341,7 +341,7 @@ fn replacing_ref_inside_array_rewrites_owning_cell() {
     assert_eq!(
         plan,
         TableWritePlan::SetCells {
-            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            document: SourceDocument::new(PathBuf::from("data.xlsx")),
             sheet: "Items".to_string(),
             id_column: 1,
             expected_key: "drop_1".to_string(),
@@ -449,7 +449,7 @@ fn insert_record_plan_renders_id_and_known_fields() {
     ]);
 
     let plan = plan_insert_record(&TableInsertRecord {
-        document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+        document: SourceDocument::new(PathBuf::from("data.xlsx")),
         sheet: "Items",
         record_key: "sword",
         actual_type: "Item",
@@ -463,7 +463,7 @@ fn insert_record_plan_renders_id_and_known_fields() {
     assert_eq!(
         plan,
         TableWritePlan::AppendRow(coflow_loader_table_core::writer::TableAppendRow {
-            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            document: SourceDocument::new(PathBuf::from("data.xlsx")),
             sheet: "Items".to_string(),
             values: vec![
                 (1, "sword".to_string()),

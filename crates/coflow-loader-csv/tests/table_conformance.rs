@@ -28,7 +28,7 @@ fn temp_csv(name: &str) -> PathBuf {
 fn csv_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "csv".to_string(),
-        location: SourceLocationSpec::Path(path.to_path_buf()),
+        location: SourceLocationSpec::new(path.to_path_buf()),
         options: CsvLoader
             .decode_options(&serde_json::Value::Null)
             .expect("decode csv options"),
@@ -38,7 +38,7 @@ fn csv_source(path: &Path) -> ResolvedSource {
 
 fn csv_origin(path: &Path, row: usize) -> RecordOrigin {
     RecordOrigin::Table {
-        document: SourceDocument::Local(path.to_path_buf()),
+        document: SourceDocument::new(path.to_path_buf()),
         sheet: "Items".to_string(),
         row,
         id_column: 1,

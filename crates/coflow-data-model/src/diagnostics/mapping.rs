@@ -124,17 +124,18 @@ impl RecordOrigin {
 
 /// A local source document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SourceDocument {
-    Local(PathBuf),
-}
+#[serde(transparent)]
+pub struct SourceDocument(PathBuf);
 
 impl SourceDocument {
     #[must_use]
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self(path.into())
+    }
+
+    #[must_use]
     pub const fn path(&self) -> &PathBuf {
-        match self {
-            Self::Local(path) => path,
-        }
+        &self.0
     }
 }
 

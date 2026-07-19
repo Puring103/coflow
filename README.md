@@ -118,7 +118,7 @@ sources:
           Skill ID: id
 ```
 
-`sources` 支持 `path`（本地文件或目录）或 `url`（远端 source）；`type` 是可选的 provider id，省略时按后缀推断。目录源可同时包含 Excel、CSV 和 CFD 文件；`sheets` 只作用于 Excel。
+`sources` 使用 `path` 指向本地文件或目录；`type` 是可选的 provider id，省略时按后缀推断。目录源可同时包含 Excel、CSV 和 CFD 文件；`sheets` 只作用于 Excel。
 
 `outputs.data.type` 支持 `json` / `messagepack`；`outputs.code.type` 目前支持 `csharp`。`outputs.*` 除 `type`、`dir` 外的字段会作为 provider options 传入（例如 C# codegen 的 `namespace`）。
 

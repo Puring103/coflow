@@ -3,9 +3,9 @@
 use coflow::commands::{check_project, CommandOutcome};
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    ProviderRegistry, ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
-    SourceProviderDescriptor, SourceWriter, WriteCellRequest, WriteContext, WriteOutcome,
-    WriterCapabilities, WriterDescriptor,
+    ProviderRegistry, ResolvedSource, SourceLoadContext, SourceProvider, SourceProviderDescriptor,
+    SourceWriter, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
+    WriterDescriptor,
 };
 use coflow_data_model::{LoadedRecordDraft, LoadedValueDraft, RecordOrigin, SourceDocument};
 use coflow_project::Project;
@@ -342,7 +342,7 @@ impl SourceProvider for FakeLocalFailLoader {
         _ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &source.location;
+        let path = source.location.path();
         let mut field_columns = BTreeMap::new();
         field_columns.insert(vec!["item".to_string()], 2);
         Ok(LoadedSource {
@@ -352,7 +352,7 @@ impl SourceProvider for FakeLocalFailLoader {
                 [("item", LoadedValueDraft::record_ref("sword"))],
             )
             .with_origin(RecordOrigin::Table {
-                document: SourceDocument::Local(path.clone()),
+                document: SourceDocument::new(path.clone()),
                 sheet: "Bundle".to_string(),
                 row: 1,
                 id_column: 1,

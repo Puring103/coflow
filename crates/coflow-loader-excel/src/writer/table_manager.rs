@@ -1,7 +1,7 @@
 use calamine::Reader;
 use coflow_api::{
-    CreateTableRequest, DiagnosticSet, SourceLocationSpec, SyncHeaderRequest, TableAddressing,
-    TableContext, TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
+    CreateTableRequest, DiagnosticSet, SyncHeaderRequest, TableAddressing, TableContext,
+    TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
 };
 use coflow_loader_table_core::writer::HeaderReconciliationPlan;
 use coflow_loader_table_core::TableSheetConfig;
@@ -64,7 +64,7 @@ impl TableManager for ExcelWriter {
         _ctx: TableContext<'_>,
         request: &CreateTableRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         ensure_writable_excel_path(path, "create tables")?;
         if path.exists() {
             append_excel_sheet(path, request.sheet, request.headers)?;
@@ -92,7 +92,7 @@ impl TableManager for ExcelWriter {
         _ctx: TableContext<'_>,
         request: &SyncHeaderRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         ensure_writable_excel_path(path, "sync headers")?;
         let sheet = request.sheet.unwrap_or(request.actual_type);
         let mut created_sheet = false;

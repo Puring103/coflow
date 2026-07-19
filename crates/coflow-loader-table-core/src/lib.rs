@@ -15,7 +15,6 @@
 )]
 #![allow(clippy::missing_const_for_fn)]
 
-pub mod cell_value;
 mod options;
 mod table;
 pub mod writer;

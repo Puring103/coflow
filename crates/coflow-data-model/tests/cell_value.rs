@@ -8,11 +8,11 @@
 )]
 
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
+use coflow_data_model::cell_value::{
+    parse_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
+};
 use coflow_data_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdValue, LoadedDictKeyDraft, LoadedValueDraft,
-};
-use coflow_loader_table_core::cell_value::{
-    parse_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
 };
 use std::collections::BTreeSet;
 

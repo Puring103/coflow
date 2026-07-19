@@ -1,7 +1,7 @@
 //! Writer that persists field edits back to local `.csv` files.
 //!
 //! `CsvWriter` is the [`SourceWriter`] for [`coflow_data_model::RecordOrigin::Table`] origins whose
-//! document is `SourceDocument::Local` and whose backing file is a CSV. Each
+//! document contains a local path and whose backing file is a CSV. Each
 //! call re-reads the file, applies the planned mutation in-memory, and writes
 //! the whole document back. The CSV format has no sheet concept, so the plan's
 //! `sheet` field is treated as a label and not validated against the file.
@@ -12,9 +12,8 @@ mod table_manager;
 
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    ReorderRecordsOperation, ReorderRecordsRequest, RewriteRecordReferencesRequest,
-    SourceLocationSpec, SourceWriter, WriteCellRequest, WriteContext, WriteOutcome,
-    WriterCapabilities, WriterDescriptor,
+    ReorderRecordsOperation, ReorderRecordsRequest, RewriteRecordReferencesRequest, SourceWriter,
+    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{
@@ -85,7 +84,7 @@ impl SourceWriter for CsvWriter {
         _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         // CSV has exactly one sheet (the file itself). If the caller picked
         // a sheet name, accept it as a label; otherwise fall back to the
         // file stem so the resulting plan's `sheet` field is non-empty.
@@ -98,7 +97,7 @@ impl SourceWriter for CsvWriter {
             request.schema,
         )?;
         let plan = plan_insert_record(&TableInsertRecord {
-            document: SourceDocument::Local(path.clone()),
+            document: SourceDocument::new(path.clone()),
             sheet,
             record_key: request.record_key,
             actual_type: request.actual_type,
@@ -141,7 +140,7 @@ impl SourceWriter for CsvWriter {
         _ctx: WriteContext<'_>,
         request: &DeleteRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         ensure_table_origin_path(request.origin, path)?;
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
@@ -162,7 +161,7 @@ impl SourceWriter for CsvWriter {
         _ctx: WriteContext<'_>,
         request: &ReorderRecordsRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let operation = match request.operation {
             ReorderRecordsOperation::Swap { first, second } => {
                 if first.actual_type != second.actual_type {
@@ -209,18 +208,12 @@ impl SourceWriter for CsvWriter {
 
 fn ensure_table_origin_path(origin: &RecordOrigin, expected: &Path) -> Result<(), DiagnosticSet> {
     match origin {
-        RecordOrigin::Table {
-            document: SourceDocument::Local(path),
-            ..
-        } if path == expected => Ok(()),
-        RecordOrigin::Table {
-            document: SourceDocument::Local(path),
-            ..
-        } => Err(DiagnosticSet::one(diag(
+        RecordOrigin::Table { document, .. } if document.path() == expected => Ok(()),
+        RecordOrigin::Table { document, .. } => Err(DiagnosticSet::one(diag(
             "CSV-WRITE",
             format!(
                 "record origin `{}` does not match source `{}`",
-                path.display(),
+                document.path().display(),
                 expected.display()
             ),
         ))),

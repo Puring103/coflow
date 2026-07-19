@@ -1,6 +1,6 @@
 use coflow_api::{
-    CreateTableRequest, DiagnosticSet, SourceLocationSpec, SyncHeaderRequest, TableAddressing,
-    TableContext, TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
+    CreateTableRequest, DiagnosticSet, SyncHeaderRequest, TableAddressing, TableContext,
+    TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
 };
 use coflow_loader_table_core::writer::HeaderReconciliationPlan;
 use coflow_loader_table_core::TableSheetConfig;
@@ -60,7 +60,7 @@ impl TableManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &CreateTableRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         if path.exists() {
             return Err(DiagnosticSet::one(diag(
                 "CSV-TABLE",
@@ -95,7 +95,7 @@ impl TableManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &SyncHeaderRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let text = fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-TABLE",

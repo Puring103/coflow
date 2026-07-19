@@ -32,8 +32,8 @@ pub use writer::CsvWriter;
 
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext,
-    SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceResolveContext,
+    ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext, SourceProvider,
+    SourceProviderDescriptor, SourceResolveContext,
 };
 use options::{csv_sheets, csv_source_options, decode_csv_source_options};
 use serde_json::Value;
@@ -74,14 +74,13 @@ impl SourceProvider for CsvLoader {
         if source.source_type == Some(CSV_LOADER_DESCRIPTOR.id) {
             return ProbeResult::certain();
         }
-        if matches!(
-            source.location,
-            SourceLocationSpec::Path(path)
-                if path
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .is_some_and(|ext| CSV_LOADER_DESCRIPTOR.extensions.contains(&ext))
-        ) {
+        if source
+            .location
+            .path()
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| CSV_LOADER_DESCRIPTOR.extensions.contains(&ext))
+        {
             ProbeResult::likely()
         } else {
             ProbeResult::none()
@@ -97,7 +96,7 @@ impl SourceProvider for CsvLoader {
         _ctx: SourceResolveContext<'_>,
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &source.location;
+        let path = (&source.location).path();
         if is_csv_path(path) {
             let mut resolved = source.clone();
             resolved.provider_id = CSV_LOADER_DESCRIPTOR.id.to_string();
@@ -118,7 +117,7 @@ impl SourceProvider for CsvLoader {
         ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let SourceLocationSpec::Path(file) = &source.location;
+        let file = (&source.location).path();
         let sheets = csv_sheets(csv_source_options(source)?);
         let csv_source = CsvSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[csv_source])

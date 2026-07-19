@@ -10,9 +10,19 @@ mod options;
 pub use options::{DecodedOutputOptions, DecodedSourceOptions};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SourceLocationSpec {
-    Path(PathBuf),
+#[serde(transparent)]
+pub struct SourceLocationSpec(PathBuf);
+
+impl SourceLocationSpec {
+    #[must_use]
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self(path.into())
+    }
+
+    #[must_use]
+    pub const fn path(&self) -> &PathBuf {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

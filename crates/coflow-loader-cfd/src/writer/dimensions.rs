@@ -2,8 +2,8 @@ use coflow_api::{
     byte_range, DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest,
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    RewriteDimensionRecordRequest, RewriteDimensionReferencesRequest, SourceLocationSpec,
-    TableContext, WriteDimensionValueRequest,
+    RewriteDimensionRecordRequest, RewriteDimensionReferencesRequest, TableContext,
+    WriteDimensionValueRequest,
 };
 use coflow_cfd::ast::CfdBlockEntry;
 use coflow_cfd::parse_cfd;
@@ -33,7 +33,7 @@ impl DimensionSourceManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &DimensionSourceLoadRequest<'_>,
     ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let text = std::fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CFD-DIMENSION",
@@ -143,7 +143,7 @@ impl DimensionSourceManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &WriteDimensionValueRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let variants = request
             .schema
             .dimension
@@ -184,7 +184,7 @@ impl DimensionSourceManager for CfdWriter {
         if request.schema.source_type.is_singleton {
             return Ok(DimensionSourceResult::default());
         }
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let variants = request
             .schema
             .dimension
@@ -216,7 +216,7 @@ impl DimensionSourceManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &RewriteDimensionReferencesRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let (source, ast) = CfdWriter::read_or_parse(path)?;
         let physical_key = if request.schema.source_type.is_singleton {
             request.schema.source_field.name.as_str()
@@ -274,7 +274,7 @@ impl DimensionSourceManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &DimensionSourceRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let expected_keys = request
             .entries
             .iter()

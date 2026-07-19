@@ -47,7 +47,7 @@ flowchart TD
 - `outputs` 声明导出和代码生成目标。
 - `dimensions` 声明维度配置，例如 `dimensions.language`。
 
-source 必须且只能设置 `path` 或 `url` 之一。source 的通用字段是 `type`、`path`、`url`，其他字段会作为 Provider options 传入 loader。
+source 必须设置本地 `path`。source 的通用字段是 `type` 和 `path`，其他字段会作为 Provider options 传入 loader。
 
 output 必须设置 `type` 和 `dir`，其他字段会作为 Provider options 传入 exporter 或 codegen。
 
@@ -101,7 +101,7 @@ Schema 编译阶段会处理：
 DataModel 和 CFT `check {}` 诊断。
 
 `data patch` 通过 write capability 执行整批 mutation transaction。runtime 先解析批内依赖并完成
-provider preflight，再为本地来源保存字节快照、为远程来源取得补偿句柄；全部 writer I/O 完成后只重建一次
+provider preflight，再为每个本地来源保存字节快照或取得 provider-owned 补偿句柄；全部 writer I/O 完成后只重建一次
 候选 generation。writer、加载、DataModel 或 transaction commit 失败会恢复来源并保留旧 generation，
 此时 `applied` 为空且 revision 不变。候选 generation 只有业务 `CHECK` 诊断时仍可发布，调用方根据
 `check_ok` 和 `diagnostics` 继续修正；一次成功批次只推进一次 revision。成功报告会保留每个
@@ -125,7 +125,6 @@ Source resolve 由 `coflow-runtime` 通过 `ProviderRegistry` 执行。
 - source 显式写 `type` 时，使用对应 Provider。
 - 本地单文件未写 `type` 时，通过扩展名和 Provider probe 选择。
 - 本地目录未写 `type` 时，runtime 统一安全遍历目录，再对每个文件执行 Provider probe。
-- 远端 URL 未写 `type` 时，通过 URI scheme 或 Provider probe 选择。
 - 多个 Provider 同等匹配时，应显式设置 `type`。
 
 Resolve 之后得到具体 `ResolvedSource`。例如一个目录 source 可能展开为多个 Excel、CSV 或 CFD 文件。

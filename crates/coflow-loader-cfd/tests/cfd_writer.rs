@@ -43,7 +43,7 @@ fn compile_schema(source: &str) -> CftSchema {
 fn empty_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "cfd".to_string(),
-        location: SourceLocationSpec::Path(path.to_path_buf()),
+        location: SourceLocationSpec::new(path.to_path_buf()),
         options: CfdLoader
             .decode_options(&serde_json::Value::Null)
             .expect("decode cfd options"),
