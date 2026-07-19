@@ -57,6 +57,20 @@ export function moveRecordOntoRecord(
   return moveRecordsOntoRecord(groups, [source], target, newGroupId, newGroupName)
 }
 
+export function createRecordGroup(
+  groups: readonly EditorRecordGroup[],
+  records: readonly RecordCoordinate[],
+  newGroupId: string,
+  newGroupName: string,
+): EditorRecordGroup[] {
+  const uniqueRecords = uniqueCoordinates(records)
+  if (uniqueRecords.length < 2) return [...groups]
+  return [
+    ...removeRecordsFromGroups(groups, uniqueRecords),
+    { id: newGroupId, name: newGroupName, color: null, records: uniqueRecords },
+  ]
+}
+
 export function moveRecordsOntoRecord(
   groups: readonly EditorRecordGroup[],
   sources: readonly RecordCoordinate[],

@@ -75,6 +75,7 @@ import {
   type RecordSelectionMode,
 } from './state/editorSelection'
 import {
+  createRecordGroup,
   moveRecordsOntoRecord,
   moveRecordsToGroup,
   nextRecordGroupName,
@@ -1335,6 +1336,20 @@ export default function App() {
       ),
     )
   }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const createManualRecordGroup = useCallback((records: readonly RecordCoordinate[]) => {
+    if (!activeFile || !activeType) return
+    recordGroupIdSequence.current += 1
+    saveRecordGroups(
+      activeFile,
+      activeType,
+      createRecordGroup(
+        recordGroups,
+        records,
+        `record-group-${Date.now().toString(36)}-${recordGroupIdSequence.current.toString(36)}`,
+        nextRecordGroupName(recordGroups),
+      ),
+    )
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
   const dropRecordIntoGroup = useCallback((sources: readonly RecordCoordinate[], groupId: string) => {
     if (!activeFile || !activeType) return
     saveRecordGroups(activeFile, activeType, moveRecordsToGroup(recordGroups, sources, groupId))
@@ -2280,6 +2295,7 @@ export default function App() {
                     collapsedGroupKeys={collapsedRecordGroups}
                     onToggleGroup={toggleRecordGroup}
                     onDropRecordOntoRecord={dropRecordOntoRecord}
+                    onCreateGroup={createManualRecordGroup}
                     onDropRecordIntoGroup={dropRecordIntoGroup}
                     onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
                     onRenameGroup={renameManualRecordGroup}

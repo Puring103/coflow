@@ -3,6 +3,7 @@ import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import {
+  createRecordGroup,
   moveRecordOntoRecord,
   moveRecordsOntoRecord,
   moveRecordsToGroup,
@@ -32,6 +33,17 @@ const group = (id: string, ...keys: string[]): EditorRecordGroup => ({
 })
 
 describe('manual record groups', () => {
+  it('creates a new group from selected records even when they were grouped before', () => {
+    expect(createRecordGroup(
+      [group('old', 'a', 'b', 'c')],
+      [coordinate('a'), coordinate('b')],
+      'new',
+      'Selected',
+    )).toEqual([
+      { id: 'new', name: 'Selected', color: null, records: [coordinate('a'), coordinate('b')] },
+    ])
+  })
+
   it('creates a group by dropping one ungrouped record onto another', () => {
     expect(moveRecordOntoRecord([], coordinate('b'), coordinate('a'), 'g1', '新分组')).toEqual([
       { id: 'g1', name: '新分组', color: null, records: [coordinate('a'), coordinate('b')] },

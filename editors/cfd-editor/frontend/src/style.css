@@ -2161,6 +2161,42 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   color: var(--text-mute);
   font-family: 'JetBrains Mono', monospace;
 }
+.table-context-menu {
+  min-width: 196px;
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+}
+.ctx-item-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+}
+.ctx-group-targets {
+  padding: 3px 0 2px;
+  border-top: 1px solid var(--border);
+}
+.ctx-group-target { padding-left: 20px; }
+.ctx-group-color {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--bg-4);
+}
+.ctx-group-color.has-color {
+  border-color: color-mix(in srgb, var(--record-group-color) 70%, var(--border-strong));
+  background: var(--record-group-color);
+}
+.ctx-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ctx-danger { color: var(--red); }
 .ctx-danger:hover { background: rgba(217, 122, 122, 0.12); }
 

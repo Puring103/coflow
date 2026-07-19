@@ -18,6 +18,7 @@ import type { RecordRow } from '../bindings/RecordRow'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import {
   coordinateId,
+  cellDeclaredType,
   cellEnumType,
   cellNullable,
   cellReadOnly,
@@ -75,6 +76,7 @@ interface Props {
   collapsedGroupKeys?: ReadonlySet<string>
   onToggleGroup?: (groupKey: string) => void
   onDropRecordOntoRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
+  onCreateGroup?: (records: readonly RecordCoordinate[]) => void
   onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
   onDropRecordIntoUngrouped?: (sources: readonly RecordCoordinate[]) => void
   onRenameGroup?: (groupId: string, name: string) => void
@@ -124,8 +126,16 @@ type TableDisplayItem =
   | { kind: 'ungrouped'; records: RecordRow[] }
   | { kind: 'row'; row: TanStackRow<RecordRow>; group?: EditorRecordGroup }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
+interface TableContextMenu {
+  x: number
+  y: number
+  row: RecordRow
+  records: RecordCoordinate[]
+  showGroupTargets: boolean
+}
+
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+  const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
   const [cellNotice, setCellNotice] = useState<string | null>(null)
@@ -461,6 +471,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   refTargetType={cellRefTargetType(f)}
                   enumType={cellEnumType(f)}
                   nullable={cellNullable(f)}
+                  declaredType={cellDeclaredType(f)}
                   onCommit={cellEditable && writeFn ? next => writeFn(row.original.coordinate, [fieldPathField(name)], next) : undefined}
                   onEditingFinished={() => tableScrollRef.current?.focus({ preventScroll: true })}
                 />
@@ -656,6 +667,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [contextMenu])
+
+  const contextMenuCanAddToGroup = contextMenu !== null && (
+    ((recordGroups?.length ?? 0) > 0 && !!onDropRecordIntoGroup)
+    || (contextMenu.records.length > 1 && !!onCreateGroup)
+  )
 
   return (
     <div
@@ -975,7 +991,25 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     style={recordGroupColorStyle(item.group?.color)}
                     onContextMenu={e => {
                       e.preventDefault()
-                      setContextMenu({ x: e.clientX, y: e.clientY, row: row.original })
+                      const clickedIsSelected = selection?.kind === 'record'
+                        && selection.filePath === data.file_path
+                        && selection.coordinates.some(coordinate => sameCoordinate(
+                          coordinate,
+                          row.original.coordinate,
+                        ))
+                      const records = clickedIsSelected
+                        ? [...selection.coordinates]
+                        : [row.original.coordinate]
+                      if (!clickedIsSelected) {
+                        onSelectRecord?.(row.original.coordinate, 'replace', visibleCoordinates)
+                      }
+                      setContextMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        row: row.original,
+                        records,
+                        showGroupTargets: false,
+                      })
                     }}
                   >
                     {row.getVisibleCells().map(cell => {
@@ -1001,6 +1035,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           style={{ width: cell.column.getSize() }}
                           aria-selected={selected || undefined}
                           onMouseDown={e => {
+                            if (e.button !== 0) return
                             // Runs before native selects open, so the inspector
                             // follows the cell even when its editor consumes click.
                             e.stopPropagation()
@@ -1065,7 +1100,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
       {contextMenu && (
         <div
-          className="context-menu"
+          className="context-menu table-context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={e => e.stopPropagation()}
           role="menu"
@@ -1074,7 +1109,73 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             <Icon name="record" size={13} aria-hidden />
             跳转到记录视图
           </div>
-          {!readOnly && data.capabilities.can_edit_key && onRenameRecord && (
+          {contextMenuCanAddToGroup && (<>
+            <div className="ctx-sep" />
+            <button
+              type="button"
+              className="ctx-item"
+              role="menuitem"
+              aria-expanded={contextMenu.showGroupTargets}
+              onClick={() => setContextMenu(current => current
+                ? { ...current, showGroupTargets: !current.showGroupTargets }
+                : null)}
+            >
+              <Icon name="plus" size={13} aria-hidden />
+              添加到分组
+              <span className="ctx-item-tail">
+                {contextMenu.records.length > 1 && <span>{contextMenu.records.length} 条</span>}
+                <Icon name={contextMenu.showGroupTargets ? 'chevron-down' : 'chevron-right'} size={12} aria-hidden />
+              </span>
+            </button>
+            {contextMenu.showGroupTargets && (
+              <div className="ctx-group-targets" role="group" aria-label="选择分组">
+                {contextMenu.records.length > 1 && onCreateGroup && (
+                  <button
+                    type="button"
+                    className="ctx-item ctx-group-target"
+                    role="menuitem"
+                    onClick={() => {
+                      const records = contextMenu.records
+                      setContextMenu(null)
+                      onCreateGroup(records)
+                    }}
+                  >
+                    <Icon name="plus" size={13} aria-hidden />
+                    新建分组
+                  </button>
+                )}
+                {onDropRecordIntoGroup && recordGroups?.map(group => {
+                  const alreadyInGroup = contextMenu.records.every(coordinate => (
+                    group.records.some(member => sameCoordinate(member, coordinate))
+                  ))
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      className="ctx-item ctx-group-target"
+                      role="menuitem"
+                      disabled={alreadyInGroup}
+                      title={alreadyInGroup ? '所选记录已在此分组中' : undefined}
+                      onClick={() => {
+                        const records = contextMenu.records
+                        setContextMenu(null)
+                        onDropRecordIntoGroup(records, group.id)
+                      }}
+                    >
+                      <span
+                        className={`ctx-group-color${group.color ? ' has-color' : ''}`}
+                        style={recordGroupColorStyle(group.color)}
+                        aria-hidden
+                      />
+                      <span className="ctx-group-name">{group.name}</span>
+                      <span className="ctx-shortcut">{group.records.length}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </>)}
+          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_edit_key && onRenameRecord && (
             <div className="ctx-item" role="menuitem" onClick={async () => {
               const key = recordKey(contextMenu.row)
               const next = window.prompt('重命名 Key', key)?.trim()
@@ -1087,7 +1188,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               重命名 Key
             </div>
           )}
-          {!readOnly && data.capabilities.can_delete_record && onDeleteRecord && (
+          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_delete_record && onDeleteRecord && (
             <div className="ctx-item ctx-danger" role="menuitem" onClick={async () => {
               const key = recordKey(contextMenu.row)
               const coordinate = contextMenu.row.coordinate
@@ -1271,7 +1372,7 @@ function CellSyntaxEditor({
 }
 
 function EditableCell({
-  value, label, editable, refTargetType, enumType, nullable, onCommit, onEditingFinished,
+  value, label, editable, refTargetType, enumType, nullable, declaredType, onCommit, onEditingFinished,
 }: {
   value: FieldValue
   label?: string
@@ -1279,6 +1380,7 @@ function EditableCell({
   refTargetType?: string
   enumType?: string
   nullable?: boolean
+  declaredType?: string
   onCommit?: (next: FieldValue) => void
   onEditingFinished?: () => void
 }) {
@@ -1358,7 +1460,7 @@ function EditableCell({
       } : undefined}
       title={canEdit ? '双击编辑' : undefined}
     >
-      <DataCardCompact value={value} label={label} />
+      <DataCardCompact value={value} label={label} declaredType={declaredType} surface="table-cell" />
     </div>
   )
 }
