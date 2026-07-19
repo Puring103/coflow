@@ -12,6 +12,13 @@ import { DimensionTableView } from './components/DimensionTableView'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import {
+  loadLocalReadPlugin,
+  restoreLocalReadPlugins,
+  setReadPluginEnabled,
+  unloadLocalReadPlugin,
+  useReadPluginSettings,
+} from './plugins'
+import {
   MOCK_PROJECT,
   MOCK_FILE_RECORDS,
   MOCK_GRAPH,
@@ -180,6 +187,10 @@ function projectGraphRows(
 }
 
 export default function App() {
+  const pluginSettings = useReadPluginSettings()
+  const restoredPlugins = useRef(false)
+  const [pluginLoadBusy, setPluginLoadBusy] = useState(false)
+  const [pluginLoadError, setPluginLoadError] = useState<string | null>(null)
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
   useEffect(() => {
     const suppressBrowserMenu = (event: MouseEvent) => event.preventDefault()
@@ -222,10 +233,10 @@ export default function App() {
   // once the file data lands, the effect below upgrades the route to
   // `preferredView` if that's not what we currently show.
   const [preferredView, setPreferredView] = useState<'table' | 'record' | 'graph'>('table')
-  const [activePane, setActivePane] = useState<'files' | 'search' | 'ai'>(() => {
+  const [activePane, setActivePane] = useState<'files' | 'search' | 'extensions' | 'ai'>(() => {
     try {
       const v = localStorage.getItem('cfd-editor-active-pane')
-      return v === 'search' || v === 'ai' ? v : 'files'
+      return v === 'search' || v === 'extensions' || v === 'ai' ? v : 'files'
     } catch { return 'files' }
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -241,6 +252,35 @@ export default function App() {
     window.addEventListener('mousedown', onClick)
     return () => window.removeEventListener('mousedown', onClick)
   }, [settingsOpen])
+  useEffect(() => {
+    if (!api.isTauri || restoredPlugins.current) return
+    restoredPlugins.current = true
+    api.listFrontendPlugins().then(restoreLocalReadPlugins).then(errors => {
+      if (errors.length > 0) setPluginLoadError(`部分插件未加载：${errors.join('; ')}`)
+    })
+  }, [])
+  const loadPluginFromSettings = useCallback(async () => {
+    const manifestPath = await api.pickFrontendPluginManifest()
+    if (!manifestPath) return
+    setPluginLoadBusy(true)
+    setPluginLoadError(null)
+    try {
+      await loadLocalReadPlugin(await api.installFrontendPlugin(manifestPath))
+    } catch (error) {
+      setPluginLoadError(`加载插件失败：${errorMessage(error)}`)
+    } finally {
+      setPluginLoadBusy(false)
+    }
+  }, [])
+  const uninstallPluginFromSettings = useCallback(async (id: string) => {
+    setPluginLoadError(null)
+    try {
+      await api.uninstallFrontendPlugin(id)
+      unloadLocalReadPlugin(id)
+    } catch (error) {
+      setPluginLoadError(`卸载插件失败：${errorMessage(error)}`)
+    }
+  }, [])
   const [tabOverflowOpen, setTabOverflowOpen] = useState(false)
   const [tabsOverflow, setTabsOverflow] = useState(false)
   const tabScrollRef = useRef<HTMLDivElement>(null)
@@ -1878,6 +1918,15 @@ export default function App() {
             <Icon name="search" size={20} />
           </button>
           <button
+            className={`activity-btn${activePane === 'extensions' ? ' active' : ''}`}
+            title="扩展"
+            aria-label="扩展"
+            aria-pressed={activePane === 'extensions'}
+            onClick={() => setActivePane('extensions')}
+          >
+            <Icon name="extensions" size={20} />
+          </button>
+          <button
             className={`activity-btn${activePane === 'ai' ? ' active' : ''}`}
             title="AI 助手"
             aria-label="AI 助手"
@@ -1958,6 +2007,44 @@ export default function App() {
                 </div>
               </div>
             </>
+          )}
+          {activePane === 'extensions' && (
+            <div className="extensions-pane">
+              <div className="sidebar-header extensions-header">
+                <span>扩展</span>
+                {api.isTauri && (
+                  <button className="btn btn-icon" onClick={() => void loadPluginFromSettings()} disabled={pluginLoadBusy} title="从文件安装插件" aria-label="从文件安装插件">
+                    <Icon name="plus" size={15} />
+                  </button>
+                )}
+              </div>
+              <div className="extensions-list">
+                {pluginSettings.map(plugin => (
+                  <article className="extension-item" key={plugin.id}>
+                    <div className="extension-item-main">
+                      <div className="extension-item-icon"><Icon name="extensions" size={16} /></div>
+                      <div>
+                        <strong>{plugin.name}</strong>
+                        <small>{plugin.description || plugin.id}</small>
+                        <em>{plugin.origin === 'local' ? '本地已安装' : '内置'}</em>
+                      </div>
+                    </div>
+                    <div className="extension-item-actions">
+                      <label className="extension-toggle">
+                        <input type="checkbox" checked={plugin.enabled} onChange={event => setReadPluginEnabled(plugin.id, event.target.checked)} />
+                        <span>{plugin.enabled ? '已启用' : '已禁用'}</span>
+                      </label>
+                      {plugin.origin === 'local' && (
+                        <button className="btn btn-icon" title="卸载插件" aria-label={`卸载 ${plugin.name}`} onClick={() => void uninstallPluginFromSettings(plugin.id)}>
+                          <Icon name="close" size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+                {pluginLoadError && <div className="extensions-error">{pluginLoadError}</div>}
+              </div>
+            </div>
           )}
           {activePane === 'ai' && (
             <>

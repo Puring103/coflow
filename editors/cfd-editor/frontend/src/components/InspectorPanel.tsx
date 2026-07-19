@@ -352,18 +352,20 @@ export function InspectorPanel({
           ) : record && data ? (
             <>
               {!inspectingValue && (
-                <CardHeader
-                  recordKey={recordKey(record)}
-                  actualType={recordActualType(record)}
-                  filePath={data.file_path}
-                  onRename={canRename && onRenameRecord
-                    ? async (next) => { await onRenameRecord(data.file_path, record.coordinate, next) }
-                    : undefined}
-                  diagSeverity={recordSeverity}
-                  onDiagBadgeClick={onDiagnosticBadgeClick
-                    ? () => onDiagnosticBadgeClick(record.coordinate, null)
-                    : undefined}
-                />
+                <>
+                  <CardHeader
+                    recordKey={recordKey(record)}
+                    actualType={recordActualType(record)}
+                    filePath={data.file_path}
+                    onRename={canRename && onRenameRecord
+                      ? async (next) => { await onRenameRecord(data.file_path, record.coordinate, next) }
+                      : undefined}
+                    diagSeverity={recordSeverity}
+                    onDiagBadgeClick={onDiagnosticBadgeClick
+                      ? () => onDiagnosticBadgeClick(record.coordinate, null)
+                      : undefined}
+                  />
+                </>
               )}
               {!inspectingValue || inspectorFields.length > 0 ? (
                 <DataCardExpanded

@@ -855,6 +855,51 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   border-bottom: 1px solid var(--border-strong);
   background: var(--bg-2);
 }
+
+.extensions-pane {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+.extensions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.extensions-list {
+  overflow-y: auto;
+  padding: 8px;
+}
+.extension-item {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.extension-item-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+}
+.extension-item-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.extension-item-main > div:last-child { display: grid; gap: 3px; min-width: 0; }
+.extension-item strong { color: var(--text); font-size: var(--fs-ui); font-weight: 600; }
+.extension-item small { color: var(--text-mute); font-size: var(--fs-xs); line-height: 1.4; }
+.extension-item em { color: var(--text-mute); font-size: var(--fs-xs); font-style: normal; }
+.extension-item-actions { display: flex; align-items: center; justify-content: space-between; }
+.extension-toggle { display: inline-flex; gap: 6px; align-items: center; color: var(--text-dim); font-size: var(--fs-xs); cursor: pointer; }
+.extension-toggle input { accent-color: var(--accent); }
+.extensions-error { padding: 8px; color: var(--red); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .dimension-table tbody tr.has-group-color td,
 .dimension-table tbody tr.has-group-color th {
   background: color-mix(in srgb, var(--record-group-color) 9%, var(--bg-1));
@@ -2170,6 +2215,22 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 .rv-sidebar-item.has-group-color {
   background: color-mix(in srgb, var(--record-group-color) 9%, var(--bg-2));
 }
+.chemical-equation {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+  font-family: Georgia, serif;
+  font-size: 16px;
+  white-space: nowrap;
+}
+.chemical-equation-compact { font-size: var(--fs-ui); gap: 5px; }
+.chemical-equation-side { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; }
+.chemical-equation-plus, .chemical-equation-arrow { color: var(--text-mute); font-family: inherit; }
+.chemical-equation-arrow { font-size: 1.2em; }
+.chemical-equation sub { font-size: 0.68em; line-height: 0; }
+.chemical-equation-empty { color: var(--text-mute); font-style: italic; }
 .rv-sidebar-item.has-group-color:hover {
   background: color-mix(in srgb, var(--record-group-color) 15%, var(--bg-2));
 }

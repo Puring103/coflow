@@ -56,6 +56,8 @@ import {
 import { useObjectDraft } from './ObjectDraftHost'
 import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 import { SearchableSelect } from './SearchableSelect'
+import { PluginRendererMount, useFieldRenderer } from '../plugins'
+import type { FieldRenderSurface, FieldRenderer } from '../plugins/types'
 
 export function CardHeader({
   recordKey,
@@ -188,10 +190,14 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, label }: { value: FieldValue; label?: string }) {
-  return isComplexValue(value)
+export function DataCardCompact({ value, label, declaredType, surface = 'table-cell' }: { value: FieldValue; label?: string; declaredType?: string; surface?: FieldRenderSurface }) {
+  const fallback = isComplexValue(value)
     ? <MarkdownValueTree value={value} label={value.kind === 'array' ? undefined : label} depth={0} />
     : <ValueChip value={value} />
+  const renderer = useFieldRenderer({ value, type: declaredType ?? '', surface })
+  return (
+    <PluginRendererMount renderer={renderer} context={{ value, type: declaredType ?? '', surface }} fallback={fallback} />
+  )
 }
 
 function MarkdownValueTree({ value, label, depth }: {
@@ -639,6 +645,11 @@ function FieldRow({
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
+  const pluginRenderer = useFieldRenderer({
+    value,
+    type: declaredType ?? '',
+    surface: 'record-foldout-header',
+  })
   const isComplex = value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
   // A `null` value on a field whose declared type is an array/dict/object
   // should still be treated as expandable, so the user can just click
@@ -687,6 +698,8 @@ function FieldRow({
         leading={leading}
         trailing={mergedTrailing}
         dragProps={dragProps}
+        pluginRenderer={pluginRenderer}
+        pluginContext={pluginRenderer ? { value, type: declaredType ?? '', surface: 'record-foldout-header' } : undefined}
       />
     )
   }
@@ -895,6 +908,8 @@ function ScalarFieldRow({
   leading,
   trailing,
   dragProps,
+  pluginRenderer,
+  pluginContext,
 }: {
   label: string
   value: FieldValue
@@ -911,12 +926,14 @@ function ScalarFieldRow({
   leading?: ReactNode
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
+  pluginRenderer?: FieldRenderer
+  pluginContext?: Parameters<typeof useFieldRenderer>[0]
 }) {
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
     || value.kind === 'string' || value.kind === 'enum' || value.kind === 'ref'
   const resolvedRefTarget = refTargetType
   const isNullDropdown = value.kind === 'null' && !!(enumType || resolvedRefTarget)
-  const canEdit = (isScalar || isNullDropdown) && !!onCommit
+  const canEdit = !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
   const rowTitle = [spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
@@ -937,10 +954,12 @@ function ScalarFieldRow({
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
-          {canEdit ? (
+          {pluginRenderer && pluginContext ? (
+            <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<ValueChip value={value} />} />
+          ) : canEdit ? (
             <DirectEditor value={value} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} nullable={nullable} />
           ) : (
-            <ValueChip value={value} />
+            <DataCardCompact value={value} label={label} declaredType={declaredType} />
           )}
         </div>
         {trailing}
@@ -1482,6 +1501,8 @@ function ExpandableRow({
   leading,
   trailing,
   dragProps,
+  pluginRenderer,
+  pluginContext,
 }: {
   label: string
   value: FieldValue
@@ -1499,6 +1520,8 @@ function ExpandableRow({
   leading?: ReactNode
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
+  pluginRenderer?: FieldRenderer
+  pluginContext?: Parameters<typeof useFieldRenderer>[0]
 }) {
   const autoExpandPaths = useContext(AutoExpandCtx)
   const controlledExpansion = useContext(ControlledExpansionCtx)
@@ -1547,8 +1570,12 @@ function ExpandableRow({
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">
-            <span className="vc vc-type">{summary}</span>
-            {count !== null && <span className="vc-count">{count}</span>}
+            {pluginRenderer && pluginContext ? (
+              <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<span className="vc vc-type">{summary}</span>} />
+            ) : <>
+              <span className="vc vc-type">{summary}</span>
+              {count !== null && <span className="vc-count">{count}</span>}
+            </>}
           </div>
           {trailing}
         </div>

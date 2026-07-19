@@ -1,0 +1,7 @@
+{
+  "id": "example-chemical-equation",
+  "name": "化学方程式（外部示例）",
+  "version": "0.1.0",
+  "description": "从本地 plugin.json 动态加载的 ChemicalExpression 渲染器。",
+  "entry": "dist/plugin.js"
+}

@@ -141,6 +141,36 @@ export async function setTableColumnWidths(
   })
 }
 
+export interface FrontendPluginBundle {
+  manifest_path: string
+  id: string
+  name: string
+  description: string
+  version: string
+  source: string
+}
+
+export async function pickFrontendPluginManifest(): Promise<string | null> {
+  if (!isTauri) return null
+  const path = await openDialog({
+    multiple: false,
+    filters: [{ name: 'CFD Editor Plugin', extensions: ['json'] }],
+  })
+  return typeof path === 'string' ? path : null
+}
+
+export async function installFrontendPlugin(manifestPath: string): Promise<FrontendPluginBundle> {
+  return invokeCommand<FrontendPluginBundle>('install_frontend_plugin', { manifestPath })
+}
+
+export async function listFrontendPlugins(): Promise<FrontendPluginBundle[]> {
+  return invokeCommand<FrontendPluginBundle[]>('list_frontend_plugins')
+}
+
+export async function uninstallFrontendPlugin(id: string): Promise<void> {
+  return invokeCommand<void>('uninstall_frontend_plugin', { id })
+}
+
 export async function setRecordGroups(
   sessionId: number,
   filePath: string,

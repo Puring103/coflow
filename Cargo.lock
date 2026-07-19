@@ -462,6 +462,7 @@ dependencies = [
  "coflow-builtins",
  "coflow-cft",
  "coflow-data-model",
+ "coflow-extension-api",
  "coflow-project",
  "coflow-runtime",
  "notify",
@@ -718,6 +719,13 @@ dependencies = [
  "rmp",
  "rmpv",
  "serde_json",
+]
+
+[[package]]
+name = "coflow-extension-api"
+version = "0.7.2"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
