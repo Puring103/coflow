@@ -365,6 +365,46 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 }
 .settings-item:hover { background: var(--bg-3); color: var(--text); }
 .settings-item svg { color: var(--text-mute); flex: none; }
+.settings-section-title {
+  padding: 8px 10px 5px;
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+}
+.settings-plugin-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 10px;
+  color: var(--text-dim);
+  cursor: default;
+}
+.settings-plugin-item:hover { background: var(--bg-3); color: var(--text); }
+.settings-plugin-item > label {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  min-width: 0;
+  cursor: pointer;
+}
+.settings-plugin-item input { margin: 3px 0 0; accent-color: var(--accent); }
+.settings-plugin-item span { display: grid; gap: 2px; }
+.settings-plugin-item strong { font-size: var(--fs-ui); font-weight: 500; }
+.settings-plugin-item small { font-size: var(--fs-xs); color: var(--text-mute); }
+.settings-plugin-load { margin-bottom: 3px; }
+.settings-plugin-remove {
+  flex: none;
+  border: 0;
+  padding: 3px;
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+}
+.settings-plugin-remove:hover { color: var(--red); }
+.settings-plugin-error {
+  padding: 6px 10px;
+  color: var(--red);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
 .settings-icon-row {
   display: flex;
   gap: 2px;
