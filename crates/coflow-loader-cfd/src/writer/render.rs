@@ -4,7 +4,7 @@ use coflow_cft::{CftField, CftSchema, CftSchemaDefaultValue, CftValueType};
 use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::schema_nav::{non_nullable, object_type_name, type_after_field_segment};
+use super::schema_nav::{object_type_name, type_after_field_segment};
 use super::{diag, raw_span};
 
 pub(super) fn cfd_top_level_fields(records: &[AstRecord], actual_type: &str) -> Vec<String> {
@@ -232,7 +232,10 @@ pub(super) fn serialize_value_for_type(
             ToString::to_string,
         ),
         CfdValue::Ref(target_key)
-            if matches!(expected.map(non_nullable), Some(CftValueType::RecordRef(_))) =>
+            if matches!(
+                expected.map(CftValueType::non_nullable),
+                Some(CftValueType::RecordRef(_))
+            ) =>
         {
             format!("&{target_key}")
         }
@@ -258,7 +261,7 @@ pub(super) fn serialize_value_for_type(
             format!("{} {{\n{body}{outer}}}", boxed.actual_type)
         }
         CfdValue::Array(items) => {
-            let item_type = expected.and_then(|ty| match non_nullable(ty) {
+            let item_type = expected.and_then(|ty| match ty.non_nullable() {
                 CftValueType::Array(inner) => Some(inner.as_ref()),
                 _ => None,
             });
@@ -269,7 +272,7 @@ pub(super) fn serialize_value_for_type(
             format!("[{}]", elems.join(", "))
         }
         CfdValue::Dict(entries) => {
-            let item_type = expected.and_then(|ty| match non_nullable(ty) {
+            let item_type = expected.and_then(|ty| match ty.non_nullable() {
                 CftValueType::Dict(_, item) => Some(item.as_ref()),
                 _ => None,
             });

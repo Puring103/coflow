@@ -17,7 +17,7 @@ impl Validator<'_, '_> {
         parent: TraversalCursor,
     ) -> Option<ValueDraft> {
         if matches!(value, CftSchemaDefaultValue::EmptyObject) {
-            if let CftValueType::Object(type_name) = non_nullable_type(&field.value_type) {
+            if let CftValueType::Object(type_name) = field.value_type.non_nullable() {
                 if let Some(cycle) =
                     crate::dependencies::schema_default_cycle(self.schema.cft(), type_name)
                 {
@@ -45,7 +45,7 @@ impl Validator<'_, '_> {
         cursor: TraversalCursor,
     ) -> Option<ValueDraft> {
         if matches!(value, CftSchemaDefaultValue::EmptyObject) {
-            return match non_nullable_type(ty) {
+            return match ty.non_nullable() {
                 CftValueType::Dict(_, _) => Some(ValueDraft::Value(CfdValue::Dict(Vec::new()))),
                 CftValueType::Object(type_name) => {
                     self.default_object_value(type_name, record, path, cursor)
@@ -79,7 +79,7 @@ impl Validator<'_, '_> {
                 enum_name,
                 variant,
                 value,
-            } if matches!(non_nullable_type(ty), CftValueType::Enum(name) if name == enum_name) => {
+            } if matches!(ty.non_nullable(), CftValueType::Enum(name) if name == enum_name) => {
                 CfdValue::Enum(CfdEnumValue {
                     enum_name: enum_name.clone(),
                     variant: Some(variant.clone()),
@@ -87,7 +87,7 @@ impl Validator<'_, '_> {
                 })
             }
             CftSchemaDefaultValue::EmptyArray
-                if matches!(non_nullable_type(ty), CftValueType::Array(_)) =>
+                if matches!(ty.non_nullable(), CftValueType::Array(_)) =>
             {
                 CfdValue::Array(Vec::new())
             }
@@ -227,13 +227,6 @@ fn draft_shape(root: &RecordDraft) -> (u64, u64) {
         }
     }
     (nodes, depth)
-}
-
-fn non_nullable_type(ty: &CftValueType) -> &CftValueType {
-    match ty {
-        CftValueType::Nullable(inner) => non_nullable_type(inner),
-        _ => ty,
-    }
 }
 
 fn type_accepts_default(expected: &CftValueType, actual: &CftValueType) -> bool {

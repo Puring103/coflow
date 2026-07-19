@@ -1,5 +1,7 @@
 # Aggressive Coflow architecture refactor plan
 
+> **Superseded:** 本计划的大部分 session、checker、provider option 和 host adapter 工作已经完成。它仅作为历史决策记录保留，不能作为当前待办清单；当前边界以 `website/docs/docs/reference/12-architecture.md`、`AGENTS.md` 和 workspace manifests 为准。
+
 本文档是基于当前源码状态重新整理的激进架构重构计划。上一版计划中的一部分判断已经被后续代码修复，本版会先剔除过期建议，再给出可以继续深入的重构路线。
 
 约束和前提：

@@ -62,11 +62,6 @@ impl<'de> Deserialize<'de> for ProjectConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DimensionConfig {
     #[serde(default)]
     pub variants: Vec<String>,

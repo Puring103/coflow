@@ -60,7 +60,7 @@ flowchart TD
 | `coflow-project` | 读取和校验 `coflow.yaml`、路径解析、schema 文件发现、项目初始化 |
 | `coflow-runtime` | schema 编译、source resolve/load、DataModel、check、索引、维度文件维护与 overlay 装配 |
 | `coflow-builtins` | 注册默认 Provider registry |
-| 根 `coflow` crate | CLI 参数解析、命令编排、human/JSON 输出、artifact generation staging 和 manifest publication |
+| 根 `coflow` crate | library 提供共享命令编排和 artifact release lifecycle；默认 `cli` feature 提供参数解析、human/JSON 输出、LSP 启动和 skill 管理 |
 | `coflow-cft` | CFT parser、schema compiler、check 表达式静态类型检查 |
 | `coflow-cfd` | 唯一 CFD syntax parser、canonical AST；基于共享 `Span` 标记源码范围 |
 | `coflow-structure` | CFT/CFD 共用的 source `Span`，以及 parser/compiler/evaluator 共用的递归深度、节点数和工作量预算 |
@@ -217,7 +217,7 @@ DataModel 统一处理：
 
 ### CLI
 
-根 `coflow` crate 是 CLI 宿主，负责：
+根 `coflow` crate 的 library 拥有共享命令编排和 artifact release lifecycle，CLI 和编辑器可以复用该 application service。默认启用的 `cli` feature 才编译终端参数、human/JSON 输出、LSP 启动和 bundled skill 管理；编辑器关闭该 feature，避免宿主之间产生无关依赖。根 crate 整体负责：
 
 - 解析命令行参数。
 - 调用 project / runtime。

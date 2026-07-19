@@ -10,6 +10,21 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+default = ["cli"]
+cli = [
+    "dep:clap",
+    "dep:coflow-builtins",
+    "dep:coflow-lsp",
+    "dep:dirs",
+    "dep:include_dir",
+]
+
+[[bin]]
+name = "coflow"
+path = "src/main.rs"
+required-features = ["cli"]
+
 [workspace]
 members = [
     "crates/coflow-api",
@@ -58,21 +73,20 @@ redundant_pub_crate = "allow"
 
 [dependencies]
 atomicwrites = "0.4.4"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive"], optional = true }
 coflow-api = { path = "crates/coflow-api" }
-coflow-builtins = { path = "crates/coflow-builtins" }
-coflow-cft = { path = "crates/coflow-cft" }
-coflow-data-model = { path = "crates/coflow-data-model" }
-coflow-lsp = { path = "crates/coflow-lsp" }
+coflow-builtins = { path = "crates/coflow-builtins", optional = true }
+coflow-lsp = { path = "crates/coflow-lsp", optional = true }
 coflow-project = { path = "crates/coflow-project" }
 coflow-runtime = { path = "crates/coflow-runtime" }
-dirs = "6"
-include_dir = "0.7"
+dirs = { version = "6", optional = true }
+include_dir = { version = "0.7", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
 coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
+coflow-data-model = { path = "crates/coflow-data-model" }
 coflow-exporter-json = { path = "crates/coflow-exporter-json" }
 coflow-loader-csv = { path = "crates/coflow-loader-csv" }
 coflow-loader-excel = { path = "crates/coflow-loader-excel" }

@@ -109,7 +109,7 @@ pub(crate) fn expected_type_for_cfd_path(
     for segment in path {
         current = match segment {
             CfdPathSegment::Field(field) => {
-                let CftValueType::Object(type_name) = non_nullable(&current) else {
+                let CftValueType::Object(type_name) = current.non_nullable() else {
                     return Err(one_error(
                         code,
                         stage,
@@ -131,7 +131,7 @@ pub(crate) fn expected_type_for_cfd_path(
                     })?
             }
             CfdPathSegment::Index(index) => {
-                let CftValueType::Array(inner) = non_nullable(&current) else {
+                let CftValueType::Array(inner) = current.non_nullable() else {
                     return Err(one_error(
                         code,
                         stage,
@@ -141,7 +141,7 @@ pub(crate) fn expected_type_for_cfd_path(
                 (**inner).clone()
             }
             CfdPathSegment::DictKey(key) => {
-                let CftValueType::Dict(_, item) = non_nullable(&current) else {
+                let CftValueType::Dict(_, item) = current.non_nullable() else {
                     return Err(one_error(
                         code,
                         stage,
@@ -266,13 +266,6 @@ pub fn write_path_to_cfd_path(
     Ok(CfdPath {
         segments: path.to_vec(),
     })
-}
-
-fn non_nullable(ty: &CftValueType) -> &CftValueType {
-    match ty {
-        CftValueType::Nullable(inner) => non_nullable(inner),
-        other => other,
-    }
 }
 
 fn one_error(code: &'static str, stage: &'static str, message: impl Into<String>) -> DiagnosticSet {

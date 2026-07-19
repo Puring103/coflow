@@ -158,7 +158,7 @@ fn dependency_target<'a>(
     let ty = match mode {
         ValueDependencyMode::SchemaDefaults => {
             matches!(field.default, Some(CftSchemaDefaultValue::EmptyObject))
-                .then_some(non_nullable(&field.value_type))?
+                .then_some(field.value_type.non_nullable())?
         }
         ValueDependencyMode::Minimal => {
             if field.default.is_some() {
@@ -167,7 +167,7 @@ fn dependency_target<'a>(
             &field.value_type
         }
         ValueDependencyMode::EditableShape => match field.default {
-            Some(CftSchemaDefaultValue::EmptyObject) => non_nullable(&field.value_type),
+            Some(CftSchemaDefaultValue::EmptyObject) => field.value_type.non_nullable(),
             Some(_) => return None,
             None => &field.value_type,
         },
@@ -176,13 +176,6 @@ fn dependency_target<'a>(
         return None;
     };
     types.contains_key(target_type).then_some(target_type)
-}
-
-fn non_nullable(ty: &CftValueType) -> &CftValueType {
-    match ty {
-        CftValueType::Nullable(inner) => non_nullable(inner),
-        other => other,
-    }
 }
 
 fn compile_root<'a>(

@@ -1,5 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity};
-use coflow_cft::{CftField, CftSchema, CftValueType};
+use coflow_cft::{CftField, CftSchema};
 use coflow_data_model::CfdEnumValue;
 
 use crate::ProjectSession;
@@ -62,13 +62,6 @@ pub(super) fn validated_record_coordinate(
 ) -> Result<crate::RecordCoordinate, DiagnosticSet> {
     crate::RecordCoordinate::try_new(actual_type, key)
         .map_err(|error| one_mutation_error("MUTATION-COORDINATE", error.to_string()))
-}
-
-fn non_nullable(ty: &CftValueType) -> &CftValueType {
-    match ty {
-        CftValueType::Nullable(inner) => non_nullable(inner),
-        other => other,
-    }
 }
 
 fn one_path_error(message: impl Into<String>) -> DiagnosticSet {
