@@ -44,12 +44,12 @@ flowchart TD
 - 顶层字段只允许 `schema`、`sources`、`outputs`、`dimensions`。
 - `schema` 是单个路径或路径列表。
 - `sources` 是数据源列表。
-- `outputs` 声明导出和代码生成目标。
+- `outputs` 声明一个或多个由 data、可选 code 和可选 loader 组成的输出目标；旧对象形式映射为单目标。
 - `dimensions` 声明维度配置，例如 `dimensions.language`。
 
 source 必须且只能设置 `path` 或 `url` 之一。source 的通用字段是 `type`、`path`、`url`，其他字段会作为 Provider options 传入 loader。
 
-output 必须设置 `type` 和 `dir`，其他字段会作为 Provider options 传入 exporter 或 codegen。
+data/code output 必须设置 `type` 和 `dir`，其他字段会作为 Provider options 传入 exporter 或 codegen。loader 必须设置 `type`，其他字段作为 loader options。
 
 ## Schema 发现与编译
 
@@ -94,7 +94,7 @@ Schema 编译阶段会处理：
 | `coflow codegen csharp` | 是 | 是 | 否 | 否 | 否 | 是 |
 | `coflow build` | 是 | 是 | 是 | 是 | 是 | 是 |
 
-`codegen csharp` 是 schema-only 命令。它不要求 source 存在，也不构建 DataModel。
+`codegen csharp` 会为唯一匹配的 target 生成公共声明和对应 loader。该命令是 schema-only，两者都不按当前数据过滤 table；它读取现有 `@idAsEnum` lock state，但只有完整 `build` 会根据当前数据更新 lock state。完整 `build` 中的公共代码和 loader 使用同一次不可变 DataModel generation，以保证导出的非空 table 与加载 API 一致。
 
 `data sources`、`data list` 和 `data get` 使用绑定到同一 generation 的只读 query capability。它们的主要输出
 分别是 source、record 索引和 record 内容，但返回的 `diagnostics` 会包含数据加载、
@@ -232,7 +232,7 @@ CLI、编辑器和自动化命令复用这些 capability，而不是导入 ownin
 
 1. 项目/schema 诊断。
 2. 需要数据时的数据加载、DataModel 和 check。
-3. 宿主调用选中 exporter / codegen 的 option decoder，把 project-facing JSON 转换为 provider-owned typed options。
+3. 宿主先解析全部 target 的 exporter、codegen 和兼容 loader，再调用各 provider 的 option decoder，把 project-facing JSON 转换为 provider-owned typed options。
 4. root artifact release module 对全部输出执行 artifact safety 检查。
 5. 全部 provider 使用 decoded options 完成纯内存 generation。
 6. 全部 generation 和目标目录 staging 成功后，事务性替换目标目录，最后只 publication 一次 active manifest。
@@ -241,7 +241,7 @@ CLI、编辑器和自动化命令复用这些 capability，而不是导入 ownin
 
 通过检查后，CLI 使用 staging 目录写入、同步并回读验证完整产物，再把目录封存为不可变 generation，并用同一份产物替换 `outputs.*.dir`。旧 generation 不会被改写；目标目录替换失败时，已经替换的目标会恢复到旧版本。
 
-data、code generation 与 C# `@idAsEnum` lock state 组成一个 manifest snapshot。CLI 先原子更新可提交到版本库的 `coflow.enum.lock.json` 镜像，再以一次原子替换项目目录下 `.coflow/artifacts/active.json` 激活整个 snapshot。任何被报告的失败都发生在最终激活之前，因此旧 active snapshot 保持完整；已有 active manifest 始终优先于镜像。没有本地 manifest 的干净 clone 才从镜像恢复编号。
+全部 target 的 data、code generation 与 C# `@idAsEnum` lock state 组成一个 manifest snapshot。第一个 target 继续使用兼容 slot `data` / `code`，后续 target 使用 `output-N-data` / `output-N-code`。CLI 先原子更新可提交到版本库的 `coflow.enum.lock.json` 镜像，再以一次原子替换项目目录下 `.coflow/artifacts/active.json` 激活整个 snapshot。任何被报告的失败都发生在最终激活之前，因此旧 active snapshot 保持完整；已有 active manifest 始终优先于镜像。没有本地 manifest 的干净 clone 才从镜像恢复编号。
 
 ## 诊断流
 

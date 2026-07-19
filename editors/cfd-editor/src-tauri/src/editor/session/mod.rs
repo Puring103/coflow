@@ -236,9 +236,12 @@ impl SessionStore {
         .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow::commands::CommandOutcome::Success(report) => {
-                let mut outputs = vec![report.data.dir.display().to_string()];
-                if let Some(code) = report.code {
-                    outputs.push(code.dir.display().to_string());
+                let mut outputs = Vec::new();
+                for target in report.targets {
+                    outputs.push(target.data.dir.display().to_string());
+                    if let Some(code) = target.code {
+                        outputs.push(code.dir.display().to_string());
+                    }
                 }
                 Ok(format!("Build completed: {}", outputs.join(", ")))
             }

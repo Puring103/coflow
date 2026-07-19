@@ -8,8 +8,9 @@ pub use errors::{ProviderRegistrationError, SourceProviderSelectionError};
 
 use crate::{
     CodeGenerator, CodegenDescriptor, DataExporter, DimensionSourceManager,
-    DimensionSourceManagerDescriptor, ExporterDescriptor, SourceProvider, SourceProviderDescriptor,
-    SourceWriter, TableManager, TableManagerDescriptor, WriterDescriptor,
+    DimensionSourceManagerDescriptor, ExporterDescriptor, LoaderDescriptor, LoaderGenerator,
+    SourceProvider, SourceProviderDescriptor, SourceWriter, TableManager, TableManagerDescriptor,
+    WriterDescriptor,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -23,6 +24,8 @@ pub struct ProviderRegistry {
     dimension_source_managers: BTreeMap<&'static str, Arc<dyn DimensionSourceManager>>,
     exporters: BTreeMap<&'static str, Arc<dyn DataExporter>>,
     codegens: BTreeMap<&'static str, Arc<dyn CodeGenerator>>,
+    loaders: BTreeMap<&'static str, Arc<dyn LoaderGenerator>>,
+    loader_order: Vec<&'static str>,
 }
 
 impl fmt::Debug for ProviderRegistry {
@@ -46,6 +49,7 @@ impl fmt::Debug for ProviderRegistry {
             )
             .field("exporters", &self.exporters.keys().collect::<Vec<_>>())
             .field("codegens", &self.codegens.keys().collect::<Vec<_>>())
+            .field("loaders", &self.loader_order)
             .finish()
     }
 }
@@ -135,6 +139,19 @@ impl ProviderRegistry {
         self.register_codegen_arc(Arc::new(codegen))
     }
 
+    /// Registers a generated-code loader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when another loader with the same provider id has
+    /// already been registered.
+    pub fn register_loader<L>(&mut self, loader: L) -> Result<(), ProviderRegistrationError>
+    where
+        L: LoaderGenerator + 'static,
+    {
+        self.register_loader_arc(Arc::new(loader))
+    }
+
     #[must_use]
     pub fn source_provider(&self, id: &str) -> Option<Arc<dyn SourceProvider>> {
         self.source_providers.get(id).cloned()
@@ -197,6 +214,32 @@ impl ProviderRegistry {
     }
 
     #[must_use]
+    pub fn loader(&self, id: &str) -> Option<Arc<dyn LoaderGenerator>> {
+        self.loaders.get(id).cloned()
+    }
+
+    #[must_use]
+    pub fn select_loader(
+        &self,
+        code: &str,
+        data: &str,
+        explicit_id: Option<&str>,
+    ) -> Option<Arc<dyn LoaderGenerator>> {
+        if let Some(id) = explicit_id {
+            return self.loader(id).filter(|loader| {
+                let descriptor = loader.descriptor();
+                descriptor.code == code && descriptor.data == data
+            });
+        }
+        self.loader_order.iter().find_map(|id| {
+            self.loaders.get(id).and_then(|loader| {
+                let descriptor = loader.descriptor();
+                (descriptor.code == code && descriptor.data == data).then(|| Arc::clone(loader))
+            })
+        })
+    }
+
+    #[must_use]
     pub fn source_provider_descriptors(&self) -> Vec<&'static SourceProviderDescriptor> {
         self.source_providers
             .values()
@@ -222,6 +265,15 @@ impl ProviderRegistry {
         self.codegens
             .values()
             .map(|codegen| codegen.descriptor())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn loader_descriptors(&self) -> Vec<&'static LoaderDescriptor> {
+        self.loader_order
+            .iter()
+            .filter_map(|id| self.loaders.get(id))
+            .map(|loader| loader.descriptor())
             .collect()
     }
 }

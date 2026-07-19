@@ -71,14 +71,20 @@ MessagePack 当前都不接受自定义 options，未知字段会在 generation 
 
 ## Codegen
 
-Codegen 实现 `CodeGenerator`，负责根据 schema 或 model 生成运行时代码。
+Codegen 实现 `CodeGenerator`，负责根据 schema 或 model 生成与数据格式无关的运行时代码。
 
-当前内置 codegen 是 `csharp`。C# codegen 读取 schema，并根据 `outputs.data.type` 选择 JSON 或 MessagePack loader。
+当前内置 codegen 是 `csharp`。它生成公共声明和 table API，不负责选择数据格式。
 
 Codegen 使用与 exporter 相同的 output option contract：`decode_options` 只处理
 project-facing 配置，`generate` 只接收 `DecodedOutputOptions`。`@idAsEnum` variants
 由宿主通过 `CodegenContext` 提供，不伪装成用户 options。provider identity 或具体
 option 类型不匹配属于 contract diagnostic。
+
+## Loader generator
+
+Loader generator 实现 `LoaderGenerator`，声明一个精确的 `(code, data)` 兼容组合，并生成对应的加载代码。宿主可以按 `loader.type` 显式选择，也可以从注册顺序中选择第一个兼容 provider。loader 同时接收 code/data/loader 三组 decoded options 和 schema；完整 build 还提供绑定到同一次 runtime generation 的 DataModel，schema-only codegen 则不提供 model。
+
+内置组合为 `csharp-json` 和 `csharp-messagepack`。公共 C# codegen 因此不再包含数据格式判断；新增 exporter 或 codegen 不会隐式改变已有组合。
 
 ## 边界
 

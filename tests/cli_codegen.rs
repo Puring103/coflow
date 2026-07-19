@@ -526,7 +526,7 @@ fn generated_csharp_loads_cyclic_json_references() {
         project_dir.join("schema.cft"),
         r"
             type Node {
-                next: Node;
+                next: &Node;
             }
         ",
     )

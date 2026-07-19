@@ -259,7 +259,25 @@ sources:
 
 ## `outputs`
 
-`outputs` 描述构建产物。
+`outputs` 描述一个或多个构建产物 target。每个 target 必须配置 `data`，可以同时配置 `code` 和 `loader`。
+
+```yaml
+outputs:
+  - data:
+      type: json
+      dir: generated/json
+    code:
+      type: csharp
+      dir: generated/csharp-json
+      namespace: Game.Config
+    loader:
+      type: csharp-json
+  - data:
+      type: messagepack
+      dir: generated/messagepack
+```
+
+旧版本的单 target 对象形式保持兼容：
 
 ```yaml
 outputs:
@@ -271,6 +289,8 @@ outputs:
     dir: generated/csharp
     namespace: Game.Config
 ```
+
+对象形式会映射成列表中的第一个 target，并保持旧版本的生成文件布局。
 
 ### `outputs.data`
 
@@ -313,6 +333,9 @@ outputs:
 
 ```yaml
 outputs:
+  data:
+    type: json
+    dir: generated/data
   code:
     type: csharp
     dir: generated/csharp
@@ -320,6 +343,17 @@ outputs:
 ```
 
 `outputs.*` 除 `type`、`dir` 之外的字段会作为 provider options 传入。例如 `namespace` 是 C# codegen 的 provider option，也可以被 `coflow codegen csharp --namespace` 覆盖。
+
+### `outputs.loader`
+
+loader 负责为一个 target 的 code/data 组合生成加载代码。当前内置 loader 为：
+
+| `type` | code | data |
+| --- | --- | --- |
+| `csharp-json` | `csharp` | `json` |
+| `csharp-messagepack` | `csharp` | `messagepack` |
+
+`loader` 可以省略；Coflow 会按注册顺序选择与 target 的 `code.type` 和 `data.type` 精确匹配的 loader。显式配置时，loader 必须与同一 target 的 code/data 组合兼容。没有 `code` 的 data-only target 不能配置 `loader`。
 
 ## `dimensions`
 
@@ -356,7 +390,7 @@ dimensions:
 
 ## 输出目录与 generation
 
-`outputs.data.dir` 和 `outputs.code.dir` 是构建成功后消费者直接使用的输出目录。目录内容由 Coflow 完整接管，不要在其中放置手写文件。
+每个 target 的 `data.dir` 和 `code.dir` 是构建成功后消费者直接使用的输出目录。目录内容由 Coflow 完整接管，不要在其中放置手写文件。
 
 写入时，Coflow 先生成、同步并验证完整 staging 和不可变 generation，再替换配置指定的输出目录。data、code 和 `@idAsEnum` lock state 通过 `.coflow/artifacts/active.json` 组成同一个 snapshot；任一步失败都会恢复旧输出目录，并且不会激活新的 build、export 或 codegen snapshot。
 

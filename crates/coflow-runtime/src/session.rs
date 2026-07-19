@@ -2,7 +2,10 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use coflow_api::{ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet};
+use coflow_api::{
+    ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet,
+    LoaderGenerationContext, LoaderGenerator,
+};
 use coflow_cft::{CftModuleSet, CftSchema};
 use coflow_data_model::{
     CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RecordCoordinate,
@@ -386,7 +389,6 @@ impl ProjectSchemaSession {
         &self,
         codegen: &dyn CodeGenerator,
         options: &DecodedOutputOptions,
-        data_format: &str,
         id_as_enum_variants: &serde_json::Value,
     ) -> Result<ArtifactSet, DiagnosticSet> {
         let schema = self
@@ -396,10 +398,37 @@ impl ProjectSchemaSession {
             CodegenContext {
                 schema,
                 model: None,
-                data_format,
                 id_as_enum_variants,
             },
             options,
+        )
+    }
+
+    /// Generates schema-only loader artifacts without filtering tables by data.
+    ///
+    /// # Errors
+    ///
+    /// Returns provider diagnostics when the loader rejects its options or schema.
+    pub fn loader_artifacts(
+        &self,
+        loader: &dyn LoaderGenerator,
+        code_options: &DecodedOutputOptions,
+        data_options: &DecodedOutputOptions,
+        loader_options: &DecodedOutputOptions,
+        id_as_enum_variants: &serde_json::Value,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        let schema = self
+            .schema()
+            .ok_or_else(|| self.diagnostics.clone().into_set())?;
+        loader.generate(
+            LoaderGenerationContext {
+                schema,
+                model: None,
+                code_options,
+                data_options,
+                id_as_enum_variants,
+            },
+            loader_options,
         )
     }
 }

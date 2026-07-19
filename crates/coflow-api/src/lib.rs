@@ -19,6 +19,7 @@ pub mod artifacts;
 pub mod codegen;
 pub mod data_output;
 pub mod diagnostics;
+pub mod loader_generation;
 pub mod operations;
 pub mod provider;
 pub mod registry;
@@ -34,6 +35,7 @@ pub use diagnostics::{
     source_location_display_path, spreadsheet_cell_name, Diagnostic, DiagnosticSet, FlatDiagnostic,
     Label, Severity, SourceLocation, TextPosition, TextRange,
 };
+pub use loader_generation::{LoaderDescriptor, LoaderGenerationContext, LoaderGenerator};
 pub use operations::{
     CreateTableRequest, DimensionSourceEntry, DimensionSourceLoadRequest,
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,

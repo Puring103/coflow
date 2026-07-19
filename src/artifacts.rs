@@ -12,9 +12,9 @@ pub use publication::{
 
 use coflow_api::{
     ArtifactSet, CodeGenerator, DataExporter, DecodedOutputOptions, Diagnostic, DiagnosticSet,
-    Label, Severity, SourceLocation,
+    Label, LoaderGenerator, Severity, SourceLocation,
 };
-use coflow_project::{OutputConfig, Project};
+use coflow_project::{OutputConfig, OutputTargetConfig, Project};
 use coflow_runtime::{BuildProjectSession, ProjectSchemaSession};
 use serde_json::Value;
 use staging::stage_artifact_set;
@@ -46,11 +46,11 @@ pub struct ReleasedOutput {
 
 #[derive(Debug)]
 pub struct ArtifactReleaseReport {
-    outputs: BTreeMap<&'static str, ReleasedOutput>,
+    outputs: BTreeMap<String, ReleasedOutput>,
 }
 
 impl ArtifactReleaseReport {
-    pub fn output(&self, slot: &'static str) -> Result<&ReleasedOutput, DiagnosticSet> {
+    pub fn output(&self, slot: &str) -> Result<&ReleasedOutput, DiagnosticSet> {
         self.outputs.get(slot).ok_or_else(|| {
             diagnostic_set(
                 PathBuf::from(slot),
@@ -66,30 +66,45 @@ enum ArtifactGenerator<'a> {
         exporter: Arc<dyn DataExporter>,
         options: &'a Value,
     },
+    #[cfg(test)]
     BuildCode {
         session: &'a BuildProjectSession,
         codegen: Arc<dyn CodeGenerator>,
         options: &'a Value,
-        data_format: &'a str,
         id_as_enum_variants: &'a Value,
     },
-    SchemaCode {
+    BuildCodeWithLoader {
+        session: &'a BuildProjectSession,
+        codegen: Arc<dyn CodeGenerator>,
+        loader: Arc<dyn LoaderGenerator>,
+        exporter: Arc<dyn DataExporter>,
+        code_options: &'a Value,
+        data_options: &'a Value,
+        loader_options: &'a Value,
+        id_as_enum_variants: &'a Value,
+        legacy_layout: bool,
+    },
+    SchemaCodeWithLoader {
         session: &'a ProjectSchemaSession,
         codegen: Arc<dyn CodeGenerator>,
-        options: &'a Value,
-        data_format: &'a str,
+        loader: Arc<dyn LoaderGenerator>,
+        exporter: Arc<dyn DataExporter>,
+        code_options: &'a Value,
+        data_options: &'a Value,
+        loader_options: &'a Value,
         id_as_enum_variants: &'a Value,
+        legacy_layout: bool,
     },
 }
 
 struct ArtifactReleaseOutput<'a> {
-    slot: &'static str,
+    slot: String,
     dir: PathBuf,
     generator: ArtifactGenerator<'a>,
 }
 
 struct GeneratedArtifactOutput {
-    slot: &'static str,
+    slot: String,
     provider_id: String,
     display_name: &'static str,
     dir: PathBuf,
@@ -97,7 +112,7 @@ struct GeneratedArtifactOutput {
 }
 
 struct ValidatedArtifactReleaseOutput<'a> {
-    slot: &'static str,
+    slot: String,
     dir: PathBuf,
     generator: ValidatedArtifactGenerator<'a>,
 }
@@ -108,34 +123,48 @@ enum ValidatedArtifactGenerator<'a> {
         exporter: Arc<dyn DataExporter>,
         options: DecodedOutputOptions,
     },
+    #[cfg(test)]
     BuildCode {
         session: &'a BuildProjectSession,
         codegen: Arc<dyn CodeGenerator>,
         options: DecodedOutputOptions,
-        data_format: &'a str,
         id_as_enum_variants: &'a Value,
         needs_model_for_build: bool,
     },
-    SchemaCode {
+    BuildCodeWithLoader {
+        session: &'a BuildProjectSession,
+        codegen: Arc<dyn CodeGenerator>,
+        loader: Arc<dyn LoaderGenerator>,
+        code_options: DecodedOutputOptions,
+        data_options: DecodedOutputOptions,
+        loader_options: DecodedOutputOptions,
+        id_as_enum_variants: &'a Value,
+        needs_model_for_build: bool,
+        legacy_layout: bool,
+    },
+    SchemaCodeWithLoader {
         session: &'a ProjectSchemaSession,
         codegen: Arc<dyn CodeGenerator>,
-        options: DecodedOutputOptions,
-        data_format: &'a str,
+        loader: Arc<dyn LoaderGenerator>,
+        code_options: DecodedOutputOptions,
+        data_options: DecodedOutputOptions,
+        loader_options: DecodedOutputOptions,
         id_as_enum_variants: &'a Value,
+        legacy_layout: bool,
     },
 }
 
 pub struct ArtifactReleasePlan<'a> {
     project: &'a Project,
     outputs: Vec<ArtifactReleaseOutput<'a>>,
-    removed_outputs: Vec<&'static str>,
+    removed_outputs: Vec<String>,
     enum_lock_update: EnumLockUpdate,
 }
 
 pub struct PreparedArtifactRelease<'a> {
     project: &'a Project,
     outputs: Vec<GeneratedArtifactOutput>,
-    removed_outputs: Vec<&'static str>,
+    removed_outputs: Vec<String>,
     enum_lock_update: EnumLockUpdate,
 }
 
@@ -150,6 +179,7 @@ impl<'a> ArtifactReleasePlan<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn add_data(
         &mut self,
         session: &'a BuildProjectSession,
@@ -157,8 +187,19 @@ impl<'a> ArtifactReleasePlan<'a> {
         output: &'a OutputConfig,
         override_dir: Option<&Path>,
     ) {
+        self.add_data_for_slot(DATA_OUTPUT_SLOT, session, exporter, output, override_dir);
+    }
+
+    pub(crate) fn add_data_for_slot(
+        &mut self,
+        slot: impl Into<String>,
+        session: &'a BuildProjectSession,
+        exporter: Arc<dyn DataExporter>,
+        output: &'a OutputConfig,
+        override_dir: Option<&Path>,
+    ) {
         self.outputs.push(ArtifactReleaseOutput {
-            slot: DATA_OUTPUT_SLOT,
+            slot: slot.into(),
             dir: output_dir(self.project, output, override_dir),
             generator: ArtifactGenerator::Data {
                 session,
@@ -168,52 +209,123 @@ impl<'a> ArtifactReleasePlan<'a> {
         });
     }
 
+    #[cfg(test)]
     pub(crate) fn add_build_code(
         &mut self,
         session: &'a BuildProjectSession,
         codegen: Arc<dyn CodeGenerator>,
         output: &'a OutputConfig,
         override_dir: Option<&Path>,
-        data_format: &'a str,
+        id_as_enum_variants: &'a Value,
+    ) {
+        self.add_build_code_for_slot(
+            CODE_OUTPUT_SLOT,
+            session,
+            codegen,
+            output,
+            override_dir,
+            id_as_enum_variants,
+        );
+    }
+
+    #[cfg(test)]
+    pub(crate) fn add_build_code_for_slot(
+        &mut self,
+        slot: impl Into<String>,
+        session: &'a BuildProjectSession,
+        codegen: Arc<dyn CodeGenerator>,
+        output: &'a OutputConfig,
+        override_dir: Option<&Path>,
         id_as_enum_variants: &'a Value,
     ) {
         self.outputs.push(ArtifactReleaseOutput {
-            slot: CODE_OUTPUT_SLOT,
+            slot: slot.into(),
             dir: output_dir(self.project, output, override_dir),
             generator: ArtifactGenerator::BuildCode {
                 session,
                 codegen,
                 options: output.options(),
-                data_format,
                 id_as_enum_variants,
             },
         });
     }
 
-    pub(crate) fn add_schema_code(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_build_code_with_loader_for_slot(
         &mut self,
-        session: &'a ProjectSchemaSession,
+        slot: impl Into<String>,
+        session: &'a BuildProjectSession,
         codegen: Arc<dyn CodeGenerator>,
-        output: &'a OutputConfig,
+        loader: Arc<dyn LoaderGenerator>,
+        exporter: Arc<dyn DataExporter>,
+        code_output: &'a OutputConfig,
+        data_output: &'a OutputConfig,
+        loader_options: &'a Value,
         override_dir: Option<&Path>,
-        data_format: &'a str,
         id_as_enum_variants: &'a Value,
     ) {
         self.outputs.push(ArtifactReleaseOutput {
-            slot: CODE_OUTPUT_SLOT,
-            dir: output_dir(self.project, output, override_dir),
-            generator: ArtifactGenerator::SchemaCode {
+            slot: slot.into(),
+            dir: output_dir(self.project, code_output, override_dir),
+            generator: ArtifactGenerator::BuildCodeWithLoader {
                 session,
                 codegen,
-                options: output.options(),
-                data_format,
+                loader,
+                exporter,
+                code_options: code_output.options(),
+                data_options: data_output.options(),
+                loader_options,
                 id_as_enum_variants,
+                legacy_layout: self.project.config.outputs.is_legacy_shape(),
             },
         });
     }
 
-    pub fn remove_output(&mut self, slot: &'static str) {
-        self.removed_outputs.push(slot);
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_schema_code_with_loader_for_slot(
+        &mut self,
+        slot: impl Into<String>,
+        session: &'a ProjectSchemaSession,
+        codegen: Arc<dyn CodeGenerator>,
+        loader: Arc<dyn LoaderGenerator>,
+        exporter: Arc<dyn DataExporter>,
+        code_output: &'a OutputConfig,
+        data_output: &'a OutputConfig,
+        loader_options: &'a Value,
+        override_dir: Option<&Path>,
+        id_as_enum_variants: &'a Value,
+    ) {
+        self.outputs.push(ArtifactReleaseOutput {
+            slot: slot.into(),
+            dir: output_dir(self.project, code_output, override_dir),
+            generator: ArtifactGenerator::SchemaCodeWithLoader {
+                session,
+                codegen,
+                loader,
+                exporter,
+                code_options: code_output.options(),
+                data_options: data_output.options(),
+                loader_options,
+                id_as_enum_variants,
+                legacy_layout: self.project.config.outputs.is_legacy_shape(),
+            },
+        });
+    }
+
+    pub fn remove_output(&mut self, slot: impl Into<String>) {
+        self.removed_outputs.push(slot.into());
+    }
+
+    pub fn remove_stale_managed_outputs(
+        &mut self,
+        planned_slots: &BTreeSet<String>,
+    ) -> Result<(), DiagnosticSet> {
+        for slot in publication::active_output_slots(self.project)? {
+            if is_managed_output_slot(&slot) && !planned_slots.contains(&slot) {
+                self.remove_output(slot);
+            }
+        }
+        Ok(())
     }
 
     pub fn replace_enum_lock(&mut self, lock: Value) {
@@ -233,16 +345,7 @@ impl<'a> ArtifactReleasePlan<'a> {
         let validated_outputs = validate_outputs(project, outputs)?;
         let output_plans = validated_outputs
             .iter()
-            .map(|output| {
-                safety::ArtifactOutputPlan::new(
-                    match output.slot {
-                        DATA_OUTPUT_SLOT => "outputs.data.dir",
-                        CODE_OUTPUT_SLOT => "outputs.code.dir",
-                        other => other,
-                    },
-                    output.dir.clone(),
-                )
-            })
+            .map(|output| safety::ArtifactOutputPlan::new(output.slot.clone(), output.dir.clone()))
             .collect::<Vec<_>>();
         let diagnostics = safety::artifact_safety_diagnostics(project, &output_plans);
         if !diagnostics.is_empty() {
@@ -290,7 +393,7 @@ fn validate_outputs<'a>(
 impl<'a> ArtifactReleaseOutput<'a> {
     fn validate(
         self,
-        project: &Project,
+        _project: &Project,
     ) -> Result<ValidatedArtifactReleaseOutput<'a>, DiagnosticSet> {
         let generator = match self.generator {
             ArtifactGenerator::Data {
@@ -302,39 +405,66 @@ impl<'a> ArtifactReleaseOutput<'a> {
                 options: exporter.decode_options(options)?,
                 exporter,
             },
+            #[cfg(test)]
             ArtifactGenerator::BuildCode {
                 session,
                 codegen,
                 options,
-                data_format,
                 id_as_enum_variants,
             } => {
-                let descriptor = validate_codegen(project, codegen.as_ref(), data_format)?;
+                let descriptor = codegen.descriptor();
                 ValidatedArtifactGenerator::BuildCode {
                     session,
                     options: codegen.decode_options(options)?,
                     codegen,
-                    data_format,
                     id_as_enum_variants,
                     needs_model_for_build: descriptor.needs_model_for_build,
                 }
             }
-            ArtifactGenerator::SchemaCode {
+            ArtifactGenerator::BuildCodeWithLoader {
                 session,
                 codegen,
-                options,
-                data_format,
+                loader,
+                exporter,
+                code_options,
+                data_options,
+                loader_options,
                 id_as_enum_variants,
+                legacy_layout,
             } => {
-                validate_codegen(project, codegen.as_ref(), data_format)?;
-                ValidatedArtifactGenerator::SchemaCode {
+                let needs_model_for_build = codegen.descriptor().needs_model_for_build;
+                ValidatedArtifactGenerator::BuildCodeWithLoader {
                     session,
-                    options: codegen.decode_options(options)?,
+                    code_options: codegen.decode_options(code_options)?,
+                    data_options: exporter.decode_options(data_options)?,
+                    loader_options: loader.decode_options(loader_options)?,
                     codegen,
-                    data_format,
+                    loader,
                     id_as_enum_variants,
+                    needs_model_for_build,
+                    legacy_layout,
                 }
             }
+            ArtifactGenerator::SchemaCodeWithLoader {
+                session,
+                codegen,
+                loader,
+                exporter,
+                code_options,
+                data_options,
+                loader_options,
+                id_as_enum_variants,
+                legacy_layout,
+            } => ValidatedArtifactGenerator::SchemaCodeWithLoader {
+                session,
+                code_options: codegen.decode_options(code_options)?,
+                data_options: exporter.decode_options(data_options)?,
+                loader_options: loader.decode_options(loader_options)?,
+                codegen,
+                loader,
+                id_as_enum_variants,
+                legacy_layout,
+            },
         };
         Ok(ValidatedArtifactReleaseOutput {
             slot: self.slot,
@@ -360,11 +490,11 @@ impl ValidatedArtifactReleaseOutput<'_> {
                     artifacts,
                 )
             }
+            #[cfg(test)]
             ValidatedArtifactGenerator::BuildCode {
                 session,
                 codegen,
                 options,
-                data_format,
                 id_as_enum_variants,
                 needs_model_for_build,
             } => {
@@ -372,7 +502,6 @@ impl ValidatedArtifactReleaseOutput<'_> {
                 let artifacts = session.codegen_artifacts(
                     codegen.as_ref(),
                     &options,
-                    data_format,
                     id_as_enum_variants,
                     needs_model_for_build,
                 )?;
@@ -382,19 +511,73 @@ impl ValidatedArtifactReleaseOutput<'_> {
                     artifacts,
                 )
             }
-            ValidatedArtifactGenerator::SchemaCode {
+            ValidatedArtifactGenerator::BuildCodeWithLoader {
                 session,
                 codegen,
-                options,
-                data_format,
+                loader,
+                code_options,
+                data_options,
+                loader_options,
                 id_as_enum_variants,
+                needs_model_for_build,
+                legacy_layout,
             } => {
                 let descriptor = codegen.descriptor();
-                let artifacts = session.codegen_artifacts(
+                let common = session.codegen_artifacts(
                     codegen.as_ref(),
-                    &options,
-                    data_format,
+                    &code_options,
                     id_as_enum_variants,
+                    needs_model_for_build,
+                )?;
+                let loader_artifacts = session.loader_artifacts(
+                    loader.as_ref(),
+                    &code_options,
+                    &data_options,
+                    &loader_options,
+                    id_as_enum_variants,
+                )?;
+                let artifacts = merge_code_and_loader_artifacts(
+                    loader.as_ref(),
+                    common,
+                    loader_artifacts,
+                    legacy_layout,
+                    &self.slot,
+                )?;
+                (
+                    descriptor.id.to_string(),
+                    descriptor.display_name,
+                    artifacts,
+                )
+            }
+            ValidatedArtifactGenerator::SchemaCodeWithLoader {
+                session,
+                codegen,
+                loader,
+                code_options,
+                data_options,
+                loader_options,
+                id_as_enum_variants,
+                legacy_layout,
+            } => {
+                let descriptor = codegen.descriptor();
+                let common = session.codegen_artifacts(
+                    codegen.as_ref(),
+                    &code_options,
+                    id_as_enum_variants,
+                )?;
+                let loader_artifacts = session.loader_artifacts(
+                    loader.as_ref(),
+                    &code_options,
+                    &data_options,
+                    &loader_options,
+                    id_as_enum_variants,
+                )?;
+                let artifacts = merge_code_and_loader_artifacts(
+                    loader.as_ref(),
+                    common,
+                    loader_artifacts,
+                    legacy_layout,
+                    &self.slot,
                 )?;
                 (
                     descriptor.id.to_string(),
@@ -413,15 +596,36 @@ impl ValidatedArtifactReleaseOutput<'_> {
     }
 }
 
+fn merge_code_and_loader_artifacts(
+    loader: &dyn LoaderGenerator,
+    common: ArtifactSet,
+    loader_artifacts: ArtifactSet,
+    legacy_layout: bool,
+    slot: &str,
+) -> Result<ArtifactSet, DiagnosticSet> {
+    if legacy_layout {
+        loader.merge_legacy_artifacts(common, loader_artifacts)
+    } else {
+        let mut files = common.into_files();
+        files.extend(loader_artifacts.into_files());
+        ArtifactSet::new(files).map_err(|error| {
+            diagnostic_set(
+                PathBuf::from(slot),
+                format!("generated code and loader artifacts conflict: {error}"),
+            )
+        })
+    }
+}
+
 fn validate_release_slots(
     outputs: &[ArtifactReleaseOutput<'_>],
-    removed_outputs: &[&str],
+    removed_outputs: &[String],
 ) -> Result<(), DiagnosticSet> {
     let mut output_slots = BTreeSet::new();
     for output in outputs {
-        if output.slot.is_empty() || !output_slots.insert(output.slot) {
+        if output.slot.is_empty() || !output_slots.insert(output.slot.as_str()) {
             return Err(diagnostic_set(
-                PathBuf::from(output.slot),
+                PathBuf::from(&output.slot),
                 format!(
                     "artifact release contains invalid or duplicate `{}` output",
                     output.slot
@@ -431,7 +635,10 @@ fn validate_release_slots(
     }
     let mut removed_slots = BTreeSet::new();
     for slot in removed_outputs {
-        if slot.is_empty() || !removed_slots.insert(*slot) || output_slots.contains(*slot) {
+        if slot.is_empty()
+            || !removed_slots.insert(slot.as_str())
+            || output_slots.contains(slot.as_str())
+        {
             return Err(diagnostic_set(
                 PathBuf::from(slot),
                 format!("artifact release contains conflicting `{slot}` removal"),
@@ -439,26 +646,6 @@ fn validate_release_slots(
         }
     }
     Ok(())
-}
-
-fn validate_codegen(
-    project: &Project,
-    codegen: &dyn CodeGenerator,
-    data_format: &str,
-) -> Result<&'static coflow_api::CodegenDescriptor, DiagnosticSet> {
-    let descriptor = codegen.descriptor();
-    if descriptor.supported_data_formats.contains(&data_format) {
-        Ok(descriptor)
-    } else {
-        Err(project_config_diagnostic_set(
-            project,
-            format!(
-                "code generator `{}` does not support data format `{data_format}`",
-                descriptor.id
-            ),
-            ["outputs", "code", "type"],
-        ))
-    }
 }
 
 impl PreparedArtifactRelease<'_> {
@@ -469,11 +656,11 @@ impl PreparedArtifactRelease<'_> {
         for output in self.outputs {
             let staged_output = stage_artifact_set(
                 &publication::artifact_state_dir(self.project),
-                output.slot,
+                &output.slot,
                 &output.dir,
                 output.artifacts,
             )?;
-            staged.push((output.slot, staged_output));
+            staged.push((output.slot.clone(), staged_output));
             metadata.push((output.slot, output.provider_id, output.display_name));
         }
 
@@ -485,12 +672,13 @@ impl PreparedArtifactRelease<'_> {
         )?;
         let mut outputs = BTreeMap::new();
         for (slot, provider_id, display_name) in metadata {
+            let dir = published.output_dir(&slot)?.to_path_buf();
             outputs.insert(
                 slot,
                 ReleasedOutput {
                     provider_id,
                     display_name,
-                    dir: published.output_dir(slot)?.to_path_buf(),
+                    dir,
                 },
             );
         }
@@ -498,88 +686,102 @@ impl PreparedArtifactRelease<'_> {
     }
 }
 
+pub fn data_output_slot(target_index: usize) -> String {
+    if target_index == 0 {
+        DATA_OUTPUT_SLOT.to_string()
+    } else {
+        format!("output-{target_index}-data")
+    }
+}
+
+pub fn code_output_slot(target_index: usize) -> String {
+    if target_index == 0 {
+        CODE_OUTPUT_SLOT.to_string()
+    } else {
+        format!("output-{target_index}-code")
+    }
+}
+
+fn is_managed_output_slot(slot: &str) -> bool {
+    if matches!(slot, DATA_OUTPUT_SLOT | CODE_OUTPUT_SLOT) {
+        return true;
+    }
+    let Some(rest) = slot.strip_prefix("output-") else {
+        return false;
+    };
+    let Some((index, kind)) = rest.rsplit_once('-') else {
+        return false;
+    };
+    index.parse::<usize>().is_ok() && matches!(kind, "data" | "code")
+}
+
 pub fn required_data_output<'a>(
     project: &'a Project,
     exporter_id: &str,
     command: &str,
-) -> Result<&'a OutputConfig, DiagnosticSet> {
-    let output = project.config.outputs.data.as_ref().ok_or_else(|| {
-        project_config_diagnostic_set(
+) -> Result<(usize, &'a OutputConfig), DiagnosticSet> {
+    let matches = project
+        .config
+        .outputs
+        .targets()
+        .iter()
+        .enumerate()
+        .filter(|(_, target)| target.data.output_type == exporter_id)
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [(index, target)] => Ok((*index, &target.data)),
+        [] => Err(project_config_diagnostic_set(
             project,
             format!(
-                "coflow.yaml missing outputs.data; required `type: {exporter_id}` and `dir` for `{command}`"
+                "coflow.yaml has no output target with data.type `{exporter_id}`; required `{exporter_id}` for `{command}`"
             ),
-            ["outputs", "data"],
-        )
-    })?;
-    require_output_type(project, output, "data", exporter_id, command)?;
-    Ok(output)
+            ["outputs"],
+        )),
+        _ => Err(project_config_diagnostic_set(
+            project,
+            format!(
+                "coflow.yaml has multiple output targets with data.type `{exporter_id}`; `{command}` requires a unique target"
+            ),
+            ["outputs"],
+        )),
+    }
 }
 
 pub fn required_code_output<'a>(
     project: &'a Project,
     codegen_id: &str,
     command: &str,
-) -> Result<&'a OutputConfig, DiagnosticSet> {
-    let output = project.config.outputs.code.as_ref().ok_or_else(|| {
-        project_config_diagnostic_set(
+) -> Result<(usize, &'a OutputTargetConfig, &'a OutputConfig), DiagnosticSet> {
+    let matches = project
+        .config
+        .outputs
+        .targets()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, target)| {
+            target
+                .code
+                .as_ref()
+                .filter(|code| code.output_type == codegen_id)
+                .map(|code| (index, target, code))
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [(index, target, code)] => Ok((*index, *target, *code)),
+        [] => Err(project_config_diagnostic_set(
             project,
             format!(
-                "coflow.yaml missing outputs.code; required `type: {codegen_id}` and `dir` for `{command}`"
+                "coflow.yaml has no output target with code.type `{codegen_id}`; required for `{command}`"
             ),
-            ["outputs", "code"],
-        )
-    })?;
-    require_output_type(project, output, "code", codegen_id, command)?;
-    Ok(output)
-}
-
-pub fn configured_data_format<'a>(
-    project: &'a Project,
-    command: &str,
-) -> Result<&'a str, DiagnosticSet> {
-    let output = project.config.outputs.data.as_ref().ok_or_else(|| {
-        project_config_diagnostic_set(
-            project,
-            format!("coflow.yaml missing outputs.data; required `type` and `dir` for `{command}`"),
-            ["outputs", "data"],
-        )
-    })?;
-    Ok(output.output_type.as_str())
-}
-
-pub fn configured_data_output<'a>(
-    project: &'a Project,
-    command: &str,
-) -> Result<(&'a OutputConfig, &'a str), DiagnosticSet> {
-    let output = project.config.outputs.data.as_ref().ok_or_else(|| {
-        project_config_diagnostic_set(
-            project,
-            format!("coflow.yaml missing outputs.data; required `type` and `dir` for `{command}`"),
-            ["outputs", "data"],
-        )
-    })?;
-    Ok((output, output.output_type.as_str()))
-}
-
-fn require_output_type(
-    project: &Project,
-    output: &OutputConfig,
-    output_name: &str,
-    required_type: &str,
-    command: &str,
-) -> Result<(), DiagnosticSet> {
-    if output.output_type == required_type {
-        Ok(())
-    } else {
-        Err(project_config_diagnostic_set(
+            ["outputs"],
+        )),
+        _ => Err(project_config_diagnostic_set(
             project,
             format!(
-            "coflow.yaml outputs.{output_name}.type is `{}`; required `{required_type}` for `{command}`",
-            output.output_type
+                "coflow.yaml has multiple output targets with code.type `{codegen_id}`; `{command}` requires a unique target"
             ),
-            ["outputs", output_name, "type"],
-        ))
+            ["outputs"],
+        )),
     }
 }
 
@@ -645,7 +847,6 @@ mod tests {
         display_name: "Test code",
         language: "test",
         file_extensions: &["txt"],
-        supported_data_formats: &["test-data"],
         needs_model_for_build: false,
     };
 
@@ -770,7 +971,6 @@ mod tests {
             Arc::new(FailingCodegen),
             fixture.code_output(),
             None,
-            "test-data",
             &Value::Null,
         );
 
@@ -800,7 +1000,6 @@ mod tests {
             Arc::new(FailingOptionCodegen),
             fixture.code_output(),
             None,
-            "test-data",
             &Value::Null,
         );
 
@@ -855,8 +1054,9 @@ mod tests {
             self.project
                 .config
                 .outputs
-                .data
-                .as_ref()
+                .targets()
+                .first()
+                .map(|target| &target.data)
                 .expect("data output")
         }
 
@@ -864,8 +1064,9 @@ mod tests {
             self.project
                 .config
                 .outputs
-                .code
-                .as_ref()
+                .targets()
+                .first()
+                .and_then(|target| target.code.as_ref())
                 .expect("code output")
         }
     }

@@ -671,6 +671,7 @@ version = "0.7.0"
 dependencies = [
  "coflow-api",
  "coflow-cft",
+ "coflow-data-model",
  "serde",
  "serde_json",
  "tera",

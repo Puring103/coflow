@@ -1,5 +1,6 @@
 use crate::{
-    CodeGenerator, DataExporter, DimensionSourceManager, SourceProvider, SourceWriter, TableManager,
+    CodeGenerator, DataExporter, DimensionSourceManager, LoaderGenerator, SourceProvider,
+    SourceWriter, TableManager,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -16,6 +17,7 @@ pub struct ProviderBundle {
     dimension_source_managers: BTreeMap<&'static str, Arc<dyn DimensionSourceManager>>,
     exporters: BTreeMap<&'static str, Arc<dyn DataExporter>>,
     codegens: BTreeMap<&'static str, Arc<dyn CodeGenerator>>,
+    loaders: Vec<Arc<dyn LoaderGenerator>>,
 }
 
 impl fmt::Debug for ProviderBundle {
@@ -30,6 +32,14 @@ impl fmt::Debug for ProviderBundle {
             )
             .field("exporters", &self.exporters.keys())
             .field("codegens", &self.codegens.keys())
+            .field(
+                "loaders",
+                &self
+                    .loaders
+                    .iter()
+                    .map(|loader| loader.descriptor().id)
+                    .collect::<Vec<_>>(),
+            )
             .finish()
     }
 }
@@ -64,6 +74,7 @@ impl ProviderBundle {
         )?;
         ensure_available(&self.exporters, &additions.exporters, "exporter")?;
         ensure_available(&self.codegens, &additions.codegens, "codegen")?;
+        ensure_loader_ids_available(&self.loaders, &additions.loaders)?;
 
         self.source_providers.extend(additions.source_providers);
         self.source_writers.extend(additions.source_writers);
@@ -72,6 +83,7 @@ impl ProviderBundle {
             .extend(additions.dimension_source_managers);
         self.exporters.extend(additions.exporters);
         self.codegens.extend(additions.codegens);
+        self.loaders.extend(additions.loaders);
         Ok(())
     }
 
@@ -226,6 +238,27 @@ impl ProviderBundle {
         let codegen: Arc<dyn CodeGenerator> = Arc::new(codegen);
         insert_role(&mut self.codegens, "codegen", id, codegen)
     }
+
+    /// Adds a generated-code loader role to this bundle.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when this bundle already contains the same role id.
+    pub fn add_loader<L>(&mut self, loader: L) -> Result<(), ProviderRegistrationError>
+    where
+        L: LoaderGenerator + 'static,
+    {
+        let id = loader.descriptor().id;
+        if self
+            .loaders
+            .iter()
+            .any(|registered| registered.descriptor().id == id)
+        {
+            return Err(ProviderRegistrationError::duplicate("loader generator", id));
+        }
+        self.loaders.push(Arc::new(loader));
+        Ok(())
+    }
 }
 
 impl ProviderRegistry {
@@ -261,6 +294,12 @@ impl ProviderRegistry {
         )?;
         ensure_available(&self.exporters, &bundle.exporters, "exporter")?;
         ensure_available(&self.codegens, &bundle.codegens, "codegen")?;
+        let registered_loaders = self
+            .loader_order
+            .iter()
+            .filter_map(|id| self.loaders.get(id).cloned())
+            .collect::<Vec<_>>();
+        ensure_loader_ids_available(&registered_loaders, &bundle.loaders)?;
 
         let ProviderBundle {
             source_providers,
@@ -269,6 +308,7 @@ impl ProviderRegistry {
             dimension_source_managers,
             exporters,
             codegens,
+            loaders,
         } = bundle;
         self.source_providers.extend(source_providers);
         self.source_writers.extend(source_writers);
@@ -277,8 +317,31 @@ impl ProviderRegistry {
             .extend(dimension_source_managers);
         self.exporters.extend(exporters);
         self.codegens.extend(codegens);
+        for loader in loaders {
+            let id = loader.descriptor().id;
+            self.loader_order.push(id);
+            self.loaders.insert(id, loader);
+        }
         Ok(())
     }
+}
+
+fn ensure_loader_ids_available(
+    registered: &[Arc<dyn LoaderGenerator>],
+    additions: &[Arc<dyn LoaderGenerator>],
+) -> Result<(), ProviderRegistrationError> {
+    if let Some(id) = additions
+        .iter()
+        .map(|loader| loader.descriptor().id)
+        .find(|id| {
+            registered
+                .iter()
+                .any(|loader| loader.descriptor().id == *id)
+        })
+    {
+        return Err(ProviderRegistrationError::duplicate("loader generator", id));
+    }
+    Ok(())
 }
 
 fn insert_role<T: ?Sized>(

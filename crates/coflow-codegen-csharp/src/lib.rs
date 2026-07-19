@@ -1,7 +1,4 @@
-//! C# code generator for Coflow's exported JSON and `MessagePack` runtime data.
-//!
-//! The generated C# code does not depend on CFT at runtime. CFT is consumed only
-//! by this Rust crate during generation.
+//! C# code generator for Coflow runtime declarations and data loaders.
 
 #![cfg_attr(
     not(test),
@@ -25,33 +22,23 @@ mod names;
 mod render;
 
 use coflow_api::{
-    ArtifactFile, ArtifactSet, CodeGenerator, CodegenContext, CodegenDescriptor,
-    DecodedOutputOptions, Diagnostic, DiagnosticSet, ProviderBundle, ProviderRegistrationError,
+    ArtifactContent, ArtifactFile, ArtifactSet, CodeGenerator, CodegenContext, CodegenDescriptor,
+    DecodedOutputOptions, Diagnostic, DiagnosticSet, LoaderDescriptor, LoaderGenerationContext,
+    LoaderGenerator, ProviderBundle, ProviderRegistrationError,
 };
 use coflow_cft::CftSchema;
+use coflow_data_model::CfdDataModel;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
 
-pub use ir::{CsharpCodegenOptions, CsharpDataFormat, CsharpIdAsEnumVariant};
+pub use ir::{CsharpCodegenOptions, CsharpIdAsEnumVariant};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedFile {
     pub relative_path: PathBuf,
     pub contents: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CsharpTemplate {
-    pub name: &'static str,
-    pub contents: &'static str,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CsharpDatabaseTemplates {
-    pub database_template: CsharpTemplate,
-    pub partials: &'static [CsharpTemplate],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,191 +73,136 @@ impl fmt::Display for CsharpCodegenError {
 
 impl std::error::Error for CsharpCodegenError {}
 
-/// Generates C# files using a caller-provided database loader template set.
+fn build_csharp_project(
+    schema: &CftSchema,
+    options: &CsharpCodegenOptions,
+    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
+    non_empty_tables: Option<&BTreeSet<String>>,
+) -> Result<model::CsharpProject, CsharpCodegenError> {
+    ir::build_project(schema, options, id_as_enum_variants, non_empty_tables)
+}
+
+/// Generates format-independent C# declarations.
 ///
 /// # Errors
 ///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
+/// Returns an error when the schema cannot be mapped to C# runtime code or a
+/// template fails to render.
 pub fn generate_csharp(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,
-    data_format: CsharpDataFormat,
-    database_templates: &CsharpDatabaseTemplates,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_database_templates(schema, options, data_format, database_templates)
+    generate_common_with_id_as_enum_variants(schema, options, BTreeMap::new(), None)
 }
 
-/// Generates C# files using a caller-provided database loader template set.
-///
-/// Format-specific crates use this to keep JSON and `MessagePack` templates out
-/// of the shared C# codegen core.
-///
-/// # Errors
-///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
-pub fn generate_csharp_with_database_templates(
+fn generate_common_with_id_as_enum_variants(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,
-    data_format: CsharpDataFormat,
-    database_templates: &CsharpDatabaseTemplates,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_id_as_enum_variants(
-        schema,
-        options,
-        data_format,
-        database_templates,
-        BTreeMap::new(),
-        None,
-    )
-}
-
-/// Generates C# files and includes data-driven enum variants for types marked
-/// with `@idAsEnum`.
-///
-/// # Errors
-///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
-pub fn generate_csharp_with_id_as_enum_variants(
-    schema: &CftSchema,
-    options: &CsharpCodegenOptions,
-    data_format: CsharpDataFormat,
-    database_templates: &CsharpDatabaseTemplates,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
-    non_empty_tables: Option<&std::collections::BTreeSet<String>>,
+    non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let project = ir::build_project(
-        schema,
-        options,
-        data_format,
-        id_as_enum_variants,
-        non_empty_tables,
-    )?;
-    render::render_project(&project, database_templates)
+    let project = build_csharp_project(schema, options, id_as_enum_variants, non_empty_tables)?;
+    render::render_common_project(&project)
 }
 
-const JSON_DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTemplates {
-    database_template: CsharpTemplate {
-        name: "database_json.cs.tera",
-        contents: include_str!("../templates/json/database_json.cs.tera"),
-    },
-    partials: &[],
-};
+fn generate_loader_with_id_as_enum_variants(
+    schema: &CftSchema,
+    options: &CsharpCodegenOptions,
+    kind: render::CsharpLoaderKind,
+    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
+    non_empty_tables: Option<&BTreeSet<String>>,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    let project = build_csharp_project(schema, options, id_as_enum_variants, non_empty_tables)?;
+    render::render_loader_project(&project, kind)
+}
 
-const MESSAGEPACK_DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTemplates {
-    database_template: CsharpTemplate {
-        name: "database_messagepack.cs.tera",
-        contents: include_str!("../templates/messagepack/database_messagepack.cs.tera"),
-    },
-    partials: &[],
-};
+fn generate_complete(
+    schema: &CftSchema,
+    options: &CsharpCodegenOptions,
+    kind: render::CsharpLoaderKind,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    let project = build_csharp_project(schema, options, BTreeMap::new(), None)?;
+    let mut files = render::render_common_project(&project)?;
+    for loader in render::render_loader_project(&project, kind)? {
+        let loader_name = loader.relative_path.to_string_lossy();
+        let common_name = loader_name.replace(".Loader.cs", ".cs");
+        if let Some(common) = files
+            .iter_mut()
+            .find(|file| file.relative_path == PathBuf::from(&common_name))
+        {
+            merge_legacy_csharp_contents(&mut common.contents, &loader.contents)?;
+        } else {
+            files.push(loader);
+        }
+    }
+    Ok(files)
+}
 
-/// Generates C# type definitions and a Newtonsoft.Json based folder loader.
+/// Generates C# declarations and a Newtonsoft.Json loader.
 ///
 /// # Errors
 ///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
+/// Returns an error when generation fails.
 pub fn generate_csharp_json(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_database_templates(
-        schema,
-        options,
-        CsharpDataFormat::Json,
-        &JSON_DATABASE_TEMPLATES,
-    )
+    generate_complete(schema, options, render::CsharpLoaderKind::Json)
 }
 
-/// Generates C# JSON loader files and includes data-driven `@idAsEnum`
-/// variants.
+/// Generates C# declarations and a MessagePack loader.
 ///
 /// # Errors
 ///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
-pub fn generate_csharp_json_with_id_as_enum_variants(
-    schema: &CftSchema,
-    options: &CsharpCodegenOptions,
-    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
-    non_empty_tables: Option<&std::collections::BTreeSet<String>>,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_id_as_enum_variants(
-        schema,
-        options,
-        CsharpDataFormat::Json,
-        &JSON_DATABASE_TEMPLATES,
-        id_as_enum_variants,
-        non_empty_tables,
-    )
-}
-
-/// Generates C# type definitions and a `MessagePack` based folder loader.
-///
-/// # Errors
-///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
+/// Returns an error when generation fails.
 pub fn generate_csharp_messagepack(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_database_templates(
-        schema,
-        options,
-        CsharpDataFormat::MessagePack,
-        &MESSAGEPACK_DATABASE_TEMPLATES,
-    )
-}
-
-/// Generates C# `MessagePack` loader files and includes data-driven
-/// `@idAsEnum` variants.
-///
-/// # Errors
-///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
-pub fn generate_csharp_messagepack_with_id_as_enum_variants(
-    schema: &CftSchema,
-    options: &CsharpCodegenOptions,
-    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
-    non_empty_tables: Option<&std::collections::BTreeSet<String>>,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_id_as_enum_variants(
-        schema,
-        options,
-        CsharpDataFormat::MessagePack,
-        &MESSAGEPACK_DATABASE_TEMPLATES,
-        id_as_enum_variants,
-        non_empty_tables,
-    )
+    generate_complete(schema, options, render::CsharpLoaderKind::MessagePack)
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CsharpCodeGenerator;
 
-/// Declares the C# code generator role implemented by this package.
-///
-/// # Errors
-///
-/// Returns an error if the package declares the code generator id more than once.
-pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
-    let mut bundle = ProviderBundle::default();
-    bundle.add_codegen(CsharpCodeGenerator)?;
-    Ok(bundle)
-}
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CsharpJsonLoaderGenerator;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CsharpMessagePackLoaderGenerator;
 
 pub const CSHARP_CODEGEN_DESCRIPTOR: CodegenDescriptor = CodegenDescriptor {
     id: "csharp",
     display_name: "C#",
     language: "csharp",
     file_extensions: &["cs"],
-    supported_data_formats: &["json", "messagepack"],
     needs_model_for_build: true,
 };
+
+pub const CSHARP_JSON_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+    id: "csharp-json",
+    code: "csharp",
+    data: "json",
+};
+
+pub const CSHARP_MESSAGEPACK_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+    id: "csharp-messagepack",
+    code: "csharp",
+    data: "messagepack",
+};
+
+/// Declares the C# code and loader generator roles implemented by this package.
+///
+/// # Errors
+///
+/// Returns an error if the package declares a provider id more than once.
+pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
+    let mut bundle = ProviderBundle::default();
+    bundle.add_codegen(CsharpCodeGenerator)?;
+    bundle.add_loader(CsharpJsonLoaderGenerator)?;
+    bundle.add_loader(CsharpMessagePackLoaderGenerator)?;
+    Ok(bundle)
+}
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -318,54 +250,218 @@ impl CodeGenerator for CsharpCodeGenerator {
         options: &DecodedOutputOptions,
     ) -> Result<ArtifactSet, DiagnosticSet> {
         let options = options.require::<CsharpOutputOptions>("csharp")?;
-        let id_as_enum_variants = id_as_enum_variants_from_context(ctx.id_as_enum_variants)?;
-        let non_empty_tables = ctx.model.map(|model| {
-            model
-                .tables()
-                .filter(|(_, table)| !table.records.is_empty())
-                .map(|(name, _)| name.to_string())
-                .collect::<std::collections::BTreeSet<String>>()
-        });
-        let generated = match ctx.data_format {
-            "json" => generate_csharp_json_with_id_as_enum_variants(
-                ctx.schema,
-                &options.codegen,
-                id_as_enum_variants,
-                non_empty_tables.as_ref(),
-            ),
-            "messagepack" => generate_csharp_messagepack_with_id_as_enum_variants(
-                ctx.schema,
-                &options.codegen,
-                id_as_enum_variants,
-                non_empty_tables.as_ref(),
-            ),
-            other => {
+        let variants = id_as_enum_variants_from_context(ctx.id_as_enum_variants)?;
+        let non_empty_tables = ctx.model.map(non_empty_tables);
+        let files = generate_common_with_id_as_enum_variants(
+            ctx.schema,
+            &options.codegen,
+            variants,
+            non_empty_tables.as_ref(),
+        )
+        .map_err(codegen_diagnostics)?;
+        generated_artifacts(files)
+    }
+}
+
+impl LoaderGenerator for CsharpJsonLoaderGenerator {
+    fn descriptor(&self) -> &'static LoaderDescriptor {
+        &CSHARP_JSON_LOADER_DESCRIPTOR
+    }
+
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedOutputOptions, DiagnosticSet> {
+        decode_loader_options(self.descriptor().id, options)
+    }
+
+    fn generate(
+        &self,
+        ctx: LoaderGenerationContext<'_>,
+        options: &DecodedOutputOptions,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        options.require::<()>(self.descriptor().id)?;
+        generate_loader_artifacts(ctx, render::CsharpLoaderKind::Json)
+    }
+
+    fn merge_legacy_artifacts(
+        &self,
+        common: ArtifactSet,
+        loader: ArtifactSet,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        merge_legacy_csharp_artifacts(common, loader)
+    }
+}
+
+impl LoaderGenerator for CsharpMessagePackLoaderGenerator {
+    fn descriptor(&self) -> &'static LoaderDescriptor {
+        &CSHARP_MESSAGEPACK_LOADER_DESCRIPTOR
+    }
+
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedOutputOptions, DiagnosticSet> {
+        decode_loader_options(self.descriptor().id, options)
+    }
+
+    fn generate(
+        &self,
+        ctx: LoaderGenerationContext<'_>,
+        options: &DecodedOutputOptions,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        options.require::<()>(self.descriptor().id)?;
+        generate_loader_artifacts(ctx, render::CsharpLoaderKind::MessagePack)
+    }
+
+    fn merge_legacy_artifacts(
+        &self,
+        common: ArtifactSet,
+        loader: ArtifactSet,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        merge_legacy_csharp_artifacts(common, loader)
+    }
+}
+
+fn merge_legacy_csharp_artifacts(
+    common: ArtifactSet,
+    loader: ArtifactSet,
+) -> Result<ArtifactSet, DiagnosticSet> {
+    let mut files = common.into_files();
+    for loader_file in loader.into_files() {
+        let loader_name = loader_file.relative_path.to_string_lossy();
+        let Some(common_name) = loader_name.strip_suffix(".Loader.cs") else {
+            files.push(loader_file);
+            continue;
+        };
+        let common_path = PathBuf::from(format!("{common_name}.cs"));
+        let Some(common_file) = files
+            .iter_mut()
+            .find(|file| file.relative_path == common_path)
+        else {
+            files.push(loader_file);
+            continue;
+        };
+        match (&mut common_file.content, loader_file.content) {
+            (ArtifactContent::Text(common), ArtifactContent::Text(loader)) => {
+                merge_legacy_csharp_contents(common, &loader).map_err(codegen_diagnostics)?;
+            }
+            _ => {
                 return Err(DiagnosticSet::one(Diagnostic::error(
-                    "CSHARP-FORMAT",
-                    "CODEGEN",
-                    format!("C# codegen does not support data format `{other}`"),
-                )))
+                    "CSHARP-ARTIFACT",
+                    "ARTIFACT",
+                    "C# loader companions must be text artifacts",
+                )));
             }
         }
-        .map_err(|err| DiagnosticSet {
-            diagnostics: err
-                .messages()
-                .map(|message| Diagnostic::error("CODEGEN-CSHARP-001", "CODEGEN", message))
-                .collect(),
-        })?;
-        ArtifactSet::new(
-            generated
-                .into_iter()
-                .map(|file| ArtifactFile::text(file.relative_path, file.contents))
-                .collect(),
-        )
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "CSHARP-ARTIFACT",
-                "ARTIFACT",
-                err.to_string(),
-            ))
+    }
+    ArtifactSet::new(files).map_err(|error| {
+        DiagnosticSet::one(Diagnostic::error(
+            "CSHARP-ARTIFACT",
+            "ARTIFACT",
+            error.to_string(),
+        ))
+    })
+}
+
+fn merge_legacy_csharp_contents(
+    common: &mut String,
+    loader: &str,
+) -> Result<(), CsharpCodegenError> {
+    let namespace_start = loader.find("namespace ").ok_or_else(|| {
+        CsharpCodegenError::new("C# loader companion is missing a namespace declaration")
+    })?;
+    let common_namespace_start = common.find("namespace ").ok_or_else(|| {
+        CsharpCodegenError::new("C# common artifact is missing a namespace declaration")
+    })?;
+    let imports = loader[..namespace_start]
+        .lines()
+        .filter(|line| line.starts_with("using "))
+        .filter(|line| {
+            !common[..common_namespace_start]
+                .lines()
+                .any(|item| item == *line)
         })
+        .collect::<Vec<_>>();
+    if !imports.is_empty() {
+        let mut block = imports.join("\n");
+        block.push('\n');
+        common.insert_str(common_namespace_start, &block);
+    }
+    common.push('\n');
+    common.push_str(&loader[namespace_start..]);
+    Ok(())
+}
+
+fn decode_loader_options(
+    id: &'static str,
+    options: &serde_json::Value,
+) -> Result<DecodedOutputOptions, DiagnosticSet> {
+    let Some(options) = options.as_object() else {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "CSHARP-LOADER-OPTIONS",
+            "CODEGEN",
+            "loader options must be an object",
+        )));
+    };
+    if let Some(option) = options.keys().next() {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "CSHARP-LOADER-OPTIONS",
+            "CODEGEN",
+            format!("unknown {id} loader option `{option}`"),
+        )));
+    }
+    Ok(DecodedOutputOptions::new(id, ()))
+}
+
+fn generate_loader_artifacts(
+    ctx: LoaderGenerationContext<'_>,
+    kind: render::CsharpLoaderKind,
+) -> Result<ArtifactSet, DiagnosticSet> {
+    let options = ctx.code_options.require::<CsharpOutputOptions>("csharp")?;
+    let variants = id_as_enum_variants_from_context(ctx.id_as_enum_variants)?;
+    let non_empty_tables = ctx.model.map(non_empty_tables);
+    let files = generate_loader_with_id_as_enum_variants(
+        ctx.schema,
+        &options.codegen,
+        kind,
+        variants,
+        non_empty_tables.as_ref(),
+    )
+    .map_err(codegen_diagnostics)?;
+    generated_artifacts(files)
+}
+
+fn non_empty_tables(model: &CfdDataModel) -> BTreeSet<String> {
+    model
+        .tables()
+        .filter(|(_, table)| !table.records.is_empty())
+        .map(|(name, _)| name.to_string())
+        .collect()
+}
+
+fn generated_artifacts(files: Vec<GeneratedFile>) -> Result<ArtifactSet, DiagnosticSet> {
+    ArtifactSet::new(
+        files
+            .into_iter()
+            .map(|file| ArtifactFile::text(file.relative_path, file.contents))
+            .collect(),
+    )
+    .map_err(|err| {
+        DiagnosticSet::one(Diagnostic::error(
+            "CSHARP-ARTIFACT",
+            "ARTIFACT",
+            err.to_string(),
+        ))
+    })
+}
+
+fn codegen_diagnostics(error: CsharpCodegenError) -> DiagnosticSet {
+    DiagnosticSet {
+        diagnostics: error
+            .messages()
+            .map(|message| Diagnostic::error("CODEGEN-CSHARP-001", "CODEGEN", message))
+            .collect(),
     }
 }
 

@@ -12,6 +12,7 @@
 use super::*;
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 fn compile_schema(source: &str) -> Result<CftSchema, String> {
     compile_schema_with_dimensions(source, CftDimensionInputs::default())
@@ -69,48 +70,18 @@ fn generated_output(files: &[GeneratedFile]) -> String {
         .join("\n")
 }
 
-fn json_database_templates() -> CsharpDatabaseTemplates {
-    CsharpDatabaseTemplates {
-        database_template: CsharpTemplate {
-            name: "database_json.cs.tera",
-            contents: include_str!("../templates/json/database_json.cs.tera"),
-        },
-        partials: &[],
-    }
-}
-
-fn messagepack_database_templates() -> CsharpDatabaseTemplates {
-    CsharpDatabaseTemplates {
-        database_template: CsharpTemplate {
-            name: "database_messagepack.cs.tera",
-            contents: include_str!("../templates/messagepack/database_messagepack.cs.tera"),
-        },
-        partials: &[],
-    }
-}
-
 fn generate_json(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp(
-        schema,
-        options,
-        CsharpDataFormat::Json,
-        &json_database_templates(),
-    )
+    generate_csharp_json(schema, options)
 }
 
 fn generate_messagepack(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp(
-        schema,
-        options,
-        CsharpDataFormat::MessagePack,
-        &messagepack_database_templates(),
-    )
+    generate_csharp_messagepack(schema, options)
 }
 
 fn generate_json_with_id_as_enum_variants(
@@ -118,14 +89,24 @@ fn generate_json_with_id_as_enum_variants(
     options: &CsharpCodegenOptions,
     variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_id_as_enum_variants(
-        schema,
-        options,
-        CsharpDataFormat::Json,
-        &json_database_templates(),
-        variants,
-        None,
-    )
+    let project = build_csharp_project(schema, options, variants, None)?;
+    let mut files = render::render_common_project(&project)?;
+    for loader in render::render_loader_project(&project, render::CsharpLoaderKind::Json)? {
+        let common_name = loader
+            .relative_path
+            .to_string_lossy()
+            .replace(".Loader.cs", ".cs");
+        if let Some(common) = files
+            .iter_mut()
+            .find(|file| file.relative_path == PathBuf::from(&common_name))
+        {
+            common.contents.push('\n');
+            common.contents.push_str(&loader.contents);
+        } else {
+            files.push(loader);
+        }
+    }
+    Ok(files)
 }
 
 #[test]
@@ -331,14 +312,6 @@ fn codegen_emits_multiple_singletons_with_correct_separators() -> Result<(), Str
     require_contains(database, "public ServerConfig ServerConfig { get; }")?;
     require_contains(database, "public Table<string, Item> TbItem { get; }")?;
     require_not_contains(database, ",,")?;
-    Ok(())
-}
-
-#[test]
-fn data_format_serializes_messagepack_without_separator() -> Result<(), String> {
-    let value =
-        serde_json::to_value(CsharpDataFormat::MessagePack).map_err(|err| err.to_string())?;
-    assert_eq!(value, serde_json::json!("messagepack"));
     Ok(())
 }
 
@@ -1019,7 +992,6 @@ fn provider_generation_preserves_multiple_validation_diagnostics() -> Result<(),
             CodegenContext {
                 schema: schema,
                 model: None,
-                data_format: "json",
                 id_as_enum_variants: &serde_json::Value::Null,
             },
             &options,
@@ -1043,7 +1015,6 @@ fn provider_generation_honors_database_class_option() -> Result<(), String> {
             CodegenContext {
                 schema: schema,
                 model: None,
-                data_format: "json",
                 id_as_enum_variants: &serde_json::Value::Null,
             },
             &options,

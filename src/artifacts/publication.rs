@@ -57,8 +57,8 @@ impl PublishedArtifactSnapshot {
 
 pub fn publish_artifacts(
     project: &Project,
-    staged_outputs: Vec<(&str, StagedArtifactDir)>,
-    removed_outputs: &[&str],
+    staged_outputs: Vec<(String, StagedArtifactDir)>,
+    removed_outputs: &[String],
     enum_lock_update: EnumLockUpdate,
 ) -> Result<PublishedArtifactSnapshot, DiagnosticSet> {
     validate_publication_slots(project, &staged_outputs, removed_outputs)?;
@@ -71,11 +71,11 @@ pub fn publish_artifacts(
     for (slot, staged) in staged_outputs {
         let (generation, requested_output) = staged.seal()?;
         pending_generations.track(&generation);
-        manifest.outputs.insert(slot.to_string(), generation);
+        manifest.outputs.insert(slot, generation);
         requested_outputs.push(requested_output);
     }
     for slot in removed_outputs {
-        manifest.outputs.remove(*slot);
+        manifest.outputs.remove(slot);
     }
     let persist_enum_lock = matches!(&enum_lock_update, EnumLockUpdate::Replace(_));
     if let EnumLockUpdate::Replace(value) = enum_lock_update {
@@ -135,12 +135,12 @@ impl Drop for PendingGenerations {
 
 fn validate_publication_slots(
     project: &Project,
-    staged_outputs: &[(&str, StagedArtifactDir)],
-    removed_outputs: &[&str],
+    staged_outputs: &[(String, StagedArtifactDir)],
+    removed_outputs: &[String],
 ) -> Result<(), DiagnosticSet> {
     let mut staged_slots = BTreeSet::new();
     for (slot, _) in staged_outputs {
-        if slot.is_empty() || !staged_slots.insert(*slot) {
+        if slot.is_empty() || !staged_slots.insert(slot.as_str()) {
             return Err(diagnostic_set(
                 manifest_path(project),
                 format!("artifact publication contains invalid or duplicate `{slot}` output"),
@@ -149,7 +149,10 @@ fn validate_publication_slots(
     }
     let mut removed_slots = BTreeSet::new();
     for slot in removed_outputs {
-        if slot.is_empty() || !removed_slots.insert(*slot) || staged_slots.contains(*slot) {
+        if slot.is_empty()
+            || !removed_slots.insert(slot.as_str())
+            || staged_slots.contains(slot.as_str())
+        {
             return Err(diagnostic_set(
                 manifest_path(project),
                 format!("artifact publication contains conflicting `{slot}` removal"),
@@ -164,6 +167,12 @@ pub fn read_active_enum_lock(project: &Project) -> Result<Option<Value>, Diagnos
         return Ok(Some(value));
     }
     read_versioned_enum_lock(project)
+}
+
+pub(crate) fn active_output_slots(project: &Project) -> Result<Vec<String>, DiagnosticSet> {
+    Ok(load_active_manifest(project)?
+        .map(|manifest| manifest.outputs.into_keys().collect())
+        .unwrap_or_default())
 }
 
 fn read_versioned_enum_lock(project: &Project) -> Result<Option<Value>, DiagnosticSet> {
@@ -465,7 +474,7 @@ mod tests {
         .expect("stage baseline artifacts");
         let baseline = publish_artifacts(
             &project,
-            vec![(DATA_OUTPUT_SLOT, baseline)],
+            vec![(DATA_OUTPUT_SLOT.to_string(), baseline)],
             &[],
             EnumLockUpdate::Replace(old_lock.clone()),
         )
@@ -499,7 +508,7 @@ mod tests {
             .and_then(|staged| {
                 publish_artifacts(
                     &project,
-                    vec![(DATA_OUTPUT_SLOT, staged)],
+                    vec![(DATA_OUTPUT_SLOT.to_string(), staged)],
                     &[],
                     EnumLockUpdate::Replace(new_lock.clone()),
                 )

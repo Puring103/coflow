@@ -133,13 +133,13 @@ pub(crate) struct ProjectCheckArgs {
 pub(crate) struct BuildArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override outputs.data.dir for this invocation.
+    /// Override the first output target's data directory for this invocation.
     #[arg(long = "data-out", value_name = "DIR")]
     pub(crate) data_out_dir: Option<PathBuf>,
-    /// Override outputs.code.dir for this invocation.
+    /// Override the first output target's code directory for this invocation.
     #[arg(long = "code-out", value_name = "DIR")]
     pub(crate) code_out_dir: Option<PathBuf>,
-    /// Override outputs.code.namespace for this invocation.
+    /// Override the first matching code target's namespace for this invocation.
     #[arg(long, value_name = "NAME")]
     pub(crate) namespace: Option<String>,
 }
@@ -158,9 +158,9 @@ pub(crate) struct ExportArgs {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum ExportCommand {
-    /// Export data as JSON. The project config must declare outputs.data.type: json.
+    /// Export the uniquely configured JSON data target.
     Json(ExportJsonArgs),
-    /// Export data as `MessagePack`. The project config must declare outputs.data.type: messagepack.
+    /// Export the uniquely configured MessagePack data target.
     Messagepack(ExportMessagePackArgs),
 }
 
@@ -168,7 +168,7 @@ pub(crate) enum ExportCommand {
 pub(crate) struct ExportJsonArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override outputs.data.dir for this invocation.
+    /// Override the selected data target's directory for this invocation.
     #[arg(long = "out", value_name = "DIR")]
     pub(crate) out_dir: Option<PathBuf>,
 }
@@ -177,7 +177,7 @@ pub(crate) struct ExportJsonArgs {
 pub(crate) struct ExportMessagePackArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override outputs.data.dir for this invocation.
+    /// Override the selected data target's directory for this invocation.
     #[arg(long = "out", value_name = "DIR")]
     pub(crate) out_dir: Option<PathBuf>,
 }
@@ -190,7 +190,7 @@ pub(crate) struct CodegenArgs {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum CodegenCommand {
-    /// Generate C# runtime code. The project config must declare outputs.code.type: csharp.
+    /// Generate the uniquely configured C# code target and its loader.
     Csharp(CodegenCsharpArgs),
 }
 
@@ -198,10 +198,10 @@ pub(crate) enum CodegenCommand {
 pub(crate) struct CodegenCsharpArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override outputs.code.dir for this invocation.
+    /// Override the selected code target's directory for this invocation.
     #[arg(long = "out", value_name = "DIR")]
     pub(crate) out_dir: Option<PathBuf>,
-    /// Override outputs.code.namespace for this invocation.
+    /// Override the selected code target's namespace for this invocation.
     #[arg(long, value_name = "NAME")]
     pub(crate) namespace: Option<String>,
 }

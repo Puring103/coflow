@@ -78,7 +78,7 @@ coflow export json examples/rpg
 coflow codegen csharp examples/rpg
 ```
 
-使用 MessagePack 时把 `outputs.data.type` 改为 `messagepack` 后重新 build 即可。
+使用 MessagePack 时把 output target 的 `data.type` 改为 `messagepack` 后重新 build 即可。
 
 ---
 
@@ -93,13 +93,15 @@ sources:
   - path: data          # 目录源，自动发现 .xlsx / .csv / .cfd
 
 outputs:
-  data:
-    type: json
-    dir: generated/data
-  code:
-    type: csharp
-    dir: generated/csharp
-    namespace: Example.Rpg.Config
+  - data:
+      type: json
+      dir: generated/data
+    code:
+      type: csharp
+      dir: generated/csharp
+      namespace: Example.Rpg.Config
+    loader:
+      type: csharp-json
 ```
 
 需要显式映射 sheet、类型和列头时：
@@ -120,7 +122,7 @@ sources:
 
 `sources` 支持 `path`（本地文件或目录）或 `url`（远端 source）；`type` 是可选的 provider id，省略时按后缀推断。目录源可同时包含 Excel、CSV 和 CFD 文件；`sheets` 只作用于 Excel。
 
-`outputs.data.type` 支持 `json` / `messagepack`；`outputs.code.type` 目前支持 `csharp`。`outputs.*` 除 `type`、`dir` 外的字段会作为 provider options 传入（例如 C# codegen 的 `namespace`）。
+`outputs` 是 output target 列表，每个 target 必须有 `data`，并可选配置 `code` 和 `loader`。`data.type` 支持 `json` / `messagepack`，`code.type` 目前支持 `csharp`；省略 `loader` 时会按 code/data 组合自动选择。旧版本的对象式 `outputs: { data, code }` 配置仍完整兼容，并保持原有生成文件布局。
 
 启用维度和变体（例如本地化）：
 
