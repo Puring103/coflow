@@ -416,7 +416,7 @@ fn validate_dict_key(
     value: &CfdDictKey,
     path: CfdPath,
 ) -> Result<(), CfdValueSemanticError> {
-    match (non_nullable(expected), value) {
+    match (expected.non_nullable(), value) {
         (CftValueType::String, CfdDictKey::String(_)) | (CftValueType::Int, CfdDictKey::Int(_)) => {
             Ok(())
         }
@@ -525,13 +525,6 @@ fn validate_ref_target<C: CfdValueSemanticContext>(
         }
     }
     Err(ref_not_found(expected_type, target_key, path))
-}
-
-fn non_nullable(ty: &CftValueType) -> &CftValueType {
-    match ty {
-        CftValueType::Nullable(inner) => non_nullable(inner),
-        other => other,
-    }
 }
 
 fn type_mismatch(expected: &str, value: &CfdValue, path: CfdPath) -> CfdValueSemanticError {

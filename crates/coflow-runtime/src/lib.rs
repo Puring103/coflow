@@ -69,7 +69,7 @@ pub use query::ProjectQueries;
 pub use records::{
     dict_key_path_text, value_summary, DimensionValueOrigin, DimensionValueState,
     DimensionValueView, EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo, RecordReferenceInfo,
-    RecordTarget, RecordView, RefTargetInfo, WriteOutcome,
+    RecordView, RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{
     BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,

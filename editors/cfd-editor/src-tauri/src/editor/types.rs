@@ -10,6 +10,7 @@
 
 use coflow_api::{FlatDiagnostic, WriterCapabilities};
 use coflow_data_model::{CfdDictKey, CfdRecord, CfdValue};
+pub use coflow_runtime::{CreateFieldSource, CreateRequiredInput};
 use coflow_runtime::{FileTreeNode, RecordCoordinate};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -461,42 +462,6 @@ pub struct CreateRecordFieldDraft {
     pub annotation: Option<FieldAnnotation>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-#[serde(rename_all = "snake_case")]
-pub enum CreateFieldSource {
-    SchemaDefault,
-    TypeSeed,
-    RequiredInput,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CreateRequiredInput {
-    Ref {
-        target_type: String,
-    },
-    AbstractObject {
-        expected_type: String,
-        concrete_types: Vec<String>,
-    },
-    RecursiveObject {
-        type_name: String,
-    },
-    Unsupported {
-        message: String,
-    },
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(
@@ -557,11 +522,6 @@ pub struct GraphData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct GraphQuery {
     pub file_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

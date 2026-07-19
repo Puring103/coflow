@@ -2,7 +2,7 @@
 
 use coflow_api::DiagnosticSet;
 use coflow_data_model::{
-    format_cfd_dict_key, CfdDictKey, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdValue,
+    format_cfd_dict_key, CfdDictKey, CfdPath, CfdPathSegment, CfdRecord, CfdValue,
 };
 use coflow_data_model::{RecordOrigin, SourceLocation};
 use serde::{Deserialize, Serialize};
@@ -30,11 +30,6 @@ pub struct RecordView<'a> {
 /// update routes, undo stacks, and any other long-lived references that
 /// previously pointed at `old`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct WriteOutcome {
     pub touched: Vec<RecordCoordinate>,
     pub inserted: Option<RecordCoordinate>,
@@ -47,7 +42,6 @@ pub struct WriteOutcome {
     // Skip from TS: `DiagnosticSet` references concrete `Diagnostic` types
     // whose location data isn't part of the editor's surface. Hosts that
     // care convert to `FlatDiagnostic` before wire-shipping.
-    #[cfg_attr(feature = "ts-export", ts(skip))]
     pub diagnostics: DiagnosticSet,
 }
 
@@ -59,16 +53,6 @@ impl WriteOutcome {
             ..Default::default()
         }
     }
-}
-
-/// Target descriptor for future host write APIs.
-///
-/// The editor still resolves writes through its own path. Other hosts can use
-/// this descriptor to carry a coordinate and record id together.
-#[derive(Debug, Clone)]
-pub struct RecordTarget {
-    pub id: CfdRecordId,
-    pub coordinate: RecordCoordinate,
 }
 
 #[derive(Debug, Clone)]

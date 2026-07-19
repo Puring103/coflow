@@ -20,8 +20,6 @@ use coflow::commands::{
     BuildOptions, CodegenOptions, CommandOutcome, ExportOptions, CSHARP_CODEGEN_ID,
     JSON_EXPORTER_ID, MESSAGEPACK_EXPORTER_ID,
 };
-use coflow::diagnostics::cli_error;
-use coflow::{data_commands, schema_commands};
 use coflow_api::DiagnosticSet;
 use coflow_project::{normalize_path, path_to_slash, Project};
 use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
@@ -33,7 +31,13 @@ use std::process::ExitCode;
 
 mod cli;
 mod cli_output;
+mod data_commands;
 mod data_get_target;
+mod diagnostics;
+mod schema_commands;
+mod skill_commands;
+
+use diagnostics::cli_error;
 
 use cli::{
     BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, CodegenCommand,
@@ -73,25 +77,25 @@ fn run_skill(command: &SkillArgs) -> Result<bool, DiagnosticSet> {
     match &command.command {
         SkillCommand::Install(args) => write_skill_report(
             if args.global {
-                coflow::skill_commands::install_global()?
+                skill_commands::install_global()?
             } else {
-                coflow::skill_commands::install_project(args.config_or_dir.as_deref())?
+                skill_commands::install_project(args.config_or_dir.as_deref())?
             },
             args,
         ),
         SkillCommand::Uninstall(args) => write_skill_report(
             if args.global {
-                coflow::skill_commands::uninstall_global()?
+                skill_commands::uninstall_global()?
             } else {
-                coflow::skill_commands::uninstall_project(args.config_or_dir.as_deref())?
+                skill_commands::uninstall_project(args.config_or_dir.as_deref())?
             },
             args,
         ),
         SkillCommand::Status(args) => write_skill_report(
             if args.global {
-                coflow::skill_commands::status_global()?
+                skill_commands::status_global()?
             } else {
-                coflow::skill_commands::status_project(args.config_or_dir.as_deref())?
+                skill_commands::status_project(args.config_or_dir.as_deref())?
             },
             args,
         ),
@@ -99,7 +103,7 @@ fn run_skill(command: &SkillArgs) -> Result<bool, DiagnosticSet> {
 }
 
 fn write_skill_report(
-    report: coflow::skill_commands::SkillReport,
+    report: skill_commands::SkillReport,
     args: &SkillScopeArgs,
 ) -> Result<bool, DiagnosticSet> {
     if args.json {

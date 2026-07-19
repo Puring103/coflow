@@ -21,7 +21,6 @@ ts-export = [
     "dep:ts-rs",
     "coflow-api/ts-export",
     "coflow-data-model/ts-export",
-    "coflow-project/ts-export",
     "coflow-runtime/ts-export",
 ]
 
@@ -40,13 +39,12 @@ serde_json = "1"
 sha2 = "0.10"
 coflow-api = { path = "../../../crates/coflow-api" }
 coflow-builtins = { path = "../../../crates/coflow-builtins" }
-coflow-cft = { path = "../../../crates/coflow-cft" }
 coflow-data-model = { path = "../../../crates/coflow-data-model" }
 coflow-project = { path = "../../../crates/coflow-project" }
 coflow-runtime = { path = "../../../crates/coflow-runtime" }
-coflow = { path = "../../.." }
-walkdir = "2"
+coflow = { path = "../../..", default-features = false }
 ts-rs = { version = "10", optional = true }
 
 [dev-dependencies]
+coflow-cft = { path = "../../../crates/coflow-cft" }
 rust_xlsxwriter = "0.95"

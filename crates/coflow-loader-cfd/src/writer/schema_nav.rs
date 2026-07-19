@@ -15,7 +15,7 @@ pub(super) fn type_after_field_segment_for_ref(
     current_type: &CftValueType,
     field_name: &str,
 ) -> Option<CftValueType> {
-    match non_nullable(current_type) {
+    match current_type.non_nullable() {
         CftValueType::Object(type_name) => type_after_field_segment(schema, type_name, field_name),
         _ => None,
     }
@@ -29,7 +29,7 @@ pub(super) fn concrete_type_for_block(
     let Some(type_marker) = type_marker else {
         return expected_type.clone();
     };
-    let CftValueType::Object(expected_name) = non_nullable(expected_type) else {
+    let CftValueType::Object(expected_name) = expected_type.non_nullable() else {
         return expected_type.clone();
     };
     schema
@@ -45,7 +45,7 @@ pub(super) fn object_type_name<'a>(
     expected: Option<&'a CftValueType>,
     actual_type: &'a str,
 ) -> Option<&'a str> {
-    match expected.map(non_nullable) {
+    match expected.map(CftValueType::non_nullable) {
         Some(CftValueType::Object(type_name)) => Some(type_name.as_str()),
         Some(CftValueType::RecordRef(_)) => None,
         Some(_) | None => Some(actual_type),
@@ -53,7 +53,7 @@ pub(super) fn object_type_name<'a>(
 }
 
 pub(super) fn type_after_index_segment(current_type: &CftValueType) -> Option<CftValueType> {
-    match non_nullable(current_type) {
+    match current_type.non_nullable() {
         CftValueType::Array(inner) => Some((**inner).clone()),
         _ => None,
     }
@@ -62,7 +62,7 @@ pub(super) fn type_after_index_segment(current_type: &CftValueType) -> Option<Cf
 pub(super) fn type_after_dict_key_segment(
     current_type: &CftValueType,
 ) -> Option<(CftValueType, CftValueType)> {
-    match non_nullable(current_type) {
+    match current_type.non_nullable() {
         CftValueType::Dict(key, item) => Some(((**key).clone(), (**item).clone())),
         _ => None,
     }
@@ -76,7 +76,7 @@ pub(super) fn dict_key_path_matches(
     if source_key == path_key {
         return true;
     }
-    match non_nullable(key_type) {
+    match key_type.non_nullable() {
         CftValueType::String if path_key.starts_with('"') => {
             serde_json::from_str::<String>(path_key).is_ok_and(|decoded| decoded == source_key)
         }
@@ -84,14 +84,6 @@ pub(super) fn dict_key_path_matches(
             .strip_prefix(enum_name.as_str())
             .and_then(|rest| rest.strip_prefix('.'))
             .is_some_and(|variant| variant == source_key),
-        CftValueType::Nullable(inner) => dict_key_path_matches(inner, source_key, path_key),
         _ => false,
-    }
-}
-
-pub(super) fn non_nullable(ty: &CftValueType) -> &CftValueType {
-    match ty {
-        CftValueType::Nullable(inner) => non_nullable(inner),
-        other => other,
     }
 }

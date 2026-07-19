@@ -8,7 +8,7 @@ use coflow_cft::{
 use coflow_data_model::{CfdEnumValue, CfdObject, CfdValue};
 
 use super::{
-    non_nullable, one_mutation_error, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
+    one_mutation_error, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
     CreateRequiredInput, DefaultMaterialization,
 };
 
@@ -258,7 +258,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                     ),
             )),
             CftSchemaDefaultValue::EmptyArray => Ok(CfdValue::Array(Vec::new())),
-            CftSchemaDefaultValue::EmptyObject => match non_nullable(ty) {
+            CftSchemaDefaultValue::EmptyObject => match ty.non_nullable() {
                 CftValueType::Object(name) => {
                     let fields = self.fields_for_type(name, materialization, None)?;
                     Ok(CfdValue::Object(Box::new(CfdObject::new(
@@ -344,7 +344,7 @@ fn required_input_for_field(
     field: &CftField,
     err: Option<&DiagnosticSet>,
 ) -> CreateRequiredInput {
-    match non_nullable(&field.value_type) {
+    match field.value_type.non_nullable() {
         CftValueType::RecordRef(target_type) => CreateRequiredInput::Ref {
             target_type: target_type.to_string(),
         },

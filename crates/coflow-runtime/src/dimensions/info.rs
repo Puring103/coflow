@@ -10,11 +10,6 @@ use std::path::PathBuf;
 use super::sources::DimensionField;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DimensionInfo {
     /// Stable dimension name from `coflow.yaml` (e.g. `"language"`).
     pub name: String,
@@ -31,11 +26,6 @@ pub struct DimensionInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DimensionFieldInfo {
     pub source_type: String,
     pub source_field: String,

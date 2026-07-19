@@ -1,5 +1,7 @@
 # Coflow crates architecture analysis
 
+> **Superseded:** 本报告记录的是早期仓库快照，其中包含已经删除的 provider 和已经改变的依赖关系。当前架构以 `website/docs/docs/reference/12-architecture.md`、`AGENTS.md` 和 workspace manifests 为准。
+
 本报告只依据当前仓库源码、`Cargo.toml` / `cargo metadata`、`crates/` 下的模块结构和实现细节整理；没有使用站点参考文档作为事实来源。目标是重新核对现状，确认上一轮指出的问题哪些已经修复、哪些仍成立，以及当前代码里是否出现新的结构性风险。
 
 ## 1. Source audit scope

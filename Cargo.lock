@@ -475,7 +475,6 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-updater",
  "ts-rs",
- "walkdir",
 ]
 
 [[package]]
@@ -596,7 +595,6 @@ dependencies = [
  "clap",
  "coflow-api",
  "coflow-builtins",
- "coflow-cft",
  "coflow-codegen-csharp",
  "coflow-data-model",
  "coflow-exporter-json",
@@ -788,7 +786,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "ts-rs",
 ]
 
 [[package]]

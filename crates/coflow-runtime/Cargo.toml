@@ -15,7 +15,6 @@ ts-export = [
     "dep:ts-rs",
     "coflow-api/ts-export",
     "coflow-data-model/ts-export",
-    "coflow-project/ts-export",
 ]
 
 [dependencies]

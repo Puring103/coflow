@@ -419,7 +419,7 @@ fn dimension_value_at_path<'a>(
 }
 
 fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
-    let non_nullable = non_nullable(ty);
+    let non_nullable = ty.non_nullable();
     let ref_target_type = match non_nullable {
         CftValueType::RecordRef(name) => Some(name.to_string()),
         _ => None,
@@ -453,12 +453,5 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         nullable: matches!(ty, CftValueType::Nullable(_)),
         polymorphic_types,
         collection_item,
-    }
-}
-
-fn non_nullable(ty: &CftValueType) -> &CftValueType {
-    match ty {
-        CftValueType::Nullable(inner) => non_nullable(inner),
-        _ => ty,
     }
 }

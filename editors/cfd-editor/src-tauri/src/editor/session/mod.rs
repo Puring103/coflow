@@ -40,11 +40,10 @@ use crate::editor::settings::{
     read_project_settings, sanitized_column_widths, write_project_settings,
 };
 use crate::editor::types::{
-    CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,
-    CreateRequiredInput, DeleteRecordOutcome, DeletedRecordSnapshot, EditorError,
-    EditorProjectSettings, FileRecords, FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome,
-    ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome,
-    WriteFieldOutcome,
+    CollectionEdit, CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome,
+    DeletedRecordSnapshot, EditorError, EditorProjectSettings, FileRecords, FileTypeOption,
+    GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget,
+    RenameRecordOutcome, ReorderRecordsOutcome, WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -1173,46 +1172,9 @@ fn create_record_field_draft_to_wire(
     CreateRecordFieldDraft {
         name: field.name.clone(),
         value: field.value.clone(),
-        source: create_field_source_to_wire(field.source),
-        required: field.required.as_ref().map(create_required_input_to_wire),
+        source: field.source,
+        required: field.required.clone(),
         annotation,
-    }
-}
-
-const fn create_field_source_to_wire(
-    source: coflow_runtime::CreateFieldSource,
-) -> CreateFieldSource {
-    match source {
-        coflow_runtime::CreateFieldSource::SchemaDefault => CreateFieldSource::SchemaDefault,
-        coflow_runtime::CreateFieldSource::TypeSeed => CreateFieldSource::TypeSeed,
-        coflow_runtime::CreateFieldSource::RequiredInput => CreateFieldSource::RequiredInput,
-    }
-}
-
-fn create_required_input_to_wire(
-    input: &coflow_runtime::CreateRequiredInput,
-) -> CreateRequiredInput {
-    match input {
-        coflow_runtime::CreateRequiredInput::Ref { target_type } => CreateRequiredInput::Ref {
-            target_type: target_type.clone(),
-        },
-        coflow_runtime::CreateRequiredInput::AbstractObject {
-            expected_type,
-            concrete_types,
-        } => CreateRequiredInput::AbstractObject {
-            expected_type: expected_type.clone(),
-            concrete_types: concrete_types.clone(),
-        },
-        coflow_runtime::CreateRequiredInput::RecursiveObject { type_name } => {
-            CreateRequiredInput::RecursiveObject {
-                type_name: type_name.clone(),
-            }
-        }
-        coflow_runtime::CreateRequiredInput::Unsupported { message } => {
-            CreateRequiredInput::Unsupported {
-                message: message.clone(),
-            }
-        }
     }
 }
 

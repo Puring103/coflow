@@ -96,7 +96,7 @@ pub fn check_project(
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
     let runtime = Runtime::new(registry.clone());
-    let session = runtime.build_project_session(project.clone())?;
+    let session = runtime.open_read_only_session(project.clone())?;
     if session.queries().has_diagnostics() {
         Ok(CommandOutcome::Diagnostics(session.into_diagnostics()))
     } else {

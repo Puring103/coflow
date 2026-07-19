@@ -1,5 +1,5 @@
 use super::{
-    open_session, DataWriteCheck, DataWriteFileOptions, DataWriteFileReport, DataWriteInput,
+    open_read_session, DataWriteCheck, DataWriteFileOptions, DataWriteFileReport, DataWriteInput,
     DataWriteMode,
 };
 use crate::diagnostics::{cli_error, cli_file_error};
@@ -144,6 +144,6 @@ fn read_stdin_source() -> Result<String, DiagnosticSet> {
 fn check_project_after_data_write(
     config_or_dir: Option<&Path>,
 ) -> Result<Vec<FlatDiagnostic>, DiagnosticSet> {
-    let (session, _registry) = open_session(config_or_dir)?;
+    let (session, _registry) = open_read_session(config_or_dir)?;
     Ok(session.queries().diagnostics().flat_diagnostics())
 }
