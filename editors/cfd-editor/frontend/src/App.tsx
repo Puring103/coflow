@@ -46,7 +46,8 @@ import {
   cloneValue,
   recordActualType,
   recordKey,
-  sameCoordinate,
+    coordinateId,
+    sameCoordinate,
   type FieldPathSegment,
   type FieldValue,
 } from './wire'
@@ -1290,22 +1291,6 @@ export default function App() {
     if (typeName) setActiveType(typeName)
   }, [currentRoute, workspaceTabs])
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
-  const transferTargets = useMemo(() => {
-    if (!project || !activeFile || !activeType) return []
-    return Object.entries(project.file_types)
-      .filter(([filePath, types]) => (
-        filePath !== activeFile
-        && types?.some(type => type.name === activeType)
-      ))
-      .map(([filePath, types]) => {
-        const loaded = fileDataCache[filePath]
-        const recordCount = loaded
-          ? loaded.records.filter(record => recordActualType(record) === activeType).length
-          : types?.find(type => type.name === activeType)?.record_count ?? 0
-        return { filePath, recordCount }
-      })
-      .sort((left, right) => left.filePath.localeCompare(right.filePath))
-  }, [project, activeFile, activeType, fileDataCache])
   const activeDimensionData = activeFile ? dimensionFileCache[activeFile] : null
   const recordGroups = projectSettings?.record_groups[activeFile ?? '']?.[activeType] ?? []
 
@@ -1375,6 +1360,34 @@ export default function App() {
       ),
     )
   }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const dropRecordsAfterRecord = useCallback(async (
+    sources: readonly RecordCoordinate[], target: RecordCoordinate,
+  ) => {
+    if (!activeFile || !activeFileData) return
+    const sourceIds = new Set(sources
+      .filter(source => source.actual_type === target.actual_type)
+      .map(coordinateId))
+    if (sourceIds.has(coordinateId(target))) return
+    const current = activeFileData.records
+      .filter(row => row.coordinate.actual_type === target.actual_type)
+      .sort((left, right) => left.container_index - right.container_index)
+    const moving = current.filter(row => sourceIds.has(coordinateId(row.coordinate)))
+    const remaining = current.filter(row => !sourceIds.has(coordinateId(row.coordinate)))
+    const targetIndex = remaining.findIndex(row => sameCoordinate(row.coordinate, target))
+    if (moving.length === 0 || targetIndex < 0) return
+    const desired = [
+      ...remaining.slice(0, targetIndex + 1),
+      ...moving,
+      ...remaining.slice(targetIndex + 1),
+    ]
+    for (let index = 0; index < desired.length; index += 1) {
+      const currentIndex = current.findIndex(row => sameCoordinate(row.coordinate, desired[index].coordinate))
+      if (currentIndex === index) continue
+      await moveRecord(activeFile, desired[index].coordinate, index)
+      const [moved] = current.splice(currentIndex, 1)
+      current.splice(index, 0, moved)
+    }
+  }, [activeFile, activeFileData, moveRecord])
   const createManualRecordGroup = useCallback((records: readonly RecordCoordinate[]) => {
     if (!activeFile || !activeType) return
     recordGroupIdSequence.current += 1
@@ -1720,32 +1733,12 @@ export default function App() {
     },
     [currentRoute?.view, currentRoute?.file, deleteRecord],
   )
-  const tableOnSwapRecords = useCallback(
-    (first: RecordCoordinate, second: RecordCoordinate): Promise<void> => {
-      if (currentRoute?.view === 'table') return swapRecords(currentRoute.file, first, second)
-      return Promise.resolve()
-    },
-    [currentRoute?.view, currentRoute?.file, swapRecords],
-  )
   const tableOnMoveRecord = useCallback(
     (coordinate: RecordCoordinate, targetIndex: number): Promise<void> => {
       if (currentRoute?.view === 'table') return moveRecord(currentRoute.file, coordinate, targetIndex)
       return Promise.resolve()
     },
     [currentRoute?.view, currentRoute?.file, moveRecord],
-  )
-  const tableOnTransferRecord = useCallback(
-    (
-      coordinate: RecordCoordinate,
-      destinationFile: string,
-      targetIndex: number,
-    ): Promise<void> => {
-      if (currentRoute?.view === 'table') {
-        return transferRecord(currentRoute.file, destinationFile, coordinate, targetIndex)
-      }
-      return Promise.resolve()
-    },
-    [currentRoute?.view, currentRoute?.file, transferRecord],
   )
   const tableOnBadgeClick = useCallback(
     (coordinate: RecordCoordinate, fieldPath: string | null) => {
@@ -2361,6 +2354,7 @@ export default function App() {
                     collapsedGroupKeys={collapsedRecordGroups}
                     onToggleGroup={toggleRecordGroup}
                     onDropRecordOntoRecord={dropRecordOntoRecord}
+                    onDropRecordAfterRecord={dropRecordsAfterRecord}
                     onCreateGroup={createManualRecordGroup}
                     onDropRecordIntoGroup={dropRecordIntoGroup}
                     onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
@@ -2380,10 +2374,7 @@ export default function App() {
                     onInsertRecord={tableOnInsertRecord}
                     onCreateRecordDraft={tableOnCreateRecordDraft}
                     onDeleteRecord={tableOnDeleteRecord}
-                    onSwapRecords={tableOnSwapRecords}
                     onMoveRecord={tableOnMoveRecord}
-                    transferTargets={transferTargets}
-                    onTransferRecord={tableOnTransferRecord}
                     onDiagnosticBadgeClick={tableOnBadgeClick}
                     columnWidths={tableColumnWidths}
                     onColumnWidthsChange={tableOnColumnWidthsChange}
@@ -2411,6 +2402,7 @@ export default function App() {
                     collapsedGroupKeys={collapsedRecordGroups}
                     onToggleGroup={toggleRecordGroup}
                     onDropRecordOntoRecord={dropRecordOntoRecord}
+                    onDropRecordAfterRecord={dropRecordsAfterRecord}
                     onDropRecordIntoGroup={dropRecordIntoGroup}
                     onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
                     onRenameGroup={renameManualRecordGroup}

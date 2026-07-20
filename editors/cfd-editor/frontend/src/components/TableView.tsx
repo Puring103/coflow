@@ -43,7 +43,6 @@ import {
   summaryOf as valueSummary,
 } from '../value/fieldValue'
 import { CreateRecordDialog } from './CreateRecordDialog'
-import { TransferRecordDialog, type RecordTransferTarget } from './TransferRecordDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import {
@@ -79,6 +78,7 @@ interface Props {
   collapsedGroupKeys?: ReadonlySet<string>
   onToggleGroup?: (groupKey: string) => void
   onDropRecordOntoRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
+  onDropRecordAfterRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
   onCreateGroup?: (records: readonly RecordCoordinate[]) => void
   onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
   onDropRecordIntoUngrouped?: (sources: readonly RecordCoordinate[]) => void
@@ -108,14 +108,7 @@ interface Props {
   onCreateRecordDraft?: (actualType: string) => Promise<CreateRecordDraft>
   /** Delete an existing record by key. */
   onDeleteRecord?: (coordinate: RecordCoordinate) => Promise<void>
-  onSwapRecords?: (first: RecordCoordinate, second: RecordCoordinate) => Promise<void>
   onMoveRecord?: (coordinate: RecordCoordinate, targetIndex: number) => Promise<void>
-  transferTargets?: RecordTransferTarget[]
-  onTransferRecord?: (
-    coordinate: RecordCoordinate,
-    destinationFile: string,
-    targetIndex: number,
-  ) => Promise<void>
   /** Click on a corner badge on a row or cell. `fieldPath` is null for
    *  record-level (the Key column badge), otherwise the column name. */
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
@@ -147,10 +140,10 @@ interface TableContextMenu {
   showGroupTargets: boolean
 }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onSwapRecords, onMoveRecord, transferTargets = [], onTransferRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
-  const [transferRow, setTransferRow] = useState<RecordRow | null>(null)
+  const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
   const [cellNotice, setCellNotice] = useState<string | null>(null)
   const [sorting, setSorting] = useState<SortingState>([])
@@ -575,6 +568,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       : [],
     onSelectDragSource: coordinate => onSelectRecord?.(coordinate, 'replace', visibleCoordinates),
     onDropRecordOntoRecord,
+    onDropRecordAfterRecord: !readOnly && data.capabilities.can_reorder_records && sorting.length === 0 && !globalFilter.trim()
+      ? onDropRecordAfterRecord
+      : undefined,
     onDropRecordIntoGroup,
     onDropRecordIntoUngrouped,
   })
@@ -1127,7 +1123,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           ) : !data.capabilities.can_insert_record || !onInsertRecord || !onCreateRecordDraft ? (
             <span className="table-footer-readonly">该来源不支持新建记录</span>
           ) : (
-            <button className="btn btn-outlined" onClick={() => setShowNewRecord(true)}>
+            <button className="btn btn-outlined" onClick={() => { setInsertAfterRow(null); setShowNewRecord(true) }}>
               <Icon name="plus" size={13} />
               新建记录
             </button>
@@ -1141,19 +1137,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           actualType={activeType || data.type_names[0] || ''}
           existingKeys={data.records.map(r => r.coordinate.key)}
           onCreateRecordDraft={onCreateRecordDraft}
-          onInsertRecord={onInsertRecord}
+          onInsertRecord={async (key, type, fields) => {
+            await onInsertRecord(key, type, fields)
+            if (insertAfterRow && onMoveRecord) {
+              await onMoveRecord({ actual_type: type, key }, insertAfterRow.container_index + 1)
+            }
+          }}
           onClose={() => setShowNewRecord(false)}
-        />
-      )}
-
-      {transferRow && onTransferRecord && (
-        <TransferRecordDialog
-          recordKey={transferRow.coordinate.key}
-          targets={transferTargets}
-          onConfirm={(destinationFile, targetIndex) => (
-            onTransferRecord(transferRow.coordinate, destinationFile, targetIndex)
-          )}
-          onClose={() => setTransferRow(null)}
         />
       )}
 
@@ -1248,68 +1238,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               重命名 Key
             </div>
           )}
-          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_reorder_records && onMoveRecord && sorting.length === 0 && !globalFilter.trim() && contextMenu.row.container_index > 0 && (
-            <div className="ctx-item" role="menuitem" onClick={async () => {
-              const row = contextMenu.row
-              setContextMenu(null)
-              await onMoveRecord(row.coordinate, row.container_index - 1)
-            }}>
-              <Icon name="arrow-up" size={13} aria-hidden />
-              上移一位
-            </div>
-          )}
-          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_reorder_records && onMoveRecord && sorting.length === 0 && !globalFilter.trim() && contextMenu.row.container_index + 1 < contextMenu.row.container_size && (
-            <div className="ctx-item" role="menuitem" onClick={async () => {
-              const row = contextMenu.row
-              setContextMenu(null)
-              await onMoveRecord(row.coordinate, row.container_index + 1)
-            }}>
-              <Icon name="arrow-down" size={13} aria-hidden />
-              下移一位
-            </div>
-          )}
-          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_reorder_records && onMoveRecord && sorting.length === 0 && !globalFilter.trim() && (
-            <div className="ctx-item" role="menuitem" onClick={async () => {
-              const row = contextMenu.row
-              const raw = window.prompt(
-                `移动到位置（0-${row.container_size - 1}）`,
-                String(row.container_index),
-              )
-              setContextMenu(null)
-              if (raw === null || !/^\d+$/.test(raw.trim())) return
-              const target = Number(raw)
-              if (target === row.container_index || target >= row.container_size) return
-              await onMoveRecord(row.coordinate, target)
-            }}>
-              <Icon name="record" size={13} aria-hidden />
-              移动到位置…
-            </div>
-          )}
-          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_reorder_records && onSwapRecords && sorting.length === 0 && !globalFilter.trim() && (
-            <div className="ctx-item" role="menuitem" onClick={async () => {
-              const row = contextMenu.row
-              const raw = window.prompt('与记录 Key 交换位置')?.trim()
-              setContextMenu(null)
-              if (!raw || raw === row.coordinate.key) return
-              const other = data.records.find(candidate => (
-                candidate.coordinate.actual_type === row.coordinate.actual_type
-                && candidate.coordinate.key === raw
-              ))
-              if (!other) return
-              await onSwapRecords(row.coordinate, other.coordinate)
-            }}>
-              <Icon name="refresh" size={13} aria-hidden />
-              交换位置…
-            </div>
-          )}
-          {contextMenu.records.length === 1 && !readOnly && onTransferRecord && transferTargets.length > 0 && sorting.length === 0 && !globalFilter.trim() && (
+          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_insert_record && data.capabilities.can_reorder_records && onInsertRecord && onCreateRecordDraft && onMoveRecord && (
             <div className="ctx-item" role="menuitem" onClick={() => {
-              const row = contextMenu.row
+              setInsertAfterRow(contextMenu.row)
+              setShowNewRecord(true)
               setContextMenu(null)
-              setTransferRow(row)
             }}>
-              <Icon name="record" size={13} aria-hidden />
-              移动到其他文件…
+              <Icon name="plus" size={13} aria-hidden />
+              在下方插入记录
             </div>
           )}
           {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_delete_record && onDeleteRecord && (
