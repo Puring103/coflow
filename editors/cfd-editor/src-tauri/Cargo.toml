@@ -1,6 +1,6 @@
 [package]
 name = "cfd-editor"
-version = "0.7.0"
+version = "0.7.3"
 edition = "2021"
 description = "CFD Editor — Tauri 2 desktop app"
 license = "Apache-2.0"
@@ -43,6 +43,7 @@ coflow-data-model = { path = "../../../crates/coflow-data-model" }
 coflow-project = { path = "../../../crates/coflow-project" }
 coflow-runtime = { path = "../../../crates/coflow-runtime" }
 coflow = { path = "../../..", default-features = false }
+coflow-extension-api = { path = "../../coflow-extension-api" }
 ts-rs = { version = "10", optional = true }
 
 [dev-dependencies]

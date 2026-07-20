@@ -50,3 +50,40 @@ type Encounter {
   featured_item: &Item;
   weakness_hint: float;
 }
+
+# The CFD editor's built-in chemical-equation reading plugin recognizes this
+# field and renders it as a chemical equation. Other fields remain ordinary
+# game-data fields and are not controlled by the plugin.
+enum ChemicalMaterial {
+  H2,
+  O2,
+  H2O,
+}
+
+enum MaterialState {
+  Gas,
+  Liquid,
+  Solid,
+}
+
+type ChemicalTermParameters {
+  coefficient: int = 1;
+  state: MaterialState = MaterialState.Gas;
+}
+
+type ChemicalTerm {
+  material: ChemicalMaterial;
+  parameters: ChemicalTermParameters;
+}
+
+type ChemicalExpression {
+  inputs: [ChemicalTerm];
+  outputs: [ChemicalTerm];
+}
+
+type ChemicalEquation {
+  name: string;
+  description: string = "";
+  expression: ChemicalExpression;
+  temperature_c: float = 25.0;
+}

@@ -94,8 +94,7 @@ export function defaultEnabledFields(
   const fields = new Set<string>()
   for (const edge of graph.edges) {
     const source = nodeById.get(edge.source)
-    const target = nodeById.get(edge.target)
-    if (source?.actual_type === activeType && target?.actual_type === activeType) {
+    if (source?.actual_type === activeType) {
       fields.add(topLevelField(edge.field_path))
     }
   }

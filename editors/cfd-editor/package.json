@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "tauri dev --no-watch",
+    "dev:watch": "tauri dev",
     "build": "tauri build",
     "tauri": "tauri",
     "frontend:dev": "npm --prefix frontend run dev",

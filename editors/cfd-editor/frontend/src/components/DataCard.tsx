@@ -49,12 +49,15 @@ import {
   collectionShapeForDeclaredType,
   parseFieldValueText,
   plainFieldValueText,
+  referenceKeyText,
   scalarDefaultForDeclaredType,
   summaryOf,
 } from '../value/fieldValue'
 import { useObjectDraft } from './ObjectDraftHost'
 import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 import { SearchableSelect } from './SearchableSelect'
+import { PluginRendererMount, useFieldRenderer } from '../plugins'
+import type { FieldRenderSurface, FieldRenderer } from '../plugins/types'
 
 export function CardHeader({
   recordKey,
@@ -187,8 +190,103 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value }: { value: FieldValue }) {
-  return <ValueChip value={value} />
+export function DataCardCompact({ value, label, declaredType, surface = 'table-cell' }: { value: FieldValue; label?: string; declaredType?: string; surface?: FieldRenderSurface }) {
+  const fallback = isComplexValue(value)
+    ? <MarkdownValueTree value={value} label={value.kind === 'array' ? undefined : label} depth={0} />
+    : <ValueChip value={value} />
+  const renderer = useFieldRenderer({ value, type: declaredType ?? '', surface })
+  return (
+    <PluginRendererMount renderer={renderer} context={{ value, type: declaredType ?? '', surface }} fallback={fallback} />
+  )
+}
+
+function MarkdownValueTree({ value, label, depth }: {
+  value: FieldValue & { kind: 'object' | 'array' | 'dict' }
+  label?: string
+  depth: number
+}) {
+  const entries = treeEntries(value)
+  const depthClass = `markdown-tree-depth-${Math.min(depth, 2)}`
+  const inlineScalarArray = value.kind === 'array'
+    && entries.every(entry => !isComplexValue(entry.value))
+
+  return (
+    <div className={`markdown-value-tree ${depthClass}${label ? ' has-branch-label' : ''}${inlineScalarArray ? ' inline-scalar-array' : ''}`}>
+      {label && <div className="markdown-tree-branch-label">{label}</div>}
+      {entries.length === 0 ? (
+        <div className="markdown-tree-empty">—</div>
+      ) : (
+        <div className="markdown-tree-items">
+          {entries.map((entry, index) => (
+            <MarkdownTreeItem key={`${entry.marker}:${index}`} entry={entry} depth={depth} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface MarkdownTreeEntry {
+  marker: string
+  markerKind: 'plain' | 'index' | 'key'
+  branchLabel?: string
+  value: FieldValue
+}
+
+function MarkdownTreeItem({ entry, depth }: { entry: MarkdownTreeEntry; depth: number }) {
+  const complex = isComplexValue(entry.value) ? entry.value : null
+  return (
+    <div className={`markdown-tree-item${complex ? ' complex-item' : ''}`}>
+      <span className={`markdown-tree-marker marker-${entry.markerKind}`}>{entry.marker}</span>
+      <div className="markdown-tree-content">
+        {complex ? (
+          <MarkdownValueTree value={complex} label={entry.branchLabel} depth={depth + 1} />
+        ) : (
+          <span className="markdown-tree-leaf"><ValueChip value={entry.value} /></span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function treeEntries(value: FieldValue & { kind: 'object' | 'array' | 'dict' }): MarkdownTreeEntry[] {
+  if (value.kind === 'object') {
+    return Object.entries(value.value.fields)
+      .filter((entry): entry is [string, FieldValue] => entry[1] !== undefined)
+      .map(([fieldName, fieldValue]) => ({
+        marker: '',
+        markerKind: 'plain',
+        branchLabel: isComplexValue(fieldValue) ? fieldName : undefined,
+        value: fieldValue,
+      }))
+  }
+  if (value.kind === 'array') {
+    return value.value.map((item, index) => {
+      const complex = isComplexValue(item)
+      return {
+        marker: complex ? `${index + 1}.` : '',
+        markerKind: complex ? 'index' : 'plain',
+        value: item,
+      }
+    })
+  }
+  return value.value.map(([key, item]) => ({
+    marker: `${dictTreeKey(key)} →`,
+    markerKind: 'key',
+    value: item,
+  }))
+}
+
+function isComplexValue(value: FieldValue): value is FieldValue & { kind: 'object' | 'array' | 'dict' } {
+  return value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
+}
+
+function dictTreeKey(key: DictKey): string {
+  switch (key.kind) {
+    case 'string': return key.value
+    case 'int': return String(key.value)
+    case 'enum': return dictEnumVariantText(key)
+  }
 }
 
 function ValueChip({ value }: { value: FieldValue }) {
@@ -215,9 +313,9 @@ function ValueChip({ value }: { value: FieldValue }) {
       )
     case 'ref':
       return (
-        <span className="vc vc-ref" title={`&${value.value}`}>
+        <span className="vc vc-ref" title={referenceKeyText(value.value)}>
           <Icon name="dot" size={9} />
-          <span className="vc-ref-key">{value.value}</span>
+          <span className="vc-ref-key">{referenceKeyText(value.value)}</span>
         </span>
       )
     case 'object':
@@ -547,6 +645,11 @@ function FieldRow({
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
+  const pluginRenderer = useFieldRenderer({
+    value,
+    type: declaredType ?? '',
+    surface: 'record-foldout-header',
+  })
   const isComplex = value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
   // A `null` value on a field whose declared type is an array/dict/object
   // should still be treated as expandable, so the user can just click
@@ -595,6 +698,8 @@ function FieldRow({
         leading={leading}
         trailing={mergedTrailing}
         dragProps={dragProps}
+        pluginRenderer={pluginRenderer}
+        pluginContext={pluginRenderer ? { value, type: declaredType ?? '', surface: 'record-foldout-header' } : undefined}
       />
     )
   }
@@ -803,6 +908,8 @@ function ScalarFieldRow({
   leading,
   trailing,
   dragProps,
+  pluginRenderer,
+  pluginContext,
 }: {
   label: string
   value: FieldValue
@@ -819,12 +926,14 @@ function ScalarFieldRow({
   leading?: ReactNode
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
+  pluginRenderer?: FieldRenderer
+  pluginContext?: Parameters<typeof useFieldRenderer>[0]
 }) {
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
     || value.kind === 'string' || value.kind === 'enum' || value.kind === 'ref'
   const resolvedRefTarget = refTargetType
   const isNullDropdown = value.kind === 'null' && !!(enumType || resolvedRefTarget)
-  const canEdit = (isScalar || isNullDropdown) && !!onCommit
+  const canEdit = !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
   const rowTitle = [spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
@@ -845,10 +954,12 @@ function ScalarFieldRow({
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
-          {canEdit ? (
+          {pluginRenderer && pluginContext ? (
+            <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<ValueChip value={value} />} />
+          ) : canEdit ? (
             <DirectEditor value={value} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} nullable={nullable} />
           ) : (
-            <ValueChip value={value} />
+            <DataCardCompact value={value} label={label} declaredType={declaredType} />
           )}
         </div>
         {trailing}
@@ -1083,7 +1194,7 @@ export function RefDirectSelect({
   const lookups = useEditorLookups()
   const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const currentKey = value.kind === 'ref' ? value.value : ''
+  const currentKey = value.kind === 'ref' ? referenceKeyText(value.value) : ''
   const selectedValue = value.kind === 'null' ? NULL_SENTINEL : currentKey
   const color = typeColor(targetType ?? 'ref')
 
@@ -1101,7 +1212,7 @@ export function RefDirectSelect({
       if (r.ok) {
         setTargets(r.value.map(target => ({
           key: target.coordinate.key,
-          label: `${target.coordinate.actual_type}.${target.coordinate.key}`,
+          label: target.coordinate.key,
         })))
       } else {
         setTargets([])
@@ -1116,13 +1227,13 @@ export function RefDirectSelect({
       if (value.kind !== 'null') onCommit(nullValue())
       return
     }
-    if (key !== currentKey) {
+    if (value.kind !== 'ref' || key !== referenceKeyText(value.value)) {
       onCommit(refValue(key))
     }
   }
 
   if (targetType && targets !== null && targets.length > 0) {
-    const hasCurrent = value.kind === 'ref' && !!value.value && targets.some(target => target.key === value.value)
+    const hasCurrent = value.kind === 'ref' && !!currentKey && targets.some(target => target.key === currentKey)
     return (
       <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
         <SearchableSelect
@@ -1133,7 +1244,7 @@ export function RefDirectSelect({
           placeholder="选择引用..."
           options={[
             ...(nullable ? [{ value: NULL_SENTINEL }] : []),
-            ...(value.kind === 'ref' && !hasCurrent && value.value ? [{ value: value.value }] : []),
+            ...(value.kind === 'ref' && !hasCurrent && currentKey ? [{ value: currentKey }] : []),
             ...targets.map(target => ({ value: target.key, label: target.label })),
           ]}
           onCommit={commit}
@@ -1314,9 +1425,9 @@ function RefSelect({
   targetType?: string
 }) {
   const lookups = useEditorLookups()
-  const [val, setVal] = useState(value.value)
+  const [val, setVal] = useState(referenceKeyText(value.value))
   const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
-  useEffect(() => { setVal(value.value) }, [value.value])
+  useEffect(() => { setVal(referenceKeyText(value.value)) }, [value.value])
   useEffect(() => {
     if (!targetType) {
       setTargets(null)
@@ -1328,7 +1439,7 @@ function RefSelect({
       if (!alive) return
       setTargets(r.ok ? r.value.map(target => ({
         key: target.coordinate.key,
-        label: `${target.coordinate.actual_type}.${target.coordinate.key}`,
+        label: target.coordinate.key,
       })) : [])
     })
     return () => { alive = false }
@@ -1342,11 +1453,13 @@ function RefSelect({
     return (
       <SearchableSelect
         className="dc-input dc-input-ref-select"
-        value={value.value}
+        value={referenceKeyText(value.value)}
         placeholder="选择..."
         autoFocus
         options={[
-          ...(value.value && !loadedTargets.some(target => target.key === value.value) ? [{ value: value.value }] : []),
+          ...(value.value && !loadedTargets.some(target => target.key === referenceKeyText(value.value))
+            ? [{ value: referenceKeyText(value.value) }]
+            : []),
           ...loadedTargets.map(target => ({ value: target.key, label: target.label })),
         ]}
         onCommit={next => onCommit(refValue(next))}
@@ -1388,6 +1501,8 @@ function ExpandableRow({
   leading,
   trailing,
   dragProps,
+  pluginRenderer,
+  pluginContext,
 }: {
   label: string
   value: FieldValue
@@ -1405,6 +1520,8 @@ function ExpandableRow({
   leading?: ReactNode
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
+  pluginRenderer?: FieldRenderer
+  pluginContext?: Parameters<typeof useFieldRenderer>[0]
 }) {
   const autoExpandPaths = useContext(AutoExpandCtx)
   const controlledExpansion = useContext(ControlledExpansionCtx)
@@ -1453,8 +1570,12 @@ function ExpandableRow({
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">
-            <span className="vc vc-type">{summary}</span>
-            {count !== null && <span className="vc-count">{count}</span>}
+            {pluginRenderer && pluginContext ? (
+              <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<span className="vc vc-type">{summary}</span>} />
+            ) : <>
+              <span className="vc vc-type">{summary}</span>
+              {count !== null && <span className="vc-count">{count}</span>}
+            </>}
           </div>
           {trailing}
         </div>

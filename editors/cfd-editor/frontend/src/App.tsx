@@ -8,12 +8,30 @@ import { InspectorPanel } from './components/InspectorPanel'
 import { Icon } from './components/Icon'
 import { ObjectDraftHost } from './components/ObjectDraftHost'
 import { UpdateControl } from './components/UpdateControl'
+import { DimensionTableView } from './components/DimensionTableView'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
-import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
+import {
+  loadLocalReadPlugin,
+  restoreLocalReadPlugins,
+  setReadPluginEnabled,
+  unloadLocalReadPlugin,
+  useReadPluginSettings,
+} from './plugins'
+import {
+  MOCK_PROJECT,
+  MOCK_FILE_RECORDS,
+  MOCK_GRAPH,
+  MOCK_DIMENSION_FILE_RECORDS,
+  MOCK_EDITOR_SETTINGS,
+} from './mock'
 import * as api from './api'
+import type { DimensionInfo } from './bindings/DimensionInfo'
+import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordinate'
+import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
+import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
@@ -51,9 +69,23 @@ import {
   recordSelection,
   rebindSelection,
   removeSelection,
+  updateRecordSelection,
   valueSelection,
   type EditorSelection,
+  type RecordSelectionMode,
 } from './state/editorSelection'
+import {
+  createRecordGroup,
+  moveRecordsOntoRecord,
+  moveRecordsToGroup,
+  nextRecordGroupName,
+  colorRecordGroup,
+  removeRecordFromGroups,
+  removeRecordsFromGroups,
+  renameRecordGroup,
+  replaceGroupedCoordinate,
+} from './state/manualRecordGroups'
+import { recordsSupportGraph } from './state/graphSupport'
 import './style.css'
 
 const GRAPH_DEPTH = 3
@@ -67,6 +99,44 @@ interface WorkspaceTab {
 }
 function workspaceTabId(filePath: string, typeName: string): string {
   return `${filePath}\u001f${typeName}`
+}
+
+function settingsWithRecordGroups(
+  settings: EditorProjectSettings | null,
+  filePath: string,
+  actualType: string,
+  groups: EditorRecordGroup[],
+): EditorProjectSettings {
+  return {
+    table_column_widths: settings?.table_column_widths ?? {},
+    graph_enabled_fields: settings?.graph_enabled_fields ?? {},
+    record_groups: {
+      ...(settings?.record_groups ?? {}),
+      [filePath]: {
+        ...(settings?.record_groups?.[filePath] ?? {}),
+        [actualType]: groups,
+      },
+    },
+  }
+}
+
+function settingsWithGraphFields(
+  settings: EditorProjectSettings | null,
+  filePath: string,
+  actualType: string,
+  fields: string[],
+): EditorProjectSettings {
+  return {
+    table_column_widths: settings?.table_column_widths ?? {},
+    record_groups: settings?.record_groups ?? {},
+    graph_enabled_fields: {
+      ...(settings?.graph_enabled_fields ?? {}),
+      [filePath]: {
+        ...(settings?.graph_enabled_fields?.[filePath] ?? {}),
+        [actualType]: fields,
+      },
+    },
+  }
 }
 
 /** Passed as `highlightField` when a record-level (no field path) jump lands
@@ -118,13 +188,25 @@ function projectGraphRows(
 }
 
 export default function App() {
+  const pluginSettings = useReadPluginSettings()
+  const restoredPlugins = useRef(false)
+  const [pluginLoadBusy, setPluginLoadBusy] = useState(false)
+  const [pluginLoadError, setPluginLoadError] = useState<string | null>(null)
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
+  useEffect(() => {
+    const suppressBrowserMenu = (event: MouseEvent) => event.preventDefault()
+    window.addEventListener('contextmenu', suppressBrowserMenu)
+    return () => window.removeEventListener('contextmenu', suppressBrowserMenu)
+  }, [])
   const [generation] = useState(() => new ProjectGenerationController())
   const [history] = useState(() => new MutationHistoryController())
   const [lookups] = useState(() => new EditorLookupController(api))
   const lookupGenerationKey = project ? `${project.session_id}:${project.revision}` : 'none'
   const historySnapshot = useSyncExternalStore(history.subscribe, history.getSnapshot, history.getSnapshot)
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
+  const [dimensionFileCache, setDimensionFileCache] = useState<Record<string, api.DimensionFileRecords>>({})
+  const [projectDimensions, setProjectDimensions] = useState<DimensionInfo[]>([])
+  const [dimensionView, setDimensionView] = useState<'table' | 'record'>('table')
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
   const [projectSettings, setProjectSettings] = useState<EditorProjectSettings | null>(null)
   const fileDataCacheRef = useRef(fileDataCache)
@@ -136,7 +218,7 @@ export default function App() {
   const helpReturnRef = useRef<HTMLElement | null>(null)
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [projectAction, setProjectAction] = useState<'check' | 'build' | null>(null)
+  const [projectAction, setProjectAction] = useState<'build' | null>(null)
   const [projectActionNotice, setProjectActionNotice] = useState<{
     message: string
     tone: 'success' | 'error'
@@ -152,10 +234,92 @@ export default function App() {
   // once the file data lands, the effect below upgrades the route to
   // `preferredView` if that's not what we currently show.
   const [preferredView, setPreferredView] = useState<'table' | 'record' | 'graph'>('table')
+  const [activePane, setActivePane] = useState<'files' | 'search' | 'extensions' | 'ai'>(() => {
+    try {
+      const v = localStorage.getItem('cfd-editor-active-pane')
+      return v === 'search' || v === 'extensions' || v === 'ai' ? v : 'files'
+    } catch { return 'files' }
+  })
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    try { localStorage.setItem('cfd-editor-active-pane', activePane) } catch { /* quota */ }
+  }, [activePane])
+  useEffect(() => {
+    if (!settingsOpen) return
+    const onClick = (e: MouseEvent) => {
+      if (!settingsMenuRef.current?.contains(e.target as Node)) setSettingsOpen(false)
+    }
+    window.addEventListener('mousedown', onClick)
+    return () => window.removeEventListener('mousedown', onClick)
+  }, [settingsOpen])
+  useEffect(() => {
+    if (!api.isTauri || restoredPlugins.current) return
+    restoredPlugins.current = true
+    api.listFrontendPlugins().then(restoreLocalReadPlugins).then(errors => {
+      if (errors.length > 0) setPluginLoadError(`部分插件未加载：${errors.join('; ')}`)
+    })
+  }, [])
+  const loadPluginFromSettings = useCallback(async () => {
+    const manifestPath = await api.pickFrontendPluginManifest()
+    if (!manifestPath) return
+    setPluginLoadBusy(true)
+    setPluginLoadError(null)
+    try {
+      await loadLocalReadPlugin(await api.installFrontendPlugin(manifestPath))
+    } catch (error) {
+      setPluginLoadError(`加载插件失败：${errorMessage(error)}`)
+    } finally {
+      setPluginLoadBusy(false)
+    }
+  }, [])
+  const uninstallPluginFromSettings = useCallback(async (id: string) => {
+    setPluginLoadError(null)
+    try {
+      await api.uninstallFrontendPlugin(id)
+      unloadLocalReadPlugin(id)
+    } catch (error) {
+      setPluginLoadError(`卸载插件失败：${errorMessage(error)}`)
+    }
+  }, [])
+  const [tabOverflowOpen, setTabOverflowOpen] = useState(false)
+  const [tabsOverflow, setTabsOverflow] = useState(false)
+  const tabScrollRef = useRef<HTMLDivElement>(null)
+  const tabOverflowRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!tabOverflowOpen) return
+    const onClick = (e: MouseEvent) => {
+      if (!tabOverflowRef.current?.contains(e.target as Node)) setTabOverflowOpen(false)
+    }
+    window.addEventListener('mousedown', onClick)
+    return () => window.removeEventListener('mousedown', onClick)
+  }, [tabOverflowOpen])
+  // Scroll the active tab into view when it changes.
+  useEffect(() => {
+    if (!activeWorkspaceTabId) return
+    const el = tabScrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeWorkspaceTabId)}"]`)
+    el?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+  }, [activeWorkspaceTabId])
+  // Track whether tabs actually overflow their container so we only surface the
+  // dropdown when needed. ResizeObserver reacts to sidebar / inspector resizes;
+  // scrollWidth changes when tabs open/close are handled by the workspaceTabs dep.
+  useEffect(() => {
+    const el = tabScrollRef.current
+    if (!el) { setTabsOverflow(false); return }
+    const check = () => setTabsOverflow(el.scrollWidth > el.clientWidth + 1)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    for (const child of Array.from(el.children)) ro.observe(child)
+    return () => ro.disconnect()
+  }, [workspaceTabs])
   const [globalSearch, setGlobalSearch] = useState('')
+  const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
+  const recordGroupIdSequence = useRef(0)
+  const recordGroupSaveSequence = useRef(0)
+  const graphFieldsSaveSequence = useRef(0)
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
-  const viewTabsRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const [inspectorFocusRequest, setInspectorFocusRequest] = useState(0)
@@ -171,6 +335,54 @@ export default function App() {
   // record/field corner badge click. Consumed by DiagnosticsPanel; we bump
   // `diagFocusTick` so repeat clicks on the same badge re-flash the item.
   const [diagFocus, setDiagFocus] = useState<{ key: string; tick: number } | null>(null)
+
+  const saveRecordGroups = useCallback((
+    filePath: string,
+    actualType: string,
+    groups: EditorRecordGroup[],
+  ) => {
+    const sequence = ++recordGroupSaveSequence.current
+    setProjectSettings(current => settingsWithRecordGroups(current, filePath, actualType, groups))
+    if (!api.isTauri) return
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    api.setRecordGroups(identity.sessionId, filePath, actualType, groups)
+      .then(settings => {
+        if (generation.currentSession() === identity.sessionId
+          && recordGroupSaveSequence.current === sequence) {
+          setProjectSettings(settings)
+        }
+      })
+      .catch(error => {
+        if (generation.currentSession() === identity.sessionId) {
+          setErrorMsg(`保存记录分组失败: ${errorMessage(error)}`)
+        }
+      })
+  }, [generation])
+
+  const saveGraphEnabledFields = useCallback((
+    filePath: string,
+    actualType: string,
+    fields: string[],
+  ) => {
+    const sequence = ++graphFieldsSaveSequence.current
+    setProjectSettings(current => settingsWithGraphFields(current, filePath, actualType, fields))
+    if (!api.isTauri) return
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    api.setGraphEnabledFields(identity.sessionId, filePath, actualType, fields)
+      .then(settings => {
+        if (generation.currentSession() === identity.sessionId
+          && graphFieldsSaveSequence.current === sequence) {
+          setProjectSettings(settings)
+        }
+      })
+      .catch(error => {
+        if (generation.currentSession() === identity.sessionId) {
+          setErrorMsg(`保存图谱字段失败: ${errorMessage(error)}`)
+        }
+      })
+  }, [generation])
 
   // Resizable sidebar width, persisted to localStorage.
   const [sidebarW, setSidebarW] = useState<number>(() => {
@@ -219,6 +431,8 @@ export default function App() {
       lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision })
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
+      setProjectSettings(MOCK_EDITOR_SETTINGS)
+      setProjectDimensions(MOCK_PROJECT.dimensions)
       setGraphCache({ [graphCacheKey('data/npc.cfd', GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
       if (MOCK_PROJECT.first_source_file) {
         const filePath = MOCK_PROJECT.first_source_file
@@ -250,8 +464,10 @@ export default function App() {
         return snapshot
       })
       setFileDataCache({})
+      setDimensionFileCache({})
       setGraphCache({})
-      setProjectSettings(null)
+      setProjectSettings(api.isTauri ? null : MOCK_EDITOR_SETTINGS)
+      setProjectDimensions(api.isTauri ? [] : MOCK_PROJECT.dimensions)
       setWorkspaceTabs([])
       setActiveWorkspaceTabId(null)
       setActiveType('')
@@ -273,6 +489,13 @@ export default function App() {
         }).catch(err => {
           if (generation.currentSession() === snapshot.session_id) {
             setErrorMsg(`读取编辑器设置失败: ${errorMessage(err)}`)
+          }
+        })
+        api.getProjectDimensions(snapshot.session_id).then(dimensions => {
+          if (generation.currentSession() === snapshot.session_id) setProjectDimensions(dimensions)
+        }).catch(err => {
+          if (generation.currentSession() === snapshot.session_id) {
+            setErrorMsg(`读取维度配置失败: ${errorMessage(err)}`)
           }
         })
       }
@@ -325,6 +548,7 @@ export default function App() {
       history.clear()
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
+      setProjectSettings(MOCK_EDITOR_SETTINGS)
       return
     }
     const request = generation.beginProjectRequest()
@@ -519,6 +743,7 @@ export default function App() {
   useEffect(() => {
     if (!project || !router.current) return
     const file = router.current.file
+    if (dimensionForFile(projectDimensions, file)) return
     if (fileDataCache[file]?.revision === project.revision) return
     if (!api.isTauri) return // mock branch already populated
     const sessionId = project.session_id
@@ -542,7 +767,36 @@ export default function App() {
       .finally(() => {
         if (generation.isRequestCurrent(request)) setLoadingFile(null)
       })
-  }, [generation, project, router.current, fileDataCache, reportSessionError])
+  }, [generation, project, projectDimensions, router.current, fileDataCache, reportSessionError])
+
+  useEffect(() => {
+    if (!project || !router.current) return
+    const file = router.current.file
+    if (!dimensionForFile(projectDimensions, file)) return
+    if (dimensionFileCache[file]?.revision === project.revision) return
+    if (!api.isTauri) {
+      const mock = MOCK_DIMENSION_FILE_RECORDS[file]
+      if (mock) setDimensionFileCache(cache => ({ ...cache, [file]: mock }))
+      return
+    }
+    const sessionId = project.session_id
+    const revision = project.revision
+    const request = generation.captureRequest()
+    setLoadingFile(file)
+    api.getDimensionFileRecords(sessionId, file)
+      .then(records => {
+        if (!generation.isCurrent(sessionId, revision) || records.revision !== revision) return
+        setDimensionFileCache(cache => ({ ...cache, [file]: records }))
+      })
+      .catch(error => {
+        if (generation.isRequestCurrent(request)) {
+          reportSessionError(sessionId, '读取维度文件失败', error)
+        }
+      })
+      .finally(() => {
+        if (generation.isRequestCurrent(request)) setLoadingFile(null)
+      })
+  }, [dimensionFileCache, generation, project, projectDimensions, reportSessionError, router.current])
 
   // Lazy-load graph when switching to graph view
   useEffect(() => {
@@ -835,6 +1089,51 @@ export default function App() {
     [history, mutationPort],
   )
 
+  const writeDimensionCell = useCallback(async (
+    data: api.DimensionFileRecords,
+    row: api.DimensionFileRow,
+    variant: string,
+    expected: DimensionValueState,
+    next: DimensionValueState,
+  ) => {
+    const coordinate: DimensionValueCoordinate = {
+      actual_type: row.coordinate.actual_type,
+      record_key: row.coordinate.key,
+      field: data.field,
+      dimension: data.dimension,
+      variant,
+      path: [],
+    }
+    const updateCache = (value: DimensionValueState, revision: number) => {
+      setDimensionFileCache(cache => {
+        const current = cache[data.file_path]
+        if (!current) return cache
+        return {
+          ...cache,
+          [data.file_path]: {
+            ...current,
+            revision,
+            rows: current.rows.map(currentRow => sameCoordinate(currentRow.coordinate, row.coordinate)
+              ? { ...currentRow, values: { ...currentRow.values, [variant]: value } }
+              : currentRow),
+          },
+        }
+      })
+    }
+    if (!api.isTauri) {
+      updateCache(next, data.revision)
+      return
+    }
+    const result = await mutations.writeDimensionValue(
+      data.file_path,
+      coordinate,
+      expected,
+      next,
+    )
+    if (!result) return
+    updateCache(result, generation.currentIdentity()?.revision ?? data.revision)
+  }, [generation, mutations])
+
   // Sidebar splitter: on mousedown, attach mousemove/mouseup listeners that
   // track the pointer X and clamp the new width to [160, 480]. Persist on
   // release. We use window listeners (not React state per move) so the drag
@@ -886,9 +1185,18 @@ export default function App() {
 
   const renameRecord = useCallback(
     async (filePath: string, coordinate: RecordCoordinate, newKey: string) => {
-      return mutations.renameRecord(filePath, coordinate, newKey)
+      const groups = projectSettings?.record_groups[filePath]?.[coordinate.actual_type] ?? []
+      const result = await mutations.renameRecord(filePath, coordinate, newKey)
+      if (result) {
+        saveRecordGroups(
+          filePath,
+          coordinate.actual_type,
+          replaceGroupedCoordinate(groups, coordinate, result.coordinate),
+        )
+      }
+      return result
     },
-    [mutations],
+    [mutations, projectSettings, saveRecordGroups],
   )
 
   const insertRecord = useCallback(
@@ -899,9 +1207,15 @@ export default function App() {
   )
   const deleteRecord = useCallback(
     async (filePath: string, coordinate: RecordCoordinate) => {
+      const groups = projectSettings?.record_groups[filePath]?.[coordinate.actual_type] ?? []
       await mutations.deleteRecord(filePath, coordinate)
+      saveRecordGroups(
+        filePath,
+        coordinate.actual_type,
+        removeRecordFromGroups(groups, coordinate),
+      )
     },
-    [mutations],
+    [mutations, projectSettings, saveRecordGroups],
   )
   const swapRecords = useCallback(
     async (filePath: string, first: RecordCoordinate, second: RecordCoordinate) => {
@@ -964,6 +1278,7 @@ export default function App() {
 
   const currentRoute = router.current
   const activeFile = currentRoute?.file ?? null
+  useEffect(() => setDimensionView('table'), [activeFile])
   useEffect(() => {
     if (!currentRoute) return
     const typeName = currentRoute.view === 'record'
@@ -991,6 +1306,119 @@ export default function App() {
       })
       .sort((left, right) => left.filePath.localeCompare(right.filePath))
   }, [project, activeFile, activeType, fileDataCache])
+  const activeDimensionData = activeFile ? dimensionFileCache[activeFile] : null
+  const recordGroups = projectSettings?.record_groups[activeFile ?? '']?.[activeType] ?? []
+
+  useEffect(() => {
+    setInspectorSelection(current => {
+      if (!current) return current
+      if (!activeFileData || current.filePath !== activeFileData.file_path) return null
+      const inActiveType = (coordinate: RecordCoordinate) => activeFileData.records.some(record => (
+        sameCoordinate(record.coordinate, coordinate)
+        && (!activeType || recordActualType(record) === activeType)
+      ))
+      if (current.kind === 'value') return inActiveType(current.coordinate) ? current : null
+      const coordinates = current.coordinates.filter(inActiveType)
+      if (coordinates.length === 0) return null
+      return {
+        ...current,
+        coordinates,
+        coordinate: coordinates.some(item => sameCoordinate(item, current.coordinate))
+          ? current.coordinate
+          : coordinates[coordinates.length - 1],
+        anchor: coordinates.some(item => sameCoordinate(item, current.anchor))
+          ? current.anchor
+          : coordinates[0],
+      }
+    })
+  }, [activeFileData?.file_path, activeType])
+
+  useEffect(() => {
+    setCollapsedRecordGroups(new Set())
+  }, [activeFileData?.file_path, activeType])
+
+  const toggleRecordGroup = useCallback((groupKey: string) => {
+    setCollapsedRecordGroups(current => {
+      const next = new Set(current)
+      if (next.has(groupKey)) next.delete(groupKey)
+      else next.add(groupKey)
+      return next
+    })
+  }, [])
+  const selectRecords = useCallback((
+    file: string,
+    coordinate: RecordCoordinate,
+    visibleCoordinates: readonly RecordCoordinate[],
+    mode: RecordSelectionMode,
+  ) => {
+    setInspectorCollapsed(false)
+    setInspectorSelection(current => updateRecordSelection(
+      current,
+      file,
+      coordinate,
+      visibleCoordinates,
+      mode,
+    ))
+  }, [])
+  const dropRecordOntoRecord = useCallback((sources: readonly RecordCoordinate[], target: RecordCoordinate) => {
+    if (!activeFile || !activeType) return
+    recordGroupIdSequence.current += 1
+    saveRecordGroups(
+      activeFile,
+      activeType,
+      moveRecordsOntoRecord(
+        recordGroups,
+        sources,
+        target,
+        `record-group-${Date.now().toString(36)}-${recordGroupIdSequence.current.toString(36)}`,
+        nextRecordGroupName(recordGroups),
+      ),
+    )
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const createManualRecordGroup = useCallback((records: readonly RecordCoordinate[]) => {
+    if (!activeFile || !activeType) return
+    recordGroupIdSequence.current += 1
+    saveRecordGroups(
+      activeFile,
+      activeType,
+      createRecordGroup(
+        recordGroups,
+        records,
+        `record-group-${Date.now().toString(36)}-${recordGroupIdSequence.current.toString(36)}`,
+        nextRecordGroupName(recordGroups),
+      ),
+    )
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const dropRecordIntoGroup = useCallback((sources: readonly RecordCoordinate[], groupId: string) => {
+    if (!activeFile || !activeType) return
+    saveRecordGroups(activeFile, activeType, moveRecordsToGroup(recordGroups, sources, groupId))
+    setCollapsedRecordGroups(current => {
+      if (!current.has(groupId)) return current
+      const next = new Set(current)
+      next.delete(groupId)
+      return next
+    })
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const dropRecordIntoUngrouped = useCallback((sources: readonly RecordCoordinate[]) => {
+    if (!activeFile || !activeType) return
+    saveRecordGroups(activeFile, activeType, removeRecordsFromGroups(recordGroups, sources))
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const renameManualRecordGroup = useCallback((groupId: string, name: string) => {
+    if (!activeFile || !activeType) return
+    saveRecordGroups(activeFile, activeType, renameRecordGroup(recordGroups, groupId, name))
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const colorManualRecordGroup = useCallback((groupId: string, color: string | null) => {
+    if (!activeFile || !activeType) return
+    saveRecordGroups(activeFile, activeType, colorRecordGroup(recordGroups, groupId, color))
+  }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const renameDimensionRecordGroup = useCallback((filePath: string, actualType: string, groupId: string, name: string) => {
+    const groups = projectSettings?.record_groups[filePath]?.[actualType] ?? []
+    saveRecordGroups(filePath, actualType, renameRecordGroup(groups, groupId, name))
+  }, [projectSettings, saveRecordGroups])
+  const colorDimensionRecordGroup = useCallback((filePath: string, actualType: string, groupId: string, color: string | null) => {
+    const groups = projectSettings?.record_groups[filePath]?.[actualType] ?? []
+    saveRecordGroups(filePath, actualType, colorRecordGroup(groups, groupId, color))
+  }, [projectSettings, saveRecordGroups])
   const activeGraphKey = activeFile
     ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
     : null
@@ -1022,6 +1450,12 @@ export default function App() {
     () => activeFile && project ? project.diagnostics.filter(d => d.file_path === activeFile) : [],
     [activeFile, project?.diagnostics],
   )
+  // Prefer schema annotations, but also inspect values because older sessions
+  // and browser mocks may contain refs without derived annotation metadata.
+  const graphSupported = useMemo(() => {
+    if (!activeFileData) return false
+    return recordsSupportGraph(activeFileData.records)
+  }, [activeFileData])
   // Set of file paths that can be opened via the record/table views. Used by
   // the diagnostics panel to decide whether "跳转" is available for a row —
   // if the diagnostic's file isn't part of the source set, we hide the button
@@ -1058,9 +1492,25 @@ export default function App() {
     ))
     setInspectorSelection(current => {
       if (!current || current.filePath !== currentRoute.file) return current
-      return visible.some(record => sameCoordinate(record.coordinate, current.coordinate))
-        ? current
-        : null
+      if (current.kind === 'value') {
+        return visible.some(record => sameCoordinate(record.coordinate, current.coordinate))
+          ? current
+          : null
+      }
+      const coordinates = current.coordinates.filter(coordinate => (
+        visible.some(record => sameCoordinate(record.coordinate, coordinate))
+      ))
+      if (coordinates.length === 0) return null
+      return {
+        ...current,
+        coordinates,
+        coordinate: coordinates.some(item => sameCoordinate(item, current.coordinate))
+          ? current.coordinate
+          : coordinates[coordinates.length - 1],
+        anchor: coordinates.some(item => sameCoordinate(item, current.anchor))
+          ? current.anchor
+          : coordinates[0],
+      }
     })
     if (
       currentRoute.view === 'record'
@@ -1074,10 +1524,21 @@ export default function App() {
   // Stable callbacks for TableView so React.memo can bail out on re-renders
   // caused by inspector panel state changes (collapsed, open, width).
   const tableOnSelectRecord = useCallback(
-    (coordinate: RecordCoordinate) => {
-      if (currentRoute?.view === 'table') openInspector(currentRoute.file, coordinate)
+    (coordinate: RecordCoordinate, mode: RecordSelectionMode, visible: readonly RecordCoordinate[]) => {
+      if (currentRoute?.view === 'table') selectRecords(currentRoute.file, coordinate, visible, mode)
     },
-    [currentRoute?.view, currentRoute?.file, openInspector],
+    [currentRoute?.view, currentRoute?.file, selectRecords],
+  )
+  const writeFields = useCallback(
+    async (
+      filePath: string,
+      coordinates: readonly RecordCoordinate[],
+      fieldPath: FieldPathSegment[],
+      newValue: FieldValue,
+    ) => {
+      await mutations.writeFields(filePath, coordinates, fieldPath, newValue)
+    },
+    [mutations],
   )
   const tableOnSelectValue = useCallback(
     (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => {
@@ -1109,14 +1570,13 @@ export default function App() {
       ?? tree?.querySelector<HTMLElement>('[role="treeitem"]')
     target?.focus({ preventScroll: true })
   }, [])
-  const focusViewTabs = useCallback(() => {
-    const target = viewTabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
-      ?? viewTabsRef.current?.querySelector<HTMLElement>('[role="tab"]')
-    target?.focus({ preventScroll: true })
-  }, [])
   const focusGlobalSearch = useCallback(() => {
     globalSearchRef.current?.focus({ preventScroll: true })
     globalSearchRef.current?.select()
+  }, [])
+  const focusDocumentTabs = useCallback(() => {
+    document.querySelector<HTMLElement>('.document-view-tabs .tab-btn.active')
+      ?.focus({ preventScroll: true })
   }, [])
   const focusActiveView = useCallback(() => {
     const target = viewContainerRef.current?.querySelector<HTMLElement>(
@@ -1138,22 +1598,20 @@ export default function App() {
     setFirstRecordFocusRequest(current => current === request ? 0 : current)
   }, [])
 
-  const runProjectAction = useCallback(async (action: 'check' | 'build') => {
+  const runBuild = useCallback(async () => {
     const identity = generation.currentIdentity()
     if (!identity || projectAction) return
-    setProjectAction(action)
+    setProjectAction('build')
     setProjectActionNotice(null)
     setErrorMsg(null)
     try {
-      const result = action === 'check'
-        ? await api.checkProject(identity.sessionId)
-        : await api.buildProject(identity.sessionId)
+      const result = await api.buildProject(identity.sessionId)
       setProjectActionNotice({
-        message: action === 'check' ? '检查完成：项目通过' : result.replace('Build completed:', '构建完成：'),
+        message: result.replace('Build completed:', '构建完成：'),
         tone: 'success',
       })
     } catch (error) {
-      const message = `${action === 'check' ? '检查' : '构建'}失败: ${errorMessage(error)}`
+      const message = `构建失败: ${errorMessage(error)}`
       setErrorMsg(message)
       setProjectActionNotice({ message, tone: 'error' })
     } finally {
@@ -1371,7 +1829,6 @@ export default function App() {
       router.replace({ view, file: currentRoute.file, coordinate: firstCoordinate })
     } else {
       router.replace({ view, file: currentRoute.file, typeFilter: activeType } as typeof currentRoute)
-      if (view === 'table') requestAnimationFrame(focusViewTabs)
     }
   }
 
@@ -1405,6 +1862,15 @@ export default function App() {
     }
   }, [currentRoute, preferredView, activeType, activeFileData, router])
 
+  // If the current file doesn't support graph view but a stale route asks for
+  // it, drop back to the table so the empty state isn't shown.
+  useEffect(() => {
+    if (!currentRoute || currentRoute.view !== 'graph') return
+    if (activeFileData?.file_path !== currentRoute.file) return
+    if (graphSupported) return
+    router.replace({ view: 'table', file: currentRoute.file, typeFilter: activeType })
+  }, [currentRoute, activeFileData, graphSupported, activeType, router])
+
   return (
     <ObjectDraftHost lookups={lookups} generationKey={lookupGenerationKey}>
     <div className="app">
@@ -1414,60 +1880,92 @@ export default function App() {
         aria-label="编辑器工具栏"
         onKeyDown={event => onToolbarKeyDown(event, focusFileTree)}
       >
-        <span className="app-title">CFD Editor</span>
-        <button className="btn btn-outlined" onClick={openProject}>
-          <Icon name="open" size={13} />
-          打开项目
-        </button>
-        <button
-          className="btn btn-outlined"
-          onClick={newProject}
-          title="选一个空目录创建新的 Coflow 工程（等价于 coflow init）"
-        >
-          <Icon name="plus" size={13} />
-          新建工程
-        </button>
-        <span className="topbar-divider" />
-        <button
-          className="btn btn-icon"
-          onClick={router.back}
-          disabled={!router.canBack}
-          title="后退 (Alt+←)"
-          aria-label="后退"
-        >
-          <Icon name="arrow-left" size={14} />
-        </button>
-        <button
-          className="btn btn-icon"
-          onClick={router.forward}
-          disabled={!router.canForward}
-          title="前进 (Alt+→)"
-          aria-label="前进"
-        >
-          <Icon name="arrow-right" size={14} />
-        </button>
-        <span className="topbar-spacer" />
-        {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
-          <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
-            {historySnapshot.undo.length > 0 ? `可撤销 ${historySnapshot.undo.length}` : `可重做 ${historySnapshot.redo.length}`}
-          </span>
-        )}
-        <button
-          className="btn btn-icon"
-          onClick={toggleTheme}
-          title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-          aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-        >
-          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
-        </button>
-        <button
-          className="btn btn-icon"
-          onClick={() => setShowHelp(v => !v)}
-          title="帮助 (?)"
-          aria-label="帮助"
-        >
-          <Icon name="help" size={14} />
-        </button>
+        <div className="topbar-left">
+          <span className="app-title">CFD Editor</span>
+          <button className="btn btn-outlined" onClick={openProject}>
+            <Icon name="open" size={13} />
+            <span className="btn-label">打开</span>
+          </button>
+          <button
+            className="btn btn-outlined"
+            onClick={newProject}
+            title="选一个空目录创建新的 Coflow 工程（等价于 coflow init）"
+          >
+            <Icon name="plus" size={13} />
+            <span className="btn-label">新建</span>
+          </button>
+          <span className="topbar-divider" />
+          <button
+            className="btn btn-icon"
+            onClick={router.back}
+            disabled={!router.canBack}
+            title="后退 (Alt+←)"
+            aria-label="后退"
+          >
+            <Icon name="arrow-left" size={14} />
+          </button>
+          <button
+            className="btn btn-icon"
+            onClick={router.forward}
+            disabled={!router.canForward}
+            title="前进 (Alt+→)"
+            aria-label="前进"
+          >
+            <Icon name="arrow-right" size={14} />
+          </button>
+        </div>
+        <div className="topbar-center">
+          {currentRoute && (activeFileData || activeDimensionData) ? (
+            <>
+              {activeDimensionData ? (
+                <div className="document-view-tabs" role="tablist" aria-label="视图">
+                  {(['record', 'table'] as const).map(view => (
+                    <button
+                      key={view}
+                      className={`tab-btn tab-view${dimensionView === view ? ' active' : ''}`}
+                      role="tab"
+                      aria-selected={dimensionView === view}
+                      onClick={() => setDimensionView(view)}
+                    >
+                      <Icon name={view} size={13} aria-hidden />
+                      {view === 'table' ? '表格' : '记录'}
+                    </button>
+                  ))}
+                </div>
+              ) : activeFileData && <div className="document-view-tabs" role="tablist" aria-label="视图">
+                {((['record', 'table', 'graph'] as const).filter(v => v !== 'graph' || graphSupported)).map(v => (
+                  <button
+                    key={v}
+                    className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
+                    role="tab"
+                    aria-selected={currentRoute.view === v}
+                    data-tab-id={v}
+                    onClick={() => switchView(v)}
+                  >
+                    <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
+                    {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
+                  </button>
+                ))}
+              </div>}
+              <button
+                className="btn btn-primary btn-icon btn-build"
+                onClick={runBuild}
+                disabled={!project || projectAction !== null}
+                title="构建项目"
+                aria-label="构建项目"
+              >
+                <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={15} className={projectAction === 'build' ? 'icon-spin' : undefined} />
+              </button>
+            </>
+          ) : null}
+        </div>
+        <div className="topbar-right">
+          {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
+            <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
+              {historySnapshot.undo.length > 0 ? `可撤销 ${historySnapshot.undo.length}` : `可重做 ${historySnapshot.redo.length}`}
+            </span>
+          )}
+        </div>
       </div>
 
       {errorMsg && (
@@ -1481,26 +1979,186 @@ export default function App() {
       )}
 
       <div className="main-layout">
-        <div className="sidebar" ref={sidebarRef}>
-          <div className="sidebar-header">
-            <span>文件</span>
+        <nav className="activity-bar" role="toolbar" aria-label="活动栏">
+          <button
+            className={`activity-btn${activePane === 'files' ? ' active' : ''}`}
+            title="文件"
+            aria-label="文件"
+            aria-pressed={activePane === 'files'}
+            onClick={() => { setActivePane('files'); focusFileTree() }}
+          >
+            <Icon name="folder" size={20} />
+          </button>
+          <button
+            className={`activity-btn${activePane === 'search' ? ' active' : ''}`}
+            title="搜索记录 (Ctrl+F)"
+            aria-label="搜索"
+            aria-pressed={activePane === 'search'}
+            onClick={() => { setActivePane('search'); requestAnimationFrame(focusGlobalSearch) }}
+          >
+            <Icon name="search" size={20} />
+          </button>
+          <button
+            className={`activity-btn${activePane === 'extensions' ? ' active' : ''}`}
+            title="扩展"
+            aria-label="扩展"
+            aria-pressed={activePane === 'extensions'}
+            onClick={() => setActivePane('extensions')}
+          >
+            <Icon name="extensions" size={20} />
+          </button>
+          <button
+            className={`activity-btn${activePane === 'ai' ? ' active' : ''}`}
+            title="AI 助手"
+            aria-label="AI 助手"
+            aria-pressed={activePane === 'ai'}
+            onClick={() => setActivePane('ai')}
+          >
+            <Icon name="sparkles" size={20} />
+          </button>
+          <div className="activity-bar-bottom" ref={settingsMenuRef}>
+            <button
+              className="activity-btn"
+              title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
+              aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
+              onClick={toggleTheme}
+            >
+              <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} />
+            </button>
+            <button
+              className={`activity-btn${settingsOpen ? ' active' : ''}`}
+              title="设置"
+              aria-label="设置"
+              aria-haspopup="true"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen(v => !v)}
+            >
+              <Icon name="settings" size={20} />
+            </button>
+            {settingsOpen && (
+              <div className="settings-dropdown" role="menu">
+                <button
+                  className="settings-item"
+                  role="menuitem"
+                  onClick={() => { setShowHelp(true); setSettingsOpen(false) }}
+                >
+                  <Icon name="help" size={14} />
+                  <span>键盘快捷键 / 帮助</span>
+                </button>
+              </div>
+            )}
           </div>
-          {project ? (
-            <FileTree
-              nodes={project.file_tree}
-              fileTypes={navigationFileTypes}
-              selectedFile={activeFile}
-              selectedType={activeType}
-              onSelectFile={openFile}
-              onExitRight={focusFirstRecord}
-              onOpenSourceFile={openSourceFile}
-            />
-          ) : (
-            <div className="sidebar-empty">
-              {api.isTauri ? '未打开项目' : '浏览器预览（Mock）'}
+        </nav>
+        <div className="sidebar" ref={sidebarRef}>
+          {activePane === 'files' && (
+            <>
+              {project ? (
+                <FileTree
+                  nodes={project.file_tree}
+                  dimensions={projectDimensions}
+                  fileTypes={navigationFileTypes}
+                  selectedFile={activeFile}
+                  selectedType={activeType}
+                  onSelectFile={openFile}
+                  onExitRight={focusFirstRecord}
+                  onOpenSourceFile={openSourceFile}
+                />
+              ) : (
+                <div className="sidebar-empty">
+                  {api.isTauri ? '未打开项目' : '浏览器预览（Mock）'}
+                </div>
+              )}
+            </>
+          )}
+          {activePane === 'search' && (
+            <>
+              <div className="sidebar-header"><span>搜索</span></div>
+              <div className="pane-search-wrap">
+                <label className="pane-search">
+                  <Icon name="search" size={13} />
+                  <input
+                    placeholder="按 key / 字段值搜索…"
+                    value={globalSearch}
+                    onChange={e => setGlobalSearch(e.target.value)}
+                    aria-label="跨文件搜索"
+                  />
+                </label>
+                <div className="pane-search-hint">
+                  当前搜索会同时应用到打开的记录视图。在文档内用 Ctrl+F 直接聚焦。
+                </div>
+              </div>
+            </>
+          )}
+          {activePane === 'extensions' && (
+            <div className="extensions-pane">
+              <div className="sidebar-header extensions-header">
+                <span>扩展</span>
+                {api.isTauri && (
+                  <button className="btn btn-icon" onClick={() => void loadPluginFromSettings()} disabled={pluginLoadBusy} title="从文件安装插件" aria-label="从文件安装插件">
+                    <Icon name="plus" size={15} />
+                  </button>
+                )}
+              </div>
+              <div className="extensions-list">
+                {pluginSettings.map(plugin => (
+                  <article className="extension-item" key={plugin.id}>
+                    <div className="extension-item-main">
+                      <div className="extension-item-icon"><Icon name="extensions" size={16} /></div>
+                      <div>
+                        <strong>{plugin.name}</strong>
+                        <small>{plugin.description || plugin.id}</small>
+                        <em>{plugin.origin === 'local' ? '本地已安装' : '内置'}</em>
+                      </div>
+                    </div>
+                    <div className="extension-item-actions">
+                      <label className="extension-toggle">
+                        <input type="checkbox" checked={plugin.enabled} onChange={event => setReadPluginEnabled(plugin.id, event.target.checked)} />
+                        <span>{plugin.enabled ? '已启用' : '已禁用'}</span>
+                      </label>
+                      {plugin.origin === 'local' && (
+                        <button className="btn btn-icon" title="卸载插件" aria-label={`卸载 ${plugin.name}`} onClick={() => void uninstallPluginFromSettings(plugin.id)}>
+                          <Icon name="close" size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+                {pluginLoadError && <div className="extensions-error">{pluginLoadError}</div>}
+              </div>
             </div>
           )}
-          {api.isTauri && <UpdateControl />}
+          {activePane === 'ai' && (
+            <>
+              <div className="sidebar-header ai-header">
+                <span>
+                  <Icon name="sparkles" size={12} className="ai-header-icon" />
+                  AI 助手
+                </span>
+              </div>
+              <div className="ai-pane">
+                <div className="ai-pane-placeholder">
+                  <Icon name="sparkles" size={22} />
+                  <div className="title">让 AI 帮你编辑配置</div>
+                  <div className="hint">选中记录后描述你想做的修改，或让它检查配置一致性。</div>
+                </div>
+                <div className="ai-pane-suggest">
+                  <button type="button" disabled>为选中的记录补齐缺失字段</button>
+                  <button type="button" disabled>找出所有存在诊断的记录</button>
+                  <button type="button" disabled>解释当前字段的类型定义</button>
+                </div>
+                <div className="ai-pane-input">
+                  <textarea
+                    placeholder="AI 助手尚未接入。当前仅为界面占位。"
+                    disabled
+                  />
+                  <button type="button" className="ai-send" disabled aria-label="发送">
+                    <Icon name="arrow-right" size={13} />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+          {activePane === 'files' && api.isTauri && <UpdateControl />}
         </div>
 
         <div
@@ -1516,120 +2174,147 @@ export default function App() {
           }}
         />
 
+        <div className="editor-column">
         <div className="content-area-wrap">
         <div className="content-area">
           {workspaceTabs.length > 0 && (
             <div className="document-tabs" role="tablist" aria-label="已打开内容">
-              {workspaceTabs.map(tab => {
-                const fileName = tab.filePath.split('/').pop() ?? tab.filePath
-                const types = project?.file_types[tab.filePath] ?? []
-                const type = types.find(option => option.name === tab.typeName)
-                const label = type
-                  ? `${fileName} / ${type.display_name}`
-                  : fileName
-                return (
-                  <div
-                    key={tab.id}
-                    className={`document-tab${tab.id === activeWorkspaceTabId ? ' active' : ''}`}
-                    role="tab"
-                    aria-selected={tab.id === activeWorkspaceTabId}
-                    tabIndex={tab.id === activeWorkspaceTabId ? 0 : -1}
-                    data-tab-id={tab.id}
-                    onClick={() => openFile(tab.filePath, tab.typeName)}
-                    onKeyDown={event => {
-                      if (event.key === 'Delete') {
-                        event.preventDefault()
-                        closeWorkspaceTab(tab.id)
-                        return
-                      }
-                      onTabListKeyDown(
-                        event,
-                        workspaceTabs.map(item => item.id),
-                        id => {
-                          const target = workspaceTabs.find(item => item.id === id)
-                          if (target) openFile(target.filePath, target.typeName)
-                        },
-                      )
-                    }}
-                    title={type && type.display_name !== type.name
-                      ? `${tab.filePath} / ${type.display_name} (${type.name})`
-                      : `${tab.filePath}${tab.typeName ? ` / ${tab.typeName}` : ''}`}
-                  >
-                    <Icon name="file" size={12} className="document-tab-icon" aria-hidden />
-                    <span className="document-tab-label">{label}</span>
-                    {readOnly && tab.id === activeWorkspaceTabId && <Icon name="lock" size={10} className="document-tab-lock" aria-hidden />}
-                    <button
-                      type="button"
-                      className="document-tab-close"
-                      onClick={event => {
-                        event.stopPropagation()
-                        closeWorkspaceTab(tab.id)
+              <div
+                className="tab-scroll"
+                ref={tabScrollRef}
+                onWheel={event => {
+                  if (event.deltaX !== 0) return
+                  const el = tabScrollRef.current
+                  if (!el || Math.abs(event.deltaY) < 1) return
+                  event.preventDefault()
+                  el.scrollLeft += event.deltaY
+                }}
+              >
+                {workspaceTabs.map(tab => {
+                  const fileName = tab.filePath.split('/').pop() ?? tab.filePath
+                  const types = project?.file_types[tab.filePath] ?? []
+                  const type = types.find(option => option.name === tab.typeName)
+                  const label = type
+                    ? `${fileName} / ${type.display_name}`
+                    : fileName
+                  return (
+                    <div
+                      key={tab.id}
+                      className={`document-tab${tab.id === activeWorkspaceTabId ? ' active' : ''}`}
+                      role="tab"
+                      aria-selected={tab.id === activeWorkspaceTabId}
+                      tabIndex={tab.id === activeWorkspaceTabId ? 0 : -1}
+                      data-tab-id={tab.id}
+                      onClick={() => openFile(tab.filePath, tab.typeName)}
+                      onKeyDown={event => {
+                        if (event.key === 'Delete') {
+                          event.preventDefault()
+                          closeWorkspaceTab(tab.id)
+                          return
+                        }
+                        onTabListKeyDown(
+                          event,
+                          workspaceTabs.map(item => item.id),
+                          id => {
+                            const target = workspaceTabs.find(item => item.id === id)
+                            if (target) openFile(target.filePath, target.typeName)
+                          },
+                        )
                       }}
-                      aria-label={`关闭 ${label}`}
-                      title="关闭标签"
+                      title={type && type.display_name !== type.name
+                        ? `${tab.filePath} / ${type.display_name} (${type.name})`
+                        : `${tab.filePath}${tab.typeName ? ` / ${tab.typeName}` : ''}`}
                     >
-                      <Icon name="close" size={11} aria-hidden />
-                    </button>
-                  </div>
-                )
-              })}
+                      <Icon name="file" size={12} className="document-tab-icon" aria-hidden />
+                      <span className="document-tab-label">{label}</span>
+                      {readOnly && tab.id === activeWorkspaceTabId && <Icon name="lock" size={10} className="document-tab-lock" aria-hidden />}
+                      <button
+                        type="button"
+                        className="document-tab-close"
+                        onClick={event => {
+                          event.stopPropagation()
+                          closeWorkspaceTab(tab.id)
+                        }}
+                        aria-label={`关闭 ${label}`}
+                        title="关闭标签"
+                      >
+                        <Icon name="close" size={11} aria-hidden />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+              {tabsOverflow && (
+                <div className="tab-overflow" ref={tabOverflowRef}>
+                  <button
+                    type="button"
+                    className="tab-overflow-btn"
+                    onClick={() => setTabOverflowOpen(v => !v)}
+                    aria-label="所有已打开标签"
+                    title="所有已打开标签"
+                    aria-expanded={tabOverflowOpen}
+                  >
+                    <Icon name="chevron-down" size={13} />
+                  </button>
+                  {tabOverflowOpen && (
+                    <div className="tab-overflow-menu" role="menu">
+                      {workspaceTabs.map(tab => {
+                        const fileName = tab.filePath.split('/').pop() ?? tab.filePath
+                        const types = project?.file_types[tab.filePath] ?? []
+                        const type = types.find(option => option.name === tab.typeName)
+                        const label = type
+                          ? `${fileName} / ${type.display_name}`
+                          : fileName
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            role="menuitem"
+                            className={`tab-overflow-item${tab.id === activeWorkspaceTabId ? ' active' : ''}`}
+                            onClick={() => {
+                              openFile(tab.filePath, tab.typeName)
+                              setTabOverflowOpen(false)
+                              requestAnimationFrame(() => {
+                                const el = tabScrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(tab.id)}"]`)
+                                el?.scrollIntoView({ inline: 'center', block: 'nearest' })
+                              })
+                            }}
+                          >
+                            <Icon name="file" size={12} aria-hidden />
+                            <span className="name">{label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
-          {currentRoute && activeFileData ? (
+          {currentRoute && activeDimensionData ? (
+            <DimensionTableView
+              data={activeDimensionData}
+              mode={dimensionView}
+              recordGroupsByFile={projectSettings?.record_groups}
+              onRenameGroup={renameDimensionRecordGroup}
+              onColorGroup={colorDimensionRecordGroup}
+              onWrite={(row, variant, expected, next) =>
+                writeDimensionCell(activeDimensionData, row, variant, expected, next)}
+              onExitLeft={focusFileTree}
+              onExitUp={focusDocumentTabs}
+              focusRequest={firstRecordFocusRequest}
+              onFocusRequestConsumed={consumeFirstRecordFocusRequest}
+            />
+          ) : currentRoute && activeFileData ? (
             <>
-              <div className="document-toolbar">
-                <div className="document-view-tabs" role="tablist" aria-label="视图" ref={viewTabsRef}>
-                  {(['record', 'table', 'graph'] as const).map(v => (
-                    <button
-                      key={v}
-                      className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
-                      role="tab"
-                      aria-selected={currentRoute.view === v}
-                      tabIndex={currentRoute.view === v ? 0 : -1}
-                      data-tab-id={v}
-                      onClick={() => switchView(v)}
-                      onKeyDown={e => onTabListKeyDown(
-                        e,
-                        ['record', 'table', 'graph'],
-                        v => switchView(v as 'table' | 'record' | 'graph'),
-                        {
-                          onLeftBoundary: focusFileTree,
-                          onUp: focusFileTree,
-                          onDown: focusGlobalSearch,
-                        },
-                      )}
-                    >
-                      <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
-                      {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
-                    </button>
-                  ))}
-                </div>
-                <span className="document-toolbar-spacer" />
-                {readOnly && (
+              {readOnly && (
+                <div className="document-toolbar readonly-only">
                   <span className="document-readonly" title="该来源未提供可写能力">
                     <Icon name="lock" size={11} aria-hidden />
                     只读
                   </span>
-                )}
-                <button
-                  className="btn btn-icon"
-                  onClick={() => runProjectAction('check')}
-                  disabled={!project || projectAction !== null}
-                  title="检查项目"
-                  aria-label="检查项目"
-                >
-                  <Icon name={projectAction === 'check' ? 'refresh' : 'check'} size={14} className={projectAction === 'check' ? 'icon-spin' : undefined} />
-                </button>
-                <button
-                  className="btn btn-icon"
-                  onClick={() => runProjectAction('build')}
-                  disabled={!project || projectAction !== null}
-                  title="构建项目"
-                  aria-label="构建项目"
-                >
-                  <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={14} className={projectAction === 'build' ? 'icon-spin' : undefined} />
-                </button>
-              </div>
+                </div>
+              )}
 
               {/* Record search bar — shared across all three views */}
               <div className="global-search-bar">
@@ -1640,10 +2325,7 @@ export default function App() {
                   value={globalSearch}
                   onChange={e => setGlobalSearch(e.target.value)}
                   onKeyDown={e => {
-                    if (e.key === 'ArrowUp') {
-                      e.preventDefault()
-                      focusViewTabs()
-                    } else if (e.key === 'ArrowDown') {
+                    if (e.key === 'ArrowDown') {
                       e.preventDefault()
                       focusFirstRecord()
                     } else if (e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0) {
@@ -1675,6 +2357,15 @@ export default function App() {
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     searchQuery={globalSearch}
+                    recordGroups={recordGroups}
+                    collapsedGroupKeys={collapsedRecordGroups}
+                    onToggleGroup={toggleRecordGroup}
+                    onDropRecordOntoRecord={dropRecordOntoRecord}
+                    onCreateGroup={createManualRecordGroup}
+                    onDropRecordIntoGroup={dropRecordIntoGroup}
+                    onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
+                    onRenameGroup={renameManualRecordGroup}
+                    onColorGroup={colorManualRecordGroup}
                     selection={inspectorSelection?.filePath === currentRoute.file
                       ? inspectorSelection
                       : null}
@@ -1716,9 +2407,20 @@ export default function App() {
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     recordSearch={globalSearch}
+                    recordGroups={recordGroups}
+                    collapsedGroupKeys={collapsedRecordGroups}
+                    onToggleGroup={toggleRecordGroup}
+                    onDropRecordOntoRecord={dropRecordOntoRecord}
+                    onDropRecordIntoGroup={dropRecordIntoGroup}
+                    onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
+                    onRenameGroup={renameManualRecordGroup}
+                    onColorGroup={colorManualRecordGroup}
                     highlightField={highlightField}
                     onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
+                    onSelectRecord={(coordinate, mode, visible) => (
+                      selectRecords(currentRoute.file, coordinate, visible, mode)
+                    )}
                     selection={inspectorSelection}
                     onSelectValue={(coordinate, path) => {
                       setInspectorSelection(valueSelection(currentRoute.file, coordinate, path))
@@ -1726,6 +2428,7 @@ export default function App() {
                     onRenderCellText={tableOnRenderCellText}
                     onParseCellText={tableOnParseCellText}
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
+                    onWriteFields={(coordinates, path, val) => writeFields(currentRoute.file, coordinates, path, val)}
                     onCollectionEdit={(coordinate, path, edit) => editCollection(currentRoute.file, coordinate, path, edit)}
                     onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
                     onInsertRecord={(rk, type, fields) => insertRecord(currentRoute.file, rk, type, fields)}
@@ -1744,6 +2447,10 @@ export default function App() {
                     <GraphView
                       graphData={activeGraph}
                       activeType={activeType}
+                      enabledFieldsOverride={projectSettings?.graph_enabled_fields[activeFile ?? '']?.[activeType]}
+                      onEnabledFieldsChange={fields => {
+                        if (activeFile && activeType) saveGraphEnabledFields(activeFile, activeType, fields)
+                      }}
                       fileCapabilities={fileCapabilities}
                       diagnostics={project?.diagnostics}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}
@@ -1805,6 +2512,7 @@ export default function App() {
           onWidthChange={setInspectorW}
           onClose={closeInspector}
           onWriteField={writeField}
+          onWriteFields={writeFields}
           onRenderCellText={(_filePath, coordinate, path) => tableOnRenderCellText(coordinate, path)}
           onParseCellText={(_filePath, coordinate, path, text) => tableOnParseCellText(coordinate, path, text)}
           onCollectionEdit={editCollection}
@@ -1817,24 +2525,24 @@ export default function App() {
           onExitKeyboardNavigation={inspectorOnExitKeyboardNavigation}
         />
         </div>
+        {project && (
+          <DiagnosticsPanel
+            diagnostics={project.diagnostics}
+            focus={diagFocus}
+            onFocusConsumed={() => setDiagFocus(null)}
+            isJumpable={(file) => sourceFileSet.has(file)}
+            onJumpToRecord={(file, key, actualType) => {
+              setHighlightField(RECORD_HIGHLIGHT_SENTINEL)
+              openRecordByKey(file, key, actualType)
+            }}
+            onJumpToField={(file, key, actualType, fieldPath) => {
+              setHighlightField(fieldPath)
+              openRecordByKey(file, key, actualType)
+            }}
+          />
+        )}
+        </div>
       </div>
-
-      {project && (
-        <DiagnosticsPanel
-          diagnostics={project.diagnostics}
-          focus={diagFocus}
-          onFocusConsumed={() => setDiagFocus(null)}
-          isJumpable={(file) => sourceFileSet.has(file)}
-          onJumpToRecord={(file, key, actualType) => {
-            setHighlightField(RECORD_HIGHLIGHT_SENTINEL)
-            openRecordByKey(file, key, actualType)
-          }}
-          onJumpToField={(file, key, actualType, fieldPath) => {
-            setHighlightField(fieldPath)
-            openRecordByKey(file, key, actualType)
-          }}
-        />
-      )}
 
       {projectActionNotice && (
         <div
@@ -1922,6 +2630,15 @@ function collectSourceFiles(snapshot: ProjectSnapshot): string[] {
   return out
 }
 
+function dimensionForFile(dimensions: DimensionInfo[], filePath: string): DimensionInfo | undefined {
+  const normalizedFile = filePath.replace(/\\/g, '/')
+  return dimensions.find(dimension => {
+    if (!dimension.out_dir) return false
+    const directory = dimension.out_dir.replace(/\\/g, '/').replace(/\/+$/, '')
+    return normalizedFile.startsWith(`${directory}/`)
+  })
+}
+
 /** True when the user is currently focused inside a text-editing control.
  *  Used to gate global shortcuts (`?`, etc.) so they don't fire while typing. */
 function isTextTarget(target: EventTarget | null): boolean {
@@ -2002,8 +2719,11 @@ function onToolbarKeyDown(event: React.KeyboardEvent, onExitDown: () => void) {
     && event.key !== 'Home'
     && event.key !== 'End'
   ) return
+  // The center view switch (记录/表格/图谱) is intentionally excluded from the
+  // toolbar's arrow-key roving nav — it's a mouse/click affordance, not part of
+  // the left-to-right keyboard chain.
   const buttons = Array.from(
-    event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+    event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled):not(.tab-view)'),
   )
   const index = buttons.indexOf(event.target)
   if (index < 0) return

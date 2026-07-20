@@ -188,7 +188,6 @@ function focusRecordValueEditor(row: HTMLElement, replacement: string | null) {
   if (!editor) return
   editor.focus({ preventScroll: true })
   if (editor instanceof HTMLInputElement && editor.classList.contains('searchable-select')) {
-    try { editor.showPicker() } catch { /* Typing still searches. */ }
     return
   }
   if (editor instanceof HTMLSelectElement) {

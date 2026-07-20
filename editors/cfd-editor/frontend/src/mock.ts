@@ -2,8 +2,11 @@
 import type { FileRecords } from './bindings/FileRecords'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
+import type { DimensionInfo } from './bindings/DimensionInfo'
+import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
+import type { DimensionFileRecords } from './api'
 import {
   boolValue,
   enumValue,
@@ -24,12 +27,32 @@ const MOCK_CFD_CAPS: WriterCapabilities = {
   requires_full_refresh_after_write: true,
 }
 
-export const MOCK_PROJECT: ProjectSnapshot = {
+export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
   session_id: 1,
   revision: 1,
   project_root: '(mock project)',
   first_source_file: 'data/item.cfd',
   file_tree: [
+    {
+      name: '本地化',
+      path: 'data/dimensions/language',
+      is_dir: true,
+      in_sources: true,
+      first_source_descendant: null,
+      children: [
+        { name: 'Item_name.csv', path: 'data/dimensions/language/Item_name.csv', is_dir: false, in_sources: true, first_source_descendant: 'data/dimensions/language/Item_name.csv', children: [] },
+      ],
+    },
+    {
+      name: '平台',
+      path: 'data/dimensions/platform',
+      is_dir: true,
+      in_sources: true,
+      first_source_descendant: null,
+      children: [
+        { name: 'Item_icon.csv', path: 'data/dimensions/platform/Item_icon.csv', is_dir: false, in_sources: true, first_source_descendant: 'data/dimensions/platform/Item_icon.csv', children: [] },
+      ],
+    },
     {
       name: 'data',
       path: 'data',
@@ -43,6 +66,10 @@ export const MOCK_PROJECT: ProjectSnapshot = {
       ],
     },
     { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, first_source_descendant: null, children: [] },
+  ],
+  dimensions: [
+    { name: 'language', display_name: '本地化', variants: ['zh-CN', 'en-US'], out_dir: 'data/dimensions/language', fields: [] },
+    { name: 'platform', display_name: '平台', variants: ['mobile', 'desktop'], out_dir: 'data/dimensions/platform', fields: [] },
   ],
   file_types: {
     'data/item.cfd': [
@@ -133,7 +160,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
       row('Npc', 'Npc_001', [
         { name: 'name', value: strVal('村民甲'), annotation: null },
         { name: 'level', value: intVal(1), annotation: null },
-        { name: 'reward_item', value: refVal(''), annotation: null },
+        { name: 'reward_item', value: refVal('ItemConfig.Item_001'), annotation: null },
         { name: 'faction', value: enumVal('Faction', 'Neutral', 0), annotation: null },
         {
           name: 'drops',
@@ -156,6 +183,64 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
       ]),
     ],
   }),
+}
+
+export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
+  table_column_widths: {},
+  graph_enabled_fields: {},
+  record_groups: {
+    'data/item.cfd': {
+      Item: [{
+        id: 'mock-potions',
+        name: '药水',
+        color: null,
+        records: [
+          { actual_type: 'Item', key: 'Item_001' },
+          { actual_type: 'Item', key: 'Item_002' },
+        ],
+      }],
+    },
+  },
+}
+
+export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> = {
+  'data/dimensions/language/Item_name.csv': {
+    revision: 1,
+    file_path: 'data/dimensions/language/Item_name.csv',
+    dimension: 'language',
+    display_name: '本地化',
+    field: 'name',
+    variants: ['zh-CN', 'en-US'],
+    rows: [
+      {
+        coordinate: { actual_type: 'Item', key: 'Item_001' },
+        owner_file_path: 'data/item.cfd',
+        default_value: stringValue('初级药水'),
+        values: {
+          'zh-CN': { kind: 'value', value: stringValue('初级药水') },
+          'en-US': { kind: 'value', value: stringValue('Minor Potion') },
+        },
+      },
+      {
+        coordinate: { actual_type: 'Item', key: 'Item_002' },
+        owner_file_path: 'data/item.cfd',
+        default_value: stringValue('中级药水'),
+        values: {
+          'zh-CN': { kind: 'value', value: stringValue('中级药水') },
+          'en-US': { kind: 'missing' },
+        },
+      },
+    ],
+  },
+  'data/dimensions/platform/Item_icon.csv': {
+    revision: 1,
+    file_path: 'data/dimensions/platform/Item_icon.csv',
+    dimension: 'platform',
+    display_name: '平台',
+    field: 'icon',
+    variants: ['mobile', 'desktop'],
+    rows: [],
+  },
 }
 
 export const MOCK_GRAPH: GraphData = {

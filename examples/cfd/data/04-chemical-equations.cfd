@@ -1,0 +1,19 @@
+# Chemical-equation reading-plugin example.
+# In the CFD editor, install the chemical-equation example from the Extensions view.
+
+ChemicalEquation {
+  water_synthesis {
+    name: "水的合成",
+    description: "氢气与氧气反应生成水。",
+    expression: {
+      inputs: [
+        { material: O2, parameters: { coefficient: 2, state: Liquid } },
+        { material: H2O, parameters: { state: Gas } },
+      ],
+      outputs: [
+        { material: H2O, parameters: { coefficient: 2, state: Liquid } },
+      ],
+    },
+    temperature_c: 25.0,
+  }
+}

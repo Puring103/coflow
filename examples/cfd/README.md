@@ -10,6 +10,8 @@ CFD loader tests.
 - `data/02-polymorphic-and-paths.cfd`: polymorphic grouping and
   key-only `&key` references.
 - `data/03-spread.cfd`: object and dictionary `...` spread with local overrides.
+- `data/04-chemical-equations.cfd`: a `ChemicalEquation` record for the CFD
+  editor's chemical-equation reading-plugin example.
 
 The examples are loaded by `coflow-loader-cfd` tests:
 
