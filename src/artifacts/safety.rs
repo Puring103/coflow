@@ -1,4 +1,4 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, SourceLocationSpec};
+use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_project::Project;
 use std::fs;
 use std::io;
@@ -190,9 +190,7 @@ fn configured_source_paths(project: &Project) -> Vec<PathBuf> {
         .config
         .sources
         .iter()
-        .map(|source| match source.location() {
-            SourceLocationSpec::Path(path) => path,
-        })
+        .map(|source| source.location().path())
         .flat_map(|path| source_overlap_paths(&project.resolve_path(path)))
         .collect()
 }

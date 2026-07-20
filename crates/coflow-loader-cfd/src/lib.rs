@@ -17,8 +17,8 @@
 
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext,
-    SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceResolveContext,
+    ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext, SourceProvider,
+    SourceProviderDescriptor, SourceResolveContext,
 };
 
 mod diagnostics;
@@ -130,11 +130,13 @@ impl SourceProvider for CfdLoader {
         if source.source_type == Some(CFD_LOADER_DESCRIPTOR.id) {
             return ProbeResult::certain();
         }
-        if matches!(
-            source.location,
-            SourceLocationSpec::Path(path)
-                if path.extension().and_then(|ext| ext.to_str()) == Some("cfd")
-        ) {
+        if source
+            .location
+            .path()
+            .extension()
+            .and_then(|ext| ext.to_str())
+            == Some("cfd")
+        {
             ProbeResult::likely()
         } else {
             ProbeResult::none()
@@ -153,7 +155,7 @@ impl SourceProvider for CfdLoader {
         _ctx: SourceResolveContext<'_>,
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &source.location;
+        let path = (&source.location).path();
         if is_cfd_path(path) {
             return Ok(vec![source.clone()]);
         }
@@ -172,7 +174,7 @@ impl SourceProvider for CfdLoader {
         ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let SourceLocationSpec::Path(file) = &source.location;
+        let file = (&source.location).path();
         let contents = fs::read_to_string(file).map_err(|err| {
             DiagnosticSet::one(Diagnostic::error(
                 "CFD-READ",

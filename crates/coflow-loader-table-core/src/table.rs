@@ -16,7 +16,7 @@ use coflow_data_model::{
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::cell_value::{parse_schema_cell, ParsedCell};
+use coflow_data_model::cell_value::{parse_schema_cell, ParsedCell};
 use columns::{
     field_columns_from_resolved, resolve_columns, ExpandedSubColumn, IdColumn, ResolvedColumn,
 };

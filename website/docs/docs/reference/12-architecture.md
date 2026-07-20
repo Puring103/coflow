@@ -64,8 +64,8 @@ flowchart TD
 | `coflow-cft` | CFT parser、schema compiler、check 表达式静态类型检查 |
 | `coflow-cfd` | 唯一 CFD syntax parser、canonical AST；基于共享 `Span` 标记源码范围 |
 | `coflow-structure` | CFT/CFD 共用的 source `Span`，以及 parser/compiler/evaluator 共用的递归深度、节点数和工作量预算 |
-| `coflow-data-model` | record/object/value 模型、默认值、引用、索引和 DataModel 诊断 |
-| `coflow-loader-table-core` | Excel/CSV 共享表格加载、表头协调和单元格值解析 |
+| `coflow-data-model` | record/object/value 模型、默认值、引用、索引、DataModel 诊断和共享单元格值语法 |
+| `coflow-loader-table-core` | Excel/CSV 共享表格加载、表头协调和 writer 规划 |
 | `coflow-loader-*` | 具体数据源 loader/writer |
 | `coflow-exporter-core` | JSON/MessagePack 共享导出遍历规则 |
 | `coflow-exporter-*` | 具体数据导出格式 |
@@ -148,13 +148,13 @@ project-facing JSON 解码一次；exporter/codegen generation 收到 provider-o
 
 1. planner 解析所有操作，并用 pending-record overlay 折叠 `insert -> set/rename/delete` 等批内依赖；随后生成一次 provider execution plan，固定 source、writer、target、sheet、delete origin 和 reference rewrite actions。
 2. 所有可执行的 provider preflight 在任何写入前完成。
-3. 每个本地 path source 由 runtime 保存原始字节；每个远程 source 必须返回 provider-owned compensation handle，否则整批在写入前拒绝。
+3. 每个本地 path source 由 runtime 保存原始字节，或由 Provider 返回可靠的 compensation handle；否则整批在写入前拒绝。
 4. `writes::stage` 只执行 provider I/O，不 rebuild session。
 5. 全部来源写入后构建一个候选 generation。加载、schema 或 DataModel 错误会触发 compensation；业务 `CHECK` 诊断属于可发布结果。
-6. 所有远端 transaction 先完成可失败的 `prepare_commit`。全部准备成功后，runtime 才调用不可失败的最终 `commit` publication，替换旧 generation，并且整批只推进一次 revision。
+6. 所有 provider-owned transaction 先完成可失败的 `prepare_commit`。全部准备成功后，runtime 才调用不可失败的最终 `commit` publication，替换旧 generation，并且整批只推进一次 revision。
 
 preflight、transaction enlistment 和 stage 只消费同一 execution plan，不重复按路径查找
-source 或 writer。stage、rebuild 或 prepare-commit 失败时，runtime 按逆序补偿远程来源并恢复本地字节，旧 generation 继续为查询提供一致视图，报告中的 `applied` 为空。最终 publication 不允许失败，因此不会出现“部分 source 已 commit 后再尝试回滚”的无效契约。远程 writer 若没有可靠补偿和两阶段 publication 能力，必须显式声明 `Unsupported`；不能用“尽力回滚”伪装成原子写入。
+source 或 writer。stage、rebuild 或 prepare-commit 失败时，runtime 按逆序执行 provider compensation 并恢复本地字节，旧 generation 继续为查询提供一致视图，报告中的 `applied` 为空。最终 publication 不允许失败，因此不会出现“部分 source 已 commit 后再尝试回滚”的无效契约。Provider writer 若没有可靠补偿能力，必须显式声明 `Unsupported`；不能用“尽力回滚”伪装成原子写入。
 
 成功报告中的 operation outcome 只保存该 operation 的 provider diagnostics，不复制整个
 generation diagnostic set。顶层 `diagnostics` 按 operation 顺序汇总 provider diagnostics，

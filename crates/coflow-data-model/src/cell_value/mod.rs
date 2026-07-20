@@ -25,8 +25,8 @@ mod scan;
 mod strings;
 mod types;
 
+use crate::LoadedValueDraft;
 use coflow_cft::{CftSchema, CftValueType};
-use coflow_data_model::LoadedValueDraft;
 use collections::{parse_array, parse_dict};
 use diagnostics::type_mismatch;
 pub use diagnostics::{CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode};
@@ -134,7 +134,7 @@ fn parse_value(
     }
 }
 
-pub(super) fn parse_enum(
+pub(crate) fn parse_enum(
     schema: &CftSchema,
     enum_name: &str,
     text: &str,

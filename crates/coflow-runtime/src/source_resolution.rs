@@ -46,7 +46,7 @@ impl<'a> SourceResolver<'a> {
         source: &SourceConfig,
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        if matches!(configured.location, SourceLocationSpec::Path(ref path) if path.is_dir()) {
+        if configured.location.path().is_dir() {
             return self.resolve_directory(configured, source.source_type.as_deref());
         }
         let provider = self.select(configured, source.source_type.as_deref())?;
@@ -59,7 +59,7 @@ impl<'a> SourceResolver<'a> {
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let source_type =
             (!configured.provider_id.is_empty()).then_some(configured.provider_id.as_str());
-        if matches!(configured.location, SourceLocationSpec::Path(ref path) if path.is_dir()) {
+        if configured.location.path().is_dir() {
             return self.resolve_directory(configured, source_type);
         }
         let provider = self.select(configured, source_type)?;
@@ -135,7 +135,7 @@ impl<'a> SourceResolver<'a> {
         configured: &ConfiguredSource,
         forced_provider: Option<&str>,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(directory) = &configured.location;
+        let directory = (&configured.location).path();
         let selected_provider = forced_provider
             .map(|provider_id| self.select(configured, Some(provider_id)))
             .transpose()?;
@@ -168,7 +168,7 @@ impl<'a> SourceResolver<'a> {
             let file_source = ConfiguredSource {
                 provider_id: String::new(),
                 display_name: path.display().to_string(),
-                location: SourceLocationSpec::Path(path.clone()),
+                location: SourceLocationSpec::new(path.clone()),
                 options: configured.options.clone(),
                 source_index: configured.source_index,
             };
@@ -204,14 +204,14 @@ impl<'a> SourceResolver<'a> {
             if let Some(template) = &decoded_directory {
                 let mut source = template.clone();
                 source.display_name = path.display().to_string();
-                source.location = SourceLocationSpec::Path(path);
+                source.location = SourceLocationSpec::new(path);
                 resolved.extend(self.expand_decoded(&provider, &source)?);
                 continue;
             }
             let mut file_source = ConfiguredSource {
                 provider_id: provider.descriptor().id.to_string(),
                 display_name: path.display().to_string(),
-                location: SourceLocationSpec::Path(path),
+                location: SourceLocationSpec::new(path),
                 options: configured.options.clone(),
                 source_index: configured.source_index,
             };
@@ -312,8 +312,8 @@ fn configured_source(
     source: &SourceConfig,
     source_index: Option<usize>,
 ) -> ConfiguredSource {
-    let SourceLocationSpec::Path(path) = source.location();
-    let location = SourceLocationSpec::Path(project.resolve_path(path));
+    let path = (source.location()).path();
+    let location = SourceLocationSpec::new(project.resolve_path(path));
     let display_name = path.display().to_string();
     ConfiguredSource {
         provider_id: source.source_type.clone().unwrap_or_default(),
@@ -471,7 +471,7 @@ fn loader_selection_diagnostic(
     spec: &ConfiguredSource,
     error: SourceProviderSelectionError,
 ) -> Diagnostic {
-    let SourceLocationSpec::Path(path) = &spec.location;
+    let path = (&spec.location).path();
     let source = path.display().to_string();
     match error {
         SourceProviderSelectionError::UnknownSourceProvider { id } => project_diagnostic(
@@ -563,7 +563,7 @@ mod tests {
         };
         let configured = ConfiguredSource {
             provider_id: DESCRIPTOR.id.to_string(),
-            location: SourceLocationSpec::Path("contract.source".into()),
+            location: SourceLocationSpec::new("contract.source"),
             options: Value::Null,
             display_name: "contract.source".to_string(),
             source_index: Some(0),
@@ -583,7 +583,7 @@ mod tests {
         };
         let source = ResolvedSource {
             provider_id: "other-provider".to_string(),
-            location: SourceLocationSpec::Path("contract.source".into()),
+            location: SourceLocationSpec::new("contract.source"),
             options: DecodedSourceOptions::new(DESCRIPTOR.id, ()),
             display_name: "contract.source".to_string(),
         };

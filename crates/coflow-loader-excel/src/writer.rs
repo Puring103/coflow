@@ -1,7 +1,7 @@
 //! Writer that persists field edits back to local `.xlsx` workbooks.
 //!
 //! `ExcelWriter` is the [`SourceWriter`] for [`coflow_data_model::RecordOrigin::Table`] origins
-//! whose document is `SourceDocument::Local`. It uses
+//! whose document contains a local path. It uses
 //! [`umya-spreadsheet`](https://docs.rs/umya-spreadsheet) so existing styles,
 //! merged cells, and column widths survive round-trips.
 mod format;
@@ -14,9 +14,9 @@ use crate::options::{
 use calamine::Reader;
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    ReorderRecordsOperation, ReorderRecordsRequest, RewriteRecordReferencesRequest,
-    SourceLocationSpec, SourceWriter, WriteBatchFailure, WriteCellRequest, WriteContext,
-    WriteOutcome, WriterCapabilities, WriterDescriptor,
+    ReorderRecordsOperation, ReorderRecordsRequest, RewriteRecordReferencesRequest, SourceWriter,
+    WriteBatchFailure, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
+    WriterDescriptor,
 };
 use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{
@@ -68,7 +68,7 @@ impl SourceWriter for ExcelWriter {
     }
 
     fn preflight(&self, _ctx: WriteContext<'_>, request: &WriteCellRequest<'_>) -> DiagnosticSet {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         ensure_writable_excel_path(path, "edit fields")
             .err()
             .unwrap_or_default()
@@ -79,7 +79,7 @@ impl SourceWriter for ExcelWriter {
         ctx: WriteContext<'_>,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         ensure_writable_excel_path(path, "edit fields")?;
         let plan = plan_field_write(&TableFieldWrite {
             origin: request.origin,
@@ -101,7 +101,7 @@ impl SourceWriter for ExcelWriter {
     ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
         let mut plans = Vec::with_capacity(requests.len());
         for (index, request) in requests.iter().enumerate() {
-            let SourceLocationSpec::Path(path) = &request.source.location;
+            let path = (&request.source.location).path();
             ensure_writable_excel_path(path, "edit fields")
                 .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
             let plan = plan_field_write(&TableFieldWrite {
@@ -126,7 +126,7 @@ impl SourceWriter for ExcelWriter {
         _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         ensure_writable_excel_path(path, "insert records")?;
         let sheet = match request.sheet {
             Some(sheet) => sheet.to_string(),
@@ -144,7 +144,7 @@ impl SourceWriter for ExcelWriter {
             request.schema,
         )?;
         let plan = plan_insert_record(&TableInsertRecord {
-            document: SourceDocument::Local(path.clone()),
+            document: SourceDocument::new(path.clone()),
             sheet: &sheet,
             record_key: request.record_key,
             actual_type: request.actual_type,
@@ -187,7 +187,7 @@ impl SourceWriter for ExcelWriter {
         _ctx: WriteContext<'_>,
         request: &DeleteRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         ensure_writable_excel_path(path, "delete records")?;
         ensure_table_origin_path(request.origin, path)?;
         let plan = plan_delete_record(request.origin, request.record_key)
@@ -209,7 +209,7 @@ impl SourceWriter for ExcelWriter {
         _ctx: WriteContext<'_>,
         request: &ReorderRecordsRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         ensure_writable_excel_path(path, "reorder records")?;
         let operation = match request.operation {
             ReorderRecordsOperation::Swap { first, second } => {
@@ -257,18 +257,12 @@ impl SourceWriter for ExcelWriter {
 
 fn ensure_table_origin_path(origin: &RecordOrigin, expected: &Path) -> Result<(), DiagnosticSet> {
     match origin {
-        RecordOrigin::Table {
-            document: SourceDocument::Local(path),
-            ..
-        } if path == expected => Ok(()),
-        RecordOrigin::Table {
-            document: SourceDocument::Local(path),
-            ..
-        } => Err(DiagnosticSet::one(diag(
+        RecordOrigin::Table { document, .. } if document.path() == expected => Ok(()),
+        RecordOrigin::Table { document, .. } => Err(DiagnosticSet::one(diag(
             "EXCEL-WRITE",
             format!(
                 "record origin `{}` does not match source `{}`",
-                path.display(),
+                document.path().display(),
                 expected.display()
             ),
         ))),
@@ -317,10 +311,7 @@ fn local_plan_path(plan: &TableWritePlan) -> &Path {
         | TableWritePlan::AppendRow(TableAppendRow { document, .. })
         | TableWritePlan::DeleteRow(TableDeleteRow { document, .. })
         | TableWritePlan::SwapRows(TableSwapRows { document, .. })
-        | TableWritePlan::MoveRowBefore(TableMoveRowBefore { document, .. }) => {
-            let SourceDocument::Local(path) = document;
-            path
-        }
+        | TableWritePlan::MoveRowBefore(TableMoveRowBefore { document, .. }) => document.path(),
     }
 }
 

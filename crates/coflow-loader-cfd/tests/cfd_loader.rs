@@ -580,7 +580,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
             },
             &ResolvedSource {
                 provider_id: "cfd".to_string(),
-                location: SourceLocationSpec::Path(source_path.clone()),
+                location: SourceLocationSpec::new(source_path.clone()),
                 options: CfdLoader
                     .decode_options(&serde_json::Value::Null)
                     .expect("decode cfd options"),

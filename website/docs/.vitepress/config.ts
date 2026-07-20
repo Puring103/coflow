@@ -77,7 +77,6 @@ export default withMermaid(defineConfig({
                 { text: '表格 Source', link: '/docs/reference/04-sources/02-table' },
                 { text: 'Excel', link: '/docs/reference/04-sources/03-excel' },
                 { text: 'CSV', link: '/docs/reference/04-sources/04-csv' },
-                { text: '飞书/Lark', link: '/docs/reference/04-sources/05-lark' },
                 { text: 'Provider API', link: '/docs/reference/04-sources/06-provider-api' }
               ]
             },

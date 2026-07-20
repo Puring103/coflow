@@ -1,7 +1,7 @@
 use coflow_data_model::{format_cfd_dict_key, CfdDataModel, CfdValue};
 use std::collections::BTreeMap;
 
-use crate::cell_value::render_cell_value;
+use coflow_data_model::cell_value::render_cell_value;
 
 use super::diagnostics::{one_error, table_render_error};
 use super::{TableSetCell, TableWriteDiagnostics, WriteFieldPathSegment};

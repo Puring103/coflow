@@ -1,18 +1,11 @@
-use super::DataWriteFileReport;
 use crate::diagnostics::cli_error;
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_runtime::{
     DataFileReport, DataGetReport, DataListReport, DataPatchReport, DataSourcesReport,
 };
-use serde::Serialize;
 use std::io::{self, Write};
 
-pub(super) fn write_json(value: &impl Serialize) -> Result<(), DiagnosticSet> {
-    serde_json::to_writer(io::stdout().lock(), value)
-        .map_err(|err| cli_error("CLI-OUTPUT", format!("failed to write JSON: {err}")))?;
-    println!();
-    Ok(())
-}
+pub(super) use crate::write_file::write_json;
 
 pub(super) fn write_sources_human(report: &DataSourcesReport) -> Result<(), DiagnosticSet> {
     let mut stdout = io::stdout().lock();
@@ -112,25 +105,6 @@ pub(super) fn write_file_report_human(report: &DataFileReport) -> Result<(), Dia
         writeln!(stdout, "removed\t{}", report.removed.join(","))
             .map_err(|err| output_error(&err))?;
     }
-    write_flat_diagnostics(&mut stdout, &report.diagnostics)
-}
-
-pub(super) fn write_data_write_file_human(
-    report: &DataWriteFileReport,
-) -> Result<(), DiagnosticSet> {
-    let mut stdout = io::stdout().lock();
-    writeln!(
-        stdout,
-        "{}\twritten={}\tdry_run={}\tchanged={}\tcheck_ok={}",
-        report.file,
-        report.written,
-        report.dry_run,
-        report.changed,
-        report
-            .check_ok
-            .map_or_else(|| "skipped".to_string(), |ok| ok.to_string())
-    )
-    .map_err(|err| output_error(&err))?;
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 

@@ -142,7 +142,7 @@ fn configured_dimension_source(
     Ok(Some((
         ConfiguredSource {
             provider_id: String::new(),
-            location: SourceLocationSpec::Path(path),
+            location: SourceLocationSpec::new(path),
             options: source_options(matched_fields[0], &extension),
             display_name: if display_name.is_empty() {
                 directory.display().to_string()

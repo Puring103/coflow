@@ -64,6 +64,14 @@ impl<'a> ProjectQueries<'a> {
         self.session.files().source_files().len()
     }
 
+    pub fn source_files(self) -> impl Iterator<Item = &'a str> + 'a {
+        self.session
+            .files()
+            .source_files()
+            .iter()
+            .map(String::as_str)
+    }
+
     #[must_use]
     pub fn record_count(self) -> usize {
         self.session.records().by_id().len()

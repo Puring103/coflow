@@ -1,4 +1,4 @@
-use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdValue};
+use crate::{CfdDictKey, CfdEnumValue, CfdValue};
 use std::fmt;
 
 use super::strings::string_needs_quotes;
@@ -80,7 +80,7 @@ fn render_dict_key(key: &CfdDictKey) -> Result<String, CellRenderError> {
     }
 }
 
-fn render_object(record: &coflow_data_model::CfdObject) -> Result<String, CellRenderError> {
+fn render_object(record: &crate::CfdObject) -> Result<String, CellRenderError> {
     let mut out = String::new();
     if !record.actual_type().is_empty() {
         out.push_str(record.actual_type());

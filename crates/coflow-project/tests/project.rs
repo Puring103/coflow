@@ -365,7 +365,7 @@ outputs:
     );
     assert_eq!(
         project.config.sources[0].location,
-        coflow_api::SourceLocationSpec::Path(PathBuf::from("data.custom"))
+        coflow_api::SourceLocationSpec::new(PathBuf::from("data.custom"))
     );
     assert_eq!(
         project.config.sources[0].options["flavor"],

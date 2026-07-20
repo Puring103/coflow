@@ -4,7 +4,7 @@ version = "0.7.0"
 edition = "2021"
 description = "Text CFD loader for Coflow data models."
 license = "Apache-2.0"
-repository = "https://github.com/wtlll/ScriptForGame"
+repository = "https://github.com/Puring103/coflow"
 publish = false
 
 [lints]

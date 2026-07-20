@@ -3,9 +3,9 @@ use super::{
     DataWriteMode,
 };
 use crate::diagnostics::{cli_error, cli_file_error};
-use coflow_api::{DiagnosticSet, FlatDiagnostic, SourceLocationSpec};
+use crate::write_file::{read_source, read_stdin_source, write_source};
+use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_project::Project;
-use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 pub(super) fn run_write_file(
@@ -14,13 +14,7 @@ pub(super) fn run_write_file(
 ) -> Result<DataWriteFileReport, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     let target = resolve_data_write_target(&project, &options.file)?;
-    let current = std::fs::read_to_string(&target.absolute_path).map_err(|err| {
-        cli_file_error(
-            &target.absolute_path,
-            "CLI-FILE-READ",
-            format!("failed to read `{}`: {err}", target.absolute_path.display()),
-        )
-    })?;
+    let current = read_source(&target.absolute_path)?;
     let source = match options.input {
         DataWriteInput::Stdin => read_stdin_source()?,
         DataWriteInput::Missing => {
@@ -30,16 +24,7 @@ pub(super) fn run_write_file(
     let changed = current != source;
     let dry_run = matches!(options.mode, DataWriteMode::DryRun);
     if !dry_run {
-        std::fs::write(&target.absolute_path, &source).map_err(|err| {
-            cli_file_error(
-                &target.absolute_path,
-                "CLI-FILE-WRITE",
-                format!(
-                    "failed to write `{}`: {err}",
-                    target.absolute_path.display()
-                ),
-            )
-        })?;
+        write_source(&target.absolute_path, &source)?;
     }
 
     let should_check = matches!(options.check, DataWriteCheck::Run) && !dry_run;
@@ -120,7 +105,7 @@ fn is_within_configured_local_data_source(project: &Project, canonical_path: &Pa
         {
             return false;
         }
-        let SourceLocationSpec::Path(path) = source.location();
+        let path = (source.location()).path();
         let source_path = project.resolve_path(path);
         let Ok(source_canonical) = std::fs::canonicalize(source_path) else {
             return false;
@@ -131,14 +116,6 @@ fn is_within_configured_local_data_source(project: &Project, canonical_path: &Pa
             canonical_path.starts_with(source_canonical)
         }
     })
-}
-
-fn read_stdin_source() -> Result<String, DiagnosticSet> {
-    let mut source = String::new();
-    io::stdin()
-        .read_to_string(&mut source)
-        .map_err(|err| cli_error("CLI-STDIN", format!("failed to read stdin: {err}")))?;
-    Ok(source)
 }
 
 fn check_project_after_data_write(

@@ -27,6 +27,7 @@
 )]
 
 mod build;
+pub mod cell_value;
 mod dependencies;
 mod diagnostics;
 mod indexes;

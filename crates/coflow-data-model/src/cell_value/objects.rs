@@ -1,5 +1,5 @@
+use crate::LoadedValueDraft;
 use coflow_cft::CftSchema;
-use coflow_data_model::LoadedValueDraft;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::diagnostics::{

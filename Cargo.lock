@@ -684,6 +684,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ts-rs",
+ "unicode-ident",
 ]
 
 [[package]]
@@ -762,7 +763,6 @@ dependencies = [
  "coflow-cft",
  "coflow-data-model",
  "serde_json",
- "unicode-ident",
 ]
 
 [[package]]
@@ -798,7 +798,6 @@ dependencies = [
  "coflow-checker",
  "coflow-data-model",
  "coflow-loader-csv",
- "coflow-loader-table-core",
  "coflow-project",
  "serde",
  "serde_json",

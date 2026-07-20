@@ -81,6 +81,7 @@ in this file or in `docs/`.
 - `coflow-api` defines provider traits, diagnostics, source locations, artifacts, and write contracts.
 - `coflow-project` handles project configuration, path resolution, configuration diagnostics, schema file discovery, and project initialization.
 - `coflow-runtime` owns the shared project runtime: schema compilation, source resolve/load, data model, check, diagnostics, and source/record/file indexes. Its source resolution module is the only place that selects providers, decodes source options, expands directories, and applies target overrides; its mutation execution plan is shared by preflight, transaction enlistment, and staging.
+- `coflow-data-model` owns source-neutral record/value semantics and the schema-guided table cell value grammar consumed by runtime and table providers.
 - `coflow-structure` owns domain-neutral structural limits and traversal/work accounting shared by parsers, compilers, and evaluators.
 - `coflow-builtins` registers the default provider registry for the CLI, editor, and LSP hosts.
 - The root `coflow` crate owns command orchestration and the artifact release lifecycle from safety validation and in-memory generation through staging and active-manifest publication. Its library exposes only the shared command/application service used by hosts; terminal/JSON commands, LSP startup, and bundled-skill management stay behind the binary's default `cli` feature. Non-CLI dependents such as the editor must use `default-features = false`.

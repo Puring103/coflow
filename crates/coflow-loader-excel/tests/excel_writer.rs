@@ -66,7 +66,7 @@ fn origin_for_sword(path: &Path) -> RecordOrigin {
     field_columns.insert(vec!["name".to_string()], 2);
     field_columns.insert(vec!["value".to_string()], 3);
     RecordOrigin::Table {
-        document: SourceDocument::Local(path.to_path_buf()),
+        document: SourceDocument::new(path.to_path_buf()),
         sheet: "Items".to_string(),
         row: 2,
         id_column: 1,
@@ -79,7 +79,7 @@ fn origin_for_shield(path: &Path) -> RecordOrigin {
     field_columns.insert(vec!["name".to_string()], 2);
     field_columns.insert(vec!["value".to_string()], 3);
     RecordOrigin::Table {
-        document: SourceDocument::Local(path.to_path_buf()),
+        document: SourceDocument::new(path.to_path_buf()),
         sheet: "Items".to_string(),
         row: 3,
         id_column: 1,
@@ -90,7 +90,7 @@ fn origin_for_shield(path: &Path) -> RecordOrigin {
 fn empty_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "excel".to_string(),
-        location: SourceLocationSpec::Path(path.to_path_buf()),
+        location: SourceLocationSpec::new(path.to_path_buf()),
         options: ExcelLoader
             .decode_options(&serde_json::Value::Null)
             .expect("decode excel options"),
@@ -491,7 +491,7 @@ fn writes_collection_element_by_rewriting_owning_cell() {
     let schema = &schema;
     let source = empty_source(&path);
     let origin = RecordOrigin::Table {
-        document: SourceDocument::Local(path.clone()),
+        document: SourceDocument::new(path.clone()),
         sheet: "Items".to_string(),
         row: 2,
         id_column: 1,

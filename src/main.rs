@@ -36,6 +36,7 @@ mod data_get_target;
 mod diagnostics;
 mod schema_commands;
 mod skill_commands;
+mod write_file;
 
 use diagnostics::cli_error;
 

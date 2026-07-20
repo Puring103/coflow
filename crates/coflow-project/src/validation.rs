@@ -1,4 +1,3 @@
-use coflow_api::SourceLocationSpec;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -71,7 +70,7 @@ fn validate_dimension_source_overlap_collecting(
 
     let mut diagnostics = Vec::new();
     for (index, source) in sources.iter().enumerate() {
-        let SourceLocationSpec::Path(path) = source.location();
+        let path = (source.location()).path();
         let source_path = normalize_path(&resolve_project_relative(root_dir, path));
         for (dimension, out_dir) in &dimension_dirs {
             if path_is_same_or_descendant(&source_path, out_dir) {
@@ -242,20 +241,17 @@ pub(super) fn validate_sources_collecting(
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
         let source_index_key = source_index.to_string();
-        match &source.location {
-            SourceLocationSpec::Path(path) => {
-                let resolved = resolve_project_relative(root_dir, path);
-                if !resolved.is_file() && !resolved.is_dir() {
-                    diagnostics.push(ProjectDiagnostic::new(
-                        format!("{source_label}.path `{}` does not exist", path.display()),
-                        [
-                            "sources".to_string(),
-                            source_index_key.clone(),
-                            "path".to_string(),
-                        ],
-                    ));
-                }
-            }
+        let path = source.location.path();
+        let resolved = resolve_project_relative(root_dir, path);
+        if !resolved.is_file() && !resolved.is_dir() {
+            diagnostics.push(ProjectDiagnostic::new(
+                format!("{source_label}.path `{}` does not exist", path.display()),
+                [
+                    "sources".to_string(),
+                    source_index_key.clone(),
+                    "path".to_string(),
+                ],
+            ));
         }
     }
     diagnostics
@@ -280,18 +276,15 @@ fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<ProjectDia
                 ],
             ));
         }
-        match &source.location {
-            SourceLocationSpec::Path(path) if path.as_os_str().is_empty() => {
-                diagnostics.push(ProjectDiagnostic::new(
-                    format!("{source_label}.path is empty"),
-                    [
-                        "sources".to_string(),
-                        source_index_key.clone(),
-                        "path".to_string(),
-                    ],
-                ));
-            }
-            SourceLocationSpec::Path(_) => {}
+        if source.location.path().as_os_str().is_empty() {
+            diagnostics.push(ProjectDiagnostic::new(
+                format!("{source_label}.path is empty"),
+                [
+                    "sources".to_string(),
+                    source_index_key.clone(),
+                    "path".to_string(),
+                ],
+            ));
         }
     }
     diagnostics

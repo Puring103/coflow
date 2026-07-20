@@ -67,7 +67,7 @@ fn cell_text(cell: &Data) -> String {
 fn excel_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "excel".to_string(),
-        location: SourceLocationSpec::Path(path.to_path_buf()),
+        location: SourceLocationSpec::new(path.to_path_buf()),
         options: ExcelLoader
             .decode_options(&serde_json::Value::Null)
             .expect("decode excel options"),

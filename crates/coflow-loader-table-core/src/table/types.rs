@@ -81,7 +81,7 @@ impl TableSource {
     ) -> Self {
         let name = name.into();
         Self {
-            document: SourceDocument::Local(name.clone()),
+            document: SourceDocument::new(name.clone()),
             name,
             sheets,
             configs,

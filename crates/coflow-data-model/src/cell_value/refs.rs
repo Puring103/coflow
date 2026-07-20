@@ -1,5 +1,5 @@
+use crate::LoadedValueDraft;
 use coflow_cft::record_key_ident_error;
-use coflow_data_model::LoadedValueDraft;
 
 use super::diagnostics::{reference_needs_marker, syntax, type_mismatch, CellValueDiagnostics};
 use super::markers::looks_like_bare_record_key;

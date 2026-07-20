@@ -4,9 +4,9 @@ use std::fmt::Write as _;
 
 use coflow_api::{
     CreateTableRequest, DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult,
-    ProjectSourceRef, ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
-    SourceProviderDescriptor, SyncHeaderRequest, TableAddressing, TableContext, TableManager,
-    TableManagerDescriptor, TableOperationResult,
+    ProjectSourceRef, ResolvedSource, SourceLoadContext, SourceProvider, SourceProviderDescriptor,
+    SyncHeaderRequest, TableAddressing, TableContext, TableManager, TableManagerDescriptor,
+    TableOperationResult,
 };
 use coflow_data_model::CfdErrorCode;
 use coflow_project::{path_to_slash, Project};
@@ -751,13 +751,6 @@ impl TableManager for FakeLocalTable {
 }
 
 fn validate_local_request(source: &ResolvedSource) -> Result<(), DiagnosticSet> {
-    if !matches!(source.location, SourceLocationSpec::Path(_)) {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "TABLE-LOCATION",
-            "TABLE",
-            "unexpected local location",
-        )));
-    }
     let options = source.options::<TestTableOptions>(FAKE_LOCAL_SOURCE.id)?;
     if options.token != "secret" {
         return Err(DiagnosticSet::one(Diagnostic::error(

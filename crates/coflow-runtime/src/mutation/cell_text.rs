@@ -1,5 +1,5 @@
+use coflow_data_model::cell_value::{parse_cell, render_cell_value, ParsedCell};
 use coflow_data_model::{CfdPathSegment, CfdValue, LoadedDictKeyDraft, LoadedValueDraft};
-use coflow_loader_table_core::cell_value::{parse_cell, render_cell_value, ParsedCell};
 use serde_json::{Map, Number, Value};
 
 use crate::{write_rules, ProjectSession};

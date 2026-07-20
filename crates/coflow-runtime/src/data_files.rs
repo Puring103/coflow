@@ -126,7 +126,7 @@ pub fn sync_data_header(
         options.provider.as_deref(),
     )?;
     let descriptor = table_manager_descriptor(registry, &provider_id)?;
-    if matches!(&source.location, SourceLocationSpec::Path(path) if !path.exists()) {
+    if !source.location.path().exists() {
         return Err(one_data_file_error(
             "DATA-FILE-MISSING",
             format!("file `{}` does not exist", options.file),
@@ -203,7 +203,7 @@ fn table_operation_source(
         } else {
             resolve_provider_id(registry, None, target)?
         };
-        let location = SourceLocationSpec::Path(project.resolve_path(Path::new(target)));
+        let location = SourceLocationSpec::new(project.resolve_path(Path::new(target)));
         let source = SourceResolver::new(project, registry).resolve_exact_at(
             configured,
             (!provider_id.is_empty()).then_some(provider_id.as_str()),
@@ -216,7 +216,7 @@ fn table_operation_source(
     let provider_id = resolve_provider_id(registry, requested_provider, target)?;
     let source = SourceResolver::new(project, registry).resolve_unconfigured(
         &provider_id,
-        SourceLocationSpec::Path(project.resolve_path(Path::new(target))),
+        SourceLocationSpec::new(project.resolve_path(Path::new(target))),
         target.to_string(),
     )?;
     Ok((provider_id, source))
@@ -421,7 +421,7 @@ fn configured_table_source<'a>(project: &'a Project, file: &str) -> Option<&'a S
 }
 
 fn source_location_matches(project: &Project, source: &SourceConfig, file: &str) -> bool {
-    let SourceLocationSpec::Path(path) = source.location();
+    let path = (source.location()).path();
     let requested = path_to_slash(Path::new(file));
     let configured = path_to_slash(path);
     if configured == requested {

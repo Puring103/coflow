@@ -2,13 +2,13 @@ use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest,
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    RewriteDimensionRecordRequest, SourceLocationSpec, TableContext, WriteDimensionValueRequest,
+    RewriteDimensionRecordRequest, TableContext, WriteDimensionValueRequest,
 };
 use coflow_cft::{CftValueType, RecordKey};
-use coflow_data_model::{CfdDictKey, CfdValue, DimensionValueDraft, RecordOrigin, SourceDocument};
-use coflow_loader_table_core::cell_value::{
+use coflow_data_model::cell_value::{
     parse_schema_cell, render_cell_value, CellRenderError, ParsedCell,
 };
+use coflow_data_model::{CfdDictKey, CfdValue, DimensionValueDraft, RecordOrigin, SourceDocument};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -33,7 +33,7 @@ impl DimensionSourceManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &DimensionSourceLoadRequest<'_>,
     ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let rows = read_dimension_rows(path)?;
         let Some(header) = rows.first() else {
             return Ok(DimensionSourceLoadResult::default());
@@ -107,7 +107,7 @@ impl DimensionSourceManager for CsvWriter {
                     variant: (*variant).clone(),
                     value,
                     origin: RecordOrigin::Table {
-                        document: SourceDocument::Local(path.clone()),
+                        document: SourceDocument::new(path.clone()),
                         sheet: request.source.display_name.clone(),
                         row: row_index,
                         id_column,
@@ -140,7 +140,7 @@ impl DimensionSourceManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &WriteDimensionValueRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let text = fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION-WRITE",
@@ -217,7 +217,7 @@ impl DimensionSourceManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &RewriteDimensionRecordRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let text = fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION-WRITE",
@@ -283,7 +283,7 @@ impl DimensionSourceManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &DimensionSourceRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location;
+        let path = (&request.source.location).path();
         let expected_keys = request
             .entries
             .iter()
