@@ -1574,6 +1574,7 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   flex: 1;
   overflow: auto;
   outline: none;
+  container-type: inline-size;
 }
 
 .data-table {
@@ -1697,6 +1698,7 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 .data-table .table-group-row td {
   height: 32px;
   padding: 0;
+  overflow: visible;
   border-right: none;
   border-bottom: 1px solid var(--border-strong);
   background: var(--bg-2);
@@ -1705,7 +1707,7 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   position: sticky;
   left: 0;
   width: 100%;
-  max-width: none;
+  max-width: 100cqw;
   box-shadow: inset 2px 0 0 transparent;
 }
 .table-record-group-header.contains-selection {

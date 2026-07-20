@@ -332,7 +332,7 @@ export function InspectorPanel({
           }}
           onMouseDownCapture={event => {
             const target = event.target as HTMLElement
-            if (isNativeEditorTarget(target)) return
+            if (target.closest('.searchable-select-menu') || isNativeEditorTarget(target)) return
             bodyRef.current?.focus({ preventScroll: true })
           }}
         >
