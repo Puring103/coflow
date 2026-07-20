@@ -387,17 +387,19 @@ fn project_build(args: &BuildArgs) -> Result<bool, DiagnosticSet> {
         },
     )? {
         CommandOutcome::Success(report) => {
-            println!(
-                "{} data exported to {}",
-                report.data.display_name,
-                display_path(&report.data.dir.display().to_string(), Some(&root_dir))
-            );
-            if let Some(code) = report.code {
+            for target in report.targets {
                 println!(
-                    "{} code generated to {}",
-                    code.display_name,
-                    display_path(&code.dir.display().to_string(), Some(&root_dir))
+                    "{} data exported to {}",
+                    target.data.display_name,
+                    display_path(&target.data.dir.display().to_string(), Some(&root_dir))
                 );
+                if let Some(code) = target.code {
+                    println!(
+                        "{} code generated to {}",
+                        code.display_name,
+                        display_path(&code.dir.display().to_string(), Some(&root_dir))
+                    );
+                }
             }
             println!(
                 "Build completed: {}",
@@ -507,7 +509,13 @@ fn override_code_namespace(project: &mut Project, namespace: Option<&str>) {
     let Some(namespace) = namespace else {
         return;
     };
-    if let Some(output) = project.config.outputs.code.as_mut() {
+    if let Some(output) = project
+        .config
+        .outputs
+        .targets_mut()
+        .iter_mut()
+        .find_map(|target| target.code.as_mut())
+    {
         let mut options = output.options().as_object().cloned().unwrap_or_default();
         options.insert(
             "namespace".to_string(),

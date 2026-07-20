@@ -181,15 +181,15 @@ coflow build examples/rpg --data-out out/data --code-out out/csharp --namespace 
 
 | 参数 | 作用 |
 | --- | --- |
-| `--data-out DIR` | 覆盖 `outputs.data.dir` |
-| `--code-out DIR` | 覆盖 `outputs.code.dir` |
-| `--namespace NAME` | 覆盖 C# codegen 的命名空间 |
+| `--data-out DIR` | 覆盖第一个 output target 的 `data.dir` |
+| `--code-out DIR` | 覆盖第一个 output target 的 `code.dir` |
+| `--namespace NAME` | 覆盖第一个 C# code target 的命名空间 |
 
-只有项目配置、schema、数据加载、引用解析和 `check` 全部通过时，`build` 才会写产物。data、code 和 `@idAsEnum` lock state 组成一个 manifest snapshot；若产生诊断，本次运行不会激活新的 snapshot。
+`build` 会生成 `outputs` 中的全部 target。所有项目配置、provider/loader 选择、schema、数据加载、引用解析和 `check` 全部通过后才会写产物。全部 data、code 和 `@idAsEnum` lock state 组成一个 manifest snapshot；任一 target 产生诊断时，本次运行不会激活新的 snapshot。完整 build 还会从 active manifest 移除配置中已经删除的旧 target slot。
 
 ## `export`
 
-`export` 只导出数据，不生成运行时代码。
+`export` 只导出数据，不生成运行时代码。在多 target 配置中，指定的 `data.type` 必须唯一匹配一个 target；存在多个同类型 target 时命令会报告歧义并要求使用完整 `build`。
 
 ### `export json`
 
@@ -255,7 +255,7 @@ coflow clean [CONFIG_OR_DIR]
 
 ## `codegen`
 
-`codegen` 只生成运行时代码，不加载数据源。
+`codegen` 只发布所选 target 的运行时代码。指定的 `code.type` 必须唯一匹配一个 target；存在多个同类型 target 时命令会报告歧义并要求使用完整 `build`。该命令是 schema-only，不要求配置的数据源存在；公共代码和 loader 都从完整 schema 生成。
 
 ### `codegen csharp`
 
@@ -282,7 +282,7 @@ coflow codegen csharp examples/rpg
 coflow codegen csharp examples/rpg --out generated/csharp --namespace Game.Config
 ```
 
-`outputs.data.type` 会影响生成的 C# loader：
+同一 target 的 `data.type` 会影响生成的 C# loader；显式 `loader.type` 必须匹配该组合：
 
 | 数据输出类型 | C# loader |
 | --- | --- |
@@ -291,7 +291,7 @@ coflow codegen csharp examples/rpg --out generated/csharp --namespace Game.Confi
 
 C# 代码会写入 `outputs.code.dir` 或 `--out` 指定的稳定目录，同时保留不可变 generation。命令输出稳定目录；内部 snapshot 记录在 active manifest 的 `outputs.code.generation_dir`。
 
-对于 `@idAsEnum`，单独运行 `codegen csharp` 会读取 active manifest 中已有的 lock state；没有 manifest 时从应提交到版本库的 `coflow.enum.lock.json` 恢复。该命令不会加载数据源，因此不会新增 data-driven enum variant。需要根据当前数据补全 variant 时，使用 `coflow build`。
+对于 `@idAsEnum`，单独运行 `codegen csharp` 会读取 active manifest 中已有的 lock state；没有 manifest 时从应提交到版本库的 `coflow.enum.lock.json` 恢复。该命令不会更新 data-driven enum variant；需要根据当前数据补全 variant 时，使用 `coflow build`。
 
 ## `lsp`
 

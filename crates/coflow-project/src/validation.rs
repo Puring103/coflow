@@ -292,68 +292,105 @@ fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<ProjectDia
 
 fn validate_outputs_collecting(outputs: &OutputsConfig) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
-    if let Some(data) = &outputs.data {
+    for (index, target) in outputs.targets().iter().enumerate() {
+        let data = &target.data;
+        let data_label = output_label(outputs, index, "data");
         if data.output_type.trim().is_empty() {
             diagnostics.push(ProjectDiagnostic::new(
-                "outputs.data.type is empty",
-                ["outputs", "data", "type"],
+                format!("{data_label}.type is empty"),
+                output_key_path(outputs, index, "data", Some("type")),
             ));
         }
-        if let Err(err) = validate_output_dir("outputs.data.dir", &data.dir) {
-            diagnostics.push(ProjectDiagnostic::new(err, ["outputs", "data", "dir"]));
-        }
-    }
-    if let Some(code) = &outputs.code {
-        if code.output_type.trim().is_empty() {
+        if let Err(err) = validate_output_dir(&format!("{data_label}.dir"), &data.dir) {
             diagnostics.push(ProjectDiagnostic::new(
-                "outputs.code.type is empty",
-                ["outputs", "code", "type"],
+                err,
+                output_key_path(outputs, index, "data", Some("dir")),
             ));
         }
-        if let Err(err) = validate_output_dir("outputs.code.dir", &code.dir) {
-            diagnostics.push(ProjectDiagnostic::new(err, ["outputs", "code", "dir"]));
+        if let Some(code) = &target.code {
+            let code_label = output_label(outputs, index, "code");
+            if code.output_type.trim().is_empty() {
+                diagnostics.push(ProjectDiagnostic::new(
+                    format!("{code_label}.type is empty"),
+                    output_key_path(outputs, index, "code", Some("type")),
+                ));
+            }
+            if let Err(err) = validate_output_dir(&format!("{code_label}.dir"), &code.dir) {
+                diagnostics.push(ProjectDiagnostic::new(
+                    err,
+                    output_key_path(outputs, index, "code", Some("dir")),
+                ));
+            }
+        } else if target.loader.is_some() {
+            diagnostics.push(ProjectDiagnostic::new(
+                format!(
+                    "{}.loader requires code output configuration",
+                    output_target_label(outputs, index)
+                ),
+                output_key_path(outputs, index, "loader", None),
+            ));
+        }
+        if target
+            .loader
+            .as_ref()
+            .is_some_and(|loader| loader.loader_type.trim().is_empty())
+        {
+            diagnostics.push(ProjectDiagnostic::new(
+                format!(
+                    "{}.loader.type is empty",
+                    output_target_label(outputs, index)
+                ),
+                output_key_path(outputs, index, "loader", Some("type")),
+            ));
         }
     }
     diagnostics
 }
 
 pub(super) fn validate_for_codegen_collecting(outputs: &OutputsConfig) -> Vec<ProjectDiagnostic> {
-    let mut diagnostics = Vec::new();
-    match outputs.code.as_ref() {
-        Some(code) => {
-            if code.output_type.trim().is_empty() {
-                diagnostics.push(ProjectDiagnostic::new(
-                    "coflow.yaml outputs.code.type is empty",
-                    ["outputs", "code", "type"],
-                ));
-            }
-            if let Err(err) = validate_output_dir("outputs.code.dir", &code.dir) {
-                diagnostics.push(ProjectDiagnostic::new(err, ["outputs", "code", "dir"]));
-            }
-        }
-        None => diagnostics.push(ProjectDiagnostic::new(
+    let mut diagnostics = validate_outputs_collecting(outputs);
+    if !outputs.targets().iter().any(|target| target.code.is_some()) {
+        diagnostics.push(ProjectDiagnostic::new(
             "coflow.yaml missing outputs.code",
             ["outputs", "code"],
-        )),
+        ));
     }
-    match outputs.data.as_ref() {
-        Some(data) => {
-            if data.output_type.trim().is_empty() {
-                diagnostics.push(ProjectDiagnostic::new(
-                    "coflow.yaml outputs.data.type is empty",
-                    ["outputs", "data", "type"],
-                ));
-            }
-            if let Err(err) = validate_output_dir("outputs.data.dir", &data.dir) {
-                diagnostics.push(ProjectDiagnostic::new(err, ["outputs", "data", "dir"]));
-            }
-        }
-        None => diagnostics.push(ProjectDiagnostic::new(
+    if outputs.targets().is_empty() {
+        diagnostics.push(ProjectDiagnostic::new(
             "coflow.yaml missing outputs.data",
             ["outputs", "data"],
-        )),
+        ));
     }
     diagnostics
+}
+
+fn output_target_label(outputs: &OutputsConfig, index: usize) -> String {
+    if outputs.is_legacy_shape() {
+        "outputs".to_string()
+    } else {
+        format!("outputs[{index}]")
+    }
+}
+
+fn output_label(outputs: &OutputsConfig, index: usize, component: &str) -> String {
+    format!("{}.{component}", output_target_label(outputs, index))
+}
+
+fn output_key_path(
+    outputs: &OutputsConfig,
+    index: usize,
+    component: &str,
+    field: Option<&str>,
+) -> Vec<String> {
+    let mut path = vec!["outputs".to_string()];
+    if !outputs.is_legacy_shape() {
+        path.push(index.to_string());
+    }
+    path.push(component.to_string());
+    if let Some(field) = field {
+        path.push(field.to_string());
+    }
+    path
 }
 
 fn validate_output_dir(label: &str, path: &Path) -> Result<(), String> {

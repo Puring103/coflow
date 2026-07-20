@@ -3,7 +3,8 @@ use std::hash::{Hash, Hasher};
 
 use coflow_api::{
     ArtifactSet, CodeGenerator, CodegenContext, DataExporter, DecodedOutputOptions, Diagnostic,
-    DiagnosticSet, ExportContext, ProviderRegistry, Severity, WriterCapabilities,
+    DiagnosticSet, ExportContext, LoaderGenerationContext, LoaderGenerator, ProviderRegistry,
+    Severity, WriterCapabilities,
 };
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
@@ -360,7 +361,6 @@ impl BuildProjectSession {
         &self,
         codegen: &dyn CodeGenerator,
         options: &DecodedOutputOptions,
-        data_format: &str,
         id_as_enum_variants: &serde_json::Value,
         include_model: bool,
     ) -> Result<ArtifactSet, DiagnosticSet> {
@@ -368,10 +368,34 @@ impl BuildProjectSession {
             CodegenContext {
                 schema: self.session.schema(),
                 model: include_model.then_some(self.session.model()),
-                data_format,
                 id_as_enum_variants,
             },
             options,
+        )
+    }
+
+    /// Generates loader artifacts from this session's immutable schema generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns provider diagnostics when the loader rejects its options or input.
+    pub fn loader_artifacts(
+        &self,
+        loader: &dyn LoaderGenerator,
+        code_options: &DecodedOutputOptions,
+        data_options: &DecodedOutputOptions,
+        loader_options: &DecodedOutputOptions,
+        id_as_enum_variants: &serde_json::Value,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        loader.generate(
+            LoaderGenerationContext {
+                schema: self.session.schema(),
+                model: Some(self.session.model()),
+                code_options,
+                data_options,
+                id_as_enum_variants,
+            },
+            loader_options,
         )
     }
 }

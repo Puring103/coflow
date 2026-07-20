@@ -14,7 +14,7 @@ use crate::CsharpCodegenError;
 use coflow_cft::{CftEnum, CftField, CftType, CftValueType};
 use std::collections::{BTreeSet, HashSet};
 
-pub use database::build_csharp_database;
+pub use database::{build_csharp_database, build_load_steps};
 use identifiers::{csharp_public_member_name, csharp_public_type_name, field_local_name};
 use loaders::{
     dimension_loader_method, field_type_requires_context, loader_method, polymorphic_loader,

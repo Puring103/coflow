@@ -11,6 +11,82 @@ mod common;
 use common::*;
 
 #[test]
+fn build_publishes_multiple_output_targets_and_removes_stale_slots() {
+    let root = temp_project_dir("build-multiple-targets");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_acyclic_csharp_project(&root, "json");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema.cft
+sources:
+  - path: data
+outputs:
+  - data:
+      type: json
+      dir: generated/json
+    code:
+      type: csharp
+      dir: generated/csharp-json
+      namespace: Game.Json
+    loader:
+      type: csharp-json
+  - data:
+      type: messagepack
+      dir: generated/messagepack
+    code:
+      type: csharp
+      dir: generated/csharp-messagepack
+      namespace: Game.MessagePack
+",
+    )
+    .expect("write multi-target config");
+
+    let output = coflow()
+        .args(["build", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run multi-target build");
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(root.join("generated/json/Item.json").exists());
+    assert!(root.join("generated/messagepack/Item.msgpack").exists());
+    let json_common = std::fs::read_to_string(root.join("generated/csharp-json/CoflowTables.cs"))
+        .expect("read JSON common code");
+    let json_loader =
+        std::fs::read_to_string(root.join("generated/csharp-json/CoflowTables.Loader.cs"))
+            .expect("read JSON loader code");
+    let messagepack_loader =
+        std::fs::read_to_string(root.join("generated/csharp-messagepack/CoflowTables.Loader.cs"))
+            .expect("read MessagePack loader code");
+    assert!(json_common.contains("namespace Game.Json"));
+    assert!(!json_common.contains("Newtonsoft.Json"));
+    assert!(json_loader.contains("using Newtonsoft.Json.Linq;"));
+    assert!(json_loader.contains("Item.json"));
+    assert!(messagepack_loader.contains("using MessagePack;"));
+    assert!(messagepack_loader.contains("Item.msgpack"));
+
+    write_acyclic_csharp_project(&root, "json");
+    let output = coflow()
+        .args(["build", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run legacy rebuild");
+    assert!(output.status.success());
+    let manifest: Value = serde_json::from_slice(
+        &std::fs::read(root.join(".coflow/artifacts/active.json")).expect("read active manifest"),
+    )
+    .expect("parse active manifest");
+    let outputs = manifest["outputs"].as_object().expect("manifest outputs");
+    assert_eq!(outputs.len(), 2);
+    assert!(outputs.contains_key("data"));
+    assert!(outputs.contains_key("code"));
+    assert!(!outputs.contains_key("output-1-data"));
+    assert!(!outputs.contains_key("output-1-code"));
+}
+
+#[test]
 fn build_exports_data_and_generates_csharp_for_json_project() {
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-build-json-test-{suffix}"));

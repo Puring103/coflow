@@ -12,8 +12,8 @@
 use coflow_api::{path_to_slash as canonical_path_to_slash, SourceLocation};
 use coflow_project::{
     discover_directory_files, init_project, normalize_path, normalized_path_identity,
-    path_is_same_or_descendant, path_to_slash, resolve_config_path, OutputConfig, OutputsConfig,
-    Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
+    path_is_same_or_descendant, path_to_slash, resolve_config_path, OutputConfig,
+    OutputTargetConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -284,29 +284,15 @@ outputs:
     );
     assert!(project.config.sources[0].options.get("options").is_none());
     assert_eq!(
-        project
-            .config
-            .outputs
-            .data
-            .as_ref()
-            .expect("data output")
-            .output_type,
+        project.config.outputs.targets()[0].data.output_type,
         "custom-export"
     );
     assert_eq!(
-        project
-            .config
-            .outputs
-            .data
-            .as_ref()
-            .expect("data output")
-            .options["compact"],
+        project.config.outputs.targets()[0].data.options["compact"],
         serde_json::Value::Bool(true)
     );
     assert_eq!(
-        project
-            .config
-            .outputs
+        project.config.outputs.targets()[0]
             .code
             .as_ref()
             .expect("code output")
@@ -314,15 +300,58 @@ outputs:
         "custom-codegen"
     );
     assert_eq!(
-        project
-            .config
-            .outputs
+        project.config.outputs.targets()[0]
             .code
             .as_ref()
             .expect("code output")
             .options["runtime"],
         serde_json::Value::String("unity".to_string())
     );
+    assert!(project.config.outputs.is_legacy_shape());
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn project_config_accepts_multiple_output_targets_and_loader_options() -> TestResult {
+    let root = temp_project_dir("coflow-project-output-targets");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Item { value: string; }")
+        .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+outputs:
+  - data:
+      type: json
+      dir: generated/json
+  - data:
+      type: messagepack
+      dir: generated/messagepack
+    code:
+      type: csharp
+      dir: generated/csharp
+    loader:
+      type: csharp-messagepack
+      runtime: unity
+"#,
+    )
+    .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    assert!(project.schema_diagnostic_set().is_empty());
+    assert!(!project.config.outputs.is_legacy_shape());
+    assert_eq!(project.config.outputs.targets().len(), 2);
+    assert!(project.config.outputs.targets()[0].code.is_none());
+    let second = &project.config.outputs.targets()[1];
+    assert_eq!(second.data.output_type, "messagepack");
+    assert_eq!(
+        second.code.as_ref().expect("code output").output_type,
+        "csharp"
+    );
+    let loader = second.loader.as_ref().expect("loader config");
+    assert_eq!(loader.loader_type, "csharp-messagepack");
+    assert_eq!(loader.options()["runtime"], "unity");
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
@@ -376,9 +405,7 @@ outputs:
         serde_json::Value::String("Item".to_string())
     );
     assert_eq!(
-        project
-            .config
-            .outputs
+        project.config.outputs.targets()[0]
             .code
             .as_ref()
             .expect("code output")
@@ -479,13 +506,7 @@ outputs:
         "${COFLOW_ARRAY_TOKEN}"
     );
     assert_eq!(
-        project
-            .config
-            .outputs
-            .data
-            .as_ref()
-            .expect("data output")
-            .options["token"],
+        project.config.outputs.targets()[0].data.options["token"],
         "${COFLOW_OUTPUT_TOKEN}"
     );
 
@@ -775,33 +796,23 @@ fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult 
 
     let wrong_code = project_with_outputs(
         &root,
-        OutputsConfig {
+        OutputsConfig::new(vec![OutputTargetConfig {
             code: Some(output_config("java", "code", None)),
-            data: Some(output_config("json", "data", None)),
-        },
+            data: output_config("json", "data", None),
+            loader: None,
+        }]),
     );
     wrong_code
         .validate_for_codegen()
         .map_err(|err| format!("provider-neutral code output should validate: {err}"))?;
 
-    let missing_data = project_with_outputs(
-        &root,
-        OutputsConfig {
-            code: Some(output_config("csharp", "code", None)),
-            data: None,
-        },
-    );
-    let err = missing_data
-        .validate_for_codegen()
-        .expect_err("missing data output should fail");
-    assert!(err.contains("missing outputs.data"));
-
     let wrong_data = project_with_outputs(
         &root,
-        OutputsConfig {
+        OutputsConfig::new(vec![OutputTargetConfig {
             code: Some(output_config("csharp", "code", None)),
-            data: Some(output_config("csv", "data", None)),
-        },
+            data: output_config("csv", "data", None),
+            loader: None,
+        }]),
     );
     wrong_data
         .validate_for_codegen()

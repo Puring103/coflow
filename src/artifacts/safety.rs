@@ -6,13 +6,16 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub(crate) struct ArtifactOutputPlan {
-    label: &'static str,
+    label: String,
     dir: PathBuf,
 }
 
 impl ArtifactOutputPlan {
-    pub(crate) const fn new(label: &'static str, dir: PathBuf) -> Self {
-        Self { label, dir }
+    pub(crate) fn new(label: impl Into<String>, dir: PathBuf) -> Self {
+        Self {
+            label: label.into(),
+            dir,
+        }
     }
 }
 
