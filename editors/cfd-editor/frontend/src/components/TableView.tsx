@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef, memo } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, memo } from 'react'
+import { createPortal } from 'react-dom'
 import {
   useReactTable,
   getCoreRowModel,
@@ -65,6 +66,7 @@ import {
 } from '../state/manualRecordGroups'
 import { useRecordPointerDrag } from '../hooks/useRecordPointerDrag'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
+import { fitViewportPosition } from '../utils/floatingPosition'
 
 interface Props {
   data: FileRecords
@@ -136,6 +138,8 @@ type TableDisplayItem =
   | { kind: 'row'; row: TanStackRow<RecordRow>; group?: EditorRecordGroup }
 
 interface TableContextMenu {
+  anchorX: number
+  anchorY: number
   x: number
   y: number
   row: RecordRow
@@ -155,6 +159,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const [tableZoom, setTableZoom] = useState(1)
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
   const columnSizingRef = useRef(columnSizing)
   const columnResizeRef = useRef<{
     pointerId: number
@@ -683,6 +688,37 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     || (contextMenu.records.length > 1 && !!onCreateGroup)
   )
 
+  useLayoutEffect(() => {
+    if (!contextMenu) return
+    const fitMenu = () => {
+      const menu = contextMenuRef.current
+      if (!menu) return
+      const rect = menu.getBoundingClientRect()
+      const next = fitViewportPosition(
+        { x: contextMenu.anchorX, y: contextMenu.anchorY },
+        { width: rect.width, height: rect.height },
+        { width: window.innerWidth, height: window.innerHeight },
+      )
+      setContextMenu(current => {
+        if (!current || current.anchorX !== contextMenu.anchorX || current.anchorY !== contextMenu.anchorY) {
+          return current
+        }
+        return current.x === next.x && current.y === next.y
+          ? current
+          : { ...current, x: next.x, y: next.y }
+      })
+    }
+    fitMenu()
+    window.addEventListener('resize', fitMenu)
+    return () => window.removeEventListener('resize', fitMenu)
+  }, [
+    contextMenu?.anchorX,
+    contextMenu?.anchorY,
+    contextMenu?.showGroupTargets,
+    contextMenuCanAddToGroup,
+    recordGroups?.length,
+  ])
+
   return (
     <div
       className="table-view"
@@ -1014,6 +1050,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                         onSelectRecord?.(row.original.coordinate, 'replace', visibleCoordinates)
                       }
                       setContextMenu({
+                        anchorX: e.clientX,
+                        anchorY: e.clientY,
                         x: e.clientX,
                         y: e.clientY,
                         row: row.original,
@@ -1119,8 +1157,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         />
       )}
 
-      {contextMenu && (
+      {contextMenu && createPortal(
         <div
+          ref={contextMenuRef}
           className="context-menu table-context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={e => e.stopPropagation()}
@@ -1285,7 +1324,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               删除记录
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
