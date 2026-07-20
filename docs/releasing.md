@@ -1,7 +1,8 @@
 # Release Packaging
 
 The release workflow publishes a full Windows product, a Windows CLI-only
-installer, macOS CLI archives, and the VS Code extension.
+installer, full macOS editor bundles (arm64 and x64), macOS CLI archives,
+and the VS Code extension.
 
 ## Updater signing
 
@@ -41,13 +42,17 @@ The public release contains only:
 
 - `coflow-tools-windows-x64-setup.exe` and its updater `.sig`;
 - `coflow-cli-windows-x64-setup.exe`;
-- `coflow-cli-macos-arm64.tar.gz`;
-- `coflow-cli-macos-x64.tar.gz`;
-- `latest.json`;
+- `coflow-tools-macos-arm64.dmg` and `coflow-tools-macos-x64.dmg`
+  (user-facing downloads);
+- `coflow-tools-macos-arm64.app.tar.gz` and its updater `.sig`, plus the
+  matching x64 pair (Tauri updater artifacts — Tauri's macOS updater expects a
+  gzipped `.app` bundle, so the DMG is not the signed artifact);
+- `coflow-cli-macos-arm64.tar.gz` and `coflow-cli-macos-x64.tar.gz`;
+- `latest.json` (merged updater manifest covering every signed platform);
 - the packaged VS Code extension.
 
 Raw editor executables and duplicate portable Windows archives remain CI build
-details and are not release assets. macOS currently publishes only the CLI.
+details and are not release assets.
 
 ## Installer behavior
 
@@ -57,8 +62,11 @@ step during an updater-driven internal uninstall. Installing the full product
 migrates an existing CLI-only installation. The CLI-only installer refuses to
 install while the full product is present.
 
-macOS archives have no installer hook. Users run `coflow skill install -g`
-after placing the CLI on `PATH`.
+macOS bundles and CLI archives have no installer hook. After moving
+`Coflow Tools.app` (from the DMG) to `/Applications` or extracting the CLI
+tarball, users run `coflow skill install -g` themselves. On first launch macOS
+may quarantine the unsigned bundle — right-click **Open** once or clear the
+attribute with `xattr -dr com.apple.quarantine "/Applications/Coflow Tools.app"`.
 
 Release tags must match the root Cargo package version exactly (`vX.Y.Z`). Run
 the full release gate from `AGENTS.md` before tagging.
