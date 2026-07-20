@@ -1,3 +1,25 @@
+# Coflow 0.7.4
+
+## Highlights
+
+### CFD Editor Usability
+
+- Kept record-group headers anchored to the visible table area during
+  horizontal scrolling.
+- Kept record context menus fully inside the viewport, including after the
+  group target list is expanded near the bottom edge.
+- Prevented searchable reference and enum options from passing clicks through
+  to controls underneath the menu.
+
+### macOS Distribution
+
+- Added full arm64 and x64 editor DMGs, signed updater archives, and matching
+  CLI archives to the release workflow.
+- Extended `latest.json` generation to publish updater assets for Windows and
+  both supported macOS architectures.
+
+---
+
 # Coflow 0.7.3
 
 ## Highlights

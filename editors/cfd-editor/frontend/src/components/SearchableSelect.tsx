@@ -222,7 +222,11 @@ export function SearchableSelect({
         maxHeight: menuPosition.maxHeight,
         transform: menuPosition.opensUpward ? 'translateY(-100%)' : undefined,
       }}
-      onMouseDown={event => event.preventDefault()}
+      onMouseDown={event => {
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      onClick={event => event.stopPropagation()}
     >
       {filteredOptions.length === 0 ? (
         <div className="searchable-select-empty">无匹配项</div>
