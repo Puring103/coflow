@@ -408,6 +408,10 @@ jobs:
             platform=""
             asset=""
             while IFS='=' read -r key value; do
+              # PowerShell Set-Content writes CRLF fragments on Windows. Bash
+              # removes the LF while reading, so normalize the remaining CR.
+              key="${key%$'\r'}"
+              value="${value%$'\r'}"
               case "$key" in
                 platform) platform="$value" ;;
                 asset)    asset="$value" ;;
