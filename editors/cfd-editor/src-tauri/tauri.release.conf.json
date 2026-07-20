@@ -3,7 +3,7 @@
   "identifier": "com.coflow.tools",
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": ["nsis", "app", "dmg"],
     "createUpdaterArtifacts": false,
     "externalBin": ["binaries/coflow"],
     "resources": {
@@ -15,6 +15,9 @@
         "installerHooks": "windows/nsis-hooks.nsh",
         "startMenuFolder": "Coflow"
       }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
     }
   }
 }
