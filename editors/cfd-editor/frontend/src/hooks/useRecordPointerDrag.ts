@@ -10,6 +10,7 @@ interface Options {
   selectedCoordinates?: readonly RecordCoordinate[]
   onSelectDragSource?: (source: RecordCoordinate) => void
   onDropRecordOntoRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
+  onDropRecordAfterRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
   onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
   onDropRecordIntoUngrouped?: (sources: readonly RecordCoordinate[]) => void
 }
@@ -46,11 +47,14 @@ export function useRecordPointerDrag(options: Options) {
     const startY = event.clientY
     let dragging = false
     let dropTarget: HTMLElement | null = null
+    let insertTarget: HTMLElement | null = null
     let preview: HTMLDivElement | null = null
 
     const clearDropTarget = () => {
       dropTarget?.classList.remove('drag-over')
       dropTarget = null
+      insertTarget?.classList.remove('record-insert-target')
+      insertTarget = null
     }
     const cleanup = () => {
       clearDropTarget()
@@ -79,8 +83,29 @@ export function useRecordPointerDrag(options: Options) {
       const hit = document.elementFromPoint(clientX, clientY)
         ?.closest<HTMLElement>('[data-record-drop-kind]') ?? null
       const next = hit && root.contains(hit) ? hit : null
+      const canInsertAfter = next?.dataset.recordDropKind === 'record'
+        && !!optionsRef.current.onDropRecordAfterRecord
+      const rect = next?.getBoundingClientRect()
+      const edgeThreshold = rect ? Math.min(8, rect.height / 4) : 0
+      const nearBottom = !!rect && clientY >= rect.bottom - edgeThreshold
+      const nearTop = !!rect && clientY <= rect.top + edgeThreshold
       const sameRecord = next?.dataset.recordDropKind === 'record'
         && sources.some(item => coordinateId(item) === next.dataset.coordinateId)
+      const previous = nearTop
+        ? next?.previousElementSibling?.matches('[data-record-drop-kind="record"]')
+          ? next.previousElementSibling as HTMLElement
+          : null
+        : null
+      const insertion = canInsertAfter && !sameRecord
+        ? (nearBottom ? next : previous)
+        : null
+      if (insertion) {
+        if (insertTarget === insertion) return
+        clearDropTarget()
+        insertTarget = insertion
+        insertTarget.classList.add('record-insert-target')
+        return
+      }
       const valid = sameRecord ? null : next
       if (valid === dropTarget) return
       clearDropTarget()
@@ -101,8 +126,15 @@ export function useRecordPointerDrag(options: Options) {
       updateDropTarget(moveEvent.clientX, moveEvent.clientY)
     }
     const finishDrop = () => {
-      if (!dragging || !dropTarget) return
+      if (!dragging) return
       const current = optionsRef.current
+      if (insertTarget) {
+        const targetId = insertTarget.dataset.coordinateId
+        const targetRecord = current.records.find(record => coordinateId(record.coordinate) === targetId)
+        if (targetRecord) current.onDropRecordAfterRecord?.(sources, targetRecord.coordinate)
+        return
+      }
+      if (!dropTarget) return
       const kind = dropTarget.dataset.recordDropKind
       if (kind === 'record') {
         const targetId = dropTarget.dataset.coordinateId
