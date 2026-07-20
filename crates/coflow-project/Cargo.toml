@@ -1,6 +1,6 @@
 [package]
 name = "coflow-project"
-version = "0.7.0"
+version = "0.7.3"
 edition = "2021"
 description = "Project configuration, path resolution, and schema source discovery for Coflow."
 license = "Apache-2.0"

@@ -18,6 +18,7 @@ mod tests {
     use clap::{error::ErrorKind, Parser};
 
     #[test]
+    #[allow(clippy::expect_used)]
     fn version_flags_report_package_version() {
         for flag in ["--version", "-V"] {
             let error = Cli::try_parse_from(["coflow", flag]).expect_err("version exits early");

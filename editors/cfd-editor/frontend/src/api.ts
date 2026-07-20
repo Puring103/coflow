@@ -2,14 +2,18 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { CfdValue } from './bindings/CfdValue'
+import type { BatchWriteFieldOutcome } from './bindings/BatchWriteFieldOutcome'
+import type { BatchWriteFieldInput } from './bindings/BatchWriteFieldInput'
 import type { CollectionEdit } from './bindings/CollectionEdit'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { DeleteRecordOutcome } from './bindings/DeleteRecordOutcome'
 import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordinate'
+import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { DimensionValueView } from './bindings/DimensionValueView'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
+import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
 import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
@@ -92,8 +96,36 @@ export async function closeSession(sessionId: number): Promise<void> {
   return invokeCommand('close_session', { sessionId })
 }
 
+export interface DimensionFileRow {
+  coordinate: RecordCoordinate
+  owner_file_path: string
+  default_value: FieldValue
+  values: Record<string, DimensionValueState | undefined>
+}
+
+export interface DimensionFileRecords {
+  revision: number
+  file_path: string
+  dimension: string
+  display_name: string
+  field: string
+  variants: string[]
+  rows: DimensionFileRow[]
+}
+
 export async function getProjectSettings(sessionId: number): Promise<EditorProjectSettings> {
   return invokeCommand<EditorProjectSettings>('get_project_settings', { sessionId })
+}
+
+export async function getProjectDimensions(sessionId: number): Promise<DimensionInfo[]> {
+  return invokeCommand<DimensionInfo[]>('get_project_dimensions', { sessionId })
+}
+
+export async function getDimensionFileRecords(
+  sessionId: number,
+  filePath: string,
+): Promise<DimensionFileRecords> {
+  return invokeCommand<DimensionFileRecords>('get_dimension_file_records', { sessionId, filePath })
 }
 
 export async function setTableColumnWidths(
@@ -107,6 +139,64 @@ export async function setTableColumnWidths(
     filePath,
     actualType,
     widths,
+  })
+}
+
+export interface FrontendPluginBundle {
+  manifest_path: string
+  id: string
+  name: string
+  description: string
+  version: string
+  source: string
+}
+
+export async function pickFrontendPluginManifest(): Promise<string | null> {
+  if (!isTauri) return null
+  const path = await openDialog({
+    multiple: false,
+    filters: [{ name: 'CFD Editor Plugin', extensions: ['json'] }],
+  })
+  return typeof path === 'string' ? path : null
+}
+
+export async function installFrontendPlugin(manifestPath: string): Promise<FrontendPluginBundle> {
+  return invokeCommand<FrontendPluginBundle>('install_frontend_plugin', { manifestPath })
+}
+
+export async function listFrontendPlugins(): Promise<FrontendPluginBundle[]> {
+  return invokeCommand<FrontendPluginBundle[]>('list_frontend_plugins')
+}
+
+export async function uninstallFrontendPlugin(id: string): Promise<void> {
+  return invokeCommand<void>('uninstall_frontend_plugin', { id })
+}
+
+export async function setRecordGroups(
+  sessionId: number,
+  filePath: string,
+  actualType: string,
+  groups: EditorRecordGroup[],
+): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('set_record_groups', {
+    sessionId,
+    filePath,
+    actualType,
+    groups,
+  })
+}
+
+export async function setGraphEnabledFields(
+  sessionId: number,
+  filePath: string,
+  actualType: string,
+  fields: string[],
+): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('set_graph_enabled_fields', {
+    sessionId,
+    filePath,
+    actualType,
+    fields,
   })
 }
 
@@ -166,6 +256,16 @@ export async function writeField(
     coordinate,
     fieldPath,
     newValue,
+  })
+}
+
+export async function writeFields(
+  sessionId: number,
+  writes: BatchWriteFieldInput[],
+): Promise<BatchWriteFieldOutcome> {
+  return invokeCommand<BatchWriteFieldOutcome>('write_fields', {
+    sessionId,
+    writes,
   })
 }
 

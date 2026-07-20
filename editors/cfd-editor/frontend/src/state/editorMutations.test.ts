@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { WriteFieldOutcome } from '../bindings/WriteFieldOutcome'
+import type { BatchWriteFieldOutcome } from '../bindings/BatchWriteFieldOutcome'
 import type { WriteDimensionValueOutcome } from '../bindings/WriteDimensionValueOutcome'
 import { committed, MutationHistoryController, superseded } from './editorState'
 import {
@@ -37,6 +38,7 @@ function backend(
   writeDimensionValue: EditorMutationBackend['writeDimensionValue'] = vi.fn(),
 ): EditorMutationBackend {
   return {
+    writeFields: vi.fn(),
     writeField,
     writeDimensionValue,
     editCollection: vi.fn(),
@@ -78,153 +80,58 @@ function dimensionOutcome(
 }
 
 describe('EditorMutationController', () => {
-  it('records authoritative move indexes and replays move undo and redo', async () => {
-    let generation = { sessionId: 1, revision: 1 }
-    const mutationBackend = backend(vi.fn())
-    mutationBackend.moveRecord = vi.fn()
-      .mockResolvedValueOnce({
-        revision: 2,
-        file_records: { revision: 2, file_path: 'data/items.cfd' } as FileRecords,
-        diagnostics: [],
-        affected_files: ['data/items.cfd'],
-        old_index: 0,
-        new_index: 2,
-      })
-      .mockResolvedValueOnce({
-        revision: 3,
-        file_records: { revision: 3, file_path: 'data/items.cfd' } as FileRecords,
-        diagnostics: [],
-        affected_files: ['data/items.cfd'],
-        old_index: 2,
-        new_index: 0,
-      })
-      .mockResolvedValueOnce({
-        revision: 4,
-        file_records: { revision: 4, file_path: 'data/items.cfd' } as FileRecords,
-        diagnostics: [],
-        affected_files: ['data/items.cfd'],
-        old_index: 0,
-        new_index: 2,
-      })
-    const port: EditorMutationPort = {
-      currentGeneration: () => generation,
-      publish: vi.fn(async request => {
-        generation = { sessionId: request.sessionId, revision: request.revision }
-        return committed(undefined)
-      }),
-      rebindCoordinate: vi.fn(),
-      recoverPublication: vi.fn(() => false),
-      reportError: vi.fn(),
-    }
-    const history = new MutationHistoryController()
-    const mutations = new EditorMutationController(mutationBackend, port, history)
-
-    await mutations.moveRecord('data/items.cfd', coordinate, 2)
-    expect(history.getSnapshot().undo).toHaveLength(1)
-    await mutations.undo()
-    await mutations.redo()
-
-    expect(mutationBackend.moveRecord).toHaveBeenNthCalledWith(1, 1, coordinate, 2)
-    expect(mutationBackend.moveRecord).toHaveBeenNthCalledWith(2, 1, coordinate, 0)
-    expect(mutationBackend.moveRecord).toHaveBeenNthCalledWith(3, 1, coordinate, 2)
-  })
-
-  it('transfers records back to the source index on undo', async () => {
-    let generation = { sessionId: 1, revision: 1 }
-    const mutationBackend = backend(vi.fn())
-    mutationBackend.transferRecord = vi.fn()
-      .mockResolvedValueOnce({
-        revision: 2,
-        file_records: { revision: 2, file_path: 'data/b.cfd' } as FileRecords,
-        diagnostics: [],
-        affected_files: ['data/a.cfd', 'data/b.cfd'],
-        old_index: 1,
-        new_index: 2,
-      })
-      .mockResolvedValueOnce({
-        revision: 3,
-        file_records: { revision: 3, file_path: 'data/a.cfd' } as FileRecords,
-        diagnostics: [],
-        affected_files: ['data/a.cfd', 'data/b.cfd'],
-        old_index: 2,
-        new_index: 1,
-      })
-      .mockResolvedValueOnce({
-        revision: 4,
-        file_records: { revision: 4, file_path: 'data/b.cfd' } as FileRecords,
-        diagnostics: [],
-        affected_files: ['data/a.cfd', 'data/b.cfd'],
-        old_index: 1,
-        new_index: 2,
-      })
-    const port: EditorMutationPort = {
-      currentGeneration: () => generation,
-      publish: vi.fn(async request => {
-        generation = { sessionId: request.sessionId, revision: request.revision }
-        return committed(undefined)
-      }),
-      rebindCoordinate: vi.fn(),
-      recoverPublication: vi.fn(() => false),
-      reportError: vi.fn(),
-    }
-    const mutations = new EditorMutationController(
-      mutationBackend,
-      port,
-      new MutationHistoryController(),
-    )
-
-    await mutations.transferRecord('data/a.cfd', 'data/b.cfd', coordinate, 2)
-    await mutations.undo()
-    await mutations.redo()
-
-    expect(mutationBackend.transferRecord).toHaveBeenNthCalledWith(
-      1, 1, coordinate, 'data/b.cfd', null, 2,
-    )
-    expect(mutationBackend.transferRecord).toHaveBeenNthCalledWith(
-      2, 1, coordinate, 'data/a.cfd', null, 1,
-    )
-    expect(mutationBackend.transferRecord).toHaveBeenNthCalledWith(
-      3, 1, coordinate, 'data/b.cfd', null, 2,
-    )
-  })
-
-  it('uses the same swap operation for undo and redo', async () => {
-    let generation = { sessionId: 1, revision: 1 }
-    const other = { actual_type: 'Item', key: 'shield' }
-    const mutationBackend = backend(vi.fn())
-    mutationBackend.swapRecords = vi.fn(async () => {
-      generation = { ...generation, revision: generation.revision + 1 }
-      return {
-        revision: generation.revision,
-        file_records: {
-          revision: generation.revision,
-          file_path: 'data/items.cfd',
-        } as FileRecords,
-        diagnostics: [],
-        affected_files: ['data/items.cfd'],
-        old_index: null,
-        new_index: null,
-      }
+  it('records a batch field edit as one atomic undo and redo step', async () => {
+    const second = { actual_type: 'Item', key: 'shield' }
+    const batchOutcome = (
+      revision: number,
+      values: Array<[typeof coordinate, string, string]>,
+    ): BatchWriteFieldOutcome => ({
+      revision,
+      edits: values.map(([item, oldValue, newValue]) => ({
+        coordinate: item,
+        final_coordinate: item,
+        field_path: fieldPath,
+        old_value: { kind: 'string', value: oldValue },
+        new_value: { kind: 'string', value: newValue },
+      })),
+      diagnostics: [],
+      affected_files: ['data/items.cfd'],
     })
+    const writeFields = vi.fn()
+      .mockResolvedValueOnce(batchOutcome(2, [[coordinate, 'Sword', 'Shared'], [second, 'Shield', 'Shared']]))
+      .mockResolvedValueOnce(batchOutcome(3, [[coordinate, 'Shared', 'Sword'], [second, 'Shared', 'Shield']]))
+      .mockResolvedValueOnce(batchOutcome(4, [[coordinate, 'Sword', 'Shared'], [second, 'Shield', 'Shared']]))
+    const fakeBackend = backend(vi.fn())
+    fakeBackend.writeFields = writeFields
     const port: EditorMutationPort = {
-      currentGeneration: () => generation,
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
       publish: vi.fn(async () => committed(undefined)),
       rebindCoordinate: vi.fn(),
       recoverPublication: vi.fn(() => false),
       reportError: vi.fn(),
     }
-    const mutations = new EditorMutationController(
-      mutationBackend,
-      port,
-      new MutationHistoryController(),
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(fakeBackend, port, history)
+
+    await mutations.writeFields(
+      'data/items.cfd',
+      [coordinate, second],
+      fieldPath,
+      { kind: 'string', value: 'Shared' },
     )
 
-    await mutations.swapRecords('data/items.cfd', coordinate, other)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    expect(history.getSnapshot().undo[0].kind).toBe('batch-field')
     await mutations.undo()
+    expect(writeFields).toHaveBeenNthCalledWith(2, 1, [
+      { coordinate, field_path: fieldPath, new_value: { kind: 'string', value: 'Sword' } },
+      { coordinate: second, field_path: fieldPath, new_value: { kind: 'string', value: 'Shield' } },
+    ])
     await mutations.redo()
-
-    expect(mutationBackend.swapRecords).toHaveBeenCalledTimes(3)
-    expect(mutationBackend.swapRecords).toHaveBeenLastCalledWith(1, coordinate, other)
+    expect(writeFields).toHaveBeenNthCalledWith(3, 1, [
+      { coordinate, field_path: fieldPath, new_value: { kind: 'string', value: 'Shared' } },
+      { coordinate: second, field_path: fieldPath, new_value: { kind: 'string', value: 'Shared' } },
+    ])
   })
 
   it('coalesces dimension writes and uses authoritative states for undo and redo', async () => {

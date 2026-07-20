@@ -38,13 +38,15 @@ use coflow_runtime::{
 
 use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
 use crate::editor::settings::{
-    read_project_settings, sanitized_column_widths, write_project_settings,
+    read_project_settings, sanitized_column_widths, sanitized_graph_fields,
+    sanitized_record_groups, write_project_settings,
 };
 use crate::editor::types::{
-    CollectionEdit, CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome,
+    BatchWriteFieldInput, BatchWriteFieldEditOutcome, BatchWriteFieldOutcome, CollectionEdit,
+    CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome,
     DeletedRecordSnapshot, EditorError, EditorProjectSettings, FileRecords, FileTypeOption,
-    GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget,
-    RenameRecordOutcome, ReorderRecordsOutcome, WriteFieldOutcome,
+    EditorRecordGroup, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RecordColumn,
+    RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -173,6 +175,15 @@ impl SessionStore {
         read_project_settings(&session.project_root)
     }
 
+    pub fn get_project_dimensions(
+        &self,
+        id: u32,
+    ) -> Result<Vec<coflow_runtime::DimensionInfo>, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry.state.read().map_err(|_| EditorError::session("session poisoned"))?;
+        Ok(session.queries().dimensions())
+    }
+
     pub fn set_table_column_widths(
         &self,
         id: u32,
@@ -194,6 +205,36 @@ impl SessionStore {
             .or_default()
             .insert(actual_type, sanitized_column_widths(widths));
         write_project_settings(&project_root, &settings)?;
+        Ok(settings)
+    }
+
+    pub fn set_record_groups(
+        &self,
+        id: u32,
+        file_path: String,
+        actual_type: String,
+        groups: Vec<EditorRecordGroup>,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry.state.read().map_err(|_| EditorError::session("session poisoned"))?;
+        let mut settings = read_project_settings(&session.project_root)?;
+        settings.record_groups.entry(file_path).or_default().insert(actual_type, sanitized_record_groups(groups));
+        write_project_settings(&session.project_root, &settings)?;
+        Ok(settings)
+    }
+
+    pub fn set_graph_enabled_fields(
+        &self,
+        id: u32,
+        file_path: String,
+        actual_type: String,
+        fields: Vec<String>,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry.state.read().map_err(|_| EditorError::session("session poisoned"))?;
+        let mut settings = read_project_settings(&session.project_root)?;
+        settings.graph_enabled_fields.entry(file_path).or_default().insert(actual_type, sanitized_graph_fields(fields));
+        write_project_settings(&session.project_root, &settings)?;
         Ok(settings)
     }
 

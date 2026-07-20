@@ -147,6 +147,85 @@ impl SessionStore {
         write_field_in_session(&mut session, coordinate, field_path, new_value)
     }
 
+    pub fn write_fields(
+        &self,
+        id: u32,
+        writes: &[BatchWriteFieldInput],
+    ) -> Result<BatchWriteFieldOutcome, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut seen = Vec::<(RecordCoordinate, Vec<coflow_data_model::CfdPathSegment>)>::new();
+        let targets = writes
+            .iter()
+            .filter(|write| {
+                if seen.iter().any(|(coordinate, path)| {
+                    coordinate == &write.coordinate && path == &write.field_path
+                }) {
+                    false
+                } else {
+                    seen.push((write.coordinate.clone(), write.field_path.clone()));
+                    true
+                }
+            })
+            .filter_map(|write| {
+                let old_value = session
+                    .queries()
+                    .effective_field_write(&write.coordinate, &write.field_path)
+                    .and_then(|preview| preview.old_value);
+                (old_value.as_ref() != Some(&write.new_value)).then(|| (write.clone(), old_value))
+            })
+            .collect::<Vec<_>>();
+        if targets.is_empty() {
+            return Err(EditorError::write("batch field write contains no changes"));
+        }
+        let report = session.engine.apply_mutation(MutationRequest {
+            stop_on_write_error: true,
+            ops: targets
+                .iter()
+                .map(|(write, _)| MutationOp::SetField {
+                    record: write.coordinate.clone(),
+                    file: None,
+                    path: write.field_path.clone(),
+                    value: MutationValue::Cfd(write.new_value.clone()),
+                })
+                .collect(),
+        });
+        let report = finalize_mutation(&mut session, report, "batch field write failed")?;
+        let edits = targets
+            .into_iter()
+            .enumerate()
+            .map(|(index, (write, old_value))| {
+                let final_coordinate = report
+                    .applied
+                    .iter()
+                    .find(|applied| applied.index == index)
+                    .and_then(|applied| applied.outcome.renamed.as_ref())
+                    .and_then(|(old, new)| (old == &write.coordinate).then(|| new.clone()))
+                    .unwrap_or_else(|| write.coordinate.clone());
+                let new_value = session
+                    .queries()
+                    .field_value(&final_coordinate.actual_type, &final_coordinate.key, &write.field_path)
+                    .cloned();
+                BatchWriteFieldEditOutcome {
+                    coordinate: write.coordinate,
+                    final_coordinate,
+                    field_path: write.field_path,
+                    old_value,
+                    new_value,
+                }
+            })
+            .collect();
+        Ok(BatchWriteFieldOutcome {
+            revision: session.revisions.current(),
+            edits,
+            diagnostics: report.diagnostics,
+            affected_files: report.affected_files,
+        })
+    }
+
     pub fn edit_collection(
         &self,
         id: u32,

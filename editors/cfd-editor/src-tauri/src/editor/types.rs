@@ -11,7 +11,7 @@
 use coflow_api::{FlatDiagnostic, WriterCapabilities};
 use coflow_data_model::{CfdDictKey, CfdRecord, CfdValue};
 pub use coflow_runtime::{CreateFieldSource, CreateRequiredInput};
-use coflow_runtime::{FileTreeNode, RecordCoordinate};
+use coflow_runtime::{DimensionValueState, FileTreeNode, RecordCoordinate};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -145,6 +145,25 @@ pub struct FileTypeOption {
     pub record_count: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimensionFileRecords {
+    pub revision: u32,
+    pub file_path: String,
+    pub dimension: String,
+    pub display_name: String,
+    pub field: String,
+    pub variants: Vec<String>,
+    pub rows: Vec<DimensionFileRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimensionFileRow {
+    pub coordinate: RecordCoordinate,
+    pub owner_file_path: String,
+    pub default_value: CfdValue,
+    pub values: BTreeMap<String, DimensionValueState>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(
@@ -154,6 +173,24 @@ pub struct FileTypeOption {
 pub struct EditorProjectSettings {
     #[serde(default)]
     pub table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
+    #[serde(default)]
+    pub record_groups: BTreeMap<String, BTreeMap<String, Vec<EditorRecordGroup>>>,
+    #[serde(default)]
+    pub graph_enabled_fields: BTreeMap<String, BTreeMap<String, Vec<String>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct EditorRecordGroup {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub color: Option<String>,
+    pub records: Vec<RecordCoordinate>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -361,6 +398,48 @@ pub struct WriteFieldOutcome {
     pub renamed: Option<RecordCoordinate>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct BatchWriteFieldEditOutcome {
+    pub coordinate: RecordCoordinate,
+    pub final_coordinate: RecordCoordinate,
+    pub field_path: Vec<coflow_data_model::CfdPathSegment>,
+    #[serde(default)]
+    pub old_value: Option<CfdValue>,
+    #[serde(default)]
+    pub new_value: Option<CfdValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct BatchWriteFieldInput {
+    pub coordinate: RecordCoordinate,
+    pub field_path: Vec<coflow_data_model::CfdPathSegment>,
+    pub new_value: CfdValue,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct BatchWriteFieldOutcome {
+    pub revision: u32,
+    pub edits: Vec<BatchWriteFieldEditOutcome>,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    #[serde(default)]
+    pub affected_files: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(
@@ -370,8 +449,8 @@ pub struct WriteFieldOutcome {
 pub struct WriteDimensionValueOutcome {
     pub revision: u32,
     pub coordinate: coflow_runtime::DimensionValueCoordinate,
-    pub old_value: coflow_runtime::DimensionValueState,
-    pub new_value: coflow_runtime::DimensionValueState,
+    pub old_value: DimensionValueState,
+    pub new_value: DimensionValueState,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub affected_files: Vec<String>,
 }

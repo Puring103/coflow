@@ -1,5 +1,7 @@
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import type { DeleteRecordOutcome } from '../bindings/DeleteRecordOutcome'
+import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
+import type { BatchWriteFieldOutcome } from '../bindings/BatchWriteFieldOutcome'
 import type { DimensionValueCoordinate } from '../bindings/DimensionValueCoordinate'
 import type { DimensionValueState } from '../bindings/DimensionValueState'
 import type { FileRecords } from '../bindings/FileRecords'
@@ -28,6 +30,10 @@ import {
 } from './editorState'
 
 export interface EditorMutationBackend {
+  writeFields: (
+    sessionId: number,
+    writes: BatchWriteFieldInput[],
+  ) => Promise<BatchWriteFieldOutcome>
   writeField: (
     sessionId: number,
     coordinate: RecordCoordinate,
@@ -189,6 +195,22 @@ export class EditorMutationController {
     const result = new Promise<RecordRow | undefined>(resolve => pending.resolve.push(resolve))
     queueMicrotask(() => this.flushFieldWrite(pending))
     return result
+  }
+
+  writeFields(
+    filePath: string,
+    coordinates: readonly RecordCoordinate[],
+    fieldPath: FieldPathSegment[],
+    newValue: FieldValue,
+  ): Promise<void> {
+    const writes = coordinates.map(coordinate => ({
+      coordinate,
+      field_path: fieldPath,
+      new_value: cloneValue(newValue),
+    }))
+    return this.enqueueMutation(undefined, async () => {
+      await this.writeFieldsInternal(filePath, writes, { recordHistory: true })
+    })
   }
 
   writeDimensionValue(
@@ -436,6 +458,17 @@ export class EditorMutationController {
             { recordHistory: false },
           )
         }
+        if (entry.kind === 'batch-field') {
+          return this.writeFieldsInternal(
+            entry.edits[0]?.filePath ?? '',
+            entry.edits.map(edit => ({
+              coordinate: edit.coordinate,
+              field_path: edit.fieldPath,
+              new_value: cloneValue(edit.oldValue),
+            })),
+            { recordHistory: false },
+          )
+        }
         if (entry.kind === 'insert') {
           return this.deleteRecordInternal(
             entry.filePath,
@@ -497,6 +530,17 @@ export class EditorMutationController {
             entry.coordinate,
             entry.fieldPath,
             entry.newValue,
+            { recordHistory: false },
+          )
+        }
+        if (entry.kind === 'batch-field') {
+          return this.writeFieldsInternal(
+            entry.edits[0]?.filePath ?? '',
+            entry.edits.map(edit => ({
+              coordinate: edit.coordinate,
+              field_path: edit.fieldPath,
+              new_value: cloneValue(edit.newValue),
+            })),
             { recordHistory: false },
           )
         }
@@ -619,6 +663,50 @@ export class EditorMutationController {
         return outcome.row
       },
       fieldWriteChangesTopology,
+    )
+  }
+
+  private writeFieldsInternal(
+    filePath: string,
+    writes: BatchWriteFieldInput[],
+    options: MutationOptions,
+  ): Promise<MutationResult<void>> {
+    return this.execute(
+      '批量写入失败',
+      filePath,
+      sessionId => this.backend.writeFields(sessionId, writes),
+      undefined,
+      outcome => {
+        for (const edit of outcome.edits) {
+          this.applyRename(filePath, edit.coordinate, sameCoordinateOrNull(
+            edit.coordinate,
+            edit.final_coordinate,
+          ))
+        }
+        if (options.recordHistory) {
+          const edits = outcome.edits.flatMap(edit => (
+            edit.old_value && edit.new_value
+              ? [{
+                  filePath,
+                  coordinate: edit.final_coordinate,
+                  fieldPath: edit.field_path,
+                  oldValue: cloneValue(edit.old_value),
+                  newValue: cloneValue(edit.new_value),
+                }]
+              : []
+          ))
+          if (edits.length > 0) {
+            this.history.record({
+              kind: 'batch-field',
+              revision: outcome.revision,
+              edits,
+            })
+          }
+        }
+      },
+      outcome => outcome.edits.some(edit => (
+        containsReference(edit.old_value) || containsReference(edit.new_value)
+      )),
     )
   }
 
@@ -939,6 +1027,13 @@ function sameGeneration(
 
 function committedValue<T>(result: MutationResult<T>): T | undefined {
   return result.status === 'committed' ? result.value : undefined
+}
+
+function sameCoordinateOrNull(
+  previous: RecordCoordinate,
+  next: RecordCoordinate,
+): RecordCoordinate | null {
+  return previous.actual_type === next.actual_type && previous.key === next.key ? null : next
 }
 
 function fieldWriteChangesTopology(outcome: WriteFieldOutcome): boolean {

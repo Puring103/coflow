@@ -139,29 +139,18 @@ jobs:
             throw "Updater signature is empty"
           }
 
-          $versionLine = Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"' |
-            Select-Object -First 1
-          $version = $versionLine.Matches[0].Groups[1].Value
           $assetName = "coflow-tools-windows-x64-setup.exe"
-          $tag = "v$version"
-          $url = "https://github.com/${{ github.repository }}/releases/download/$tag/$assetName"
 
           New-Item -ItemType Directory -Force release-assets | Out-Null
           Copy-Item $installer.FullName "release-assets/$assetName" -Force
           Copy-Item $signaturePath "release-assets/$assetName.sig" -Force
 
-          $manifest = [ordered]@{
-            version = $version
-            notes = (Get-Content -Raw RELEASE_NOTES.md)
-            pub_date = (Get-Date).ToUniversalTime().ToString("o")
-            platforms = [ordered]@{
-              "windows-x86_64" = [ordered]@{
-                signature = $signature
-                url = $url
-              }
-            }
-          }
-          $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM release-assets/latest.json
+          # Emit a fragment describing which updater platform this asset targets.
+          # The release job merges fragments from every platform into latest.json.
+          Set-Content -Path "release-assets/$assetName.updater" -Encoding utf8NoBOM -Value @(
+            "platform=windows-x86_64",
+            "asset=$assetName"
+          )
 
       - name: Upload full installer assets
         uses: actions/upload-artifact@v4
@@ -251,6 +240,109 @@ jobs:
           name: release-macos-cli-${{ matrix.arch }}
           path: release-assets/*
 
+  macos-full:
+    name: macOS full editor ${{ matrix.arch }}
+    needs: ci
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            target: aarch64-apple-darwin
+            updater_platform: darwin-aarch64
+          - arch: x64
+            target: x86_64-apple-darwin
+            updater_platform: darwin-x86_64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install editor dependencies
+        run: npm ci
+        working-directory: editors/cfd-editor
+
+      - name: Install editor frontend dependencies
+        run: npm ci
+        working-directory: editors/cfd-editor/frontend
+
+      - name: Build CLI sidecar
+        run: cargo build --release --target ${{ matrix.target }} -p coflow
+
+      - name: Prepare CLI sidecar
+        run: |
+          destination="editors/cfd-editor/src-tauri/binaries/coflow-${{ matrix.target }}"
+          mkdir -p "$(dirname "$destination")"
+          cp "target/${{ matrix.target }}/release/coflow" "$destination"
+
+      - name: Build full macOS bundle
+        run: npm run tauri -- build --target ${{ matrix.target }} --bundles app,dmg --config src-tauri/tauri.release.conf.json
+        working-directory: editors/cfd-editor
+
+      - name: Sign updater and stage release assets
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is not configured" >&2
+            exit 1
+          fi
+
+          dmg=$(find "target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name '*.dmg' | head -n 1)
+          if [ -z "$dmg" ]; then
+            echo "Full macOS DMG was not produced" >&2
+            exit 1
+          fi
+
+          app_bundle=$(find "target/${{ matrix.target }}/release/bundle/macos" -maxdepth 1 -name '*.app' | head -n 1)
+          if [ -z "$app_bundle" ]; then
+            echo "Full macOS .app bundle was not produced" >&2
+            exit 1
+          fi
+
+          # The Tauri updater expects a compressed .app bundle, so we ship the
+          # DMG as the human download and pair it with a tarball that carries
+          # the updater signature.
+          mkdir -p release-assets
+          dmg_asset="coflow-tools-macos-${{ matrix.arch }}.dmg"
+          updater_asset="coflow-tools-macos-${{ matrix.arch }}.app.tar.gz"
+          cp "$dmg" "release-assets/$dmg_asset"
+          tar -czf "release-assets/$updater_asset" \
+            -C "$(dirname "$app_bundle")" "$(basename "$app_bundle")"
+
+          node editors/cfd-editor/node_modules/@tauri-apps/cli/tauri.js \
+            signer sign --password "" "release-assets/$updater_asset"
+
+          if [ ! -s "release-assets/$updater_asset.sig" ]; then
+            echo "Updater signature is empty" >&2
+            exit 1
+          fi
+
+          # Emit a per-arch fragment consumed by the release job when it
+          # assembles the shared latest.json manifest. The updater points at
+          # the .app.tar.gz asset; the .dmg stays a plain download.
+          {
+            printf 'platform=%s\n' '${{ matrix.updater_platform }}'
+            printf 'asset=%s\n' "$updater_asset"
+          } > "release-assets/$updater_asset.updater"
+
+      - name: Upload full macOS bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-full-${{ matrix.arch }}
+          path: release-assets/*
+
   vsix:
     name: Build VSIX
     needs: ci
@@ -276,7 +368,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: [windows-full, windows-cli, macos-cli, vsix]
+    needs: [windows-full, windows-cli, macos-cli, macos-full, vsix]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -297,6 +389,71 @@ jobs:
           version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble updater manifest
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          tag="v$VERSION"
+          pub_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          notes="$(cat RELEASE_NOTES.md)"
+
+          platforms_json="{}"
+          shopt -s nullglob
+          for fragment in release-assets/*.updater; do
+            platform=""
+            asset=""
+            while IFS='=' read -r key value; do
+              # PowerShell Set-Content writes CRLF fragments on Windows. Bash
+              # removes the LF while reading, so normalize the remaining CR.
+              key="${key%$'\r'}"
+              value="${value%$'\r'}"
+              case "$key" in
+                platform) platform="$value" ;;
+                asset)    asset="$value" ;;
+              esac
+            done < "$fragment"
+
+            if [ -z "$platform" ] || [ -z "$asset" ]; then
+              echo "Updater fragment $fragment is missing platform or asset" >&2
+              exit 1
+            fi
+
+            signature_path="release-assets/$asset.sig"
+            if [ ! -s "$signature_path" ]; then
+              echo "Updater signature $signature_path is missing" >&2
+              exit 1
+            fi
+
+            signature="$(tr -d '\n' < "$signature_path")"
+            url="https://github.com/$REPO/releases/download/$tag/$asset"
+
+            platforms_json="$(jq \
+              --arg platform "$platform" \
+              --arg signature "$signature" \
+              --arg url "$url" \
+              '. + {($platform): {signature: $signature, url: $url}}' \
+              <<< "$platforms_json")"
+          done
+
+          if [ "$platforms_json" = "{}" ]; then
+            echo "No updater fragments were produced" >&2
+            exit 1
+          fi
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "$notes" \
+            --arg pub_date "$pub_date" \
+            --argjson platforms "$platforms_json" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: $platforms}' \
+            > release-assets/latest.json
+
+          rm -f release-assets/*.updater
 
       - name: List release assets
         run: find release-assets -maxdepth 1 -type f -printf '%f\n' | sort

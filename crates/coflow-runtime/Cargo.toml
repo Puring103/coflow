@@ -1,6 +1,6 @@
 [package]
 name = "coflow-runtime"
-version = "0.7.0"
+version = "0.7.3"
 edition = "2021"
 description = "Shared Coflow project runtime."
 license = "Apache-2.0"

@@ -110,6 +110,12 @@ export function annotationPolymorphicTypes(annotation: FieldAnnotation | null | 
   return annotation?.polymorphic_types ?? []
 }
 
+export function annotationChildren(annotation: FieldAnnotation | null | undefined): FieldAnnotation[] {
+  return Object.values(annotation?.children ?? {}).filter(
+    (child): child is FieldAnnotation => child !== undefined,
+  )
+}
+
 export function cellEnumType(cell: FieldCell): string | undefined {
   return cell.annotation?.enum_type ?? undefined
 }

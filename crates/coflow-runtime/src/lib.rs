@@ -57,6 +57,7 @@ pub use files::{DimensionGroup, FileTreeNode, FileTreeOptions};
 pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef};
 // Re-export helpers that hosts (tauri editor, CLI) call when translating
 // engine data to a wire format so they don't diverge in path formatting.
+pub use coflow_cft::{DimensionName, FieldName, VariantName};
 pub use coflow_data_model::RecordCoordinate;
 pub use load::format_cfd_path as format_field_path;
 pub use mutation::{

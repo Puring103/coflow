@@ -9,6 +9,7 @@ import {
   recordKey,
   sameCoordinate,
   coordinateId,
+  errorMessage,
   type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
@@ -26,6 +27,7 @@ import {
 } from '../state/recordDiagnostics'
 import type { EditorSelection } from '../state/editorSelection'
 import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
+import { BatchRecordEditor } from './BatchRecordEditor'
 
 interface Props {
   open: boolean
@@ -44,6 +46,12 @@ interface Props {
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
   ) => Promise<RecordRow | void>
+  onWriteFields?: (
+    filePath: string,
+    coordinates: readonly RecordCoordinate[],
+    fieldPath: FieldPathSegment[],
+    newValue: FieldValue,
+  ) => Promise<void>
   onRenderCellText?: (
     filePath: string,
     coordinate: RecordCoordinate,
@@ -86,6 +94,7 @@ export function InspectorPanel({
   onWidthChange,
   onClose,
   onWriteField,
+  onWriteFields,
   onRenderCellText,
   onParseCellText,
   onCollectionEdit,
@@ -101,8 +110,29 @@ export function InspectorPanel({
   const [keyboardFieldPath, setKeyboardFieldPath] = useState<FieldPathSegment[] | null>(null)
   const [selectedActionPathWire, setSelectedActionPathWire] = useState<string | null>(null)
   const [keyboardNotice, setKeyboardNotice] = useState<string | null>(null)
+  const [recordTreeMenu, setRecordTreeMenu] = useState<{
+    x: number
+    y: number
+    path: FieldPathSegment[]
+    editable: boolean
+  } | null>(null)
   widthRef.current = width
   const coordinate = selection?.coordinate ?? null
+
+  useEffect(() => {
+    if (!recordTreeMenu) return
+    const close = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest('.record-tree-context-menu')) return
+      setRecordTreeMenu(null)
+    }
+    const closeOnBlur = () => setRecordTreeMenu(null)
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('blur', closeOnBlur)
+    return () => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('blur', closeOnBlur)
+    }
+  }, [recordTreeMenu])
 
   const onSplitterDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -125,6 +155,13 @@ export function InspectorPanel({
   const record = data && coordinate
     ? data.records.find(r => sameCoordinate(r.coordinate, coordinate))
     : null
+  const selectedRecords = data && selection?.kind === 'record'
+    ? selection.coordinates.flatMap(selected => {
+        const row = data.records.find(item => sameCoordinate(item.coordinate, selected))
+        return row ? [row] : []
+      })
+    : []
+  const batchRecords = selectedRecords.length > 1 ? selectedRecords : null
 
   const diagnosticIndex = useMemo(
     () => buildRecordDiagnosticIndex(
@@ -276,27 +313,59 @@ export function InspectorPanel({
           ref={bodyRef}
           tabIndex={-1}
           onKeyDown={onBodyKeyDown}
+          onContextMenu={event => {
+            if (batchRecords || !record || !data) return
+            const row = (event.target as HTMLElement).closest<HTMLElement>('.dc-row[data-field-path-wire]')
+            if (!row || !bodyRef.current?.contains(row)) return
+            const path = parseWireFieldPath(row.dataset.fieldPathWire)
+            if (!path) return
+            event.preventDefault()
+            event.stopPropagation()
+            setSelectedActionPathWire(null)
+            setKeyboardFieldPath(path)
+            setRecordTreeMenu({
+              x: event.clientX,
+              y: event.clientY,
+              path,
+              editable: row.dataset.keyboardEditable === 'true',
+            })
+          }}
           onMouseDownCapture={event => {
             const target = event.target as HTMLElement
             if (isNativeEditorTarget(target)) return
             bodyRef.current?.focus({ preventScroll: true })
           }}
         >
-          {record && data ? (
+          {batchRecords && data ? (
+            <BatchRecordEditor
+              records={batchRecords}
+              readOnly={readOnly}
+              onWriteFields={!onWriteFields
+                ? undefined
+                : (path, value) => onWriteFields(
+                    data.file_path,
+                    batchRecords.map(item => item.coordinate),
+                    path,
+                    value,
+                  )}
+            />
+          ) : record && data ? (
             <>
               {!inspectingValue && (
-                <CardHeader
-                  recordKey={recordKey(record)}
-                  actualType={recordActualType(record)}
-                  filePath={data.file_path}
-                  onRename={canRename && onRenameRecord
-                    ? async (next) => { await onRenameRecord(data.file_path, record.coordinate, next) }
-                    : undefined}
-                  diagSeverity={recordSeverity}
-                  onDiagBadgeClick={onDiagnosticBadgeClick
-                    ? () => onDiagnosticBadgeClick(record.coordinate, null)
-                    : undefined}
-                />
+                <>
+                  <CardHeader
+                    recordKey={recordKey(record)}
+                    actualType={recordActualType(record)}
+                    filePath={data.file_path}
+                    onRename={canRename && onRenameRecord
+                      ? async (next) => { await onRenameRecord(data.file_path, record.coordinate, next) }
+                      : undefined}
+                    diagSeverity={recordSeverity}
+                    onDiagBadgeClick={onDiagnosticBadgeClick
+                      ? () => onDiagnosticBadgeClick(record.coordinate, null)
+                      : undefined}
+                  />
+                </>
               )}
               {!inspectingValue || inspectorFields.length > 0 ? (
                 <DataCardExpanded
@@ -338,6 +407,61 @@ export function InspectorPanel({
           )}
         </div>
       )}
+      {recordTreeMenu && record && data && (
+        <div
+          className="context-menu record-tree-context-menu"
+          style={{ left: recordTreeMenu.x, top: recordTreeMenu.y }}
+          role="menu"
+          onPointerDown={event => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            disabled={!onRenderCellText}
+            onClick={async () => {
+              const path = recordTreeMenu.path
+              setRecordTreeMenu(null)
+              try {
+                if (!onRenderCellText) return
+                await navigator.clipboard.writeText(await onRenderCellText(data.file_path, record.coordinate, path))
+                setKeyboardNotice(null)
+              } catch (error) {
+                setKeyboardNotice(`复制失败：${errorMessage(error)}`)
+              }
+            }}
+          >
+            <Icon name="copy" size={13} aria-hidden />
+            复制
+            <span className="ctx-shortcut">Ctrl+C</span>
+          </button>
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            disabled={!recordTreeMenu.editable || !onParseCellText || !onWriteField}
+            onClick={async () => {
+              const path = recordTreeMenu.path
+              setRecordTreeMenu(null)
+              try {
+                if (!onParseCellText || !onWriteField) return
+                const text = await navigator.clipboard.readText()
+                const next = await onParseCellText(data.file_path, record.coordinate, path, text)
+                await onWriteField(data.file_path, record.coordinate, path, next)
+                setKeyboardNotice(null)
+              } catch (error) {
+                setKeyboardNotice(`粘贴格式不正确：${errorMessage(error)}`)
+              } finally {
+                requestAnimationFrame(() => bodyRef.current?.focus({ preventScroll: true }))
+              }
+            }}
+          >
+            <Icon name="paste" size={13} aria-hidden />
+            粘贴
+            <span className="ctx-shortcut">Ctrl+V</span>
+          </button>
+        </div>
+      )}
     </aside>
   )
 }
@@ -371,6 +495,16 @@ function dictKeyText(key: CfdDictKey): string {
 }
 
 const EMPTY_EXPANDED_PATHS = new Set<string>()
+
+function parseWireFieldPath(raw: string | undefined): FieldPathSegment[] | null {
+  if (!raw) return null
+  try {
+    const value = JSON.parse(raw)
+    return Array.isArray(value) ? value as FieldPathSegment[] : null
+  } catch {
+    return null
+  }
+}
 
 function isNativeEditorTarget(target: HTMLElement): boolean {
   return target.isContentEditable

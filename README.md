@@ -38,7 +38,8 @@ coflow --help
 也可以直接下载 [最新 Release](https://github.com/Puring103/coflow/releases/latest)。
 
 Windows Release 提供包含 CLI 与可视化编辑器的完整版安装包，以及不含编辑器的
-CLI-only 安装包。macOS 暂时只发布 CLI 压缩包。
+CLI-only 安装包。macOS Release 同时提供包含 CLI 与可视化编辑器的完整版 DMG
+（arm64 / x64），以及仅含 CLI 的压缩包。
 
 ### AI Agent Skills
 

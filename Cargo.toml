@@ -1,6 +1,6 @@
 [package]
 name = "coflow"
-version = "0.7.0"
+version = "0.7.3"
 edition = "2021"
 description = "Project-level command-line tools for Coflow."
 license = "Apache-2.0"
@@ -46,6 +46,7 @@ members = [
     "crates/coflow-lsp",
     "crates/coflow-structure",
     "editors/cfd-editor/src-tauri",
+    "editors/coflow-extension-api",
 ]
 resolver = "2"
 

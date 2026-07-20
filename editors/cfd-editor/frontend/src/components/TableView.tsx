@@ -9,13 +9,16 @@ import {
   type SortingState,
   type ColumnSizingState,
 } from '@tanstack/react-table'
+import type { Row as TanStackRow } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
+import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import {
   coordinateId,
+  cellDeclaredType,
   cellEnumType,
   cellNullable,
   cellReadOnly,
@@ -44,9 +47,11 @@ import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import {
   recordSelection,
+  recordSelectionCoordinates,
   selectionMatchesRecord,
   selectionMatchesValue,
   type EditorSelection,
+  type RecordSelectionMode,
 } from '../state/editorSelection'
 import {
   moveTableSelection,
@@ -54,6 +59,12 @@ import {
 } from '../state/tableCellNavigation'
 import { selectionEditIntentForKey } from '../state/selectionKeyboard'
 import { fieldTypeColor } from '../utils/typeColor'
+import {
+  organizeRecordRows,
+  type RecordGroupView,
+} from '../state/manualRecordGroups'
+import { useRecordPointerDrag } from '../hooks/useRecordPointerDrag'
+import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
 
 interface Props {
   data: FileRecords
@@ -62,10 +73,23 @@ interface Props {
   diagnostics?: DiagnosticItem[]
   /** Pre-populate the search filter from the parent global search bar. */
   searchQuery?: string
+  recordGroups?: readonly EditorRecordGroup[]
+  collapsedGroupKeys?: ReadonlySet<string>
+  onToggleGroup?: (groupKey: string) => void
+  onDropRecordOntoRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
+  onCreateGroup?: (records: readonly RecordCoordinate[]) => void
+  onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
+  onDropRecordIntoUngrouped?: (sources: readonly RecordCoordinate[]) => void
+  onRenameGroup?: (groupId: string, name: string) => void
+  onColorGroup?: (groupId: string, color: string | null) => void
   /** Current record/value selection, lifted so it can drive the inspector. */
   selection?: EditorSelection | null
   /** Click on the Key cell: select the record. */
-  onSelectRecord?: (coordinate: RecordCoordinate) => void
+  onSelectRecord?: (
+    coordinate: RecordCoordinate,
+    mode: RecordSelectionMode,
+    visibleCoordinates: readonly RecordCoordinate[],
+  ) => void
   /** Click on a field cell: select that value. */
   onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => void
   onRenderCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => Promise<string>
@@ -103,9 +127,25 @@ interface Props {
 }
 
 const ROW_H = 30
+const GROUP_ROW_H = 32
+const MIN_COLUMN_WIDTH = 48
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onSwapRecords, onMoveRecord, transferTargets = [], onTransferRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
+type TableDisplayItem =
+  | { kind: 'group'; view: RecordGroupView }
+  | { kind: 'ungrouped'; records: RecordRow[] }
+  | { kind: 'row'; row: TanStackRow<RecordRow>; group?: EditorRecordGroup }
+
+interface TableContextMenu {
+  x: number
+  y: number
+  row: RecordRow
+  records: RecordCoordinate[]
+  showGroupTargets: boolean
+}
+
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onSwapRecords, onMoveRecord, transferTargets = [], onTransferRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+  const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [transferRow, setTransferRow] = useState<RecordRow | null>(null)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
@@ -113,10 +153,32 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => columnWidths ?? {})
   const [globalFilter, setGlobalFilter] = useState(searchQuery ?? '')
+  const [tableZoom, setTableZoom] = useState(1)
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const columnSizingRef = useRef(columnSizing)
+  const columnResizeRef = useRef<{
+    pointerId: number
+    columnId: string
+    startX: number
+    startWidth: number
+  } | null>(null)
   columnSizingRef.current = columnSizing
+
+  const updateColumnResize = (pointerId: number, clientX: number) => {
+    const resize = columnResizeRef.current
+    if (!resize || resize.pointerId !== pointerId) return
+    const width = Math.max(MIN_COLUMN_WIDTH, resize.startWidth + clientX - resize.startX)
+    const next = { ...columnSizingRef.current, [resize.columnId]: width }
+    columnSizingRef.current = next
+    setColumnSizing(next)
+  }
+
+  const finishColumnResize = (pointerId: number) => {
+    if (columnResizeRef.current?.pointerId !== pointerId) return
+    columnResizeRef.current = null
+    onColumnWidthsChange?.(columnSizingRef.current)
+  }
 
   // Reset transient UI state when active file/type changes.
   useEffect(() => {
@@ -255,11 +317,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       const isPill = kind !== null
       const chrome = (isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME) + BADGE_ROOM
       let maxContent = 0
+      let hasComplexValue = false
       let declaredForHeader: string | undefined
       for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
         const cell = fieldCell(record, column.name)
         if (!cell) continue
+        if (isComplexValue(cell.value)) hasComplexValue = true
         const w = measure(valueSummary(cell.value))
         if (w > maxContent) maxContent = w
         if (!declaredForHeader) declaredForHeader = cell.annotation?.declared_type ?? undefined
@@ -267,7 +331,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       const summaryWidth = maxContent + chrome
       const typeChipWidth = declaredForHeader ? measureMono(declaredForHeader) + 16 : 0
       const headerWidth = measure(column.name) + PLAIN_CHROME + 12 /* sort caret */ + typeChipWidth
-      hints[column.name] = Math.min(VALUE_MAX, Math.max(MIN, Math.ceil(Math.max(summaryWidth, headerWidth))))
+      const minimumWidth = hasComplexValue ? 300 : MIN
+      hints[column.name] = Math.min(VALUE_MAX, Math.max(minimumWidth, Math.ceil(Math.max(summaryWidth, headerWidth))))
     }
     return hints
     // Deps intentionally stable: file, active type, column identity/count,
@@ -315,6 +380,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           const renameFn = onRenameRecordRef.current
           return (
             <span className={`cell-key-wrap${rowSev ? ' has-diag' : ''}`}>
+              <Icon name="grip" size={13} className="record-drag-handle" aria-hidden />
               <EditableKeyCell
                 value={info.getValue()}
                 editable={canRename}
@@ -331,7 +397,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             </span>
           )
         },
-        size: columnSizeHints.key ?? 140,
+        size: columnWidths?.key ?? columnSizeHints.key ?? 140,
+        sortDescFirst: false,
       }),
       ...allFieldNames.map(name => {
         const declared = columnDeclaredTypes[name]
@@ -348,7 +415,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               )}
             </span>
           ),
-          size: columnSizeHints[name] ?? 120,
+          size: columnWidths?.[name] ?? columnSizeHints[name] ?? 120,
+          enableSorting: false,
           cell: ({ row }) => {
             const filePath = dataForCellsRef.current.file_path
             const f = fieldCell(row.original, name)
@@ -409,10 +477,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               <span className={sev ? `dc-cell-diag dc-cell-diag-${sev}` : undefined} title={title}>
                 <EditableCell
                   value={f.value}
+                  label={name}
                   editable={cellEditable}
                   refTargetType={cellRefTargetType(f)}
                   enumType={cellEnumType(f)}
                   nullable={cellNullable(f)}
+                  declaredType={cellDeclaredType(f)}
                   onCommit={cellEditable && writeFn ? next => writeFn(row.original.coordinate, [fieldPathField(name)], next) : undefined}
                   onEditingFinished={() => tableScrollRef.current?.focus({ preventScroll: true })}
                 />
@@ -426,7 +496,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     // Only structural changes (column set, active type, computed widths,
     // permission flags) rebuild the column defs. Edit-time state
     // (diagnostics, records, callbacks) is read via refs above.
-  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, canEdit, canRename])
+  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, columnWidths, canEdit, canRename])
 
   // Global filter: match key or any scalar field value (via summaryOf).
   const globalFilterFn = useMemo(
@@ -439,13 +509,16 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const table = useReactTable({
     data: filtered,
     columns,
+    defaultColumn: {
+      minSize: MIN_COLUMN_WIDTH,
+      maxSize: Number.MAX_SAFE_INTEGER,
+    },
     state: { sorting, columnSizing, globalFilter },
     onSortingChange: setSorting,
     onColumnSizingChange: updater => {
       const next = typeof updater === 'function' ? updater(columnSizingRef.current) : updater
       columnSizingRef.current = next
       setColumnSizing(next)
-      onColumnWidthsChange?.(next)
     },
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
@@ -453,17 +526,67 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     getFilteredRowModel: getFilteredRowModel(),
     getRowId: row => coordinateId(row.coordinate),
     globalFilterFn,
-    columnResizeMode: 'onEnd',
+    enableSortingRemoval: true,
+    enableMultiSort: false,
     enableColumnResizing: true,
   })
 
   const rows = table.getRowModel().rows
+  const displayItems = useMemo<TableDisplayItem[]>(() => {
+    const rowsById = new Map(rows.map(row => [coordinateId(row.original.coordinate), row]))
+    const organized = organizeRecordRows(rows.map(row => row.original), recordGroups ?? [])
+    if (organized.groups.length === 0) return rows.map(row => ({ kind: 'row', row }))
+
+    const items: TableDisplayItem[] = []
+    for (const view of organized.groups) {
+      items.push({ kind: 'group', view })
+      if (!collapsedGroupKeys?.has(view.group.id)) {
+        items.push(...view.records.map(record => ({
+          kind: 'row' as const,
+          row: rowsById.get(coordinateId(record.coordinate))!,
+          group: view.group,
+        })))
+      }
+    }
+    items.push({ kind: 'ungrouped', records: organized.ungrouped })
+    items.push(...organized.ungrouped.map(record => ({
+        kind: 'row' as const,
+        row: rowsById.get(coordinateId(record.coordinate))!,
+    })))
+    return items
+  }, [rows, recordGroups, collapsedGroupKeys])
+  const visibleRows = useMemo(
+    () => displayItems.flatMap(item => item.kind === 'row' ? [item.row] : []),
+    [displayItems],
+  )
+  const visibleCoordinates = useMemo(
+    () => visibleRows.map(row => row.original.coordinate),
+    [visibleRows],
+  )
+  const recordPointerDrag = useRecordPointerDrag({
+    rootRef: tableScrollRef,
+    records: data.records,
+    selectedCoordinates: selection?.filePath === data.file_path
+      ? recordSelectionCoordinates(selection)
+      : [],
+    onSelectDragSource: coordinate => onSelectRecord?.(coordinate, 'replace', visibleCoordinates),
+    onDropRecordOntoRecord,
+    onDropRecordIntoGroup,
+    onDropRecordIntoUngrouped,
+  })
   const rowVirtualizer = useVirtualizer({
-    count: rows.length,
+    count: displayItems.length,
     getScrollElement: () => tableScrollRef.current,
-    estimateSize: () => ROW_H,
+    estimateSize: index => (displayItems[index]?.kind === 'row' ? ROW_H : GROUP_ROW_H) * tableZoom,
+    getItemKey: index => {
+      const item = displayItems[index]
+      if (item?.kind === 'group') return `group:${item.view.group.id}`
+      if (item?.kind === 'ungrouped') return 'group:ungrouped'
+      return item?.row.id ?? index
+    },
     overscan: 12,
   })
+  useEffect(() => rowVirtualizer.measure(), [rowVirtualizer, tableZoom])
   const virtualRows = rowVirtualizer.getVirtualItems()
   const totalHeight = rowVirtualizer.getTotalSize()
   const padBefore = virtualRows.length > 0 ? virtualRows[0].start : 0
@@ -471,7 +594,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
   const revealTableSelection = (target: EditorSelection) => {
     if (target.filePath !== data.file_path) return
-    const rowIndex = rows.findIndex(row => sameCoordinate(row.original.coordinate, target.coordinate))
+    const rowIndex = displayItems.findIndex(item => (
+      item.kind === 'row' && sameCoordinate(item.row.original.coordinate, target.coordinate)
+    ))
     if (rowIndex < 0) return
     rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
     const columnId = target.kind === 'record'
@@ -481,7 +606,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     const key = tableCellKey(target.coordinate, columnId)
     let attempts = 0
     const reveal = () => {
-      const cell = tableScrollRef.current?.querySelector<HTMLElement>(
+      const scroller = tableScrollRef.current
+      const cell = scroller?.querySelector<HTMLElement>(
         `[data-table-cell-key="${CSS.escape(key)}"]`,
       )
       if (!cell && attempts < 4) {
@@ -489,7 +615,24 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         requestAnimationFrame(reveal)
         return
       }
-      cell?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      if (!cell || !scroller) return
+      // Vertical: fall back to browser nearest logic.
+      cell.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      if (columnId === 'key') return
+      // Horizontal: ensure the WHOLE column is visible, respecting the sticky
+      // Key column that overlays the left edge. Only scroll if either edge is
+      // clipped; center if the cell is wider than the visible area.
+      const scrollerRect = scroller.getBoundingClientRect()
+      const cellRect = cell.getBoundingClientRect()
+      const keyCol = scroller.querySelector<HTMLElement>('thead .sticky-key-column')
+      const leftOccluded = keyCol ? keyCol.getBoundingClientRect().right : scrollerRect.left
+      const visibleLeft = Math.max(scrollerRect.left, leftOccluded)
+      const visibleRight = scrollerRect.right
+      if (cellRect.right > visibleRight) {
+        scroller.scrollLeft += cellRect.right - visibleRight + 4
+      } else if (cellRect.left < visibleLeft) {
+        scroller.scrollLeft -= visibleLeft - cellRect.left + 4
+      }
     }
     reveal()
   }
@@ -500,12 +643,23 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     revealTableSelection(selection)
   }, [focusRequest])
 
+  // Any selection change (click, keyboard nav, inspector-driven) should
+  // reveal the selected cell so its full column stays visible under the
+  // sticky Key column.
+  const selectionKeyForReveal = selection
+    ? `${selection.filePath}::${coordinateId(selection.coordinate)}::${selection.kind === 'value' ? JSON.stringify(selection.fieldPath) : '__record__'}`
+    : null
+  useEffect(() => {
+    if (!selection) return
+    revealTableSelection(selection)
+  }, [selectionKeyForReveal])
+
   useEffect(() => {
     if (!firstRecordFocusRequest) return
     tableScrollRef.current?.focus({ preventScroll: true })
-    const first = rows[0]?.original.coordinate
+    const first = visibleRows[0]?.original.coordinate
     if (first) {
-      onSelectRecord?.(first)
+      onSelectRecord?.(first, 'replace', visibleCoordinates)
       revealTableSelection(recordSelection(data.file_path, first))
     }
     onFirstRecordFocusConsumed?.(firstRecordFocusRequest)
@@ -515,7 +669,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     if (selection) revealTableSelection(selection)
   // Row/column identity and selection are the only inputs that can move the target.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, rows.length, allFieldNames.join('\u001f')])
+  }, [selection, displayItems.length, allFieldNames.join('\u001f')])
 
   // Close context menu on Escape.
   useEffect(() => {
@@ -525,6 +679,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     return () => window.removeEventListener('keydown', h)
   }, [contextMenu])
 
+  const contextMenuCanAddToGroup = contextMenu !== null && (
+    ((recordGroups?.length ?? 0) > 0 && !!onDropRecordIntoGroup)
+    || (contextMenu.records.length > 1 && !!onCreateGroup)
+  )
+
   return (
     <div
       className="table-view"
@@ -533,7 +692,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         // Clicks that didn't land on a row deselect the current row, which
         // also closes the shared right-side inspector.
         const target = e.target as HTMLElement
-        if (!target.closest('.table-row') && !target.closest('.context-menu')) {
+        if (!target.closest('.table-row')
+          && !target.closest('.record-group-header')
+          && !target.closest('.record-ungrouped-header')
+          && !target.closest('.context-menu')) {
           onClearSelection?.()
         }
       }}
@@ -542,18 +704,51 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         <div
           className="table-scroll"
           ref={tableScrollRef}
+          onWheel={event => {
+            if (!event.ctrlKey) return
+            event.preventDefault()
+            setTableZoom(current => Math.max(0.7, Math.min(1.6,
+              Math.round((current + (event.deltaY < 0 ? 0.1 : -0.1)) * 10) / 10,
+            )))
+          }}
           tabIndex={0}
+          onPointerDown={recordPointerDrag.onPointerDown}
+          onClickCapture={recordPointerDrag.onClickCapture}
           onFocus={e => {
-            if (e.target !== e.currentTarget || selection || rows.length === 0) return
-            onSelectRecord?.(rows[0].original.coordinate)
+            if (e.target !== e.currentTarget || selection || visibleRows.length === 0) return
+            onSelectRecord?.(visibleRows[0].original.coordinate, 'replace', visibleCoordinates)
           }}
           onKeyDown={async e => {
             if (isNativeEditingTarget(e.target)) return
             if (!selection || selection.filePath !== data.file_path) return
 
-            const visibleCoordinates = rows.map(row => row.original.coordinate)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && visibleCoordinates.length > 0) {
+              e.preventDefault()
+              const first = visibleCoordinates[0]
+              const last = visibleCoordinates[visibleCoordinates.length - 1]
+              onSelectRecord?.(first, 'replace', visibleCoordinates)
+              onSelectRecord?.(last, 'range', visibleCoordinates)
+              return
+            }
             if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
               e.preventDefault()
+              if (
+                selection.kind === 'record'
+                && e.shiftKey
+                && (e.key === 'ArrowUp' || e.key === 'ArrowDown')
+              ) {
+                const currentIndex = visibleCoordinates.findIndex(item => sameCoordinate(item, selection.coordinate))
+                const nextIndex = Math.max(0, Math.min(
+                  visibleCoordinates.length - 1,
+                  currentIndex + (e.key === 'ArrowDown' ? 1 : -1),
+                ))
+                const nextCoordinate = visibleCoordinates[nextIndex]
+                if (currentIndex >= 0 && nextCoordinate) {
+                  onSelectRecord?.(nextCoordinate, 'range', visibleCoordinates)
+                  revealTableSelection(recordSelection(data.file_path, nextCoordinate))
+                }
+                return
+              }
               const next = moveTableSelection(
                 selection,
                 e.key as TableDirection,
@@ -562,7 +757,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               )
               if (next !== selection) {
                 setSyntaxEdit(null)
-                if (next.kind === 'record') onSelectRecord?.(next.coordinate)
+                if (next.kind === 'record') onSelectRecord?.(next.coordinate, 'replace', visibleCoordinates)
                 else onSelectValue?.(next.coordinate, next.fieldPath)
                 revealTableSelection(next)
               } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'ArrowRight') {
@@ -574,7 +769,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             if (e.key === 'Enter' && onEnterInspector) {
               if (selection.kind === 'value') {
                 const field = selectedTopLevelField(selection.fieldPath)
-                const selectedRow = rows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
+                const selectedRow = visibleRows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
                 const selectedCell = field && selectedRow ? fieldCell(selectedRow.original, field) : undefined
                 if (selectedCell?.value.kind === 'bool' && canEdit && !cellReadOnly(selectedCell)) {
                   e.preventDefault()
@@ -599,20 +794,20 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             if (selection.kind !== 'value') return
             const field = selectedTopLevelField(selection.fieldPath)
             if (!field) return
-            const selectedRow = rows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
+            const selectedRow = visibleRows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
             const selectedCell = selectedRow ? fieldCell(selectedRow.original, field) : undefined
             const editable = !!selectedCell && canEdit && !cellReadOnly(selectedCell)
+            const directlyEditable = editable && !isComplexValue(selectedCell?.value)
             const modified = e.ctrlKey || e.metaKey || e.altKey
             const lower = e.key.toLowerCase()
 
             if (e.key === 'Enter') {
-              const dropdown = tableScrollRef.current?.querySelector<HTMLSelectElement>(
-                `[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] select.searchable-select`,
+              const dropdown = tableScrollRef.current?.querySelector<HTMLInputElement>(
+                `[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] input.searchable-select`,
               )
               if (dropdown) {
                 e.preventDefault()
                 dropdown.focus({ preventScroll: true })
-                try { dropdown.showPicker() } catch { /* typing still searches the datalist */ }
                 return
               }
             }
@@ -628,7 +823,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               }
               return
             }
-            if ((e.ctrlKey || e.metaKey) && lower === 'v' && editable && onParseCellText && onWriteField) {
+            if ((e.ctrlKey || e.metaKey) && lower === 'v' && directlyEditable && onParseCellText && onWriteField) {
               e.preventDefault()
               try {
                 const text = await navigator.clipboard.readText()
@@ -641,7 +836,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               return
             }
 
-            const intent = editable && selectedCell
+            const intent = directlyEditable && selectedCell
               ? selectionEditIntentForKey(e.key, modified, selectedCell.value.kind)
               : null
             if (!intent) return
@@ -671,7 +866,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             }
           }}
         >
-          <table className="data-table" style={{ width: table.getTotalSize() }}>
+          <table className="data-table" style={{ width: table.getTotalSize(), zoom: tableZoom }}>
             <thead>
               {table.getHeaderGroups().map(hg => (
                 <tr key={hg.id}>
@@ -689,16 +884,52 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           className="th-sort-btn"
                           onClick={h.column.getToggleSortingHandler()}
                           disabled={!h.column.getCanSort()}
-                          title={h.column.getCanSort() ? '点击排序' : undefined}
+                          title={h.column.getCanSort()
+                            ? sort === 'asc'
+                              ? '当前主键升序；点击切换为降序'
+                              : sort === 'desc'
+                                ? '当前主键降序；点击取消排序'
+                                : '点击按主键升序'
+                            : undefined}
                         >
                           {flexRender(h.column.columnDef.header, h.getContext())}
-                          {sort === 'asc' && <Icon name="chevron-down" size={10} className="th-sort-icon asc" aria-hidden />}
-                          {sort === 'desc' && <Icon name="chevron-right" size={10} className="th-sort-icon desc" aria-hidden />}
+                          {sort === 'asc' && <Icon name="chevron-up" size={11} className="th-sort-icon asc" aria-hidden />}
+                          {sort === 'desc' && <Icon name="chevron-down" size={11} className="th-sort-icon desc" aria-hidden />}
                         </button>
                         {h.column.getCanResize() && (
                           <div
                             className="th-resizer"
-                            onMouseDown={h.getResizeHandler()}
+                            onPointerDown={event => {
+                              if (event.button !== 0) return
+                              event.preventDefault()
+                              event.currentTarget.setPointerCapture(event.pointerId)
+                              columnResizeRef.current = {
+                                pointerId: event.pointerId,
+                                columnId: h.column.id,
+                                startX: event.clientX,
+                                startWidth: h.getSize(),
+                              }
+                            }}
+                            onPointerMove={event => {
+                              if (columnResizeRef.current?.pointerId !== event.pointerId) return
+                              if (event.buttons === 0) {
+                                if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                                  event.currentTarget.releasePointerCapture(event.pointerId)
+                                }
+                                finishColumnResize(event.pointerId)
+                                return
+                              }
+                              updateColumnResize(event.pointerId, event.clientX)
+                            }}
+                            onPointerUp={event => {
+                              updateColumnResize(event.pointerId, event.clientX)
+                              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                                event.currentTarget.releasePointerCapture(event.pointerId)
+                              }
+                              finishColumnResize(event.pointerId)
+                            }}
+                            onPointerCancel={event => finishColumnResize(event.pointerId)}
+                            onLostPointerCapture={event => finishColumnResize(event.pointerId)}
                             onClick={e => e.stopPropagation()}
                             aria-hidden
                           />
@@ -716,15 +947,80 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 </tr>
               )}
               {virtualRows.map(vr => {
-                const row = rows[vr.index]
+                const item = displayItems[vr.index]
+                if (item.kind === 'group') {
+                  const collapsed = collapsedGroupKeys?.has(item.view.group.id) ?? false
+                  const containsSelection = item.view.records.some(record => (
+                    selectionOwnsRow(selection, data.file_path, record.coordinate)
+                  ))
+                  return (
+                    <tr key={`group:${item.view.group.id}`} className="table-group-row">
+                      <td colSpan={columns.length}>
+                        <RecordGroupHeader
+                          name={item.view.group.name}
+                          groupId={item.view.group.id}
+                          count={item.view.records.length}
+                          collapsed={collapsed}
+                          color={item.view.group.color}
+                          className={`table-record-group-header${containsSelection ? ' contains-selection' : ''}`}
+                          onToggle={() => onToggleGroup?.(item.view.group.id)}
+                          onRename={name => onRenameGroup?.(item.view.group.id, name)}
+                          onColorChange={color => onColorGroup?.(item.view.group.id, color)}
+                        />
+                      </td>
+                    </tr>
+                  )
+                }
+                if (item.kind === 'ungrouped') {
+                  const containsSelection = item.records.some(record => (
+                    selectionMatchesRecord(selection ?? null, data.file_path, record.coordinate)
+                  ))
+                  return (
+                    <tr key="group:ungrouped" className="table-group-row">
+                      <td colSpan={columns.length}>
+                        <RecordUngroupedHeader
+                          count={item.records.length}
+                          className={`table-record-group-header${containsSelection ? ' contains-selection' : ''}`}
+                        />
+                      </td>
+                    </tr>
+                  )
+                }
+                const row = item.row
                 const rowSev = recordSeverity(row.original.coordinate)
                 return (
                   <tr
                     key={row.id}
-                    className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
+                    data-index={vr.index}
+                    data-coordinate-id={coordinateId(row.original.coordinate)}
+                    data-record-draggable="true"
+                    data-record-drop-kind="record"
+                    data-record-label={recordKey(row.original)}
+                    ref={rowVirtualizer.measureElement}
+                    className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${item.group?.color ? ' has-group-color' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
+                    data-contains-selection={selectionOwnsRow(selection, data.file_path, row.original.coordinate) || undefined}
+                    style={recordGroupColorStyle(item.group?.color)}
                     onContextMenu={e => {
                       e.preventDefault()
-                      setContextMenu({ x: e.clientX, y: e.clientY, row: row.original })
+                      const clickedIsSelected = selection?.kind === 'record'
+                        && selection.filePath === data.file_path
+                        && selection.coordinates.some(coordinate => sameCoordinate(
+                          coordinate,
+                          row.original.coordinate,
+                        ))
+                      const records = clickedIsSelected
+                        ? [...selection.coordinates]
+                        : [row.original.coordinate]
+                      if (!clickedIsSelected) {
+                        onSelectRecord?.(row.original.coordinate, 'replace', visibleCoordinates)
+                      }
+                      setContextMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        row: row.original,
+                        records,
+                        showGroupTargets: false,
+                      })
                     }}
                   >
                     {row.getVisibleCells().map(cell => {
@@ -739,6 +1035,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       )
                       const classes = [
                         pillColumns.has(cell.column.id) ? 'pill-cell' : '',
+                        fieldPath && isComplexValue(fieldCell(row.original, cell.column.id)?.value) ? 'complex-cell' : '',
                         selected ? 'selected-cell' : '',
                       ].filter(Boolean).join(' ')
                       return (
@@ -749,6 +1046,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           style={{ width: cell.column.getSize() }}
                           aria-selected={selected || undefined}
                           onMouseDown={e => {
+                            if (e.button !== 0) return
                             // Runs before native selects open, so the inspector
                             // follows the cell even when its editor consumes click.
                             e.stopPropagation()
@@ -756,7 +1054,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                               tableScrollRef.current?.focus({ preventScroll: true })
                             }
                             if (fieldPath) onSelectValue?.(row.original.coordinate, fieldPath)
-                            else onSelectRecord?.(row.original.coordinate)
+                            else {
+                              const mode: RecordSelectionMode = e.shiftKey
+                                ? 'range'
+                                : (e.ctrlKey || e.metaKey ? 'toggle' : 'replace')
+                              onSelectRecord?.(row.original.coordinate, mode, visibleCoordinates)
+                            }
                           }}
                         >
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -819,7 +1122,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
       {contextMenu && (
         <div
-          className="context-menu"
+          className="context-menu table-context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={e => e.stopPropagation()}
           role="menu"
@@ -828,7 +1131,73 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             <Icon name="record" size={13} aria-hidden />
             跳转到记录视图
           </div>
-          {!readOnly && data.capabilities.can_edit_key && onRenameRecord && (
+          {contextMenuCanAddToGroup && (<>
+            <div className="ctx-sep" />
+            <button
+              type="button"
+              className="ctx-item"
+              role="menuitem"
+              aria-expanded={contextMenu.showGroupTargets}
+              onClick={() => setContextMenu(current => current
+                ? { ...current, showGroupTargets: !current.showGroupTargets }
+                : null)}
+            >
+              <Icon name="plus" size={13} aria-hidden />
+              添加到分组
+              <span className="ctx-item-tail">
+                {contextMenu.records.length > 1 && <span>{contextMenu.records.length} 条</span>}
+                <Icon name={contextMenu.showGroupTargets ? 'chevron-down' : 'chevron-right'} size={12} aria-hidden />
+              </span>
+            </button>
+            {contextMenu.showGroupTargets && (
+              <div className="ctx-group-targets" role="group" aria-label="选择分组">
+                {contextMenu.records.length > 1 && onCreateGroup && (
+                  <button
+                    type="button"
+                    className="ctx-item ctx-group-target"
+                    role="menuitem"
+                    onClick={() => {
+                      const records = contextMenu.records
+                      setContextMenu(null)
+                      onCreateGroup(records)
+                    }}
+                  >
+                    <Icon name="plus" size={13} aria-hidden />
+                    新建分组
+                  </button>
+                )}
+                {onDropRecordIntoGroup && recordGroups?.map(group => {
+                  const alreadyInGroup = contextMenu.records.every(coordinate => (
+                    group.records.some(member => sameCoordinate(member, coordinate))
+                  ))
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      className="ctx-item ctx-group-target"
+                      role="menuitem"
+                      disabled={alreadyInGroup}
+                      title={alreadyInGroup ? '所选记录已在此分组中' : undefined}
+                      onClick={() => {
+                        const records = contextMenu.records
+                        setContextMenu(null)
+                        onDropRecordIntoGroup(records, group.id)
+                      }}
+                    >
+                      <span
+                        className={`ctx-group-color${group.color ? ' has-color' : ''}`}
+                        style={recordGroupColorStyle(group.color)}
+                        aria-hidden
+                      />
+                      <span className="ctx-group-name">{group.name}</span>
+                      <span className="ctx-shortcut">{group.records.length}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </>)}
+          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_edit_key && onRenameRecord && (
             <div className="ctx-item" role="menuitem" onClick={async () => {
               const key = recordKey(contextMenu.row)
               const next = window.prompt('重命名 Key', key)?.trim()
@@ -841,7 +1210,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               重命名 Key
             </div>
           )}
-          {!readOnly && data.capabilities.can_reorder_records && onMoveRecord && sorting.length === 0 && !globalFilter.trim() && contextMenu.row.container_index > 0 && (
+          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_reorder_records && onMoveRecord && sorting.length === 0 && !globalFilter.trim() && contextMenu.row.container_index > 0 && (
             <div className="ctx-item" role="menuitem" onClick={async () => {
               const row = contextMenu.row
               setContextMenu(null)
@@ -851,7 +1220,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               上移一位
             </div>
           )}
-          {!readOnly && data.capabilities.can_reorder_records && onMoveRecord && sorting.length === 0 && !globalFilter.trim() && contextMenu.row.container_index + 1 < contextMenu.row.container_size && (
+          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_reorder_records && onMoveRecord && sorting.length === 0 && !globalFilter.trim() && contextMenu.row.container_index + 1 < contextMenu.row.container_size && (
             <div className="ctx-item" role="menuitem" onClick={async () => {
               const row = contextMenu.row
               setContextMenu(null)
@@ -861,7 +1230,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               下移一位
             </div>
           )}
-          {!readOnly && data.capabilities.can_reorder_records && onMoveRecord && sorting.length === 0 && !globalFilter.trim() && (
+          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_reorder_records && onMoveRecord && sorting.length === 0 && !globalFilter.trim() && (
             <div className="ctx-item" role="menuitem" onClick={async () => {
               const row = contextMenu.row
               const raw = window.prompt(
@@ -878,7 +1247,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               移动到位置…
             </div>
           )}
-          {!readOnly && data.capabilities.can_reorder_records && onSwapRecords && sorting.length === 0 && !globalFilter.trim() && (
+          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_reorder_records && onSwapRecords && sorting.length === 0 && !globalFilter.trim() && (
             <div className="ctx-item" role="menuitem" onClick={async () => {
               const row = contextMenu.row
               const raw = window.prompt('与记录 Key 交换位置')?.trim()
@@ -895,7 +1264,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               交换位置…
             </div>
           )}
-          {!readOnly && onTransferRecord && transferTargets.length > 0 && sorting.length === 0 && !globalFilter.trim() && (
+          {contextMenu.records.length === 1 && !readOnly && onTransferRecord && transferTargets.length > 0 && sorting.length === 0 && !globalFilter.trim() && (
             <div className="ctx-item" role="menuitem" onClick={() => {
               const row = contextMenu.row
               setContextMenu(null)
@@ -905,7 +1274,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               移动到其他文件…
             </div>
           )}
-          {!readOnly && data.capabilities.can_delete_record && onDeleteRecord && (
+          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_delete_record && onDeleteRecord && (
             <div className="ctx-item ctx-danger" role="menuitem" onClick={async () => {
               const key = recordKey(contextMenu.row)
               const coordinate = contextMenu.row.coordinate
@@ -967,12 +1336,16 @@ function inferredCellType(cell: RecordRow['fields'][number] | undefined): string
   if (!cell) return undefined
   const value = cell.value
   if (value.kind === 'enum') return value.value.enum_name
-  if (value.kind === 'ref') return cellRefTargetType(cell) ? `&${cellRefTargetType(cell)}` : 'ref'
+  if (value.kind === 'ref') return 'ref'
   if (value.kind === 'object') return value.value.actual_type
   if (value.kind === 'array') return 'array'
   if (value.kind === 'dict') return 'dict'
   if (value.kind === 'null') return 'null'
   return value.kind
+}
+
+function isComplexValue(value: FieldValue | undefined): boolean {
+  return value?.kind === 'object' || value?.kind === 'array' || value?.kind === 'dict'
 }
 
 
@@ -1085,13 +1458,15 @@ function CellSyntaxEditor({
 }
 
 function EditableCell({
-  value, editable, refTargetType, enumType, nullable, onCommit, onEditingFinished,
+  value, label, editable, refTargetType, enumType, nullable, declaredType, onCommit, onEditingFinished,
 }: {
   value: FieldValue
+  label?: string
   editable: boolean
   refTargetType?: string
   enumType?: string
   nullable?: boolean
+  declaredType?: string
   onCommit?: (next: FieldValue) => void
   onEditingFinished?: () => void
 }) {
@@ -1171,9 +1546,21 @@ function EditableCell({
       } : undefined}
       title={canEdit ? '双击编辑' : undefined}
     >
-      <DataCardCompact value={value} />
+      <DataCardCompact value={value} label={label} declaredType={declaredType} surface="table-cell" />
     </div>
   )
+}
+
+function selectionOwnsRow(
+  selection: EditorSelection | null | undefined,
+  filePath: string,
+  coordinate: RecordCoordinate,
+): boolean {
+  return !!selection
+    && selection.filePath === filePath
+    && (selection.kind === 'value'
+      ? sameCoordinate(selection.coordinate, coordinate)
+      : selection.coordinates.some(item => sameCoordinate(item, coordinate)))
 }
 
 function CellTextEditor({
@@ -1252,11 +1639,11 @@ function EditableKeyCell({
   return (
     <span
       className={`cell-key${editable ? ' editable' : ''}`}
-      onClick={editable ? e => {
+      onDoubleClick={editable ? e => {
         e.stopPropagation()
         setEditing(true)
       } : undefined}
-      title={editable ? '点击重命名 Key' : undefined}
+      title={editable ? '双击重命名 Key' : undefined}
     >
       {value}
     </span>

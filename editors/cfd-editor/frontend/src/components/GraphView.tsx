@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, mem
 import {
   ReactFlow, Background, Controls, MiniMap,
   Handle, Position, useUpdateNodeInternals, type NodeProps,
-  type Node, type Edge,
+  type Node, type Edge, type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { GraphData } from '../bindings/GraphData'
@@ -221,12 +221,6 @@ function CfdNode({ id, data }: NodeProps) {
 const CfdNodeMemo = memo(CfdNode)
 const nodeTypes = { cfd: CfdNodeMemo }
 
-function sameStringSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
-  if (a.size !== b.size) return false
-  for (const item of a) if (!b.has(item)) return false
-  return true
-}
-
 // ─── Edge handle id (outside component, stable reference) ────────────────────
 
 function edgeHandleId(
@@ -241,6 +235,8 @@ function edgeHandleId(
 interface Props {
   graphData: GraphData
   activeType?: string
+  enabledFieldsOverride?: readonly string[]
+  onEnabledFieldsChange?: (fields: string[]) => void
   fileCapabilities?: Record<string, WriterCapabilities>
   /** Full diagnostics list (not pre-filtered by file) — nodes in the graph
    *  can point at records that live outside the focus file. */
@@ -268,7 +264,7 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function GraphView({ graphData, activeType, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function GraphView({ graphData, activeType, enabledFieldsOverride, onEnabledFieldsChange, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
@@ -289,28 +285,12 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
     [topologySignature, availableFields, activeType],
   )
 
-  const focusFileKey = useMemo(
-    () => graphData.nodes.find(n => n.in_focus_file)?.file_path ?? '',
-    [graphData.nodes],
-  )
-  const [enabledFieldsOverride, setEnabledFieldsOverride] = useState<Set<string> | null>(null)
   const enabledFields = useMemo(
-    () => enabledFieldsOverride ?? new Set(defaultFields),
-    [enabledFieldsOverride, defaultFields],
+    () => enabledFieldsOverride === undefined
+      ? new Set(defaultFields)
+      : new Set(enabledFieldsOverride.filter(field => availableFields.includes(field))),
+    [enabledFieldsOverride, defaultFields, availableFields],
   )
-
-  useEffect(() => {
-    setEnabledFieldsOverride(null)
-  }, [activeType, focusFileKey])
-
-  useEffect(() => {
-    setEnabledFieldsOverride(prev => {
-      if (prev === null) return null
-      const next = new Set<string>()
-      for (const f of availableFields) if (prev.has(f)) next.add(f)
-      return sameStringSet(prev, next) ? prev : next
-    })
-  }, [availableFields])
 
   const [filterPanelOpen, setFilterPanelOpen] = useState(false)
 
@@ -459,6 +439,21 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
     ),
     [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, measureHandles, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities, selectedCoordinate, diagnosticIndex, onDiagnosticBadgeClick]
   )
+  const reactFlowRef = useRef<ReactFlowInstance<Node, Edge> | null>(null)
+
+  useEffect(() => {
+    if (rfNodes.length === 0) return
+    let fitFrame = 0
+    const measureFrame = requestAnimationFrame(() => {
+      fitFrame = requestAnimationFrame(() => {
+        void reactFlowRef.current?.fitView({ padding: 0.25, minZoom: 0.2, maxZoom: 1.2 })
+      })
+    })
+    return () => {
+      cancelAnimationFrame(measureFrame)
+      cancelAnimationFrame(fitFrame)
+    }
+  }, [positions, rfNodes.length])
 
   const rfEdges: Edge[] = useMemo(() => {
     const fwdEdges: Edge[] = forwardEdges
@@ -577,11 +572,9 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
   }, [])
 
   function toggleField(name: string) {
-    setEnabledFieldsOverride(prev => {
-      const next = new Set(prev ?? defaultFields)
-      if (next.has(name)) next.delete(name); else next.add(name)
-      return next
-    })
+    const next = new Set(enabledFields)
+    if (next.has(name)) next.delete(name); else next.add(name)
+    onEnabledFieldsChange?.(Array.from(next).sort())
   }
 
   const allOn = enabledFields.size === availableFields.length
@@ -646,8 +639,14 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
             }}
             onPaneClick={() => onClearSelection?.()}
             onViewportChange={handleViewportChange}
-            fitView
-            fitViewOptions={{ padding: 0.15, minZoom: 0.2, maxZoom: 1.2 }}
+            onInit={instance => {
+              reactFlowRef.current = instance
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  void instance.fitView({ padding: 0.25, minZoom: 0.2, maxZoom: 1.2 })
+                })
+              })
+            }}
             proOptions={{ hideAttribution: true }}
             minZoom={0.1}
             maxZoom={2}
@@ -655,6 +654,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
             <Background color="var(--graph-bg-grid)" gap={24} size={1} />
             <Controls showInteractive={false} />
             <MiniMap
+              style={{ width: 88, height: 60 }}
               nodeColor={n => {
                 const { graphNode } = n.data as NodeData
                 return graphNode.in_focus_file ? '#8a93a3' : '#3a3f48'
@@ -686,7 +686,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, diagnostics
                   <span>字段过滤</span>
                   <button
                     className="btn btn-link"
-                    onClick={() => setEnabledFieldsOverride(allOn ? new Set() : new Set(availableFields))}
+                    onClick={() => onEnabledFieldsChange?.(allOn ? [] : [...availableFields])}
                   >
                     {allOn ? '全部隐藏' : noneOn ? '全部显示' : '反选'}
                   </button>
