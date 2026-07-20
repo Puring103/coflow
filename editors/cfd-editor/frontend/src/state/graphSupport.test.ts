@@ -7,6 +7,8 @@ function record(value: RecordRow['fields'][number]['value'], annotation: FieldAn
   return {
     coordinate: { actual_type: 'Npc', key: 'Npc_001' },
     display_path: 'Npc.Npc_001',
+    container_index: 0,
+    container_size: 1,
     fields: [{ name: 'reward', value, annotation }],
     field_index: { reward: 0 },
     field_summaries: { reward: '' },

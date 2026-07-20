@@ -19,6 +19,8 @@ const coordinate = (key: string): RecordCoordinate => ({ actual_type: 'Item', ke
 const row = (key: string): RecordRow => ({
   coordinate: coordinate(key),
   display_path: key,
+  container_index: 0,
+  container_size: 1,
   fields: [],
   field_index: {},
   field_summaries: {},
