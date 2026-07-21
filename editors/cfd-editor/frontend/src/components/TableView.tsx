@@ -798,7 +798,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             cellRangeDrag.onPointerDown(event)
             recordPointerDrag.onPointerDown(event)
           }}
-          onClickCapture={recordPointerDrag.onClickCapture}
+          onClickCapture={event => {
+            cellRangeDrag.onClickCapture(event)
+            if (!event.isPropagationStopped()) recordPointerDrag.onClickCapture(event)
+          }}
           onFocus={e => {
             if (e.target !== e.currentTarget || selection || visibleRows.length === 0) return
             onSelectRecord?.(visibleRows[0].original.coordinate, 'replace', visibleCoordinates)
