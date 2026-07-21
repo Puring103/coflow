@@ -1272,7 +1272,8 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 .view-field-row:hover { background: var(--bg-1); }
 .view-field-row.selected { background: var(--bg-1); }
 .view-field-row.dragging { opacity: 0.4; }
-.view-field-row label { display: flex; align-items: center; gap: 6px; flex: 1; cursor: pointer; }
+.view-field-label { display: flex; align-items: center; gap: 6px; flex: 1; }
+.view-field-label input { cursor: pointer; }
 .view-field-grip { color: var(--text-mute); }
 .view-editor-actions {
   display: flex;

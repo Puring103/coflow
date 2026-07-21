@@ -114,8 +114,8 @@ export function ViewEditorDialog({
 
   function onRowPointerDown(field: string, event: ReactPointerEvent<HTMLElement>) {
     if (event.button !== 0) return
-    // Let the checkbox/label handle its own clicks.
-    if ((event.target as HTMLElement).closest('input, label')) return
+    // The checkbox handles its own toggle; don't start a drag from it.
+    if ((event.target as HTMLElement).closest('input[type="checkbox"]')) return
     dragStateRef.current = { field, startY: event.clientY, moved: false }
     ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   }
@@ -136,6 +136,10 @@ export function ViewEditorDialog({
     const state = dragStateRef.current
     if (state) {
       try { (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId) } catch { /* already released */ }
+      // A press without movement on the row body toggles selection.
+      if (!state.moved && !(event.target as HTMLElement).closest('input[type="checkbox"]')) {
+        toggleSelected(state.field)
+      }
     }
     dragStateRef.current = null
     setDragField(null)
@@ -232,14 +236,15 @@ export function ViewEditorDialog({
                   onPointerUp={onRowPointerUp}
                   onPointerCancel={onRowPointerUp}
                 >
-                  <label onPointerDown={e => e.stopPropagation()}>
+                  <span className="view-field-label">
                     <input
                       type="checkbox"
                       checked={selected.has(field)}
                       onChange={() => toggleSelected(field)}
+                      onClick={e => e.stopPropagation()}
                     />
                     {field}
-                  </label>
+                  </span>
                   <Icon name="grip" size={13} className="view-field-grip" aria-hidden />
                 </li>
               ))}
