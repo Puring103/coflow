@@ -155,6 +155,8 @@ pub struct FieldShapeInfo {
     pub nullable: bool,
     pub polymorphic_types: Vec<String>,
     pub collection_item: Option<Box<Self>>,
+    pub object_type: Option<String>,
+    pub field_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

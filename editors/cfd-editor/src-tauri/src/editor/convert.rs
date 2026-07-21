@@ -215,6 +215,8 @@ fn annotation_for_value(
         annotation
             .polymorphic_types
             .clone_from(&shape.polymorphic_types);
+        annotation.object_type.clone_from(&shape.object_type);
+        annotation.field_order.clone_from(&shape.field_order);
         // Preload the element template when the declared type is a
         // collection. Filled here (not only in the Array/Dict arms below) so
         // a nullable / empty collection still carries the template the
@@ -237,6 +239,8 @@ fn annotation_for_value(
             annotation.enum_int_value = Some(enum_value.value);
         }
         CfdValue::Object(object) => {
+            annotation.object_type = Some(object.actual_type().to_string());
+            annotation.field_order = ctx.queries.type_field_names(object.actual_type());
             for (name, child) in object.fields() {
                 let child_shape = ctx.queries.field_shape(object.actual_type(), name.as_str());
                 let child_path = path.clone().field(name.as_str());
@@ -290,6 +294,8 @@ fn element_template(item_shape: &FieldShapeInfo) -> FieldAnnotation {
         enum_type: item_shape.enum_type.clone(),
         nullable: item_shape.nullable,
         polymorphic_types: item_shape.polymorphic_types.clone(),
+        object_type: item_shape.object_type.clone(),
+        field_order: item_shape.field_order.clone(),
         ..FieldAnnotation::default()
     };
     if let Some(inner) = item_shape.collection_item.as_deref() {

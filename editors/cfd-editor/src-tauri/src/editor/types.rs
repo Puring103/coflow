@@ -335,6 +335,12 @@ pub struct FieldAnnotation {
     /// a concrete type when materializing a null polymorphic field.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub polymorphic_types: Vec<String>,
+    /// Concrete object type when schema context determines one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_type: Option<String>,
+    /// Direct object fields in inherited schema declaration order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_order: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub children: BTreeMap<String, Self>,
 }
@@ -352,6 +358,8 @@ impl FieldAnnotation {
             && !self.read_only
             && self.item_annotation.is_none()
             && self.polymorphic_types.is_empty()
+            && self.object_type.is_none()
+            && self.field_order.is_empty()
             && self.children.is_empty()
     }
 }

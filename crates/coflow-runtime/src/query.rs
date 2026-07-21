@@ -302,6 +302,15 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
+    pub fn type_field_names(self, actual_type: &str) -> Vec<String> {
+        self.session
+            .schema()
+            .resolve_type(actual_type)
+            .map(|meta| meta.all_fields().map(|field| field.name.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    #[must_use]
     pub fn spread_source(
         self,
         coordinate: &RecordCoordinate,
@@ -489,6 +498,20 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         }
         _ => None,
     };
+    let object_type = match non_nullable {
+        CftValueType::Object(name) => schema
+            .resolve_type(name)
+            .filter(|meta| !meta.is_abstract)
+            .map(|meta| meta.name.to_string()),
+        _ => None,
+    };
+    let field_order = match non_nullable {
+        CftValueType::Object(name) => schema
+            .resolve_type(name)
+            .map(|meta| meta.all_fields().map(|field| field.name.to_string()).collect())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
     FieldShapeInfo {
         display_label: ty.display_label(),
         ref_target_type,
@@ -496,5 +519,7 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         nullable: matches!(ty, CftValueType::Nullable(_)),
         polymorphic_types,
         collection_item,
+        object_type,
+        field_order,
     }
 }

@@ -239,6 +239,8 @@ function annotationForDraft(field: CreateRecordFieldDraft): FieldAnnotation | nu
     read_only: base?.read_only ?? false,
     item_annotation: base?.item_annotation ?? null,
     polymorphic_types: base?.polymorphic_types ?? [],
+    object_type: base?.object_type ?? null,
+    field_order: base?.field_order ?? [],
     children: base?.children ?? {},
   }
 }
