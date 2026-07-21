@@ -92,7 +92,7 @@ import {
   renameRecordGroup,
   replaceGroupedCoordinate,
 } from './state/manualRecordGroups'
-import { recordsSupportGraph } from './state/graphSupport'
+import { recordsSupportGraph, relationFieldNames } from './state/graphSupport'
 import {
   DEFAULT_RECORD_VIEW_ID,
   DEFAULT_TABLE_VIEW_ID,
@@ -1595,9 +1595,15 @@ export default function App() {
     () => activeFileData?.columns.map(column => column.name) ?? [],
     [activeFileData],
   )
+  // Relations are derived from record annotations (not the graph, which may
+  // not be loaded when the dialog opens from the table view).
   const viewEditorRelations = useMemo(
-    () => activeGraph?.available_fields ?? [],
-    [activeGraph],
+    () => activeFileData
+      ? relationFieldNames(
+          activeFileData.records.filter(row => recordActualType(row) === activeType),
+        )
+      : [],
+    [activeFileData, activeType],
   )
   // Create or update a custom view: merge into the (file,type) list and save.
   const submitViewConfig = useCallback((view: ViewConfig) => {

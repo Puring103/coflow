@@ -18,15 +18,6 @@ interface Props {
   onClose: () => void
 }
 
-/** Move an item within a list, returning a new array. */
-function move<T>(list: T[], from: number, to: number): T[] {
-  if (from === to || to < 0 || to >= list.length) return list
-  const next = list.slice()
-  const [item] = next.splice(from, 1)
-  next.splice(to, 0, item)
-  return next
-}
-
 /** Toggle membership while preserving selection order (append on add). */
 function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter(v => v !== value) : [...list, value]
@@ -42,36 +33,35 @@ export function ViewEditorDialog({
 }: Props) {
   const [name, setName] = useState(initial?.name ?? '')
   const [kind, setKind] = useState<ViewKind>(initial?.kind ?? 'table')
-  // Ordered selections; seed from initial (columns for table, fields for graph).
-  const [fields, setFields] = useState<string[]>(
+  // Which fields are checked (membership only; ordering is separate).
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(
     initial ? (initial.kind === 'table' ? initial.columns : initial.fields) : [],
-  )
+  ))
+  // The full field list in display order. Drag reorders this in place; a
+  // field's row never moves just because it was (un)checked. Seeded so any
+  // saved order comes first, then remaining fields in schema order.
+  const [order, setOrder] = useState<string[]>(() => {
+    const saved = initial ? (initial.kind === 'table' ? initial.columns : initial.fields) : []
+    const rest = availableFields.filter(f => !saved.includes(f))
+    return [...saved.filter(f => availableFields.includes(f)), ...rest]
+  })
   const [relations, setRelations] = useState<string[]>(initial?.relations ?? [])
   const [groupFilter, setGroupFilter] = useState<string | null>(initial?.group_filter ?? null)
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragField, setDragField] = useState<string | null>(null)
 
   const trimmedName = name.trim()
   const relationSet = useMemo(() => new Set(relations), [relations])
-  // Graph views: fields exclude already-selected relations (a relation is
-  // shown as an edge, not a card field).
-  const fieldChoices = useMemo(
-    () => (kind === 'graph' ? availableFields.filter(f => !relationSet.has(f)) : availableFields),
-    [availableFields, kind, relationSet],
-  )
-  // Selected first (in chosen order), then the rest — so the order is visible
-  // and drag-reorderable.
-  const selectedFields = useMemo(
-    () => fields.filter(f => fieldChoices.includes(f)),
-    [fields, fieldChoices],
-  )
-  const unselectedFields = useMemo(
-    () => fieldChoices.filter(f => !fields.includes(f)),
-    [fieldChoices, fields],
+  // Graph views: fields exclude already-selected relations (a relation renders
+  // as an edge, not a card field). Preserves the persistent drag order.
+  const fieldRows = useMemo(
+    () => order.filter(f => availableFields.includes(f) && !(kind === 'graph' && relationSet.has(f))),
+    [order, availableFields, kind, relationSet],
   )
 
   function submit() {
     if (!trimmedName) return
-    const cleanFields = selectedFields
+    // Output only checked fields, in display order.
+    const cleanFields = fieldRows.filter(f => selected.has(f))
     onSubmit({
       id: initial?.id ?? newViewId(),
       name: trimmedName,
@@ -85,14 +75,27 @@ export function ViewEditorDialog({
     onClose()
   }
 
-  function onDrop(targetIndex: number) {
-    if (dragIndex === null) return
-    setFields(cur => {
-      const ordered = cur.filter(f => fieldChoices.includes(f))
-      const rest = cur.filter(f => !fieldChoices.includes(f))
-      return [...move(ordered, dragIndex, targetIndex), ...rest]
+  function toggleSelected(field: string) {
+    setSelected(cur => {
+      const next = new Set(cur)
+      if (next.has(field)) next.delete(field); else next.add(field)
+      return next
     })
-    setDragIndex(null)
+  }
+
+  // Drop the dragged field immediately before `targetField` in the full order.
+  function onDropOn(targetField: string) {
+    const dragged = dragField
+    if (dragged === null || dragged === targetField) { setDragField(null); return }
+    setOrder(cur => {
+      const without = cur.filter(f => f !== dragged)
+      const to = without.indexOf(targetField)
+      if (to < 0) return cur
+      const next = without.slice()
+      next.splice(to, 0, dragged)
+      return next
+    })
+    setDragField(null)
   }
 
   return (
@@ -152,7 +155,12 @@ export function ViewEditorDialog({
                         onChange={() => {
                           setRelations(cur => toggle(cur, relation))
                           // Drop from field selection if it was chosen there.
-                          setFields(cur => cur.filter(f => f !== relation))
+                          setSelected(cur => {
+                            if (!cur.has(relation)) return cur
+                            const next = new Set(cur)
+                            next.delete(relation)
+                            return next
+                          })
                         }}
                       />
                       {relation}
@@ -166,44 +174,38 @@ export function ViewEditorDialog({
             </div>
           )}
 
-          {/* Fields (columns for table; card fields for graph). Drag to order. */}
+          {/* Fields (columns for table; card fields for graph). Drag the grip
+              handle to reorder; the row order is independent of checked state. */}
           <div className="view-editor-field">
             <span>{kind === 'graph' ? '显示字段' : '显示列'}（拖动排序）</span>
             <ul className="view-field-list">
-              {selectedFields.map((field, index) => (
+              {fieldRows.map(field => (
                 <li
                   key={field}
-                  className={`view-field-row selected${dragIndex === index ? ' dragging' : ''}`}
+                  className={`view-field-row${selected.has(field) ? ' selected' : ''}${dragField === field ? ' dragging' : ''}`}
                   draggable
-                  onDragStart={() => setDragIndex(index)}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={() => onDrop(index)}
-                  onDragEnd={() => setDragIndex(null)}
+                  onDragStart={e => {
+                    setDragField(field)
+                    e.dataTransfer.effectAllowed = 'move'
+                    // Firefox/WebView require data to be set for drag to start.
+                    e.dataTransfer.setData('text/plain', field)
+                  }}
+                  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+                  onDrop={e => { e.preventDefault(); onDropOn(field) }}
+                  onDragEnd={() => setDragField(null)}
                 >
                   <label>
                     <input
                       type="checkbox"
-                      checked
-                      onChange={() => setFields(cur => cur.filter(f => f !== field))}
+                      checked={selected.has(field)}
+                      onChange={() => toggleSelected(field)}
                     />
                     {field}
                   </label>
                   <Icon name="grip" size={13} className="view-field-grip" aria-hidden />
                 </li>
               ))}
-              {unselectedFields.map(field => (
-                <li key={field} className="view-field-row">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={false}
-                      onChange={() => setFields(cur => toggle(cur, field))}
-                    />
-                    {field}
-                  </label>
-                </li>
-              ))}
-              {fieldChoices.length === 0 && (
+              {fieldRows.length === 0 && (
                 <li className="view-editor-empty">该类型没有可选字段</li>
               )}
             </ul>
