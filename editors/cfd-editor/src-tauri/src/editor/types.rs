@@ -143,6 +143,7 @@ pub struct FileTypeOption {
     pub name: String,
     pub display_name: String,
     pub record_count: usize,
+    pub is_singleton: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
