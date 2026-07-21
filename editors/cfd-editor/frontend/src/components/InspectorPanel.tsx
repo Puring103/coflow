@@ -82,6 +82,9 @@ interface Props {
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
   focusRequest?: number
   onExitKeyboardNavigation?: () => void
+  /** Custom view: fields visible by default. undefined => show all (default
+   *  views); a set restricts fields, with a header toggle to reveal the rest. */
+  visibleFields?: ReadonlySet<string>
 }
 
 const MIN_W = 280
@@ -109,8 +112,13 @@ export function InspectorPanel({
   onDiagnosticBadgeClick,
   focusRequest,
   onExitKeyboardNavigation,
+  visibleFields,
 }: Props) {
   const [dragging, setDragging] = useState(false)
+  // Session-only toggle: in a custom view, reveal all fields (incl. hidden).
+  // Not persisted; resets whenever the visible-field set changes (view switch).
+  const [showAllFields, setShowAllFields] = useState(false)
+  useEffect(() => { setShowAllFields(false) }, [visibleFields])
   const [expandedByRecord, setExpandedByRecord] = useState<ExpandedPathMap>(() => new Map())
   const widthRef = useRef(width)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -208,9 +216,19 @@ export function InspectorPanel({
   const selectedTopField = selection?.kind === 'value' && selection.fieldPath[0]?.kind === 'field'
     ? selection.fieldPath[0].value
     : null
+  // In a custom view, restrict to the view's fields unless the user toggled
+  // "show all". A specific selected top field always wins.
+  const restrictFields = !!visibleFields && !showAllFields
+  const hiddenFieldCount = visibleFields && record
+    ? record.fields.filter(field => !visibleFields.has(field.name)).length
+    : 0
   const inspectorFields = selectedTopField && record
     ? record.fields.filter(field => field.name === selectedTopField)
-    : record?.fields ?? []
+    : record
+      ? (restrictFields
+          ? record.fields.filter(field => visibleFields!.has(field.name))
+          : record.fields)
+      : []
   const inspectingValue = selection?.kind === 'value'
   const expansionOwner = data && coordinate
     ? `${data.file_path}:${coordinateId(coordinate)}`
@@ -315,6 +333,17 @@ export function InspectorPanel({
           <Icon name="chevron-right" size={13} className={collapsed ? '' : 'icon-flip-h'} />
         </button>
         {!collapsed && <span className="inspector-title">{inspectingValue ? '单元格详情' : '记录详情'}</span>}
+        {!collapsed && visibleFields && !inspectingValue && !selectedTopField && hiddenFieldCount > 0 && (
+          <button
+            className={`btn btn-icon inspector-showall-btn${showAllFields ? ' active' : ''}`}
+            onClick={() => setShowAllFields(show => !show)}
+            title={showAllFields ? '仅显示视图字段' : `显示全部字段（含隐藏的 ${hiddenFieldCount} 个）`}
+            aria-label={showAllFields ? '仅显示视图字段' : '显示全部字段'}
+            aria-pressed={showAllFields}
+          >
+            <Icon name="filter" size={13} />
+          </button>
+        )}
         {!collapsed && (
           <button
             className="btn btn-icon"

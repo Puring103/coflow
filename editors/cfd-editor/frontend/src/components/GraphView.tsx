@@ -237,6 +237,8 @@ interface Props {
   activeType?: string
   enabledFieldsOverride?: readonly string[]
   onEnabledFieldsChange?: (fields: string[]) => void
+  /** Custom graph view: restrict node card fields to this set (undefined = all). */
+  visibleCardFields?: ReadonlySet<string>
   fileCapabilities?: Record<string, WriterCapabilities>
   /** Full diagnostics list (not pre-filtered by file) — nodes in the graph
    *  can point at records that live outside the focus file. */
@@ -264,14 +266,19 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function GraphView({ graphData, activeType, enabledFieldsOverride, onEnabledFieldsChange, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function GraphView({ graphData, activeType, enabledFieldsOverride, onEnabledFieldsChange, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
-      nodes: graphData.nodes.map(graphNodeView),
+      nodes: graphData.nodes.map(node => {
+        const view = graphNodeView(node)
+        if (!visibleCardFields) return view
+        // Custom graph view: show only the selected card fields.
+        return { ...view, fields: view.fields.filter(cell => visibleCardFields.has(cell.name)) }
+      }),
       edges: graphData.edges.map(graphEdgeView),
     }),
-    [graphData],
+    [graphData, visibleCardFields],
   )
   const topologySignature = useMemo(() => graphTopologySignature(graph), [graph])
 

@@ -1272,6 +1272,7 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   border-top: 1px solid var(--border);
 }
 .ctx-item.danger { color: var(--red); }
+.inspector-showall-btn.active { color: var(--accent); background: var(--bg-3); }
 .document-readonly {
   display: inline-flex;
   align-items: center;
