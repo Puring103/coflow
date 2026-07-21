@@ -1557,6 +1557,43 @@ export default function App() {
     () => (resolvedView ? visibleFieldsFor(resolvedView) : undefined),
     [resolvedView],
   )
+  // Custom-view group filter applied to the table's records (whole-list
+  // filter, not a collapse). Returns the file data unchanged when the view
+  // has no valid group filter.
+  const viewFilteredFileData = useMemo(() => {
+    if (!activeFileData || !resolvedView || !resolvedView.groupFilter) return activeFileData
+    const predicate = groupFilterPredicate(resolvedView, recordGroups)
+    return { ...activeFileData, records: activeFileData.records.filter(row => predicate(row.coordinate)) }
+  }, [activeFileData, resolvedView, recordGroups])
+  // Graph root filter: keep group-member roots plus everything reachable from
+  // them via edges (only the roots are constrained, per design §4.2).
+  const viewFilteredGraph = useMemo(() => {
+    if (!activeGraph || !resolvedView || !resolvedView.groupFilter) return activeGraph
+    const predicate = groupFilterPredicate(resolvedView, recordGroups)
+    const coordKey = (c: { actual_type: string; key: string }) => `${c.actual_type}${c.key}`
+    const keep = new Set<string>()
+    for (const node of activeGraph.nodes) {
+      if (predicate(node.coordinate)) keep.add(coordKey(node.coordinate))
+    }
+    // Expand along edges until no new reachable target is added.
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const edge of activeGraph.edges) {
+        if (keep.has(coordKey(edge.source)) && !keep.has(coordKey(edge.target))) {
+          keep.add(coordKey(edge.target))
+          grew = true
+        }
+      }
+    }
+    return {
+      ...activeGraph,
+      nodes: activeGraph.nodes.filter(node => keep.has(coordKey(node.coordinate))),
+      edges: activeGraph.edges.filter(
+        edge => keep.has(coordKey(edge.source)) && keep.has(coordKey(edge.target)),
+      ),
+    }
+  }, [activeGraph, resolvedView, recordGroups])
   // Choices offered by the view editor dialog.
   const viewEditorFields = useMemo(
     () => activeFileData?.columns.map(column => column.name) ?? [],
@@ -2510,12 +2547,12 @@ export default function App() {
               <div className="view-container" ref={viewContainerRef}>
                 {currentRoute.view === 'table' && (
                   <TableView
-                    data={activeFileData}
+                    data={viewFilteredFileData ?? activeFileData}
                     activeType={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     searchQuery={globalSearch}
-                    recordGroups={recordGroups}
+                    recordGroups={resolvedView?.groupFilter ? [] : recordGroups}
                     collapsedGroupKeys={collapsedRecordGroups}
                     onToggleGroup={toggleRecordGroup}
                     onDropRecordOntoRecord={dropRecordOntoRecord}
@@ -2545,6 +2582,7 @@ export default function App() {
                     onDiagnosticBadgeClick={tableOnBadgeClick}
                     columnWidths={tableColumnWidths}
                     onColumnWidthsChange={tableOnColumnWidthsChange}
+                    visibleColumns={resolvedView?.kind === 'table' && !resolvedView.isDefault ? resolvedView.columns : undefined}
                     onEnterInspector={tableOnEnterInspector}
                     focusRequest={tableFocusRequest}
                     firstRecordFocusRequest={firstRecordFocusRequest}
@@ -2605,9 +2643,10 @@ export default function App() {
                 {currentRoute.view === 'graph' && (
                   activeGraph ? (
                     <GraphView
-                      graphData={activeGraph}
+                      graphData={viewFilteredGraph ?? activeGraph}
                       activeType={activeType}
-                      enabledFieldsOverride={resolvedView?.kind === 'graph' ? resolvedView.fields : undefined}
+                      enabledFieldsOverride={resolvedView?.kind === 'graph' && !resolvedView.isDefault ? resolvedView.relations : undefined}
+                      visibleCardFields={visibleFields}
                       fileCapabilities={fileCapabilities}
                       diagnostics={project?.diagnostics}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}
@@ -2682,6 +2721,7 @@ export default function App() {
           }}
           focusRequest={inspectorFocusRequest}
           onExitKeyboardNavigation={inspectorOnExitKeyboardNavigation}
+          visibleFields={visibleFields}
         />
         </div>
         {project && (

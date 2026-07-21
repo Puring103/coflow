@@ -130,6 +130,8 @@ interface Props {
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
   columnWidths?: ColumnSizingState
   onColumnWidthsChange?: (widths: ColumnSizingState) => void
+  /** Custom table view: ordered visible columns. undefined => all columns. */
+  visibleColumns?: readonly string[]
   onEnterInspector?: () => void
   focusRequest?: number
   firstRecordFocusRequest?: number
@@ -156,7 +158,7 @@ interface TableContextMenu {
   showGroupTargets: boolean
 }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
@@ -244,10 +246,17 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     severityForCoordinate(diagnostics, data.file_path, coordinate)
 
   const allFieldNames = useMemo(
-    () => data.columns
-      .filter(column => column.type_names.includes(activeType))
-      .map(column => column.name),
-    [data.columns, activeType]
+    () => {
+      const available = data.columns
+        .filter(column => column.type_names.includes(activeType))
+        .map(column => column.name)
+      if (!visibleColumns) return available
+      // Custom view: restrict to selected columns, in the selected order,
+      // dropping any that no longer exist on the type.
+      const availableSet = new Set(available)
+      return visibleColumns.filter(name => availableSet.has(name))
+    },
+    [data.columns, activeType, visibleColumns]
   )
 
   // Ref to the latest `data` so structural memos below (pill columns,
