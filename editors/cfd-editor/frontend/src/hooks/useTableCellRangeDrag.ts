@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
+import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent, RefObject } from 'react'
 
 interface Options {
   rootRef: RefObject<HTMLElement | null>
@@ -12,6 +12,7 @@ const EDGE = 28
 export function useTableCellRangeDrag(options: Options) {
   const optionsRef = useRef(options)
   const cleanupRef = useRef<(() => void) | null>(null)
+  const suppressClickRef = useRef(false)
   optionsRef.current = options
   useEffect(() => () => cleanupRef.current?.(), [])
 
@@ -82,12 +83,24 @@ export function useTableCellRangeDrag(options: Options) {
       move.preventDefault()
       selectAtPoint()
     }
-    const onUp = () => cleanup()
+    const onUp = () => {
+      // Pointer release is followed by a synthetic click. Do not allow that
+      // click to reach the table's blank-area selection handler after a drag.
+      if (dragging) suppressClickRef.current = true
+      cleanup()
+      if (dragging) window.setTimeout(() => { suppressClickRef.current = false }, 0)
+    }
     document.addEventListener('pointermove', onMove, { passive: false })
     document.addEventListener('pointerup', onUp)
     document.addEventListener('pointercancel', onUp)
     cleanupRef.current = cleanup
   }
 
-  return { onPointerDown }
+  const onClickCapture = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!suppressClickRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  return { onPointerDown, onClickCapture }
 }
