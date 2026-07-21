@@ -186,8 +186,8 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
 }
 
 export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
-  table_column_widths: {},
-  graph_enabled_fields: {},
+  views: {},
+  default_table_column_widths: {},
   record_groups: {
     'data/item.cfd': {
       Item: [{
