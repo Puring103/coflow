@@ -32,6 +32,7 @@ import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
+import type { ViewConfig } from './bindings/ViewConfig'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
@@ -91,6 +92,16 @@ import {
   replaceGroupedCoordinate,
 } from './state/manualRecordGroups'
 import { recordsSupportGraph } from './state/graphSupport'
+import {
+  DEFAULT_RECORD_VIEW_ID,
+  DEFAULT_TABLE_VIEW_ID,
+  DEFAULT_GRAPH_VIEW_ID,
+  viewTabsFor,
+  resolveView,
+  visibleFieldsFor,
+  groupFilterPredicate,
+  type ViewTab,
+} from './state/views'
 import './style.css'
 
 const GRAPH_DEPTH = 3
@@ -115,39 +126,43 @@ function sameValueCells(left: readonly CellAnchor[], right: readonly CellAnchor[
   })
 }
 
+function emptySettings(): EditorProjectSettings {
+  return { views: {}, default_table_column_widths: {}, record_groups: {} }
+}
+
 function settingsWithRecordGroups(
   settings: EditorProjectSettings | null,
   filePath: string,
   actualType: string,
   groups: EditorRecordGroup[],
 ): EditorProjectSettings {
+  const base = settings ?? emptySettings()
   return {
-    table_column_widths: settings?.table_column_widths ?? {},
-    graph_enabled_fields: settings?.graph_enabled_fields ?? {},
+    ...base,
     record_groups: {
-      ...(settings?.record_groups ?? {}),
+      ...base.record_groups,
       [filePath]: {
-        ...(settings?.record_groups?.[filePath] ?? {}),
+        ...(base.record_groups?.[filePath] ?? {}),
         [actualType]: groups,
       },
     },
   }
 }
 
-function settingsWithGraphFields(
+function settingsWithViews(
   settings: EditorProjectSettings | null,
   filePath: string,
   actualType: string,
-  fields: string[],
+  views: ViewConfig[],
 ): EditorProjectSettings {
+  const base = settings ?? emptySettings()
   return {
-    table_column_widths: settings?.table_column_widths ?? {},
-    record_groups: settings?.record_groups ?? {},
-    graph_enabled_fields: {
-      ...(settings?.graph_enabled_fields ?? {}),
+    ...base,
+    views: {
+      ...base.views,
       [filePath]: {
-        ...(settings?.graph_enabled_fields?.[filePath] ?? {}),
-        [actualType]: fields,
+        ...(base.views?.[filePath] ?? {}),
+        [actualType]: views,
       },
     },
   }
@@ -331,7 +346,7 @@ export default function App() {
   const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
   const recordGroupIdSequence = useRef(0)
   const recordGroupSaveSequence = useRef(0)
-  const graphFieldsSaveSequence = useRef(0)
+  const viewsSaveSequence = useRef(0)
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
@@ -374,26 +389,26 @@ export default function App() {
       })
   }, [generation])
 
-  const saveGraphEnabledFields = useCallback((
+  const saveViews = useCallback((
     filePath: string,
     actualType: string,
-    fields: string[],
+    views: ViewConfig[],
   ) => {
-    const sequence = ++graphFieldsSaveSequence.current
-    setProjectSettings(current => settingsWithGraphFields(current, filePath, actualType, fields))
+    const sequence = ++viewsSaveSequence.current
+    setProjectSettings(current => settingsWithViews(current, filePath, actualType, views))
     if (!api.isTauri) return
     const identity = generation.currentIdentity()
     if (!identity) return
-    api.setGraphEnabledFields(identity.sessionId, filePath, actualType, fields)
+    api.setViews(identity.sessionId, filePath, actualType, views)
       .then(settings => {
         if (generation.currentSession() === identity.sessionId
-          && graphFieldsSaveSequence.current === sequence) {
+          && viewsSaveSequence.current === sequence) {
           setProjectSettings(settings)
         }
       })
       .catch(error => {
         if (generation.currentSession() === identity.sessionId) {
-          setErrorMsg(`保存图谱字段失败: ${errorMessage(error)}`)
+          setErrorMsg(`保存视图失败: ${errorMessage(error)}`)
         }
       })
   }, [generation])
@@ -455,7 +470,7 @@ export default function App() {
         setWorkspaceTabs([tab])
         setActiveWorkspaceTabId(tab.id)
         setActiveType(typeName)
-        router.push({ view: 'table', file: filePath, typeFilter: typeName })
+        router.push({ view: 'table', file: filePath, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
       }
     }
   }, [generation, lookups, router.push])
@@ -493,7 +508,7 @@ export default function App() {
         setWorkspaceTabs([tab])
         setActiveWorkspaceTabId(tab.id)
         setActiveType(typeName)
-        router.push({ view: 'table', file: firstFile, typeFilter: typeName })
+        router.push({ view: 'table', file: firstFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
       } else {
         router.clear()
       }
@@ -610,7 +625,7 @@ export default function App() {
         ])
         setActiveWorkspaceTabId(tab.id)
         setActiveType(typeName)
-        router.push({ view: 'table', file: nextFile, typeFilter: typeName })
+        router.push({ view: 'table', file: nextFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
         return
       }
       try {
@@ -632,6 +647,7 @@ export default function App() {
             : {
                 view: 'table',
                 file: nextFile,
+                viewId: DEFAULT_TABLE_VIEW_ID,
                 typeFilter: current.coordinate.actual_type,
               })
         } else {
@@ -641,7 +657,7 @@ export default function App() {
         if (generation.isCurrent(snapshot.session_id, snapshot.revision)) {
           setProject(snapshot)
           reportSessionError(snapshot.session_id, '刷新项目失败', err)
-          router.push({ view: 'table', file: nextFile, typeFilter: snapshot.file_types[nextFile]?.[0]?.name ?? '' })
+          router.push({ view: 'table', file: nextFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: snapshot.file_types[nextFile]?.[0]?.name ?? '' })
         }
       }
     },
@@ -868,10 +884,10 @@ export default function App() {
       setActiveType(typeName)
       const currentView = router.current?.view ?? 'table'
       if (currentView === 'graph') {
-        router.push({ view: 'graph', file: filePath, typeFilter: typeName })
+        router.push({ view: 'graph', file: filePath, viewId: DEFAULT_GRAPH_VIEW_ID, typeFilter: typeName })
         return
       }
-      router.push({ view: 'table', file: filePath, typeFilter: typeName })
+      router.push({ view: 'table', file: filePath, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
     },
     [project?.file_types, router]
   )
@@ -885,7 +901,7 @@ export default function App() {
         : [...current, { id, filePath, typeName: coordinate.actual_type }])
       setActiveWorkspaceTabId(id)
       setActiveType(coordinate.actual_type)
-      router.push({ view: 'record', file: filePath, coordinate })
+      router.push({ view: 'record', file: filePath, viewId: DEFAULT_RECORD_VIEW_ID, coordinate })
     },
     [router]
   )
@@ -1306,6 +1322,11 @@ export default function App() {
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeDimensionData = activeFile ? dimensionFileCache[activeFile] : null
   const recordGroups = projectSettings?.record_groups[activeFile ?? '']?.[activeType] ?? []
+  const activeTypeOption = useMemo(
+    () => project?.file_types[activeFile ?? '']?.find(option => option.name === activeType) ?? null,
+    [project?.file_types, activeFile, activeType],
+  )
+  const isSingletonType = activeTypeOption?.is_singleton ?? false
 
   useEffect(() => {
     setInspectorSelection(current => {
@@ -1491,6 +1512,25 @@ export default function App() {
     if (!activeFileData) return false
     return recordsSupportGraph(activeFileData.records)
   }, [activeFileData])
+  // View tabs (default + custom) for the active (file, type).
+  const viewTabs = useMemo(
+    () => activeFile && activeType
+      ? viewTabsFor(projectSettings, activeFile, activeType, isSingletonType, graphSupported)
+      : [],
+    [projectSettings, activeFile, activeType, isSingletonType, graphSupported],
+  )
+  // The view the current route resolves to (default reserved id or custom uuid).
+  const resolvedView = useMemo(
+    () => activeFile && activeType && currentRoute
+      ? resolveView(projectSettings, activeFile, activeType, currentRoute.viewId)
+      : null,
+    [projectSettings, activeFile, activeType, currentRoute],
+  )
+  // Fields the custom view restricts to (undefined = show all).
+  const visibleFields = useMemo(
+    () => (resolvedView ? visibleFieldsFor(resolvedView) : undefined),
+    [resolvedView],
+  )
   // Set of file paths that can be opened via the record/table views. Used by
   // the diagnostics panel to decide whether "跳转" is available for a row —
   // if the diagnostic's file isn't part of the source set, we hide the button
@@ -1556,7 +1596,7 @@ export default function App() {
       && visible.length > 0
       && !visible.some(record => sameCoordinate(record.coordinate, currentRoute.coordinate))
     ) {
-      router.replace({ view: 'record', file: currentRoute.file, coordinate: visible[0].coordinate })
+      router.replace({ view: 'record', file: currentRoute.file, viewId: currentRoute.viewId, coordinate: visible[0].coordinate })
     }
   }, [activeFileData, activeType, currentRoute, globalSearch, router])
 
@@ -1702,15 +1742,20 @@ export default function App() {
     else focusActiveView()
   }, [currentRoute?.view, focusActiveView])
   const tableColumnWidths = useMemo(() => (
-    currentRoute?.view === 'table' && activeType
-      ? definedColumnWidths(projectSettings?.table_column_widths[currentRoute.file]?.[activeType])
+    resolvedView?.kind === 'table'
+      ? definedColumnWidths(resolvedView.columnWidths)
       : undefined
-  ), [activeType, currentRoute?.file, currentRoute?.view, projectSettings])
+  ), [resolvedView])
   const tableOnColumnWidthsChange = useCallback((widths: Record<string, number>) => {
-    if (!api.isTauri || currentRoute?.view !== 'table' || !activeType) return
+    if (!api.isTauri || currentRoute?.view !== 'table' || !activeType || !resolvedView) return
     const identity = generation.currentIdentity()
     if (!identity) return
-    api.setTableColumnWidths(identity.sessionId, currentRoute.file, activeType, widths)
+    // Default table view widths live in default_table_column_widths; custom
+    // table views carry their own widths inside the ViewConfig.
+    const save = resolvedView.isDefault
+      ? api.setDefaultTableColumnWidths(identity.sessionId, currentRoute.file, activeType, widths)
+      : api.setViewColumnWidths(identity.sessionId, currentRoute.file, activeType, resolvedView.id, widths)
+    save
       .then(settings => {
         if (generation.isCurrent(identity.sessionId, identity.revision)) setProjectSettings(settings)
       })
@@ -1719,7 +1764,7 @@ export default function App() {
           setErrorMsg(`保存列宽失败: ${errorMessage(err)}`)
         }
       })
-  }, [activeType, currentRoute?.file, currentRoute?.view, generation])
+  }, [activeType, currentRoute?.file, currentRoute?.view, resolvedView, generation])
   const tableOnRenderCellText = useCallback(
     async (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => {
       const identity = generation.currentIdentity()
@@ -1851,23 +1896,23 @@ export default function App() {
     if (nextType !== activeType) setActiveType(nextType)
   }, [activeFileData?.file_path, activeFileData?.type_names, currentRoute, activeType])
 
-  function switchView(view: 'table' | 'record' | 'graph') {
+  function switchView(tab: ViewTab) {
     if (!currentRoute) return
-    setPreferredView(view)
-    if (view === 'table') {
+    setPreferredView(tab.kind)
+    if (tab.kind === 'table') {
       setFirstRecordFocusRequest(0)
       closeInspector()
     }
-    if (view === 'record') {
+    if (tab.kind === 'record') {
       const firstCoordinate =
         (activeType
           ? activeFileData?.records.find(r => recordActualType(r) === activeType)
           : activeFileData?.records[0])?.coordinate
         ?? activeFileData?.records[0]?.coordinate
       if (!firstCoordinate) return
-      router.replace({ view, file: currentRoute.file, coordinate: firstCoordinate })
+      router.replace({ view: 'record', file: currentRoute.file, viewId: tab.id, coordinate: firstCoordinate })
     } else {
-      router.replace({ view, file: currentRoute.file, typeFilter: activeType } as typeof currentRoute)
+      router.replace({ view: tab.kind, file: currentRoute.file, viewId: tab.id, typeFilter: activeType })
     }
   }
 
@@ -1885,7 +1930,7 @@ export default function App() {
         record => !activeType || recordActualType(record) === activeType,
       )?.coordinate
       if (firstCoord) {
-        router.replace({ view: 'record', file: currentRoute.file, coordinate: firstCoord })
+        router.replace({ view: 'record', file: currentRoute.file, viewId: DEFAULT_RECORD_VIEW_ID, coordinate: firstCoord })
       }
       return
     }
@@ -1895,7 +1940,7 @@ export default function App() {
           r => recordActualType(r) === activeType,
         )?.coordinate
         if (firstOfType) {
-          router.replace({ view: 'record', file: currentRoute.file, coordinate: firstOfType })
+          router.replace({ view: 'record', file: currentRoute.file, viewId: currentRoute.viewId, coordinate: firstOfType })
         }
       }
     }
@@ -1907,7 +1952,7 @@ export default function App() {
     if (!currentRoute || currentRoute.view !== 'graph') return
     if (activeFileData?.file_path !== currentRoute.file) return
     if (graphSupported) return
-    router.replace({ view: 'table', file: currentRoute.file, typeFilter: activeType })
+    router.replace({ view: 'table', file: currentRoute.file, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
   }, [currentRoute, activeFileData, graphSupported, activeType, router])
 
   return (
@@ -1972,17 +2017,17 @@ export default function App() {
                   ))}
                 </div>
               ) : activeFileData && <div className="document-view-tabs" role="tablist" aria-label="视图">
-                {((['record', 'table', 'graph'] as const).filter(v => v !== 'graph' || graphSupported)).map(v => (
+                {viewTabs.map(tab => (
                   <button
-                    key={v}
-                    className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
+                    key={tab.id}
+                    className={`tab-btn tab-view${currentRoute.viewId === tab.id ? ' active' : ''}`}
                     role="tab"
-                    aria-selected={currentRoute.view === v}
-                    data-tab-id={v}
-                    onClick={() => switchView(v)}
+                    aria-selected={currentRoute.viewId === tab.id}
+                    data-tab-id={tab.id}
+                    onClick={() => switchView(tab)}
                   >
-                    <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
-                    {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
+                    <Icon name={tab.kind} size={13} aria-hidden />
+                    {tab.name}
                   </button>
                 ))}
               </div>}
@@ -2487,10 +2532,7 @@ export default function App() {
                     <GraphView
                       graphData={activeGraph}
                       activeType={activeType}
-                      enabledFieldsOverride={projectSettings?.graph_enabled_fields[activeFile ?? '']?.[activeType]}
-                      onEnabledFieldsChange={fields => {
-                        if (activeFile && activeType) saveGraphEnabledFields(activeFile, activeType, fields)
-                      }}
+                      enabledFieldsOverride={resolvedView?.kind === 'graph' ? resolvedView.fields : undefined}
                       fileCapabilities={fileCapabilities}
                       diagnostics={project?.diagnostics}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}

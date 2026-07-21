@@ -14,6 +14,7 @@ import type { DimensionValueView } from './bindings/DimensionValueView'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
+import type { ViewConfig } from './bindings/ViewConfig'
 import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
@@ -128,16 +129,32 @@ export async function getDimensionFileRecords(
   return invokeCommand<DimensionFileRecords>('get_dimension_file_records', { sessionId, filePath })
 }
 
-export async function setTableColumnWidths(
+export async function setDefaultTableColumnWidths(
   sessionId: number,
   filePath: string,
   actualType: string,
   widths: Record<string, number>,
 ): Promise<EditorProjectSettings> {
-  return invokeCommand<EditorProjectSettings>('set_table_column_widths', {
+  return invokeCommand<EditorProjectSettings>('set_default_table_column_widths', {
     sessionId,
     filePath,
     actualType,
+    widths,
+  })
+}
+
+export async function setViewColumnWidths(
+  sessionId: number,
+  filePath: string,
+  actualType: string,
+  viewId: string,
+  widths: Record<string, number>,
+): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('set_view_column_widths', {
+    sessionId,
+    filePath,
+    actualType,
+    viewId,
     widths,
   })
 }
@@ -186,17 +203,17 @@ export async function setRecordGroups(
   })
 }
 
-export async function setGraphEnabledFields(
+export async function setViews(
   sessionId: number,
   filePath: string,
   actualType: string,
-  fields: string[],
+  views: ViewConfig[],
 ): Promise<EditorProjectSettings> {
-  return invokeCommand<EditorProjectSettings>('set_graph_enabled_fields', {
+  return invokeCommand<EditorProjectSettings>('set_views', {
     sessionId,
     filePath,
     actualType,
-    fields,
+    views,
   })
 }
 
