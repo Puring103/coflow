@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
+import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import type { CfdDictKey } from '../bindings/CfdDictKey'
 import {
@@ -25,9 +26,11 @@ import {
   buildRecordDiagnosticIndex,
   diagnosticsForRecord,
 } from '../state/recordDiagnostics'
-import type { EditorSelection } from '../state/editorSelection'
+import type { CellAnchor, EditorSelection } from '../state/editorSelection'
 import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
 import { BatchRecordEditor } from './BatchRecordEditor'
+import { BatchCellEditor } from './BatchCellEditor'
+import { projectBatchCells } from '../state/batchRecordProjection'
 
 interface Props {
   open: boolean
@@ -35,6 +38,7 @@ interface Props {
   onToggleCollapse: () => void
   data: FileRecords | null
   selection: EditorSelection | null
+  valueCells?: readonly CellAnchor[]
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
   width: number
@@ -52,6 +56,7 @@ interface Props {
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
   ) => Promise<void>
+  onWriteFieldBatch?: (writes: readonly BatchWriteFieldInput[]) => Promise<void>
   onRenderCellText?: (
     filePath: string,
     coordinate: RecordCoordinate,
@@ -88,6 +93,7 @@ export function InspectorPanel({
   onToggleCollapse,
   data,
   selection,
+  valueCells = [],
   readOnly,
   diagnostics,
   width,
@@ -95,6 +101,7 @@ export function InspectorPanel({
   onClose,
   onWriteField,
   onWriteFields,
+  onWriteFieldBatch,
   onRenderCellText,
   onParseCellText,
   onCollectionEdit,
@@ -162,6 +169,18 @@ export function InspectorPanel({
       })
     : []
   const batchRecords = selectedRecords.length > 1 ? selectedRecords : null
+  const batchCells = useMemo(() => {
+    if (!data || selection?.kind !== 'value' || valueCells.length < 2) return []
+    return valueCells.flatMap(anchor => {
+      const name = anchor.fieldPath.length === 1 && anchor.fieldPath[0].kind === 'field'
+        ? anchor.fieldPath[0].value
+        : null
+      const row = data.records.find(item => sameCoordinate(item.coordinate, anchor.coordinate))
+      const cell = name ? row?.fields.find(item => item.name === name) : undefined
+      return cell ? [{ anchor, cell }] : []
+    })
+  }, [data, selection?.kind, valueCells])
+  const hasBatchCellEditor = !!projectBatchCells(batchCells.map(item => item.cell))
 
   const diagnosticIndex = useMemo(
     () => buildRecordDiagnosticIndex(
@@ -314,7 +333,7 @@ export function InspectorPanel({
           tabIndex={-1}
           onKeyDown={onBodyKeyDown}
           onContextMenu={event => {
-            if (batchRecords || !record || !data) return
+            if (batchRecords || hasBatchCellEditor || !record || !data) return
             const row = (event.target as HTMLElement).closest<HTMLElement>('.dc-row[data-field-path-wire]')
             if (!row || !bodyRef.current?.contains(row)) return
             const path = parseWireFieldPath(row.dataset.fieldPathWire)
@@ -348,6 +367,12 @@ export function InspectorPanel({
                     path,
                     value,
                   )}
+            />
+          ) : hasBatchCellEditor ? (
+            <BatchCellEditor
+              cells={batchCells}
+              readOnly={readOnly}
+              onWriteBatch={onWriteFieldBatch}
             />
           ) : record && data ? (
             <>

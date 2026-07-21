@@ -73,6 +73,7 @@ import {
   updateRecordSelection,
   updateValueSelection,
   valueSelection,
+  type CellAnchor,
   type EditorSelection,
   type RecordSelectionMode,
   type ValueSelectionMode,
@@ -103,6 +104,15 @@ interface WorkspaceTab {
 }
 function workspaceTabId(filePath: string, typeName: string): string {
   return `${filePath}\u001f${typeName}`
+}
+
+function sameValueCells(left: readonly CellAnchor[], right: readonly CellAnchor[]): boolean {
+  return left.length === right.length && left.every((cell, index) => {
+    const other = right[index]
+    return !!other
+      && coordinateId(cell.coordinate) === coordinateId(other.coordinate)
+      && JSON.stringify(cell.fieldPath) === JSON.stringify(other.fieldPath)
+  })
 }
 
 function settingsWithRecordGroups(
@@ -1583,6 +1593,10 @@ export default function App() {
     },
     [currentRoute?.view, currentRoute?.file],
   )
+  const [inspectorValueCells, setInspectorValueCells] = useState<readonly CellAnchor[]>([])
+  const tableOnValueSelectionCellsChange = useCallback((cells: readonly CellAnchor[]) => {
+    setInspectorValueCells(current => sameValueCells(current, cells) ? current : cells)
+  }, [])
   const tableOnWriteFieldBatch = useCallback(
     async (writes: readonly BatchWriteFieldInput[]) => {
       if (currentRoute?.view === 'table') {
@@ -2397,6 +2411,7 @@ export default function App() {
                       : null}
                     onSelectRecord={tableOnSelectRecord}
                     onSelectValue={tableOnSelectValue}
+                    onValueSelectionCellsChange={tableOnValueSelectionCellsChange}
                     onRenderCellText={tableOnRenderCellText}
                     onParseCellText={tableOnParseCellText}
                     onClearSelection={closeInspector}
@@ -2531,6 +2546,7 @@ export default function App() {
           onToggleCollapse={() => setInspectorCollapsed(v => !v)}
           data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}
           selection={inspectorSelection}
+          valueCells={inspectorValueCells}
           readOnly={inspectorCoord ? !isEditableFile(fileDataCache[inspectorCoord.file]) : true}
           diagnostics={project?.diagnostics}
           width={inspectorW}
@@ -2538,6 +2554,7 @@ export default function App() {
           onClose={closeInspector}
           onWriteField={writeField}
           onWriteFields={writeFields}
+          onWriteFieldBatch={tableOnWriteFieldBatch}
           onRenderCellText={(_filePath, coordinate, path) => tableOnRenderCellText(coordinate, path)}
           onParseCellText={(_filePath, coordinate, path, text) => tableOnParseCellText(coordinate, path, text)}
           onCollectionEdit={editCollection}

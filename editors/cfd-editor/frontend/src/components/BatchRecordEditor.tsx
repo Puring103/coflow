@@ -74,7 +74,7 @@ export function BatchRecordEditor({ records, readOnly, onWriteFields }: Props) {
   )
 }
 
-function MixedFieldRow({ label, sample, declaredType, enumType, refTargetType, nullable, disabled, busy, onCommit }: {
+export function MixedFieldRow({ label, sample, declaredType, enumType, refTargetType, nullable, disabled, busy, onCommit }: {
   label: string
   sample: FieldValue
   declaredType?: string

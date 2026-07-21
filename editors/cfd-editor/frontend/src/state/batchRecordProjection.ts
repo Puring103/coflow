@@ -9,6 +9,32 @@ export interface BatchFieldProjection {
   editable: boolean
 }
 
+export interface BatchCellProjection {
+  cell: FieldCell
+  state: 'same' | 'mixed'
+  editable: boolean
+}
+
+/** A range can share one editor only when its type and editor annotations agree. */
+export function projectBatchCells(cells: readonly FieldCell[]): BatchCellProjection | null {
+  const first = cells[0]
+  if (!first || cells.length < 2) return null
+  const type = cellDeclaredType(first)
+  const annotation = annotationKey(first)
+  if (cells.some(cell => cellDeclaredType(cell) !== type || annotationKey(cell) !== annotation)) return null
+  return {
+    cell: first,
+    state: cells.every(cell => fieldValuesEqual(cell.value, first.value)) ? 'same' : 'mixed',
+    editable: cells.every(cell => !cellReadOnly(cell)),
+  }
+}
+
+function annotationKey(cell: FieldCell): string {
+  return JSON.stringify(cell.annotation, (_key, value) =>
+    typeof value === 'bigint' ? `${value}n` : value,
+  )
+}
+
 export function projectBatchRecordFields(records: readonly RecordRow[]): BatchFieldProjection[] {
   const first = records[0]
   if (!first || records.length < 2) return []

@@ -107,6 +107,8 @@ interface Props {
   ) => void
   /** Click on a field cell: select that value. */
   onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], mode?: ValueSelectionMode) => void
+  /** Reports the exact visible rectangle so the inspector shares table range semantics. */
+  onValueSelectionCellsChange?: (cells: readonly CellAnchor[]) => void
   onRenderCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => Promise<string>
   onParseCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], text: string) => Promise<FieldValue>
   /** Click on blank space inside the table view: deselect / close inspector. */
@@ -154,7 +156,7 @@ interface TableContextMenu {
   showGroupTargets: boolean
 }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
@@ -696,6 +698,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   }, [selection, visibleCoordinates, allFieldNames, data.file_path, onSelectValue, onClearSelection])
 
   useEffect(() => {
+    onValueSelectionCellsChange?.(
+      selection?.kind === 'value' && selection.filePath === data.file_path
+        ? selectionCellMatrix(selection, visibleCoordinates, allFieldNames).flat()
+        : [],
+    )
+  }, [selection, visibleCoordinates, allFieldNames, data.file_path, onValueSelectionCellsChange])
+
+  useEffect(() => {
     if (!firstRecordFocusRequest) return
     tableScrollRef.current?.focus({ preventScroll: true })
     const first = visibleRows[0]?.original.coordinate
@@ -1216,12 +1226,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                             if (!isNativeEditingTarget(e.target)) {
                               tableScrollRef.current?.focus({ preventScroll: true })
                             }
-                            if (fieldPath) onSelectValue?.(
-                              row.original.coordinate,
-                              fieldPath,
-                              e.shiftKey ? 'range' : 'replace',
-                            )
-                            else {
+                            if (!fieldPath) {
                               const mode: RecordSelectionMode = e.shiftKey
                                 ? 'range'
                                 : (e.ctrlKey || e.metaKey ? 'toggle' : 'replace')
