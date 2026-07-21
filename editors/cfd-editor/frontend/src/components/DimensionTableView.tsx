@@ -3,8 +3,10 @@ import type { DimensionFileRecords, DimensionFileRow } from '../api'
 import type { DimensionValueState } from '../bindings/DimensionValueState'
 import type { EditorProjectSettings } from '../bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
-import type { FieldValue } from '../wire'
-import { coordinateId, sameCoordinate } from '../wire'
+import type { RecordCoordinate } from '../bindings/RecordCoordinate'
+import type { FieldPathSegment, FieldValue } from '../wire'
+import { coordinateId, fieldPathField, sameCoordinate } from '../wire'
+import { summaryOf as valueSummary } from '../value/fieldValue'
 import { DataCardCompact, DirectEditor, InlineEditor } from './DataCard'
 import { Icon } from './Icon'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
@@ -21,6 +23,8 @@ interface Props {
     expected: DimensionValueState,
     next: DimensionValueState,
   ) => Promise<void>
+  onRenderCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => Promise<string>
+  onParseCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], text: string) => Promise<FieldValue>
   onExitLeft?: () => void
   onExitUp?: () => void
   focusRequest?: number
@@ -100,6 +104,8 @@ export function DimensionTableView({
   onRenameGroup,
   onColorGroup,
   onWrite,
+  onRenderCellText,
+  onParseCellText,
   onExitLeft,
   onExitUp,
   focusRequest = 0,
@@ -148,6 +154,8 @@ export function DimensionTableView({
         <DimensionGrid
           data={data}
           onWrite={onWrite}
+          onRenderCellText={onRenderCellText}
+          onParseCellText={onParseCellText}
           rootRef={tableRef}
           items={items}
           collapsedGroups={collapsedGroups}
@@ -255,46 +263,239 @@ export function DimensionTableView({
   )
 }
 
-function DimensionGrid({ data, onWrite, rootRef, onExitLeft, onExitUp, items, collapsedGroups, onToggleGroup, onRenameGroup, onColorGroup }: Pick<Props, 'data' | 'onWrite' | 'onExitLeft' | 'onExitUp' | 'onRenameGroup' | 'onColorGroup'> & {
+interface DimensionRange { rowStart: number; rowEnd: number; colStart: number; colEnd: number }
+
+function rangeCells(range: DimensionRange): DimensionCellSelection[] {
+  const cells: DimensionCellSelection[] = []
+  for (let r = range.rowStart; r <= range.rowEnd; r++) {
+    for (let c = range.colStart; c <= range.colEnd; c++) {
+      cells.push({ row: r, column: c })
+    }
+  }
+  return cells
+}
+
+function inRange(range: DimensionRange, row: number, column: number): boolean {
+  return row >= range.rowStart && row <= range.rowEnd && column >= range.colStart && column <= range.colEnd
+}
+
+// column 0 = key (readonly), column 1 = default (readonly), column 2+ = variants
+function isEditableColumn(column: number): boolean { return column >= 2 }
+
+function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootRef, onExitLeft, onExitUp, items, collapsedGroups, onToggleGroup, onRenameGroup, onColorGroup }: Pick<Props, 'data' | 'onWrite' | 'onRenderCellText' | 'onParseCellText' | 'onExitLeft' | 'onExitUp' | 'onRenameGroup' | 'onColorGroup'> & {
   rootRef: React.RefObject<HTMLDivElement | null>
   items: DimensionDisplayItem[]
   collapsedGroups: ReadonlySet<string>
   onToggleGroup: (key: string) => void
 }) {
-  const [selection, setSelection] = useState<DimensionCellSelection>({ row: 0, column: 0 })
+  const [anchor, setAnchor] = useState<DimensionCellSelection>({ row: 0, column: 0 })
+  const [rangeEnd, setRangeEnd] = useState<DimensionCellSelection | null>(null)
+  // inlineEdit: { row, column, initialText } — overlay syntax editor on that cell
+  const [inlineEdit, setInlineEdit] = useState<{ row: number; column: number; initialText: string } | null>(null)
+  const clipboardBusyRef = useRef(false)
+
   const columnCount = data.variants.length + 2
   const visibleRows = items.flatMap(item => item.kind === 'row' ? [item.row] : [])
-  const select = (next: DimensionCellSelection) => {
-    setSelection(next)
+
+  const selection = anchor
+  const range: DimensionRange = rangeEnd ? {
+    rowStart: Math.min(anchor.row, rangeEnd.row),
+    rowEnd: Math.max(anchor.row, rangeEnd.row),
+    colStart: Math.min(anchor.column, rangeEnd.column),
+    colEnd: Math.max(anchor.column, rangeEnd.column),
+  } : { rowStart: anchor.row, rowEnd: anchor.row, colStart: anchor.column, colEnd: anchor.column }
+
+  const isRangeSelection = rangeEnd !== null && (rangeEnd.row !== anchor.row || rangeEnd.column !== anchor.column)
+
+  const select = (next: DimensionCellSelection, extend = false) => {
+    if (extend) {
+      setRangeEnd(next)
+    } else {
+      setAnchor(next)
+      setRangeEnd(null)
+    }
     requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>(
       `[data-dimension-row="${next.row}"][data-dimension-column="${next.column}"]`,
     )?.scrollIntoView({ block: 'nearest', inline: 'nearest' }))
   }
+
+  // Collect all selected (row, variantIndex) pairs — only editable columns (col >= 2)
+  const selectedVariantCells = (): Array<{ row: DimensionFileRow; variantIndex: number; variant: string }> => {
+    return rangeCells(range).flatMap(({ row, column }) => {
+      if (!isEditableColumn(column)) return []
+      const r = visibleRows[row]
+      const variantIndex = column - 2
+      const variant = data.variants[variantIndex]
+      if (!r || !variant) return []
+      return [{ row: r, variantIndex, variant }]
+    })
+  }
+
+  const fieldPathForVariant = (variant: string): FieldPathSegment[] =>
+    [fieldPathField(data.field), fieldPathField(variant)]
+
   return (
     <div
       className="dimension-table-scroll"
       ref={rootRef}
       tabIndex={0}
-      onKeyDown={event => {
+      onKeyDown={async event => {
         if (isNativeEditorTarget(event.target)) return
-        if (event.key === 'Enter') {
+        const modified = event.ctrlKey || event.metaKey
+
+        // Ctrl+A: select all
+        if (modified && event.key.toLowerCase() === 'a') {
           event.preventDefault()
-          focusDimensionEditor(rootRef.current, selection.column, selection.row)
+          if (visibleRows.length > 0) {
+            setAnchor({ row: 0, column: 2 })
+            setRangeEnd({ row: visibleRows.length - 1, column: columnCount - 1 })
+          }
           return
         }
+
+        // Ctrl+C: copy selected variant cells as TSV
+        if (modified && event.key.toLowerCase() === 'c') {
+          event.preventDefault()
+          if (clipboardBusyRef.current) return
+          clipboardBusyRef.current = true
+          try {
+            const cells = selectedVariantCells()
+            if (cells.length === 0) return
+            // Build TSV: rows are grouped by row index, columns by variant order
+            const rowIndices = [...new Set(rangeCells(range).filter(c => isEditableColumn(c.column)).map(c => c.row))]
+            const colIndices = [...new Set(rangeCells(range).filter(c => isEditableColumn(c.column)).map(c => c.column))].sort((a, b) => a - b)
+            const lines: string[] = []
+            for (const ri of rowIndices) {
+              const row = visibleRows[ri]
+              if (!row) continue
+              const parts: string[] = []
+              for (const ci of colIndices) {
+                const variant = data.variants[ci - 2]
+                if (!variant) { parts.push(''); continue }
+                const state = row.values[variant]
+                let text = ''
+                if (state?.kind === 'value') {
+                  if (onRenderCellText) {
+                    try { text = await onRenderCellText(row.coordinate, fieldPathForVariant(variant)) } catch { text = valueSummary(state.value) }
+                  } else {
+                    text = valueSummary(state.value)
+                  }
+                }
+                parts.push(escapeTsvCell(text))
+              }
+              lines.push(parts.join('\t'))
+            }
+            await navigator.clipboard.writeText(lines.join('\n'))
+          } finally {
+            clipboardBusyRef.current = false
+          }
+          return
+        }
+
+        // Ctrl+V: paste TSV into selected variant cells
+        if (modified && event.key.toLowerCase() === 'v') {
+          event.preventDefault()
+          if (!onParseCellText || clipboardBusyRef.current) return
+          clipboardBusyRef.current = true
+          try {
+            const text = await navigator.clipboard.readText()
+            const rows = parseTsvSimple(text)
+            const broadcast = rows.length === 1 && rows[0].length === 1
+            // Determine target cells: start from anchor, extend by paste size if single-cell selection
+            const targetColStart = Math.max(2, range.colStart)
+            const pasteColCount = rows[0]?.length ?? 1
+            const pasteRowCount = rows.length
+            const targetRowEnd = broadcast ? range.rowEnd : range.rowStart + pasteRowCount - 1
+            const targetColEnd = broadcast ? range.colEnd : targetColStart + pasteColCount - 1
+            const writes: Array<() => Promise<void>> = []
+            for (let ri = range.rowStart; ri <= Math.min(targetRowEnd, visibleRows.length - 1); ri++) {
+              const row = visibleRows[ri]
+              if (!row) continue
+              for (let ci = targetColStart; ci <= Math.min(targetColEnd, columnCount - 1); ci++) {
+                const variant = data.variants[ci - 2]
+                if (!variant) continue
+                const sourceText = broadcast ? rows[0][0] : (rows[ri - range.rowStart]?.[ci - targetColStart] ?? '')
+                const state = row.values[variant] ?? { kind: 'missing' as const }
+                const capturedRow = row; const capturedVariant = variant; const capturedState = state
+                writes.push(async () => {
+                  try {
+                    const value = await onParseCellText(capturedRow.coordinate, fieldPathForVariant(capturedVariant), sourceText)
+                    await onWrite(capturedRow, capturedVariant, capturedState, { kind: 'value', value })
+                  } catch {
+                    // skip unparseable cells
+                  }
+                })
+              }
+            }
+            await Promise.all(writes.map(fn => fn()))
+          } finally {
+            clipboardBusyRef.current = false
+          }
+          return
+        }
+
+        // Delete: reset selected variant cells to missing
+        if (event.key === 'Delete' && !modified) {
+          event.preventDefault()
+          const cells = selectedVariantCells()
+          await Promise.all(cells.map(({ row, variant }) => {
+            const state = row.values[variant] ?? { kind: 'missing' as const }
+            if (state.kind === 'missing') return Promise.resolve()
+            return onWrite(row, variant, state, { kind: 'missing' })
+          }))
+          return
+        }
+
+        // Enter / F2: open editor on current single cell
+        if ((event.key === 'Enter' || event.key === 'F2') && !modified) {
+          event.preventDefault()
+          if (isEditableColumn(selection.column)) {
+            const variant = data.variants[selection.column - 2]
+            const row = visibleRows[selection.row]
+            if (variant && row && onParseCellText) {
+              const state = row.values[variant]
+              let initialText = ''
+              if (state?.kind === 'value') {
+                if (onRenderCellText) {
+                  try { initialText = await onRenderCellText(row.coordinate, fieldPathForVariant(variant)) } catch { initialText = valueSummary(state.value) }
+                } else {
+                  initialText = valueSummary(state.value)
+                }
+              }
+              setInlineEdit({ row: selection.row, column: selection.column, initialText })
+            } else {
+              focusDimensionEditor(rootRef.current, selection.column, selection.row)
+            }
+          } else {
+            focusDimensionEditor(rootRef.current, selection.column, selection.row)
+          }
+          return
+        }
+
+        // Printable character: start replace-mode inline edit
+        if (!modified && event.key.length === 1 && isEditableColumn(selection.column) && onParseCellText) {
+          const row = visibleRows[selection.row]
+          const variant = data.variants[selection.column - 2]
+          if (row && variant) {
+            setInlineEdit({ row: selection.row, column: selection.column, initialText: event.key })
+          }
+          return
+        }
+
         if (!isDirection(event.key)) return
-        if (event.key === 'ArrowLeft' && selection.column === 0) {
+        if (event.key === 'ArrowLeft' && selection.column === 0 && !event.shiftKey) {
           event.preventDefault()
           onExitLeft?.()
           return
         }
-        if (event.key === 'ArrowUp' && selection.row === 0) {
+        if (event.key === 'ArrowUp' && selection.row === 0 && !event.shiftKey) {
           event.preventDefault()
           onExitUp?.()
           return
         }
         event.preventDefault()
-        select(moveDimensionCell(selection, event.key, visibleRows.length, columnCount))
+        const next = moveDimensionCell(selection, event.key, visibleRows.length, columnCount)
+        select(next, event.shiftKey)
       }}
     >
       <table className="dimension-table">
@@ -333,13 +534,32 @@ function DimensionGrid({ data, onWrite, rootRef, onExitLeft, onExitUp, items, co
                 className={item.group?.color ? 'has-group-color' : undefined}
                 style={recordGroupColorStyle(item.group?.color)}
               >
-                <th scope="row" {...cellProps(rowIndex, 0, selection, select)}>{item.row.coordinate.key}</th>
-                <td {...cellProps(rowIndex, 1, selection, select)}><DataCardCompact value={item.row.default_value} label="default" /></td>
-                {data.variants.map((variant, variantIndex) => (
-                  <td key={variant} {...cellProps(rowIndex, variantIndex + 2, selection, select)}>
-                    <DimensionCellEditor row={item.row} variant={variant} onWrite={onWrite} />
-                  </td>
-                ))}
+                <th scope="row" {...cellProps(rowIndex, 0, anchor, isRangeSelection, range, select)}>{item.row.coordinate.key}</th>
+                <td {...cellProps(rowIndex, 1, anchor, isRangeSelection, range, select)}><DataCardCompact value={item.row.default_value} label="default" /></td>
+                {data.variants.map((variant, variantIndex) => {
+                  const colIndex = variantIndex + 2
+                  const isInline = inlineEdit?.row === rowIndex && inlineEdit.column === colIndex
+                  return (
+                    <td key={variant} {...cellProps(rowIndex, colIndex, anchor, isRangeSelection, range, select)}>
+                      {isInline && onParseCellText ? (
+                        <DimensionInlineEditor
+                          row={item.row}
+                          variant={variant}
+                          initialText={inlineEdit.initialText}
+                          onWrite={onWrite}
+                          onParseCellText={onParseCellText}
+                          fieldPath={fieldPathForVariant(variant)}
+                          onDone={() => {
+                            setInlineEdit(null)
+                            requestAnimationFrame(() => rootRef.current?.focus({ preventScroll: true }))
+                          }}
+                        />
+                      ) : (
+                        <DimensionCellEditor row={item.row} variant={variant} onWrite={onWrite} />
+                      )}
+                    </td>
+                  )
+                })}
               </tr>
             )
           })())}
@@ -377,15 +597,30 @@ function DimensionRecord({ row, variants, onWrite, selectedField, onSelectField 
 function cellProps(
   row: number,
   column: number,
-  selection: DimensionCellSelection,
-  onSelect: (selection: DimensionCellSelection) => void,
+  anchor: DimensionCellSelection,
+  isRangeSelection: boolean,
+  range: DimensionRange,
+  onSelect: (selection: DimensionCellSelection, extend?: boolean) => void,
 ) {
+  const isAnchor = anchor.row === row && anchor.column === column
+  const isSelected = isRangeSelection ? inRange(range, row, column) : isAnchor
   return {
     'data-dimension-row': row,
     'data-dimension-column': column,
-    className: selection.row === row && selection.column === column ? 'keyboard-selected' : undefined,
-    onMouseDown: () => onSelect({ row, column }),
+    className: isSelected ? (isAnchor ? 'keyboard-selected' : 'range-selected') : undefined,
+    onMouseDown: (e: React.MouseEvent) => onSelect({ row, column }, e.shiftKey),
   }
+}
+
+function escapeTsvCell(text: string): string {
+  return /[\t\r\n"]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+function parseTsvSimple(text: string): string[][] {
+  if (!text) return [['']]
+  const lines = text.split(/\r?\n/)
+  const rows = lines.filter((_, i) => i < lines.length - 1 || lines[i].length > 0)
+  return rows.map(line => line.split('\t'))
 }
 
 function isDirection(key: string): key is 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown' {
@@ -406,6 +641,49 @@ function focusDimensionEditor(root: HTMLElement | null, column: number, row?: nu
   const editor = cell?.querySelector<HTMLElement>('input, textarea, select, button.dimension-value-missing')
   editor?.focus({ preventScroll: true })
   if (editor instanceof HTMLInputElement || editor instanceof HTMLTextAreaElement) editor.select()
+}
+
+function DimensionInlineEditor({ row, variant, initialText, onWrite, onParseCellText, fieldPath, onDone }: {
+  row: DimensionFileRow
+  variant: string
+  initialText: string
+  onWrite: Props['onWrite']
+  onParseCellText: NonNullable<Props['onParseCellText']>
+  fieldPath: FieldPathSegment[]
+  onDone: () => void
+}) {
+  const state = row.values[variant] ?? { kind: 'missing' as const }
+  const [draft, setDraft] = useState(initialText)
+  const [busy, setBusy] = useState(false)
+
+  const commit = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const value = await onParseCellText(row.coordinate, fieldPath, draft)
+      await onWrite(row, variant, state, { kind: 'value', value })
+      onDone()
+    } catch {
+      onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <input
+      className="dimension-inline-input"
+      value={draft}
+      autoFocus
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        e.stopPropagation()
+        if (e.key === 'Enter') { e.preventDefault(); void commit() }
+        if (e.key === 'Escape') { e.preventDefault(); onDone() }
+      }}
+    />
+  )
 }
 
 function DimensionCellEditor({ row, variant, onWrite }: {

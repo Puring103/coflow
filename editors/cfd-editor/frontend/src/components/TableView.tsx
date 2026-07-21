@@ -62,7 +62,7 @@ import {
   moveTableSelection,
   type TableDirection,
 } from '../state/tableCellNavigation'
-import { selectionEditIntentForKey } from '../state/selectionKeyboard'
+import { defaultValueForClear, selectionEditIntentForKey } from '../state/selectionKeyboard'
 import { fieldTypeColor } from '../utils/typeColor'
 import {
   organizeRecordRows,
@@ -954,11 +954,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 const source = parseTsv(await navigator.clipboard.readText())
                 const records = visibleRows.map(row => row.original)
                 let anchors = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
-                const firstTarget = pasteCellFor(anchors[0][0], records, canEdit)
                 if (
                   anchors.length === 1
                   && anchors[0].length === 1
-                  && !isComplexPasteCell(firstTarget)
                   && (source.length > 1 || source[0].length > 1)
                 ) {
                   anchors = boundedPasteMatrix(
@@ -988,13 +986,40 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             }
 
             if (selection.kind !== 'value') return
+            const modified = e.ctrlKey || e.metaKey || e.altKey
+
+            // Delete key with multi-cell range selection: batch-clear all cells.
+            if (e.key === 'Delete' && !modified && canEdit && onWriteFieldBatch) {
+              const range = valueSelectionRange(selection, visibleCoordinates, allFieldNames)
+              const isRange = range && (range.rowEnd > range.rowStart || range.columnEnd > range.columnStart)
+              if (isRange) {
+                e.preventDefault()
+                const cells = selectionCellMatrix(selection, visibleCoordinates, allFieldNames).flat()
+                const records = visibleRows.map(row => row.original)
+                const writes = cells.flatMap(anchor => {
+                  const f = selectedTopLevelField(anchor.fieldPath)
+                  const row = records.find(r => sameCoordinate(r.coordinate, anchor.coordinate))
+                  const cell = f && row ? fieldCell(row, f) : undefined
+                  if (!cell || cellReadOnly(cell)) return []
+                  const next = defaultValueForClear(cell.annotation, cell.value.kind)
+                  return [{ coordinate: anchor.coordinate, field_path: anchor.fieldPath, new_value: next }]
+                })
+                try {
+                  if (writes.length > 0) await onWriteFieldBatch(writes)
+                  setCellNotice(null)
+                } catch (error) {
+                  setCellNotice(`无法编辑：${errorMessage(error)}`)
+                }
+                return
+              }
+            }
+
             const field = selectedTopLevelField(selection.fieldPath)
             if (!field) return
             const selectedRow = visibleRows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
             const selectedCell = selectedRow ? fieldCell(selectedRow.original, field) : undefined
             const editable = !!selectedCell && canEdit && !cellReadOnly(selectedCell)
             const directlyEditable = editable && !isComplexValue(selectedCell?.value)
-            const modified = e.ctrlKey || e.metaKey || e.altKey
             if (e.key === 'Enter') {
               const dropdown = tableScrollRef.current?.querySelector<HTMLInputElement>(
                 `[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] input.searchable-select`,
@@ -1006,17 +1031,34 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               }
             }
 
+            // Delete on a single cell: works for both simple and collection types.
+            if (e.key === 'Delete' && !modified && editable && selectedCell) {
+              e.preventDefault()
+              try {
+                await onWriteField?.(
+                  selection.coordinate,
+                  selection.fieldPath,
+                  defaultValueForClear(selectedCell.annotation, selectedCell.value.kind),
+                )
+                setCellNotice(null)
+              } catch (error) {
+                setCellNotice(`无法编辑：${errorMessage(error)}`)
+              }
+              return
+            }
+
             const intent = directlyEditable && selectedCell
               ? selectionEditIntentForKey(e.key, modified, selectedCell.value.kind)
               : null
             if (!intent) return
             e.preventDefault()
-            if (intent.kind === 'clear' || intent.kind === 'toggle-bool') {
+            if (intent.kind === 'toggle-bool') {
               try {
-                const next = intent.kind === 'clear'
-                  ? nullValue()
-                  : { kind: 'bool' as const, value: !(selectedCell?.value.kind === 'bool' && selectedCell.value.value) }
-                await onWriteField?.(selection.coordinate, selection.fieldPath, next)
+                await onWriteField?.(
+                  selection.coordinate,
+                  selection.fieldPath,
+                  { kind: 'bool', value: !(selectedCell?.value.kind === 'bool' && selectedCell.value.value) },
+                )
                 setCellNotice(null)
               } catch (error) {
                 setCellNotice(`无法编辑：${errorMessage(error)}`)
