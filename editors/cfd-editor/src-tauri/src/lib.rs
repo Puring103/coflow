@@ -16,7 +16,7 @@ use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
     EditorRecordGroup, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot,
-    RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome,
+    RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig, WriteDimensionValueOutcome,
     WriteFieldOutcome,
 };
 use host::EditorHost;
@@ -263,7 +263,7 @@ async fn get_dimension_file_records(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-async fn set_table_column_widths(
+async fn set_default_table_column_widths(
     session_id: u32,
     file_path: String,
     actual_type: String,
@@ -273,7 +273,42 @@ async fn set_table_column_widths(
     let host = host.inner().clone();
     run_blocking(move || {
         host.sessions()
-            .set_table_column_widths(session_id, file_path, actual_type, widths)
+            .set_default_table_column_widths(session_id, file_path, actual_type, widths)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn set_views(
+    session_id: u32,
+    file_path: String,
+    actual_type: String,
+    views: Vec<ViewConfig>,
+    host: State<'_, EditorHost>,
+) -> Result<EditorProjectSettings, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .set_views(session_id, file_path, actual_type, views)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn set_view_column_widths(
+    session_id: u32,
+    file_path: String,
+    actual_type: String,
+    view_id: String,
+    widths: BTreeMap<String, f64>,
+    host: State<'_, EditorHost>,
+) -> Result<EditorProjectSettings, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .set_view_column_widths(session_id, file_path, actual_type, view_id, widths)
     })
     .await
 }
@@ -291,23 +326,6 @@ async fn set_record_groups(
     run_blocking(move || {
         host.sessions()
             .set_record_groups(session_id, file_path, actual_type, groups)
-    })
-    .await
-}
-
-#[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
-async fn set_graph_enabled_fields(
-    session_id: u32,
-    file_path: String,
-    actual_type: String,
-    fields: Vec<String>,
-    host: State<'_, EditorHost>,
-) -> Result<EditorProjectSettings, EditorError> {
-    let host = host.inner().clone();
-    run_blocking(move || {
-        host.sessions()
-            .set_graph_enabled_fields(session_id, file_path, actual_type, fields)
     })
     .await
 }
@@ -665,9 +683,10 @@ pub fn run() -> tauri::Result<()> {
             get_project_settings,
             get_project_dimensions,
             get_dimension_file_records,
-            set_table_column_widths,
+            set_default_table_column_widths,
+            set_views,
+            set_view_column_widths,
             set_record_groups,
-            set_graph_enabled_fields,
             check_project,
             build_project,
             open_source_file,

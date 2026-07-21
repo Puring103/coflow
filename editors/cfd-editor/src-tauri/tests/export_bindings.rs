@@ -27,6 +27,8 @@ fn export_bindings() {
     t::ProjectSnapshot::export_all().expect("export ProjectSnapshot");
     t::EditorProjectSettings::export_all().expect("export EditorProjectSettings");
     t::EditorRecordGroup::export_all().expect("export EditorRecordGroup");
+    t::ViewConfig::export_all().expect("export ViewConfig");
+    t::ViewKind::export_all().expect("export ViewKind");
     t::FileRecords::export_all().expect("export FileRecords");
     t::RecordRow::export_all().expect("export RecordRow");
     t::FieldCell::export_all().expect("export FieldCell");

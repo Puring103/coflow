@@ -172,12 +172,58 @@ pub struct DimensionFileRow {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct EditorProjectSettings {
+    /// Custom views keyed by (filePath, actualType). Default record/table
+    /// views are implicit and never stored here.
     #[serde(default)]
-    pub table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
+    pub views: BTreeMap<String, BTreeMap<String, Vec<ViewConfig>>>,
+    /// Column widths for the implicit default table view, keyed by
+    /// (filePath, actualType, columnName). Custom table views carry their
+    /// own widths inside their [`ViewConfig`].
+    #[serde(default)]
+    pub default_table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
     #[serde(default)]
     pub record_groups: BTreeMap<String, BTreeMap<String, Vec<EditorRecordGroup>>>,
+}
+
+/// Kind of a custom view. Record view is implicit and cannot be created,
+/// so it is not part of this enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewKind {
+    Table,
+    Graph,
+}
+
+/// A user-created custom view over a (filePath, actualType).
+///
+/// Table views use `columns` (ordered) + `column_widths`; graph views use
+/// `relations` + `fields`. `group_filter` is common to both (see design
+/// doc §4). Unused fields for a given `kind` are cleared during sanitize.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct ViewConfig {
+    pub id: String,
+    pub name: String,
+    pub kind: ViewKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_filter: Option<String>,
     #[serde(default)]
-    pub graph_enabled_fields: BTreeMap<String, BTreeMap<String, Vec<String>>>,
+    pub columns: Vec<String>,
+    #[serde(default)]
+    pub column_widths: BTreeMap<String, f64>,
+    #[serde(default)]
+    pub relations: Vec<String>,
+    #[serde(default)]
+    pub fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

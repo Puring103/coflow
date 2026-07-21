@@ -38,15 +38,15 @@ use coflow_runtime::{
 
 use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
 use crate::editor::settings::{
-    read_project_settings, sanitized_column_widths, sanitized_graph_fields,
-    sanitized_record_groups, write_project_settings,
+    read_project_settings, sanitized_column_widths, sanitized_record_groups, sanitized_views,
+    write_project_settings,
 };
 use crate::editor::types::{
     BatchWriteFieldInput, BatchWriteFieldEditOutcome, BatchWriteFieldOutcome, CollectionEdit,
     CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome,
     DeletedRecordSnapshot, EditorError, EditorProjectSettings, FileRecords, FileTypeOption,
     EditorRecordGroup, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot, RecordColumn,
-    RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, WriteFieldOutcome,
+    RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig, WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -184,27 +184,85 @@ impl SessionStore {
         Ok(session.queries().dimensions())
     }
 
-    pub fn set_table_column_widths(
+    fn project_root_for(&self, id: u32) -> Result<StdPathBuf, EditorError> {
+        let entry = self.session(id)?;
+        let root = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned during settings write"))?
+            .project_root
+            .clone();
+        Ok(root)
+    }
+
+    /// Set the column widths of the implicit default table view for a
+    /// (filePath, actualType).
+    pub fn set_default_table_column_widths(
         &self,
         id: u32,
         file_path: String,
         actual_type: String,
         widths: BTreeMap<String, f64>,
     ) -> Result<EditorProjectSettings, EditorError> {
-        let entry = self.session(id)?;
-        let project_root = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned during settings write"))?
-            .project_root
-            .clone();
+        let project_root = self.project_root_for(id)?;
         let mut settings = read_project_settings(&project_root)?;
         settings
-            .table_column_widths
+            .default_table_column_widths
             .entry(file_path)
             .or_default()
             .insert(actual_type, sanitized_column_widths(widths));
         write_project_settings(&project_root, &settings)?;
+        Ok(settings)
+    }
+
+    /// Overwrite the full custom-view list for a (filePath, actualType). The
+    /// frontend mutates the list in memory (create/rename/reconfigure/delete)
+    /// and submits the whole thing; the backend only sanitizes + persists.
+    pub fn set_views(
+        &self,
+        id: u32,
+        file_path: String,
+        actual_type: String,
+        views: Vec<ViewConfig>,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        let project_root = self.project_root_for(id)?;
+        let mut settings = read_project_settings(&project_root)?;
+        let valid_group_ids = settings
+            .record_groups
+            .get(&file_path)
+            .and_then(|by_type| by_type.get(&actual_type))
+            .map(|groups| groups.iter().map(|group| group.id.clone()).collect())
+            .unwrap_or_default();
+        settings
+            .views
+            .entry(file_path)
+            .or_default()
+            .insert(actual_type, sanitized_views(views, &valid_group_ids));
+        write_project_settings(&project_root, &settings)?;
+        Ok(settings)
+    }
+
+    /// Update just the `column_widths` of one custom table view in place,
+    /// without round-tripping the whole view list (called on drag).
+    pub fn set_view_column_widths(
+        &self,
+        id: u32,
+        file_path: String,
+        actual_type: String,
+        view_id: String,
+        widths: BTreeMap<String, f64>,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        let project_root = self.project_root_for(id)?;
+        let mut settings = read_project_settings(&project_root)?;
+        if let Some(view) = settings
+            .views
+            .get_mut(&file_path)
+            .and_then(|by_type| by_type.get_mut(&actual_type))
+            .and_then(|views| views.iter_mut().find(|view| view.id == view_id))
+        {
+            view.column_widths = sanitized_column_widths(widths);
+            write_project_settings(&project_root, &settings)?;
+        }
         Ok(settings)
     }
 
@@ -215,26 +273,14 @@ impl SessionStore {
         actual_type: String,
         groups: Vec<EditorRecordGroup>,
     ) -> Result<EditorProjectSettings, EditorError> {
-        let entry = self.session(id)?;
-        let session = entry.state.read().map_err(|_| EditorError::session("session poisoned"))?;
-        let mut settings = read_project_settings(&session.project_root)?;
-        settings.record_groups.entry(file_path).or_default().insert(actual_type, sanitized_record_groups(groups));
-        write_project_settings(&session.project_root, &settings)?;
-        Ok(settings)
-    }
-
-    pub fn set_graph_enabled_fields(
-        &self,
-        id: u32,
-        file_path: String,
-        actual_type: String,
-        fields: Vec<String>,
-    ) -> Result<EditorProjectSettings, EditorError> {
-        let entry = self.session(id)?;
-        let session = entry.state.read().map_err(|_| EditorError::session("session poisoned"))?;
-        let mut settings = read_project_settings(&session.project_root)?;
-        settings.graph_enabled_fields.entry(file_path).or_default().insert(actual_type, sanitized_graph_fields(fields));
-        write_project_settings(&session.project_root, &settings)?;
+        let project_root = self.project_root_for(id)?;
+        let mut settings = read_project_settings(&project_root)?;
+        settings
+            .record_groups
+            .entry(file_path)
+            .or_default()
+            .insert(actual_type, sanitized_record_groups(groups));
+        write_project_settings(&project_root, &settings)?;
         Ok(settings)
     }
 
