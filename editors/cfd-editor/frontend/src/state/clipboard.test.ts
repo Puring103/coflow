@@ -47,6 +47,17 @@ describe('TSV clipboard codec', () => {
 })
 
 describe('paste planner', () => {
+  it('accepts older scalar annotations that omit optional object metadata', async () => {
+    const target = cell('name', {
+      annotation: { declared_type: 'string', read_only: false } as FieldAnnotation,
+    })
+    const result = await planPaste([['updated']], [[target]], {
+      mode: 'replace',
+      parse: async (_coordinate, _path, text) => ({ kind: 'string', value: text }),
+    })
+    expect(result.ok).toBe(true)
+  })
+
   it('broadcasts one source cell but parses independently for mixed targets', async () => {
     const seen: string[] = []
     const result = await planPaste([['7']], [[cell('name'), cell('count')]], {

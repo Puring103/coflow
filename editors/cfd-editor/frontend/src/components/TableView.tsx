@@ -1502,7 +1502,7 @@ function pasteCellFor(
 }
 
 function isComplexPasteCell(cell: PasteCell): boolean {
-  return !!cell.annotation?.item_annotation || (cell.annotation?.field_order.length ?? 0) > 0
+  return !!cell.annotation?.item_annotation || (cell.annotation?.field_order?.length ?? 0) > 0
 }
 
 function fieldCell(record: RecordRow, fieldName: string) {
