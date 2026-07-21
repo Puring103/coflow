@@ -16,6 +16,7 @@ import type { FileRecords } from '../bindings/FileRecords'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
+import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import {
   coordinateId,
@@ -50,8 +51,12 @@ import {
   recordSelectionCoordinates,
   selectionMatchesRecord,
   selectionMatchesValue,
+  valueSelectionRange,
+  type CellAnchor,
   type EditorSelection,
   type RecordSelectionMode,
+  type ValueSelectionMode,
+  type ValueSelection,
 } from '../state/editorSelection'
 import {
   moveTableSelection,
@@ -64,6 +69,14 @@ import {
   type RecordGroupView,
 } from '../state/manualRecordGroups'
 import { useRecordPointerDrag } from '../hooks/useRecordPointerDrag'
+import { useTableCellRangeDrag } from '../hooks/useTableCellRangeDrag'
+import {
+  parseTsv,
+  planPaste,
+  serializeCellMatrix,
+  serializeRecordsToRefColumn,
+  type PasteCell,
+} from '../state/clipboard'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
 import { fitViewportPosition } from '../utils/floatingPosition'
 
@@ -93,7 +106,7 @@ interface Props {
     visibleCoordinates: readonly RecordCoordinate[],
   ) => void
   /** Click on a field cell: select that value. */
-  onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => void
+  onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], mode?: ValueSelectionMode) => void
   onRenderCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => Promise<string>
   onParseCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], text: string) => Promise<FieldValue>
   /** Click on blank space inside the table view: deselect / close inspector. */
@@ -101,6 +114,7 @@ interface Props {
   /** Dbl-click / context-menu jump to the dedicated record view. */
   onOpenRecord: (coordinate: RecordCoordinate) => void
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
+  onWriteFieldBatch?: (writes: readonly BatchWriteFieldInput[]) => Promise<void>
   onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
   /** Create a new record. Resolves once the back-end has persisted and the
    *  parent has refreshed `data` for this file. */
@@ -140,7 +154,7 @@ interface TableContextMenu {
   showGroupTargets: boolean
 }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
@@ -160,6 +174,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     startX: number
     startWidth: number
   } | null>(null)
+  const clipboardBusyRef = useRef(false)
   columnSizingRef.current = columnSizing
 
   const updateColumnResize = (pointerId: number, clientX: number) => {
@@ -560,6 +575,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     () => visibleRows.map(row => row.original.coordinate),
     [visibleRows],
   )
+  const selectedValueRange = valueSelectionRange(selection ?? null, visibleCoordinates, allFieldNames)
+  const cellRangeDrag = useTableCellRangeDrag({
+    rootRef: tableScrollRef,
+    onSelectCell: (id, field, mode) => {
+      const coordinate = visibleCoordinates.find(item => coordinateId(item) === id)
+      if (coordinate) onSelectValue?.(coordinate, [fieldPathField(field)], mode)
+    },
+  })
   const recordPointerDrag = useRecordPointerDrag({
     rootRef: tableScrollRef,
     records: data.records,
@@ -655,6 +678,24 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   }, [selectionKeyForReveal])
 
   useEffect(() => {
+    if (selection?.kind !== 'value' || selection.filePath !== data.file_path) return
+    if (valueSelectionRange(selection, visibleCoordinates, allFieldNames)) return
+    const focusVisible = visibleCoordinates.some(item => sameCoordinate(item, selection.coordinate))
+      && !!selectedTopLevelField(selection.fieldPath)
+      && allFieldNames.includes(selectedTopLevelField(selection.fieldPath)!)
+    const anchorVisible = visibleCoordinates.some(item => sameCoordinate(item, selection.rangeAnchor.coordinate))
+      && !!selectedTopLevelField(selection.rangeAnchor.fieldPath)
+      && allFieldNames.includes(selectedTopLevelField(selection.rangeAnchor.fieldPath)!)
+    if (focusVisible) onSelectValue?.(selection.coordinate, selection.fieldPath, 'replace')
+    else if (anchorVisible) onSelectValue?.(
+      selection.rangeAnchor.coordinate,
+      selection.rangeAnchor.fieldPath,
+      'replace',
+    )
+    else onClearSelection?.()
+  }, [selection, visibleCoordinates, allFieldNames, data.file_path, onSelectValue, onClearSelection])
+
+  useEffect(() => {
     if (!firstRecordFocusRequest) return
     tableScrollRef.current?.focus({ preventScroll: true })
     const first = visibleRows[0]?.original.coordinate
@@ -743,7 +784,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             )))
           }}
           tabIndex={0}
-          onPointerDown={recordPointerDrag.onPointerDown}
+          onPointerDown={event => {
+            cellRangeDrag.onPointerDown(event)
+            recordPointerDrag.onPointerDown(event)
+          }}
           onClickCapture={recordPointerDrag.onClickCapture}
           onFocus={e => {
             if (e.target !== e.currentTarget || selection || visibleRows.length === 0) return
@@ -755,10 +799,19 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && visibleCoordinates.length > 0) {
               e.preventDefault()
-              const first = visibleCoordinates[0]
-              const last = visibleCoordinates[visibleCoordinates.length - 1]
-              onSelectRecord?.(first, 'replace', visibleCoordinates)
-              onSelectRecord?.(last, 'range', visibleCoordinates)
+              if (selection.kind === 'value' && allFieldNames.length > 0) {
+                onSelectValue?.(visibleCoordinates[0], [fieldPathField(allFieldNames[0])], 'replace')
+                onSelectValue?.(
+                  visibleCoordinates[visibleCoordinates.length - 1],
+                  [fieldPathField(allFieldNames[allFieldNames.length - 1])],
+                  'range',
+                )
+              } else {
+                const first = visibleCoordinates[0]
+                const last = visibleCoordinates[visibleCoordinates.length - 1]
+                onSelectRecord?.(first, 'replace', visibleCoordinates)
+                onSelectRecord?.(last, 'range', visibleCoordinates)
+              }
               return
             }
             if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -785,11 +838,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 e.key as TableDirection,
                 visibleCoordinates,
                 allFieldNames,
+                e.shiftKey && selection.kind === 'value',
               )
               if (next !== selection) {
                 setSyntaxEdit(null)
                 if (next.kind === 'record') onSelectRecord?.(next.coordinate, 'replace', visibleCoordinates)
-                else onSelectValue?.(next.coordinate, next.fieldPath)
+                else onSelectValue?.(next.coordinate, next.fieldPath, e.shiftKey ? 'range' : 'replace')
                 revealTableSelection(next)
               } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'ArrowRight') {
                 onNavigationBoundary?.(e.key)
@@ -822,6 +876,95 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               return
             }
 
+            const shortcut = (e.ctrlKey || e.metaKey) ? e.key.toLowerCase() : ''
+            if ((shortcut === 'c' || shortcut === 'x') && onRenderCellText) {
+              e.preventDefault()
+              if (clipboardBusyRef.current) return
+              clipboardBusyRef.current = true
+              try {
+                if (selection.kind === 'record') {
+                  if (shortcut === 'x') throw new Error('不支持剪切整条记录')
+                  const coordinates = recordSelectionCoordinates(selection)
+                  await navigator.clipboard.writeText(serializeRecordsToRefColumn(coordinates))
+                } else {
+                  const matrix = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
+                  const text = await serializeCellMatrix(matrix, onRenderCellText)
+                  await navigator.clipboard.writeText(text)
+                  if (shortcut === 'x') {
+                    if (!onWriteFieldBatch) throw new Error('当前来源不支持批量写入')
+                    const targets = matrix.flat().map(anchor => pasteCellFor(
+                      anchor,
+                      visibleRows.map(row => row.original),
+                      canEdit,
+                    ))
+                    if (targets.some(target => !target.writable || !target.annotation?.nullable)) {
+                      throw new Error('剪切区域包含只读或不可清空的单元格')
+                    }
+                    const writes = targets.filter(target => target.value.kind !== 'null').map(target => ({
+                      coordinate: target.coordinate,
+                      field_path: target.fieldPath,
+                      new_value: nullValue(),
+                    }))
+                    if (writes.length > 0) await onWriteFieldBatch(writes)
+                  }
+                }
+                setCellNotice(null)
+              } catch (error) {
+                setCellNotice(`${shortcut === 'x' ? '剪切' : '复制'}失败：${errorMessage(error)}`)
+              } finally {
+                clipboardBusyRef.current = false
+              }
+              return
+            }
+            if (shortcut === 'v') {
+              e.preventDefault()
+              if (clipboardBusyRef.current) return
+              if (selection.kind !== 'value') {
+                setCellNotice('记录选择模式不支持粘贴')
+                return
+              }
+              if (!onParseCellText || !onWriteFieldBatch) {
+                setCellNotice('当前来源不支持批量粘贴')
+                return
+              }
+              clipboardBusyRef.current = true
+              try {
+                const source = parseTsv(await navigator.clipboard.readText())
+                const records = visibleRows.map(row => row.original)
+                let anchors = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
+                const firstTarget = pasteCellFor(anchors[0][0], records, canEdit)
+                if (
+                  anchors.length === 1
+                  && anchors[0].length === 1
+                  && !isComplexPasteCell(firstTarget)
+                  && (source.length > 1 || source[0].length > 1)
+                ) {
+                  anchors = boundedPasteMatrix(
+                    anchors[0][0],
+                    source.length,
+                    source[0].length,
+                    visibleCoordinates,
+                    allFieldNames,
+                  )
+                }
+                const targets = anchors.map(row => row.map(anchor => pasteCellFor(anchor, records, canEdit)))
+                const result = await planPaste(source, targets, {
+                  parse: onParseCellText,
+                  mode: e.shiftKey ? 'append' : 'replace',
+                })
+                if (!result.ok) {
+                  throw new Error(result.errors.map(error => error.message).join('; '))
+                }
+                if (result.writes.length > 0) await onWriteFieldBatch(result.writes)
+                setCellNotice(null)
+              } catch (error) {
+                setCellNotice(`粘贴失败：${errorMessage(error)}`)
+              } finally {
+                clipboardBusyRef.current = false
+              }
+              return
+            }
+
             if (selection.kind !== 'value') return
             const field = selectedTopLevelField(selection.fieldPath)
             if (!field) return
@@ -830,8 +973,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             const editable = !!selectedCell && canEdit && !cellReadOnly(selectedCell)
             const directlyEditable = editable && !isComplexValue(selectedCell?.value)
             const modified = e.ctrlKey || e.metaKey || e.altKey
-            const lower = e.key.toLowerCase()
-
             if (e.key === 'Enter') {
               const dropdown = tableScrollRef.current?.querySelector<HTMLInputElement>(
                 `[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] input.searchable-select`,
@@ -841,30 +982,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 dropdown.focus({ preventScroll: true })
                 return
               }
-            }
-
-            if ((e.ctrlKey || e.metaKey) && lower === 'c' && onRenderCellText) {
-              e.preventDefault()
-              try {
-                const text = await onRenderCellText(selection.coordinate, selection.fieldPath)
-                await navigator.clipboard.writeText(text)
-                setCellNotice(null)
-              } catch (error) {
-                setCellNotice(`复制失败：${errorMessage(error)}`)
-              }
-              return
-            }
-            if ((e.ctrlKey || e.metaKey) && lower === 'v' && directlyEditable && onParseCellText && onWriteField) {
-              e.preventDefault()
-              try {
-                const text = await navigator.clipboard.readText()
-                const next = await onParseCellText(selection.coordinate, selection.fieldPath, text)
-                await onWriteField(selection.coordinate, selection.fieldPath, next)
-                setCellNotice(null)
-              } catch (error) {
-                setCellNotice(`粘贴格式不正确：${errorMessage(error)}`)
-              }
-              return
             }
 
             const intent = directlyEditable && selectedCell
@@ -1024,9 +1141,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     key={row.id}
                     data-index={vr.index}
                     data-coordinate-id={coordinateId(row.original.coordinate)}
-                    data-record-draggable="true"
                     data-record-drop-kind="record"
-                    data-record-label={recordKey(row.original)}
                     ref={rowVirtualizer.measureElement}
                     className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${item.group?.color ? ' has-group-color' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
                     data-contains-selection={selectionOwnsRow(selection, data.file_path, row.original.coordinate) || undefined}
@@ -1065,17 +1180,32 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                         data.file_path,
                         row.original.coordinate,
                         fieldPath,
+                        visibleCoordinates,
+                        allFieldNames,
                       )
+                      const selectedRowIndex = selected
+                        ? visibleCoordinates.findIndex(item => sameCoordinate(item, row.original.coordinate))
+                        : -1
+                      const selectedColumnIndex = selected ? allFieldNames.indexOf(cell.column.id) : -1
                       const classes = [
                         pillColumns.has(cell.column.id) ? 'pill-cell' : '',
                         fieldPath && isComplexValue(fieldCell(row.original, cell.column.id)?.value) ? 'complex-cell' : '',
                         selected ? 'selected-cell' : '',
+                        selected && selectedValueRange?.rowStart === selectedRowIndex ? 'range-top' : '',
+                        selected && selectedValueRange?.rowEnd === selectedRowIndex ? 'range-bottom' : '',
+                        selected && selectedValueRange?.columnStart === selectedColumnIndex ? 'range-left' : '',
+                        selected && selectedValueRange?.columnEnd === selectedColumnIndex ? 'range-right' : '',
                       ].filter(Boolean).join(' ')
                       return (
                         <td
                           key={cell.id}
                           className={[classes, cell.column.id === 'key' ? 'sticky-key-column' : ''].filter(Boolean).join(' ') || undefined}
                           data-table-cell-key={tableCellKey(row.original.coordinate, cell.column.id)}
+                          data-table-value-cell={fieldPath ? 'true' : undefined}
+                          data-coordinate-id={coordinateId(row.original.coordinate)}
+                          data-field={fieldPath ? cell.column.id : undefined}
+                          data-record-draggable={!fieldPath ? 'true' : undefined}
+                          data-record-label={!fieldPath ? recordKey(row.original) : undefined}
                           style={{ width: cell.column.getSize() }}
                           aria-selected={selected || undefined}
                           onMouseDown={e => {
@@ -1086,7 +1216,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                             if (!isNativeEditingTarget(e.target)) {
                               tableScrollRef.current?.focus({ preventScroll: true })
                             }
-                            if (fieldPath) onSelectValue?.(row.original.coordinate, fieldPath)
+                            if (fieldPath) onSelectValue?.(
+                              row.original.coordinate,
+                              fieldPath,
+                              e.shiftKey ? 'range' : 'replace',
+                            )
                             else {
                               const mode: RecordSelectionMode = e.shiftKey
                                 ? 'range'
@@ -1300,6 +1434,67 @@ function isEastAsianWide(cp: number): boolean {
     (cp >= 0xFFE0 && cp <= 0xFFE6) ||        // Full-width signs
     (cp >= 0x20000 && cp <= 0x3FFFD)         // CJK Extension B..F, supplements
   )
+}
+
+function selectionCellMatrix(
+  selection: ValueSelection,
+  rows: readonly RecordCoordinate[],
+  columns: readonly string[],
+): CellAnchor[][] {
+  const range = valueSelectionRange(selection, rows, columns)
+  if (!range) return [[{ coordinate: selection.coordinate, fieldPath: selection.fieldPath }]]
+  const matrix: CellAnchor[][] = []
+  for (let row = range.rowStart; row <= range.rowEnd; row++) {
+    const cells: CellAnchor[] = []
+    for (let column = range.columnStart; column <= range.columnEnd; column++) {
+      cells.push({ coordinate: rows[row], fieldPath: [fieldPathField(columns[column])] })
+    }
+    matrix.push(cells)
+  }
+  return matrix
+}
+
+function boundedPasteMatrix(
+  start: CellAnchor,
+  rowCount: number,
+  columnCount: number,
+  rows: readonly RecordCoordinate[],
+  columns: readonly string[],
+): CellAnchor[][] {
+  const rowStart = rows.findIndex(row => sameCoordinate(row, start.coordinate))
+  const field = selectedTopLevelField(start.fieldPath)
+  const columnStart = field ? columns.indexOf(field) : -1
+  if (rowStart < 0 || columnStart < 0) return [[start]]
+  const matrix: CellAnchor[][] = []
+  for (let row = rowStart; row < Math.min(rows.length, rowStart + rowCount); row++) {
+    const cells: CellAnchor[] = []
+    for (let column = columnStart; column < Math.min(columns.length, columnStart + columnCount); column++) {
+      cells.push({ coordinate: rows[row], fieldPath: [fieldPathField(columns[column])] })
+    }
+    matrix.push(cells)
+  }
+  return matrix
+}
+
+function pasteCellFor(
+  anchor: CellAnchor,
+  rows: readonly RecordRow[],
+  editable: boolean,
+): PasteCell {
+  const field = selectedTopLevelField(anchor.fieldPath)
+  const row = rows.find(candidate => sameCoordinate(candidate.coordinate, anchor.coordinate))
+  const cell = field && row ? fieldCell(row, field) : undefined
+  return {
+    coordinate: anchor.coordinate,
+    fieldPath: anchor.fieldPath,
+    annotation: cell?.annotation ?? null,
+    value: cell?.value ?? nullValue(),
+    writable: editable && !!cell && !cellReadOnly(cell),
+  }
+}
+
+function isComplexPasteCell(cell: PasteCell): boolean {
+  return !!cell.annotation?.item_annotation || (cell.annotation?.field_order.length ?? 0) > 0
 }
 
 function fieldCell(record: RecordRow, fieldName: string) {

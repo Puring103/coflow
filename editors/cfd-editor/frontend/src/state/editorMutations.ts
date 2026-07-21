@@ -213,6 +213,20 @@ export class EditorMutationController {
     })
   }
 
+  writeFieldBatch(
+    filePath: string,
+    inputs: readonly BatchWriteFieldInput[],
+  ): Promise<void> {
+    const writes = inputs.map(input => ({
+      coordinate: { ...input.coordinate },
+      field_path: input.field_path.map(segment => ({ ...segment })),
+      new_value: cloneValue(input.new_value),
+    }))
+    return this.enqueueMutation(undefined, async () => {
+      await this.writeFieldsInternal(filePath, writes, { recordHistory: true })
+    })
+  }
+
   writeDimensionValue(
     filePath: string,
     coordinate: DimensionValueCoordinate,

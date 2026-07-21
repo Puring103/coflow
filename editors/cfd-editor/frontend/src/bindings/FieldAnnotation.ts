@@ -41,4 +41,12 @@ item_annotation: FieldAnnotation | null,
  * this to expose a type-switch control on object cells and to prompt for
  * a concrete type when materializing a null polymorphic field.
  */
-polymorphic_types: Array<string>, children: { [key in string]?: FieldAnnotation }, };
+polymorphic_types: Array<string>,
+/**
+ * Concrete object type when schema context determines one.
+ */
+object_type: string | null,
+/**
+ * Direct object fields in inherited schema declaration order.
+ */
+field_order: Array<string>, children: { [key in string]?: FieldAnnotation }, };

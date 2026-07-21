@@ -797,6 +797,66 @@ fn file_records_follow_schema_field_definition_order() {
 }
 
 #[test]
+fn object_annotations_preserve_schema_field_order() {
+    let root = temp_project_dir("cfd-editor-object-annotation-order");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            @struct sealed type Stats {
+                zulu: string;
+                alpha: int;
+                middle: bool;
+            }
+            type Item {
+                stats: Stats;
+                history: [Stats];
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        r#"sword: Item {
+            stats: Stats { zulu: "Z", alpha: 1, middle: true },
+            history: []
+        }"#,
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/items.cfd\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let records = store
+        .get_file_records(snapshot.session_id, "data/items.cfd")
+        .expect("load file records");
+    let row = &records.records[0];
+    let stats = row.fields.iter().find(|field| field.name == "stats").expect("stats field");
+    let history = row.fields.iter().find(|field| field.name == "history").expect("history field");
+
+    assert_eq!(
+        stats.annotation.as_ref().expect("stats annotation").field_order,
+        ["zulu", "alpha", "middle"]
+    );
+    assert_eq!(
+        history
+            .annotation
+            .as_ref()
+            .and_then(|annotation| annotation.item_annotation.as_deref())
+            .expect("history item annotation")
+            .field_order,
+        ["zulu", "alpha", "middle"]
+    );
+}
+
+#[test]
 fn load_project_does_not_generate_missing_dimension_sources() {
     let root = temp_project_dir("cfd-editor-dim-no-generate");
     let _cleanup = TempDirCleanup(root.clone());

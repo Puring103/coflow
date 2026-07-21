@@ -17,6 +17,8 @@ const cell = (name: string, value: FieldCell['value'], declaredType = 'string'):
     read_only: false,
     item_annotation: null,
     polymorphic_types: [],
+    object_type: null,
+    field_order: [],
     children: {},
   },
 })

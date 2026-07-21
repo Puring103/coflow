@@ -71,10 +71,13 @@ import {
   rebindSelection,
   removeSelection,
   updateRecordSelection,
+  updateValueSelection,
   valueSelection,
   type EditorSelection,
   type RecordSelectionMode,
+  type ValueSelectionMode,
 } from './state/editorSelection'
+import type { BatchWriteFieldInput } from './bindings/BatchWriteFieldInput'
 import {
   createRecordGroup,
   moveRecordsOntoRecord,
@@ -1302,7 +1305,16 @@ export default function App() {
         sameCoordinate(record.coordinate, coordinate)
         && (!activeType || recordActualType(record) === activeType)
       ))
-      if (current.kind === 'value') return inActiveType(current.coordinate) ? current : null
+      if (current.kind === 'value') {
+        if (inActiveType(current.coordinate) && inActiveType(current.rangeAnchor.coordinate)) return current
+        if (inActiveType(current.coordinate)) {
+          return valueSelection(current.filePath, current.coordinate, current.fieldPath)
+        }
+        if (inActiveType(current.rangeAnchor.coordinate)) {
+          return valueSelection(current.filePath, current.rangeAnchor.coordinate, current.rangeAnchor.fieldPath)
+        }
+        return null
+      }
       const coordinates = current.coordinates.filter(inActiveType)
       if (coordinates.length === 0) return null
       return {
@@ -1506,9 +1518,13 @@ export default function App() {
     setInspectorSelection(current => {
       if (!current || current.filePath !== currentRoute.file) return current
       if (current.kind === 'value') {
-        return visible.some(record => sameCoordinate(record.coordinate, current.coordinate))
-          ? current
-          : null
+        const contains = (coordinate: RecordCoordinate) => visible.some(record => sameCoordinate(record.coordinate, coordinate))
+        if (contains(current.coordinate) && contains(current.rangeAnchor.coordinate)) return current
+        if (contains(current.coordinate)) return valueSelection(current.filePath, current.coordinate, current.fieldPath)
+        if (contains(current.rangeAnchor.coordinate)) {
+          return valueSelection(current.filePath, current.rangeAnchor.coordinate, current.rangeAnchor.fieldPath)
+        }
+        return null
       }
       const coordinates = current.coordinates.filter(coordinate => (
         visible.some(record => sameCoordinate(record.coordinate, coordinate))
@@ -1554,10 +1570,26 @@ export default function App() {
     [mutations],
   )
   const tableOnSelectValue = useCallback(
-    (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => {
-      if (currentRoute?.view === 'table') openValueInspector(currentRoute.file, coordinate, fieldPath)
+    (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], mode: ValueSelectionMode = 'replace') => {
+      if (currentRoute?.view !== 'table') return
+      setInspectorCollapsed(false)
+      setInspectorSelection(current => updateValueSelection(
+        current,
+        currentRoute.file,
+        coordinate,
+        fieldPath,
+        mode,
+      ))
     },
-    [currentRoute?.view, currentRoute?.file, openValueInspector],
+    [currentRoute?.view, currentRoute?.file],
+  )
+  const tableOnWriteFieldBatch = useCallback(
+    async (writes: readonly BatchWriteFieldInput[]) => {
+      if (currentRoute?.view === 'table') {
+        await mutations.writeFieldBatch(currentRoute.file, writes)
+      }
+    },
+    [currentRoute?.view, currentRoute?.file, mutations],
   )
 
   const closeWorkspaceTab = useCallback((id: string) => {
@@ -2370,6 +2402,7 @@ export default function App() {
                     onClearSelection={closeInspector}
                     onOpenRecord={tableOnOpenRecord}
                     onWriteField={tableOnWriteField}
+                    onWriteFieldBatch={tableOnWriteFieldBatch}
                     onRenameRecord={tableOnRenameRecord}
                     onInsertRecord={tableOnInsertRecord}
                     onCreateRecordDraft={tableOnCreateRecordDraft}
