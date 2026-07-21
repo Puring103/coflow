@@ -657,6 +657,7 @@ fn snapshot_file_types(session: &EditorSession) -> BTreeMap<String, Vec<FileType
                 .map(|name| FileTypeOption {
                     display_name: session.type_display_name(file_path, &name),
                     record_count: counts.get(&name).copied().unwrap_or_default(),
+                    is_singleton: session.queries().type_is_singleton(&name),
                     name,
                 })
                 .collect();

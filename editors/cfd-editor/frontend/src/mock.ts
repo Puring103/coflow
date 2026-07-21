@@ -73,14 +73,14 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
   ],
   file_types: {
     'data/item.cfd': [
-      { name: 'Item', display_name: 'Items', record_count: 2 },
-      { name: 'Weapon', display_name: 'Weapons', record_count: 1 },
+      { name: 'Item', display_name: 'Items', record_count: 2, is_singleton: false },
+      { name: 'Weapon', display_name: 'Weapons', record_count: 1, is_singleton: false },
     ],
     'data/npc.cfd': [
-      { name: 'Npc', display_name: 'Npc', record_count: 2 },
+      { name: 'Npc', display_name: 'Npc', record_count: 2, is_singleton: false },
     ],
     'data/archive.cfd': [
-      { name: 'Item', display_name: 'Items', record_count: 0 },
+      { name: 'Item', display_name: 'Items', record_count: 0, is_singleton: false },
     ],
   },
   diagnostics: [

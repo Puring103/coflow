@@ -91,6 +91,14 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
+    pub fn type_is_singleton(self, type_name: &str) -> bool {
+        self.session
+            .schema()
+            .resolve_type(type_name)
+            .is_some_and(|meta| meta.is_singleton)
+    }
+
+    #[must_use]
     pub fn schema_type_names(self) -> Vec<String> {
         self.session
             .schema()
