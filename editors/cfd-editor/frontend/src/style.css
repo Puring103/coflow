@@ -1265,7 +1265,10 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   justify-content: space-between;
   padding: 3px 6px;
   cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
+.view-field-row.dragging { cursor: grabbing; }
 .view-field-row:hover { background: var(--bg-1); }
 .view-field-row.selected { background: var(--bg-1); }
 .view-field-row.dragging { opacity: 0.4; }

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { ViewConfig } from '../bindings/ViewConfig'
 import type { ViewKind } from '../bindings/ViewKind'
@@ -47,7 +48,11 @@ export function ViewEditorDialog({
   })
   const [relations, setRelations] = useState<string[]>(initial?.relations ?? [])
   const [groupFilter, setGroupFilter] = useState<string | null>(initial?.group_filter ?? null)
+  // Pointer-based drag (native HTML5 drag is unreliable in the Tauri webview,
+  // matching the record list's approach). `dragField` is the row being moved.
   const [dragField, setDragField] = useState<string | null>(null)
+  const listRef = useRef<HTMLUListElement | null>(null)
+  const dragStateRef = useRef<{ field: string; startY: number; moved: boolean } | null>(null)
 
   const trimmedName = name.trim()
   const relationSet = useMemo(() => new Set(relations), [relations])
@@ -83,10 +88,9 @@ export function ViewEditorDialog({
     })
   }
 
-  // Drop the dragged field immediately before `targetField` in the full order.
-  function onDropOn(targetField: string) {
-    const dragged = dragField
-    if (dragged === null || dragged === targetField) { setDragField(null); return }
+  // Move `dragged` to sit immediately before `targetField` in the full order.
+  function reorder(dragged: string, targetField: string) {
+    if (dragged === targetField) return
     setOrder(cur => {
       const without = cur.filter(f => f !== dragged)
       const to = without.indexOf(targetField)
@@ -95,6 +99,45 @@ export function ViewEditorDialog({
       next.splice(to, 0, dragged)
       return next
     })
+  }
+
+  // The field name of the row under a given viewport Y coordinate, if any.
+  function fieldUnderPointer(clientY: number): string | null {
+    const rows = listRef.current?.querySelectorAll<HTMLElement>('[data-field]')
+    if (!rows) return null
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect()
+      if (clientY >= rect.top && clientY <= rect.bottom) return row.dataset.field ?? null
+    }
+    return null
+  }
+
+  function onRowPointerDown(field: string, event: ReactPointerEvent<HTMLElement>) {
+    if (event.button !== 0) return
+    // Let the checkbox/label handle its own clicks.
+    if ((event.target as HTMLElement).closest('input, label')) return
+    dragStateRef.current = { field, startY: event.clientY, moved: false }
+    ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  }
+
+  function onRowPointerMove(event: ReactPointerEvent<HTMLElement>) {
+    const state = dragStateRef.current
+    if (!state) return
+    if (!state.moved) {
+      if (Math.abs(event.clientY - state.startY) < 4) return
+      state.moved = true
+      setDragField(state.field)
+    }
+    const target = fieldUnderPointer(event.clientY)
+    if (target && target !== state.field) reorder(state.field, target)
+  }
+
+  function onRowPointerUp(event: ReactPointerEvent<HTMLElement>) {
+    const state = dragStateRef.current
+    if (state) {
+      try { (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId) } catch { /* already released */ }
+    }
+    dragStateRef.current = null
     setDragField(null)
   }
 
@@ -178,23 +221,18 @@ export function ViewEditorDialog({
               handle to reorder; the row order is independent of checked state. */}
           <div className="view-editor-field">
             <span>{kind === 'graph' ? '显示字段' : '显示列'}（拖动排序）</span>
-            <ul className="view-field-list">
+            <ul className="view-field-list" ref={listRef}>
               {fieldRows.map(field => (
                 <li
                   key={field}
+                  data-field={field}
                   className={`view-field-row${selected.has(field) ? ' selected' : ''}${dragField === field ? ' dragging' : ''}`}
-                  draggable
-                  onDragStart={e => {
-                    setDragField(field)
-                    e.dataTransfer.effectAllowed = 'move'
-                    // Firefox/WebView require data to be set for drag to start.
-                    e.dataTransfer.setData('text/plain', field)
-                  }}
-                  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
-                  onDrop={e => { e.preventDefault(); onDropOn(field) }}
-                  onDragEnd={() => setDragField(null)}
+                  onPointerDown={e => onRowPointerDown(field, e)}
+                  onPointerMove={onRowPointerMove}
+                  onPointerUp={onRowPointerUp}
+                  onPointerCancel={onRowPointerUp}
                 >
-                  <label>
+                  <label onPointerDown={e => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={selected.has(field)}
