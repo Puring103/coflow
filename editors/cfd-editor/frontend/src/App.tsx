@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore
 import { FileTree } from './components/FileTree'
 import { TableView } from './components/TableView'
 import { RecordView } from './components/RecordView'
+import { ViewEditorDialog } from './components/ViewEditorDialog'
 import { GraphView } from './components/GraphView'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { InspectorPanel } from './components/InspectorPanel'
@@ -412,6 +413,31 @@ export default function App() {
         }
       })
   }, [generation])
+
+  // View editor dialog + view-tab context menu (create/edit/delete custom views).
+  const [viewEditor, setViewEditor] = useState<
+    { mode: 'create' } | { mode: 'edit'; view: ViewConfig } | null
+  >(null)
+  const [viewMenu, setViewMenu] = useState<
+    { tab: ViewTab; x: number; y: number } | null
+  >(null)
+  const openViewEditor = useCallback((mode: 'create') => {
+    setViewMenu(null)
+    setViewEditor({ mode })
+  }, [])
+  const openViewContextMenu = useCallback((tab: ViewTab, x: number, y: number) => {
+    setViewMenu({ tab, x, y })
+  }, [])
+  useEffect(() => {
+    if (!viewMenu) return
+    const close = () => setViewMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('resize', close)
+    }
+  }, [viewMenu])
 
   // Resizable sidebar width, persisted to localStorage.
   const [sidebarW, setSidebarW] = useState<number>(() => {
@@ -1531,6 +1557,35 @@ export default function App() {
     () => (resolvedView ? visibleFieldsFor(resolvedView) : undefined),
     [resolvedView],
   )
+  // Choices offered by the view editor dialog.
+  const viewEditorFields = useMemo(
+    () => activeFileData?.columns.map(column => column.name) ?? [],
+    [activeFileData],
+  )
+  const viewEditorRelations = useMemo(
+    () => activeGraph?.available_fields ?? [],
+    [activeGraph],
+  )
+  // Create or update a custom view: merge into the (file,type) list and save.
+  const submitViewConfig = useCallback((view: ViewConfig) => {
+    if (!activeFile || !activeType) return
+    const existing = projectSettings?.views[activeFile]?.[activeType] ?? []
+    const next = existing.some(v => v.id === view.id)
+      ? existing.map(v => (v.id === view.id ? view : v))
+      : [...existing, view]
+    saveViews(activeFile, activeType, next)
+  }, [activeFile, activeType, projectSettings, saveViews])
+
+  // Delete a custom view; if the current route pointed at it, fall back to the
+  // default table view (its column widths vanish with the ViewConfig).
+  const deleteView = useCallback((viewId: string) => {
+    if (!activeFile || !activeType) return
+    const existing = projectSettings?.views[activeFile]?.[activeType] ?? []
+    saveViews(activeFile, activeType, existing.filter(v => v.id !== viewId))
+    if (currentRoute?.viewId === viewId) {
+      router.replace({ view: 'table', file: activeFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
+    }
+  }, [activeFile, activeType, projectSettings, saveViews, currentRoute, router])
   // Set of file paths that can be opened via the record/table views. Used by
   // the diagnostics panel to decide whether "跳转" is available for a row —
   // if the diagnostic's file isn't part of the source set, we hide the button
@@ -1978,6 +2033,17 @@ export default function App() {
             <Icon name="plus" size={13} />
             <span className="btn-label">新建</span>
           </button>
+          {project && (
+            <button
+              className="btn btn-primary btn-icon btn-build"
+              onClick={runBuild}
+              disabled={projectAction !== null}
+              title="构建项目"
+              aria-label="构建项目"
+            >
+              <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={15} className={projectAction === 'build' ? 'icon-spin' : undefined} />
+            </button>
+          )}
           <span className="topbar-divider" />
           <button
             className="btn btn-icon"
@@ -1998,51 +2064,7 @@ export default function App() {
             <Icon name="arrow-right" size={14} />
           </button>
         </div>
-        <div className="topbar-center">
-          {currentRoute && (activeFileData || activeDimensionData) ? (
-            <>
-              {activeDimensionData ? (
-                <div className="document-view-tabs" role="tablist" aria-label="视图">
-                  {(['record', 'table'] as const).map(view => (
-                    <button
-                      key={view}
-                      className={`tab-btn tab-view${dimensionView === view ? ' active' : ''}`}
-                      role="tab"
-                      aria-selected={dimensionView === view}
-                      onClick={() => setDimensionView(view)}
-                    >
-                      <Icon name={view} size={13} aria-hidden />
-                      {view === 'table' ? '表格' : '记录'}
-                    </button>
-                  ))}
-                </div>
-              ) : activeFileData && <div className="document-view-tabs" role="tablist" aria-label="视图">
-                {viewTabs.map(tab => (
-                  <button
-                    key={tab.id}
-                    className={`tab-btn tab-view${currentRoute.viewId === tab.id ? ' active' : ''}`}
-                    role="tab"
-                    aria-selected={currentRoute.viewId === tab.id}
-                    data-tab-id={tab.id}
-                    onClick={() => switchView(tab)}
-                  >
-                    <Icon name={tab.kind} size={13} aria-hidden />
-                    {tab.name}
-                  </button>
-                ))}
-              </div>}
-              <button
-                className="btn btn-primary btn-icon btn-build"
-                onClick={runBuild}
-                disabled={!project || projectAction !== null}
-                title="构建项目"
-                aria-label="构建项目"
-              >
-                <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={15} className={projectAction === 'build' ? 'icon-spin' : undefined} />
-              </button>
-            </>
-          ) : null}
-        </div>
+        <div className="topbar-center" />
         <div className="topbar-right">
           {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
             <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
@@ -2375,6 +2397,58 @@ export default function App() {
               )}
             </div>
           )}
+          {currentRoute && (activeFileData || activeDimensionData) && (
+            activeDimensionData ? (
+              <div className="view-tabs-row">
+                <div className="document-view-tabs" role="tablist" aria-label="视图">
+                  {(['record', 'table'] as const).map(view => (
+                    <button
+                      key={view}
+                      className={`tab-btn tab-view${dimensionView === view ? ' active' : ''}`}
+                      role="tab"
+                      aria-selected={dimensionView === view}
+                      onClick={() => setDimensionView(view)}
+                    >
+                      <Icon name={view} size={13} aria-hidden />
+                      {view === 'table' ? '表格' : '记录'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : activeFileData && (
+              <div className="view-tabs-row">
+                <div className="document-view-tabs" role="tablist" aria-label="视图">
+                  {viewTabs.map(tab => (
+                    <button
+                      key={tab.id}
+                      className={`tab-btn tab-view${currentRoute.viewId === tab.id ? ' active' : ''}`}
+                      role="tab"
+                      aria-selected={currentRoute.viewId === tab.id}
+                      data-tab-id={tab.id}
+                      onClick={() => switchView(tab)}
+                      onContextMenu={tab.isDefault ? undefined : event => {
+                        event.preventDefault()
+                        openViewContextMenu(tab, event.clientX, event.clientY)
+                      }}
+                    >
+                      <Icon name={tab.kind} size={13} aria-hidden />
+                      {tab.name}
+                    </button>
+                  ))}
+                </div>
+                {!isSingletonType && (
+                  <button
+                    className="btn btn-icon view-tab-add"
+                    onClick={() => openViewEditor('create')}
+                    title="新建视图"
+                    aria-label="新建视图"
+                  >
+                    <Icon name="plus" size={13} aria-hidden />
+                  </button>
+                )}
+              </div>
+            )
+          )}
           {currentRoute && activeDimensionData ? (
             <DimensionTableView
               data={activeDimensionData}
@@ -2491,6 +2565,7 @@ export default function App() {
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     recordSearch={globalSearch}
+                    hideRecordList={isSingletonType}
                     recordGroups={recordGroups}
                     collapsedGroupKeys={collapsedRecordGroups}
                     onToggleGroup={toggleRecordGroup}
@@ -2636,6 +2711,51 @@ export default function App() {
           <Icon name={projectActionNotice.tone === 'error' ? 'error' : 'check'} size={14} />
           <span>{projectActionNotice.message}</span>
         </div>
+      )}
+
+      {viewMenu && (
+        <div
+          className="context-menu view-tab-menu"
+          style={{ left: viewMenu.x, top: viewMenu.y }}
+          role="menu"
+          onClick={e => e.stopPropagation()}
+        >
+          <button
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              const view = projectSettings?.views[activeFile ?? '']?.[activeType]
+                ?.find(v => v.id === viewMenu.tab.id)
+              setViewMenu(null)
+              if (view) setViewEditor({ mode: 'edit', view })
+            }}
+          >
+            <Icon name="edit" size={13} aria-hidden />
+            编辑视图
+          </button>
+          <button
+            className="ctx-item danger"
+            role="menuitem"
+            onClick={() => {
+              deleteView(viewMenu.tab.id)
+              setViewMenu(null)
+            }}
+          >
+            <Icon name="close" size={13} aria-hidden />
+            删除视图
+          </button>
+        </div>
+      )}
+
+      {viewEditor && activeFile && activeType && (
+        <ViewEditorDialog
+          initial={viewEditor.mode === 'edit' ? viewEditor.view : null}
+          availableFields={viewEditorFields}
+          availableRelations={viewEditorRelations}
+          groups={recordGroups}
+          onSubmit={submitViewConfig}
+          onClose={() => setViewEditor(null)}
+        />
       )}
 
       {showHelp && (
