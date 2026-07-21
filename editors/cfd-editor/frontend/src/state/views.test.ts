@@ -3,7 +3,6 @@ import type { EditorProjectSettings } from '../bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { ViewConfig } from '../bindings/ViewConfig'
 import {
-  DEFAULT_GRAPH_VIEW_ID,
   DEFAULT_RECORD_VIEW_ID,
   DEFAULT_TABLE_VIEW_ID,
   RESERVED_VIEW_ID_PREFIX,
@@ -61,15 +60,9 @@ describe('viewTabsFor', () => {
     ])
   })
 
-  it('includes record + table always, graph only when supported', () => {
-    const noGraph = viewTabsFor(null, FILE, TYPE, false, false).map(t => t.id)
-    expect(noGraph).toEqual([DEFAULT_RECORD_VIEW_ID, DEFAULT_TABLE_VIEW_ID])
-    const withGraph = viewTabsFor(null, FILE, TYPE, false, true).map(t => t.id)
-    expect(withGraph).toEqual([
-      DEFAULT_RECORD_VIEW_ID,
-      DEFAULT_TABLE_VIEW_ID,
-      DEFAULT_GRAPH_VIEW_ID,
-    ])
+  it('includes record + table by default, with no default graph view', () => {
+    const tabs = viewTabsFor(null, FILE, TYPE, false, true).map(t => t.id)
+    expect(tabs).toEqual([DEFAULT_RECORD_VIEW_ID, DEFAULT_TABLE_VIEW_ID])
   })
 
   it('appends custom views in order, skipping graph views when unsupported', () => {
@@ -78,7 +71,6 @@ describe('viewTabsFor', () => {
     expect(supported).toEqual([
       DEFAULT_RECORD_VIEW_ID,
       DEFAULT_TABLE_VIEW_ID,
-      DEFAULT_GRAPH_VIEW_ID,
       'a',
       'b',
     ])
@@ -88,13 +80,9 @@ describe('viewTabsFor', () => {
 })
 
 describe('resolveView', () => {
-  it('resolves default record/graph views without restrictions', () => {
+  it('resolves the default record view without restrictions', () => {
     expect(resolveView(null, FILE, TYPE, DEFAULT_RECORD_VIEW_ID)).toMatchObject({
       kind: 'record',
-      isDefault: true,
-    })
-    expect(resolveView(null, FILE, TYPE, DEFAULT_GRAPH_VIEW_ID)).toMatchObject({
-      kind: 'graph',
       isDefault: true,
     })
   })
@@ -136,9 +124,8 @@ describe('resolveView', () => {
 })
 
 describe('visibleFieldsFor', () => {
-  it('returns undefined (all fields) for default views', () => {
+  it('returns undefined (all fields) for the default table view', () => {
     expect(visibleFieldsFor(resolveView(null, FILE, TYPE, DEFAULT_TABLE_VIEW_ID))).toBeUndefined()
-    expect(visibleFieldsFor(resolveView(null, FILE, TYPE, DEFAULT_GRAPH_VIEW_ID))).toBeUndefined()
   })
 
   it('restricts to columns for custom table views and fields for graph views', () => {

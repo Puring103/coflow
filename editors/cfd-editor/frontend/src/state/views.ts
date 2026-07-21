@@ -10,7 +10,6 @@ import type { ViewConfig } from '../bindings/ViewConfig'
 
 export const DEFAULT_RECORD_VIEW_ID = '__default_record'
 export const DEFAULT_TABLE_VIEW_ID = '__default_table'
-export const DEFAULT_GRAPH_VIEW_ID = '__default_graph'
 export const RESERVED_VIEW_ID_PREFIX = '__'
 
 export type ViewRenderKind = 'record' | 'table' | 'graph'
@@ -51,9 +50,9 @@ function customViews(
 
 /**
  * The view tabs to show for a (file, type).
- * - Singleton types: only the default record view (no list, no table/graph).
- * - Otherwise: default record + default table, then default graph if the
- *   records support it, then custom views in stored order.
+ * - Singleton types: only the default record view (no list, no table).
+ * - Otherwise: default record + default table, then custom views in stored
+ *   order. There is no default graph view — graph views are custom-only.
  */
 export function viewTabsFor(
   settings: EditorProjectSettings | null,
@@ -69,9 +68,6 @@ export function viewTabsFor(
     { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
     { id: DEFAULT_TABLE_VIEW_ID, name: '表格', kind: 'table', isDefault: true },
   ]
-  if (graphSupported) {
-    tabs.push({ id: DEFAULT_GRAPH_VIEW_ID, name: '图谱', kind: 'graph', isDefault: true })
-  }
   for (const view of customViews(settings, file, type)) {
     if (view.kind === 'graph' && !graphSupported) continue
     tabs.push({ id: view.id, name: view.name, kind: view.kind, isDefault: false })
@@ -97,9 +93,6 @@ export function resolveView(
       isDefault: true,
       columnWidths: settings?.default_table_column_widths?.[file]?.[type] ?? {},
     }
-  }
-  if (viewId === DEFAULT_GRAPH_VIEW_ID) {
-    return { id: viewId, kind: 'graph', isDefault: true }
   }
   const view = customViews(settings, file, type).find(v => v.id === viewId)
   if (!view) {

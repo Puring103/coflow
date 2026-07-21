@@ -96,7 +96,6 @@ import { recordsSupportGraph } from './state/graphSupport'
 import {
   DEFAULT_RECORD_VIEW_ID,
   DEFAULT_TABLE_VIEW_ID,
-  DEFAULT_GRAPH_VIEW_ID,
   viewTabsFor,
   resolveView,
   visibleFieldsFor,
@@ -908,11 +907,8 @@ export default function App() {
         : [...current, { id, filePath, typeName }])
       setActiveWorkspaceTabId(id)
       setActiveType(typeName)
-      const currentView = router.current?.view ?? 'table'
-      if (currentView === 'graph') {
-        router.push({ view: 'graph', file: filePath, viewId: DEFAULT_GRAPH_VIEW_ID, typeFilter: typeName })
-        return
-      }
+      // Graph views are custom-only and keyed by (file, type), so a new file
+      // always opens on the default table view.
       router.push({ view: 'table', file: filePath, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
     },
     [project?.file_types, router]

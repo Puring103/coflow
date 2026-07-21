@@ -21,7 +21,6 @@ import {
 import { isEditableCapabilities, isEditableFile } from '../utils/editable'
 import { DataCardNode, CardHeader } from './DataCard'
 import { DiagBadge } from './DiagBadge'
-import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import {
   defaultEnabledFields,
@@ -236,7 +235,6 @@ interface Props {
   graphData: GraphData
   activeType?: string
   enabledFieldsOverride?: readonly string[]
-  onEnabledFieldsChange?: (fields: string[]) => void
   /** Custom graph view: restrict node card fields to this set (undefined = all). */
   visibleCardFields?: ReadonlySet<string>
   fileCapabilities?: Record<string, WriterCapabilities>
@@ -266,7 +264,7 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function GraphView({ graphData, activeType, enabledFieldsOverride, onEnabledFieldsChange, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function GraphView({ graphData, activeType, enabledFieldsOverride, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
@@ -299,7 +297,6 @@ export function GraphView({ graphData, activeType, enabledFieldsOverride, onEnab
     [enabledFieldsOverride, defaultFields, availableFields],
   )
 
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false)
 
   // Expand states lifted here so layout recalcs on any change
   const [nodeExpandedMap, setNodeExpandedMap] = useState<Map<string, boolean>>(new Map())
@@ -578,15 +575,6 @@ export function GraphView({ graphData, activeType, enabledFieldsOverride, onEnab
     })
   }, [])
 
-  function toggleField(name: string) {
-    const next = new Set(enabledFields)
-    if (next.has(name)) next.delete(name); else next.add(name)
-    onEnabledFieldsChange?.(Array.from(next).sort())
-  }
-
-  const allOn = enabledFields.size === availableFields.length
-  const noneOn = enabledFields.size === 0
-  const hiddenCount = availableFields.length - enabledFields.size
   const handleViewportChange = useCallback((viewport: { zoom: number }) => {
     const next = isCompactGraphZoom(viewport.zoom)
     setZoomCompactNodes(prev => prev === next ? prev : next)
@@ -675,48 +663,6 @@ export function GraphView({ graphData, activeType, enabledFieldsOverride, onEnab
             点击节点查看 · Ctrl+点击跳转
           </div>
           </>
-        )}
-        {availableFields.length > 0 && (
-          <div className={`graph-filter-float${filterPanelOpen ? ' open' : ''}`}>
-            <button
-              className="graph-filter-trigger"
-              onClick={() => setFilterPanelOpen(o => !o)}
-              title="字段过滤"
-            >
-              <Icon name="filter" size={13} />
-              <span>字段</span>
-              {hiddenCount > 0 && <span className="graph-filter-badge">{hiddenCount}</span>}
-            </button>
-            {filterPanelOpen && (
-              <div className="graph-filter-panel">
-                <div className="graph-filter-head">
-                  <span>字段过滤</span>
-                  <button
-                    className="btn btn-link"
-                    onClick={() => onEnabledFieldsChange?.(allOn ? [] : [...availableFields])}
-                  >
-                    {allOn ? '全部隐藏' : noneOn ? '全部显示' : '反选'}
-                  </button>
-                </div>
-                <div className="graph-field-chips">
-                  {availableFields.map(f => {
-                    const on = enabledFields.has(f)
-                    return (
-                      <button
-                        key={f}
-                        className={`field-chip${on ? ' on' : ''}`}
-                        onClick={() => toggleField(f)}
-                        title={on ? '点击隐藏此字段的连线' : '点击显示此字段的连线'}
-                      >
-                        {on ? <Icon name="check" size={10} /> : <Icon name="dot" size={10} />}
-                        {f}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
         )}
       </div>
     </div>
