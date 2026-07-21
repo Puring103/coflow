@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { FieldCell } from '../bindings/FieldCell'
 import type { RecordRow } from '../bindings/RecordRow'
-import { fieldValuesEqual, projectBatchRecordFields } from './batchRecordProjection'
+import { fieldValuesEqual, projectBatchCells, projectBatchRecordFields } from './batchRecordProjection'
 
 const cell = (name: string, value: FieldCell['value'], declaredType = 'string'): FieldCell => ({
   name,
@@ -59,5 +59,14 @@ describe('batch record projection', () => {
       row('b', [cell('name', { kind: 'string', value: 'B' }, 'LocalizedText')]),
     ])
     expect(fields).toEqual([])
+  })
+
+  it('projects a same-type cell range and rejects differing editor annotations', () => {
+    const left = cell('first', { kind: 'string', value: 'A' })
+    const right = cell('second', { kind: 'string', value: 'B' })
+    expect(projectBatchCells([left, right])).toMatchObject({ state: 'mixed', editable: true })
+
+    right.annotation = { ...right.annotation!, ref_target_type: 'Other' }
+    expect(projectBatchCells([left, right])).toBeNull()
   })
 })
