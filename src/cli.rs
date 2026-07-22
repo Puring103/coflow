@@ -14,8 +14,9 @@ pub(crate) struct Cli {
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::Cli;
+    use super::{Cli, Command, SchemaCommand};
     use clap::{error::ErrorKind, Parser};
+    use std::path::PathBuf;
 
     #[test]
     #[allow(clippy::expect_used)]
@@ -28,6 +29,71 @@ mod tests {
                 format!("coflow {}\n", env!("CARGO_PKG_VERSION"))
             );
         }
+    }
+
+    #[test]
+    fn export_accepts_provider_id_as_a_positional_argument() {
+        let cli = Cli::try_parse_from([
+            "coflow",
+            "export",
+            "custom-json",
+            "project",
+            "--out",
+            "generated/custom",
+        ])
+        .expect("parse export provider id");
+        let Command::Export(args) = cli.command else {
+            panic!("expected export command");
+        };
+        assert_eq!(args.output_type, "custom-json");
+        assert_eq!(args.config_or_dir, Some(PathBuf::from("project")));
+        assert_eq!(args.out_dir, Some(PathBuf::from("generated/custom")));
+    }
+
+    #[test]
+    fn codegen_accepts_provider_id_as_a_positional_argument() {
+        let cli = Cli::try_parse_from([
+            "coflow",
+            "codegen",
+            "custom-code",
+            "project",
+            "--namespace",
+            "Game.Config",
+        ])
+        .expect("parse codegen provider id");
+        let Command::Codegen(args) = cli.command else {
+            panic!("expected codegen command");
+        };
+        assert_eq!(args.output_type, "custom-code");
+        assert_eq!(args.config_or_dir, Some(PathBuf::from("project")));
+        assert_eq!(args.namespace.as_deref(), Some("Game.Config"));
+    }
+
+    #[test]
+    fn schema_and_data_commands_default_to_human_output() {
+        let cli = Cli::try_parse_from(["coflow", "schema", "inspect"])
+            .expect("parse default schema output");
+        let Command::Schema(schema) = cli.command else {
+            panic!("expected schema command");
+        };
+        let SchemaCommand::Inspect(args) = schema.command else {
+            panic!("expected schema inspect command");
+        };
+        assert!(!args.json);
+
+        let cli = Cli::try_parse_from(["coflow", "schema", "inspect", "--json"])
+            .expect("parse JSON schema output");
+        let Command::Schema(schema) = cli.command else {
+            panic!("expected schema command");
+        };
+        let SchemaCommand::Inspect(args) = schema.command else {
+            panic!("expected schema inspect command");
+        };
+        assert!(args.json);
+
+        let error = Cli::try_parse_from(["coflow", "schema", "inspect", "--human"])
+            .expect_err("--human was removed");
+        assert_eq!(error.kind(), ErrorKind::UnknownArgument);
     }
 }
 
@@ -153,29 +219,9 @@ pub(crate) struct CleanArgs {
 
 #[derive(Debug, Args)]
 pub(crate) struct ExportArgs {
-    #[command(subcommand)]
-    pub(crate) command: ExportCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum ExportCommand {
-    /// Export the uniquely configured JSON data target.
-    Json(ExportJsonArgs),
-    /// Export the uniquely configured MessagePack data target.
-    Messagepack(ExportMessagePackArgs),
-}
-
-#[derive(Debug, Args)]
-pub(crate) struct ExportJsonArgs {
-    #[arg(value_name = "CONFIG_OR_DIR")]
-    pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override the selected data target's directory for this invocation.
-    #[arg(long = "out", value_name = "DIR")]
-    pub(crate) out_dir: Option<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-pub(crate) struct ExportMessagePackArgs {
+    /// Data exporter provider id.
+    #[arg(value_name = "TYPE")]
+    pub(crate) output_type: String,
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
     /// Override the selected data target's directory for this invocation.
@@ -185,18 +231,9 @@ pub(crate) struct ExportMessagePackArgs {
 
 #[derive(Debug, Args)]
 pub(crate) struct CodegenArgs {
-    #[command(subcommand)]
-    pub(crate) command: CodegenCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum CodegenCommand {
-    /// Generate the uniquely configured C# code target and its loader.
-    Csharp(CodegenCsharpArgs),
-}
-
-#[derive(Debug, Args)]
-pub(crate) struct CodegenCsharpArgs {
+    /// Code generator provider id.
+    #[arg(value_name = "TYPE")]
+    pub(crate) output_type: String,
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
     /// Override the selected code target's directory for this invocation.
@@ -233,18 +270,18 @@ pub(crate) struct SchemaInspectArgs {
     /// Include derived types when --type is supplied.
     #[arg(long)]
     pub(crate) include_derived: bool,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
 pub(crate) struct SchemaFilesArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -264,9 +301,9 @@ pub(crate) struct SchemaWriteFileArgs {
     /// Compile the schema after writing, or against the in-memory source in --dry-run mode.
     #[arg(long)]
     pub(crate) check: bool,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -299,9 +336,9 @@ pub(crate) enum DataCommand {
 pub(crate) struct DataSourcesArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -320,9 +357,9 @@ pub(crate) struct DataListArgs {
     /// Number of matching records to skip.
     #[arg(long, default_value_t = 0)]
     pub(crate) offset: usize,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -350,9 +387,9 @@ pub(crate) struct DataGetArgs {
     /// Fetch all matching records without the default safety limit.
     #[arg(long)]
     pub(crate) all: bool,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -368,9 +405,9 @@ pub(crate) struct DataPatchArgs {
     /// Read the JSON patch request from stdin.
     #[arg(long, conflicts_with_all = ["patch", "patch_file"])]
     pub(crate) stdin: bool,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -389,9 +426,9 @@ pub(crate) struct DataCreateFileArgs {
     /// Sheet name for Excel/table sources.
     #[arg(long, value_name = "SHEET")]
     pub(crate) sheet: Option<String>,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -410,9 +447,9 @@ pub(crate) struct DataCreateTableArgs {
     /// Sheet name to create.
     #[arg(long, value_name = "SHEET")]
     pub(crate) sheet: Option<String>,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -431,9 +468,9 @@ pub(crate) struct DataSyncHeaderArgs {
     /// Sheet name for Excel/table sources.
     #[arg(long, value_name = "SHEET")]
     pub(crate) sheet: Option<String>,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -453,7 +490,7 @@ pub(crate) struct DataWriteFileArgs {
     /// Run full project validation after writing. In --dry-run mode this is skipped.
     #[arg(long)]
     pub(crate) check: bool,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }

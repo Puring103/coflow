@@ -16,6 +16,16 @@ coflow <command>
 
 下面示例统一使用 `coflow`。
 
+查看 CLI 版本或任一层级的命令帮助：
+
+```powershell
+coflow --version
+coflow --help
+coflow <command> --help
+```
+
+`-V` 等价于 `--version`，`-h` 等价于 `--help`。
+
 ## 项目参数
 
 大多数命令接受可选的 `CONFIG_OR_DIR`：
@@ -46,13 +56,16 @@ CLI 退出码用于脚本和 CI 判断命令是否成功：
 
 会输出诊断的命令会尽量收集多个错误，再一起返回。只要存在诊断，`check`、`build`、`export`、`codegen` 这类命令就会返回非 `0`，并且不会写入对应产物。
 
-支持 `--json` 或默认 JSON 输出的命令适合接入编辑器、CI 和自动化脚本；支持 `--human` 的命令适合人工在终端阅读。`schema` 和 `data` 命令默认输出 JSON，`--human` 改为文本；`cft check` 和 `check` 默认文本输出，用 `--json` 改为诊断数组。`build`、`export`、`codegen`、`clean` 和 `init` 只输出文本状态。
+所有命令默认输出适合终端阅读的 human 文本。支持 `--json` 的命令可显式切换为
+machine-readable JSON，适合编辑器、CI 和自动化脚本。`cft check`、`check`、`schema`、
+`data` 和 `skill` 的相关命令支持 `--json`；`build`、`export`、`codegen`、`clean` 和 `init`
+只输出文本状态。
 
 输出模式由具体命令在成功解析项目和输入后应用。配置文件无法定位/解析、stdin/patch 文件
 无法读取等提前返回到顶层的错误统一使用 human diagnostics 写到 stderr，即使调用时带了
-`--json` 或命令通常默认 JSON。
+`--json`。
 
-默认 JSON 的查询命令会先输出 report 再用退出码表达结果：`schema inspect/files`、
+使用 `--json` 的查询命令会先输出 report 再用退出码表达结果：`schema inspect/files`、
 `data sources/list` 在 report 含 diagnostics 时返回 `1`。`data get` 的显式 lookup/limit 错误
 返回 `1`；成功生成 report 后，只要至少返回一条 record 就返回 `0`，即使 report 同时带有
 项目 diagnostics；空 records 只有在 diagnostics 也为空时返回 `0`。
@@ -203,7 +216,16 @@ coflow build examples/rpg --data-out out/data --code-out out/csharp --namespace 
 
 ## `export`
 
-`export` 只导出数据，不生成运行时代码。在多 target 配置中，指定的 `data.type` 必须唯一匹配一个 target；存在多个同类型 target 时命令会报告歧义并要求使用完整 `build`。
+`export` 只导出数据，不生成运行时代码：
+
+```powershell
+coflow export TYPE [CONFIG_OR_DIR] [--out DIR]
+```
+
+`TYPE` 是必填的 exporter provider id，不是固定子命令。默认 CLI 提供 `json` 和
+`messagepack`；当前应用注册其他 exporter 后，也可以直接使用其 id。在多 target 配置中，指定的
+`data.type` 必须唯一匹配一个 target；存在多个同类型 target 时命令会报告歧义并要求使用
+完整 `build`。
 
 ### `export json`
 
@@ -271,7 +293,16 @@ coflow clean [CONFIG_OR_DIR]
 
 ## `codegen`
 
-`codegen` 只发布所选 target 的运行时代码。指定的 `code.type` 必须唯一匹配一个 target；存在多个同类型 target 时命令会报告歧义并要求使用完整 `build`。该命令是 schema-only，不要求配置的数据源存在；公共代码和 loader 都从完整 schema 生成。
+`codegen` 只发布所选 target 的运行时代码：
+
+```powershell
+coflow codegen TYPE [CONFIG_OR_DIR] [--out DIR] [--namespace NAME]
+```
+
+`TYPE` 是必填的 codegen provider id，不是固定子命令。默认 CLI 提供 `csharp`；当前应用注册
+其他 codegen 后，也可以直接使用其 id。指定的 `code.type` 必须唯一匹配一个 target；存在多个
+同类型 target 时命令会报告歧义并要求使用完整 `build`。该命令是 schema-only，不要求配置的
+数据源存在；公共代码和 loader 都从完整 schema 生成。
 
 ### `codegen csharp`
 
@@ -341,7 +372,7 @@ language server 使用 schema-only 项目加载，不要求数据源文件存在
 输出编译后的 schema 视图。
 
 ```powershell
-coflow schema inspect [CONFIG_OR_DIR] [--type TYPE] [--include-derived] [--human]
+coflow schema inspect [CONFIG_OR_DIR] [--type TYPE] [--include-derived] [--json]
 ```
 
 示例：
@@ -350,10 +381,10 @@ coflow schema inspect [CONFIG_OR_DIR] [--type TYPE] [--include-derived] [--human
 coflow schema inspect examples/rpg
 coflow schema inspect examples/rpg --type Item
 coflow schema inspect examples/rpg --type Reward --include-derived
-coflow schema inspect examples/rpg --human
+coflow schema inspect examples/rpg --json
 ```
 
-默认输出 JSON，包含：
+使用 `--json` 时输出以下结构：
 
 - `types`：`module`、类型名、父类型，abstract/sealed/struct/singleton 标记、可选
   `id_as_enum` 名称，以及包含继承字段的 `fields`。
@@ -371,17 +402,17 @@ coflow schema inspect examples/rpg --human
 输出参与本次 schema 编译的 CFT 文件源码。
 
 ```powershell
-coflow schema files [CONFIG_OR_DIR] [--human]
+coflow schema files [CONFIG_OR_DIR] [--json]
 ```
 
 示例：
 
 ```powershell
 coflow schema files examples/rpg
-coflow schema files examples/rpg --human
+coflow schema files examples/rpg --json
 ```
 
-JSON 形状为 `{"files":[{"module":"...","source":"..."}],"diagnostics":[]}`。该命令
+使用 `--json` 时形状为 `{"files":[{"module":"...","source":"..."}],"diagnostics":[]}`。该命令
 适合读取 `schema inspect` 不保留的原始注释、注解、类型文本、默认值、字段顺序和 `check` 块。
 
 ### `schema write-file`
@@ -389,7 +420,7 @@ JSON 形状为 `{"files":[{"module":"...","source":"..."}],"diagnostics":[]}`。
 从标准输入写入项目配置中的 `.cft` 文件。
 
 ```powershell
-coflow schema write-file [CONFIG_OR_DIR] --file FILE --stdin [--dry-run] [--check] [--human]
+coflow schema write-file [CONFIG_OR_DIR] --file FILE --stdin [--dry-run] [--check] [--json]
 ```
 
 示例：
@@ -408,7 +439,7 @@ Get-Content schema/main.cft | coflow schema write-file examples/rpg --file schem
   模式仍会写入同一份文本，dry-run 不落盘。它不加载数据源、不同步表头，也不执行项目级
   项目数据或 `check {}` 校验。
 
-`--check` 发现 schema 诊断时命令返回 `1`，但诊断不阻止非 dry-run 写入。默认 JSON 报告字段为
+`--check` 发现 schema 诊断时命令返回 `1`，但诊断不阻止非 dry-run 写入。使用 `--json` 时报告字段为
 `file`、`written`、`dry_run`、`changed`、`check_ok` 和 `diagnostics`；未传 `--check` 时
 `check_ok` 为 `null`。
 
@@ -421,19 +452,19 @@ Get-Content schema/main.cft | coflow schema write-file examples/rpg --file schem
 输出解析后的数据源、provider id、可用操作和发现的 record 类型。
 
 ```powershell
-coflow data sources [CONFIG_OR_DIR] [--human]
+coflow data sources [CONFIG_OR_DIR] [--json]
 ```
 
 示例：
 
 ```powershell
 coflow data sources examples/rpg
-coflow data sources examples/rpg --human
+coflow data sources examples/rpg --json
 ```
 
 该命令会加载完整项目数据，因此要求数据源文件存在。
 输出中的 `diagnostics` 会包含数据加载、记录校验和 CFT `check {}` 诊断。
-默认 JSON 为 `sources` 和 `diagnostics`；每个 source 包含 `file`、`provider`、
+使用 `--json` 时报告包含 `sources` 和 `diagnostics`；每个 source 包含 `file`、`provider`、
 `capabilities` 和该文件实际发现的去重 `types`。`capabilities` 表示该具体 source 当前支持的
 操作。
 
@@ -442,7 +473,7 @@ coflow data sources examples/rpg --human
 输出轻量 record 索引，不包含完整字段值。
 
 ```powershell
-coflow data list [CONFIG_OR_DIR] [--type TYPE] [--file FILE] [--limit N] [--offset N] [--human]
+coflow data list [CONFIG_OR_DIR] [--type TYPE] [--file FILE] [--limit N] [--offset N] [--json]
 ```
 
 示例：
@@ -454,7 +485,7 @@ coflow data list examples/rpg --file data/items.cfd --limit 20
 
 每条记录包含 record type、record key、来源文件和 provider。
 输出中的 `diagnostics` 会包含数据加载、记录校验和 CFT `check {}` 诊断。
-未传 `--limit` 时 `data list` 返回 offset 后的全部匹配记录。默认 JSON 为 `records` 和
+未传 `--limit` 时 `data list` 返回 offset 后的全部匹配记录。使用 `--json` 时报告包含 `records` 和
 `diagnostics`；每项记录形如
 `{"record":{"actual_type":"Item","key":"sword"},"file":"...","provider":"..."}`。
 
@@ -463,7 +494,7 @@ coflow data list examples/rpg --file data/items.cfd --limit 20
 输出完整 record 数据。
 
 ```powershell
-coflow data get [CONFIG_OR_DIR] [TYPE.KEY] [--type TYPE] [--file FILE] [--keys a,b] [--limit N] [--offset N] [--all] [--human]
+coflow data get [CONFIG_OR_DIR] [TYPE.KEY] [--type TYPE] [--file FILE] [--keys a,b] [--limit N] [--offset N] [--all] [--json]
 ```
 
 示例：
@@ -481,7 +512,7 @@ coflow data get examples/rpg --type Item --all
 默认安全上限是 100；`--offset` 本身不能解除该限制。`--all` 忽略 `--limit`，返回 offset
 之后的全部匹配项。`--keys` 以逗号分隔并在分页前过滤。显式 `TYPE.KEY` 找不到时报告
 `DATA-NOT-FOUND`；若该记录存在但被额外的 `--type`/`--file` 过滤掉，则返回空 records，而不报告 not-found。
-默认 JSON 为 `records` 和 `diagnostics`，每个完整记录包含 `record`、`file`、`provider` 和
+使用 `--json` 时报告包含 `records` 和 `diagnostics`，每个完整记录包含 `record`、`file`、`provider` 和
 按字段名组织的结构化 `fields`。
 
 只有一个位置参数时，已存在路径、包含 `/` 或 `\` 的文本以及 `.yaml`/`.yml` 名称按
@@ -493,7 +524,7 @@ coflow data get examples/rpg --type Item --all
 创建数据文件。
 
 ```powershell
-coflow data create-file [CONFIG_OR_DIR] --file FILE [--type TYPE] [--provider cfd|csv|excel] [--sheet SHEET] [--human]
+coflow data create-file [CONFIG_OR_DIR] --file FILE [--type TYPE] [--provider cfd|csv|excel] [--sheet SHEET] [--json]
 ```
 
 示例：
@@ -517,7 +548,7 @@ coflow data create-file examples/rpg --file data/items.cfd --provider cfd
   provider options，否则按未配置目标解析。显式 `--provider` 不能与已配置的
   `source.type` 冲突。
 
-默认 JSON 报告包含 `file`、`provider`、可选 `sheet`/`type`、`headers`、`added`、
+使用 `--json` 时报告包含 `file`、`provider`、可选 `sheet`/`type`、`headers`、`added`、
 `removed` 和 `diagnostics`。
 
 使用 Coflow 库的应用可以通过自定义 provider 增加可识别的 source 文件类型。要让新类型也
@@ -531,7 +562,7 @@ coflow data create-file examples/rpg --file data/items.cfd --provider cfd
 `data create-file` 使用相同的 provider、type 和 sheet 解析规则，主要用于表达“在 workbook 中建表”。
 
 ```powershell
-coflow data create-table [CONFIG_OR_DIR] --source SOURCE [--type TYPE] [--provider PROVIDER] [--sheet SHEET] [--human]
+coflow data create-table [CONFIG_OR_DIR] --source SOURCE [--type TYPE] [--provider PROVIDER] [--sheet SHEET] [--json]
 ```
 
 示例：
@@ -554,7 +585,7 @@ coflow data create-table examples/rpg --source data/gameplay.xlsx --type Item --
 按当前 schema 同步数据文件的顶层字段或表头。
 
 ```powershell
-coflow data sync-header [CONFIG_OR_DIR] --file FILE --type TYPE [--provider cfd|csv|excel] [--sheet SHEET] [--human]
+coflow data sync-header [CONFIG_OR_DIR] --file FILE --type TYPE [--provider cfd|csv|excel] [--sheet SHEET] [--json]
 ```
 
 示例：
@@ -573,14 +604,14 @@ coflow data sync-header examples/rpg --file data/items.cfd --type Item
 
 命令会先加载并校验全部 source。schema 编译失败，或发现重复 header、重复 key 列、多个
 header 映射到同一字段时，不会同步；其他已有的数据或 `check {}` 诊断不会单独阻止本次操作。
-该命令不会生成或重写维度托管文件。默认 JSON 报告字段与 `data create-file` 相同。
+该命令不会生成或重写维度托管文件。使用 `--json` 时报告字段与 `data create-file` 相同。
 
 ### `data write-file`
 
 从标准输入重写项目配置中的 CFD 文件。
 
 ```powershell
-coflow data write-file [CONFIG_OR_DIR] --file FILE --stdin [--dry-run] [--check] [--human]
+coflow data write-file [CONFIG_OR_DIR] --file FILE --stdin [--dry-run] [--check] [--json]
 ```
 
 示例：
@@ -602,7 +633,7 @@ Get-Content data/items.cfd | coflow data write-file examples/rpg --file data/ite
 
 `--dry-run --check` 不运行检查，报告中的 `check_ok` 为 `null`。非 dry-run 模式下，如果
 `--check` 发现诊断，文件已经写入且命令返回 `1`，调用方需要根据报告继续修正。检查不会
-生成或重写维度托管文件。默认 JSON 报告字段与 `schema write-file` 相同：
+生成或重写维度托管文件。使用 `--json` 时报告字段与 `schema write-file` 相同：
 `file`、`written`、`dry_run`、`changed`、`check_ok` 和 `diagnostics`。
 
 ### `data patch`
@@ -610,9 +641,9 @@ Get-Content data/items.cfd | coflow data write-file examples/rpg --file data/ite
 应用批量数据补丁。
 
 ```powershell
-coflow data patch [CONFIG_OR_DIR] --patch JSON [--human]
-coflow data patch [CONFIG_OR_DIR] --patch-file PATCH_FILE [--human]
-coflow data patch [CONFIG_OR_DIR] --stdin [--human]
+coflow data patch [CONFIG_OR_DIR] --patch JSON [--json]
+coflow data patch [CONFIG_OR_DIR] --patch-file PATCH_FILE [--json]
+coflow data patch [CONFIG_OR_DIR] --stdin [--json]
 ```
 
 示例：
@@ -730,7 +761,7 @@ patch value 支持普通 JSON 值，也支持以下特殊对象：
 整批成功后只重新校验一次项目。最终 `diagnostics` 同时包含写入和项目校验诊断，`check_ok`
 根据完整诊断计算。`affected_files` 给出实际写入并去重后的项目 source 路径。
 
-默认 JSON 报告字段为：
+使用 `--json` 时报告字段为：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -806,6 +837,5 @@ coflow skill uninstall -g [--json]
 | `check` | 是 | 是 | 是 | 是 | 否 |
 | `build` | 是 | 是 | 是 | 是 | 数据和可选代码 |
 | `clean` | 否 | 否 | 否 | 否 | 删除历史构建数据和临时文件 |
-| `export json` | 是 | 是 | 是 | 是 | JSON 数据 |
-| `export messagepack` | 是 | 是 | 是 | 是 | MessagePack 数据 |
-| `codegen csharp` | 是 | 否 | 否 | 否 | C# 代码 |
+| `export TYPE`（内置 `json`、`messagepack`） | 是 | 是 | 是 | 是 | 对应类型的数据 |
+| `codegen TYPE`（内置 `csharp`） | 是 | 否 | 否 | 否 | 对应类型的代码 |

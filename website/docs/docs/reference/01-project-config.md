@@ -33,7 +33,7 @@ outputs:
 | --- | --- | --- | --- |
 | `schema` | path 或 path list | 是 | CFT schema 文件或目录。 |
 | `sources` | source list | 否 | 数据输入源。运行 `check`、`build`、`export` 时通常需要。 |
-| `outputs` | object | 否 | 构建、导出和代码生成输出配置。 |
+| `outputs` | object 或 target list | 否 | 构建、导出和代码生成输出配置。 |
 | `dimensions` | object | 否 | 维度/变体配置，目前内建使用 `dimensions.language` 支持本地化。 |
 
 `coflow.yaml` 使用严格字段集。未知的顶层字段会被诊断为配置错误。YAML 映射中不允许重复 key，避免后写字段静默覆盖前面的配置。
@@ -380,7 +380,9 @@ outputs:
     namespace: Game.Config
 ```
 
-`outputs.*` 除 `type`、`dir` 之外的字段会作为 provider options 传入。例如 `namespace` 是 C# codegen 的 provider option，也可以被 `coflow codegen csharp --namespace` 覆盖。
+`outputs.*` 除 `type`、`dir` 之外的字段会作为 provider options 传入。例如 `namespace` 是
+C# codegen 的 provider option，也可以被 `coflow build --namespace` 或
+`coflow codegen csharp --namespace` 覆盖。
 
 ### `outputs.loader`
 
@@ -393,8 +395,9 @@ loader 负责为一个 target 的 code/data 组合生成加载代码。当前内
 
 `loader` 可以省略；Coflow 会按注册顺序选择与 target 的 `code.type` 和 `data.type` 精确匹配的 loader。显式配置时，loader 必须与同一 target 的 code/data 组合兼容。没有 `code` 的 data-only target 不能配置 `loader`。
 
-内置组合之外的 exporter、codegen 和 loader id 只有在当前 Coflow 安装提供对应 provider 时才有效。
-单独执行 `export <type>` 或 `codegen <type>` 时，同类型 target 必须恰好一个；完整
+内置组合之外的 exporter、codegen 和 loader id 只有在当前应用提供对应 provider 时才有效。
+`coflow export TYPE` 和 `coflow codegen TYPE` 将 `TYPE` 作为 provider id；单独执行时，
+同类型 target 必须恰好一个。完整
 `build` 则处理列表中的全部 target。
 
 ## `dimensions`
