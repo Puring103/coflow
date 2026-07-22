@@ -123,7 +123,7 @@ sources:
 
 `sources` 使用 `path` 指向本地文件或目录；`type` 是可选的 provider id，省略时按后缀推断。目录源可同时包含 Excel、CSV 和 CFD 文件；`sheets` 只作用于 Excel。
 
-`outputs` 是 output target 列表，每个 target 必须有 `data`，并可选配置 `code` 和 `loader`。`data.type` 支持 `json` / `messagepack`，`code.type` 目前支持 `csharp`；省略 `loader` 时会按 code/data 组合自动选择。旧版本的对象式 `outputs: { data, code }` 配置仍完整兼容，并保持原有生成文件布局。
+`outputs` 可以是 output target 列表，也可以是包含 `data`、`code` 和 `loader` 的单个对象。每个 target 必须有 `data`，`code` 和 `loader` 可选；省略 `loader` 时会按 code/data 组合自动选择。`data.type` 支持 `json` / `messagepack`，`code.type` 支持 `csharp`。
 
 启用维度和变体（例如本地化）：
 

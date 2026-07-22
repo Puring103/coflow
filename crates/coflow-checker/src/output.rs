@@ -30,7 +30,7 @@ impl CheckOutput {
         self.diagnostics.is_empty()
     }
 
-    /// Converts failed checks into the legacy aggregate diagnostic result.
+    /// Converts failed checks into the aggregate diagnostic result.
     ///
     /// # Errors
     ///

@@ -1117,7 +1117,7 @@ fn language_dimension_rejects_stale_variant_records() {
     std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write items");
     std::fs::write(
         root.join("data/dimensions/language/Item_name.csv"),
-        "id,default,zh,old\npotion,Old,药水,legacy\nstale,Stale,旧,legacy\n",
+        "id,default,zh,extra\npotion,Old,药水,unused\nstale,Stale,旧,unused\n",
     )
     .expect("write dimension csv");
     std::fs::write(

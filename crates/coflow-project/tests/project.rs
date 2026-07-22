@@ -307,7 +307,7 @@ outputs:
             .options["runtime"],
         serde_json::Value::String("unity".to_string())
     );
-    assert!(project.config.outputs.is_legacy_shape());
+    assert!(project.config.outputs.is_object_shape());
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
@@ -340,7 +340,7 @@ outputs:
 
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
     assert!(project.schema_diagnostic_set().is_empty());
-    assert!(!project.config.outputs.is_legacy_shape());
+    assert!(!project.config.outputs.is_object_shape());
     assert_eq!(project.config.outputs.targets().len(), 2);
     assert!(project.config.outputs.targets()[0].code.is_none());
     let second = &project.config.outputs.targets()[1];
@@ -417,20 +417,20 @@ outputs:
 }
 
 #[test]
-fn project_config_rejects_old_source_fields() -> TestResult {
-    let root = temp_project_dir("coflow-project-reject-old-config-model");
+fn project_config_rejects_unknown_source_fields() -> TestResult {
+    let root = temp_project_dir("coflow-project-reject-unknown-config-fields");
     std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
     std::fs::write(root.join("schema/main.cft"), "type Item { value: string; }")
         .map_err(|err| err.to_string())?;
 
     for (name, yaml, expected) in [
         (
-            "old-file",
+            "unknown-file",
             "schema: schema/main.cft\nsources:\n  - file: data.xlsx\n",
             "unknown field `file`",
         ),
         (
-            "old-dir",
+            "unknown-dir",
             "schema: schema/main.cft\nsources:\n  - dir: data\n",
             "unknown field `dir`",
         ),
@@ -580,8 +580,8 @@ dimensions:
 }
 
 #[test]
-fn project_config_rejects_removed_localization_key() -> TestResult {
-    let root = temp_project_dir("coflow-project-localization-removed");
+fn project_config_rejects_unknown_localization_key() -> TestResult {
+    let root = temp_project_dir("coflow-project-localization-unknown");
     std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
     std::fs::write(root.join("schema/main.cft"), "type Item { name: string; }")
         .map_err(|err| err.to_string())?;
@@ -596,9 +596,8 @@ localization:
     .map_err(|err| err.to_string())?;
 
     let err =
-        Project::open_schema_only(Some(&config)).expect_err("old localization key should fail");
-    assert!(err.contains("PROJECT-CONFIG-LOCALIZATION-REMOVED"));
-    assert!(err.contains("`localization` has been removed; use `dimensions.language` instead"));
+        Project::open_schema_only(Some(&config)).expect_err("unknown localization key should fail");
+    assert!(err.contains("unknown field `localization`"));
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }

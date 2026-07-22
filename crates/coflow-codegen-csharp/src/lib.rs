@@ -130,7 +130,7 @@ fn generate_complete(
             .iter_mut()
             .find(|file| file.relative_path == PathBuf::from(&common_name))
         {
-            merge_legacy_csharp_contents(&mut common.contents, &loader.contents)?;
+            merge_csharp_contents(&mut common.contents, &loader.contents)?;
         } else {
             files.push(loader);
         }
@@ -284,12 +284,12 @@ impl LoaderGenerator for CsharpJsonLoaderGenerator {
         generate_loader_artifacts(ctx, render::CsharpLoaderKind::Json)
     }
 
-    fn merge_legacy_artifacts(
+    fn merge_object_layout_artifacts(
         &self,
         common: ArtifactSet,
         loader: ArtifactSet,
     ) -> Result<ArtifactSet, DiagnosticSet> {
-        merge_legacy_csharp_artifacts(common, loader)
+        merge_object_layout_csharp_artifacts(common, loader)
     }
 }
 
@@ -314,16 +314,16 @@ impl LoaderGenerator for CsharpMessagePackLoaderGenerator {
         generate_loader_artifacts(ctx, render::CsharpLoaderKind::MessagePack)
     }
 
-    fn merge_legacy_artifacts(
+    fn merge_object_layout_artifacts(
         &self,
         common: ArtifactSet,
         loader: ArtifactSet,
     ) -> Result<ArtifactSet, DiagnosticSet> {
-        merge_legacy_csharp_artifacts(common, loader)
+        merge_object_layout_csharp_artifacts(common, loader)
     }
 }
 
-fn merge_legacy_csharp_artifacts(
+fn merge_object_layout_csharp_artifacts(
     common: ArtifactSet,
     loader: ArtifactSet,
 ) -> Result<ArtifactSet, DiagnosticSet> {
@@ -344,7 +344,7 @@ fn merge_legacy_csharp_artifacts(
         };
         match (&mut common_file.content, loader_file.content) {
             (ArtifactContent::Text(common), ArtifactContent::Text(loader)) => {
-                merge_legacy_csharp_contents(common, &loader).map_err(codegen_diagnostics)?;
+                merge_csharp_contents(common, &loader).map_err(codegen_diagnostics)?;
             }
             _ => {
                 return Err(DiagnosticSet::one(Diagnostic::error(
@@ -364,7 +364,7 @@ fn merge_legacy_csharp_artifacts(
     })
 }
 
-fn merge_legacy_csharp_contents(
+fn merge_csharp_contents(
     common: &mut String,
     loader: &str,
 ) -> Result<(), CsharpCodegenError> {

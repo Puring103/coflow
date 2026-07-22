@@ -55,9 +55,9 @@ generated/csharp/
     Localization.cs
 ```
 
-`CoflowTables.cs` 是默认入口。每个 CFT type / enum 会生成对应 C# 文件，loader 成员位于配套的 `*.Loader.cs` partial 文件。本地化字段存在时，会额外生成运行时 helper。旧对象式 `outputs: { data, code }` 配置继续把配套 loader 合并到原来的 `*.cs` 文件中，以保持旧版本输出布局。
+`CoflowTables.cs` 是默认入口。每个 CFT type / enum 会生成对应 C# 文件。本地化字段存在时，会额外生成运行时 helper。`outputs` 使用 target 列表时，loader 成员位于配套的 `*.Loader.cs` partial 文件；使用单个对象时，loader 成员写入对应类型的 `*.cs` 文件。
 
-`outputs.code.dir` 或 `--out` 是生成成功后的实际 C# 目录。Coflow 先验证 staging 和不可变 generation，再完整替换该目录；生成成功信息会输出这个稳定目录。不可变 snapshot 记录在 `.coflow/artifacts/active.json` 的 `outputs.code.generation_dir`。不要在输出目录中放置手写代码。
+`outputs.code.dir` 或 `--out` 指定生成后的 C# 目录。每次成功生成都会完整更新该目录，不要在其中放置手写代码。
 
 ## 入口类
 

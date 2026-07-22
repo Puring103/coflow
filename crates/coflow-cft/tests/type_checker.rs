@@ -502,7 +502,7 @@ fn type_checker_suppresses_cascaded_operator_errors_when_operand_is_unknown() {
 }
 
 #[test]
-fn type_checker_rejects_old_unique_name_without_compatibility_alias() {
+fn type_checker_rejects_unknown_unique_method_name() {
     let err = compile_one(
         r#"
             type Holder {
@@ -511,7 +511,7 @@ fn type_checker_rejects_old_unique_name_without_compatibility_alias() {
             }
         "#,
     )
-    .expect_err("old unique method name should be removed");
+    .expect_err("unknown unique method name should be rejected");
 
     assert_has_code(&err, CftErrorCode::UnknownFunction);
 }

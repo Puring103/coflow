@@ -116,7 +116,7 @@ fn record_coordinate_has_stable_validated_wire_form() -> Result<(), Box<dyn std:
 }
 
 #[test]
-fn cfd_i64_wire_uses_strings_and_accepts_legacy_numbers() -> Result<(), Box<dyn std::error::Error>>
+fn cfd_i64_wire_uses_strings_and_accepts_numeric_values() -> Result<(), Box<dyn std::error::Error>>
 {
     let value = CfdValue::Int(i64::MIN);
     let json = serde_json::to_string(&value)?;
@@ -133,13 +133,13 @@ fn cfd_i64_wire_uses_strings_and_accepts_legacy_numbers() -> Result<(), Box<dyn 
     expect_eq(
         &serde_json::from_str::<CfdValue>(r#"{"kind":"int","value":42}"#)?,
         &CfdValue::Int(42),
-        "legacy numeric i64 values should deserialize",
+        "numeric i64 values should deserialize",
     )?;
 
     expect_eq(
         &serde_json::from_str::<CfdDictKey>(r#"{"kind":"int","value":2}"#)?,
         &CfdDictKey::Int(2),
-        "legacy numeric dict keys should deserialize",
+        "numeric dict keys should deserialize",
     )?;
     expect_eq(
         &serde_json::from_str::<CfdEnumValue>(

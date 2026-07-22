@@ -182,7 +182,7 @@ fn writer_capabilities_are_derived_from_workbook_format() {
     let writer = ExcelWriter::new();
     let writable_source = empty_source(Path::new("items.xlsx"));
     let macro_source = empty_source(Path::new("items.xlsm"));
-    let legacy_source = empty_source(Path::new("items.xls"));
+    let binary_source = empty_source(Path::new("items.xls"));
 
     let writable = writer.capabilities(&writable_source);
     assert!(writable.can_edit_field);
@@ -192,7 +192,7 @@ fn writer_capabilities_are_derived_from_workbook_format() {
 
     for read_only in [
         writer.capabilities(&macro_source),
-        writer.capabilities(&legacy_source),
+        writer.capabilities(&binary_source),
     ] {
         assert!(!read_only.can_edit_field);
         assert!(!read_only.can_edit_key);

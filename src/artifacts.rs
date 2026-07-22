@@ -82,7 +82,7 @@ enum ArtifactGenerator<'a> {
         data_options: &'a Value,
         loader_options: &'a Value,
         id_as_enum_variants: &'a Value,
-        legacy_layout: bool,
+        object_layout: bool,
     },
     SchemaCodeWithLoader {
         session: &'a ProjectSchemaSession,
@@ -93,7 +93,7 @@ enum ArtifactGenerator<'a> {
         data_options: &'a Value,
         loader_options: &'a Value,
         id_as_enum_variants: &'a Value,
-        legacy_layout: bool,
+        object_layout: bool,
     },
 }
 
@@ -140,7 +140,7 @@ enum ValidatedArtifactGenerator<'a> {
         loader_options: DecodedOutputOptions,
         id_as_enum_variants: &'a Value,
         needs_model_for_build: bool,
-        legacy_layout: bool,
+        object_layout: bool,
     },
     SchemaCodeWithLoader {
         session: &'a ProjectSchemaSession,
@@ -150,7 +150,7 @@ enum ValidatedArtifactGenerator<'a> {
         data_options: DecodedOutputOptions,
         loader_options: DecodedOutputOptions,
         id_as_enum_variants: &'a Value,
-        legacy_layout: bool,
+        object_layout: bool,
     },
 }
 
@@ -276,7 +276,7 @@ impl<'a> ArtifactReleasePlan<'a> {
                 data_options: data_output.options(),
                 loader_options,
                 id_as_enum_variants,
-                legacy_layout: self.project.config.outputs.is_legacy_shape(),
+                object_layout: self.project.config.outputs.is_object_shape(),
             },
         });
     }
@@ -307,7 +307,7 @@ impl<'a> ArtifactReleasePlan<'a> {
                 data_options: data_output.options(),
                 loader_options,
                 id_as_enum_variants,
-                legacy_layout: self.project.config.outputs.is_legacy_shape(),
+                object_layout: self.project.config.outputs.is_object_shape(),
             },
         });
     }
@@ -430,7 +430,7 @@ impl<'a> ArtifactReleaseOutput<'a> {
                 data_options,
                 loader_options,
                 id_as_enum_variants,
-                legacy_layout,
+                object_layout,
             } => {
                 let needs_model_for_build = codegen.descriptor().needs_model_for_build;
                 ValidatedArtifactGenerator::BuildCodeWithLoader {
@@ -442,7 +442,7 @@ impl<'a> ArtifactReleaseOutput<'a> {
                     loader,
                     id_as_enum_variants,
                     needs_model_for_build,
-                    legacy_layout,
+                    object_layout,
                 }
             }
             ArtifactGenerator::SchemaCodeWithLoader {
@@ -454,7 +454,7 @@ impl<'a> ArtifactReleaseOutput<'a> {
                 data_options,
                 loader_options,
                 id_as_enum_variants,
-                legacy_layout,
+                object_layout,
             } => ValidatedArtifactGenerator::SchemaCodeWithLoader {
                 session,
                 code_options: codegen.decode_options(code_options)?,
@@ -463,7 +463,7 @@ impl<'a> ArtifactReleaseOutput<'a> {
                 codegen,
                 loader,
                 id_as_enum_variants,
-                legacy_layout,
+                object_layout,
             },
         };
         Ok(ValidatedArtifactReleaseOutput {
@@ -520,7 +520,7 @@ impl ValidatedArtifactReleaseOutput<'_> {
                 loader_options,
                 id_as_enum_variants,
                 needs_model_for_build,
-                legacy_layout,
+                object_layout,
             } => {
                 let descriptor = codegen.descriptor();
                 let common = session.codegen_artifacts(
@@ -540,7 +540,7 @@ impl ValidatedArtifactReleaseOutput<'_> {
                     loader.as_ref(),
                     common,
                     loader_artifacts,
-                    legacy_layout,
+                    object_layout,
                     &self.slot,
                 )?;
                 (
@@ -557,7 +557,7 @@ impl ValidatedArtifactReleaseOutput<'_> {
                 data_options,
                 loader_options,
                 id_as_enum_variants,
-                legacy_layout,
+                object_layout,
             } => {
                 let descriptor = codegen.descriptor();
                 let common = session.codegen_artifacts(
@@ -576,7 +576,7 @@ impl ValidatedArtifactReleaseOutput<'_> {
                     loader.as_ref(),
                     common,
                     loader_artifacts,
-                    legacy_layout,
+                    object_layout,
                     &self.slot,
                 )?;
                 (
@@ -600,11 +600,11 @@ fn merge_code_and_loader_artifacts(
     loader: &dyn LoaderGenerator,
     common: ArtifactSet,
     loader_artifacts: ArtifactSet,
-    legacy_layout: bool,
+    object_layout: bool,
     slot: &str,
 ) -> Result<ArtifactSet, DiagnosticSet> {
-    if legacy_layout {
-        loader.merge_legacy_artifacts(common, loader_artifacts)
+    if object_layout {
+        loader.merge_object_layout_artifacts(common, loader_artifacts)
     } else {
         let mut files = common.into_files();
         files.extend(loader_artifacts.into_files());

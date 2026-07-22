@@ -123,7 +123,7 @@ fn schema_reports_inheritance_and_modifier_errors() {
 }
 
 #[test]
-fn schema_reports_removed_record_annotations_and_flag_errors() {
+fn schema_reports_invalid_record_annotations_and_flag_errors() {
     let source = r#"
         @flag
         enum Flags { A = 1, B = 3, }
@@ -131,7 +131,7 @@ fn schema_reports_removed_record_annotations_and_flag_errors() {
         @struct
         type NotSealed { x: int; }
 
-        type OldAnnotations {
+        type InvalidAnnotations {
             @id
             key: string;
             @ref(Flags)
@@ -279,7 +279,7 @@ fn schema_accepts_zero_flag_value_and_rejects_negative_flag_values() {
 }
 
 #[test]
-fn schema_rejects_removed_display_and_deprecated_annotations() {
+fn schema_rejects_unknown_display_and_deprecated_annotations() {
     let err = compile_one(
         r#"
             @display("Item")
@@ -296,7 +296,7 @@ fn schema_rejects_removed_display_and_deprecated_annotations() {
             }
         "#,
     )
-    .expect_err("@display and @deprecated should no longer be valid annotations");
+    .expect_err("@display and @deprecated should be rejected");
 
     let unknown_count = err
         .diagnostics

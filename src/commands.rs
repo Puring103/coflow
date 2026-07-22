@@ -412,7 +412,7 @@ fn output_target_diagnostic(
     message: impl Into<String>,
 ) -> Diagnostic {
     let mut key_path = vec!["outputs".to_string()];
-    if !project.config.outputs.is_legacy_shape() {
+    if !project.config.outputs.is_object_shape() {
         key_path.push(target_index.to_string());
     }
     key_path.push(component.to_string());
