@@ -514,7 +514,8 @@ fn override_code_namespace(project: &mut Project, namespace: Option<&str>) {
         .outputs
         .targets_mut()
         .iter_mut()
-        .find_map(|target| target.code.as_mut())
+        .filter_map(|target| target.code.as_mut())
+        .find(|output| output.output_type == CSHARP_CODEGEN_ID)
     {
         let mut options = output.options().as_object().cloned().unwrap_or_default();
         options.insert(

@@ -57,6 +57,57 @@ fn codegen_csharp_writes_newtonsoft_json_source_provider() {
 }
 
 #[test]
+fn codegen_namespace_override_targets_csharp_after_other_code_targets() {
+    let root = temp_project_dir("csharp-codegen-namespace-target");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(root.join("schema/main.cft"), "type Item { value: int; }\n")
+        .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/
+outputs:
+  - data:
+      type: json
+      dir: generated/unused-data
+    code:
+      type: custom
+      dir: generated/custom
+  - data:
+      type: json
+      dir: generated/data
+    code:
+      type: csharp
+      dir: generated/csharp
+      namespace: Original.Namespace
+"#,
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args([
+            "codegen",
+            "csharp",
+            root.to_str().expect("utf8 path"),
+            "--namespace",
+            "Override.Namespace",
+        ])
+        .output()
+        .expect("run codegen");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let item = std::fs::read_to_string(root.join("generated/csharp/Item.cs"))
+        .expect("read generated C# type");
+    assert!(item.contains("namespace Override.Namespace"));
+    assert!(!item.contains("namespace Original.Namespace"));
+}
+
+#[test]
 fn codegen_csharp_uses_messagepack_loader_when_data_output_is_messagepack() {
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-csharp-messagepack-test-{suffix}"));
