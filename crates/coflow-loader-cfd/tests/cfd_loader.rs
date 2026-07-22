@@ -127,7 +127,7 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
 }
 
 #[test]
-fn cfd_rejects_legacy_and_bare_object_references() {
+fn cfd_rejects_invalid_reference_syntax_and_bare_object_keys() {
     let schema = compile_schema(
         r#"
             type Item { name: string; }
@@ -135,15 +135,15 @@ fn cfd_rejects_legacy_and_bare_object_references() {
         "#,
     );
 
-    let legacy_at = parse_cfd_input_records(
+    let invalid_at = parse_cfd_input_records(
         &schema,
         r#"
             sword: Item { name: "Iron Sword" }
             holder: Holder { item: @sword }
         "#,
     )
-    .expect_err("@key is no longer valid");
-    assert_has_text_code(&legacy_at, CfdTextErrorCode::Syntax);
+    .expect_err("@key is invalid");
+    assert_has_text_code(&invalid_at, CfdTextErrorCode::Syntax);
 
     let direct_path = parse_cfd_input_records(
         &schema,
@@ -397,8 +397,14 @@ fn cfd_object_and_dict_spreads_merge_before_local_overrides() -> TestResult {
             elite: Monster {
                 ...&base,
                 name: "Elite",
-                stats: { hp: 180, attack: 20 },
-                weights: { Fire: 20, Ice: 5 },
+                stats: {
+                    ...{ hp: 100, attack: 15 },
+                    hp: 180,
+                },
+                weights: {
+                    ...{ Fire: 10, Ice: 5 },
+                    Fire: 20,
+                },
             }
         "#,
     )?;
@@ -415,7 +421,7 @@ fn cfd_object_and_dict_spreads_merge_before_local_overrides() -> TestResult {
         panic!("expected stats object");
     };
     assert_eq!(stats.field("hp"), Some(&CfdValue::Int(180)));
-    assert_eq!(stats.field("attack"), Some(&CfdValue::Int(20)));
+    assert_eq!(stats.field("attack"), Some(&CfdValue::Int(15)));
     let Some(CfdValue::Dict(weights)) = elite.field("weights") else {
         panic!("expected weights dict");
     };
@@ -486,7 +492,7 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
 }
 
 #[test]
-fn cfd_rejects_typed_and_path_refs() {
+fn cfd_rejects_invalid_record_reference_forms() {
     let schema = compile_schema(
         r#"
             enum Element { Fire, Ice, }
@@ -515,12 +521,12 @@ fn cfd_rejects_typed_and_path_refs() {
             }
         "#,
     )
-    .expect_err("typed/path refs should be rejected");
+    .expect_err("invalid record reference should be rejected");
     assert_has_text_code(&err, CfdTextErrorCode::Syntax);
 }
 
 #[test]
-fn cfd_path_refs_can_no_longer_target_scalar_fields() {
+fn cfd_rejects_invalid_record_reference_in_scalar_field() {
     let schema = compile_schema(
         r#"
             enum Element { Fire, Ice, }
@@ -546,7 +552,8 @@ fn cfd_path_refs_can_no_longer_target_scalar_fields() {
         }
     "#;
 
-    let err = parse_cfd_input_records(&schema, source).expect_err("path refs should be rejected");
+    let err = parse_cfd_input_records(&schema, source)
+        .expect_err("invalid record reference should be rejected");
     assert_has_text_code(&err, CfdTextErrorCode::Syntax);
 }
 

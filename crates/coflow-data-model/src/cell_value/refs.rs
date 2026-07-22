@@ -11,9 +11,7 @@ pub(super) fn parse_ref(
     let text = text.trim();
     let Some(key) = text.strip_prefix('&') else {
         if text.starts_with('@') {
-            return Err(syntax(
-                "typed and path references are no longer supported; use `&key`",
-            ));
+            return Err(syntax("invalid record reference"));
         }
         if looks_like_bare_record_key(text) {
             return Err(reference_needs_marker(text));
@@ -21,7 +19,7 @@ pub(super) fn parse_ref(
         return Err(type_mismatch(&format!("&{expected_type}")));
     };
     if key.contains('.') || key.contains('[') || key.contains(']') {
-        return Err(syntax("record references do not support paths"));
+        return Err(syntax("invalid record reference"));
     }
     if key.trim() != key {
         return Err(syntax("direct reference key cannot contain whitespace"));

@@ -1134,7 +1134,7 @@ fn parses_unicode_polymorphic_object_type_markers() -> TestResult {
 }
 
 #[test]
-fn object_cells_reject_typed_and_path_refs() -> TestResult {
+fn object_cells_reject_invalid_record_reference_forms() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
@@ -1212,7 +1212,7 @@ fn ref_cells_parse_direct_record_ref_shorthand_from_expected_type() -> TestResul
 }
 
 #[test]
-fn direct_record_ref_shorthand_rejects_paths_and_invalid_keys() -> TestResult {
+fn direct_record_refs_reject_invalid_forms_and_keys() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
@@ -1226,8 +1226,8 @@ fn direct_record_ref_shorthand_rejects_paths_and_invalid_keys() -> TestResult {
     assert!(
         path.diagnostics
             .iter()
-            .any(|diag| diag.message.contains("do not support paths")),
-        "expected path rejection, got {path:?}",
+            .any(|diag| diag.message == "invalid record reference"),
+        "expected invalid record reference diagnostic, got {path:?}",
     );
 
     let invalid_key = parse_err(&schema, "&Item", "&fire-ball")?;
@@ -1280,7 +1280,7 @@ fn object_cells_reject_bare_reference_keys_with_marker_hint() -> TestResult {
 }
 
 #[test]
-fn object_cells_reject_legacy_bare_at_references() -> TestResult {
+fn object_cells_reject_invalid_at_references() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item { name: string; }
@@ -1295,14 +1295,13 @@ fn object_cells_reject_legacy_bare_at_references() -> TestResult {
                 diag.code,
                 CellValueErrorCode::Syntax | CellValueErrorCode::UnknownType
             )),
-            "expected legacy reference `{text}` to fail as syntax or unknown type, got {err:?}",
+            "expected invalid reference `{text}` to fail as syntax or unknown type, got {err:?}",
         );
         assert!(
             err.diagnostics
                 .iter()
-                .any(|diag| diag.message.contains("no longer supported")
-                    || diag.message.contains("use `&key`")),
-            "expected legacy reference hint for `{text}`, got {err:?}",
+                .any(|diag| diag.message == "invalid record reference"),
+            "expected invalid record reference diagnostic for `{text}`, got {err:?}",
         );
     }
     Ok(())

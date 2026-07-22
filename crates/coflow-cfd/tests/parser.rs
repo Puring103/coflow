@@ -225,23 +225,20 @@ fn unterminated_string_produces_error() {
 }
 
 #[test]
-fn typed_refs_are_rejected() {
-    let errors = parse_err("r: T { target: @Monster.boss }");
-    assert!(
-        errors.iter().any(|error| error.message.contains("`&key`")),
-        "expected typed ref rejection, got {errors:?}"
-    );
-}
-
-#[test]
-fn direct_ref_paths_are_rejected() {
-    let errors = parse_err("r: T { target: &boss.name }");
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message.contains("reference paths")),
-        "expected path ref rejection, got {errors:?}"
-    );
+fn invalid_record_reference_syntax_is_rejected() {
+    for source in [
+        "r: T { target: @Monster.boss }",
+        "r: T { target: &boss.name }",
+        "r: T { target: &boss[0] }",
+    ] {
+        let errors = parse_err(source);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message == "invalid record reference"),
+            "expected invalid reference diagnostic, got {errors:?}"
+        );
+    }
 }
 
 #[test]

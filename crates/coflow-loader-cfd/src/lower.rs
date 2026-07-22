@@ -297,7 +297,7 @@ fn lower_ref(
     let CfdValue::Ref(reference) = value else {
         return Err(error(
             CfdTextErrorCode::Syntax,
-            "typed and path references are no longer supported; use `&key`",
+            "invalid record reference",
             value.span(),
         ));
     };
