@@ -65,6 +65,7 @@ export default withMermaid(defineConfig({
               collapsed: false,
               items: [
                 { text: 'CFT Schema', link: '/docs/reference/03-language/01-cft' },
+                { text: 'Check 校验', link: '/docs/reference/03-language/04-check' },
                 { text: 'CFD 文本数据', link: '/docs/reference/03-language/02-cfd' },
                 { text: '表格单元格值', link: '/docs/reference/03-language/03-cell-value' }
               ]

@@ -1,195 +1,161 @@
 # 数据模型
 
-Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Excel、CSV 和 CFD 会被 Provider 转换成来源无关的 loaded record drafts；维度文件会转换成直接关联 owner record 的 dimension value drafts。DataModel 统一处理默认值、类型检查、引用解析、记录索引和业务校验。
+Coflow 会把 Excel、CSV、CFD 和维度文件中的数据合并成统一的数据模型。无论记录来自哪种数据源，它们都遵循相同的 CFT 类型、默认值、引用和校验规则。
 
-数据模型不保留数据源格式差异。导出、代码生成、编辑器视图和 `check {}` 都基于同一个模型工作。
+配置作者通常不需要关心数据在内存中的存储方式，但需要理解合并后的数据语义，因为 `check`、导出、代码生成和编辑器都以这份统一结果为准。
 
-## 结构
+## 记录与类型
 
-核心结构可以理解为：
+每条顶层记录由两部分确定：
 
-```text
-CfdDataModel
-  tables              # TypeName -> CfdTable
-  record_by_domain_key # (inheritance root TypeName, RecordKey) -> RecordId
-  records             # 所有顶层 records
-  ref_edges           # 直接 &Type 引用边
-  spread_edges        # ...&key spread 来源边
-
-CfdTable
-  type_name
-  records             # RecordId 列表，保持数据源顺序
-  primary_index        # record key -> RecordId
-
-CfdRecord
-  key                 # record key
-  object              # 顶层 record 的对象值
-
-CfdObject
-  actual_type          # 运行时实际类型
-  fields               # FieldName -> CfdValue
-  dimension_fields     # FieldName -> DimensionName -> VariantName -> value/origin
-```
-
-`records` 是集中存储。table 和记录索引只保存 `CfdRecordId`，消费者通过 model 查询记录，而不是复制记录内容。按“实际类型 + key”精确查找时，DataModel 直接读取对应 `CfdTable.primary_index`，不再维护内容相同的第二张全局 map；跨继承命名域的唯一性与引用查找继续由 `record_by_domain_key` 负责。
-
-类型声明、继承根、祖先、后代和 assignability 只由 `CftSchema` 维护。DataModel 的索引使用 canonical `TypeName`，不复制第二套 type/domain/ancestor 关系模型。
-
-## Value 类型
-
-`CfdValue` 覆盖 CFT 支持的数据形状：
-
-| 类型 | 说明 |
-| --- | --- |
-| `Null` | nullable 字段的空值 |
-| `Bool` | 布尔值 |
-| `Int` | 64 位整数 |
-| `Float` | 有限 `f64`，不允许 `NaN` 或无穷值 |
-| `String` | 字符串 |
-| `Enum` | 枚举值，携带 enum 名、底层整数值和可选 variant 名 |
-| `Object` | 内联对象，无独立 record identity |
-| `Ref` | 指向顶层 record 的引用，值本身只保留目标 key |
-| `Array` | 有序数组 |
-| `Dict` | 保持插入顺序的字典 |
-
-字典 key 只允许 `string`、`int` 和 enum。重复字典 key 是数据错误，不会后写覆盖。
-
-## Object 与 Ref
-
-`Object` 表示内联对象，只属于所在记录或字段值，不可被其他记录引用。
-
-`Ref` 表示对顶层 record 的共享引用。构建模型时，Coflow 会把字段类型为 `&Type` 的输入值 `&key` 解析成目标记录；找不到目标或类型不兼容时报告引用诊断。
-
-字段类型会约束输入形态：
-
-| 字段类型 | DataModel 行为 |
-| --- | --- |
-| `&Item` | 该字段位置必须是记录引用，拒绝内联对象 |
-| `Item` | 该字段位置必须是内联对象，拒绝记录引用 |
-| `[&Item]` / `{string: &Item}` | 集合元素或字典 value 必须是记录引用 |
-
-这些约束会沿数组元素和字典 value 递归应用。`null` 仍按 nullable 规则处理。
-
-## actual_type
-
-每条 record 都有 `actual_type`。它表示运行时实际 CFT 类型，用于多态判断、继承 check、导出和代码生成。
-
-| 场景 | actual_type 来源 |
-| --- | --- |
-| 顶层 record | 数据源声明的 record 类型 |
-| 非多态内联对象 | 字段声明类型 |
-| 多态对象 | 输入中的具体类型标记，例如 `CurrencyReward{...}` |
-
-`actual_type` 参与：
-
-- `check {}` 中的 `is` 类型判断。
-- 从父类到实际类型的 check 执行顺序。
-- JSON 导出中的 `$type` 判断。
-- C# codegen 的类型分发。
-
-## 继承与引用范围
-
-当字段声明为 `&Type` 时，引用查找会在该 type 所属继承命名域内进行：
-
-| 引用类型 | 可引用范围 |
-| --- | --- |
-| `&Reward`，其中 `Reward` 是 abstract type | 所有具体子类 |
-| `&Item`，其中 `Item` 有子类 | 自身和所有子类 |
-| `&Stats`，其中 `Stats` 是 sealed type 或无子类普通 type | 仅自身 |
-
-同一继承连通分量内 record key 必须唯一。无继承关系的 type 仍可复用相同 key。
-
-子类 record 可以满足父类字段引用；父类 record 不能满足子类字段引用。
-
-## 引用索引
-
-直接 `&Type` 引用会生成 `RefEdge`。edge 只保存引用位置 `RefSite` 和目标 record id；
-期望类型、继承范围和目标 key 继续由 canonical schema 与字段值提供，不在关系索引中复制。
+- record key，例如 `sword_fire`；
+- 实际类型，例如 `Item` 或 `CurrencyReward`。
 
 ```text
-RefSite(host_record, field_path) -> RefEdge
+sword_fire: Item {
+  name: "Fire Sword",
+}
 ```
 
-DataModel 同时维护：
+record key 相当于记录的业务 ID，不需要也不能再声明为普通 `id` 字段。CFT `check` 中可以通过虚拟字段 `id` 读取它。
 
-- `ref_by_site`：按字段位置查目标。
-- `ref_by_host`：按 record 枚举直接出边，供图视图使用。
-- `ref_by_target`：按目标 record 枚举入边，供 rename 和删除检查使用。
-- `spread_by_host`：按 materialized host 限定 spread provenance 查询，不扫描全部 edge。
-- `spread_by_source`：按 source record 枚举依赖 host，供增量失效和 rename rewrite 使用。
+实际类型决定记录拥有哪些字段、执行哪些继承校验，以及导出多态对象时使用哪个具体类型。
 
-`SpreadEdge` 只保存 host、object path、可选 dimension coordinate、实际继承字段和 source record id。
-spread provenance 与直接引用图、checker read dependency 保持独立，因为三者的失效规则不同。
+## 值类型
 
-## 数据源顺序
+数据模型支持以下值：
 
-同一 type 的 records 按稳定顺序追加：
+| CFT 类型 | 数据含义 |
+| --- | --- |
+| `int` | 64 位整数 |
+| `float` | 有限浮点数，不允许 `NaN` 或无穷值 |
+| `bool` | 布尔值 |
+| `string` | 字符串 |
+| enum | 指定 enum 的值 |
+| `TypeName` | 内联对象 |
+| `&TypeName` | 指向顶层记录的引用 |
+| `[T]` | 有序数组 |
+| `{K: V}` | 字典 |
+| `T?` | 可显式取 `null` 的值 |
 
-1. `coflow.yaml` 中 `sources` 的顺序。
-2. 同一表格 source 内 `sheets` 的顺序。
-3. 同一 sheet 内的行顺序。
-4. 同一 CFD 文件内记录出现顺序。
+字典 key 只允许 `string`、`int` 或 enum。同一个字典中不能出现重复 key。
 
-这个顺序会影响 `data list`、导出文件中的记录顺序，以及编辑器展示顺序。
+## 内联对象与记录引用
 
-## 默认值与必填字段
+内联对象是所在记录的一部分，没有独立 record key，也不能被其他记录引用：
 
-字段缺省时：
+```text
+stats: { hp: 100, attack: 20 }
+```
 
-- 有 CFT 默认值：使用默认值。
-- 是 nullable 字段：可以使用 `null`。
-- 没有默认值且非 nullable：报告 `CFD-DATA-006`。
+记录引用指向另一条顶层记录：
 
-默认值由 schema 编译阶段确定。DataModel 构建时只应用已编译的默认值，不重新解释 CFT 源文本。
+```text
+featured_item: &sword_fire
+```
 
-写入接口把字段值视为完整值：每一层内联 object 都必须包含所有没有 CFT 默认值的字段。局部片段验证只检查已提供字段，只用于尚未提交的路径级构造过程，不能直接通过 Provider 写入。
+CFT 字段类型决定必须使用哪一种形态：
+
+| 字段类型 | 合法数据 |
+| --- | --- |
+| `Item` | 内联 `Item` 对象 |
+| `&Item` | `&key` 记录引用 |
+| `[&Item]` | 记录引用数组 |
+| `{string: &Item}` | value 为记录引用的字典 |
+
+内联对象不能写成裸 record key，记录引用也不能用内联对象代替。
+
+## 继承与多态
+
+子类型的记录或对象可以赋给父类型位置。例如 `ItemReward` 是 `Reward` 的子类型时：
+
+```text
+type Drop {
+  reward: Reward;
+  saved_reward: &Reward;
+}
+```
+
+`reward` 可以保存内联 `ItemReward { ... }`，`saved_reward` 可以引用实际类型为 `ItemReward` 的顶层记录。
+
+反方向不成立：父类型值不能赋给要求具体子类型的位置。抽象类型不能直接实例化，必须使用具体子类型。
+
+同一继承体系中的 record key 必须唯一。没有继承关系的类型可以使用相同 key，因为引用的目标类型能够区分它们。
+
+## 缺省字段、默认值与 null
+
+字段没有出现在数据源中时：
+
+- 字段声明了 CFT 默认值：使用默认值；
+- 字段没有默认值：报告 `CFD-DATA-006`，即使它是 nullable 也不能省略。
+
+nullable 只表示该字段可以**显式填写** `null`。如果希望字段既可为 null 又可省略，应声明默认值：
+
+```text
+type Node {
+  next: &Node? = null;
+}
+```
+
+默认值会递归应用到内联对象。每一层对象中没有默认值的必填字段都必须由数据源提供。
+
+## 记录顺序
+
+同一类型的记录保持稳定顺序：
+
+1. `coflow.yaml` 中 source 的顺序；
+2. 表格 source 中 sheet 的顺序；
+3. sheet 中的行顺序；
+4. CFD 文件中记录的出现顺序。
+
+这个顺序会反映在数据查询、编辑器列表和导出结果中。
+
+## Spread
+
+CFD 的 `...source` 会先复制来源对象或字典的值，再应用本地覆盖：
+
+```text
+elite_monster: Monster {
+  ...&basic_monster,
+  name: "Elite Training Dummy",
+}
+```
+
+多个 spread 按出现顺序合并，后面的 spread 覆盖前面的 spread，本地字段拥有最高优先级。spread 来源必须与目标对象或字典的类型兼容，循环依赖会被拒绝。
 
 ## Singleton
 
-`@singleton` type 在 DataModel 阶段执行约束：
-
-| 规则 | 诊断 |
-| --- | --- |
-| 该 type 必须恰好有一条 record | `CFD-DATA-015` |
-| record key 必须存在且是合法 CFT 标识符 | `CFD-DATA-016` |
-| 不同 `@singleton` type 的 record key 不能撞名 | `CFD-DATA-017` |
-
-`@singleton` type 不能作为普通引用字段类型使用。这个限制在 CFT schema 阶段检查。
-
-## 维度字段
-
-`@localized` 和 `@dimension` 字段在编译后直接带有 dimension binding。每个顶层 record 自己持有这些字段的 variant overlay：
+`@singleton` 类型在整个数据集中必须恰好有一条记录：
 
 ```text
-record.fields[name]                         # default，唯一语义值
-record.dimension_fields[name].variants[zh] # zh overlay value + physical origin
+@singleton
+type GameConfig {
+  max_level: int;
+}
 ```
 
-普通 source field 是 default 的唯一权威。维度文件中的 `default` 列只是 Provider 管理的物理镜像，不会再次加载进 DataModel。
+singleton 记录仍然需要 record key。不同 singleton 类型不能使用相同 key。singleton 类型不能作为普通内联对象或记录引用字段使用。
 
-variant map 中没有 key 表示 missing；存在且值为 `Null` 表示 explicit null。missing 不回退 default，explicit null 保持 checker 的 skip 语义。
+## 维度值
 
-维度值和 owner record 同生命周期：clone、publication、rename 和 delete 不需要维护独立 dimension store。维度值中的 `&Type` 引用进入与普通字段相同的 ref edge、反向引用、rename rewrite、结构预算和 checker 流程。
+`@localized` 和 `@dimension("name")` 字段可以针对不同维度变体提供值。普通数据源中的字段值是默认值，维度文件保存各个变体的覆盖值。
 
-每个 variant value 保留自己的 CSV cell 或 CFD span origin，因此诊断和编辑器跳转仍定位到实际维度文件。
+维度变体缺失和显式 `null` 含义不同：
 
-## 与 Provider 的边界
+- 缺失：这个变体没有提供值；
+- `null`：这个变体明确提供了空值，字段必须是 nullable。
 
-Provider 只负责把来源格式转成 input records，并提供来源定位：
+维度值使用与默认值相同的字段类型、记录引用和校验规则。详见 [本地化与维度](./10-localization.md)。
 
-- Excel / CSV 负责表头、行、单元格文本读取。
-- CFD 负责文本记录解析。
-- 维度 source manager 负责维护物理镜像并直接输出 dimension values。
+## 数据源一致性
 
-以下规则由 DataModel 统一处理：
+所有 Provider 最终遵循相同规则：
 
-- 默认值。
-- 必填字段。
-- 字段类型匹配。
-- 多态可赋值。
-- 字典 key 去重。
-- record key 唯一性。
-- `&Type` 记录引用解析。
-- `@singleton` 约束。
+- 字段必须存在于 CFT 类型中；
+- 值必须符合字段类型；
+- 默认值和必填字段行为一致；
+- enum、字典 key 和多态类型按同一规则校验；
+- 记录引用可以跨数据源解析；
+- record key 唯一性和 `@singleton` 约束对整个项目生效。
 
-这样不同来源可以互相引用，并且所有来源得到一致的校验结果。
+因此，一条 CFD 记录可以引用 Excel 中的记录，CSV 和 Excel 中相同类型的记录也会进入同一个逻辑数据集合。

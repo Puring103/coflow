@@ -37,7 +37,6 @@ type Item {
 - `const`、`enum`、`type` 名称在整个项目中唯一。
 - 支持前向引用，不要求先声明后使用。
 - 当前没有 `module`、`import` 或 `use` 语句。
-- 诊断中看到的 module id 通常是项目相对路径，例如 `schema/item.cft`。
 
 注释使用 `#`：
 
@@ -215,6 +214,8 @@ check {
 ## check 块
 
 `check` 用来把业务规则写进 schema，并在 `coflow check` / `coflow build` 阶段提前拦截错误配置。它是 CFT 的核心能力之一。
+
+本节介绍常用写法；完整的运算符、优先级、索引、量词和内建方法见 [Check 校验](./04-check.md)。
 
 `check` 是 `type` 内部的校验块，必须位于所有字段声明之后。
 
@@ -429,6 +430,7 @@ check {
 | `@expand` | field | table loader | 表格相邻列展开成嵌套对象 |
 | `@idAsEnum(EnumName)` | type | build / codegen | 按 record key 填充空 enum，用于强类型 key |
 | `@localized` / `@localized("bucket")` | field | dimensions / check / codegen | 字段值按语言维度变化 |
+| `@dimension("name")` | field | dimensions / check / codegen | 字段值按指定维度变化 |
 | `@singleton` | type | data model / codegen | 数据集中该 type 只有一条 record |
 
 示例：
@@ -456,7 +458,7 @@ type Item {
 enum ItemId {}
 ```
 
-构建时，Coflow 会在 `.coflow/artifacts/active.json` 中维护 lock state 来稳定生成 enum 的整数值。它与 data/code generation 在同一个 manifest snapshot 中激活；应提交版本库的 `coflow.enum.lock.json` 是在最终 manifest 激活前写好的非权威镜像。
+构建后应将 `coflow.enum.lock.json` 提交到版本库，以保证自动生成的 enum 整数值在不同机器和后续构建中保持稳定。
 
 ### `@singleton`
 
@@ -493,6 +495,19 @@ type Item {
 项目中使用 `@localized` 时，需要在 `coflow.yaml` 配置 `dimensions.language`。详见 [本地化与维度](../10-localization.md)。
 
 `@localized` 只能用于顶层 type 字段，不能用于 `sealed type` 的内部对象字段。`@localized("bucket")` 的 bucket 必须是合法 CFT 标识符。
+
+### `@dimension`
+
+`@dimension("name")` 把字段绑定到 `coflow.yaml` 中声明的指定维度：
+
+```text
+type Item {
+  @dimension("platform")
+  price: int;
+}
+```
+
+维度名必须是合法 CFT 标识符，并且项目配置中必须存在同名维度。一个字段只能使用一个维度注解，不能同时声明 `@localized` 和 `@dimension`。维度字段只能用于顶层 type，不能用于 `sealed type` 的内联对象字段。详见 [本地化与维度](../10-localization.md)。
 
 ## 常量
 
@@ -626,18 +641,6 @@ type Monster {
   }
 }
 ```
-
-## 结构预算
-
-CFT parser 会在构造 AST 时限制结构深度、节点数和解析工作量。默认上限为：
-
-- 最大深度 `256`；
-- 最大节点数 `1,000,000`；
-- 最大工作量 `10,000,000`。
-
-parser 预算覆盖 type ref、default、check 表达式、`when`/量词语句和 module 顶层节点。超过上限时当前 module 解析失败并返回 `CFT-SYN-011`，不会向项目发布部分 AST。公开 API 使用默认结构限制，通过 `parse_modules` 一次收集项目 module。
-
-schema compiler 使用独立的 project 预算重新验证所有 module AST，并限制继承链与 schema dependency 工作量。超过上限时返回 `CFT-SCHEMA-038`。继承 cycle 在能够确认 back edge 时优先返回 `CFT-SCHEMA-009`；无环继承链超过深度上限时返回结构预算诊断。`build_schema(&modules, &dimensions)` 只有在所有 pass 成功后才返回完整的 `CftSchema`。
 
 ## 常见错误
 
