@@ -123,7 +123,7 @@ fn id_is_reserved_as_a_field_name() {
 }
 
 #[test]
-fn old_record_annotations_are_rejected() {
+fn unknown_record_annotations_are_rejected() {
     for source in [
         "type Skill { @id key: string; }",
         "type Skill { @index name: string; }",

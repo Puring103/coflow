@@ -43,7 +43,7 @@ pub(super) fn ensure_writable_excel_path(
             "`.xlsm` is read-only because the Excel writer cannot preserve VBA projects"
         }
         ExcelWorkbookFormat::Xls => {
-            "legacy `.xls` is read-only because the Excel writer emits OOXML workbooks"
+            "`.xls` is read-only because the Excel writer emits OOXML workbooks"
         }
         ExcelWorkbookFormat::Unsupported => "only `.xlsx` workbooks have a mutation implementation",
         ExcelWorkbookFormat::Xlsx => return Ok(()),

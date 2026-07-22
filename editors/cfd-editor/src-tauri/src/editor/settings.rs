@@ -70,8 +70,7 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), EditorError> {
         .map_err(|error| EditorError::other(format!("failed to write {}: {error}", path.display())))
 }
 
-/// Read both settings files and merge into one in-memory struct. Legacy
-/// `.coflow/editor.json` is intentionally not read or migrated.
+/// Read the project settings files and merge them into one in-memory struct.
 pub(super) fn read_project_settings(
     project_root: &Path,
 ) -> Result<EditorProjectSettings, EditorError> {

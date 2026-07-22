@@ -21,12 +21,6 @@ impl<'de> Deserialize<'de> for ProjectConfig {
         D: Deserializer<'de>,
     {
         let mut fields = no_duplicate_object(deserializer)?;
-        if fields.contains_key("localization") {
-            return Err(de::Error::custom(
-                "PROJECT-CONFIG-LOCALIZATION-REMOVED: `localization` has been removed; use `dimensions.language` instead.",
-            ));
-        }
-
         let schema = fields
             .remove("schema")
             .ok_or_else(|| de::Error::missing_field("schema"))
@@ -90,7 +84,7 @@ pub struct SourceConfig {
 #[derive(Debug, Clone, Default)]
 pub struct OutputsConfig {
     targets: Vec<OutputTargetConfig>,
-    legacy_shape: bool,
+    object_shape: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -137,7 +131,7 @@ impl OutputsConfig {
     pub fn new(targets: Vec<OutputTargetConfig>) -> Self {
         Self {
             targets,
-            legacy_shape: false,
+            object_shape: false,
         }
     }
 
@@ -151,8 +145,8 @@ impl OutputsConfig {
     }
 
     #[must_use]
-    pub const fn is_legacy_shape(&self) -> bool {
-        self.legacy_shape
+    pub const fn is_object_shape(&self) -> bool {
+        self.object_shape
     }
 }
 
@@ -254,14 +248,14 @@ impl<'de> Deserialize<'de> for OutputsConfig {
                     Some(data) => vec![OutputTargetConfig { data, code, loader }],
                     None if code.is_some() || loader.is_some() => {
                         return Err(de::Error::custom(
-                            "coflow.yaml missing outputs.data; legacy outputs.code and outputs.loader require outputs.data",
+                            "coflow.yaml missing outputs.data; object-form outputs.code and outputs.loader require outputs.data",
                         ));
                     }
                     None => Vec::new(),
                 };
                 Ok(Self {
                     targets,
-                    legacy_shape: true,
+                    object_shape: true,
                 })
             }
             Value::Array(values) => values

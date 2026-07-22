@@ -42,10 +42,9 @@ pub trait LoaderGenerator: Send + Sync {
         options: &DecodedOutputOptions,
     ) -> Result<ArtifactSet, DiagnosticSet>;
 
-    /// Combines common code and loader artifacts using the layout emitted by
-    /// legacy output configuration. Providers may override this when the old
-    /// layout embedded loader members into common files.
-    fn merge_legacy_artifacts(
+    /// Combines common code and loader artifacts for object-form output
+    /// configuration, which embeds loader members into common files.
+    fn merge_object_layout_artifacts(
         &self,
         common: ArtifactSet,
         loader: ArtifactSet,

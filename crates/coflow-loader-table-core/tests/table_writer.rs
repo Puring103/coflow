@@ -96,7 +96,7 @@ fn header_reconciliation_preserves_values_across_add_remove_and_reorder() {
             vec![
                 "sword".to_string(),
                 "Sword".to_string(),
-                "legacy".to_string()
+                "existing".to_string()
             ],
         ]),
         vec![

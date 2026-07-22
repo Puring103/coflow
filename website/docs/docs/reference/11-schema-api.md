@@ -6,8 +6,8 @@ Schema API 是 `coflow-cft` 编译后的公开语义模型，面向 loader、che
 
 源码与编译结果分开持有：
 
-- `CftModuleSet` 是 module path、source、AST 和 parse diagnostics 的唯一所有者。
-- `CftSchema` 是唯一成功发布的编译后语义模型。
+- `CftModuleSet` 保存 module path、source、AST 和 parse diagnostics。
+- `CftSchema` 是编译成功后返回的语义模型。
 - schema 编译失败时不返回空 schema 或部分 schema。
 - 保留上一份成功 schema 是 runtime generation 的职责，不属于 `coflow-cft`。
 
@@ -23,7 +23,7 @@ let schema = build_schema(&modules, &dimensions)?;
 
 ## Canonical 对象
 
-`CftSchema` 直接拥有唯一一套声明对象：
+`CftSchema` 直接提供以下声明对象：
 
 | 对象 | 主要信息 |
 | --- | --- |
@@ -52,13 +52,13 @@ let schema = build_schema(&modules, &dimensions)?;
 | `children(parent)` | 读取编译时建立的直接子类反向索引 |
 | `type_for_id_as_enum(enum)` | 从 idAsEnum enum 反查 owner type |
 
-主声明 map 本身就是名称索引。schema 不再维护重复的 names、metas、has/resolve 或 field projection 集合。
+主声明 map 同时提供名称索引。
 
 ## Type 与 Field
 
 `CftType::own_fields()` 保持当前 type 的声明顺序；`CftType::all_fields()` 保持根类型到当前类型的字段顺序。继承字段通过共享的 immutable `CftField` 保存，不复制完整字段对象。
 
-`CftType::field(name)` 使用 type 内部预构建的位置表查询有效字段。消费者拿到 `CftType` 后应直接读取 `is_struct`、`is_singleton`、`id_as_enum` 等字段，不再调用同义 schema convenience API。
+`CftType::field(name)` 查询 type 的有效字段。消费者可以直接读取 `CftType` 的 `is_struct`、`is_singleton`、`id_as_enum` 等语义字段。
 
 字段类型已经完成名称解析：
 

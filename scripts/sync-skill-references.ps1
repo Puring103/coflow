@@ -164,10 +164,10 @@ foreach ($referenceDir in $referenceDirs) {
             $relative = [System.IO.Path]::GetRelativePath($RepoRoot, $file.FullName) -replace "\\", "/"
             if ($Check) {
                 $outOfDate.Add($relative)
-                Write-Host "Stale legacy reference: $relative"
+                Write-Host "Stale generated reference: $relative"
             } else {
                 Remove-Item -LiteralPath $file.FullName
-                Write-Host "Removed stale legacy reference: $relative"
+                Write-Host "Removed stale generated reference: $relative"
             }
         }
     }

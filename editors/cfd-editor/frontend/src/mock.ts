@@ -98,11 +98,11 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
       severity: 'warning',
       code: 'unused_field',
       stage: 'check',
-      message: 'item.cfd: field "legacy_id" is not in schema',
+      message: 'item.cfd: field "unknown_id" is not in schema',
       file_path: 'data/item.cfd',
       actual_type: 'Item',
       record_key: 'Item_001',
-      field_path: 'legacy_id',
+      field_path: 'unknown_id',
     },
   ],
 }
@@ -133,7 +133,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
         { name: 'max_stack', value: intVal(99), annotation: null },
         { name: 'quality', value: enumVal('Quality', 'Common', 0), annotation: null },
         { name: 'stackable', value: boolVal(true), annotation: null },
-        { name: 'legacy_id', value: nullValue(), annotation: null },
+        { name: 'unknown_id', value: nullValue(), annotation: null },
       ]),
       row('Item', 'Item_002', [
         { name: 'name', value: strVal('中级药水'), annotation: null },
@@ -141,7 +141,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
         { name: 'max_stack', value: intVal(50), annotation: null },
         { name: 'quality', value: enumVal('Quality', 'Uncommon', 1), annotation: null },
         { name: 'stackable', value: boolVal(true), annotation: null },
-        { name: 'legacy_id', value: nullValue(), annotation: null },
+        { name: 'unknown_id', value: nullValue(), annotation: null },
       ]),
       row('Weapon', 'Sword_001', [
         { name: 'name', value: strVal('铁剑'), annotation: null },

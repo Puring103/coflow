@@ -365,7 +365,7 @@ pub(super) fn validate_for_codegen_collecting(outputs: &OutputsConfig) -> Vec<Pr
 }
 
 fn output_target_label(outputs: &OutputsConfig, index: usize) -> String {
-    if outputs.is_legacy_shape() {
+    if outputs.is_object_shape() {
         "outputs".to_string()
     } else {
         format!("outputs[{index}]")
@@ -383,7 +383,7 @@ fn output_key_path(
     field: Option<&str>,
 ) -> Vec<String> {
     let mut path = vec!["outputs".to_string()];
-    if !outputs.is_legacy_shape() {
+    if !outputs.is_object_shape() {
         path.push(index.to_string());
     }
     path.push(component.to_string());
