@@ -2,12 +2,6 @@
 
 `coflow.yaml` 是 Coflow 项目的入口配置文件。它描述 schema 在哪里、数据从哪里读取，以及构建成功后产物写到哪里。
 
-大多数命令都接受可选的 `CONFIG_OR_DIR` 参数：
-
-- 省略时，在当前目录查找 `coflow.yaml`，然后查找 `coflow.yml`。
-- 参数是目录时，在该目录下查找 `coflow.yaml`，然后查找 `coflow.yml`。
-- 参数是文件时，直接把该文件作为项目配置读取。
-
 所有项目相对路径都以配置文件所在目录为根解析。
 
 ## 示例
@@ -44,6 +38,10 @@ outputs:
 
 `coflow.yaml` 使用严格字段集。未知的顶层字段会被诊断为配置错误。YAML 映射中不允许重复 key，避免后写字段静默覆盖前面的配置。
 
+严格字段也适用于每个 output target（只允许 `data`、`code`、`loader`）和 dimension 配置
+（只允许 `variants`、`out_dir`、`display_name`）。source 以及 data/code/loader 组件可以包含
+对应 provider 支持的额外选项；未知选项或类型错误会被诊断为配置错误。
+
 ## `schema`
 
 `schema` 指向 CFT schema：
@@ -68,20 +66,23 @@ schema:
 
 规则：
 
+- `schema` 不能为空路径，列表形式也不能为空列表；配置路径必须存在。
 - 文件必须使用精确小写 `.cft` 扩展名。
 - 目录会递归发现精确小写 `.cft` 文件。
 - `.CFT` 或混合大小写扩展名不会被当作 schema 文件。
+- 发现结果顺序稳定；指向同一实际文件的重复路径只编译一次。
+- 目录发现不会跟随符号链接、junction 等路径别名逃出声明的 schema 根目录。
 
 ## `sources`
 
-`sources` 配置本地数据输入。每个 source 必须设置 `path`。
+`sources` 配置数据输入。每个 source 必须设置 `path`。
 
 ```yaml
 sources:
   - path: data
 ```
 
-### 本地 source
+### `path`
 
 `path` 可以指向单个文件：
 
@@ -98,7 +99,7 @@ sources:
   - path: data
 ```
 
-目录 source 会由 loader resolve 阶段递归发现支持的文件。目前常见输入包括：
+目录 source 会递归发现支持的文件。默认 Coflow CLI 和编辑器提供以下输入类型：
 
 - `.xlsx`
 - `.xlsm`
@@ -106,7 +107,19 @@ sources:
 - `.csv`
 - `.cfd`
 
-目录里不支持的扩展名会被忽略。
+支持的文件类型不是 `coflow.yaml` 中的固定白名单，而是由当前应用提供的 source provider
+声明和识别。使用 Coflow 库的应用可以注册自定义 source provider，增加新的扩展名或识别
+规则；注册后，目录发现和未显式设置 `type` 的文件都会使用这些自定义能力。配置文件只能
+选择当前应用已经提供的 provider，不能直接定义或安装 provider。
+
+目录里没有 provider 支持的文件会被忽略。
+
+schema-only 命令只校验 source 的配置形状，不要求 `path` 当前存在。需要数据的命令会要求
+每个 source path 是已存在的文件或目录。`path` 和显式 `type` 都不能是空字符串。
+
+目录遍历会去除指向同一实际文件的重复项并保持稳定顺序，不会通过符号链接、junction 等路径别名逃出
+声明的目录根。配置了 `dimensions` 时，嵌套的维度托管目录也会从普通目录 source 的
+发现结果中排除。
 
 ### `type`
 
@@ -119,6 +132,10 @@ sources:
 ```
 
 如果多个 provider 都能处理同一个 source，应该显式指定 `type`。
+
+对目录 source 显式指定 `type` 时，只发现该 provider 支持的文件；即使目录为空，provider
+选项仍会被校验。未指定 `type` 时，每个文件按其格式选择 provider。目录上的额外选项必须
+至少适用于一个实际发现的 provider，否则会报告配置错误。
 
 ### provider options
 
@@ -140,7 +157,9 @@ sources:
 
 ## `sheets`
 
-`sheets` 用于配置 Excel workbook 中的 sheet 映射。
+`sheets` 用于配置表格 provider 的 sheet 映射。Excel 中 `sheet` 是真实 worksheet 名；CSV
+没有物理 sheet，省略配置时以去掉扩展名后的文件名作为唯一逻辑 sheet 名，例如
+`items.csv` 使用 `items`；显式配置则用 `sheet` 作为类型和表头的映射标签。
 
 省略 `sheets` 时：
 
@@ -160,9 +179,25 @@ sources:
 
 `columns` 不是白名单。未列出的表头仍会按原表头文本尝试映射到 CFT 字段。
 
-导入的 sheet 必须有 key 表头列作为 record key。名为 `#` 的表头是可选导入控制列；数据行中该列单元格为 `##` 时，整行会在读取 key 或字段前跳过。
+同一 source 的 `sheet` 名不能重复。`sheet` 必须是非空字符串；可选 `type`、`key` 也必须是
+非空字符串。`columns` 的 source header 和目标字段名都不能为空，一个 sheet 内不能把多个
+header 映射到同一目标字段。sheet object 当前只读取 `sheet`、`type`、`key`、`columns`；
+其他嵌套 key 不参与映射行为。
 
-目录 source 可以同时发现 Excel、CSV 和 CFD 文件。此时 `sheets` 只作用于表格类 source；CFD 文件仍由文本中的记录类型决定 CFT 类型。
+导入的 sheet 必须有 key 表头列作为 record key。
+
+目录 source 可以同时发现 Excel、CSV 和 CFD 文件。此时 `sheets` 只作用于表格类 source；
+CFD 文件仍由文本中的记录类型决定 CFT 类型。
+
+未指定目录 `type` 时，`sheets` 只应用于其中的表格文件，不影响 CFD 文件。如果显式写
+`type: cfd`，同一 source 上的 `sheets` 会被诊断为无效选项。
+
+### 跳过数据行
+
+Excel 和 CSV 中 record key 与所有已映射字段都为空的数据行会被跳过。
+
+表格还可以包含名为 `#` 的控制列。数据行中该列的内容去掉首尾空白后等于 `##` 时，整行会
+在读取 record key 和字段之前跳过。`#` 控制列不映射到 CFT 字段，也不参与未知字段检查。
 
 ### 表格配置示例
 
@@ -259,7 +294,25 @@ sources:
 
 ## `outputs`
 
-`outputs` 描述构建产物。
+`outputs` 描述一个或多个构建产物 target。每个 target 必须配置 `data`，可以同时配置 `code` 和 `loader`。
+
+```yaml
+outputs:
+  - data:
+      type: json
+      dir: generated/json
+    code:
+      type: csharp
+      dir: generated/csharp-json
+      namespace: Game.Config
+    loader:
+      type: csharp-json
+  - data:
+      type: messagepack
+      dir: generated/messagepack
+```
+
+单目标可以使用简写对象语法：
 
 ```yaml
 outputs:
@@ -271,6 +324,11 @@ outputs:
     dir: generated/csharp
     namespace: Game.Config
 ```
+
+该写法等价于只配置一个 target。
+
+可以省略整个 `outputs`，也可以配置空列表；schema 检查和数据查询仍可运行，但 `build`、
+`export` 或 `codegen` 会按各自需要报告缺少匹配 target。`type` 和 `dir` 都不能是空字符串。
 
 ### `outputs.data`
 
@@ -313,6 +371,9 @@ outputs:
 
 ```yaml
 outputs:
+  data:
+    type: json
+    dir: generated/data
   code:
     type: csharp
     dir: generated/csharp
@@ -321,9 +382,26 @@ outputs:
 
 `outputs.*` 除 `type`、`dir` 之外的字段会作为 provider options 传入。例如 `namespace` 是 C# codegen 的 provider option，也可以被 `coflow codegen csharp --namespace` 覆盖。
 
+### `outputs.loader`
+
+loader 负责为一个 target 的 code/data 组合生成加载代码。当前内置 loader 为：
+
+| `type` | code | data |
+| --- | --- | --- |
+| `csharp-json` | `csharp` | `json` |
+| `csharp-messagepack` | `csharp` | `messagepack` |
+
+`loader` 可以省略；Coflow 会按注册顺序选择与 target 的 `code.type` 和 `data.type` 精确匹配的 loader。显式配置时，loader 必须与同一 target 的 code/data 组合兼容。没有 `code` 的 data-only target 不能配置 `loader`。
+
+内置组合之外的 exporter、codegen 和 loader id 只有在当前 Coflow 安装提供对应 provider 时才有效。
+单独执行 `export <type>` 或 `codegen <type>` 时，同类型 target 必须恰好一个；完整
+`build` 则处理列表中的全部 target。
+
 ## `dimensions`
 
 `dimensions` 用于配置维度/变体数据。每个维度使用相同的配置和校验规则；`language` 是 `@localized` 使用的内建维度名。
+
+维度文件的目录结构、内容和维护规则见[维度文件](./10-localization.md#维度文件)。
 
 ```yaml
 dimensions:
@@ -341,6 +419,8 @@ dimensions:
 | `dimensions.<name>.out_dir` | 是 | 维度文件的独占托管目录。可为绝对路径或项目相对路径，不能与其他维度目录重叠。 |
 | `dimensions.<name>.display_name` | 否 | 编辑器中展示这一组维度文件的人类可读名称。省略时使用维度名；`language` 默认显示为「本地化」。 |
 
+维度名本身也必须是合法 CFT 标识符。`variants` 不能为空列表。
+
 如果不配置 `dimensions`，Coflow 不会构造任何维度数据。schema 字段引用未配置的维度时，会报告 CFT schema 诊断。
 
 `out_dir` 下的文件由 Coflow 按维度规则生成和维护。普通目录 source 递归发现文件时会自动跳过嵌套的维度托管目录；不要把托管目录或其中的文件显式加入 `sources`。维度文件会把源数据中的默认值写入 `default`，再按 `variants` 生成对应变体列或记录。
@@ -354,19 +434,25 @@ dimensions:
     out_dir: data/dimensions/language
 ```
 
-## 输出目录与 generation
+## 输出目录
 
-`outputs.data.dir` 和 `outputs.code.dir` 是构建成功后消费者直接使用的输出目录。目录内容由 Coflow 完整接管，不要在其中放置手写文件。
+每个 target 的 `data.dir` 和 `code.dir` 是构建成功后消费者直接使用的输出目录。目录内容由 Coflow 完整接管，不要在其中放置手写文件。
 
-写入时，Coflow 先生成、同步并验证完整 staging 和不可变 generation，再替换配置指定的输出目录。data、code 和 `@idAsEnum` lock state 通过 `.coflow/artifacts/active.json` 组成同一个 snapshot；任一步失败都会恢复旧输出目录，并且不会激活新的 build、export 或 codegen snapshot。
+Coflow 会按解析后的真实路径检查输出目录，以下配置会在生成前被拒绝：
 
-命令成功信息输出配置指定的目录。不可变 generation 保存在 `.coflow/artifacts/generations/`，用于 active manifest 和历史清理，不是需要消费者追踪的输出路径。
+- 输出路径已存在但不是目录。
+- 输出目录等于项目根，或与 `coflow.yaml`、任一 schema 路径、任一 source 路径重叠。
+- 任意两个本次发布的 data/code 输出目录彼此相同、互为父子目录，或通过路径别名实际重叠。
+
+对单文件 source，其父目录也受保护，因此不能把输出目录设为该 source 的同级目录；这是为
+防止 Coflow 接管整个输出目录时删除旁边的输入文件。检查会解析已存在的祖先，所以符号链接、
+junction、大小写差异和 Windows 尾随空格/点不能绕过这些规则。
 
 ## 常见错误
 
 ### source 缺少 `path`
 
-每个 source 必须设置本地文件或目录的 `path`。
+每个 source 必须设置文件或目录的 `path`。
 
 ### source 使用未知字段
 
@@ -375,7 +461,7 @@ sources:
   - file: data/items.xlsx
 ```
 
-source 只使用通用字段 `type`、`path` 加 provider options。表达本地文件或目录时使用 `path`。
+source 只使用通用字段 `type`、`path` 加 provider options。表达文件或目录时使用 `path`。
 
 ### schema 扩展名大小写不正确
 
