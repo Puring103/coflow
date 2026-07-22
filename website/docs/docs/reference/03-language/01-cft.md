@@ -184,8 +184,8 @@ type Drop {
 
 常见引用场景：
 
-- 掉落奖励引用物品 record，例如 `Item.sword`。
-- 怪物引用掉落表 record，例如 `DropTable.goblin_drop`。
+- 掉落奖励通过 `&sword` 引用 key 为 `sword` 的物品 record。
+- 怪物通过 `&goblin_drop` 引用 key 为 `goblin_drop` 的掉落表 record。
 
 ## nullable
 
@@ -214,11 +214,7 @@ check {
 
 `check` 用来把业务规则写进 schema，并在 `coflow check` / `coflow build` 阶段提前拦截错误配置。它是 CFT 的核心能力之一。
 
-本节介绍常用写法；完整的运算符、优先级、索引、量词和内建方法见 [Check 校验](./04-check.md)。
-
-`check` 是 `type` 内部的校验块，必须位于所有字段声明之后。
-
-`check` 只在 Coflow 检查/构建阶段执行，用来阻止错误配置进入导出产物。它不会被导出成游戏运行时代码。
+每个 `type` 最多有一个 `check` 块，并且必须位于所有字段声明之后。规则会在字段值、默认值和记录引用准备完成后执行；父类型的规则也会按继承顺序应用到子类型实例。`check` 不会成为导出数据或生成代码中的运行时逻辑。
 
 ```text
 const MAX_LEVEL: int = 100;
@@ -238,121 +234,7 @@ type Monster {
 }
 ```
 
-`check` 在对象构建完成、记录引用解析完成后执行。它可以访问：
-
-- 当前对象字段。
-- 继承字段。
-- 虚拟 `id`。
-- `const` 常量。
-- enum 值。
-- 已解析引用对象的字段。
-
-父类 `check` 会对子类实例执行，并且执行顺序是从根类到当前类。
-
-### 条件语句
-
-条件语句用于声明一条必须成立的布尔规则。
-
-一个表达式加分号就是一条条件语句，表达式结果必须是 `bool`。
-
-```text
-check {
-  damage > 0;
-  cooldown >= 0.1;
-  0 < damage <= 999;
-}
-```
-
-多条语句相互独立。某条条件为假时，Coflow 会继续执行后续语句并收集诊断。
-
-### when 块
-
-`when` 用于有条件地启用一组校验，适合“某个开关打开后，另一些字段必须满足要求”的规则。
-
-```text
-type Skill {
-  is_passive: bool;
-  cooldown: float? = null;
-  range: float? = null;
-
-  check {
-    when !is_passive {
-      cooldown != null;
-      cooldown > 0.0;
-    }
-    when is_passive {
-      range != null;
-      range > 0.0;
-    }
-  }
-}
-```
-
-### 量词块
-
-量词用于遍历数组或字典，适合校验集合中的每个元素、至少一个元素或没有元素满足某个条件。
-
-```text
-check {
-  all weight in weights {
-    weight > 0;
-  }
-
-  any reward in rewards {
-    reward is CurrencyReward;
-  }
-
-  none tag in tags {
-    tag == "";
-  }
-}
-```
-
-| 量词 | 语义 | 空集合行为 |
-| --- | --- | --- |
-| `all x in col { ... }` | 全部元素通过 | 通过 |
-| `any x in col { ... }` | 至少一个元素通过 | 失败 |
-| `none x in col { ... }` | 没有元素通过 | 通过 |
-
-遍历字典时，变量是 entry 对象，可访问 `.key` 和 `.value`：
-
-```text
-all entry in resistances {
-  0.0 <= entry.value <= 1.0;
-}
-```
-
-### 类型判断
-
-`is` 用于在 check 中判断多态对象的实际类型，也可以判断 nullable 值是否为 `null`。
-
-```text
-check {
-  reward is Reward;
-  reward is CurrencyReward;
-  item is null;
-}
-```
-
-`is null` 用于 nullable 类型。
-
-### 内建函数
-
-内建函数提供常见集合和字符串校验能力，避免在数据源外再写脚本检查。
-
-| 函数 | 适用类型 | 返回值 | 说明 |
-| --- | --- | --- | --- |
-| `col.len()` | array / dict | int | 元素数量 |
-| `col.contains(value)` | array / dict | bool | array 检查元素，dict 检查 key |
-| `array.isUnique()` | array | bool | 元素是否唯一，支持 int、bool、string、enum 及其 nullable 形式 |
-| `array.min()` | int / float / enum array | 同元素类型 | 最小值 |
-| `array.max()` | int / float / enum array | 同元素类型 | 最大值 |
-| `array.sum()` | int / float array | 同元素类型 | 求和 |
-| `dict.keys()` | dict | array | key 数组 |
-| `dict.values()` | dict | array | value 数组 |
-| `str.matches("pattern")` | string | bool | 正则匹配 |
-
-`matches` 使用 Rust `regex` 语义，默认是子串匹配；需要全量匹配时写 `^...$`。
+完整的条件语句、`when`、集合量词、字段与索引、类型判断、运算符和内建方法见 [Check 校验](./04-check.md)。
 
 ## 枚举
 
@@ -493,7 +375,7 @@ type Item {
 
 项目中使用 `@localized` 时，需要在 `coflow.yaml` 配置 `dimensions.language`。详见 [本地化与维度](../10-localization.md)。
 
-`@localized` 只能用于顶层 type 字段，不能用于 `sealed type` 的内部对象字段。`@localized("bucket")` 的 bucket 必须是合法 CFT 标识符。
+`@localized` 只能用于非 `sealed type` 的字段。`@localized("bucket")` 的 bucket 必须是合法 CFT 标识符。
 
 ### `@dimension`
 
@@ -506,7 +388,7 @@ type Item {
 }
 ```
 
-维度名必须是合法 CFT 标识符，并且项目配置中必须存在同名维度。一个字段只能使用一个维度注解，不能同时声明 `@localized` 和 `@dimension`。维度字段只能用于顶层 type，不能用于 `sealed type` 的内联对象字段。详见 [本地化与维度](../10-localization.md)。
+维度名必须是合法 CFT 标识符，并且项目配置中必须存在同名维度。一个字段只能使用一个维度注解，不能同时声明 `@localized` 和 `@dimension`。维度字段只能用于非 `sealed type` 的字段。详见 [本地化与维度](../10-localization.md)。
 
 ## 常量
 

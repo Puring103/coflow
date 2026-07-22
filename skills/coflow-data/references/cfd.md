@@ -330,7 +330,7 @@ shop_01: Shop {
 }
 ```
 
-只要 `Item.sword_fire` 存在于当前项目中，CFD 就可以引用它。目标记录可以来自 CFD，也可以来自 Excel、CSV 或其他数据源。
+只要项目中存在 key 为 `sword_fire`、实际类型可赋给 `Item` 的记录，CFD 就可以通过 `&sword_fire` 引用它。目标记录可以来自 CFD，也可以来自 Excel、CSV 或其他数据源。
 
 ## 完整示例
 

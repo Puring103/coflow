@@ -402,7 +402,7 @@ loader 负责为一个 target 的 code/data 组合生成加载代码。当前内
 
 `dimensions` 用于配置维度/变体数据。每个维度使用相同的配置和校验规则；`language` 是 `@localized` 使用的内建维度名。
 
-维度文件的目录结构、内容和维护规则见[维度文件](./10-localization.md#维度文件)。
+维度文件的目录结构、内容和维护规则见[维度文件](https://puring103.github.io/coflow/docs/reference/10-localization#维度文件)。
 
 ```yaml
 dimensions:

@@ -119,7 +119,7 @@ singleton type 的同一维度字段会合并到一份 CFD 文件，每个字段
 - 删除源 record 时，同一 transaction 会删除对应维度行。
 - 删除字段后，对应维度文件不再参与当前项目模型。
 
-维度 CSV 使用普通表格数据源语义。变体列按原 schema 字段类型解析，因此可以使用 [单元格值语法](./03-language/03-cell-value.md)：
+维度 CSV 使用普通表格数据源语义。变体列按原 schema 字段类型解析，因此可以使用 [单元格值语法](https://puring103.github.io/coflow/docs/reference/03-language/03-cell-value)：
 
 ```csv
 id,default,zh,en

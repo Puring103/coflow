@@ -2,7 +2,7 @@
 
 Excel source 使用 `excel` Provider 读取 `.xlsx`、`.xlsm`、`.xls` workbook，并把 sheet 转成共享表格模型。
 
-Excel 与 CSV 共享 [表格 Source](./02-table.md) 规则：第一行表头、`id` 列作为 key、`sheets` 映射、`columns` 映射、`#` 控制列和 `@expand`。
+Excel 与 CSV 共享 [表格 Source](./table-source.md) 规则：第一行表头、`id` 列作为 key、`sheets` 映射、`columns` 映射、`#` 控制列和 `@expand`。
 
 ## 配置示例
 
@@ -61,4 +61,4 @@ coflow data sync-header <project> --file data/items.xlsx --type Item --provider 
 
 普通写回失败使用 `EXCEL-WRITE` 诊断；不安全格式使用
 `EXCEL-FORMAT-READ-ONLY`。读取和解析阶段的诊断见
-[错误码](../09-diagnostics/02-codes.md)。
+[错误码](https://puring103.github.io/coflow/docs/reference/09-diagnostics/02-codes)。
