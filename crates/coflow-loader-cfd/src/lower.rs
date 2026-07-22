@@ -212,9 +212,7 @@ fn lower_bool(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> 
 
 fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     match value {
-        CfdValue::QuotedString(text, _) | CfdValue::Scalar(text, _) => {
-            Ok(LoadedValueDraft::String(text.clone()))
-        }
+        CfdValue::QuotedString(text, _) => Ok(LoadedValueDraft::String(text.clone())),
         _ => Err(error(
             CfdTextErrorCode::TypeMismatch,
             "expected string",

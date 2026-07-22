@@ -2435,7 +2435,7 @@ fn json_patch_insert_accepts_ref_object_form() {
     .expect("write schema");
     std::fs::write(
         root.join("data").join("records.cfd"),
-        "Item { sword { name: Sword } }\n",
+        "Item { sword { name: \"Sword\" } }\n",
     )
     .expect("write data");
     std::fs::write(
