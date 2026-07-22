@@ -147,11 +147,11 @@ monster_01: Monster {
 | `100` | `int` / `float` | 整数或浮点数字面量 |
 | `1.25` | `float` | 浮点数字面量 |
 | `true` / `false` | `bool` | 布尔值 |
-| `"Fire Sword"` | `string` | 双引号字符串 |
-| `Fire Sword` | `string` | 简单裸字符串 |
+| `"Fire Sword"` | `string` | 双引号字符串，string 值必须使用这种写法 |
 | `null` | `T?` | 只允许用于 nullable 字段 |
 
-字符串建议优先使用双引号。裸字符串适合简单文本，遇到空格、标点、转义需求或容易和枚举/关键字混淆时，使用双引号更清晰。
+字符串必须使用双引号。支持 `\"`、`\\`、`\n`、`\r` 和 `\t` 转义。
+数字、布尔值和 enum 值仍使用各自的裸字面量写法；它们不会被当作字符串。
 
 ### 枚举
 
@@ -399,6 +399,7 @@ fire_encounter: Encounter {
 | `sword_01 Item { ... }` | 记录 key 和类型之间缺少 `:` | 写 `sword_01: Item { ... }` |
 | 在顶层记录里写 `id: "sword_01"` | record key 已承担 `id` 语义 | 把 key 写在记录开头 |
 | `featured_item: sword_fire` | 裸 key 不会被解析为对象引用 | 写 `&sword_fire` |
+| `name: Fire Sword` | string 值必须使用引号 | 写 `name: "Fire Sword"` |
 | `Reward { r1 { ... } }` 且 `Reward` 是抽象类型 | 抽象类型不能直接实例化 | 写 `r1: ItemReward { ... }` |
 | `...&sword_fire` spread 到 `Stats` | spread 来源类型不能赋给目标对象类型 | 使用同类型或可赋值对象来源 |
 | `name: null` 且 `name` 不是 nullable | `null` 只能赋给 `T?` | 改字段类型为 `string?` 或提供字符串 |

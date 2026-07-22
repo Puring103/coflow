@@ -44,7 +44,7 @@ dimensions:
 
 ## 维度字段
 
-维度字段通过 CFT 注解声明。当前可用注解是 `@localized`，它把字段归入 `language` 维度：
+维度字段通过 CFT 注解声明。`@localized` 是 `language` 维度的便捷写法：
 
 ```text
 type Item {
@@ -63,6 +63,17 @@ type Item {
 - 检查时，Coflow 会用默认值和各语言变体分别执行相关规则。
 
 如果 schema 中存在 `@localized` 字段，但没有配置 `dimensions.language`，Coflow 会报告缺失维度 binding 的 CFT schema 诊断。
+
+其他维度使用 `@dimension("name")`：
+
+```text
+type Item {
+  @dimension("platform")
+  price: int;
+}
+```
+
+注解中的名称必须对应 `coflow.yaml` 中已声明的维度。一个字段不能同时使用 `@localized` 和 `@dimension`。
 
 ## Record Overlay
 

@@ -45,6 +45,11 @@ $Mappings = @(
         Url = "$PublicDocsBase/docs/reference/03-language/01-cft"
     }
     @{
+        Source = "website/docs/docs/reference/03-language/04-check.md"
+        Target = "skills/coflow-schema/references/check.md"
+        Url = "$PublicDocsBase/docs/reference/03-language/04-check"
+    }
+    @{
         Source = "website/docs/docs/reference/05-data-model.md"
         Target = "skills/coflow-schema/references/data-model.md"
         Url = "$PublicDocsBase/docs/reference/05-data-model"

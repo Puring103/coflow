@@ -34,7 +34,8 @@ coflow schema write-file <project> --file schema/main.cft --stdin --check
 ## Reference
 
 - 数据结构设计建议和常见建模取舍：读 `references/modeling.md`。
-- CFT 完整语法：读 `references/cft.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/03-language/01-cft>。
+- CFT schema 语法：读 `references/cft.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/03-language/01-cft>。
+- Check 校验语法：读 `references/check.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/03-language/04-check>。
 - 本地化与维度：读 `references/localization.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/10-localization>。
 - Schema API 输出结构：读 `references/schema-api.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/11-schema-api>。
 - DataModel 对默认值、引用和 check 的语义：读 `references/data-model.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/05-data-model>。
