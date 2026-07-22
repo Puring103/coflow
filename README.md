@@ -225,17 +225,17 @@ coflow export messagepack examples/rpg --out generated/data
 coflow codegen csharp examples/rpg --out generated/csharp --namespace Game.Config
 coflow lsp examples/rpg
 
-# AI / 自动化入口（默认输出 JSON）
-coflow schema inspect examples/rpg
-coflow schema files examples/rpg
-coflow schema write-file examples/rpg --file schema/main.cft --stdin --check
-coflow data sources examples/rpg
-coflow data list examples/rpg --type Item
-coflow data get examples/rpg Item.sword
-coflow data create-file examples/rpg --file data/items.csv --type Item --provider csv
-coflow data sync-header examples/rpg --file data/items.csv --type Item
-coflow data write-file examples/rpg --file data/items.cfd --stdin --check
-coflow data patch examples/rpg --patch-file patch.json
+# AI / 自动化入口（显式使用 JSON 输出）
+coflow schema inspect examples/rpg --json
+coflow schema files examples/rpg --json
+coflow schema write-file examples/rpg --file schema/main.cft --stdin --check --json
+coflow data sources examples/rpg --json
+coflow data list examples/rpg --type Item --json
+coflow data get examples/rpg Item.sword --json
+coflow data create-file examples/rpg --file data/items.csv --type Item --provider csv --json
+coflow data sync-header examples/rpg --file data/items.csv --type Item --json
+coflow data write-file examples/rpg --file data/items.cfd --stdin --check --json
+coflow data patch examples/rpg --patch-file patch.json --json
 ```
 
 data 命令区分：
