@@ -36,6 +36,15 @@ This updater signature verifies package integrity. Windows Authenticode signing
 is not part of the initial release setup, so Windows may still show an unknown
 publisher warning.
 
+## macOS codesign and notarization
+
+macOS bundles are codesigned with a Developer ID Application certificate,
+notarized through Apple's notary service, and stapled so Gatekeeper accepts a
+freshly downloaded DMG. The workflow reads the certificate, its export
+password, the App Store Connect API key, and the identity string from
+repository secrets. Provisioning steps live in
+[releasing-macos-signing.md](./releasing-macos-signing.md).
+
 ## Published assets
 
 The public release contains only:
@@ -64,9 +73,8 @@ install while the full product is present.
 
 macOS bundles and CLI archives have no installer hook. After moving
 `Coflow Tools.app` (from the DMG) to `/Applications` or extracting the CLI
-tarball, users run `coflow skill install -g` themselves. On first launch macOS
-may quarantine the unsigned bundle — right-click **Open** once or clear the
-attribute with `xattr -dr com.apple.quarantine "/Applications/Coflow Tools.app"`.
+tarball, users run `coflow skill install -g` themselves. The DMG is signed and
+notarized, so Gatekeeper accepts a first-time launch without a warning.
 
 Release tags must match the root Cargo package version exactly (`vX.Y.Z`). Run
 the full release gate from `AGENTS.md` before tagging.
