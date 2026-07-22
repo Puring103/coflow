@@ -58,6 +58,24 @@ fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
 }
 
 #[test]
+fn string_fields_require_quotes() {
+    let schema = compile_schema("type Item { name: string; }");
+    let error = parse_cfd_input_records(&schema, "item: Item { name: sword, }")
+        .expect_err("bare strings must be rejected");
+
+    assert_has_text_code(&error, CfdTextErrorCode::TypeMismatch);
+    let CfdTextLoadError::Text(diagnostics) = error else {
+        panic!("expected text diagnostics");
+    };
+    assert!(
+        diagnostics
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message == "expected string")
+    );
+}
+
+#[test]
 fn ref_type_fields_parse_key_only_refs() -> TestResult {
     let schema = compile_schema(
         r#"
