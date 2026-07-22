@@ -14,7 +14,16 @@ type Monster {
 }
 ```
 
-`check` 必须位于类型的所有字段之后，一个类型只能有一个 `check` 块。父类型的规则也会应用到子类型实例。
+`check` 必须位于类型的所有字段之后，一个类型只能有一个 `check` 块。父类型的规则也会应用到子类型实例，并且按继承链从根类型到实际类型依次执行。
+
+## 执行时机与产物边界
+
+`check` 在字段值和默认值构建完成、记录引用解析完成后执行。`coflow check`、`coflow build`、
+`coflow export` 以及加载完整项目数据的 `coflow data` 查询和修改命令都会运行相关规则；
+只编译 schema 的 `coflow cft check`、`coflow schema` 和 `coflow codegen` 不执行数据规则。
+
+校验失败会作为诊断返回，并阻止 `build` 或 `export` 发布新产物。`check` 块本身不会写入导出数据，
+也不会生成游戏运行时代码；运行时消费者读取的是已经通过 Coflow 校验的产物。
 
 ## 可用值
 
@@ -171,7 +180,7 @@ check {
 | --- | --- | --- | --- |
 | `value.len()` | array / dict | `int` | 元素数量 |
 | `value.contains(x)` | array / dict | `bool` | array 查元素；dict 查 key |
-| `array.isUnique()` | array | `bool` | 检查元素是否唯一 |
+| `array.isUnique()` | int、bool、string、enum 数组及其 nullable 形式 | `bool` | 检查元素是否唯一 |
 | `array.min()` | int / float / enum array | 元素类型 | 最小值 |
 | `array.max()` | int / float / enum array | 元素类型 | 最大值 |
 | `array.sum()` | int / float array | 元素类型 | 求和 |

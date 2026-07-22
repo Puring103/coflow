@@ -121,7 +121,9 @@ elite_monster: Monster {
 }
 ```
 
-多个 spread 按出现顺序合并，后面的 spread 覆盖前面的 spread，本地字段拥有最高优先级。spread 来源必须与目标对象或字典的类型兼容，循环依赖会被拒绝。
+对象 spread 可以使用顶层 record 引用或内联对象，来源类型必须能赋值给当前对象类型。字典 spread 使用内联字典，其中的 key 和 value 必须符合当前字典类型。
+
+多个 spread 按出现顺序合并，后面的 spread 覆盖前面的 spread，本地字段或字典条目拥有最高优先级。循环依赖会被拒绝。
 
 ## Singleton
 

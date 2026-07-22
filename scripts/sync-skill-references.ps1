@@ -113,6 +113,68 @@ function Normalize-Lf([string]$Text) {
     return (($Text -replace "`r`n", "`n") -replace "`r", "`n")
 }
 
+function Get-SkillRoot([string]$RelativePath) {
+    $parts = ($RelativePath -replace "\\", "/").Split("/")
+    if ($parts.Length -lt 2 -or $parts[0] -ne "skills") {
+        throw "Skill target must be under skills/<name>: $RelativePath"
+    }
+    return "$($parts[0])/$($parts[1])"
+}
+
+function Get-PublicDocsUrl([string]$SourcePath) {
+    $docsRoot = Get-RepoPath "website/docs"
+    $relative = [System.IO.Path]::GetRelativePath($docsRoot, $SourcePath) -replace "\\", "/"
+    if ($relative.StartsWith("../", [System.StringComparison]::Ordinal)) {
+        throw "Linked source is outside website/docs: $SourcePath"
+    }
+    if ($relative.EndsWith(".md", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $relative = $relative.Substring(0, $relative.Length - 3)
+    }
+    return "$PublicDocsBase/$relative"
+}
+
+function Rewrite-ReferenceLinks([string]$Text, $Mapping) {
+    $sourcePath = Get-RepoPath $Mapping.Source
+    $sourceDir = Split-Path -Parent $sourcePath
+    $targetPath = Get-RepoPath $Mapping.Target
+    $targetDir = Split-Path -Parent $targetPath
+    $skillRoot = Get-SkillRoot $Mapping.Target
+    $linkPattern = '(?<prefix>!?\[[^\]]*\]\()(?<destination>[^)\s]+)(?<suffix>\))'
+
+    return [regex]::Replace($Text, $linkPattern, {
+        param($match)
+
+        $destination = $match.Groups["destination"].Value
+        if ($destination.StartsWith("#") -or
+            $destination.StartsWith("/") -or
+            $destination -match '^[a-zA-Z][a-zA-Z0-9+.-]*:') {
+            return $match.Value
+        }
+
+        if ($destination -notmatch '^(?<path>[^?#]+)(?<tail>[?#].*)?$') {
+            return $match.Value
+        }
+        $linkedPath = [System.IO.Path]::GetFullPath((Join-Path $sourceDir $Matches["path"]))
+        $tail = $Matches["tail"]
+        $localMapping = $Mappings | Where-Object {
+            (Get-RepoPath $_.Source) -eq $linkedPath -and
+            (Get-SkillRoot $_.Target) -eq $skillRoot
+        } | Select-Object -First 1
+
+        if ($null -ne $localMapping) {
+            $localTarget = Get-RepoPath $localMapping.Target
+            $rewritten = [System.IO.Path]::GetRelativePath($targetDir, $localTarget) -replace "\\", "/"
+            if (-not $rewritten.StartsWith(".")) {
+                $rewritten = "./$rewritten"
+            }
+        } else {
+            $rewritten = Get-PublicDocsUrl $linkedPath
+        }
+
+        return $match.Groups["prefix"].Value + $rewritten + $tail + $match.Groups["suffix"].Value
+    })
+}
+
 function Get-ExpectedContent($Mapping) {
     $sourcePath = Get-RepoPath $Mapping.Source
     if (-not (Test-Path -LiteralPath $sourcePath)) {
@@ -120,7 +182,31 @@ function Get-ExpectedContent($Mapping) {
     }
 
     $sourceText = Normalize-Lf ([System.IO.File]::ReadAllText($sourcePath))
+    $sourceText = Rewrite-ReferenceLinks $sourceText $Mapping
     return $sourceText.TrimEnd() + "`n"
+}
+
+function Get-BrokenLocalLinks([string]$Text, [string]$TargetPath) {
+    $targetDir = Split-Path -Parent $TargetPath
+    $linkPattern = '!?\[[^\]]*\]\((?<destination>[^)\s]+)\)'
+    $broken = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($match in [regex]::Matches($Text, $linkPattern)) {
+        $destination = $match.Groups["destination"].Value
+        if ($destination.StartsWith("#") -or
+            $destination.StartsWith("/") -or
+            $destination -match '^[a-zA-Z][a-zA-Z0-9+.-]*:') {
+            continue
+        }
+        if ($destination -notmatch '^(?<path>[^?#]+)') {
+            continue
+        }
+        $linkedPath = [System.IO.Path]::GetFullPath((Join-Path $targetDir $Matches["path"]))
+        if (-not (Test-Path -LiteralPath $linkedPath)) {
+            $broken.Add($destination)
+        }
+    }
+    return $broken
 }
 
 $outOfDate = [System.Collections.Generic.List[string]]::new()
@@ -130,6 +216,11 @@ foreach ($mapping in $Mappings) {
     $targetPath = Get-RepoPath $mapping.Target
     [void]$expectedTargets.Add($targetPath)
     $expected = Get-ExpectedContent $mapping
+    $brokenLinks = Get-BrokenLocalLinks $expected $targetPath
+    foreach ($brokenLink in $brokenLinks) {
+        $outOfDate.Add("$($mapping.Target) -> $brokenLink")
+        Write-Host "Broken generated reference: $($mapping.Target) -> $brokenLink"
+    }
 
     if (Test-Path -LiteralPath $targetPath) {
         $actual = Normalize-Lf ([System.IO.File]::ReadAllText($targetPath))

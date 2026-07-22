@@ -4,7 +4,7 @@ Coflow 诊断用于报告项目配置、CFT schema、数据源、DataModel、引
 
 诊断不同于不可恢复的 CLI 错误。诊断表示 Coflow 已经进入可定位的项目检查阶段，可以给出 code、stage、message 和 source location；CLI 错误通常表示配置文件无法读取、命令参数无法解析等更早期失败。
 
-完整错误码表见 [错误码索引](./02-codes.md)。
+完整错误码表见 [错误码索引](https://puring103.github.io/coflow/docs/reference/09-diagnostics/02-codes)。
 
 ## 输出形式
 
