@@ -172,7 +172,6 @@ dimensions:
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
             "--check",
         ],
         source,
@@ -366,7 +365,6 @@ fn schema_write_file_writes_existing_schema_file_from_stdin() {
         root.to_str().expect("utf8 path"),
         "--file",
         "schema.cft",
-        "--stdin",
     ]);
     let mut child = command
         .stdin(std::process::Stdio::piped())
@@ -415,7 +413,6 @@ fn schema_write_file_dry_run_does_not_write() {
         root.to_str().expect("utf8 path"),
         "--file",
         "schema.cft",
-        "--stdin",
         "--dry-run",
     ]);
     let mut child = command
@@ -464,7 +461,6 @@ fn schema_write_file_rejects_non_schema_file() {
         root.to_str().expect("utf8 path"),
         "--file",
         "data/items.cfd",
-        "--stdin",
     ]);
     let mut child = command
         .stdin(std::process::Stdio::piped())
@@ -509,7 +505,6 @@ fn schema_write_file_check_reports_schema_diagnostics() {
         root.to_str().expect("utf8 path"),
         "--file",
         "schema.cft",
-        "--stdin",
         "--check",
     ]);
     let mut child = command
@@ -981,7 +976,6 @@ fn data_write_file_writes_configured_cfd_file_from_stdin() {
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
         ],
         next_cfd,
     );
@@ -1019,7 +1013,6 @@ fn data_write_file_dry_run_does_not_write() {
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
             "--dry-run",
         ],
         "shield: Item { name: \"Shield\", price: 80 }\n",
@@ -1056,7 +1049,6 @@ fn data_write_file_dry_run_check_reports_check_skipped() {
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
             "--dry-run",
             "--check",
         ],
@@ -1097,7 +1089,6 @@ fn data_write_file_rejects_non_cfd_file() {
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.csv",
-            "--stdin",
         ],
         "id,name,price\nshield,Shield,80\n",
     );
@@ -1131,7 +1122,6 @@ fn data_write_file_rejects_file_outside_configured_sources() {
             root.to_str().expect("utf8 path"),
             "--file",
             "other/items.cfd",
-            "--stdin",
         ],
         "shield: Item { name: \"Shield\", price: 80 }\n",
     );
@@ -1169,7 +1159,6 @@ fn data_write_file_writes_file_under_explicit_cfd_source() {
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
             "--check",
         ],
         next_cfd,
@@ -1210,7 +1199,6 @@ fn data_write_file_rejects_cfd_file_under_explicit_non_cfd_source() {
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
         ],
         "shield: Item { name: \"Shield\", price: 80 }\n",
     );
@@ -1243,7 +1231,6 @@ fn data_write_file_check_reports_project_diagnostics_after_write() {
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
             "--check",
         ],
         bad_cfd,

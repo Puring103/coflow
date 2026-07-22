@@ -14,7 +14,7 @@ use coflow_api::{
     ArtifactSet, CodeGenerator, DataExporter, DecodedOutputOptions, Diagnostic, DiagnosticSet,
     Label, LoaderGenerator, Severity, SourceLocation,
 };
-use coflow_project::{OutputConfig, OutputTargetConfig, Project};
+use coflow_project::{OutputConfig, Project};
 use coflow_runtime::{BuildProjectSession, ProjectSchemaSession};
 use serde_json::Value;
 use staging::stage_artifact_set;
@@ -715,76 +715,6 @@ fn is_managed_output_slot(slot: &str) -> bool {
     index.parse::<usize>().is_ok() && matches!(kind, "data" | "code")
 }
 
-pub fn required_data_output<'a>(
-    project: &'a Project,
-    exporter_id: &str,
-    command: &str,
-) -> Result<(usize, &'a OutputConfig), DiagnosticSet> {
-    let matches = project
-        .config
-        .outputs
-        .targets()
-        .iter()
-        .enumerate()
-        .filter(|(_, target)| target.data.output_type == exporter_id)
-        .collect::<Vec<_>>();
-    match matches.as_slice() {
-        [(index, target)] => Ok((*index, &target.data)),
-        [] => Err(project_config_diagnostic_set(
-            project,
-            format!(
-                "coflow.yaml has no output target with data.type `{exporter_id}`; required `{exporter_id}` for `{command}`"
-            ),
-            ["outputs"],
-        )),
-        _ => Err(project_config_diagnostic_set(
-            project,
-            format!(
-                "coflow.yaml has multiple output targets with data.type `{exporter_id}`; `{command}` requires a unique target"
-            ),
-            ["outputs"],
-        )),
-    }
-}
-
-pub fn required_code_output<'a>(
-    project: &'a Project,
-    codegen_id: &str,
-    command: &str,
-) -> Result<(usize, &'a OutputTargetConfig, &'a OutputConfig), DiagnosticSet> {
-    let matches = project
-        .config
-        .outputs
-        .targets()
-        .iter()
-        .enumerate()
-        .filter_map(|(index, target)| {
-            target
-                .code
-                .as_ref()
-                .filter(|code| code.output_type == codegen_id)
-                .map(|code| (index, target, code))
-        })
-        .collect::<Vec<_>>();
-    match matches.as_slice() {
-        [(index, target, code)] => Ok((*index, *target, *code)),
-        [] => Err(project_config_diagnostic_set(
-            project,
-            format!(
-                "coflow.yaml has no output target with code.type `{codegen_id}`; required for `{command}`"
-            ),
-            ["outputs"],
-        )),
-        _ => Err(project_config_diagnostic_set(
-            project,
-            format!(
-                "coflow.yaml has multiple output targets with code.type `{codegen_id}`; `{command}` requires a unique target"
-            ),
-            ["outputs"],
-        )),
-    }
-}
-
 fn diagnostic_set(path: impl Into<PathBuf>, message: impl Into<String>) -> DiagnosticSet {
     DiagnosticSet::one(Diagnostic {
         code: "ARTIFACT-001".to_string(),
@@ -793,27 +723,6 @@ fn diagnostic_set(path: impl Into<PathBuf>, message: impl Into<String>) -> Diagn
         message: message.into(),
         primary: Some(Label {
             location: SourceLocation::Artifact { path: path.into() },
-            message: None,
-        }),
-        related: Vec::new(),
-    })
-}
-
-fn project_config_diagnostic_set(
-    project: &Project,
-    message: impl Into<String>,
-    key_path: impl IntoIterator<Item = impl Into<String>>,
-) -> DiagnosticSet {
-    DiagnosticSet::one(Diagnostic {
-        code: "PROJECT-001".to_string(),
-        stage: "PROJECT".to_string(),
-        severity: Severity::Error,
-        message: message.into(),
-        primary: Some(Label {
-            location: SourceLocation::ProjectConfig {
-                path: project.config_path.clone(),
-                key_path: key_path.into_iter().map(Into::into).collect(),
-            },
             message: None,
         }),
         related: Vec::new(),

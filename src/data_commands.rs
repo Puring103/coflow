@@ -33,8 +33,8 @@ pub struct DataGetOptions {
 
 pub(crate) use crate::write_file::{
     WriteCheck as DataWriteCheck, WriteFileOptions as DataWriteFileOptions,
-    WriteFileReport as DataWriteFileReport, WriteInput as DataWriteInput,
-    WriteMode as DataWriteMode, WriteOutput as DataWriteOutput,
+    WriteFileReport as DataWriteFileReport, WriteMode as DataWriteMode,
+    WriteOutput as DataWriteOutput,
 };
 
 #[derive(Debug)]

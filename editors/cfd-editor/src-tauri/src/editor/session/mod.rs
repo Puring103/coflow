@@ -302,12 +302,8 @@ impl SessionStore {
         let (yaml_path, registry) = self.project_action_context(id)?;
         let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
-        match coflow::commands::build_project(
-            &project,
-            registry.as_ref(),
-            coflow::commands::BuildOptions::default(),
-        )
-        .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
+        match coflow::commands::build_project(&project, registry.as_ref())
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow::commands::CommandOutcome::Success(report) => {
                 let mut outputs = Vec::new();

@@ -63,7 +63,7 @@ record map 的字段顺序遵循 CFT schema 的继承展开顺序：父类字段
 
 ## 输出目录
 
-`outputs.data.dir` 或 `--out` 是导出成功后的实际数据目录。Coflow 先写入并验证 staging 和不可变 generation，再替换该目录，并通过项目目录下 `.coflow/artifacts/active.json` 单点激活完整 snapshot。命令成功信息会输出实际数据目录。
+`outputs.data.dir` 是导出成功后的实际数据目录。Coflow 先写入并验证 staging 和不可变 generation，再替换该目录，并通过项目目录下 `.coflow/artifacts/active.json` 单点激活完整 snapshot。命令成功信息会输出实际数据目录。
 
 不要在输出目录中放置手写文件。后续导出会完整替换目录内容；不可变 generation 由 Coflow 在 `.coflow/artifacts/generations/` 中维护。
 

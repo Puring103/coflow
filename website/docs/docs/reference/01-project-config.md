@@ -381,8 +381,7 @@ outputs:
 ```
 
 `outputs.*` 除 `type`、`dir` 之外的字段会作为 provider options 传入。例如 `namespace` 是
-C# codegen 的 provider option，也可以被 `coflow build --namespace` 或
-`coflow codegen csharp --namespace` 覆盖。
+C# codegen 的 provider option。构建命令直接使用这里配置的输出目录和 provider options。
 
 ### `outputs.loader`
 
@@ -396,9 +395,8 @@ loader 负责为一个 target 的 code/data 组合生成加载代码。当前内
 `loader` 可以省略；Coflow 会按注册顺序选择与 target 的 `code.type` 和 `data.type` 精确匹配的 loader。显式配置时，loader 必须与同一 target 的 code/data 组合兼容。没有 `code` 的 data-only target 不能配置 `loader`。
 
 内置组合之外的 exporter、codegen 和 loader id 只有在当前应用提供对应 provider 时才有效。
-`coflow export TYPE` 和 `coflow codegen TYPE` 将 `TYPE` 作为 provider id；单独执行时，
-同类型 target 必须恰好一个。完整
-`build` 则处理列表中的全部 target。
+`coflow export` 处理全部 data target，`coflow codegen` 处理全部配置了 code 的 target，
+`coflow build` 处理全部 data 和 code target。
 
 ## `dimensions`
 

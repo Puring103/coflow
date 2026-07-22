@@ -24,7 +24,7 @@ outputs:
 运行：
 
 ```powershell
-coflow codegen csharp
+coflow codegen
 ```
 
 或在完整构建中生成：
@@ -33,11 +33,7 @@ coflow codegen csharp
 coflow build
 ```
 
-命令行可以覆盖输出目录和命名空间：
-
-```powershell
-coflow codegen csharp --out generated/csharp --namespace Game.Config
-```
+输出目录、命名空间和其他 codegen 选项均从 `coflow.yaml` 读取。
 
 ## 输出目录
 
@@ -57,7 +53,7 @@ generated/csharp/
 
 `CoflowTables.cs` 是默认入口。每个 CFT type / enum 会生成对应 C# 文件。本地化字段存在时，会额外生成运行时 helper。`outputs` 使用 target 列表时，loader 成员位于配套的 `*.Loader.cs` partial 文件；使用单个对象时，loader 成员写入对应类型的 `*.cs` 文件。
 
-`outputs.code.dir` 或 `--out` 指定生成后的 C# 目录。每次成功生成都会完整更新该目录，不要在其中放置手写代码。
+`outputs.code.dir` 指定生成后的 C# 目录。每次成功生成都会完整更新该目录，不要在其中放置手写代码。
 
 ## 入口类
 
@@ -188,7 +184,7 @@ enum ItemId {}
 
 生成后，`TbItem` 的 key 类型会从 `string` 变为 `ItemId`，引用该 type 的字段也会使用对应 enum。
 
-`@idAsEnum` lock state 位于 `.coflow/artifacts/active.json`，与 data/code generation 在同一次 manifest 激活中发布，用来稳定 enum variant 的整数值。Coflow 在最终激活前原子更新 `coflow.yaml` 同级的 `coflow.enum.lock.json`，它是可提交到版本库的非权威镜像；已有 active manifest 始终优先，没有本地 manifest 的干净 clone 才从该文件恢复 lock state。`coflow build` 会加载数据并补全新增 variant；单独运行 `codegen csharp` 不加载数据源，因此只读取已有 lock state。
+`@idAsEnum` lock state 位于 `.coflow/artifacts/active.json`，与 data/code generation 在同一次 manifest 激活中发布，用来稳定 enum variant 的整数值。Coflow 在最终激活前原子更新 `coflow.yaml` 同级的 `coflow.enum.lock.json`，它是可提交到版本库的非权威镜像；已有 active manifest 始终优先，没有本地 manifest 的干净 clone 才从该文件恢复 lock state。`coflow build` 会加载数据并补全新增 variant；单独运行 `codegen` 不加载数据源，因此只读取已有 lock state。
 
 ## `@singleton`
 

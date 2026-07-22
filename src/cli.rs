@@ -32,41 +32,29 @@ mod tests {
     }
 
     #[test]
-    fn export_accepts_provider_id_as_a_positional_argument() {
-        let cli = Cli::try_parse_from([
-            "coflow",
-            "export",
-            "custom-json",
-            "project",
-            "--out",
-            "generated/custom",
-        ])
-        .expect("parse export provider id");
+    fn artifact_commands_only_accept_the_project_argument() {
+        let cli =
+            Cli::try_parse_from(["coflow", "export", "project"]).expect("parse export project");
         let Command::Export(args) = cli.command else {
             panic!("expected export command");
         };
-        assert_eq!(args.output_type, "custom-json");
         assert_eq!(args.config_or_dir, Some(PathBuf::from("project")));
-        assert_eq!(args.out_dir, Some(PathBuf::from("generated/custom")));
-    }
 
-    #[test]
-    fn codegen_accepts_provider_id_as_a_positional_argument() {
-        let cli = Cli::try_parse_from([
-            "coflow",
-            "codegen",
-            "custom-code",
-            "project",
-            "--namespace",
-            "Game.Config",
-        ])
-        .expect("parse codegen provider id");
+        let cli =
+            Cli::try_parse_from(["coflow", "codegen", "project"]).expect("parse codegen project");
         let Command::Codegen(args) = cli.command else {
             panic!("expected codegen command");
         };
-        assert_eq!(args.output_type, "custom-code");
         assert_eq!(args.config_or_dir, Some(PathBuf::from("project")));
-        assert_eq!(args.namespace.as_deref(), Some("Game.Config"));
+
+        for args in [
+            ["coflow", "build", "--namespace"],
+            ["coflow", "export", "--out"],
+            ["coflow", "codegen", "--out"],
+        ] {
+            let error = Cli::try_parse_from(args).expect_err("override option was removed");
+            assert_eq!(error.kind(), ErrorKind::UnknownArgument);
+        }
     }
 
     #[test]
@@ -200,15 +188,6 @@ pub(crate) struct ProjectCheckArgs {
 pub(crate) struct BuildArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override the first output target's data directory for this invocation.
-    #[arg(long = "data-out", value_name = "DIR")]
-    pub(crate) data_out_dir: Option<PathBuf>,
-    /// Override the first output target's code directory for this invocation.
-    #[arg(long = "code-out", value_name = "DIR")]
-    pub(crate) code_out_dir: Option<PathBuf>,
-    /// Override the first matching code target's namespace for this invocation.
-    #[arg(long, value_name = "NAME")]
-    pub(crate) namespace: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -219,29 +198,14 @@ pub(crate) struct CleanArgs {
 
 #[derive(Debug, Args)]
 pub(crate) struct ExportArgs {
-    /// Data exporter provider id.
-    #[arg(value_name = "TYPE")]
-    pub(crate) output_type: String,
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override the selected data target's directory for this invocation.
-    #[arg(long = "out", value_name = "DIR")]
-    pub(crate) out_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 pub(crate) struct CodegenArgs {
-    /// Code generator provider id.
-    #[arg(value_name = "TYPE")]
-    pub(crate) output_type: String,
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override the selected code target's directory for this invocation.
-    #[arg(long = "out", value_name = "DIR")]
-    pub(crate) out_dir: Option<PathBuf>,
-    /// Override the selected code target's namespace for this invocation.
-    #[arg(long, value_name = "NAME")]
-    pub(crate) namespace: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -292,9 +256,6 @@ pub(crate) struct SchemaWriteFileArgs {
     /// Project-relative configured .cft schema file to write.
     #[arg(long, value_name = "FILE")]
     pub(crate) file: String,
-    /// Read the replacement CFT source from stdin.
-    #[arg(long)]
-    pub(crate) stdin: bool,
     /// Validate and report without writing the file.
     #[arg(long)]
     pub(crate) dry_run: bool,
@@ -481,9 +442,6 @@ pub(crate) struct DataWriteFileArgs {
     /// Project-relative configured .cfd data file to write.
     #[arg(long, value_name = "FILE")]
     pub(crate) file: String,
-    /// Read the replacement CFD source from stdin.
-    #[arg(long)]
-    pub(crate) stdin: bool,
     /// Validate and report without writing the file.
     #[arg(long)]
     pub(crate) dry_run: bool,

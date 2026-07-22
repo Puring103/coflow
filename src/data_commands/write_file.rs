@@ -1,6 +1,5 @@
 use super::{
-    open_read_session, DataWriteCheck, DataWriteFileOptions, DataWriteFileReport, DataWriteInput,
-    DataWriteMode,
+    open_read_session, DataWriteCheck, DataWriteFileOptions, DataWriteFileReport, DataWriteMode,
 };
 use crate::diagnostics::{cli_error, cli_file_error};
 use crate::write_file::{read_source, read_stdin_source, write_source};
@@ -15,12 +14,7 @@ pub(super) fn run_write_file(
     let project = Project::open_schema_only(config_or_dir)?;
     let target = resolve_data_write_target(&project, &options.file)?;
     let current = read_source(&target.absolute_path)?;
-    let source = match options.input {
-        DataWriteInput::Stdin => read_stdin_source()?,
-        DataWriteInput::Missing => {
-            return Err(cli_error("CLI-ARG", "data write-file requires --stdin"));
-        }
-    };
+    let source = read_stdin_source()?;
     let changed = current != source;
     let dry_run = matches!(options.mode, DataWriteMode::DryRun);
     if !dry_run {

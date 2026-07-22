@@ -6,7 +6,7 @@
 
 | 诊断码 | 阶段 | 含义 |
 | --- | --- | --- |
-| `CLI-ARG` | `CLI` | 命令参数组合非法，例如写文件命令缺少 `--stdin` |
+| `CLI-ARG` | `CLI` | 命令参数组合非法，例如同时指定多种 patch 输入方式 |
 | `CLI-STDIN` | `CLI` | 读取标准输入失败 |
 | `CLI-OUTPUT` | `CLI` | 写 stdout/stderr 或 JSON 输出失败 |
 | `CLI-FILE-READ` | `CLI` | CLI 直接读取补丁、schema 或 data 文件失败 |

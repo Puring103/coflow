@@ -91,25 +91,16 @@ fn build_exports_data_and_generates_csharp_for_json_project() {
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-build-json-test-{suffix}"));
     let project_dir = root_dir.join("project");
-    let data_dir = root_dir.join("data-out");
-    let code_dir = root_dir.join("code-out");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
     }
     std::fs::create_dir_all(&project_dir).expect("create project dir");
     write_acyclic_csharp_project(&project_dir, "json");
+    let data_dir = project_dir.join("generated/data");
+    let code_dir = project_dir.join("generated/csharp");
 
     let output = coflow()
-        .args([
-            "build",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--data-out",
-            data_dir.to_str().expect("utf8 temp path"),
-            "--code-out",
-            code_dir.to_str().expect("utf8 temp path"),
-            "--namespace",
-            "Game.Config",
-        ])
+        .args(["build", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow build");
 
@@ -141,23 +132,16 @@ fn build_exports_messagepack_when_configured() {
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-build-messagepack-test-{suffix}"));
     let project_dir = root_dir.join("project");
-    let data_dir = root_dir.join("data-out");
-    let code_dir = root_dir.join("code-out");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
     }
     std::fs::create_dir_all(&project_dir).expect("create project dir");
     write_acyclic_csharp_project(&project_dir, "messagepack");
+    let data_dir = project_dir.join("generated/data");
+    let code_dir = project_dir.join("generated/csharp");
 
     let output = coflow()
-        .args([
-            "build",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--data-out",
-            data_dir.to_str().expect("utf8 temp path"),
-            "--code-out",
-            code_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["build", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow build");
 
@@ -236,7 +220,7 @@ outputs:
 }
 
 #[test]
-fn build_exports_dimension_variant_tables_to_requested_data_dir() {
+fn build_exports_dimension_variant_tables_to_configured_data_dir() {
     let root = temp_project_dir("build-dimension-export");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
@@ -451,23 +435,16 @@ outputs:
 }
 
 #[test]
-fn build_updates_requested_outputs_and_tracks_immutable_generations() {
+fn build_updates_configured_outputs_and_tracks_immutable_generations() {
     let root = temp_project_dir("build-immutable-generations");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(&root).expect("create project root");
     write_acyclic_csharp_project(&root, "json");
-    let requested_data = root.join("artifacts/data");
-    let requested_code = root.join("artifacts/code");
+    let configured_data = root.join("generated/data");
+    let configured_code = root.join("generated/csharp");
 
     let first = coflow()
-        .args([
-            "build",
-            root.to_str().expect("utf8 path"),
-            "--data-out",
-            requested_data.to_str().expect("utf8 path"),
-            "--code-out",
-            requested_code.to_str().expect("utf8 path"),
-        ])
+        .args(["build", root.to_str().expect("utf8 path")])
         .output()
         .expect("run first build");
     assert!(
@@ -482,11 +459,11 @@ fn build_updates_requested_outputs_and_tracks_immutable_generations() {
     let first_tables =
         std::fs::read(first_code.join("CoflowTables.cs")).expect("read first C# generation");
     assert_eq!(
-        std::fs::read(requested_data.join("Item.json")).expect("read first requested data"),
+        std::fs::read(configured_data.join("Item.json")).expect("read first configured data"),
         first_item
     );
     assert_eq!(
-        std::fs::read(requested_code.join("CoflowTables.cs")).expect("read first requested code"),
+        std::fs::read(configured_code.join("CoflowTables.cs")).expect("read first configured code"),
         first_tables
     );
 
@@ -494,14 +471,7 @@ fn build_updates_requested_outputs_and_tracks_immutable_generations() {
     let source = std::fs::read_to_string(&source_path).expect("read source");
     std::fs::write(&source_path, source.replace("Potion", "Elixir")).expect("update source");
     let second = coflow()
-        .args([
-            "build",
-            root.to_str().expect("utf8 path"),
-            "--data-out",
-            requested_data.to_str().expect("utf8 path"),
-            "--code-out",
-            requested_code.to_str().expect("utf8 path"),
-        ])
+        .args(["build", root.to_str().expect("utf8 path")])
         .output()
         .expect("run second build");
     assert!(
@@ -526,11 +496,12 @@ fn build_updates_requested_outputs_and_tracks_immutable_generations() {
         std::fs::read(first_code.join("CoflowTables.cs")).expect("re-read first C# generation"),
         first_tables
     );
-    assert!(std::fs::read_to_string(requested_data.join("Item.json"))
+    assert!(std::fs::read_to_string(configured_data.join("Item.json"))
         .expect("read second requested data")
         .contains("Elixir"));
     assert_eq!(
-        std::fs::read(requested_code.join("CoflowTables.cs")).expect("read second requested code"),
+        std::fs::read(configured_code.join("CoflowTables.cs"))
+            .expect("read second configured code"),
         std::fs::read(second_code.join("CoflowTables.cs")).expect("read second C# generation")
     );
     let generation_root = root.join(".coflow/artifacts/generations");

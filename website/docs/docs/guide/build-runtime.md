@@ -4,8 +4,8 @@
 
 - `coflow check` 编译 schema、解析 source、构建 data model 并执行全部检查，不生成产物。
 - `coflow build` 在检查通过后生成配置中声明的数据与代码产物。
-- `coflow export` 只生成 JSON 或 MessagePack 数据。
-- `coflow codegen csharp` 只生成 C# 类型和 loader。
+- `coflow export` 只生成配置中的数据产物。
+- `coflow codegen` 只生成配置中的代码和 loader。
 
 ## 产物发布
 

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use crate::write_file::WriteFileReport as SchemaWriteFileReport;
 pub(crate) use crate::write_file::{
     WriteCheck as SchemaWriteCheck, WriteFileOptions as SchemaWriteFileOptions,
-    WriteInput as SchemaWriteInput, WriteMode as SchemaWriteMode, WriteOutput as SchemaWriteOutput,
+    WriteMode as SchemaWriteMode, WriteOutput as SchemaWriteOutput,
 };
 
 /// Inspects the compiled project schema.
@@ -73,12 +73,7 @@ pub fn write_file(
     let project = Project::open_schema_only(config_or_dir)?;
     let target = resolve_schema_write_target(&project, &options.file)?;
     let current = read_source(&target.absolute_path)?;
-    let source = match options.input {
-        SchemaWriteInput::Stdin => read_stdin_source()?,
-        SchemaWriteInput::Missing => {
-            return Err(cli_error("CLI-ARG", "schema write-file requires --stdin"));
-        }
-    };
+    let source = read_stdin_source()?;
     let changed = current != source;
 
     let diagnostics = if matches!(options.check, SchemaWriteCheck::Run) {
