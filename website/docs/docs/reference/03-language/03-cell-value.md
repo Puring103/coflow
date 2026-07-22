@@ -147,7 +147,7 @@ root 字典可以省略最外层 `{}`，嵌套字典必须写 `{}`：
 weaknesses: {Fire: 1.25, Ice: 1.0}
 ```
 
-字典 key 类型由 CFT 决定，只支持 `string`、`int` 或 enum key。重复 key 会报错，不以后写覆盖。
+字典 key 类型由 CFT 决定，只支持 `string`、`int` 或 enum key。重复 key 会报错，不能通过后写条目覆盖。
 
 ## 记录引用
 
@@ -157,7 +157,7 @@ weaknesses: {Fire: 1.25, Ice: 1.0}
 &sword_fire
 ```
 
-目标类型来自 CFT 字段类型，例如 `item: &Item;`、`items: [&Item];` 或 `{string: &Item}`。`&key` 只引用顶层 record，不支持 `.field` 或 `[index]` 路径访问。
+目标类型来自 CFT 字段类型，例如 `item: &Item;`、`items: [&Item];` 或 `{string: &Item}`。引用目标是由 key 标识的顶层 record。
 
 目标类型是 `string` 时，`&sword_fire` 只是普通字符串。目标类型是 `&Type` 时，裸 `sword_fire` 不会被当成引用，应写成 `&sword_fire`。
 

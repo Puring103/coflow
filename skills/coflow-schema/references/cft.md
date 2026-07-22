@@ -24,7 +24,7 @@ type Item {
 }
 ```
 
-这个示例展示了 CFT 如何约束 `Item` records 的字段、默认值和业务规则。更小的 schema 可以只包含一个 `type`。
+这个示例展示了 CFT 如何约束 `Item` records 的字段、默认值和业务规则。
 
 ## 文件与命名空间
 
@@ -36,7 +36,6 @@ type Item {
 
 - `const`、`enum`、`type` 名称在整个项目中唯一。
 - 支持前向引用，不要求先声明后使用。
-- 当前没有 `module`、`import` 或 `use` 语句。
 
 注释使用 `#`：
 
@@ -190,7 +189,7 @@ type Drop {
 
 ## nullable
 
-nullable 用于表达字段可以没有值，但仍然要显式处理 `null`。
+nullable 用于表达字段值可以是 `null`；`null` 是一个明确的值，不等同于未定义。
 
 `T?` 表示字段可以为 `null`。
 
@@ -394,31 +393,6 @@ type Item {
 - 枚举与 `int` 不隐式互转。
 - 枚举只能与同类型枚举比较。
 
-### 位标志枚举
-
-`@flag` 用于定义位标志枚举。
-
-```text
-@flag
-enum Permission {
-  Read = 1,
-  Write = 2,
-  Execute = 4,
-}
-```
-
-约束：
-
-- 除 `0` 外，所有变体值必须是 2 的幂。
-- 支持 `&`、`|`、`^`、`~` 位运算。
-- 运算结果仍是同一枚举类型。
-
-```text
-check {
-  (flags & Permission.Read) != Permission(0);
-}
-```
-
 ## 注解
 
 注解用于补充 schema 语义，影响加载器、导出和代码生成。注解写在 `type`、`enum` 或字段之前。
@@ -426,7 +400,7 @@ check {
 | 注解 | 适用目标 | 影响阶段 | 说明 |
 | --- | --- | --- | --- |
 | `@flag` | enum | schema / codegen | 位标志枚举 |
-| `@struct` | type | codegen | C# codegen 生成 value-like struct；目标必须是 `sealed type` |
+| `@struct` | type | codegen | 生成值类型；目标必须是 `sealed type` |
 | `@expand` | field | table loader | 表格相邻列展开成嵌套对象 |
 | `@idAsEnum(EnumName)` | type | build / codegen | 按 record key 填充空 enum，用于强类型 key |
 | `@localized` / `@localized("bucket")` | field | dimensions / check / codegen | 字段值按语言维度变化 |
@@ -443,6 +417,31 @@ type Item {
 }
 
 enum ItemId {}
+```
+
+### `@flag`
+
+`@flag` 把 enum 声明为可组合的位标志：
+
+```text
+@flag
+enum Permission {
+  Read = 1,
+  Write = 2,
+  Execute = 4,
+}
+```
+
+约束：
+
+- 除 `0` 外，所有变体值必须是 2 的幂。
+- 支持 `&`、`|`、`^`、`~` 位运算。
+- 运算结果仍是同一 enum 类型。
+
+```text
+check {
+  (flags & Permission.Read) != Permission(0);
+}
 ```
 
 ### `@idAsEnum`
@@ -549,14 +548,14 @@ CFT 只定义 schema，不保存 record 数据。数据来自 Excel、CSV、CFD 
 - 空值、`_`、`null`、数组、字典、内联对象、记录引用等值语法见 [单元格值语法](./03-cell-value.md)。
 - CFD 文本配置语法见 [CFD 语法参考](./02-cfd.md)。
 
-## 和导出/codegen 的关系
+## 和导出/代码生成的关系
 
 CFT schema 会影响导出和代码生成：
 
 - JSON 和 MessagePack 根据 schema/model 导出字段和值。
-- C# codegen 根据 type、enum、字段和注解生成运行时 API。
-- `@flag` 生成 C# `[Flags]` enum。
-- `@struct` 生成 C# struct。
+- 代码生成器根据 type、enum、字段和注解生成对应语言的运行时 API。
+- `@flag` 生成目标语言中的位标志 enum。
+- `@struct` 生成目标语言中的值类型。
 - `@idAsEnum` 生成强类型 record key。
 - `@localized` 生成本地化运行时访问结构。
 

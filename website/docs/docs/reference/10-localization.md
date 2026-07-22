@@ -151,9 +151,7 @@ Item_nameVariants.json
 
 缺失或显式为 `null` 的变体导出为 `null`。继承该字段的子 type record 会进入声明类型对应的 Variants 表；singleton 字段使用字段名作为 `id`。
 
-配置 C# codegen 时，每张 Variants 表还会生成对应的
-`{声明类型}{字段名}Variants.cs` 和 `CoflowTables.Tb{声明类型}{字段名}Variants`，
-其 loader 使用带下划线的 Variants 数据文件名。
+启用代码生成时，生成结果会包含对应 Variants 表的读取 API。具体类型和命名规则取决于所选代码生成目标。
 
 ## 本地化作为语言维度
 
@@ -201,23 +199,9 @@ type Item {
 
 语言轮产生的诊断会带上语言上下文，例如 `[language=zh]`。
 
-## C# 运行时
+## 代码生成
 
-C# codegen 会把 `@localized` 字段包装为 `Localized<T>`：
-
-```csharp
-public Localized<string> Name { get; }
-```
-
-使用方式：
-
-```csharp
-var defaultName = item.Name.Default;
-var currentName = item.Name.Value;
-var englishName = item.Name.For("en");
-```
-
-`Localized<T>` 保存 key 和默认值。宿主可以替换或扩展生成的 `Localization` helper，以接入自己的语言切换和翻译表加载方式。
+启用代码生成时，维度字段会生成能够读取默认值、当前变体和指定变体的访问 API。具体 API 形态由代码生成目标决定，详见对应目标的代码生成文档。
 
 ## 常见错误
 

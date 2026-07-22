@@ -19,9 +19,7 @@ pub(super) fn parse_object(
 ) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let expected_fields = full_fields(schema, expected_type)?;
     if text.trim().starts_with('@') {
-        return Err(syntax(
-            "typed and path references are no longer supported; use `&key`",
-        ));
+        return Err(syntax("invalid record reference"));
     }
     if text.trim().starts_with('&') {
         return Err(type_mismatch(expected_type));

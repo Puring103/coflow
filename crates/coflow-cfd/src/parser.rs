@@ -249,7 +249,7 @@ impl<'a> Parser<'a> {
                 Ok(CfdValue::QuotedString(s, Span::new(start, self.pos)))
             }
             Some('[') => self.parse_array(),
-            Some('@') => Err(self.error("typed references were removed; use `&key`")),
+            Some('@') => Err(self.error("invalid record reference")),
             Some('&') => self.parse_ref_direct(),
             _ => {
                 // Could be: null, scalar, or a block (with optional type marker).
@@ -336,7 +336,7 @@ impl<'a> Parser<'a> {
         let key = self.parse_ref_name("reference key")?;
         let key_span = Span::new(key_start, self.pos);
         if matches!(self.peek_char(), Some('.' | '[')) {
-            return Err(self.error("reference paths were removed; use `&key`"));
+            return Err(self.error("invalid record reference"));
         }
         let span = Span::new(start, self.pos);
         Ok(CfdValue::Ref(CfdRef {

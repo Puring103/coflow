@@ -2,7 +2,7 @@
 
 CFD（Coflow Data File，`.cfd`）是 coflow 的文本数据文件格式，用来编写 CFT schema 定义下的配置记录。
 
-它适合承载表格不容易表达的数据：嵌套对象、数组、字典、多态对象、记录引用和覆盖模板。Excel / CSV 更适合大量同构记录；CFD 更适合结构复杂、层级较深、需要手写维护的配置。项目中的不同数据源会合并检查，因此可以互相引用。
+它适合承载表格不容易表达的数据：单例、嵌套对象、数组、字典、多态对象、记录引用和覆盖模板。Excel / CSV 更适合大量同构记录；CFD 更适合结构复杂、层级较深、需要手写维护的配置。项目中的不同数据源会合并检查，因此可以互相引用。
 
 下面是一个简单 CFD 文件：
 
@@ -32,7 +32,7 @@ basic_monster: Monster {
 
 CFD 文件只保存数据，不声明 schema。字段、类型、枚举、默认值、引用规则和 check 规则来自 CFT。
 
-注释只使用 `#`：
+注释使用 `#`：
 
 ```text
 # 整行注释
@@ -125,7 +125,7 @@ Reward {
 
 ## 字段值
 
-CFD 是 schema-guided 解析：同一段文本会按照 CFT 字段类型解释。
+CFD 是 schema-guided 解析：同一段文本在不同 CFT 字段类型下可能得到不同的解释。
 
 ```text
 monster_01: Monster {
@@ -172,7 +172,7 @@ element: Element.Fire
 tags: ["weapon", "melee"]
 ```
 
-对象数组可以包含内联对象或多态对象；如果 CFT 元素类型是 `&Type`，数组元素写 `&key`：
+当 CFT 数组元素类型是对象时，每个元素都是内联对象。元素类型存在子类型时，可以在元素前写具体类型名来表达多态：
 
 ```text
 rewards: [
@@ -212,7 +212,7 @@ weaknesses: {
 }
 ```
 
-字典 key 类型由 CFT 字段类型决定。常见 key 类型是 `string`、`int` 或 enum。
+字典 key 类型由 CFT 字段类型决定，只能是 `string`、`int` 或 enum。
 
 ## 引用
 
@@ -224,7 +224,7 @@ item: &sword_fire
 
 ### `&key`
 
-`&key` 是唯一的记录引用值语法：
+记录引用写成 `&key`：
 
 ```text
 featured_item: &sword_fire
@@ -234,7 +234,7 @@ featured_item: &sword_fire
 
 - 只能用于期望类型为 `&Type` 的位置。
 - 目标类型来自 CFT 字段类型。
-- 只能引用记录本身，不支持 `.field`、`[index]` 这类路径访问。
+- 引用目标是由 key 标识的顶层 record。
 - `&Reward` 可以引用实际类型为 `Reward` 或其子类的 record；不能引用父类、兄弟类型或无关 type。
 
 加载项目时会检查引用：目标必须存在，目标 record 的实际类型必须能赋给字段声明的引用类型。子类可以赋给父类字段，父类不能直接赋给更窄的子类字段。
@@ -268,7 +268,7 @@ item: &sword_fire
 
 ## 覆盖
 
-CFD 支持 `...source` 覆盖语法，用于复用已有对象或字典，再局部改写字段。
+CFD 支持 `...source` 覆盖语法，用于复用对象或字典中的值，再局部改写字段或条目。
 
 ```text
 elite_monster: Monster {
@@ -283,13 +283,21 @@ elite_monster: Monster {
 - spread 按出现顺序合并。
 - 后面的 spread 覆盖前面的 spread。
 - 本地字段或本地字典条目覆盖所有 spread 来源。
-- 对象 spread 的来源必须是可赋值对象，`...&key` 的目标类型来自外层对象上下文。
-- 字典 spread 的来源必须与目标字典类型一致。
-- spread source 写成 `...&key` 时，source record 的实际类型必须是外层期望类型本身或其子类。
+- 对象 spread 可以引用顶层 record，也可以使用内联对象；来源类型必须能赋值给当前对象类型。
+- 字典 spread 使用内联字典；每个 key 和 value 都必须符合当前字典类型。
+- `...&key` 中的 key 按当前对象类型查找，可以引用该类型或其子类型的 record。
 
-字典可以继续嵌套 spread：
+对象和字典都可以使用内联 spread：
 
 ```text
+elite_monster: Monster {
+  ...&base_monster,
+  stats: {
+    ...{ hp: 100, attack: 5 },
+    hp: 250,
+  }
+}
+
 elite_drop: DropTable {
   ...&base_drop,
   weights: {
@@ -307,7 +315,7 @@ CFD 只描述数据值，具体语义由 CFT 决定：
 - 字段名必须来自目标 type 或其父类。
 - 字段值会按照 CFT 字段类型解析。
 - 未填写字段会使用 CFT 默认值。
-- `&Type` 引用和 `...&key` spread source 会按照 CFT 继承关系检查可赋值性。
+- `&Type` 引用和对象 spread 会按照 CFT 继承关系检查可赋值性。
 - `check` 块会在对象构建、默认值填充和引用解析后执行。
 
 因此，修改 CFT 字段类型、默认值或继承关系，都可能影响 CFD 文件是否仍然通过检查。
