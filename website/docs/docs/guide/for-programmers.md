@@ -11,7 +11,9 @@ coflow check path/to/project
 coflow build path/to/project
 ```
 
-Pull request CI 应使用 `check`，只校验而不写产物。需要发布运行时数据的交付阶段使用 `build`。如果只需要单个产物，使用 `export json`、`export messagepack` 或 `codegen csharp`。
+Pull request CI 应使用 `check`，只校验而不写产物。需要发布全部运行时产物的交付阶段使用
+`build`；只需要数据或代码时，分别使用 `export` 或 `codegen`。这些命令处理 YAML 中配置的
+全部对应 target。
 
 ## 运行时接入
 

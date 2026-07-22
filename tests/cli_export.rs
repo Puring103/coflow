@@ -11,24 +11,18 @@ mod common;
 use common::*;
 
 #[test]
-fn export_json_validates_declared_output_type() {
+fn export_writes_configured_json_target() {
     let root_dir = temp_project_dir("json-export");
     let project_dir = root_dir.join("rpg");
-    let out_dir = root_dir.join("export");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old output dir");
     }
     copy_dir_recursive(std::path::Path::new("examples/rpg"), &project_dir)
         .expect("copy example project");
+    let out_dir = project_dir.join("generated/data");
 
     let output = coflow()
-        .args([
-            "export",
-            "json",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--out",
-            out_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["export", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow");
 
@@ -62,7 +56,6 @@ fn export_messagepack_writes_msgpack_tables() {
     );
     let root_dir = std::env::temp_dir().join(format!("coflow-messagepack-export-test-{suffix}"));
     let project_dir = root_dir.join("rpg");
-    let out_dir = root_dir.join("export");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
     }
@@ -75,15 +68,10 @@ fn export_messagepack_writes_msgpack_tables() {
         config.replacen("type: json", "type: messagepack", 1),
     )
     .expect("write coflow.yaml");
+    let out_dir = project_dir.join("generated/data");
 
     let output = coflow()
-        .args([
-            "export",
-            "messagepack",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--out",
-            out_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["export", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow");
 
@@ -105,35 +93,41 @@ fn export_messagepack_writes_msgpack_tables() {
 }
 
 #[test]
-fn export_messagepack_validates_declared_output_type() {
-    let out_dir = std::env::temp_dir().join(format!(
-        "coflow-messagepack-validation-test-{}",
-        std::process::id()
-    ));
-    if out_dir.exists() {
-        std::fs::remove_dir_all(&out_dir).expect("clean old output dir");
-    }
+fn export_writes_all_configured_data_targets() {
+    let root_dir = temp_project_dir("multi-target-export");
+    let project_dir = root_dir.join("project");
+    write_acyclic_csharp_project(&project_dir, "json");
+    std::fs::write(
+        project_dir.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data
+outputs:
+  - data:
+      type: json
+      dir: generated/json
+  - data:
+      type: messagepack
+      dir: generated/messagepack
+"#,
+    )
+    .expect("write multi-target config");
 
     let output = coflow()
-        .args([
-            "export",
-            "messagepack",
-            "examples/rpg",
-            "--out",
-            out_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["export", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow");
 
-    assert!(!output.status.success());
     assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("required `messagepack` for `coflow export messagepack`"),
-        "stderr: {}",
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    assert!(project_dir.join("generated/json/Item.json").exists());
+    assert!(project_dir
+        .join("generated/messagepack/Item.msgpack")
+        .exists());
 
-    if out_dir.exists() {
-        std::fs::remove_dir_all(out_dir).expect("clean output dir");
-    }
+    std::fs::remove_dir_all(root_dir).expect("clean output dir");
 }

@@ -544,15 +544,8 @@ outputs:
         String::from_utf8_lossy(&cft_check.stderr)
     );
 
-    let codegen_dir = root.join("generated").join("csharp");
     let codegen = coflow()
-        .args([
-            "codegen",
-            "csharp",
-            root.to_str().expect("utf8 path"),
-            "--out",
-            codegen_dir.to_str().expect("utf8 path"),
-        ])
+        .args(["codegen", root.to_str().expect("utf8 path")])
         .output()
         .expect("run codegen");
     assert!(
@@ -624,7 +617,7 @@ outputs:
     for args in [
         vec!["check", root.to_str().expect("utf8 path")],
         vec!["build", root.to_str().expect("utf8 path")],
-        vec!["export", "json", root.to_str().expect("utf8 path")],
+        vec!["export", root.to_str().expect("utf8 path")],
     ] {
         let output = coflow().args(args).output().expect("run data command");
         assert!(!output.status.success());

@@ -124,9 +124,9 @@ JSON object key 必须是字符串，因此 Coflow 会把字典 key 统一转成
 
 ## 输出目录
 
-`outputs.data.dir` 或 `--out` 是导出成功后的实际数据目录。Coflow 先写入并校验 staging 和不可变 generation，再替换该目录；完成后通过项目目录下 `.coflow/artifacts/active.json` 一次激活 data、code 和 `@idAsEnum` lock state。命令成功信息会输出实际数据目录。
+`outputs.data.dir` 是导出成功后的实际数据目录。Coflow 先写入并校验 staging 和不可变 generation，再替换该目录；完成后通过项目目录下 `.coflow/artifacts/active.json` 一次激活 data、code 和 `@idAsEnum` lock state。命令成功信息会输出实际数据目录。
 
-消费者直接使用配置目录或 `--out` 目录。后续发布会完整替换其中的内容；不要在输出目录中放置手写文件。active manifest 中的 `outputs.data.generation_dir` 指向 Coflow 保留的不可变内部 snapshot。
+消费者直接使用配置的输出目录。后续发布会完整替换其中的内容；不要在输出目录中放置手写文件。active manifest 中的 `outputs.data.generation_dir` 指向 Coflow 保留的不可变内部 snapshot。
 
 ## 示例
 

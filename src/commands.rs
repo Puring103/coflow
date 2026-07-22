@@ -1,7 +1,4 @@
-use crate::artifacts::{
-    code_output_slot, data_output_slot, required_code_output, required_data_output,
-    ArtifactReleasePlan,
-};
+use crate::artifacts::{code_output_slot, data_output_slot, ArtifactReleasePlan};
 use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
 use coflow_project::Project;
 use coflow_runtime::Runtime;
@@ -22,22 +19,6 @@ pub enum CommandOutcome<T> {
     Diagnostics(DiagnosticSet),
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct BuildOptions<'a> {
-    pub data_out_dir: Option<&'a Path>,
-    pub code_out_dir: Option<&'a Path>,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ExportOptions<'a> {
-    pub out_dir: Option<&'a Path>,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CodegenOptions<'a> {
-    pub out_dir: Option<&'a Path>,
-}
-
 #[derive(Debug)]
 pub struct CheckReport;
 
@@ -53,6 +34,16 @@ pub struct CodegenReport {
     pub codegen_id: String,
     pub display_name: String,
     pub dir: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct ExportProjectReport {
+    pub targets: Vec<ExportReport>,
+}
+
+#[derive(Debug)]
+pub struct CodegenProjectReport {
+    pub targets: Vec<CodegenReport>,
 }
 
 #[derive(Debug)]
@@ -120,7 +111,6 @@ pub fn check_project(
 pub fn build_project(
     project: &Project,
     registry: &ProviderRegistry,
-    options: BuildOptions<'_>,
 ) -> Result<CommandOutcome<BuildReport>, DiagnosticSet> {
     let diagnostics = build_config_diagnostics(project);
     if !diagnostics.is_empty() {
@@ -206,18 +196,16 @@ pub fn build_project(
     let mut planned_slots = BTreeSet::new();
     for (index, target, exporter, code) in targets {
         let data_slot = data_output_slot(index);
-        let data_override = (index == 0).then_some(options.data_out_dir).flatten();
         release.add_data_for_slot(
             data_slot.clone(),
             &session,
             exporter.clone(),
             &target.data,
-            data_override,
+            None,
         );
         planned_slots.insert(data_slot);
         if let (Some(output), Some((codegen, loader))) = (&target.code, code) {
             let code_slot = code_output_slot(index);
-            let code_override = (index == 0).then_some(options.code_out_dir).flatten();
             release.add_build_code_with_loader_for_slot(
                 code_slot.clone(),
                 &session,
@@ -227,7 +215,7 @@ pub fn build_project(
                 output,
                 &target.data,
                 target.loader_options(),
-                code_override,
+                None,
                 &id_as_enum_variants,
             );
             planned_slots.insert(code_slot);
@@ -262,7 +250,7 @@ pub fn build_project(
     Ok(CommandOutcome::Success(BuildReport { targets: reports }))
 }
 
-/// Exports project data in the requested format.
+/// Exports every data target configured by the project.
 ///
 /// # Errors
 ///
@@ -271,44 +259,71 @@ pub fn build_project(
 pub fn export_project_data(
     project: &Project,
     registry: &ProviderRegistry,
-    exporter_id: &str,
-    options: ExportOptions<'_>,
-) -> Result<CommandOutcome<ExportReport>, DiagnosticSet> {
+) -> Result<CommandOutcome<ExportProjectReport>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.data_diagnostic_set());
-    let command = format!("coflow export {exporter_id}");
-    if let Err(output_diagnostics) = required_data_output(project, exporter_id, &command) {
-        diagnostics.extend(output_diagnostics);
+    if project.config.outputs.targets().is_empty() {
+        diagnostics.push(project_diagnostic(
+            &project.config_path,
+            "coflow.yaml missing outputs.data",
+            ["outputs", "data"],
+        ));
+    }
+    let mut targets = Vec::new();
+    for (index, target) in project.config.outputs.targets().iter().enumerate() {
+        match registry.exporter(&target.data.output_type) {
+            Some(exporter) => targets.push((index, target, exporter)),
+            None => diagnostics.push(output_target_diagnostic(
+                project,
+                index,
+                "data",
+                format!(
+                    "no data exporter registered for `{}`",
+                    target.data.output_type
+                ),
+            )),
+        }
     }
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    let (target_index, output) = required_data_output(project, exporter_id, &command)?;
     let runtime = Runtime::new(registry.clone());
     let session = runtime.build_project_session(project.clone())?;
     if session.queries().has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let Some(exporter) = registry.exporter(exporter_id) else {
-        return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
-            &project.config_path,
-            format!("no data exporter registered for `{exporter_id}`"),
-            ["outputs", "data", "type"],
-        )));
-    };
     let mut release = ArtifactReleasePlan::new(project);
-    let slot = data_output_slot(target_index);
-    release.add_data_for_slot(&slot, &session, exporter, output, options.out_dir);
+    for (index, target, exporter) in targets {
+        release.add_data_for_slot(
+            data_output_slot(index),
+            &session,
+            exporter,
+            &target.data,
+            None,
+        );
+    }
     let published = match release.execute() {
         Ok(published) => published,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    Ok(CommandOutcome::Success(export_report(
-        published.output(&slot)?,
-    )))
+    let reports = project
+        .config
+        .outputs
+        .targets()
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            published
+                .output(&data_output_slot(index))
+                .map(export_report)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(CommandOutcome::Success(ExportProjectReport {
+        targets: reports,
+    }))
 }
 
-/// Generates project code for the requested target.
+/// Generates every code target configured by the project.
 ///
 /// # Errors
 ///
@@ -318,78 +333,117 @@ pub fn export_project_data(
 pub fn generate_project_code(
     project: &Project,
     registry: &ProviderRegistry,
-    codegen_id: &str,
-    options: CodegenOptions<'_>,
-) -> Result<CommandOutcome<CodegenReport>, DiagnosticSet> {
+) -> Result<CommandOutcome<CodegenProjectReport>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.codegen_diagnostic_set());
+    let mut targets = Vec::new();
+    for (index, target) in project.config.outputs.targets().iter().enumerate() {
+        let Some(output) = target.code.as_ref() else {
+            continue;
+        };
+        let codegen = registry.codegen(&output.output_type);
+        if codegen.is_none() {
+            diagnostics.push(output_target_diagnostic(
+                project,
+                index,
+                "code",
+                format!("no code generator registered for `{}`", output.output_type),
+            ));
+        }
+        let explicit_loader = target
+            .loader
+            .as_ref()
+            .map(|loader| loader.loader_type.as_str());
+        let loader = registry.select_loader(
+            &output.output_type,
+            &target.data.output_type,
+            explicit_loader,
+        );
+        if loader.is_none() {
+            let message = explicit_loader.map_or_else(
+                || {
+                    format!(
+                        "no loader registered for code `{}` and data `{}`",
+                        output.output_type, target.data.output_type
+                    )
+                },
+                |loader| {
+                    format!(
+                        "loader `{loader}` is not registered for code `{}` and data `{}`",
+                        output.output_type, target.data.output_type
+                    )
+                },
+            );
+            diagnostics.push(output_target_diagnostic(project, index, "loader", message));
+        }
+        let exporter = registry.exporter(&target.data.output_type);
+        if exporter.is_none() {
+            diagnostics.push(output_target_diagnostic(
+                project,
+                index,
+                "data",
+                format!(
+                    "no data exporter registered for `{}`",
+                    target.data.output_type
+                ),
+            ));
+        }
+        if let (Some(codegen), Some(loader), Some(exporter)) = (codegen, loader, exporter) {
+            targets.push((index, target, output, codegen, loader, exporter));
+        }
+    }
+    if targets.is_empty() && diagnostics.is_empty() {
+        diagnostics.push(project_diagnostic(
+            &project.config_path,
+            "coflow.yaml has no output target with code configuration",
+            ["outputs", "code"],
+        ));
+    }
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    let command = format!("coflow codegen {codegen_id}");
-    let (target_index, target, output) = required_code_output(project, codegen_id, &command)?;
     let session = Runtime::open_schema_session(project.clone())?;
     if session.has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let Some(codegen) = registry.codegen(codegen_id) else {
-        return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
-            &project.config_path,
-            format!("no code generator registered for `{codegen_id}`"),
-            ["outputs", "code", "type"],
-        )));
-    };
-    let explicit_loader = target
-        .loader
-        .as_ref()
-        .map(|loader| loader.loader_type.as_str());
-    let Some(loader) =
-        registry.select_loader(codegen_id, &target.data.output_type, explicit_loader)
-    else {
-        return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
-            &project.config_path,
-            format!(
-                "code generator `{codegen_id}` does not support data format `{}`: no compatible loader is registered",
-                target.data.output_type
-            ),
-            ["outputs", "loader", "type"],
-        )));
-    };
-    let Some(exporter) = registry.exporter(&target.data.output_type) else {
-        return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
-            &project.config_path,
-            format!(
-                "no data exporter registered for `{}`",
-                target.data.output_type
-            ),
-            ["outputs", "data", "type"],
-        )));
-    };
     let variants = match id_as_enum_variants_for_schema_only(project) {
         Ok(variants) => variants,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
     let mut release = ArtifactReleasePlan::new(project);
-    let slot = code_output_slot(target_index);
-    release.add_schema_code_with_loader_for_slot(
-        &slot,
-        &session,
-        codegen,
-        loader,
-        exporter,
-        output,
-        &target.data,
-        target.loader_options(),
-        options.out_dir,
-        &variants,
-    );
+    let target_indices = targets
+        .iter()
+        .map(|(index, _, _, _, _, _)| *index)
+        .collect::<Vec<_>>();
+    for (index, target, output, codegen, loader, exporter) in targets {
+        release.add_schema_code_with_loader_for_slot(
+            code_output_slot(index),
+            &session,
+            codegen,
+            loader,
+            exporter,
+            output,
+            &target.data,
+            target.loader_options(),
+            None,
+            &variants,
+        );
+    }
     let published = match release.execute() {
         Ok(published) => published,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    Ok(CommandOutcome::Success(codegen_report(
-        published.output(&slot)?,
-    )))
+    let reports = target_indices
+        .into_iter()
+        .map(|index| {
+            published
+                .output(&code_output_slot(index))
+                .map(codegen_report)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(CommandOutcome::Success(CodegenProjectReport {
+        targets: reports,
+    }))
 }
 
 fn build_config_diagnostics(project: &Project) -> DiagnosticSet {
@@ -434,14 +488,6 @@ fn codegen_report(output: &crate::artifacts::ReleasedOutput) -> CodegenReport {
         display_name: output.display_name.to_string(),
         dir: output.dir.clone(),
     }
-}
-
-fn project_diagnostic_set(
-    config_path: &Path,
-    message: impl Into<String>,
-    key_path: impl IntoIterator<Item = impl Into<String>>,
-) -> DiagnosticSet {
-    DiagnosticSet::one(project_diagnostic(config_path, message, key_path))
 }
 
 fn project_diagnostic(

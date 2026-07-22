@@ -17,13 +17,12 @@ use clap::Parser;
 use cli_output::{display_path, project_path, write_json_diagnostics, write_project_diagnostics};
 use coflow::commands::{
     build_project, check_project, clean_project, export_project_data, generate_project_code,
-    BuildOptions, CodegenOptions, CommandOutcome, ExportOptions, CSHARP_CODEGEN_ID,
+    CommandOutcome,
 };
 use coflow_api::DiagnosticSet;
 use coflow_project::{normalize_path, path_to_slash, Project};
 use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
 use data_get_target::parse_data_get_target;
-use serde_json::Value;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -152,11 +151,6 @@ fn run_schema(command: &SchemaArgs) -> Result<bool, DiagnosticSet> {
             args.config_or_dir.as_deref(),
             &schema_commands::SchemaWriteFileOptions {
                 file: args.file.clone(),
-                input: if args.stdin {
-                    schema_commands::SchemaWriteInput::Stdin
-                } else {
-                    schema_commands::SchemaWriteInput::Missing
-                },
                 mode: if args.dry_run {
                     schema_commands::SchemaWriteMode::DryRun
                 } else {
@@ -241,11 +235,6 @@ fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
             args.config_or_dir.as_deref(),
             &data_commands::DataWriteFileOptions {
                 file: args.file.clone(),
-                input: if args.stdin {
-                    data_commands::DataWriteInput::Stdin
-                } else {
-                    data_commands::DataWriteInput::Missing
-                },
                 mode: if args.dry_run {
                     data_commands::DataWriteMode::DryRun
                 } else {
@@ -358,19 +347,11 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, DiagnosticSet> {
 }
 
 fn project_build(args: &BuildArgs) -> Result<bool, DiagnosticSet> {
-    let mut project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    override_code_namespace(&mut project, CSHARP_CODEGEN_ID, args.namespace.as_deref());
+    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir.clone();
     let config_path = project.config_path.clone();
     let registry = default_provider_registry()?;
-    match build_project(
-        &project,
-        &registry,
-        BuildOptions {
-            data_out_dir: args.data_out_dir.as_deref(),
-            code_out_dir: args.code_out_dir.as_deref(),
-        },
-    )? {
+    match build_project(&project, &registry)? {
         CommandOutcome::Success(report) => {
             for target in report.targets {
                 println!(
@@ -415,20 +396,15 @@ fn export_data(args: &ExportArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir.clone();
     let registry = default_provider_registry()?;
-    match export_project_data(
-        &project,
-        &registry,
-        &args.output_type,
-        ExportOptions {
-            out_dir: args.out_dir.as_deref(),
-        },
-    )? {
+    match export_project_data(&project, &registry)? {
         CommandOutcome::Success(report) => {
-            println!(
-                "{} data exported to {}",
-                report.display_name,
-                display_path(&report.dir.display().to_string(), Some(&root_dir))
-            );
+            for target in report.targets {
+                println!(
+                    "{} data exported to {}",
+                    target.display_name,
+                    display_path(&target.dir.display().to_string(), Some(&root_dir))
+                );
+            }
             Ok(true)
         }
         CommandOutcome::Diagnostics(diagnostics) => {
@@ -439,51 +415,24 @@ fn export_data(args: &ExportArgs) -> Result<bool, DiagnosticSet> {
 }
 
 fn generate_code(args: &CodegenArgs) -> Result<bool, DiagnosticSet> {
-    let mut project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    override_code_namespace(&mut project, &args.output_type, args.namespace.as_deref());
+    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir.clone();
     let registry = default_provider_registry()?;
-    match generate_project_code(
-        &project,
-        &registry,
-        &args.output_type,
-        CodegenOptions {
-            out_dir: args.out_dir.as_deref(),
-        },
-    )? {
+    match generate_project_code(&project, &registry)? {
         CommandOutcome::Success(report) => {
-            println!(
-                "{} code generated to {}",
-                report.display_name,
-                display_path(&report.dir.display().to_string(), Some(&root_dir))
-            );
+            for target in report.targets {
+                println!(
+                    "{} code generated to {}",
+                    target.display_name,
+                    display_path(&target.dir.display().to_string(), Some(&root_dir))
+                );
+            }
             Ok(true)
         }
         CommandOutcome::Diagnostics(diagnostics) => {
             write_project_diagnostics(diagnostics, false, &root_dir).map_err(output_error)?;
             Ok(false)
         }
-    }
-}
-
-fn override_code_namespace(project: &mut Project, codegen_id: &str, namespace: Option<&str>) {
-    let Some(namespace) = namespace else {
-        return;
-    };
-    if let Some(output) = project
-        .config
-        .outputs
-        .targets_mut()
-        .iter_mut()
-        .filter_map(|target| target.code.as_mut())
-        .find(|output| output.output_type == codegen_id)
-    {
-        let mut options = output.options().as_object().cloned().unwrap_or_default();
-        options.insert(
-            "namespace".to_string(),
-            Value::String(namespace.to_string()),
-        );
-        output.options = Value::Object(options);
     }
 }
 

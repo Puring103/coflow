@@ -20,7 +20,7 @@ coflow schema inspect . --type Item
 
 ```powershell
 coflow data sync-header . --file data/items.csv --type Item
-coflow data write-file . --file data/items.cfd --stdin --check
+coflow data write-file . --file data/items.cfd --check
 coflow data patch . --patch '<json>'
 coflow check .
 ```

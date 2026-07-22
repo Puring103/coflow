@@ -75,8 +75,8 @@ Coflow 每次构建都会先写入并验证 staging 和 `.coflow/artifacts/gener
 
 ```powershell
 coflow cft check examples/rpg
-coflow export json examples/rpg
-coflow codegen csharp examples/rpg
+coflow export examples/rpg
+coflow codegen examples/rpg
 ```
 
 使用 MessagePack 时把 output target 的 `data.type` 改为 `messagepack` 后重新 build 即可。
@@ -220,21 +220,20 @@ check 支持 `len` / `contains` / `isUnique` / `min` / `max` / `sum` / `keys` / 
 coflow init my-config
 coflow check examples/rpg
 coflow build examples/rpg
-coflow export json examples/rpg --out generated/data
-coflow export messagepack examples/rpg --out generated/data
-coflow codegen csharp examples/rpg --out generated/csharp --namespace Game.Config
+coflow export examples/rpg
+coflow codegen examples/rpg
 coflow lsp examples/rpg
 
 # AI / 自动化入口（显式使用 JSON 输出）
 coflow schema inspect examples/rpg --json
 coflow schema files examples/rpg --json
-coflow schema write-file examples/rpg --file schema/main.cft --stdin --check --json
+coflow schema write-file examples/rpg --file schema/main.cft --check --json
 coflow data sources examples/rpg --json
 coflow data list examples/rpg --type Item --json
 coflow data get examples/rpg Item.sword --json
 coflow data create-file examples/rpg --file data/items.csv --type Item --provider csv --json
 coflow data sync-header examples/rpg --file data/items.csv --type Item --json
-coflow data write-file examples/rpg --file data/items.cfd --stdin --check --json
+coflow data write-file examples/rpg --file data/items.cfd --check --json
 coflow data patch examples/rpg --patch-file patch.json --json
 ```
 

@@ -40,7 +40,7 @@ coflow data sources <project>
 修改 schema 后运行：
 
 ```powershell
-coflow schema write-file <project> --file schema/main.cft --stdin --check
+coflow schema write-file <project> --file schema/main.cft --check
 coflow check <project>
 ```
 
@@ -49,7 +49,7 @@ coflow check <project>
 ```powershell
 coflow data patch <project> --patch '<json>'
 coflow data sync-header <project> --file data/items.csv --type Item
-coflow data write-file <project> --file data/items.cfd --stdin --check
+coflow data write-file <project> --file data/items.cfd --check
 coflow check <project>
 ```
 

@@ -15,7 +15,7 @@ description: "Coflow CFT schema 与配置数据结构建模：当用户需要设
 4. 修改 `.cft` 时优先使用：
 
 ```powershell
-coflow schema write-file <project> --file schema/main.cft --stdin --check
+coflow schema write-file <project> --file schema/main.cft --check
 ```
 
 5. 如果字段变化影响表格或 CFD 顶层字段，交给 `coflow-data` 运行 `coflow data sync-header`。

@@ -7,16 +7,9 @@ use std::path::Path;
 #[derive(Debug)]
 pub(crate) struct WriteFileOptions {
     pub file: String,
-    pub input: WriteInput,
     pub mode: WriteMode,
     pub check: WriteCheck,
     pub output: WriteOutput,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum WriteInput {
-    Stdin,
-    Missing,
 }
 
 #[derive(Debug, Clone, Copy)]
