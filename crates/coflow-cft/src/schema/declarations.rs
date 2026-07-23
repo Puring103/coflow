@@ -80,8 +80,20 @@ pub struct CftSchemaCheckBlock {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftSchemaCheckMessage {
-    pub value: String,
+    pub kind: CftSchemaCheckMessageKind,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CftSchemaCheckMessageKind {
+    String(String),
+    Formatted(Vec<CftSchemaCheckFormatSegment>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CftSchemaCheckFormatSegment {
+    Text(String, Span),
+    Expr(CftSchemaCheckExpr),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -118,6 +130,7 @@ pub enum CftSchemaCheckExprKind {
     Bool(bool),
     Null,
     String(String),
+    FormattedString(Vec<CftSchemaCheckFormatSegment>),
     Name(String),
     Field {
         expr: Box<CftSchemaCheckExpr>,

@@ -197,8 +197,20 @@ pub struct CheckBlock {
 
 #[derive(Debug, Clone)]
 pub struct CheckMessage {
-    pub value: String,
+    pub kind: CheckMessageKind,
     pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum CheckMessageKind {
+    String(String),
+    Formatted(Vec<CheckFormatSegment>),
+}
+
+#[derive(Debug, Clone)]
+pub enum CheckFormatSegment {
+    Text(String, Span),
+    Expr(CheckExpr),
 }
 
 #[derive(Debug, Clone)]
@@ -253,6 +265,7 @@ pub enum CheckExprKind {
     Bool(bool),
     Null,
     String(String),
+    FormattedString(Vec<CheckFormatSegment>),
     Name(String),
     Field {
         expr: Box<CheckExpr>,

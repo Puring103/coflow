@@ -44,11 +44,11 @@ pub use schema::{
     build_schema, BucketName, CftCheckBuiltin, CftConst, CftConstValue, CftDimension,
     CftDimensionInput, CftDimensionInputError, CftDimensionInputs, CftEnum, CftEnumValue,
     CftEnumVariant, CftField, CftFieldDimension, CftNameError, CftSchema, CftSchemaBinOp,
-    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckMessage,
-    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaDefaultValue, CftSchemaQuantifierKind,
-    CftSchemaTypePredicate, CftSchemaUnaryOp, CftType, CftValueType, ConstName, DimensionName,
-    EnumName, EnumVariantName, FieldName, RecordKey, ScheduledCheckBlock, TypeName,
-    TypedCheckSchedule, ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan,
-    ValueDependencyStep, VariantName,
+    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
+    CftSchemaCheckMessage, CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp,
+    CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp,
+    CftType, CftValueType, ConstName, DimensionName, EnumName, EnumVariantName, FieldName,
+    RecordKey, ScheduledCheckBlock, TypeName, TypedCheckSchedule, ValueDependencyCycle,
+    ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep, VariantName,
 };
 pub use syntax::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error, Span};

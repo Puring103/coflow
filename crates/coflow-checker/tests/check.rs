@@ -65,6 +65,63 @@ fn custom_check_message_replaces_generated_explanation() {
 }
 
 #[test]
+fn formatted_strings_work_as_values_and_failure_messages() {
+    let schema = compile_schema(
+        r#"
+        type Item {
+            category: string;
+            level: int;
+            check {
+                id == f"{category}_{level}":
+                    f"expected {category}_{level}, got {id}";
+            }
+        }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "wrong",
+        "Item",
+        [
+            ("category", LoadedValueDraft::from("weapon")),
+            ("level", LoadedValueDraft::from(3_i64)),
+        ],
+    );
+    let model = build_model(&schema, builder);
+    let diagnostics = run_model_checks(&model, &schema).expect_err("id check must fail");
+
+    assert_eq!(diagnostics.diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(
+        diagnostics.diagnostics[0].message,
+        "expected weapon_3, got wrong"
+    );
+}
+
+#[test]
+fn formatted_failure_messages_are_evaluated_lazily() {
+    let schema = compile_schema(
+        r#"
+        type Item {
+            nums: [int];
+            check {
+                id != "": f"first value is {nums[0]}";
+            }
+        }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [("nums", LoadedValueDraft::Array(Vec::new()))],
+    );
+    let model = build_model(&schema, builder);
+
+    run_model_checks(&model, &schema)
+        .expect("a true condition must not evaluate its formatted message");
+}
+
+#[test]
 fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
     let schema = compile_schema(
         r#"

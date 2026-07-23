@@ -2,8 +2,8 @@ use super::{negate_u64_to_i64, Parsed, Parser};
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::module::ModuleId;
 use crate::syntax::ast::{
-    BinOp, CheckBlock, CheckExpr, CheckExprKind, CheckMessage, CheckStmt, CmpOp, QuantifierKind,
-    TypePredicate, UnaryOp,
+    BinOp, CheckBlock, CheckExpr, CheckExprKind, CheckMessage, CheckMessageKind, CheckStmt, CmpOp,
+    QuantifierKind, TypePredicate, UnaryOp,
 };
 use crate::syntax::lexer::TokenKind;
 use crate::syntax::Span;
@@ -58,18 +58,45 @@ impl Parser<'_> {
         let expr = self.parse_or_expr()?;
         let message = if self.eat(&TokenKind::Colon).is_some() {
             let token = self.peek().clone();
-            let TokenKind::String(value) = token.kind else {
-                return self.err_at(
-                    CftErrorCode::InvalidCheckStatement,
-                    token.span,
-                    "check message must be a string literal",
-                );
-            };
-            self.bump();
-            Some(CheckMessage {
-                value,
-                span: token.span,
-            })
+            match token.kind {
+                TokenKind::String(value) => {
+                    self.bump();
+                    Some(Parsed {
+                        value: CheckMessage {
+                            kind: CheckMessageKind::String(value),
+                            span: token.span,
+                        },
+                        depth: 0,
+                    })
+                }
+                TokenKind::FormattedStringStart => {
+                    let formatted = self.parse_formatted_string()?;
+                    let CheckExpr {
+                        kind: CheckExprKind::FormattedString(segments),
+                        span,
+                    } = formatted.value
+                    else {
+                        return self.err(
+                            CftErrorCode::InvalidCheckStatement,
+                            "expected formatted check message",
+                        );
+                    };
+                    Some(Parsed {
+                        value: CheckMessage {
+                            kind: CheckMessageKind::Formatted(segments),
+                            span,
+                        },
+                        depth: formatted.depth,
+                    })
+                }
+                _ => {
+                    return self.err_at(
+                        CftErrorCode::InvalidCheckStatement,
+                        token.span,
+                        "check message must be a string or formatted string literal",
+                    );
+                }
+            }
         } else {
             None
         };
@@ -82,11 +109,14 @@ impl Parser<'_> {
         let span = expr
             .value
             .span
-            .join(message.as_ref().map_or(expr.value.span, |message| message.span));
-        self.node(StructureKind::CheckAst, span, [expr.depth], || {
+            .join(message.as_ref().map_or(expr.value.span, |message| message.value.span));
+        let depths = message
+            .as_ref()
+            .map_or_else(|| vec![expr.depth], |message| vec![expr.depth, message.depth]);
+        self.node(StructureKind::CheckAst, span, depths, || {
             CheckStmt::Expr {
                 condition: expr.value,
-                message,
+                message: message.map(|message| message.value),
                 span,
             }
         })

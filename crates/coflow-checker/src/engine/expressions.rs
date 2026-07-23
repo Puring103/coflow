@@ -2,7 +2,10 @@ use super::evaluator::{CheckEvaluator, EvalResult};
 use super::ops;
 use super::type_predicates;
 use super::value::{EvalValue, LocatedEvalValue};
-use coflow_cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind};
+use coflow_cft::{
+    CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
+};
+use coflow_structure::StructureKind;
 
 pub(super) fn eval_expr<'model>(
     evaluator: &mut CheckEvaluator<'model>,
@@ -17,6 +20,10 @@ pub(super) fn eval_expr<'model>(
         CftSchemaCheckExprKind::Null => Ok(LocatedEvalValue::value(EvalValue::null())),
         CftSchemaCheckExprKind::String(value) => {
             Ok(LocatedEvalValue::value(EvalValue::string(value.clone())))
+        }
+        CftSchemaCheckExprKind::FormattedString(segments) => {
+            let value = eval_formatted_segments(evaluator, segments)?;
+            Ok(LocatedEvalValue::value(EvalValue::string(value)))
         }
         CftSchemaCheckExprKind::Name(name) => evaluator.eval_name(name),
         CftSchemaCheckExprKind::Field { expr: inner, name } => {
@@ -43,6 +50,50 @@ pub(super) fn eval_expr<'model>(
         CftSchemaCheckExprKind::CmpChain { first, rest } => {
             eval_cmp_chain_expr(evaluator, first, rest)
         }
+    }
+}
+
+pub(super) fn eval_formatted_segments(
+    evaluator: &mut CheckEvaluator<'_>,
+    segments: &[CftSchemaCheckFormatSegment],
+) -> EvalResult<String> {
+    let mut out = String::new();
+    for segment in segments {
+        let rendered = match segment {
+            CftSchemaCheckFormatSegment::Text(value, _) => value.clone(),
+            CftSchemaCheckFormatSegment::Expr(expr) => {
+                let value = evaluator.eval_expr(expr)?;
+                format_interpolated_scalar(&value.value).ok_or_else(|| {
+                    evaluator.diag_at(
+                        coflow_data_model::CfdErrorCode::CheckEvalTypeError,
+                        value.location,
+                        "formatted string interpolation did not evaluate to a scalar value",
+                    );
+                    super::evaluator::EvalAbort::Error
+                })?
+            }
+        };
+        evaluator.charge_work_at(
+            StructureKind::CheckEvaluation,
+            u64::try_from(rendered.len()).unwrap_or(u64::MAX),
+            None,
+        )?;
+        out.push_str(&rendered);
+    }
+    Ok(out)
+}
+
+fn format_interpolated_scalar(value: &EvalValue<'_>) -> Option<String> {
+    match value.scalar()? {
+        super::value::ScalarValue::Null => Some("null".to_string()),
+        super::value::ScalarValue::Bool(value) => Some(value.to_string()),
+        super::value::ScalarValue::Int(value) => Some(value.to_string()),
+        super::value::ScalarValue::Float(value) => Some(value.to_string()),
+        super::value::ScalarValue::String(value) => Some(value.to_string()),
+        super::value::ScalarValue::Enum(value) => Some(match &value.variant {
+            Some(variant) => format!("{}.{}", value.enum_name, variant),
+            None => format!("{}({})", value.enum_name, value.value),
+        }),
     }
 }
 

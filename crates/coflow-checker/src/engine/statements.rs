@@ -6,8 +6,8 @@ use super::explanations;
 use super::quantifiers;
 use super::value::{LocatedEvalValue, ScalarValue, ValueLocation};
 use coflow_cft::{
-    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckStmt, CftSchemaQuantifierKind,
-    ScheduledCheckBlock,
+    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckMessage, CftSchemaCheckMessageKind,
+    CftSchemaCheckStmt, CftSchemaQuantifierKind, ScheduledCheckBlock,
 };
 use coflow_data_model::CfdErrorCode;
 use coflow_structure::StructureKind;
@@ -70,7 +70,7 @@ fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> E
         } => eval_expr_stmt(
             evaluator,
             condition,
-            message.as_ref().map(|message| message.value.as_str()),
+            message.as_ref(),
         ),
         CftSchemaCheckStmt::When {
             condition, body, ..
@@ -88,7 +88,7 @@ fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> E
 fn eval_expr_stmt(
     evaluator: &mut CheckEvaluator<'_>,
     expr: &CftSchemaCheckExpr,
-    custom_message: Option<&str>,
+    custom_message: Option<&CftSchemaCheckMessage>,
 ) -> EvalFlow {
     let (result, trace) = evaluator.eval_expr_with_trace(expr);
     match result {
@@ -105,9 +105,21 @@ fn eval_expr_stmt(
                     )
                 })
                 .with_context(&evaluator.contexts);
-            let message = custom_message
-                .map(str::to_owned)
-                .unwrap_or_else(|| explanation.message());
+            let message = match custom_message {
+                Some(CftSchemaCheckMessage {
+                    kind: CftSchemaCheckMessageKind::String(message),
+                    ..
+                }) => message.clone(),
+                Some(CftSchemaCheckMessage {
+                    kind: CftSchemaCheckMessageKind::Formatted(segments),
+                    ..
+                }) => match super::expressions::eval_formatted_segments(evaluator, segments) {
+                    Ok(message) => message,
+                    Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
+                    Err(EvalAbort::Error) => return EvalFlow::HardStop,
+                },
+                None => explanation.message(),
+            };
             evaluator.diag_at_preformatted(explanation.code, explanation.location, message);
             EvalFlow::Continue
         }

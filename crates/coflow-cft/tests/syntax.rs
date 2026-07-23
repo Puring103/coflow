@@ -9,7 +9,10 @@
 
 mod common;
 use common::*;
-use coflow_cft::CftSchemaCheckStmt;
+use coflow_cft::{
+    CftSchemaCheckExprKind, CftSchemaCheckFormatSegment, CftSchemaCheckMessageKind,
+    CftSchemaCheckStmt,
+};
 
 #[test]
 fn lexer_reports_invalid_character() {
@@ -106,7 +109,10 @@ fn check_expression_messages_are_preserved_in_schema() {
     else {
         panic!("expected check expression message");
     };
-    assert_eq!(message.value, "price must be positive");
+    assert_eq!(
+        message.kind,
+        CftSchemaCheckMessageKind::String("price must be positive".to_string())
+    );
     assert!(span.start < message.span.start);
     assert!(message.span.end <= span.end);
 
@@ -121,7 +127,65 @@ fn check_expression_message_must_be_a_string_literal() {
     assert_has_code(&err, CftErrorCode::InvalidCheckStatement);
     assert!(err.diagnostics[0]
         .message
-        .contains("check message must be a string literal"));
+        .contains("check message must be a string or formatted string literal"));
+}
+
+#[test]
+fn formatted_strings_are_structured_check_expressions_and_messages() {
+    let modules = add_source(
+        r#"
+        type Item {
+            category: string;
+            level: int;
+            check {
+                id == f"{category}_{level}";
+                level > 0: f"item {{id}} {id} has level {level}";
+            }
+        }
+        "#,
+    )
+    .unwrap();
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
+    let check = schema
+        .resolve_type("Item")
+        .and_then(|ty| ty.check.as_ref())
+        .expect("check block");
+    let CftSchemaCheckStmt::Expr { condition, .. } = &check.stmts[0] else {
+        panic!("expected expression statement");
+    };
+    let CftSchemaCheckExprKind::CmpChain { rest, .. } = &condition.kind else {
+        panic!("expected comparison");
+    };
+    assert!(matches!(
+        rest[0].1.kind,
+        CftSchemaCheckExprKind::FormattedString(_)
+    ));
+    let CftSchemaCheckStmt::Expr {
+        message: Some(message),
+        ..
+    } = &check.stmts[1]
+    else {
+        panic!("expected formatted message");
+    };
+    let CftSchemaCheckMessageKind::Formatted(segments) = &message.kind else {
+        panic!("expected formatted message segments");
+    };
+    assert!(matches!(
+        &segments[0],
+        CftSchemaCheckFormatSegment::Text(value, _) if value == "item {id} "
+    ));
+}
+
+#[test]
+fn formatted_strings_reject_invalid_boundaries_and_nesting() {
+    let empty = add_source("type Item { check { id == f\"{}\"; } }").unwrap_err();
+    assert_has_code(&empty, CftErrorCode::InvalidCheckStatement);
+
+    let unmatched = add_source("type Item { check { id == f\"bad }\"; } }").unwrap_err();
+    assert_has_code(&unmatched, CftErrorCode::UnexpectedCharacter);
+
+    let nested = add_source("type Item { check { id == f\"{f\\\"{id}\\\"}\"; } }").unwrap_err();
+    assert_has_code(&nested, CftErrorCode::UnexpectedCharacter);
 }
 
 #[test]

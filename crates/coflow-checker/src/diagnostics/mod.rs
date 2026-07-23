@@ -1,6 +1,7 @@
 use coflow_cft::{
-    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp,
-    CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp, CftValueType,
+    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
+    CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind,
+    CftSchemaTypePredicate, CftSchemaUnaryOp, CftValueType,
 };
 use coflow_data_model::{CfdErrorCode, CfdPath, CfdPathSegment, DimensionFieldLookupError};
 
@@ -137,7 +138,13 @@ pub(crate) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
         } => {
             let rendered = render_expr(condition);
             message.as_ref().map_or(rendered.clone(), |message| {
-                format!("{rendered}: {:?}", message.value)
+                let message = match &message.kind {
+                    CftSchemaCheckMessageKind::String(value) => format!("{value:?}"),
+                    CftSchemaCheckMessageKind::Formatted(segments) => {
+                        render_formatted_string(segments)
+                    }
+                };
+                format!("{rendered}: {message}")
             })
         }
         CftSchemaCheckStmt::Quantifier {
@@ -174,6 +181,7 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
         CftSchemaCheckExprKind::Bool(value) => value.to_string(),
         CftSchemaCheckExprKind::Null => "null".to_string(),
         CftSchemaCheckExprKind::String(value) => format!("\"{value}\""),
+        CftSchemaCheckExprKind::FormattedString(segments) => render_formatted_string(segments),
         CftSchemaCheckExprKind::Name(name) => name.clone(),
         CftSchemaCheckExprKind::Field { expr, name } => {
             format!("{}.{}", render_expr(expr), name)
@@ -222,6 +230,35 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
             out
         }
     }
+}
+
+fn render_formatted_string(segments: &[CftSchemaCheckFormatSegment]) -> String {
+    let mut out = String::from("f\"");
+    for segment in segments {
+        match segment {
+            CftSchemaCheckFormatSegment::Text(value, _) => {
+                for ch in value.chars() {
+                    match ch {
+                        '{' => out.push_str("{{"),
+                        '}' => out.push_str("}}"),
+                        '\\' => out.push_str("\\\\"),
+                        '"' => out.push_str("\\\""),
+                        '\n' => out.push_str("\\n"),
+                        '\r' => out.push_str("\\r"),
+                        '\t' => out.push_str("\\t"),
+                        _ => out.push(ch),
+                    }
+                }
+            }
+            CftSchemaCheckFormatSegment::Expr(expr) => {
+                out.push('{');
+                out.push_str(&render_expr(expr));
+                out.push('}');
+            }
+        }
+    }
+    out.push('"');
+    out
 }
 
 pub(crate) fn format_cfd_path_for_message(path: &CfdPath) -> String {

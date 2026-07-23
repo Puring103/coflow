@@ -8,7 +8,10 @@ use super::state::{SymbolKind, TypeInfo};
 use super::SchemaCompiler;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::schema::CftValueType;
-use crate::syntax::ast::{CheckExpr, CheckExprKind, CheckStmt, NameRef, TypePredicate};
+use crate::syntax::ast::{
+    CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt, NameRef,
+    TypePredicate,
+};
 use crate::syntax::Span;
 use std::collections::HashMap;
 
@@ -16,6 +19,32 @@ pub(super) struct CheckTypeAnalyzer<'a, 'b> {
     compiler: &'a mut SchemaCompiler<'b>,
     type_info: &'a TypeInfo<'b>,
     locals: Vec<HashMap<String, InferredType>>,
+}
+
+fn is_formattable(ty: &InferredType) -> bool {
+    match ty {
+        InferredType::Null | InferredType::Unknown => true,
+        InferredType::Value(
+            CftValueType::Int
+            | CftValueType::Float
+            | CftValueType::Bool
+            | CftValueType::String
+            | CftValueType::Enum(_),
+        ) => true,
+        InferredType::Value(CftValueType::Nullable(inner)) => is_formattable(
+            &InferredType::Value((**inner).clone()),
+        ),
+        InferredType::Value(
+            CftValueType::Array(_)
+            | CftValueType::Dict(_, _)
+            | CftValueType::Object(_)
+            | CftValueType::RecordRef(_),
+        )
+        | InferredType::EnumNamespace(_)
+        | InferredType::Entry(_, _)
+        | InferredType::EmptyArray
+        | InferredType::EmptyObject => false,
+    }
 }
 
 impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
@@ -35,9 +64,18 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
 
     fn check_stmt(&mut self, stmt: &CheckStmt) {
         match stmt {
-            CheckStmt::Expr { condition, .. } => {
+            CheckStmt::Expr {
+                condition,
+                message,
+                ..
+            } => {
                 let ty = self.check_expr_value(condition);
                 self.expect_bool(&ty, condition.span);
+                if let Some(message) = message {
+                    if let CheckMessageKind::Formatted(segments) = &message.kind {
+                        self.check_format_segments(segments);
+                    }
+                }
             }
             CheckStmt::When {
                 condition, body, ..
@@ -93,6 +131,10 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             CheckExprKind::Bool(_) => InferredType::bool(),
             CheckExprKind::Null => InferredType::Null,
             CheckExprKind::String(_) => InferredType::string(),
+            CheckExprKind::FormattedString(segments) => {
+                self.check_format_segments(segments);
+                InferredType::string()
+            }
             CheckExprKind::Name(name) => self.resolve_value_name(name, expr.span),
             CheckExprKind::Unary { op, expr: inner } => {
                 let ty = self.check_expr_value(inner);
@@ -130,6 +172,22 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 name,
                 args,
             } => self.check_method_call(receiver, name, args, expr.span),
+        }
+    }
+
+    fn check_format_segments(&mut self, segments: &[CheckFormatSegment]) {
+        for segment in segments {
+            let CheckFormatSegment::Expr(expr) = segment else {
+                continue;
+            };
+            let ty = self.check_expr_value(expr);
+            if !is_formattable(&ty) {
+                self.diag(
+                    CftErrorCode::OperatorTypeMismatch,
+                    expr.span,
+                    "formatted string interpolation requires a scalar, enum, or null value",
+                );
+            }
         }
     }
 
