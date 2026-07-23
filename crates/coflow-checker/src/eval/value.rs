@@ -321,6 +321,29 @@ impl EvalRecordRef {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScalarFormat {
+    Display,
+    Diagnostic,
+}
+
+pub(crate) fn format_scalar(value: ScalarValue<'_>, format: ScalarFormat) -> String {
+    match value {
+        ScalarValue::Null => "null".to_string(),
+        ScalarValue::Bool(value) => value.to_string(),
+        ScalarValue::Int(value) => value.to_string(),
+        ScalarValue::Float(value) => value.to_string(),
+        ScalarValue::String(value) => match format {
+            ScalarFormat::Display => value.to_string(),
+            ScalarFormat::Diagnostic => format!("\"{value}\""),
+        },
+        ScalarValue::Enum(value) => value.variant.as_deref().map_or_else(
+            || format!("{}({})", value.enum_name, value.value),
+            |variant| format!("{}.{variant}", value.enum_name),
+        ),
+    }
+}
+
 fn resolved_object_fields<'a>(
     model: &'a CfdDataModel,
     cursor: &ModelCursor,

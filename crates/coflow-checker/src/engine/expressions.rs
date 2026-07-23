@@ -119,17 +119,9 @@ pub(super) fn eval_formatted_segments(
 }
 
 fn format_interpolated_scalar(value: &EvalValue<'_>) -> Option<String> {
-    match value.scalar()? {
-        super::value::ScalarValue::Null => Some("null".to_string()),
-        super::value::ScalarValue::Bool(value) => Some(value.to_string()),
-        super::value::ScalarValue::Int(value) => Some(value.to_string()),
-        super::value::ScalarValue::Float(value) => Some(value.to_string()),
-        super::value::ScalarValue::String(value) => Some(value.to_string()),
-        super::value::ScalarValue::Enum(value) => Some(match &value.variant {
-            Some(variant) => format!("{}.{}", value.enum_name, variant),
-            None => format!("{}({})", value.enum_name, value.value),
-        }),
-    }
+    value.scalar().map(|scalar| {
+        super::value::format_scalar(scalar, super::value::ScalarFormat::Display)
+    })
 }
 
 fn eval_field_expr<'model>(
