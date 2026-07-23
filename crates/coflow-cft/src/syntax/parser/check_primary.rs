@@ -1,6 +1,6 @@
 use super::{Parsed, Parser};
 use crate::diagnostics::{CftDiagnostics, CftErrorCode};
-use crate::syntax::ast::{CheckExpr, CheckExprKind, NameRef, TypePredicate};
+use crate::syntax::ast::{CheckExpr, CheckExprKind, CheckFormatSegment, NameRef, TypePredicate};
 use crate::syntax::lexer::TokenKind;
 use crate::syntax::Span;
 use coflow_structure::StructureKind;
@@ -153,6 +153,7 @@ impl Parser<'_> {
                     span: token.span,
                 })
             }
+            TokenKind::FormattedStringStart => self.parse_formatted_string(),
             TokenKind::Ident(value) => {
                 self.bump();
                 self.node(StructureKind::CheckAst, token.span, [], || CheckExpr {
@@ -181,6 +182,60 @@ impl Parser<'_> {
                 "expected check expression",
             ),
         }
+    }
+
+    pub(super) fn parse_formatted_string(
+        &mut self,
+    ) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
+        let start = self
+            .expect_simple(
+                &TokenKind::FormattedStringStart,
+                CftErrorCode::ExpectedToken,
+            )?
+            .start;
+        let mut segments = Vec::new();
+        let mut depths = Vec::new();
+        while !self.at(&TokenKind::FormattedStringEnd) {
+            let token = self.peek().clone();
+            match token.kind {
+                TokenKind::FormattedStringText(value) => {
+                    self.bump();
+                    segments.push(CheckFormatSegment::Text(value, token.span));
+                }
+                TokenKind::FormattedStringExprStart => {
+                    let opener = self.bump().span;
+                    let expr = self.nested(StructureKind::CheckAst, opener, |parser| {
+                        parser.parse_or_expr()
+                    })?;
+                    self.expect_simple(
+                        &TokenKind::FormattedStringExprEnd,
+                        CftErrorCode::ExpectedToken,
+                    )?;
+                    depths.push(expr.depth);
+                    segments.push(CheckFormatSegment::Expr(expr.value));
+                }
+                TokenKind::Eof => {
+                    return self.err(
+                        CftErrorCode::UnexpectedEof,
+                        "unterminated formatted string",
+                    );
+                }
+                _ => {
+                    return self.err(
+                        CftErrorCode::InvalidCheckStatement,
+                        "invalid formatted string segment",
+                    );
+                }
+            }
+        }
+        let end = self
+            .expect_simple(&TokenKind::FormattedStringEnd, CftErrorCode::ExpectedToken)?
+            .end;
+        let span = Span::new(start, end);
+        self.node(StructureKind::CheckAst, span, depths, || CheckExpr {
+            kind: CheckExprKind::FormattedString(segments),
+            span,
+        })
     }
 
     pub(super) fn parse_type_predicate(&mut self) -> Result<TypePredicate, CftDiagnostics> {

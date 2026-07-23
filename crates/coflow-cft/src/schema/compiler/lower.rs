@@ -2,14 +2,15 @@ use super::annotations::{find_annotation, has_annotation};
 use super::SchemaCompiler;
 use crate::schema::{
     CftConst, CftConstValue, CftEnum, CftEnumVariant, CftField, CftFieldDimension, CftSchemaBinOp,
-    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckMessage,
-    CftSchemaCheckStmt,
-    CftSchemaCmpOp, CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate,
-    CftSchemaUnaryOp, CftType, CftValueType,
+    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
+    CftSchemaCheckMessage, CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp,
+    CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp,
+    CftType, CftValueType,
 };
 use crate::syntax::ast::{
-    AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, ConstLiteral, DefaultExpr,
-    DefaultExprKind, FieldDef, TypePredicate, TypeRef, TypeRefKind, UnaryOp,
+    AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt,
+    CmpOp, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, TypePredicate, TypeRef,
+    TypeRefKind, UnaryOp,
 };
 use crate::{BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
 use std::collections::BTreeMap;
@@ -255,7 +256,14 @@ fn convert_check_stmt(stmt: &CheckStmt) -> CftSchemaCheckStmt {
         } => CftSchemaCheckStmt::Expr {
             condition: convert_check_expr(condition),
             message: message.as_ref().map(|message| CftSchemaCheckMessage {
-                value: message.value.clone(),
+                kind: match &message.kind {
+                    CheckMessageKind::String(value) => {
+                        CftSchemaCheckMessageKind::String(value.clone())
+                    }
+                    CheckMessageKind::Formatted(segments) => {
+                        CftSchemaCheckMessageKind::Formatted(convert_format_segments(segments))
+                    }
+                },
                 span: message.span,
             }),
             span: *span,
@@ -297,6 +305,9 @@ fn convert_check_expr(expr: &CheckExpr) -> CftSchemaCheckExpr {
             CheckExprKind::Bool(value) => CftSchemaCheckExprKind::Bool(*value),
             CheckExprKind::Null => CftSchemaCheckExprKind::Null,
             CheckExprKind::String(value) => CftSchemaCheckExprKind::String(value.clone()),
+            CheckExprKind::FormattedString(segments) => {
+                CftSchemaCheckExprKind::FormattedString(convert_format_segments(segments))
+            }
             CheckExprKind::Name(name) => CftSchemaCheckExprKind::Name(name.clone()),
             CheckExprKind::Field { expr: inner, name } => CftSchemaCheckExprKind::Field {
                 expr: Box::new(convert_check_expr(inner)),
@@ -354,6 +365,20 @@ fn convert_check_expr(expr: &CheckExpr) -> CftSchemaCheckExpr {
         },
         span: expr.span,
     }
+}
+
+fn convert_format_segments(segments: &[CheckFormatSegment]) -> Vec<CftSchemaCheckFormatSegment> {
+    segments
+        .iter()
+        .map(|segment| match segment {
+            CheckFormatSegment::Text(value, span) => {
+                CftSchemaCheckFormatSegment::Text(value.clone(), *span)
+            }
+            CheckFormatSegment::Expr(expr) => {
+                CftSchemaCheckFormatSegment::Expr(convert_check_expr(expr))
+            }
+        })
+        .collect()
 }
 
 fn convert_bin_op(op: BinOp) -> CftSchemaBinOp {

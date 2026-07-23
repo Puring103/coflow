@@ -21,6 +21,8 @@ struct Lexer<'a> {
     source: &'a str,
     bytes: &'a [u8],
     pos: usize,
+    end: usize,
+    allow_formatted_strings: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -30,13 +32,26 @@ impl<'a> Lexer<'a> {
             source,
             bytes: source.as_bytes(),
             pos: 0,
+            end: source.len(),
+            allow_formatted_strings: true,
+        }
+    }
+
+    fn fragment(&self, start: usize, end: usize) -> Self {
+        Self {
+            module: self.module,
+            source: self.source,
+            bytes: self.bytes,
+            pos: start,
+            end,
+            allow_formatted_strings: false,
         }
     }
 
     #[allow(clippy::too_many_lines)]
     fn lex(mut self) -> Result<Vec<Token>, CftDiagnostics> {
         let mut tokens = Vec::new();
-        while self.pos < self.bytes.len() {
+        while self.pos < self.end {
             let Some(ch) = self.source[self.pos..].chars().next() else {
                 break;
             };
@@ -46,9 +61,20 @@ impl<'a> Lexer<'a> {
             }
             if ch == '#' {
                 self.pos += 1;
-                while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
+                while self.pos < self.end && self.bytes[self.pos] != b'\n' {
                     self.pos += 1;
                 }
+                continue;
+            }
+            if ch == 'f' && self.source[self.pos..self.end].starts_with("f\"") {
+                if !self.allow_formatted_strings {
+                    return Err(self.err(
+                        CftErrorCode::UnexpectedCharacter,
+                        Span::new(self.pos, self.pos + 2),
+                        "nested formatted strings are not supported",
+                    ));
+                }
+                self.lex_formatted_string(&mut tokens)?;
                 continue;
             }
 
@@ -213,7 +239,7 @@ impl<'a> Lexer<'a> {
         }
         tokens.push(Token {
             kind: TokenKind::Eof,
-            span: Span::new(self.source.len(), self.source.len()),
+            span: Span::new(self.end, self.end),
         });
         Ok(tokens)
     }
@@ -248,7 +274,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_number(&mut self, start: usize) -> Result<TokenKind, CftDiagnostics> {
-        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+        while self.pos < self.end && self.bytes[self.pos].is_ascii_digit() {
             self.pos += 1;
         }
 
@@ -256,7 +282,7 @@ impl<'a> Lexer<'a> {
         if self.bytes.get(self.pos) == Some(&b'.') {
             if self.bytes.get(self.pos + 1).is_some_and(u8::is_ascii_digit) {
                 self.pos += 1;
-                while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+                while self.pos < self.end && self.bytes[self.pos].is_ascii_digit() {
                     self.pos += 1;
                 }
                 is_float = true;
@@ -276,7 +302,7 @@ impl<'a> Lexer<'a> {
                 self.pos += 1;
             }
             let digits_start = self.pos;
-            while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+            while self.pos < self.end && self.bytes[self.pos].is_ascii_digit() {
                 self.pos += 1;
             }
             if digits_start == self.pos {
@@ -339,7 +365,7 @@ impl<'a> Lexer<'a> {
     fn lex_string(&mut self, start: usize) -> Result<TokenKind, CftDiagnostics> {
         self.pos += 1;
         let mut out = String::new();
-        while self.pos < self.bytes.len() {
+        while self.pos < self.end {
             let Some(ch) = self.source[self.pos..].chars().next() else {
                 break;
             };
@@ -386,13 +412,189 @@ impl<'a> Lexer<'a> {
         }
         Err(self.err(
             CftErrorCode::UnterminatedString,
-            Span::new(start, self.source.len()),
+            Span::new(start, self.end),
             "unterminated string literal",
         ))
     }
 
+    fn lex_formatted_string(
+        &mut self,
+        tokens: &mut Vec<Token>,
+    ) -> Result<(), CftDiagnostics> {
+        let start = self.pos;
+        self.pos += 2;
+        tokens.push(Token {
+            kind: TokenKind::FormattedStringStart,
+            span: Span::new(start, self.pos),
+        });
+        let mut text = String::new();
+        let mut text_start = self.pos;
+        while self.pos < self.end {
+            let Some(ch) = self.source[self.pos..].chars().next() else {
+                break;
+            };
+            match ch {
+                '"' => {
+                    self.push_formatted_text(tokens, &mut text, text_start, self.pos);
+                    let quote = self.pos;
+                    self.pos += 1;
+                    tokens.push(Token {
+                        kind: TokenKind::FormattedStringEnd,
+                        span: Span::new(quote, self.pos),
+                    });
+                    return Ok(());
+                }
+                '{' if self.starts_with("{{") => {
+                    text.push('{');
+                    self.pos += 2;
+                }
+                '}' if self.starts_with("}}") => {
+                    text.push('}');
+                    self.pos += 2;
+                }
+                '{' => {
+                    self.push_formatted_text(tokens, &mut text, text_start, self.pos);
+                    let opener = self.pos;
+                    self.pos += 1;
+                    tokens.push(Token {
+                        kind: TokenKind::FormattedStringExprStart,
+                        span: Span::new(opener, self.pos),
+                    });
+                    let expr_start = self.pos;
+                    let expr_end = self.find_formatted_expr_end(expr_start)?;
+                    if expr_start == expr_end {
+                        return Err(self.err(
+                            CftErrorCode::InvalidCheckStatement,
+                            Span::new(opener, expr_end + 1),
+                            "formatted string interpolation cannot be empty",
+                        ));
+                    }
+                    let mut expression_tokens = self.fragment(expr_start, expr_end).lex()?;
+                    let _ = expression_tokens.pop();
+                    tokens.extend(expression_tokens);
+                    tokens.push(Token {
+                        kind: TokenKind::FormattedStringExprEnd,
+                        span: Span::new(expr_end, expr_end + 1),
+                    });
+                    self.pos = expr_end + 1;
+                    text_start = self.pos;
+                }
+                '}' => {
+                    return Err(self.err(
+                        CftErrorCode::UnexpectedCharacter,
+                        Span::new(self.pos, self.pos + 1),
+                        "literal `}` in a formatted string must be written as `}}`",
+                    ));
+                }
+                '\\' => {
+                    let escape_start = self.pos;
+                    self.pos += 1;
+                    let Some(escaped) = self.bytes.get(self.pos).copied() else {
+                        break;
+                    };
+                    let value = match escaped {
+                        b'"' => '"',
+                        b'\\' => '\\',
+                        b'n' => '\n',
+                        b'r' => '\r',
+                        b't' => '\t',
+                        _ => {
+                            return Err(self.err(
+                                CftErrorCode::InvalidStringEscape,
+                                Span::new(escape_start, self.pos + 1),
+                                "invalid string escape",
+                            ));
+                        }
+                    };
+                    text.push(value);
+                    self.pos += 1;
+                }
+                '\n' | '\r' => {
+                    return Err(self.err(
+                        CftErrorCode::UnterminatedString,
+                        Span::new(start, self.pos),
+                        "unterminated formatted string literal",
+                    ));
+                }
+                _ => {
+                    text.push(ch);
+                    self.pos += ch.len_utf8();
+                }
+            }
+        }
+        Err(self.err(
+            CftErrorCode::UnterminatedString,
+            Span::new(start, self.end),
+            "unterminated formatted string literal",
+        ))
+    }
+
+    fn push_formatted_text(
+        &self,
+        tokens: &mut Vec<Token>,
+        text: &mut String,
+        start: usize,
+        end: usize,
+    ) {
+        if text.is_empty() {
+            return;
+        }
+        tokens.push(Token {
+            kind: TokenKind::FormattedStringText(std::mem::take(text)),
+            span: Span::new(start, end),
+        });
+    }
+
+    fn find_formatted_expr_end(&self, start: usize) -> Result<usize, CftDiagnostics> {
+        let mut pos = start;
+        let mut brace_depth = 0_usize;
+        let mut in_string = false;
+        let mut escaped = false;
+        while pos < self.end {
+            let Some(ch) = self.source[pos..].chars().next() else {
+                break;
+            };
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_string = false;
+                } else if matches!(ch, '\n' | '\r') {
+                    return Err(self.err(
+                        CftErrorCode::UnterminatedString,
+                        Span::new(start, pos),
+                        "unterminated string in formatted interpolation",
+                    ));
+                }
+            } else {
+                match ch {
+                    '"' => in_string = true,
+                    '{' => brace_depth += 1,
+                    '}' if brace_depth == 0 => return Ok(pos),
+                    '}' => brace_depth -= 1,
+                    '#' | '\n' | '\r' => {
+                        return Err(self.err(
+                            CftErrorCode::InvalidCheckStatement,
+                            Span::new(pos, pos + ch.len_utf8()),
+                            "formatted string interpolation must stay on one line and cannot contain comments",
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            pos += ch.len_utf8();
+        }
+        Err(self.err(
+            CftErrorCode::UnterminatedString,
+            Span::new(start.saturating_sub(1), self.end),
+            "unterminated formatted string interpolation",
+        ))
+    }
+
     fn starts_with(&self, text: &str) -> bool {
-        self.source[self.pos..].starts_with(text)
+        self.source[self.pos..self.end].starts_with(text)
     }
 
     fn err(&self, code: CftErrorCode, span: Span, message: impl Into<String>) -> CftDiagnostics {

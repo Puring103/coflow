@@ -3,8 +3,8 @@ use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
 use crate::schema::LocatedBudgetError;
 use crate::syntax::ast::{
-    Annotation, CheckBlock, CheckExpr, CheckExprKind, CheckStmt, DefaultExpr, DefaultExprKind,
-    Item, TypeRef, TypeRefKind,
+    Annotation, CheckBlock, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
+    CheckStmt, DefaultExpr, DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
 use crate::syntax::Span;
 use coflow_structure::{BudgetExceeded, StructuralBudget, StructureKind, TraversalCursor};
@@ -234,7 +234,22 @@ fn walk_check(
         let (span, children) = match node {
             CheckNode::Stmt(stmt) => {
                 let children = match stmt {
-                    CheckStmt::Expr { condition, .. } => vec![CheckNode::Expr(condition)],
+                    CheckStmt::Expr {
+                        condition,
+                        message,
+                        ..
+                    } => std::iter::once(CheckNode::Expr(condition))
+                        .chain(message.iter().flat_map(|message| match &message.kind {
+                            CheckMessageKind::String(_) => Vec::new(),
+                            CheckMessageKind::Formatted(segments) => segments
+                                .iter()
+                                .filter_map(|segment| match segment {
+                                    CheckFormatSegment::Text(_, _) => None,
+                                    CheckFormatSegment::Expr(expr) => Some(CheckNode::Expr(expr)),
+                                })
+                                .collect(),
+                        }))
+                        .collect(),
                     CheckStmt::When {
                         condition, body, ..
                     } => std::iter::once(CheckNode::Expr(condition))
@@ -276,6 +291,13 @@ fn check_expr_children(expr: &CheckExpr) -> Vec<CheckNode<'_>> {
                 .chain(args.iter().map(CheckNode::Expr))
                 .collect()
         }
+        CheckExprKind::FormattedString(segments) => segments
+            .iter()
+            .filter_map(|segment| match segment {
+                CheckFormatSegment::Text(_, _) => None,
+                CheckFormatSegment::Expr(expr) => Some(CheckNode::Expr(expr)),
+            })
+            .collect(),
         CheckExprKind::Int(_)
         | CheckExprKind::Float(_)
         | CheckExprKind::Bool(_)

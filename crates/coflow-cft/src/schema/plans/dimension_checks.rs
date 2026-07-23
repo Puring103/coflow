@@ -1,8 +1,8 @@
 use crate::module::ModuleId;
 use crate::schema::LocatedBudgetError;
 use crate::{
-    CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftType, DimensionName, Span,
-    TypeName,
+    CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
+    CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftType, DimensionName, Span, TypeName,
 };
 use coflow_structure::{StructuralBudget, StructureKind};
 use std::collections::{BTreeMap, BTreeSet};
@@ -79,7 +79,19 @@ impl<'schema, 'budget> DimensionCheckAnalyzer<'schema, 'budget> {
     ) -> Result<BTreeSet<DimensionName>, LocatedBudgetError> {
         self.charge()?;
         Ok(match stmt {
-            CftSchemaCheckStmt::Expr { condition, .. } => self.expr_dimensions(condition)?,
+            CftSchemaCheckStmt::Expr {
+                condition,
+                message,
+                ..
+            } => {
+                let mut out = self.expr_dimensions(condition)?;
+                if let Some(message) = message {
+                    if let CftSchemaCheckMessageKind::Formatted(segments) = &message.kind {
+                        out.extend(self.format_dimensions(segments)?);
+                    }
+                }
+                out
+            }
             CftSchemaCheckStmt::Quantifier {
                 binding,
                 collection,
@@ -117,6 +129,9 @@ impl<'schema, 'budget> DimensionCheckAnalyzer<'schema, 'budget> {
             | CftSchemaCheckExprKind::Bool(_)
             | CftSchemaCheckExprKind::Null
             | CftSchemaCheckExprKind::String(_) => BTreeSet::new(),
+            CftSchemaCheckExprKind::FormattedString(segments) => {
+                self.format_dimensions(segments)?
+            }
             CftSchemaCheckExprKind::Name(name) => self.name_dimensions(name),
             CftSchemaCheckExprKind::Field { expr, .. }
             | CftSchemaCheckExprKind::Is { expr, .. }
@@ -145,6 +160,19 @@ impl<'schema, 'budget> DimensionCheckAnalyzer<'schema, 'budget> {
                 out
             }
         })
+    }
+
+    fn format_dimensions(
+        &mut self,
+        segments: &[CftSchemaCheckFormatSegment],
+    ) -> Result<BTreeSet<DimensionName>, LocatedBudgetError> {
+        let mut out = BTreeSet::new();
+        for segment in segments {
+            if let CftSchemaCheckFormatSegment::Expr(expr) = segment {
+                out.extend(self.expr_dimensions(expr)?);
+            }
+        }
+        Ok(out)
     }
 
     fn name_dimensions(&self, name: &str) -> BTreeSet<DimensionName> {

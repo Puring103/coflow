@@ -602,3 +602,43 @@ fn type_checker_reports_array_contains_dict_contains_and_matches_arg_edges() {
         3
     );
 }
+
+#[test]
+fn type_checker_accepts_scalar_formatted_values_and_rejects_collections() {
+    compile_one(
+        r#"
+        enum Rarity { Common, Rare, }
+        type Item {
+            level: int;
+            enabled: bool;
+            rarity: Rarity;
+            note: string?;
+            check {
+                id == f"{level}:{enabled}:{rarity}:{note}:{null}";
+            }
+        }
+        "#,
+    )
+    .expect("scalar, enum, nullable scalar, and null interpolation should compile");
+
+    let err = compile_one(
+        r#"
+        type Item {
+            nums: [int];
+            attrs: {string: int};
+            check {
+                id == f"{nums}";
+                id == f"{attrs}";
+            }
+        }
+        "#,
+    )
+    .expect_err("collection interpolation must fail type checking");
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::OperatorTypeMismatch)
+            .count(),
+        2
+    );
+}

@@ -1,6 +1,6 @@
 use coflow_cft::syntax::ast::{
-    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, ConstLiteral, DefaultExpr,
-    DefaultExprKind, Item, TypeRef, TypeRefKind,
+    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
+    CheckStmt, ConstLiteral, DefaultExpr, DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
 use coflow_cft::syntax::lexer::{lex, TokenKind};
 use coflow_cft::{ModuleId, Span};
@@ -208,7 +208,10 @@ fn add_lex_semantic_token(
         | TokenKind::False
         | TokenKind::Null => SEM_KEYWORD,
         TokenKind::Int(_) | TokenKind::UIntOverflow(_) | TokenKind::Float(_) => SEM_NUMBER,
-        TokenKind::String(_) => SEM_STRING,
+        TokenKind::String(_)
+        | TokenKind::FormattedStringStart
+        | TokenKind::FormattedStringText(_)
+        | TokenKind::FormattedStringEnd => SEM_STRING,
         TokenKind::Plus
         | TokenKind::Minus
         | TokenKind::Star
@@ -498,8 +501,17 @@ fn add_check_stmt_semantic(
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     match stmt {
-        CheckStmt::Expr { condition, .. } => {
+        CheckStmt::Expr {
+            condition,
+            message,
+            ..
+        } => {
             add_check_expr_semantic(build, document, condition, tokens);
+            if let Some(message) = message {
+                if let CheckMessageKind::Formatted(segments) = &message.kind {
+                    add_format_segments_semantic(build, document, segments, tokens);
+                }
+            }
         }
         CheckStmt::Quantifier {
             binding,
@@ -546,6 +558,9 @@ fn add_check_expr_semantic(
         }
         CheckExprKind::String(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
+        }
+        CheckExprKind::FormattedString(segments) => {
+            add_format_segments_semantic(build, document, segments, tokens);
         }
         CheckExprKind::Name(_) => {
             push_semantic_span(
@@ -651,6 +666,19 @@ fn add_check_expr_semantic(
             for (_, expr) in rest {
                 add_check_expr_semantic(build, document, expr, tokens);
             }
+        }
+    }
+}
+
+fn add_format_segments_semantic(
+    build: &LspBuild,
+    document: &LspDocument,
+    segments: &[CheckFormatSegment],
+    tokens: &mut Vec<RawSemanticToken>,
+) {
+    for segment in segments {
+        if let CheckFormatSegment::Expr(expr) = segment {
+            add_check_expr_semantic(build, document, expr, tokens);
         }
     }
 }
