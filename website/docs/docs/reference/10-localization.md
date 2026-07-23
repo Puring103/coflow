@@ -46,7 +46,7 @@ dimensions:
 
 维度字段通过 CFT 注解声明。`@localized` 是 `language` 维度的便捷写法：
 
-```text
+```cft
 type Item {
   @localized
   name: string;
@@ -66,7 +66,7 @@ type Item {
 
 其他维度使用 `@dimension("name")`：
 
-```text
+```cft
 type Item {
   @dimension("platform")
   price: int;
@@ -157,7 +157,7 @@ Item_nameVariants.json
 
 本地化就是 `language` 维度的一种使用方式。`@localized` 声明字段随语言变化：
 
-```text
+```cft
 type Item {
   @localized
   name: string;
@@ -166,7 +166,7 @@ type Item {
 
 也可以指定 bucket：
 
-```text
+```cft
 type Item {
   @localized("ui")
   icon_text: string;

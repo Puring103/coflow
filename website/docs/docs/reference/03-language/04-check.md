@@ -2,7 +2,7 @@
 
 CFT 的 `check` 块用于声明配置数据必须满足的业务规则。`coflow check` 和 `coflow build` 会在字段值、默认值和记录引用准备完成后执行这些规则。
 
-```text
+```cft
 type Monster {
   level: int;
   tags: [string] = [];
@@ -29,7 +29,7 @@ type Monster {
 
 表达式可以读取当前对象及继承字段、虚拟 `id`、`const` 常量、enum 值、已解析引用对象的字段，以及量词声明的局部变量。
 
-```text
+```cft
 const MAX_LEVEL = 100;
 
 type Monster {
@@ -48,7 +48,7 @@ type Monster {
 
 普通校验语句是一个结果为 `bool` 的表达式，以 `;` 结束。某条条件失败后，Coflow 会继续执行其他独立语句，以便一次报告多个问题。
 
-```text
+```cft
 check {
   damage > 0;
   cooldown >= 0.1;
@@ -73,13 +73,13 @@ check {
 
 比较可以连续书写：
 
-```text
+```cft
 check { 0 <= level <= 100; }
 ```
 
 enum 不会和整数隐式转换。需要构造没有具名变体的 enum 值时，使用 `EnumName(integer)`：
 
-```text
+```cft
 check {
   (permissions & Permission.Read) != Permission(0);
 }
@@ -106,7 +106,7 @@ check {
 
 对象和记录引用使用 `.field` 访问字段。数组使用整数索引，字典使用与 key 类型一致的索引：
 
-```text
+```cft
 check {
   stats.hp > 0;
   rewards[0].count > 0;
@@ -116,7 +116,7 @@ check {
 
 访问 nullable 值之前应先排除 `null`。`&&` 和 `||` 支持短路：
 
-```text
+```cft
 check {
   next == null || next.level > level;
 }
@@ -126,7 +126,7 @@ check {
 
 `when` 只在条件为真时执行其中的规则：
 
-```text
+```cft
 check {
   when !is_passive {
     cooldown != null;
@@ -141,7 +141,7 @@ check {
 
 量词遍历数组或字典：
 
-```text
+```cft
 check {
   all cost in costs { cost >= 0; }
   any reward in rewards { reward is CurrencyReward; }
@@ -157,7 +157,7 @@ check {
 
 遍历字典时，局部变量具有 `.key` 和 `.value`：
 
-```text
+```cft
 all entry in resistances {
   0.0 <= entry.value <= 1.0;
 }
@@ -167,7 +167,7 @@ all entry in resistances {
 
 `is` 可以判断多态对象的实际类型，或判断 nullable 值是否为 `null`：
 
-```text
+```cft
 check {
   reward is CurrencyReward;
   optional_item is null;
@@ -192,7 +192,7 @@ check {
 
 `min()` 和 `max()` 应在确认数组非空后调用：
 
-```text
+```cft
 check {
   when scores.len() > 0 {
     scores.min() <= scores.max();

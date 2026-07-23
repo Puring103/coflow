@@ -6,7 +6,7 @@ CFT（Coflow Type File，`.cft`）是专为 coflow 设计的 schema 语言，用
 
 下面是一个包含 `enum`、`type` 和 `check` 的简单示例：
 
-```text
+```cft
 enum Rarity {
   Common,
   Rare,
@@ -39,7 +39,7 @@ type Item {
 
 注释使用 `#`：
 
-```text
+```cft
 # 整行注释
 type Item { name: string; }  # 行尾注释
 ```
@@ -63,7 +63,7 @@ type Item { name: string; }  # 行尾注释
 
 `type` 用来声明一类配置 record 的字段结构。数据源中的 sheet、CSV、CFD record 通常会映射到某个 CFT `type`。
 
-```text
+```cft
 type Weapon {
   name: string;
   damage: int;
@@ -91,7 +91,7 @@ type Weapon {
 
 示例：
 
-```text
+```cft
 type Item {
   name: string;
   rarity: Rarity = Rarity.Common;
@@ -107,7 +107,7 @@ type Item {
 
 字段默认值必须是编译期常量：
 
-```text
+```cft
 type Item {
   price: int = 10;
   rarity: Rarity = Rarity.Common;
@@ -125,7 +125,7 @@ type Item {
 
 `abstract` 禁止直接实例化，只能通过子类使用。`sealed` 禁止被继承。
 
-```text
+```cft
 abstract type Reward {
   source: string = "drop";
 
@@ -156,7 +156,7 @@ sealed type CurrencyReward : Reward {
 
 顶层记录 key 由数据源提供，不在 CFT 字段中声明。`id` 是只读虚拟字段，可在 `check` 中读取当前顶层记录 key。
 
-```text
+```cft
 type Item {
   name: string;
 
@@ -168,7 +168,7 @@ type Item {
 
 对象字段的形态由字段类型直接决定：
 
-```text
+```cft
 type Drop {
   item: &Item;
   backup: &Item? = null;
@@ -193,7 +193,7 @@ nullable 用于表达字段值可以是 `null`；`null` 是一个明确的值，
 
 `T?` 表示字段可以为 `null`。
 
-```text
+```cft
 type Drop {
   item: &Item?;
   backup: &Item? = null;
@@ -202,7 +202,7 @@ type Drop {
 
 安全访问惯用写法：
 
-```text
+```cft
 check {
   item != null && item.id != "";
 }
@@ -216,7 +216,7 @@ check {
 
 每个 `type` 最多有一个 `check` 块，并且必须位于所有字段声明之后。规则会在字段值、默认值和记录引用准备完成后执行；父类型的规则也会按继承顺序应用到子类型实例。`check` 不会成为导出数据或生成代码中的运行时逻辑。
 
-```text
+```cft
 const MAX_LEVEL: int = 100;
 
 type Monster {
@@ -242,7 +242,7 @@ type Monster {
 
 当字段只能从一组固定选项中选择时，用 `enum`，不要用裸 `string` 表达业务分类。
 
-```text
+```cft
 enum Rarity {
   Common,
   Rare,
@@ -252,7 +252,7 @@ enum Rarity {
 
 变体默认从 `0` 开始递增，也可以显式指定整数值：
 
-```text
+```cft
 enum Status {
   None = 0,
   Active = 10,
@@ -263,7 +263,7 @@ enum Status {
 
 使用枚举值时写 `EnumName.Variant`：
 
-```text
+```cft
 type Item {
   rarity: Rarity = Rarity.Common;
 }
@@ -291,7 +291,7 @@ type Item {
 
 示例：
 
-```text
+```cft
 @idAsEnum(ItemId)
 type Item {
   @localized
@@ -305,7 +305,7 @@ enum ItemId {}
 
 `@flag` 把 enum 声明为可组合的位标志：
 
-```text
+```cft
 @flag
 enum Permission {
   Read = 1,
@@ -320,7 +320,7 @@ enum Permission {
 - 支持 `&`、`|`、`^`、`~` 位运算。
 - 运算结果仍是同一 enum 类型。
 
-```text
+```cft
 check {
   (flags & Permission.Read) != Permission(0);
 }
@@ -330,7 +330,7 @@ check {
 
 `@idAsEnum(EnumName)` 用于把数据源中的 record key 填充进一个空 enum。
 
-```text
+```cft
 @idAsEnum(ItemId)
 type Item {
   name: string;
@@ -345,7 +345,7 @@ enum ItemId {}
 
 `@singleton` 声明该类型在数据集中只有一条 record。
 
-```text
+```cft
 @singleton
 type GameConfig {
   max_level: int;
@@ -363,7 +363,7 @@ type GameConfig {
 
 `@localized` 声明字段值随语言维度变化。
 
-```text
+```cft
 type Item {
   @localized
   name: string;
@@ -381,7 +381,7 @@ type Item {
 
 `@dimension("name")` 把字段绑定到 `coflow.yaml` 中声明的指定维度：
 
-```text
+```cft
 type Item {
   @dimension("platform")
   price: int;
@@ -396,7 +396,7 @@ type Item {
 
 当多个字段默认值或业务规则共享同一个阈值时，用 `const` 避免 magic number 分散在 schema 中。
 
-```text
+```cft
 const MAX_LEVEL = 100;
 const MIN_SPEED = 0.1;
 const EMPTY_NAME = "unknown";
@@ -404,7 +404,7 @@ const EMPTY_NAME = "unknown";
 
 可以显式标注基础类型：
 
-```text
+```cft
 const MAX_LEVEL: int = 100;
 const MIN_SPEED: float = 0.1;
 const ENABLED: bool = true;
@@ -443,7 +443,7 @@ CFT schema 会影响导出和代码生成：
 
 ## 完整示例
 
-```text
+```cft
 const MAX_LEVEL: int = 100;
 const MAX_ATTACK: int = 999;
 
