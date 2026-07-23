@@ -200,21 +200,24 @@ type Drop {
 }
 ```
 
-安全访问惯用写法：
+可以使用短路保护、安全访问或 null 合并：
 
 ```cft
 check {
   item != null && item.id != "";
+  (backup?.id ?? "") != "";
 }
 ```
 
-对 `null` 做字段访问、索引访问、大小比较或算术，会在 check 执行时报错。
+`?.` 和 `?[...]` 只传播 receiver 的 null，`??` 延迟计算 fallback；它们不会吞掉越界、key 缺失或引用错误。对 `null` 做普通字段访问、索引访问、大小比较或算术，会在 check 执行时报错。
 
 ## check 块
 
 `check` 用来把业务规则写进 schema，并在 `coflow check` / `coflow build` 阶段提前拦截错误配置。它是 CFT 的核心能力之一。
 
 每个 `type` 最多有一个 `check` 块，并且必须位于所有字段声明之后。规则会在字段值、默认值和记录引用准备完成后执行；父类型的规则也会按继承顺序应用到子类型实例。`check` 不会成为导出数据或生成代码中的运行时逻辑。
+
+项目级跨记录规则使用 `check Name { ... }`，通过 `records(Type)` 访问某个 object type 及其派生类型的全部顶层记录。条件可以使用 `: "message"` 或 `: f"...{expr}..."` 提供诊断消息；裸 bool 表达式仍然就是断言，不引入 `let`、`assert` 或 `require` 语句。
 
 ```cft
 const MAX_LEVEL: int = 100;
@@ -234,7 +237,7 @@ type Monster {
 }
 ```
 
-完整的条件语句、`when`、集合量词、字段与索引、类型判断、运算符和内建方法见 [Check 校验](./04-check.md)。
+完整的自定义消息、格式化字符串、nullable 操作、双 binding 量词、命名顶层 check、`records(Type)`、运算符和内建方法见 [Check 校验](./04-check.md)。
 
 ## 枚举
 

@@ -71,7 +71,9 @@ DataSource 将 CFD、CSV、Excel 等外部数据转换为统一的 input records
 
 ### 6. Check 执行
 
-`coflow-checker` 在 DataModel 上执行 schema 中的 `check {}`，并输出业务诊断。
+`coflow-checker` 在 DataModel 上执行 type-local 与命名顶层 check。两种作用域共用 evaluator、预算、`CheckExecutionId`、动态 path dependency、dimension round 和 snapshot engine；`records(Type)` 使用 DataModel 的稳定 assignable-record index，并以只读 record handle 求值，不复制 record object。
+
+增量写入由 runtime 产生 canonical mutation impact：每个 `RecordCoordinate` 对应精确 `Paths` 或显式 `All`，结构操作另带 record-set membership delta。snapshot 使用同一 typed path 的祖先/后代 overlap 规则选择受影响根。schema-only 顶层诊断使用 module source catalog 映射到 CFT 文件；具体成员失败以数据位置为 primary，并关联规则声明位置。
 
 ### 7. Runtime Generation
 

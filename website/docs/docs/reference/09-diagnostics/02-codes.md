@@ -152,6 +152,7 @@
 | `CFT-SCHEMA-036` | `SingletonOnAbstractType` | `@singleton` 用在 `abstract type` 上 |
 | `CFT-SCHEMA-037` | `SingletonIdAsEnumConflict` | `@singleton` 与 `@idAsEnum` 同时使用 |
 | `CFT-SCHEMA-038` | `SchemaStructureLimitExceeded` | schema AST、继承链或 dependency 编译工作超过结构预算 |
+| `CFT-SCHEMA-039` | `DuplicateTopLevelCheck` | 项目内重复声明同名顶层 check |
 
 ## CFT Check 类型错误
 
@@ -177,6 +178,8 @@
 | `CFT-TYPE-018` | `ShiftRequiresInt` | `<<`、`>>` 操作数不是 int |
 | `CFT-TYPE-019` | `RegexPatternMustBeLiteral` | `matches` 的 pattern 不是字符串字面量 |
 | `CFT-TYPE-020` | `InvalidRegexPattern` | `matches` 的正则 pattern 无法编译 |
+| `CFT-TYPE-021` | `InvalidQuantifierBindings` | array/dict 量词 binding 数量或顺序不符合 canonical layout |
+| `CFT-TYPE-022` | `InvalidRecordSetQuery` | `records(Type)` 作用域、参数形式或 object type 非法 |
 
 ## 表格与单元格
 
