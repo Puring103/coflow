@@ -7,29 +7,42 @@ use crate::{
 use coflow_structure::{StructuralBudget, StructureKind};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) fn dimension_checks_for_type(
+#[derive(Debug, Clone, Default)]
+pub(super) struct CheckDependencyPlan {
+    dimension_statements: BTreeMap<DimensionName, Vec<usize>>,
+}
+
+impl CheckDependencyPlan {
+    pub(super) fn statement_indices(&self, dimension: &str) -> Option<&[usize]> {
+        self.dimension_statements.get(dimension).map(Vec::as_slice)
+    }
+}
+
+pub(super) fn check_dependencies_for_type(
     types: &BTreeMap<TypeName, CftType>,
     type_name: &TypeName,
     budget: &mut StructuralBudget,
-) -> Result<BTreeMap<DimensionName, Vec<usize>>, LocatedBudgetError> {
+) -> Result<CheckDependencyPlan, LocatedBudgetError> {
     let Some(owner) = types.get(type_name) else {
-        return Ok(BTreeMap::new());
+        return Ok(CheckDependencyPlan::default());
     };
     let Some(check) = owner.check.as_ref() else {
-        return Ok(BTreeMap::new());
+        return Ok(CheckDependencyPlan::default());
     };
     let mut by_dimension: BTreeMap<DimensionName, Vec<usize>> = BTreeMap::new();
-    let mut analyzer = DimensionCheckAnalyzer::new(types, type_name, &owner.module, check.span)
+    let mut analyzer = CheckDependencyAnalyzer::new(types, type_name, &owner.module, check.span)
         .with_budget(budget);
     for (index, stmt) in check.stmts.iter().enumerate() {
         for dimension in analyzer.stmt_dimensions(stmt)? {
             by_dimension.entry(dimension).or_default().push(index);
         }
     }
-    Ok(by_dimension)
+    Ok(CheckDependencyPlan {
+        dimension_statements: by_dimension,
+    })
 }
 
-struct DimensionCheckAnalyzer<'schema, 'budget> {
+struct CheckDependencyAnalyzer<'schema, 'budget> {
     types: &'schema BTreeMap<TypeName, CftType>,
     current_type: &'schema TypeName,
     scopes: Vec<BTreeSet<String>>,
@@ -38,7 +51,7 @@ struct DimensionCheckAnalyzer<'schema, 'budget> {
     budget: Option<&'budget mut StructuralBudget>,
 }
 
-impl<'schema, 'budget> DimensionCheckAnalyzer<'schema, 'budget> {
+impl<'schema, 'budget> CheckDependencyAnalyzer<'schema, 'budget> {
     fn new(
         types: &'schema BTreeMap<TypeName, CftType>,
         current_type: &'schema TypeName,

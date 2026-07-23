@@ -1,4 +1,4 @@
-mod dimension_checks;
+mod check_dependencies;
 mod typed_checks;
 mod value_dependencies;
 
