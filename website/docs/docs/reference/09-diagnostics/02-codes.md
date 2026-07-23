@@ -23,8 +23,8 @@
 | `PROJECT-INIT-IO` | `PROJECT` | `coflow init` 创建目录或写入初始文件失败 |
 | `PROJECT-SCHEMA-PATH` | `PROJECT` | schema glob 或 schema 文件路径解析失败 |
 | `PROJECT-SCHEMA-READ` | `PROJECT` | schema 文件读取失败 |
-| `PROJECT-SCHEMA` | `PROJECT` | schema 编译后缺少预期容器等内部项目 schema 错误 |
-| `PROJECT-001` | `PROJECT` | 已解析项目配置或命令 preflight 诊断，例如路径不存在、source 配置非法、output 缺失或类型不兼容 |
+| `PROJECT-SCHEMA` | `PROJECT` | 项目 schema 状态异常；重新检查项目，若持续出现请报告问题 |
+| `PROJECT-001` | `PROJECT` | 项目配置无法用于当前命令，例如路径不存在、source 配置非法、output 缺失或类型不匹配 |
 | `SCHEMA-STDIN-PATH` | `PROJECT` | `--stdin-path` 与配置中的 schema 文件不匹配 |
 | `SCHEMA-WRITE-TARGET` | `CLI` | `schema write-file` 目标不是已配置的本地 `.cft` schema 文件 |
 | `DATA-WRITE-TARGET` | `CLI` | `data write-file` 目标不是已配置本地 CFD source 覆盖的 `.cfd` 文件 |
@@ -36,19 +36,52 @@
 | `MUTATION-FILE-GUARD` | `MUTATION` | `data patch` 的 file guard 与记录实际来源不匹配 |
 | `MUTATION-INSERT` | `MUTATION` | `data patch` 插入记录时 record key 不合法或插入前置校验失败 |
 | `MUTATION-INSERT-CONFLICT` | `MUTATION` | `data patch` 插入记录时 key 已存在 |
+| `MUTATION-COORDINATE` | `MUTATION` | record coordinate 缺少 type/key、包含非法名称或无法解析 |
+| `MUTATION-SHAPE` | `MUTATION` | patch 值、引用或 collection 操作与目标 schema 形状不兼容 |
+| `MUTATION-RENAME` | `MUTATION` | record 重命名请求或引用改写无法准备 |
+| `MUTATION-RENAME-CONFLICT` | `MUTATION` | record 重命名后的 key 与现有记录或同批操作冲突 |
+| `MUTATION-REORDER` | `MUTATION` | record 排序请求无法定位记录来源 |
+| `MUTATION-REORDER-BATCH` | `MUTATION` | 同一 patch 中的排序操作无法组成一致的执行顺序 |
+| `MUTATION-REORDER-CONTAINER` | `MUTATION` | 要排序的 records 不属于同一个可排序容器 |
+| `MUTATION-TRANSFER` | `MUTATION` | record 移动请求无法定位来源 |
+| `MUTATION-TRANSFER-FILE` | `MUTATION` | record 移动的目标文件与来源文件相同或不适合作为目标 |
+| `MUTATION-TXN-INVARIANT` | `MUTATION` | 无法安全完成整批修改；文件保持不变，若持续出现请报告问题 |
 | `MUTATION-DIMENSION` | `MUTATION` | 维度坐标引用未知 record、field、dimension、variant、nested path 或 managed source |
+| `MUTATION-DIMENSION-PATH` | `MUTATION` | 维度 patch 使用了不支持的 nested path |
 | `MUTATION-DIMENSION-STALE` | `MUTATION` | 维度值与调用方提供的 expected state 不一致；managed source 未修改 |
 | `PATCH-DIMENSION-COORDINATE` | `PATCH` | patch 中的 type、record key、field、dimension 或 variant 名称不合法 |
-| `RUNTIME-INTERNAL` | `RUNTIME` | runtime 构造空模型等不可恢复内部错误 |
+| `RUNTIME-INTERNAL` | `RUNTIME` | 项目运行状态异常；重新运行命令，若持续出现请报告问题 |
+| `RUNTIME-SOURCE-CACHE` | `RUNTIME` | 已加载的数据源状态失效；重新加载项目，若持续出现请报告问题 |
+| `RUNTIME-DIMENSION-SINGLETON` | `RUNTIME` | singleton 维度字段无法映射到唯一记录 |
 | `DIM-CONFIG-002` | `PROJECT` | `dimensions.<name>` 名称或 variants 非法、为空、包含 `default` 或重复项 |
 | `DIM-CONFIG-003` | `PROJECT` | `dimensions.<name>.out_dir` 缺失 |
 | `DIM-SOURCE-001` | `PROJECT` / engine | 维度文件生成或隐式 source 注册失败，例如无法创建目录、读取或写入维度文件失败 |
+| `DIM-SOURCE-002` | `PROJECT` | 维度 source 所需的 provider 未注册 |
 | `DIM-SOURCE-003` | `PROJECT` | 显式 source 位于 `dimensions.*.out_dir` 下；维度文件由 Coflow 管理，不能加入 `sources` |
 | `DIM-SOURCE-005` | `PROJECT` | 维度字段重命名后的物理 source 迁移失败 |
-| `DIM-SOURCE-006` | `PROJECT` | 删除不再由当前 schema 管理的旧维度 source 失败 |
+| `DIM-SOURCE-006` | `PROJECT` | 删除不受当前 schema 管理的维度 source 失败 |
 | `DIM-SOURCE-007` | `PROJECT` | 两个维度的托管目录相同或互相包含，无法建立唯一目录所有权 |
 | `DIM-SOURCE-PATH-CONFLICT` | `PROJECT` | 多个非 singleton 维度字段映射到同一物理 source 路径 |
+| `DIM-SOURCE-DISCOVERY-001` | `PROJECT` | 发现或读取已有维度 source 失败 |
+| `DIM-SOURCE-SNAPSHOT-001` | `PROJECT` | 更新维度 source 前无法创建文件快照 |
+| `DIM-SOURCE-ROLLBACK-001` | `PROJECT` | 维度 source 更新失败后无法恢复文件快照 |
 | `CFT-LSP` | `LSP` | Language Server 无法解析当前文档或项目上下文时返回的编辑器诊断 |
+| `CFD-LSP` | `LSP` | Language Server 无法构造或验证 CFD 文档快照 |
+
+### Skill 命令
+
+| 诊断码 | 阶段 | 含义 |
+| --- | --- | --- |
+| `SKILL-HOME` | `CLI` | 无法确定当前用户的 skill 安装目录 |
+| `SKILL-BUNDLE` | `CLI` | CLI 内置 skill bundle 缺失或内容非法 |
+| `SKILL-MANIFEST` | `CLI` | skill 安装 manifest 无法读取、解析或校验 |
+| `SKILL-DIR-CREATE` | `CLI` | 无法创建 skill 安装目录 |
+| `SKILL-DIR-READ` | `CLI` | 无法读取 skill 安装目录 |
+| `SKILL-DIR-REMOVE` | `CLI` | 无法删除空的 skill 安装目录 |
+| `SKILL-FILE-WRITE` | `CLI` | 无法写入 bundle 中的 skill 文件 |
+| `SKILL-SWAP` | `CLI` | 无法用新 bundle 原子替换已安装 skill |
+| `SKILL-REMOVE` | `CLI` | 无法删除已安装 skill |
+| `SKILL-CLEANUP` | `CLI` | 安装或替换失败后无法清理临时 skill 目录 |
 
 `PROJECT-001` 是项目配置聚合诊断，会尽量一次报告多个独立配置问题。
 
@@ -151,7 +184,7 @@
 
 | 诊断码 | 阶段 | 含义 |
 | --- | --- | --- |
-| `EXCEL-SOURCE` | `EXCEL` | Excel source resolve/preflight 失败，例如扩展名不支持、路径或 options 不合法 |
+| `EXCEL-SOURCE` | `EXCEL` | Excel source 无法使用，例如扩展名、路径或 options 不合法 |
 | `EXCEL-OPEN` | `EXCEL` | workbook 无法打开 |
 | `EXCEL-SHEET` | `EXCEL` | sheet 不存在、为空或无法读取 |
 | `EXCEL-TYPE` | `EXCEL` | sheet 映射到未知 CFT type |
@@ -167,7 +200,7 @@
 
 | 诊断码 | 阶段 | 含义 |
 | --- | --- | --- |
-| `CSV-SOURCE` | `CSV` | CSV source resolve/preflight/load 失败，例如扩展名、路径、表头或 options 不合法 |
+| `CSV-SOURCE` | `CSV` | CSV source 无法使用，例如扩展名、路径、表头或 options 不合法 |
 | `CSV-READ` | `CSV` | CSV 文件读取失败 |
 | `CSV-PARSE` | `CSV` | CSV 内容解析失败 |
 | `CSV-SHEET` | `CSV` | CSV 表格映射失败 |
@@ -176,6 +209,9 @@
 | `CSV-ID` | `CSV` | key 列缺失、key 为空或 key 非法 |
 | `CSV-WRITE` | `CSV` | CSV writer 写回失败 |
 | `CSV-DIMENSION` | `CSV` | CSV 维度文件生成/同步失败，例如维度表存在重复或未管理的 id |
+| `CSV-DIMENSION-VALUE` | `CSV` | CSV 维度值无法解析或与目标字段类型不兼容 |
+| `CSV-DIMENSION-WRITE` | `CSV` | CSV 维度记录无法写入文件 |
+| `CSV-TABLE` | `CSV` | CSV table manager 创建表或同步表头失败 |
 
 ### 共享表格诊断
 
@@ -218,10 +254,13 @@ provider 专属阶段；需要跨 provider 保持稳定语义的诊断会保留 
 
 | 诊断码 | 阶段 | 含义 |
 | --- | --- | --- |
-| `CFD-SOURCE` | `CFD` | CFD source resolve/preflight 失败，例如扩展名或路径不合法 |
+| `CFD-SOURCE` | `CFD` | CFD source 无法使用，例如扩展名或路径不合法 |
 | `CFD-READ` | `CFD` | CFD 文件读取失败 |
 | `CFD-WRITE` | `CFD` | CFD writer 写回失败 |
 | `CFD-DIMENSION` | `CFD` | CFD 维度文件生成/同步失败，例如维度表存在重复或未管理的 id |
+| `CFD-DIMENSION-VALUE` | `CFD` | CFD 维度值无法解析或与目标字段类型不兼容 |
+| `CFD-DIMENSION-WRITE` | `CFD` | CFD 维度记录无法渲染或写入文件 |
+| `CFD-TABLE` | `CFD` | CFD table manager 创建文档、同步字段或渲染表结构失败 |
 | `CFD-TEXT-Syntax` | `CFD` | CFD 文本语法错误 |
 | `CFD-TEXT-UnknownType` | `CFD` | 文本记录或对象使用未知类型 |
 | `CFD-TEXT-AbstractObjectType` | `CFD` | 尝试实例化抽象对象类型 |
@@ -301,15 +340,18 @@ provider 专属阶段；需要跨 provider 保持稳定语义的诊断会保留 
 | `JSON-EXPORT` | `EXPORT` | JSON exporter 编码失败 |
 | `MESSAGEPACK-OPTIONS` | `EXPORT` | MessagePack exporter 收到不支持的 output options |
 | `MESSAGEPACK-EXPORT` | `EXPORT` | MessagePack exporter 编码失败 |
-| `CODEGEN-CSHARP-001` | `CODEGEN` | C# generation validation 诊断，例如 namespace、类型名、成员名、文件名或 `@idAsEnum` variant 非法 |
+| `CODEGEN-CSHARP-001` | `CODEGEN` | C# 产物校验失败，例如 namespace、类型名、成员名、文件名或 `@idAsEnum` variant 非法 |
 | `CSHARP-FORMAT` | `CODEGEN` | C# codegen 不支持当前数据导出格式 |
 | `CSHARP-OPTIONS` | `CODEGEN` | C# codegen provider option 解析失败 |
+| `CSHARP-LOADER-OPTIONS` | `CODEGEN` | C# loader options 解析失败或包含未知字段 |
 | `CSHARP-ARTIFACT` | `CODEGEN` | C# codegen 无法构造合法 artifact set |
+| `LOADER-ARTIFACT` | `ARTIFACT` | loader generator 合并 common code 与 loader artifacts 失败 |
 | `CODEGEN` | `CODEGEN` | codegen provider 通用诊断 |
 | `PROVIDER-OPTIONS-CONTRACT` | `PROVIDER` | provider 收到了由其他 provider 解码或类型不匹配的 typed options |
-| `ARTIFACT-001` | `ARTIFACT` | artifact path、generation 写入/验证、active manifest 或 lock state 读写/解析失败 |
+| `PROVIDER-SOURCE-CONTRACT` | `PROVIDER` | Provider 返回的数据源信息不一致；检查自定义 Provider，若使用内置 Provider 请报告问题 |
+| `ARTIFACT-001` | `ARTIFACT` | 产物路径、写入或校验失败 |
 
-存在 `CODEGEN-CSHARP-001` 时，Coflow 不封存新的 C# generation，也不更新 active manifest。
+存在 `CODEGEN-CSHARP-001` 时，Coflow 不会替换现有 C# 产物。
 
 ## 通用写回
 
@@ -319,12 +361,26 @@ provider 专属阶段；需要跨 provider 保持稳定语义的诊断会保留 
 | `WRITE-NOT-FOUND` | `WRITE` | 写入目标 record 不存在 |
 | `WRITE-NO-SOURCE` | `WRITE` | 找不到可承载写入请求的数据源 |
 | `WRITE-NO-WRITER` | `WRITE` | 目标 source 没有注册对应 writer |
+| `WRITE-AMBIGUOUS-SOURCE` | `WRITE` | 多个 source 都可承载新记录，无法唯一选择写入目标 |
 | `WRITE-SHAPE` | `WRITE` | 写入值不符合目标字段类型、引用目标不存在或路径形状不合法 |
 | `WRITE-INSERT` | `WRITE` | 插入记录时类型、key 或字段值不合法 |
 | `WRITE-TXN` | `WRITE` | 本地文件写事务无法创建回滚快照 |
+| `WRITE-TXN-UNSUPPORTED` | `WRITE` | source 不支持事务写入，或多个 source 无法加入同一事务 |
+| `WRITE-TXN-COMMIT` | `WRITE` | provider 提交事务失败 |
+| `WRITE-TXN-COMPENSATE` | `WRITE` | 部分 source 提交后，补偿已提交事务失败 |
+| `WRITE-TXN-ABORT` | `WRITE` | 写入失败后中止尚未提交的事务失败 |
+| `WRITE-TXN-NO-OUTCOME` | `WRITE` | provider 事务结束后没有返回 commit/abort 结果 |
 | `WRITE-ROLLBACK` | `WRITE` | 写入失败后的本地文件回滚失败 |
 | `WRITE-RENAME` | `WRITE` | record key 重命名失败，例如新 key 已存在或引用改写失败 |
 | `WRITE-SPREAD-SOURCE` | `WRITE` | 写入涉及 spread 来源记录，但无法定位或更新来源 |
+| `WRITE-TRANSFER-FILE` | `WRITE` | record 移动的目标文件无效或与来源文件相同 |
+| `WRITE-TRANSFER-ORIGIN` | `WRITE` | record 移动时无法确定或更新来源坐标 |
+| `WRITE-TRANSFER-INDEX` | `WRITE` | record 移动的目标插入位置超出范围 |
+| `WRITE-TRANSFER-SHEET` | `WRITE` | record 移动的目标 sheet 无效或不可唯一确定 |
+| `WRITE-REORDER-TYPE` | `WRITE` | record 排序包含不兼容的声明类型 |
+| `WRITE-REORDER-INDEX` | `WRITE` | record 排序的目标索引超出范围 |
+| `WRITE-REORDER-CONTAINER` | `WRITE` | 要排序的 records 不属于同一个 source 容器 |
+| `WRITE-REORDER-ORIGIN` | `WRITE` | record 排序时无法确定稳定的来源顺序 |
 
 具体 provider 写回失败通常会使用 provider 自己的诊断码，例如 `EXCEL-WRITE`、`CSV-WRITE` 或 `CFD-WRITE`。
 

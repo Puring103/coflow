@@ -69,7 +69,7 @@ examples/rpg/generated/data
 examples/rpg/generated/csharp
 ```
 
-Coflow 每次构建都会先写入并验证 staging 和 `.coflow/artifacts/generations/` 中的不可变 generation，再完整替换配置指定的 data/code 输出目录，最后原子替换 `.coflow/artifacts/active.json`。命令成功信息会输出稳定输出目录；不要在这些目录中放置手写文件。使用 `coflow clean [CONFIG_OR_DIR]` 清理历史 generation 和中断遗留的 staging；当前活动 generation 会保留。
+Coflow 只会在完整构建成功后替换配置指定的 data/code 输出目录；失败时现有产物保持不变。输出目录由 Coflow 管理，不要在其中放置手写文件。使用 `coflow clean [CONFIG_OR_DIR]` 清理构建产生的临时数据。
 
 单独运行某个阶段：
 
@@ -209,7 +209,7 @@ check 支持 `len` / `contains` / `isUnique` / `min` / `max` / `sum` / `keys` / 
 - CFT 字段类型是 `&Item` / `[&Item]` / `{string: &Item}` 时，单元格写 `&sword_01` 这类 key-only 引用。
 - CFT 字段是普通对象（`Stats`、`Reward`）时，单元格写 `Stats{hp: 100, attack: 50}`；多态对象用 `ConcreteType{...}`。
 - 裸字符串保持字符串语义。JSON / MessagePack 中，引用字段导出为纯 key 字符串（`"sword_01"`，不是 `"Item.sword_01"`）。
-- `coflow build` 会把 `@idAsEnum` lock state 与 data/code generation 一起激活，并在最终激活前于 `coflow.yaml` 同级原子更新非权威的 `coflow.enum.lock.json` 镜像；此文件应提交到版本库，让干净 clone 恢复稳定整数值。
+- `coflow build` 会更新 `coflow.yaml` 同级的 `coflow.enum.lock.json`，用于保持 `@idAsEnum` 的整数值稳定；此文件应提交到版本库。
 
 ---
 

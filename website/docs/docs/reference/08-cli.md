@@ -26,6 +26,22 @@ coflow <command> --help
 
 `-V` 等价于 `--version`，`-h` 等价于 `--help`。
 
+## 快速选择
+
+| 目标 | 命令 | 详见 |
+| --- | --- | --- |
+| 创建项目 | `coflow init` | [`init`](#init) |
+| 检查 schema | `coflow cft check` | [`cft check`](#cft-check) |
+| 检查完整项目 | `coflow check` | [`check`](#check) |
+| 生成全部产物 | `coflow build` | [`build`](#build) |
+| 只导出数据 | `coflow export` | [`export`](#export) |
+| 只生成代码 | `coflow codegen` | [`codegen`](#codegen) |
+| 查询或写入 schema | `coflow schema ...` | [`schema`](#schema) |
+| 查询或修改数据 | `coflow data ...` | [`data`](#data) |
+| 管理 Agent Skills | `coflow skill ...` | [`skill`](#skill) |
+
+不确定命令会读取或写入什么时，查看文末的[命令矩阵](#命令矩阵)。
+
 ## 项目参数
 
 大多数命令接受可选的 `CONFIG_OR_DIR`：
@@ -52,7 +68,7 @@ CLI 退出码用于脚本和 CI 判断命令是否成功：
 | --- | --- |
 | `0` | 命令成功完成 |
 | `1` | 命令失败，或产生使该命令结果不成功的诊断 |
-| `2` | Clap 在执行命令前拒绝了命令行语法或参数值 |
+| `2` | 命令行语法或参数值无效，命令尚未执行 |
 
 会输出诊断的命令会尽量收集多个错误，再一起返回。只要存在诊断，`check`、`build`、`export`、`codegen` 这类命令就会返回非 `0`，并且不会写入对应产物。
 

@@ -2,15 +2,15 @@
 
 ## 可视化编辑器
 
-CFD Editor 使用与 CLI 相同的 `coflow-runtime` 加载项目，不另外实现一套解析和校验语义。它提供：
+CFD Editor 提供：
 
 - 文件与类型导航。
 - 记录表格和字段编辑。
 - 引用关系图。
 - 项目诊断和源位置跳转。
-- 基于 writer transaction 的可撤销变更。
+- 可撤销的安全写入。
 
-编辑器的项目 generation 是不可变快照。当文件重载或写入完成时，后端构建新 generation 并通过 revision 防止旧请求覆盖新状态。
+编辑器会在文件变化后重新加载项目，并避免较早的加载结果覆盖较新的修改。
 
 ## VS Code 与 LSP
 
@@ -18,4 +18,4 @@ Coflow LSP 为 CFT 和 CFD 提供诊断、补全、hover、定义跳转和语义
 
 ## 与 CLI 的分工
 
-编辑器和 LSP 负责交互和快速反馈；CLI 负责可重复的检查、批处理、CI 和 artifact 发布。三者共用 schema、runtime、provider registry 和诊断合同。
+编辑器和 LSP 负责交互和快速反馈；CLI 负责完整检查、批处理、CI 和产物生成。提交或交付前仍应运行 CLI 检查。
