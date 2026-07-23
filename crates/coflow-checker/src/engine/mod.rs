@@ -56,18 +56,43 @@ pub(crate) fn execute(
     let mut dependencies = DependencyGraph::default();
     let mut dimension_projected_records = 0;
 
-    if !selection.top_level_targets.is_empty() {
+    if !selection.top_level_default_targets.is_empty() {
         let execution = run_top_level_checks(
             schema,
             model,
-            &selection.top_level_targets,
+            &selection.top_level_default_targets,
+            None,
             collect_dependencies,
             request.structural_limits,
         );
         record_top_level_execution(
             &mut replacement,
             model,
-            &selection.top_level_targets,
+            &CheckRound::Default,
+            &selection.top_level_default_targets,
+            &execution,
+        );
+        diagnostics.extend(execution.diagnostics);
+        dependencies.merge(execution.dependencies);
+    }
+
+    for (round, targets) in &selection.top_level_dimension_targets {
+        if targets.is_empty() {
+            continue;
+        }
+        let execution = run_top_level_checks(
+            schema,
+            model,
+            targets,
+            Some(round),
+            collect_dependencies,
+            request.structural_limits,
+        );
+        record_top_level_execution(
+            &mut replacement,
+            model,
+            &CheckRound::Dimension(round.clone()),
+            targets,
             &execution,
         );
         diagnostics.extend(execution.diagnostics);
@@ -132,14 +157,15 @@ pub(crate) fn execute(
             requested_roots,
             executed_rounds,
             dimension_projected_records,
-            executed_top_level_checks: selection.top_level_targets.len(),
+            executed_top_level_checks: selection.top_level_execution_count(),
             dependency_collection: request.dependency_collection,
         },
     }
 }
 
 struct TargetSelection<'a> {
-    top_level_targets: Vec<coflow_cft::CheckName>,
+    top_level_default_targets: Vec<coflow_cft::CheckName>,
+    top_level_dimension_targets: Vec<(DimensionCheckRound, Vec<coflow_cft::CheckName>)>,
     default_targets: Vec<CfdRecordId>,
     dimension_targets: Vec<(DimensionCheckRound, Vec<CfdRecordId>)>,
     previous: Option<&'a CheckSnapshot>,
@@ -148,7 +174,7 @@ struct TargetSelection<'a> {
 
 impl TargetSelection<'_> {
     fn requested_roots(&self) -> usize {
-        self.top_level_targets.len() + self.default_targets
+        self.top_level_execution_count() + self.default_targets
             .iter()
             .copied()
             .chain(
@@ -161,9 +187,18 @@ impl TargetSelection<'_> {
     }
 
     fn executed_rounds(&self) -> usize {
-        self.top_level_targets.len() + self.default_targets.len()
+        self.top_level_execution_count() + self.default_targets.len()
             + self
                 .dimension_targets
+                .iter()
+                .map(|(_, targets)| targets.len())
+                .sum::<usize>()
+    }
+
+    fn top_level_execution_count(&self) -> usize {
+        self.top_level_default_targets.len()
+            + self
+                .top_level_dimension_targets
                 .iter()
                 .map(|(_, targets)| targets.len())
                 .sum::<usize>()
@@ -191,7 +226,20 @@ fn select_targets<'a>(
 fn full_selection<'a>(schema: &CftSchema, model: &CfdDataModel, rounds: &[DimensionCheckRound]) -> TargetSelection<'a> {
     let targets = model.records().map(|(id, _)| id).collect();
     let mut selection = selection_for_targets(targets, rounds);
-    selection.top_level_targets = schema.all_checks().map(|check| check.name.clone()).collect();
+    selection.top_level_default_targets =
+        schema.all_checks().map(|check| check.name.clone()).collect();
+    selection.top_level_dimension_targets = rounds
+        .iter()
+        .cloned()
+        .map(|round| {
+            let targets = schema
+                .all_checks()
+                .filter(|check| check.statement_indices(&round.dimension).is_some())
+                .map(|check| check.name.clone())
+                .collect();
+            (round, targets)
+        })
+        .collect();
     selection
 }
 
@@ -205,7 +253,12 @@ fn selection_for_targets<'a>(
         .map(|round| (round, targets.clone()))
         .collect();
     TargetSelection {
-        top_level_targets: Vec::new(),
+        top_level_default_targets: Vec::new(),
+        top_level_dimension_targets: rounds
+            .iter()
+            .cloned()
+            .map(|round| (round, Vec::new()))
+            .collect(),
         default_targets: targets,
         dimension_targets,
         previous: None,
@@ -222,7 +275,12 @@ fn select_incremental_targets<'a>(
     let changed = expand_materialization_changes(model, changed);
     let replaced = previous.affected_roots(&changed, rounds)?;
     let mut default_targets = Vec::new();
-    let mut top_level_targets = Vec::new();
+    let mut top_level_default_targets = Vec::new();
+    let mut top_level_dimension_targets = rounds
+        .iter()
+        .cloned()
+        .map(|round| (round, Vec::new()))
+        .collect::<Vec<_>>();
     let mut dimension_targets = rounds
         .iter()
         .cloned()
@@ -234,7 +292,17 @@ fn select_incremental_targets<'a>(
                 Some(model.record_by_type_key(&record.actual_type, &record.key)?)
             }
             StableExecutionId::TopLevel(name) => {
-                top_level_targets.push(name.clone());
+                match &root.round {
+                    CheckRound::Default => top_level_default_targets.push(name.clone()),
+                    CheckRound::Dimension(round) => {
+                        if let Some((_, targets)) = top_level_dimension_targets
+                            .iter_mut()
+                            .find(|(candidate, _)| candidate == round)
+                        {
+                            targets.push(name.clone());
+                        }
+                    }
+                }
                 None
             }
         };
@@ -252,7 +320,8 @@ fn select_incremental_targets<'a>(
         }
     }
     Some(TargetSelection {
-        top_level_targets,
+        top_level_default_targets,
+        top_level_dimension_targets,
         default_targets,
         dimension_targets,
         previous: Some(previous),
@@ -264,16 +333,43 @@ fn run_top_level_checks(
     schema: &CftSchema,
     model: &CfdDataModel,
     targets: &[coflow_cft::CheckName],
+    round: Option<&DimensionCheckRound>,
     collect_dependencies: bool,
     structural_limits: StructuralLimits,
 ) -> RoundExecution {
-    let (diagnostics, dependencies) = CheckRunner::new(schema, model, structural_limits)
-        .run_top_level(targets, collect_dependencies);
+    let runner = round.map_or_else(
+        || CheckRunner::new(schema, model, structural_limits),
+        |round| {
+            CheckRunner::with_dimension_context(
+                schema,
+                model,
+                DimensionCheckContext {
+                    dimension: round.dimension.clone(),
+                    variant: round.variant.clone(),
+                },
+                structural_limits,
+            )
+        },
+    );
+    let (diagnostics, dependencies) = runner.run_top_level(targets, collect_dependencies);
+    let diagnostics = diagnostics
+        .into_iter()
+        .map(|(root, mut diagnostic)| {
+            if let Some(round) = round {
+                dimensions::attach_dimension_origins(model, round, &mut diagnostic.diagnostic);
+                diagnostic.contexts.insert(
+                    0,
+                    CheckDiagnosticContext::Dimension {
+                        dimension: round.dimension.to_string(),
+                        variant: round.variant.to_string(),
+                    },
+                );
+            }
+            RootedCheckDiagnostic { root, diagnostic }
+        })
+        .collect();
     RoundExecution {
-        diagnostics: diagnostics
-            .into_iter()
-            .map(|(root, diagnostic)| RootedCheckDiagnostic { root, diagnostic })
-            .collect(),
+        diagnostics,
         dependencies,
         dimension_projected_records: 0,
     }
@@ -370,6 +466,7 @@ fn record_execution(
 fn record_top_level_execution(
     replacement: &mut Option<CheckSnapshot>,
     model: &CfdDataModel,
+    round: &CheckRound,
     targets: &[coflow_cft::CheckName],
     execution: &RoundExecution,
 ) {
@@ -382,7 +479,7 @@ fn record_top_level_execution(
         snapshot
             .insert_execution(
                 model,
-                &CheckRound::Default,
+                round,
                 &execution_targets,
                 execution.diagnostics.clone(),
                 &execution.dependencies,

@@ -143,7 +143,23 @@ impl<'a> CheckRunner<'a> {
             evaluator.contexts.push(CheckDiagnosticContext::Check {
                 name: name.to_string(),
             });
-            let _ = statements::eval_check_block(&mut evaluator, &check.block);
+            if self.dimension_round.is_some() {
+                evaluator.dimension_round.clone_from(&self.dimension_round);
+            }
+            let statement_indices = self
+                .dimension_context
+                .as_ref()
+                .and_then(|context| check.statement_indices(&context.dimension));
+            let _ = match statement_indices {
+                Some(statement_indices) => statements::eval_scheduled_check_block(
+                    &mut evaluator,
+                    coflow_cft::ScheduledCheckBlock::new(&check.block, statement_indices),
+                ),
+                None if self.dimension_context.is_none() => {
+                    statements::eval_check_block(&mut evaluator, &check.block)
+                }
+                None => continue,
+            };
             let (diagnostics, collector) = evaluator.into_outputs();
             self.diagnostic_roots.extend(std::iter::repeat_n(
                 execution.clone(),

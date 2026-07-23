@@ -116,6 +116,67 @@ fn simple_schema() -> CftSchema {
     )
 }
 
+#[test]
+fn top_level_checks_schedule_only_dimension_dependent_statements() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @localized
+                name: string;
+            }
+
+            check ItemNames {
+                records(Item).len() > 0;
+                all item in records(Item) { item.name != ""; }
+            }
+
+            check StableCollectionRule {
+                records(Item).len() == 1;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "potion",
+        "Item",
+        [("name", LoadedValueDraft::from("Potion"))],
+    );
+    add_overlay(
+        &mut builder,
+        "Item",
+        "potion",
+        "name",
+        "language",
+        "zh",
+        LoadedValueDraft::from(""),
+    );
+    add_overlay(
+        &mut builder,
+        "Item",
+        "potion",
+        "name",
+        "language",
+        "en",
+        LoadedValueDraft::from("Potion"),
+    );
+    let model = builder.build().expect("model builds");
+    let output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::all().with_rounds(language_plan(&schema)),
+    );
+
+    assert_eq!(output.statistics.executed_top_level_checks, 4);
+    assert_eq!(output.diagnostics.len(), 1);
+    assert!(output.diagnostics[0].diagnostic.contexts.iter().any(|context| {
+        matches!(
+            context,
+            coflow_checker::CheckDiagnosticContext::Dimension { dimension, variant }
+                if dimension == "language" && variant == "zh"
+        )
+    }));
+}
+
 fn simple_model(
     zh: Option<LoadedValueDraft>,
     en: Option<LoadedValueDraft>,

@@ -15,13 +15,14 @@ use crate::syntax::ast::{
     TypePredicate,
 };
 use crate::syntax::Span;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub(super) struct CheckTypeAnalyzer<'a, 'b> {
     compiler: &'a mut SchemaCompiler<'b>,
     module: crate::ModuleId,
     scope: CheckScope,
     locals: Vec<HashMap<String, InferredType>>,
+    dimensions: BTreeSet<crate::DimensionName>,
 }
 
 enum CheckScope {
@@ -62,6 +63,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             module: type_info.module.clone(),
             scope: CheckScope::Record(type_info.def.name.clone()),
             locals: Vec::new(),
+            dimensions: BTreeSet::new(),
         }
     }
 
@@ -74,7 +76,26 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             module,
             scope: CheckScope::TopLevel,
             locals: Vec::new(),
+            dimensions: BTreeSet::new(),
         }
+    }
+
+    pub(super) fn check_root_stmts(
+        &mut self,
+        stmts: &[CheckStmt],
+    ) -> BTreeMap<crate::DimensionName, Vec<usize>> {
+        let mut by_dimension = BTreeMap::<crate::DimensionName, Vec<usize>>::new();
+        for (index, stmt) in stmts.iter().enumerate() {
+            self.dimensions.clear();
+            self.check_stmt(stmt);
+            for dimension in &self.dimensions {
+                by_dimension
+                    .entry(dimension.clone())
+                    .or_default()
+                    .push(index);
+            }
+        }
+        by_dimension
     }
 
     pub(super) fn check_stmts(&mut self, stmts: &[CheckStmt]) {
@@ -349,10 +370,17 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             }
         }
         if let CheckScope::Record(type_name) = &self.scope {
-            if let Some(fields) = self.compiler.full_fields.get(type_name) {
-                if let Some(field) = fields.get(name) {
-                    return field.inferred_type.clone();
+            let field = self
+                .compiler
+                .full_fields
+                .get(type_name)
+                .and_then(|fields| fields.get(name))
+                .cloned();
+            if let Some(field) = field {
+                if let Some(dimension) = field.dimension {
+                    self.dimensions.insert(dimension);
                 }
+                return field.inferred_type;
             }
             if name == "id" {
                 return InferredType::string();
@@ -437,14 +465,17 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                     return InferredType::string();
                 }
                 let type_known = self.compiler.full_fields.contains_key(type_name.as_str());
-                let field_ty = self
+                let field = self
                     .compiler
                     .full_fields
                     .get(type_name.as_str())
                     .and_then(|fields| fields.get(&name.name))
-                    .map(|field| field.inferred_type.clone());
-                if let Some(ty) = field_ty {
-                    return ty;
+                    .cloned();
+                if let Some(field) = field {
+                    if let Some(dimension) = field.dimension {
+                        self.dimensions.insert(dimension);
+                    }
+                    return field.inferred_type;
                 }
                 if type_known {
                     self.diag(

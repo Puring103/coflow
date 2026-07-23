@@ -44,6 +44,8 @@ pub(super) struct SchemaCompiler<'a> {
     inheritance_chains: BTreeMap<String, Vec<String>>,
     quantifier_bindings:
         BTreeMap<(ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
+    check_dimensions:
+        BTreeMap<(ModuleId, usize, usize), BTreeMap<crate::DimensionName, Vec<usize>>>,
     budget: StructuralBudget,
 }
 
@@ -60,6 +62,7 @@ impl<'a> SchemaCompiler<'a> {
             full_fields: BTreeMap::new(),
             inheritance_chains: BTreeMap::new(),
             quantifier_bindings: BTreeMap::new(),
+            check_dimensions: BTreeMap::new(),
             budget: StructuralBudget::new(StructuralLimits::default()),
         }
     }
@@ -131,13 +134,29 @@ impl<'a> SchemaCompiler<'a> {
         self.each_type(|this, info| {
             if let Some(check) = &info.def.check {
                 let mut checker = CheckTypeAnalyzer::new(this, info);
-                checker.check_stmts(&check.stmts);
+                let dimensions = checker.check_root_stmts(&check.stmts);
+                this.check_dimensions.insert(
+                    (info.module.clone(), check.span.start, check.span.end),
+                    dimensions,
+                );
             }
         });
-        let checks: Vec<_> = self.checks.values().cloned().collect();
-        for info in checks {
+        let checks: Vec<_> = self
+            .checks
+            .iter()
+            .map(|(name, info)| (name.clone(), info.clone()))
+            .collect();
+        for (_name, info) in checks {
             let mut checker = CheckTypeAnalyzer::top_level(self, info.module.clone());
-            checker.check_stmts(&info.def.block.stmts);
+            let dimensions = checker.check_root_stmts(&info.def.block.stmts);
+            self.check_dimensions.insert(
+                (
+                    info.module.clone(),
+                    info.def.block.span.start,
+                    info.def.block.span.end,
+                ),
+                dimensions,
+            );
         }
     }
 

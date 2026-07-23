@@ -32,6 +32,13 @@ pub struct CftTopLevelCheck {
     pub record_sets: BTreeSet<TypeName>,
 }
 
+impl CftTopLevelCheck {
+    #[must_use]
+    pub fn statement_indices(&self, dimension: &str) -> Option<&[usize]> {
+        self.block.statement_indices(dimension)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CftConstValue {
     Int(i64),
@@ -95,6 +102,14 @@ pub enum CftSchemaDefaultValue {
 pub struct CftSchemaCheckBlock {
     pub stmts: Vec<CftSchemaCheckStmt>,
     pub span: Span,
+    pub(crate) dimension_statements: BTreeMap<DimensionName, Vec<usize>>,
+}
+
+impl CftSchemaCheckBlock {
+    #[must_use]
+    pub fn statement_indices(&self, dimension: &str) -> Option<&[usize]> {
+        self.dimension_statements.get(dimension).map(Vec::as_slice)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
