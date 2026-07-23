@@ -99,7 +99,10 @@ pub(crate) fn explain_false_expr(
             .with_expected("true"),
         ),
         CftSchemaCheckExprKind::Field { .. }
+        | CftSchemaCheckExprKind::SafeField { .. }
         | CftSchemaCheckExprKind::Index { .. }
+        | CftSchemaCheckExprKind::SafeIndex { .. }
+        | CftSchemaCheckExprKind::Coalesce { .. }
         | CftSchemaCheckExprKind::Call { .. }
         | CftSchemaCheckExprKind::MethodCall { .. }
             if matches!(value.value.scalar(), Some(ScalarValue::Bool(false))) =>

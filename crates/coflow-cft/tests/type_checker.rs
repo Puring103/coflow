@@ -85,6 +85,52 @@ fn type_checker_accepts_nullable_guarded_access_and_object_fields() {
 }
 
 #[test]
+fn type_checker_accepts_safe_access_and_rejects_invalid_nullable_operators() {
+    compile_one(
+        r#"
+        type Item { value: int; }
+        type Holder {
+            maybe: Item? = null;
+            numbers: [int]? = null;
+            check {
+                (maybe?.value ?? 0) >= 0;
+                (numbers?[0] ?? 0) >= 0;
+            }
+        }
+        "#,
+    )
+    .expect("safe access and matching fallback should compile");
+
+    let error = compile_one(
+        r#"
+        type Item { value: int; }
+        type Holder {
+            item: Item;
+            numbers: [int];
+            maybe: int? = null;
+            check {
+                item?.value > 0;
+                numbers?[0] > 0;
+                (maybe ?? "wrong") > 0;
+                (1 ?? 0) > 0;
+            }
+        }
+        "#,
+    )
+    .unwrap_err();
+    assert_has_code(&error, CftErrorCode::OperatorTypeMismatch);
+    assert!(
+        error
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == CftErrorCode::OperatorTypeMismatch)
+            .count()
+            >= 4,
+        "{error:#?}"
+    );
+}
+
+#[test]
 fn type_checker_allows_is_null_for_nullable_operands() {
     compile_one(
         r#"

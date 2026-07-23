@@ -106,19 +106,19 @@ impl Parser<'_> {
                 "check expression statements must end with `;`",
             );
         }
-        let span = expr
-            .value
-            .span
-            .join(message.as_ref().map_or(expr.value.span, |message| message.value.span));
-        let depths = message
-            .as_ref()
-            .map_or_else(|| vec![expr.depth], |message| vec![expr.depth, message.depth]);
-        self.node(StructureKind::CheckAst, span, depths, || {
-            CheckStmt::Expr {
-                condition: expr.value,
-                message: message.map(|message| message.value),
-                span,
-            }
+        let span = expr.value.span.join(
+            message
+                .as_ref()
+                .map_or(expr.value.span, |message| message.value.span),
+        );
+        let depths = message.as_ref().map_or_else(
+            || vec![expr.depth],
+            |message| vec![expr.depth, message.depth],
+        );
+        self.node(StructureKind::CheckAst, span, depths, || CheckStmt::Expr {
+            condition: expr.value,
+            message: message.map(|message| message.value),
+            span,
         })
     }
 
@@ -178,6 +178,26 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_or_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
+        let lhs = self.parse_logical_or_expr()?;
+        if let Some(operator) = self.eat(&TokenKind::QuestionQuestion) {
+            let rhs = self.nested(StructureKind::CheckAst, operator, |parser| {
+                parser.parse_or_expr()
+            })?;
+            let span = Span::new(lhs.value.span.start, rhs.value.span.end);
+            let depths = [lhs.depth, rhs.depth];
+            self.node(StructureKind::CheckAst, operator, depths, || CheckExpr {
+                span,
+                kind: CheckExprKind::Coalesce {
+                    lhs: Box::new(lhs.value),
+                    rhs: Box::new(rhs.value),
+                },
+            })
+        } else {
+            Ok(lhs)
+        }
+    }
+
+    fn parse_logical_or_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let mut expr = self.parse_and_expr()?;
         while let Some(operator) = self.eat(&TokenKind::PipePipe) {
             let rhs = self.parse_and_expr()?;

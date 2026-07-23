@@ -238,9 +238,9 @@ impl CheckStmt {
     #[must_use]
     pub fn span(&self) -> Span {
         match self {
-            Self::Expr { span, .. }
-            | Self::Quantifier { span, .. }
-            | Self::When { span, .. } => *span,
+            Self::Expr { span, .. } | Self::Quantifier { span, .. } | Self::When { span, .. } => {
+                *span
+            }
         }
     }
 }
@@ -271,9 +271,21 @@ pub enum CheckExprKind {
         expr: Box<CheckExpr>,
         name: NameRef,
     },
+    SafeField {
+        expr: Box<CheckExpr>,
+        name: NameRef,
+    },
     Index {
         expr: Box<CheckExpr>,
         index: Box<CheckExpr>,
+    },
+    SafeIndex {
+        expr: Box<CheckExpr>,
+        index: Box<CheckExpr>,
+    },
+    Coalesce {
+        lhs: Box<CheckExpr>,
+        rhs: Box<CheckExpr>,
     },
     Is {
         expr: Box<CheckExpr>,

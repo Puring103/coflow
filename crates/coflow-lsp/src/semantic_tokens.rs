@@ -502,9 +502,7 @@ fn add_check_stmt_semantic(
 ) {
     match stmt {
         CheckStmt::Expr {
-            condition,
-            message,
-            ..
+            condition, message, ..
         } => {
             add_check_expr_semantic(build, document, condition, tokens);
             if let Some(message) = message {
@@ -600,7 +598,17 @@ fn add_check_expr_semantic(
                 tokens,
             );
         }
-        CheckExprKind::Index { expr, index } => {
+        CheckExprKind::SafeField { expr, name } => {
+            add_check_expr_semantic(build, document, expr, tokens);
+            push_semantic_span(
+                &document.source,
+                name.span,
+                SEM_PROPERTY,
+                MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
+                tokens,
+            );
+        }
+        CheckExprKind::Index { expr, index } | CheckExprKind::SafeIndex { expr, index } => {
             add_check_expr_semantic(build, document, expr, tokens);
             add_check_expr_semantic(build, document, index, tokens);
         }
@@ -654,7 +662,7 @@ fn add_check_expr_semantic(
                 add_check_expr_semantic(build, document, arg, tokens);
             }
         }
-        CheckExprKind::BinOp { lhs, rhs, .. } => {
+        CheckExprKind::BinOp { lhs, rhs, .. } | CheckExprKind::Coalesce { lhs, rhs } => {
             add_check_expr_semantic(build, document, lhs, tokens);
             add_check_expr_semantic(build, document, rhs, tokens);
         }

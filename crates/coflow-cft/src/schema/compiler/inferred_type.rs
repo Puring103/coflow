@@ -62,6 +62,9 @@ impl InferredType {
 
     pub(super) fn nullable(inner: Self) -> Self {
         match inner {
+            Self::Value(CftValueType::Nullable(inner)) => {
+                Self::Value(CftValueType::Nullable(inner))
+            }
             Self::Value(inner) => Self::Value(CftValueType::Nullable(Box::new(inner))),
             _ => Self::Unknown,
         }

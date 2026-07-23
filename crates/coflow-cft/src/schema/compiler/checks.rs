@@ -3,7 +3,9 @@ mod functions;
 #[path = "check_operators.rs"]
 mod operators;
 
-use super::inferred_type::{types_comparable, unwrap_nullable, unwrap_reference, InferredType};
+use super::inferred_type::{
+    types_assignable, types_comparable, unwrap_nullable, unwrap_reference, InferredType,
+};
 use super::state::{SymbolKind, TypeInfo};
 use super::SchemaCompiler;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
@@ -31,9 +33,9 @@ fn is_formattable(ty: &InferredType) -> bool {
             | CftValueType::String
             | CftValueType::Enum(_),
         ) => true,
-        InferredType::Value(CftValueType::Nullable(inner)) => is_formattable(
-            &InferredType::Value((**inner).clone()),
-        ),
+        InferredType::Value(CftValueType::Nullable(inner)) => {
+            is_formattable(&InferredType::Value((**inner).clone()))
+        }
         InferredType::Value(
             CftValueType::Array(_)
             | CftValueType::Dict(_, _)
@@ -65,9 +67,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     fn check_stmt(&mut self, stmt: &CheckStmt) {
         match stmt {
             CheckStmt::Expr {
-                condition,
-                message,
-                ..
+                condition, message, ..
             } => {
                 let ty = self.check_expr_value(condition);
                 self.expect_bool(&ty, condition.span);
@@ -145,6 +145,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 let rhs_ty = self.check_expr_value(rhs);
                 self.check_binop(*op, &lhs_ty, &rhs_ty, expr.span)
             }
+            CheckExprKind::Coalesce { lhs, rhs } => self.check_coalesce(lhs, rhs, expr.span),
             CheckExprKind::CmpChain { first, rest } => {
                 let mut lhs_ty = self.check_expr_value(first);
                 for (op, rhs) in rest {
@@ -155,8 +156,14 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 InferredType::bool()
             }
             CheckExprKind::Field { expr: inner, name } => self.check_field(inner, name, expr.span),
+            CheckExprKind::SafeField { expr: inner, name } => {
+                self.check_safe_field(inner, name, expr.span)
+            }
             CheckExprKind::Index { expr: inner, index } => {
                 self.check_index(inner, index, expr.span)
+            }
+            CheckExprKind::SafeIndex { expr: inner, index } => {
+                self.check_safe_index(inner, index, expr.span)
             }
             CheckExprKind::Is {
                 expr: inner,
@@ -266,7 +273,16 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
 
         let inner_ty = self.check_expr_value(inner);
-        match unwrap_reference(&unwrap_nullable(&inner_ty)) {
+        self.check_field_type(&unwrap_nullable(&inner_ty), name, span)
+    }
+
+    fn check_field_type(
+        &mut self,
+        inner_ty: &InferredType,
+        name: &NameRef,
+        span: Span,
+    ) -> InferredType {
+        match unwrap_reference(inner_ty) {
             InferredType::Value(CftValueType::Object(type_name)) => {
                 if name.name == "id" {
                     return InferredType::string();
@@ -314,10 +330,34 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
     }
 
+    fn check_safe_field(&mut self, inner: &CheckExpr, name: &NameRef, span: Span) -> InferredType {
+        let inner_ty = self.check_expr_value(inner);
+        if !inner_ty.is_nullable() {
+            if !inner_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::OperatorTypeMismatch,
+                    inner.span,
+                    "safe field access requires a nullable receiver",
+                );
+            }
+            return InferredType::Unknown;
+        }
+        let projected = self.check_field_type(&unwrap_nullable(&inner_ty), name, span);
+        InferredType::nullable(projected)
+    }
+
     fn check_index(&mut self, inner: &CheckExpr, index: &CheckExpr, span: Span) -> InferredType {
         let inner_ty = self.check_expr_value(inner);
+        self.check_index_type(&unwrap_nullable(&inner_ty), index, span)
+    }
+
+    fn check_index_type(
+        &mut self,
+        inner_ty: &InferredType,
+        index: &CheckExpr,
+        span: Span,
+    ) -> InferredType {
         let index_ty = self.check_expr_value(index);
-        let inner_ty = unwrap_nullable(&inner_ty);
         if let Some(elem) = inner_ty.array_element() {
             if !types_comparable(&index_ty, &InferredType::int()) && !index_ty.is_unknown() {
                 self.diag(
@@ -346,6 +386,52 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             );
             InferredType::Unknown
         }
+    }
+
+    fn check_safe_index(
+        &mut self,
+        inner: &CheckExpr,
+        index: &CheckExpr,
+        span: Span,
+    ) -> InferredType {
+        let inner_ty = self.check_expr_value(inner);
+        if !inner_ty.is_nullable() {
+            if !inner_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::OperatorTypeMismatch,
+                    inner.span,
+                    "safe index access requires a nullable receiver",
+                );
+            }
+            self.check_expr_value(index);
+            return InferredType::Unknown;
+        }
+        let projected = self.check_index_type(&unwrap_nullable(&inner_ty), index, span);
+        InferredType::nullable(projected)
+    }
+
+    fn check_coalesce(&mut self, lhs: &CheckExpr, rhs: &CheckExpr, span: Span) -> InferredType {
+        let lhs_ty = self.check_expr_value(lhs);
+        let rhs_ty = self.check_expr_value(rhs);
+        if !lhs_ty.is_nullable() {
+            if !lhs_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::OperatorTypeMismatch,
+                    span,
+                    "left operand of `??` must be nullable",
+                );
+            }
+            return InferredType::Unknown;
+        }
+        let result = unwrap_nullable(&lhs_ty);
+        if !types_assignable(&result, &rhs_ty) {
+            self.diag(
+                CftErrorCode::OperatorTypeMismatch,
+                rhs.span,
+                "right operand of `??` must match the non-null left operand type",
+            );
+        }
+        result
     }
 
     fn check_is(&mut self, lhs: &InferredType, predicate: &TypePredicate, span: Span) {

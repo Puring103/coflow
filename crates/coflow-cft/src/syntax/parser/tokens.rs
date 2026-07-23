@@ -14,6 +14,7 @@ pub(super) fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Dot => ".",
         TokenKind::Equal => "=",
         TokenKind::Question => "?",
+        TokenKind::QuestionQuestion => "??",
         TokenKind::FormattedStringStart => "formatted string",
         TokenKind::FormattedStringExprStart => "{",
         TokenKind::FormattedStringExprEnd => "}",

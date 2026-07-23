@@ -256,6 +256,101 @@ fn numeric_builtin_invalid_domains_report_runtime_errors() {
 }
 
 #[test]
+fn nullable_access_and_coalescing_short_circuit_without_hiding_access_errors() {
+    let schema = compile_schema(
+        r#"
+        type Child { value: int; }
+        type Holder {
+            maybe: Child? = null;
+            numbers: [int]? = null;
+            fallback: int? = null;
+            bad: [int];
+            check {
+                (maybe?.value ?? 3) == 3;
+                (numbers?[bad[99]] ?? 4) == 4;
+                (fallback ?? bad[99]) == 5;
+            }
+        }
+        "#,
+    );
+
+    let mut passing = CfdDataModel::builder(&schema);
+    passing.add_record(
+        "passing",
+        "Holder",
+        [
+            ("fallback", LoadedValueDraft::from(5_i64)),
+            ("bad", LoadedValueDraft::Array(Vec::new())),
+        ],
+    );
+    let model = build_model(&schema, passing);
+    run_model_checks(&model, &schema).expect("all skipped branches must remain unevaluated");
+
+    let mut failing = CfdDataModel::builder(&schema);
+    failing.add_record(
+        "failing",
+        "Holder",
+        [
+            ("fallback", LoadedValueDraft::Null),
+            ("bad", LoadedValueDraft::Array(Vec::new())),
+        ],
+    );
+    let model = build_model(&schema, failing);
+    let error =
+        run_model_checks(&model, &schema).expect_err("executed fallback keeps index errors");
+    assert_has_code(&error, CfdErrorCode::CheckIndexOutOfBounds);
+}
+
+#[test]
+fn coalescing_collects_dependencies_only_from_the_selected_branch() {
+    let schema = compile_schema(
+        r#"
+        type Target { value: int; }
+        type Reader {
+            selected: &Target? = null;
+            fallback: &Target;
+            check { (selected ?? fallback).value > 0; }
+        }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("selected", "Target", [("value", 1_i64.into())]);
+    builder.add_record("fallback", "Target", [("value", 1_i64.into())]);
+    builder.add_record(
+        "reader",
+        "Reader",
+        [
+            ("selected", LoadedValueDraft::record_ref("selected")),
+            ("fallback", LoadedValueDraft::record_ref("fallback")),
+        ],
+    );
+    let model = builder.build().expect("model builds");
+    let selected = model
+        .lookup_assignable(&schema, "Target", "selected")
+        .expect("selected target");
+    let fallback = model
+        .lookup_assignable(&schema, "Target", "fallback")
+        .expect("fallback target");
+    let reader = model
+        .lookup_assignable(&schema, "Reader", "reader")
+        .expect("reader");
+
+    let output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::records(&[reader]).with_dependency_collection(DependencyCollection::Reads),
+    );
+    assert!(output.diagnostics.is_empty(), "{:#?}", output.diagnostics);
+    let reads = output
+        .dependencies
+        .reads_from
+        .get(&reader)
+        .expect("reader dependencies");
+    assert!(reads.contains(&selected));
+    assert!(!reads.contains(&fallback));
+}
+
+#[test]
 fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
     let schema = compile_schema(
         r#"

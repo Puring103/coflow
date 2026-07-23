@@ -43,6 +43,38 @@ impl Parser<'_> {
                         args: args.into_iter().map(|arg| arg.value).collect(),
                     },
                 })?;
+            } else if self.at(&TokenKind::Question) && self.next_at(&TokenKind::Dot) {
+                let question = self.bump().span;
+                self.bump();
+                let name = self.expect_ident()?;
+                let span = Span::new(expr.value.span.start, name.span.end);
+                let depth = expr.depth;
+                expr = self.node(StructureKind::CheckAst, question, [depth], || CheckExpr {
+                    span,
+                    kind: CheckExprKind::SafeField {
+                        expr: Box::new(expr.value),
+                        name,
+                    },
+                })?;
+            } else if self.at(&TokenKind::Question) && self.next_at(&TokenKind::LBracket) {
+                let question = self.bump().span;
+                let opener = self.bump().span;
+                let (index, end) = self.nested(StructureKind::CheckAst, opener, |parser| {
+                    let index = parser.parse_or_expr()?;
+                    let end = parser
+                        .expect_simple(&TokenKind::RBracket, CftErrorCode::ExpectedToken)?
+                        .end;
+                    Ok((index, end))
+                })?;
+                let span = Span::new(expr.value.span.start, end);
+                let depths = [expr.depth, index.depth];
+                expr = self.node(StructureKind::CheckAst, question, depths, || CheckExpr {
+                    span,
+                    kind: CheckExprKind::SafeIndex {
+                        expr: Box::new(expr.value),
+                        index: Box::new(index.value),
+                    },
+                })?;
             } else if let Some(dot) = self.eat(&TokenKind::Dot) {
                 let name = self.expect_ident()?;
                 if let Some(opener) = self.eat(&TokenKind::LParen) {
@@ -184,9 +216,7 @@ impl Parser<'_> {
         }
     }
 
-    pub(super) fn parse_formatted_string(
-        &mut self,
-    ) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
+    pub(super) fn parse_formatted_string(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let start = self
             .expect_simple(
                 &TokenKind::FormattedStringStart,
@@ -215,10 +245,7 @@ impl Parser<'_> {
                     segments.push(CheckFormatSegment::Expr(expr.value));
                 }
                 TokenKind::Eof => {
-                    return self.err(
-                        CftErrorCode::UnexpectedEof,
-                        "unterminated formatted string",
-                    );
+                    return self.err(CftErrorCode::UnexpectedEof, "unterminated formatted string");
                 }
                 _ => {
                     return self.err(

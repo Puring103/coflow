@@ -8,8 +8,8 @@ use crate::schema::{
     CftType, CftValueType,
 };
 use crate::syntax::ast::{
-    AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt,
-    CmpOp, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, TypePredicate, TypeRef,
+    AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
+    CheckStmt, CmpOp, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, TypePredicate, TypeRef,
     TypeRefKind, UnaryOp,
 };
 use crate::{BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
@@ -313,9 +313,21 @@ fn convert_check_expr(expr: &CheckExpr) -> CftSchemaCheckExpr {
                 expr: Box::new(convert_check_expr(inner)),
                 name: FieldName::from_validated(name.name.clone()),
             },
+            CheckExprKind::SafeField { expr: inner, name } => CftSchemaCheckExprKind::SafeField {
+                expr: Box::new(convert_check_expr(inner)),
+                name: FieldName::from_validated(name.name.clone()),
+            },
             CheckExprKind::Index { expr: inner, index } => CftSchemaCheckExprKind::Index {
                 expr: Box::new(convert_check_expr(inner)),
                 index: Box::new(convert_check_expr(index)),
+            },
+            CheckExprKind::SafeIndex { expr: inner, index } => CftSchemaCheckExprKind::SafeIndex {
+                expr: Box::new(convert_check_expr(inner)),
+                index: Box::new(convert_check_expr(index)),
+            },
+            CheckExprKind::Coalesce { lhs, rhs } => CftSchemaCheckExprKind::Coalesce {
+                lhs: Box::new(convert_check_expr(lhs)),
+                rhs: Box::new(convert_check_expr(rhs)),
             },
             CheckExprKind::Is {
                 expr: inner,
