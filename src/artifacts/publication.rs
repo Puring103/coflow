@@ -163,9 +163,6 @@ fn validate_publication_slots(
 }
 
 pub fn read_active_enum_lock(project: &Project) -> Result<Option<Value>, DiagnosticSet> {
-    if let Some(value) = load_active_manifest(project)?.and_then(|manifest| manifest.enum_lock) {
-        return Ok(Some(value));
-    }
     read_versioned_enum_lock(project)
 }
 
@@ -458,6 +455,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn versioned_enum_lock_takes_precedence_over_local_artifact_state() {
+        let root = test_project_root(fault::Point::WriteActiveManifest);
+        let project = open_test_project(&root);
+        let versioned_lock = json!({"ItemId": {"versioned": 7}});
+        let local_lock = json!({"ItemId": {"local": 3}});
+
+        std::fs::write(
+            root.join(ENUM_LOCKFILE_NAME),
+            serde_json::to_vec_pretty(&versioned_lock).expect("serialize versioned enum lock"),
+        )
+        .expect("write versioned enum lock");
+        let mut manifest = super::empty_manifest();
+        manifest.enum_lock = Some(local_lock);
+        super::write_active_manifest(&project, &manifest).expect("write local artifact manifest");
+
+        assert_eq!(
+            read_active_enum_lock(&project).expect("read enum lock"),
+            Some(versioned_lock)
+        );
+        std::fs::remove_dir_all(root).expect("remove test project");
+    }
+
     fn assert_failure_preserves_active_snapshot(point: fault::Point) {
         let root = test_project_root(point);
         let project = open_test_project(&root);
@@ -534,10 +554,14 @@ mod tests {
             old_requested,
             "{point:?} changed the requested output"
         );
+        let expected_lock: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join(ENUM_LOCKFILE_NAME)).expect("read versioned enum lock"),
+        )
+        .expect("parse versioned enum lock");
         assert_eq!(
-            read_active_enum_lock(&project).expect("read active enum lock"),
-            Some(old_lock),
-            "{point:?} exposed the non-authoritative enum lock mirror"
+            read_active_enum_lock(&project).expect("read versioned enum lock"),
+            Some(expected_lock),
+            "{point:?} did not expose the versioned enum lock"
         );
         if point == fault::Point::WriteActiveManifest {
             let mirror: serde_json::Value = serde_json::from_slice(
