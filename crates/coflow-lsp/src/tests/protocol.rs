@@ -678,10 +678,31 @@ fn unified_diagnostic_severity_is_preserved_in_lsp_rendering() {
             message: "message".to_string(),
             primary: None,
             related: Vec::new(),
+            contexts: Vec::new(),
         };
 
         assert_eq!(lsp_diagnostic(&diagnostic)["severity"], json!(expected));
     }
+}
+
+#[test]
+fn lsp_diagnostic_renders_structured_context_without_mutating_message() {
+    let diagnostic = coflow_api::Diagnostic {
+        code: "TEST".to_string(),
+        stage: "CHECK".to_string(),
+        severity: coflow_api::Severity::Error,
+        message: "custom".to_string(),
+        primary: None,
+        related: Vec::new(),
+        contexts: vec![coflow_api::DiagnosticContext {
+            kind: "when".to_string(),
+            expression: Some("enabled".to_string()),
+            ..coflow_api::DiagnosticContext::default()
+        }],
+    };
+
+    assert_eq!(lsp_diagnostic(&diagnostic)["message"], "custom\n上下文: 在 when enabled 内");
+    assert_eq!(diagnostic.message, "custom");
 }
 
 #[test]

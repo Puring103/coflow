@@ -229,6 +229,22 @@ export function diagnosticSeverity(severity: string): 'error' | 'warning' | 'inf
   return severity === 'error' || severity === 'warning' ? severity : 'info'
 }
 
+export function diagnosticDisplayMessage(diagnostic: DiagnosticItem): string {
+  const lines = [diagnostic.message]
+  for (const context of diagnostic.contexts ?? []) {
+    let detail = context.kind
+    if (context.kind === 'check' && context.name) detail = `check ${context.name}`
+    else if (context.kind === 'when' && context.expression) detail = `在 when ${context.expression} 内`
+    else if (context.kind === 'quantifier' && context.binding && context.item) {
+      detail = `绑定 ${context.binding} 位于 ${context.item}`
+    } else if (context.kind === 'dimension' && context.dimension && context.variant) {
+      detail = `${context.dimension}=${context.variant}`
+    }
+    lines.push(`上下文: ${detail}`)
+  }
+  return lines.join('\n')
+}
+
 /** Stable identity for a diagnostic. Same anchor + code + message ⇒ same key,
  *  so a focus request survives project snapshot refreshes even without an
  *  explicit ID field on FlatDiagnostic. */
@@ -240,7 +256,7 @@ export function diagnosticKey(diagnostic: DiagnosticItem): string {
     diagnostic.field_path ?? '',
     diagnostic.severity,
     diagnostic.code,
-    diagnostic.message,
+    diagnosticDisplayMessage(diagnostic),
   ].join('')
 }
 

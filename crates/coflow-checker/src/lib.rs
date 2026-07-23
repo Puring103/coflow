@@ -40,6 +40,7 @@ use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 pub use coflow_structure::StructuralLimits;
 pub use dependencies::DependencyGraph;
+pub use diagnostics::{CheckDiagnostic, CheckDiagnosticContext};
 pub use dimensions::{DimensionCheckRound, DimensionCheckRoundError};
 pub use output::{CheckExecutionStats, CheckOutput, RootedCheckDiagnostic};
 pub use request::{CheckRequest, CheckTargets, DependencyCollection};

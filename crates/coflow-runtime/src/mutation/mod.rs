@@ -80,5 +80,6 @@ fn one_mutation_error(code: &'static str, message: impl Into<String>) -> Diagnos
         message: message.into(),
         primary: None,
         related: Vec::new(),
+        contexts: Vec::new(),
     })
 }

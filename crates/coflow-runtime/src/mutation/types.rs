@@ -357,6 +357,7 @@ mod tests {
                 message: "structured diagnostic".to_string(),
                 primary: Some(primary.clone()),
                 related: vec![related.clone()],
+                contexts: Vec::new(),
             }),
         );
 

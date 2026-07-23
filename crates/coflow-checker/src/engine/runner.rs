@@ -3,7 +3,7 @@ use super::dimensions::{DimensionRoundView, DimensionVariantAbort};
 use super::evaluator::CheckEvaluator;
 use super::statements;
 use super::value::{EvalRecordRef, EvalValue, ValueLocation};
-use crate::{DependencyGraph, DimensionCheckContext};
+use crate::{CheckDiagnostic, DependencyGraph, DimensionCheckContext};
 use coflow_cft::{CftSchema, FieldName};
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
@@ -14,7 +14,7 @@ use std::rc::Rc;
 pub(crate) struct CheckRunner<'a> {
     schema: &'a CftSchema,
     model: &'a CfdDataModel,
-    diagnostics: Vec<CfdDiagnostic>,
+    diagnostics: Vec<CheckDiagnostic>,
     diagnostic_roots: Vec<CfdRecordId>,
     /// When `Some`, the runner records read-from edges for each top-level
     /// record. The current root is the most recently pushed entry.
@@ -84,7 +84,7 @@ impl<'a> CheckRunner<'a> {
         mut self,
         targets: &[CfdRecordId],
         collect_dependencies: bool,
-    ) -> (Vec<(CfdRecordId, CfdDiagnostic)>, DependencyGraph, usize) {
+    ) -> (Vec<(CfdRecordId, CheckDiagnostic)>, DependencyGraph, usize) {
         if collect_dependencies {
             self.deps = Some(DependencyGraphBuilder::new());
         }
@@ -245,7 +245,8 @@ impl<'a> CheckRunner<'a> {
             if let Some(message) = error {
                 self.diagnostics.push(
                     CfdDiagnostic::error(CfdErrorCode::CheckEvalTypeError, message)
-                        .with_primary(Some(root_record), root_location.field(&field).blame.path),
+                        .with_primary(Some(root_record), root_location.field(&field).blame.path)
+                        .into(),
                 );
                 continue;
             }
@@ -276,7 +277,8 @@ impl<'a> CheckRunner<'a> {
                     let location = (*location).unwrap_or_else(|| logical_location.clone());
                     self.diagnostics.push(
                         CfdDiagnostic::error(code, message)
-                            .with_primary(Some(location.blame.record), location.blame.path),
+                            .with_primary(Some(location.blame.record), location.blame.path)
+                            .into(),
                     );
                 }
             }
@@ -296,7 +298,8 @@ impl<'a> CheckRunner<'a> {
                 *budget = None;
                 self.diagnostics.push(
                     CfdDiagnostic::error(CfdErrorCode::CheckBudgetExceeded, error.to_string())
-                        .with_primary(Some(location.blame.record), location.blame.path.clone()),
+                        .with_primary(Some(location.blame.record), location.blame.path.clone())
+                        .into(),
                 );
                 None
             }

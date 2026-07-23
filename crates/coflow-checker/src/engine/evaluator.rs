@@ -1,7 +1,7 @@
 use super::access;
 use super::builtins::{self, Builtin, CallSignature, CallSignatureError, CallTarget};
 use super::deps::DependencyCollector;
-use super::diagnostics::format_value_for_message;
+use super::diagnostics::{CheckDiagnostic, CheckDiagnosticContext, format_value_for_message};
 use super::dimensions::{self, DimensionVariantAbort};
 use super::evaluation_trace::EvaluationTrace;
 use super::ops::{self, OpsResult};
@@ -22,8 +22,8 @@ pub(super) struct CheckEvaluator<'model> {
     pub(super) check_origin: ValueLocation,
     pub(super) current: EvalValue<'model>,
     pub(super) scopes: Vec<BTreeMap<String, LocatedEvalValue<'model>>>,
-    pub(super) contexts: Vec<String>,
-    pub(super) diagnostics: Vec<CfdDiagnostic>,
+    pub(super) contexts: Vec<CheckDiagnosticContext>,
+    pub(super) diagnostics: Vec<CheckDiagnostic>,
     deps: DependencyCollector,
     pub(super) dimension_round: Option<dimensions::DimensionRoundView>,
     trace: Option<EvaluationTrace>,
@@ -81,7 +81,7 @@ impl<'model> CheckEvaluator<'model> {
         }
     }
 
-    pub(super) fn into_outputs(self) -> (Vec<CfdDiagnostic>, DependencyCollector) {
+    pub(super) fn into_outputs(self) -> (Vec<CheckDiagnostic>, DependencyCollector) {
         (self.diagnostics, self.deps)
     }
 
@@ -562,11 +562,6 @@ impl<'model> CheckEvaluator<'model> {
         location: Option<ValueLocation>,
         message: impl Into<String>,
     ) {
-        let mut message = message.into();
-        for context in &self.contexts {
-            message.push_str("\n上下文: ");
-            message.push_str(context);
-        }
         self.diag_at_preformatted(code, location, message);
     }
 
@@ -607,6 +602,22 @@ impl<'model> CheckEvaluator<'model> {
                 "value stored here",
             );
         }
-        self.diagnostics.push(diagnostic);
+        self.diagnostics.push(CheckDiagnostic {
+            diagnostic,
+            contexts: self.contexts.clone(),
+            is_custom_message: false,
+        });
+    }
+
+    pub(super) fn diag_at_custom_message(
+        &mut self,
+        code: CfdErrorCode,
+        location: Option<ValueLocation>,
+        message: impl Into<String>,
+    ) {
+        self.diag_at_preformatted(code, location, message);
+        if let Some(diagnostic) = self.diagnostics.last_mut() {
+            diagnostic.is_custom_message = true;
+        }
     }
 }

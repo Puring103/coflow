@@ -17,6 +17,7 @@ mod statements;
 
 use crate::dependencies as deps;
 use crate::diagnostics;
+use crate::CheckDiagnosticContext;
 use crate::diagnostics::{explanations, trace as evaluation_trace};
 use crate::dimensions;
 use crate::eval as value;
@@ -267,10 +268,13 @@ fn run_dimension_round(
     let diagnostics = diagnostics
         .into_iter()
         .map(|(root, mut diagnostic)| {
-            dimensions::attach_dimension_origins(model, round, &mut diagnostic);
-            diagnostic.message = format!(
-                "[{}={}] {}",
-                round.dimension, round.variant, diagnostic.message
+            dimensions::attach_dimension_origins(model, round, &mut diagnostic.diagnostic);
+            diagnostic.contexts.insert(
+                0,
+                CheckDiagnosticContext::Dimension {
+                    dimension: round.dimension.to_string(),
+                    variant: round.variant.to_string(),
+                },
             );
             RootedCheckDiagnostic { root, diagnostic }
         })

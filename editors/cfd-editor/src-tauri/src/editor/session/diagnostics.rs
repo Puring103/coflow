@@ -168,6 +168,7 @@ mod tests {
             actual_type: actual_type.map(str::to_string),
             record_key: Some(record_key.to_string()),
             field_path: Some("name".to_string()),
+            contexts: Vec::new(),
         }
     }
 }

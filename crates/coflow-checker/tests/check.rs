@@ -122,6 +122,39 @@ fn formatted_failure_messages_are_evaluated_lazily() {
 }
 
 #[test]
+fn all_quantifier_preserves_custom_message_and_structured_context() {
+    let schema = compile_schema(
+        r#"
+        type Item {
+            nums: [int];
+            check {
+                all number in nums {
+                    number > 0: f"invalid number {number}";
+                }
+            }
+        }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [("nums", LoadedValueDraft::Array(vec![LoadedValueDraft::from(-2_i64)]))],
+    );
+    let model = build_model(&schema, builder);
+    let output = coflow_checker::run_checks(&schema, &model, CheckRequest::all());
+    let diagnostic = &output.diagnostics[0].diagnostic;
+
+    assert_eq!(diagnostic.diagnostic.message, "invalid number -2");
+    assert_eq!(diagnostic.diagnostic.code, CfdErrorCode::CheckAllQuantifierFailed);
+    assert!(matches!(
+        diagnostic.contexts.as_slice(),
+        [coflow_checker::CheckDiagnosticContext::Quantifier { kind, binding, .. }]
+            if kind == "all" && binding == "number"
+    ));
+}
+
+#[test]
 fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
     let schema = compile_schema(
         r#"
@@ -173,6 +206,7 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
         diagnostics.iter().all(|rooted| {
             rooted.root == reader
                 && rooted
+                    .diagnostic
                     .diagnostic
                     .primary
                     .as_ref()

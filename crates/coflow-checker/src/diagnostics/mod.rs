@@ -10,13 +10,80 @@ use crate::eval::{EvalValue, ScalarValue, ValueLocation};
 pub(crate) mod explanations;
 pub(crate) mod trace;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckDiagnosticContext {
+    When {
+        expression: String,
+    },
+    Quantifier {
+        kind: String,
+        binding: String,
+        item: String,
+    },
+    Dimension {
+        dimension: String,
+        variant: String,
+    },
+}
+
+impl CheckDiagnosticContext {
+    #[must_use]
+    pub fn human_message(&self) -> String {
+        match self {
+            Self::When { expression } => format!("在 when {expression} 内"),
+            Self::Quantifier {
+                binding, item, ..
+            } => format!("绑定 {binding} 位于 {item}"),
+            Self::Dimension { dimension, variant } => format!("{dimension}={variant}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckDiagnostic {
+    pub diagnostic: coflow_data_model::CfdDiagnostic,
+    pub contexts: Vec<CheckDiagnosticContext>,
+    pub is_custom_message: bool,
+}
+
+impl CheckDiagnostic {
+    #[must_use]
+    pub fn into_legacy_diagnostic(mut self) -> coflow_data_model::CfdDiagnostic {
+        for context in &self.contexts {
+            match context {
+                CheckDiagnosticContext::Dimension { .. } => {
+                    self.diagnostic.message = format!(
+                        "[{}] {}",
+                        context.human_message(),
+                        self.diagnostic.message
+                    );
+                }
+                _ => {
+                    self.diagnostic.message.push_str("\n上下文: ");
+                    self.diagnostic.message.push_str(&context.human_message());
+                }
+            }
+        }
+        self.diagnostic
+    }
+}
+
+impl From<coflow_data_model::CfdDiagnostic> for CheckDiagnostic {
+    fn from(diagnostic: coflow_data_model::CfdDiagnostic) -> Self {
+        Self {
+            diagnostic,
+            contexts: Vec::new(),
+            is_custom_message: false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct CheckExplanation {
     pub(crate) code: CfdErrorCode,
     pub(crate) expression: String,
     pub(crate) actual: Option<String>,
     pub(crate) expected: Option<String>,
-    pub(crate) context: Vec<String>,
     pub(crate) location: Option<ValueLocation>,
 }
 
@@ -31,7 +98,6 @@ impl CheckExplanation {
             expression: expression.into(),
             actual: None,
             expected: None,
-            context: Vec::new(),
             location,
         }
     }
@@ -46,11 +112,6 @@ impl CheckExplanation {
         self
     }
 
-    pub(crate) fn with_context(mut self, context: &[String]) -> Self {
-        self.context.extend(context.iter().cloned());
-        self
-    }
-
     pub(crate) fn message(&self) -> String {
         let mut out = format!("校验失败: {}", self.expression);
         if let Some(actual) = &self.actual {
@@ -60,10 +121,6 @@ impl CheckExplanation {
         if let Some(expected) = &self.expected {
             out.push_str("\n期望: ");
             out.push_str(expected);
-        }
-        for context in &self.context {
-            out.push_str("\n上下文: ");
-            out.push_str(context);
         }
         out
     }
@@ -288,15 +345,6 @@ pub(crate) fn format_cfd_path_for_message(path: &CfdPath) -> String {
     } else {
         out
     }
-}
-
-pub(crate) fn one_line_message(message: &str) -> String {
-    message
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("; ")
 }
 
 /// Render a `EvalValue` as a short token for inclusion in a diagnostic

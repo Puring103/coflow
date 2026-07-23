@@ -2,6 +2,7 @@ import type { FieldDiagnostic } from '../bindings/FieldDiagnostic'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import {
   coordinateId,
+  diagnosticDisplayMessage,
   diagnosticSeverity,
   type DiagnosticItem,
 } from '../wire'
@@ -56,7 +57,7 @@ export function buildRecordDiagnosticIndex(
         projection.fieldDiagnostics.push({
           severity,
           field_path: diagnostic.field_path,
-          message: diagnostic.message,
+          message: diagnosticDisplayMessage(diagnostic),
         })
       }
       index.set(key, projection)

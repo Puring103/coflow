@@ -726,6 +726,7 @@ fn diagnostic_set(path: impl Into<PathBuf>, message: impl Into<String>) -> Diagn
             message: None,
         }),
         related: Vec::new(),
+        contexts: Vec::new(),
     })
 }
 

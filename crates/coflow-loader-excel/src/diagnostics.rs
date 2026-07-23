@@ -178,6 +178,7 @@ fn excel_diagnostic_to_api(diagnostic: ExcelDiagnostic) -> Diagnostic {
             .into_iter()
             .map(excel_label_to_api)
             .collect(),
+        contexts: Vec::new(),
     }
 }
 

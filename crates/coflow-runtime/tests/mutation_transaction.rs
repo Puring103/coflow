@@ -293,6 +293,7 @@ impl SourceWriter for TestWriter {
                 message: format!("provider write {call} completed"),
                 primary: None,
                 related: Vec::new(),
+                contexts: Vec::new(),
             })
         } else {
             DiagnosticSet::empty()

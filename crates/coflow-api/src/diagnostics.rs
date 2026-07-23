@@ -66,6 +66,9 @@ impl fmt::Display for DiagnosticSet {
                 "[{}] [{}] {}",
                 diagnostic.code, diagnostic.stage, diagnostic.message
             )?;
+            for context in &diagnostic.contexts {
+                write!(f, "\n上下文: {}", context.human_message())?;
+            }
         }
         Ok(())
     }
@@ -95,6 +98,57 @@ pub struct Diagnostic {
     pub primary: Option<Label>,
     #[serde(default)]
     pub related: Vec<Label>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contexts: Vec<DiagnosticContext>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct DiagnosticContext {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expression: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantifier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dimension: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+}
+
+impl DiagnosticContext {
+    #[must_use]
+    pub fn human_message(&self) -> String {
+        match self.kind.as_str() {
+            "check" => self
+                .name
+                .as_ref()
+                .map_or_else(|| "check".to_string(), |name| format!("check {name}")),
+            "when" => self.expression.as_ref().map_or_else(
+                || "when".to_string(),
+                |expression| format!("在 when {expression} 内"),
+            ),
+            "quantifier" => match (&self.binding, &self.item) {
+                (Some(binding), Some(item)) => format!("绑定 {binding} 位于 {item}"),
+                _ => "量词遍历".to_string(),
+            },
+            "dimension" => match (&self.dimension, &self.variant) {
+                (Some(dimension), Some(variant)) => format!("{dimension}={variant}"),
+                _ => "dimension".to_string(),
+            },
+            unknown => unknown.to_string(),
+        }
+    }
 }
 
 impl Diagnostic {
@@ -111,6 +165,7 @@ impl Diagnostic {
             message: message.into(),
             primary: None,
             related: Vec::new(),
+            contexts: Vec::new(),
         }
     }
 
@@ -144,6 +199,7 @@ impl Diagnostic {
             actual_type,
             record_key,
             field_path,
+            contexts: self.contexts.clone(),
         }
     }
 }
@@ -334,6 +390,7 @@ pub fn map_diagnostics_with_origins(
                         message: l.message,
                     })
                     .collect(),
+                contexts: Vec::new(),
             })
             .collect(),
     }
@@ -364,6 +421,20 @@ pub struct FlatDiagnostic {
     pub actual_type: Option<String>,
     pub record_key: Option<String>,
     pub field_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contexts: Vec<DiagnosticContext>,
+}
+
+impl FlatDiagnostic {
+    #[must_use]
+    pub fn display_message(&self) -> String {
+        let mut message = self.message.clone();
+        for context in &self.contexts {
+            message.push_str("\n上下文: ");
+            message.push_str(&context.human_message());
+        }
+        message
+    }
 }
 
 fn severity_str(severity: Severity) -> &'static str {
@@ -444,4 +515,29 @@ fn spreadsheet_column_name(column: usize) -> String {
         value /= 26;
     }
     name.iter().rev().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Diagnostic, DiagnosticContext};
+
+    #[test]
+    fn diagnostic_contexts_are_backward_compatible_and_preserve_unknown_kinds() {
+        let legacy = r#"{"code":"X","stage":"TEST","severity":"error","message":"failed","primary":null,"related":[]}"#;
+        let diagnostic: Diagnostic = serde_json::from_str(legacy).expect("legacy diagnostic");
+        assert!(diagnostic.contexts.is_empty());
+        assert_eq!(serde_json::to_value(&diagnostic).expect("serialize")["contexts"], serde_json::Value::Null);
+
+        let with_unknown = r#"{"code":"X","stage":"TEST","severity":"error","message":"failed","primary":null,"related":[],"contexts":[{"kind":"future","name":"kept"}]}"#;
+        let diagnostic: Diagnostic =
+            serde_json::from_str(with_unknown).expect("unknown context kind remains data");
+        assert_eq!(
+            diagnostic.contexts,
+            vec![DiagnosticContext {
+                kind: "future".to_string(),
+                name: Some("kept".to_string()),
+                ..DiagnosticContext::default()
+            }]
+        );
+    }
 }

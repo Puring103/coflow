@@ -25,6 +25,7 @@ import {
   cellNullable,
   cellReadOnly,
   cellRefTargetType,
+  diagnosticDisplayMessage,
   diagnosticMatchesCoordinate,
   diagnosticSeverity,
   errorMessage,
@@ -1631,7 +1632,7 @@ function findDiagMessage(
     if (d.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
     const top = d.field_path ? d.field_path.split(/[.[]/, 1)[0] : null
     if (top !== topField) continue
-    msgs.push(d.message)
+    msgs.push(diagnosticDisplayMessage(d))
   }
   return msgs.length ? msgs.join('\n') : undefined
 }
