@@ -264,12 +264,16 @@ impl SchemaCompiler<'_> {
 fn collect_record_sets(block: &CftSchemaCheckBlock) -> std::collections::BTreeSet<TypeName> {
     struct Collector(std::collections::BTreeSet<TypeName>);
     impl crate::schema::check_visit::CheckVisitor for Collector {
-        fn visit_records(&mut self, type_name: &TypeName) {
+        type Error = std::convert::Infallible;
+
+        fn visit_records(&mut self, type_name: &TypeName) -> Result<(), Self::Error> {
             self.0.insert(type_name.clone());
+            Ok(())
         }
     }
     let mut collector = Collector(std::collections::BTreeSet::new());
-    crate::schema::check_visit::CheckVisitor::visit_block(&mut collector, block);
+    let result = crate::schema::check_visit::CheckVisitor::visit_block(&mut collector, block);
+    debug_assert!(result.is_ok());
     collector.0
 }
 
