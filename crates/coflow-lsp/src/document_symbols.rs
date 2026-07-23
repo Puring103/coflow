@@ -8,6 +8,7 @@ const SYMBOL_KIND_FIELD: u8 = 8;
 const SYMBOL_KIND_ENUM: u8 = 10;
 const SYMBOL_KIND_CONSTANT: u8 = 14;
 const SYMBOL_KIND_ENUM_MEMBER: u8 = 22;
+const SYMBOL_KIND_FUNCTION: u8 = 12;
 
 pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
     let Some(ast) = &document.ast else {
@@ -72,6 +73,14 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                     &children,
                 ));
             }
+            Item::Check(check) => symbols.push(document_symbol_item(
+                &document.source,
+                &check.name,
+                SYMBOL_KIND_FUNCTION,
+                check.span,
+                check.name_span,
+                &[],
+            )),
         }
     }
     symbols

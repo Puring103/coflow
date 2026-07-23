@@ -169,6 +169,21 @@ type Item {\n\
 }
 
 #[test]
+fn named_top_level_check_uses_check_completion_scope() {
+    let source = "check Integrity { true; }";
+    let (_cleanup, build) = test_lsp_build("lsp-top-level-check-scope", source);
+    let document = first_document(&build);
+    let offset = source.find("true").expect("condition");
+
+    assert_eq!(
+        completion_scope(document, offset),
+        CompletionScope::CheckBlock
+    );
+    let labels = completion_labels(top_level_completion_items(""));
+    assert!(labels.iter().any(|label| label == "check"));
+}
+
+#[test]
 fn completion_items_suppress_trivia_and_restrict_predicate_context() {
     let source = "type Target { key: string; }\n\
 type Item {\n\

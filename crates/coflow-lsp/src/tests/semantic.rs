@@ -5,8 +5,8 @@ use crate::document_symbols::document_symbols;
 use crate::semantic_tokens::{
     comment_start_in_line, encode_semantic_tokens, push_semantic_span, push_semantic_span_plain,
     semantic_raw_tokens, semantic_token_data, RawSemanticToken, MOD_DECLARATION, MOD_PATH,
-    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_NAMESPACE, SEM_OPERATOR, SEM_PROPERTY, SEM_STRING,
-    SEM_TYPE, SEM_VARIABLE,
+    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_NAMESPACE, SEM_OPERATOR, SEM_PROPERTY,
+    SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
 use crate::text::{is_after_line_comment, is_inside_string};
 use crate::uri::{hex_value, percent_decode};
@@ -130,6 +130,27 @@ type Holder {\n\
         SEM_PROPERTY,
         MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
     ));
+}
+
+#[test]
+fn named_top_level_checks_are_symbols_and_semantic_declarations() {
+    let source = "check ItemIntegrity { true; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cft-top-level-check", source);
+    let document = first_document(&build);
+    let raw_tokens = semantic_raw_tokens(&build, document);
+
+    assert!(has_semantic_token(
+        source,
+        &raw_tokens,
+        "check ItemIntegrity",
+        "ItemIntegrity",
+        SEM_FUNCTION,
+        MOD_DECLARATION | MOD_SCHEMA,
+    ));
+    let symbols = document_symbols(document);
+    assert_eq!(symbols.len(), 1);
+    assert_eq!(symbols[0]["name"], "ItemIntegrity");
+    assert_eq!(symbols[0]["kind"], 12);
 }
 
 #[test]
