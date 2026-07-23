@@ -28,6 +28,11 @@ pub(crate) const LITERALS: &[(&str, &str)] = &[
     ("null", "Nullable value."),
 ];
 
+pub(crate) const CHECK_SPECIAL_FORMS: &[(&str, &str)] = &[(
+    "records",
+    "`records(Type)` returns all top-level records assignable to the static object type, in stable type/key order. Available only in named top-level checks.",
+)];
+
 pub(crate) fn builtin_functions() -> impl Iterator<Item = (&'static str, &'static str)> {
     coflow_cft::CftCheckBuiltin::ALL
         .into_iter()
@@ -77,6 +82,7 @@ pub(crate) fn static_documentation(text: &str) -> Option<&'static str> {
         .iter()
         .chain(PRIMITIVE_TYPES)
         .chain(LITERALS)
+        .chain(CHECK_SPECIAL_FORMS)
         .copied()
         .chain(builtin_functions())
         .find_map(|(label, documentation)| (label == text).then_some(documentation))
@@ -93,6 +99,7 @@ pub(crate) fn is_builtin_name(name: &str) -> bool {
         .iter()
         .chain(PRIMITIVE_TYPES)
         .chain(LITERALS)
+        .chain(CHECK_SPECIAL_FORMS)
         .copied()
         .chain(builtin_functions())
         .any(|(label, _)| label == name)

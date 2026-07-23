@@ -184,6 +184,52 @@ fn named_top_level_check_uses_check_completion_scope() {
 }
 
 #[test]
+fn records_query_completes_types_and_resolves_hover_and_definition() {
+    let source = "type Item { value: int; check { value > 0; } }\n\
+type Reward { amount: int; }\n\
+check GlobalRules { all item in records(Item) { item.value > 0; } }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-records-query", source);
+    let document = first_document(&build);
+    let records_offset = source.find("records(Item)").expect("records query");
+    let type_offset = records_offset + "records(I".len();
+    let labels = completion_labels(completion_items(
+        &build,
+        document,
+        &position_from_byte(source, type_offset),
+    ));
+    assert_eq!(labels, vec!["Item".to_string(), "Reward".to_string()]);
+
+    let top_level_labels = completion_labels(check_expression_completion_items(
+        &build,
+        document,
+        records_offset,
+    ));
+    assert!(top_level_labels.contains(&"records".to_string()));
+    let type_local_offset = source.find("value > 0").expect("type-local check");
+    let type_local_labels = completion_labels(check_expression_completion_items(
+        &build,
+        document,
+        type_local_offset,
+    ));
+    assert!(!type_local_labels.contains(&"records".to_string()));
+
+    let records_hover = hover_at(
+        &build,
+        document,
+        &position_from_byte(source, records_offset + 1),
+    )
+    .expect("records hover");
+    assert!(records_hover["contents"]["value"]
+        .as_str()
+        .is_some_and(|text| text.contains("all top-level records")));
+    let item_position = position_from_byte(
+        source,
+        records_offset + "records(".len() + 1,
+    );
+    assert!(!definitions_at(&build, document, &item_position).is_empty());
+}
+
+#[test]
 fn completion_items_suppress_trivia_and_restrict_predicate_context() {
     let source = "type Target { key: string; }\n\
 type Item {\n\
@@ -451,5 +497,11 @@ values: [string] = [\n\
     assert_eq!(
         format_cft("type Item {\n\nkey: string;\n}"),
         "type Item {\n\n  key: string;\n}"
+    );
+    assert_eq!(
+        format_cft(
+            "check ItemRules {\nall item in records(Item) {\nitem.value > 0:\n f\"bad {item.id}\";\n}\n}"
+        ),
+        "check ItemRules {\n  all item in records(Item) {\n    item.value > 0:\n      f\"bad {item.id}\";\n  }\n}"
     );
 }
