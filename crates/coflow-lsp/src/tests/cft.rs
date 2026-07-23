@@ -331,6 +331,11 @@ type Item {\n\
     ));
     assert!(method_labels.contains(&"len".to_string()));
     assert!(method_labels.contains(&"contains".to_string()));
+    assert!(method_labels.contains(&"startsWith".to_string()));
+    assert!(method_labels.contains(&"approxEqual".to_string()));
+    assert!(method_labels.contains(&"containsKey".to_string()));
+    assert!(method_labels.contains(&"isSorted".to_string()));
+    assert!(method_labels.contains(&"isSubsetOf".to_string()));
 
     assert_eq!(
         completion_labels(dot_completion_items(

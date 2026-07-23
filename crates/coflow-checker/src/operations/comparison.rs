@@ -132,6 +132,8 @@ pub(crate) fn compare_order(
     }
     match (lhs.scalar(), rhs.scalar()) {
         (Some(ScalarValue::Int(lhs)), Some(ScalarValue::Int(rhs))) => Ok(lhs.cmp(&rhs)),
+        (Some(ScalarValue::Bool(lhs)), Some(ScalarValue::Bool(rhs))) => Ok(lhs.cmp(&rhs)),
+        (Some(ScalarValue::String(lhs)), Some(ScalarValue::String(rhs))) => Ok(lhs.cmp(rhs)),
         (Some(ScalarValue::Float(lhs)), Some(ScalarValue::Float(rhs))) => {
             lhs.partial_cmp(&rhs).ok_or_else(|| {
                 OpsError::new(

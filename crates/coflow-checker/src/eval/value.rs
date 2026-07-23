@@ -126,7 +126,10 @@ impl<'a> EvalValue<'a> {
         match self {
             Self::Array { items, .. } => Some(items.len()),
             Self::Dict { entries, .. } => Some(entries.len()),
-            _ => None,
+            _ => match self.scalar() {
+                Some(ScalarValue::String(value)) => Some(value.chars().count()),
+                _ => None,
+            },
         }
     }
 

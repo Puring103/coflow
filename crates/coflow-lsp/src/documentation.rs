@@ -28,35 +28,11 @@ pub(crate) const LITERALS: &[(&str, &str)] = &[
     ("null", "Nullable value."),
 ];
 
-pub(crate) const BUILTIN_FUNCTIONS: &[(&str, &str)] = &[
-    (
-        "len",
-        "value.len(): return the number of items in an array or dict.",
-    ),
-    (
-        "contains",
-        "value.contains(val): test array element or dict key presence.",
-    ),
-    (
-        "isUnique",
-        "value.isUnique(): true when supported scalar elements are unique.",
-    ),
-    (
-        "min",
-        "value.min(): minimum value in a non-empty int, float, or enum array.",
-    ),
-    (
-        "max",
-        "value.max(): maximum value in a non-empty int, float, or enum array.",
-    ),
-    ("sum", "value.sum(): sum an int or float array."),
-    ("keys", "value.keys(): return dict keys as an array."),
-    ("values", "value.values(): return dict values as an array."),
-    (
-        "matches",
-        "value.matches(pat): regex match with a string literal pattern.",
-    ),
-];
+pub(crate) fn builtin_functions() -> impl Iterator<Item = (&'static str, &'static str)> {
+    coflow_cft::CftCheckBuiltin::ALL
+        .into_iter()
+        .map(|builtin| (builtin.name(), builtin.documentation()))
+}
 
 pub(crate) const ANNOTATIONS: &[AnnotationCompletion] = &[
     AnnotationCompletion {
@@ -101,8 +77,9 @@ pub(crate) fn static_documentation(text: &str) -> Option<&'static str> {
         .iter()
         .chain(PRIMITIVE_TYPES)
         .chain(LITERALS)
-        .chain(BUILTIN_FUNCTIONS)
-        .find_map(|(label, documentation)| (*label == text).then_some(*documentation))
+        .copied()
+        .chain(builtin_functions())
+        .find_map(|(label, documentation)| (label == text).then_some(documentation))
         .or_else(|| {
             ANNOTATIONS
                 .iter()
@@ -116,6 +93,7 @@ pub(crate) fn is_builtin_name(name: &str) -> bool {
         .iter()
         .chain(PRIMITIVE_TYPES)
         .chain(LITERALS)
-        .chain(BUILTIN_FUNCTIONS)
-        .any(|(label, _)| *label == name)
+        .copied()
+        .chain(builtin_functions())
+        .any(|(label, _)| label == name)
 }

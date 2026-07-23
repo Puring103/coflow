@@ -45,19 +45,12 @@ fn custom_check_message_replaces_generated_explanation() {
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "sword",
-        "Item",
-        [("price", LoadedValueDraft::from(-1_i64))],
-    );
+    builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(-1_i64))]);
     let model = build_model(&schema, builder);
     let diagnostics = run_model_checks(&model, &schema).expect_err("check must fail");
 
     assert_eq!(diagnostics.diagnostics.len(), 1, "{diagnostics:#?}");
-    assert_eq!(
-        diagnostics.diagnostics[0].message,
-        "price must be positive"
-    );
+    assert_eq!(diagnostics.diagnostics[0].message, "price must be positive");
     assert_eq!(
         diagnostics.diagnostics[0].code,
         CfdErrorCode::CheckComparisonFailed
@@ -139,19 +132,127 @@ fn all_quantifier_preserves_custom_message_and_structured_context() {
     builder.add_record(
         "item",
         "Item",
-        [("nums", LoadedValueDraft::Array(vec![LoadedValueDraft::from(-2_i64)]))],
+        [(
+            "nums",
+            LoadedValueDraft::Array(vec![LoadedValueDraft::from(-2_i64)]),
+        )],
     );
     let model = build_model(&schema, builder);
     let output = coflow_checker::run_checks(&schema, &model, CheckRequest::all());
     let diagnostic = &output.diagnostics[0].diagnostic;
 
     assert_eq!(diagnostic.diagnostic.message, "invalid number -2");
-    assert_eq!(diagnostic.diagnostic.code, CfdErrorCode::CheckAllQuantifierFailed);
+    assert_eq!(
+        diagnostic.diagnostic.code,
+        CfdErrorCode::CheckAllQuantifierFailed
+    );
     assert!(matches!(
         diagnostic.contexts.as_slice(),
         [coflow_checker::CheckDiagnosticContext::Quantifier { kind, binding, .. }]
             if kind == "all" && binding == "number"
     ));
+}
+
+#[test]
+fn extended_builtins_cover_strings_numbers_dicts_sorting_and_sets() {
+    let schema = compile_schema(
+        r#"
+        type Item {
+            text: string;
+            blank: string;
+            count: int;
+            ratio: float;
+            nums: [int];
+            duplicates: [int];
+            other: [int];
+            disjoint: [int];
+            words: [string];
+            flags: [bool];
+            attrs: {string: int};
+            check {
+                text.len() == 2;
+                text.contains("界");
+                text.startsWith("a");
+                text.endsWith("界");
+                blank.isBlank();
+                count.abs() == 5;
+                ratio.isFinite();
+                ratio.approxEqual(1.0, 0.001);
+                attrs.containsKey("power");
+                attrs.containsValue(7);
+                nums.isSorted();
+                nums.isStrictlySorted();
+                words.isSorted();
+                flags.isSorted();
+                duplicates.intersects(other);
+                duplicates.isDisjoint(disjoint);
+                duplicates.isSubsetOf(nums);
+                nums.isSupersetOf(duplicates);
+            }
+        }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [
+            ("text", LoadedValueDraft::from("a界")),
+            ("blank", LoadedValueDraft::from(" \t")),
+            ("count", LoadedValueDraft::from(-5_i64)),
+            ("ratio", LoadedValueDraft::from(1.0005_f64)),
+            (
+                "nums",
+                LoadedValueDraft::Array(vec![1_i64.into(), 2_i64.into(), 3_i64.into()]),
+            ),
+            (
+                "duplicates",
+                LoadedValueDraft::Array(vec![1_i64.into(), 1_i64.into()]),
+            ),
+            (
+                "other",
+                LoadedValueDraft::Array(vec![1_i64.into(), 8_i64.into()]),
+            ),
+            ("disjoint", LoadedValueDraft::Array(vec![9_i64.into()])),
+            (
+                "words",
+                LoadedValueDraft::Array(vec!["a".into(), "b".into()]),
+            ),
+            (
+                "flags",
+                LoadedValueDraft::Array(vec![false.into(), true.into()]),
+            ),
+            (
+                "attrs",
+                LoadedValueDraft::dict([(LoadedDictKeyDraft::from("power"), 7_i64.into())]),
+            ),
+        ],
+    );
+    let model = build_model(&schema, builder);
+
+    run_model_checks(&model, &schema).expect("all extended builtin checks should pass");
+}
+
+#[test]
+fn numeric_builtin_invalid_domains_report_runtime_errors() {
+    let abs_schema = compile_schema("type Item { value: int; check { value.abs() >= 0; } }");
+    let mut builder = CfdDataModel::builder(&abs_schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [("value", LoadedValueDraft::from(i64::MIN))],
+    );
+    let model = build_model(&abs_schema, builder);
+    let error = run_model_checks(&model, &abs_schema).expect_err("i64::MIN abs must fail");
+    assert_has_code(&error, CfdErrorCode::CheckEvalTypeError);
+
+    let epsilon_schema =
+        compile_schema("type Item { value: float; check { value.approxEqual(1.0, -0.1); } }");
+    let mut builder = CfdDataModel::builder(&epsilon_schema);
+    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1.0_f64))]);
+    let model = build_model(&epsilon_schema, builder);
+    let error = run_model_checks(&model, &epsilon_schema).expect_err("negative epsilon must fail");
+    assert_has_code(&error, CfdErrorCode::CheckEvalTypeError);
 }
 
 #[test]
