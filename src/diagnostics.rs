@@ -1,4 +1,6 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_api::{
+    Diagnostic, DiagnosticContext, DiagnosticSet, Label, Severity, SourceLocation,
+};
 use serde::Serialize;
 use std::path::Path;
 
@@ -41,6 +43,8 @@ pub struct DiagnosticJson {
     #[serde(rename = "endCharacter")]
     pub end_character: usize,
     pub related: Vec<RelatedJson>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub contexts: Vec<DiagnosticContext>,
 }
 
 #[derive(Debug, Serialize)]
@@ -96,6 +100,7 @@ fn diagnostic_json_from_diagnostic(diagnostic: Diagnostic) -> DiagnosticJson {
             .iter()
             .map(related_json_from_label)
             .collect(),
+        contexts: diagnostic.contexts,
     }
 }
 

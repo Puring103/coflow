@@ -31,6 +31,11 @@ pub(super) fn eval_expr<'model>(
                 u64::try_from(records.len()).unwrap_or(u64::MAX),
                 None,
             )?;
+            evaluator.charge_nodes_at(
+                StructureKind::CheckEvaluation,
+                u64::try_from(records.len()).unwrap_or(u64::MAX),
+                None,
+            )?;
             Ok(LocatedEvalValue::value(EvalValue::Array {
                 items: super::value::EvalItems::Records(records),
                 element_type: Some(coflow_cft::CftValueType::RecordRef(type_name.clone())),
