@@ -1224,7 +1224,12 @@ dimensions:
             .as_set()
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.message.contains("[language=zh]")),
+            .flat_map(|diagnostic| &diagnostic.contexts)
+            .any(|context| {
+                context.kind == "dimension"
+                    && context.dimension.as_deref() == Some("language")
+                    && context.variant.as_deref() == Some("zh")
+            }),
         "diagnostics: {:?}",
         session.queries().diagnostics().as_set()
     );

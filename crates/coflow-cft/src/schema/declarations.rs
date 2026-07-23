@@ -5,7 +5,15 @@ use crate::{
     BucketName, CheckName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName,
 };
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::path::PathBuf;
+
+#[derive(Debug, Clone)]
+pub struct CftSchemaSource {
+    pub path: PathBuf,
+    pub source: Arc<str>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftConst {
@@ -21,6 +29,7 @@ pub struct CftTopLevelCheck {
     pub name: CheckName,
     pub block: CftSchemaCheckBlock,
     pub span: Span,
+    pub record_sets: BTreeSet<TypeName>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

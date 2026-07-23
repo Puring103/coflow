@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_api::{map_diagnostics_with_origins, DiagnosticContext, DiagnosticSet};
+use coflow_api::{byte_range, map_diagnostics_with_origins, DiagnosticContext, DiagnosticSet, Label, SourceLocation};
 use coflow_cft::CftSchema;
 use coflow_checker::{
     run_checks, CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats, CheckRequest,
-    CheckSnapshot, DependencyCollection, DimensionCheckRound,
+    CheckChangeSet, CheckSnapshot, DependencyCollection, DimensionCheckRound,
 };
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdRecordId, RecordOrigin};
 
@@ -36,11 +36,12 @@ pub(crate) fn run_full_project_checks(
     );
     let statistics = output.statistics;
     if let Some(snapshot) = output.snapshot {
-        if let Some(rendered) = render_check_snapshot(model, origins, snapshot, statistics) {
+        if let Some(rendered) = render_check_snapshot(schema, model, origins, snapshot, statistics) {
             return rendered;
         }
     }
     render_raw_check_output(
+        schema,
         model,
         origins,
         output
@@ -62,12 +63,17 @@ pub(crate) fn run_incremental_project_checks(
     let output = run_checks(
         schema,
         model,
-        CheckRequest::incremental(previous, changed).with_rounds(dimension_check_rounds(schema)),
+        CheckRequest::incremental(
+            previous,
+            &CheckChangeSet::from_records(schema, changed.iter().cloned()),
+        )
+        .with_rounds(dimension_check_rounds(schema)),
     );
-    render_check_snapshot(model, origins, output.snapshot?, output.statistics)
+    render_check_snapshot(schema, model, origins, output.snapshot?, output.statistics)
 }
 
 fn render_check_snapshot(
+    schema: &CftSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
     state: CheckSnapshot,
@@ -81,7 +87,7 @@ fn render_check_snapshot(
     );
     let logical_locations = logical_locations_from_cfd(&cfd, |id| coordinate_for_id(model, id));
     Some(ProjectCheckOutput {
-        diagnostics: map_check_diagnostics_with_origins(raw, origins),
+        diagnostics: map_check_diagnostics_with_origins(Some(schema), raw, origins),
         logical_locations,
         state,
         statistics,
@@ -106,6 +112,7 @@ fn dimension_check_rounds(schema: &CftSchema) -> Vec<DimensionCheckRound> {
 }
 
 fn render_raw_check_output(
+    schema: &CftSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
     diagnostics: Vec<CheckDiagnostic>,
@@ -119,7 +126,7 @@ fn render_raw_check_output(
     );
     let logical_locations = logical_locations_from_cfd(&cfd, |id| coordinate_for_id(model, id));
     ProjectCheckOutput {
-        diagnostics: map_check_diagnostics_with_origins(diagnostics, origins),
+        diagnostics: map_check_diagnostics_with_origins(Some(schema), diagnostics, origins),
         logical_locations,
         state: CheckSnapshot::default(),
         statistics,
@@ -127,16 +134,42 @@ fn render_raw_check_output(
 }
 
 fn map_check_diagnostics_with_origins(
+    schema: Option<&CftSchema>,
     diagnostics: Vec<CheckDiagnostic>,
     origins: &[RecordOrigin],
 ) -> DiagnosticSet {
-    let (raw, contexts): (Vec<_>, Vec<_>) = diagnostics
+    let (raw, metadata): (Vec<_>, Vec<_>) = diagnostics
         .into_iter()
-        .map(|diagnostic| (diagnostic.diagnostic, diagnostic.contexts))
+        .map(|diagnostic| {
+            (
+                diagnostic.diagnostic,
+                (diagnostic.contexts, diagnostic.schema_location),
+            )
+        })
         .unzip();
     let mut mapped = map_diagnostics_with_origins(CfdDiagnostics::new(raw), origins);
-    for (diagnostic, contexts) in mapped.diagnostics.iter_mut().zip(contexts) {
+    for (diagnostic, (contexts, schema_location)) in mapped.diagnostics.iter_mut().zip(metadata) {
         diagnostic.contexts = contexts.into_iter().map(map_check_context).collect();
+        if let (Some(schema), Some(location)) = (schema, schema_location) {
+            if let Some(source) = schema.source(&location.module) {
+                let range = byte_range(&source.source, location.span.start, location.span.end);
+                let label = Label {
+                    location: SourceLocation::FileSpan {
+                        path: source.path.clone(),
+                        start_line: range.start.line,
+                        start_character: range.start.character,
+                        end_line: range.end.line,
+                        end_character: range.end.character,
+                    },
+                    message: Some("check declared here".to_string()),
+                };
+                if diagnostic.primary.is_none() {
+                    diagnostic.primary = Some(label);
+                } else {
+                    diagnostic.related.push(label);
+                }
+            }
+        }
     }
     mapped
 }
@@ -144,6 +177,10 @@ fn map_check_diagnostics_with_origins(
 fn map_check_context(context: CheckDiagnosticContext) -> DiagnosticContext {
     let mut mapped = DiagnosticContext::default();
     match context {
+        CheckDiagnosticContext::Check { name } => {
+            mapped.kind = "check".to_string();
+            mapped.name = Some(name);
+        }
         CheckDiagnosticContext::When { expression } => {
             mapped.kind = "when".to_string();
             mapped.expression = Some(expression);
@@ -172,6 +209,8 @@ mod tests {
     use super::map_check_diagnostics_with_origins;
     use coflow_checker::{CheckDiagnostic, CheckDiagnosticContext, CheckSnapshot};
     use coflow_data_model::{CfdDiagnostic, CfdErrorCode};
+    use coflow_api::SourceLocation;
+    use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId, Span};
 
     #[test]
     fn default_snapshot_disables_incremental_reuse() {
@@ -181,12 +220,14 @@ mod tests {
     #[test]
     fn check_contexts_map_without_changing_custom_message() {
         let mapped = map_check_diagnostics_with_origins(
+            None,
             vec![CheckDiagnostic {
                 diagnostic: CfdDiagnostic::error(CfdErrorCode::CheckFailed, "custom message"),
                 contexts: vec![CheckDiagnosticContext::When {
                     expression: "enabled".to_string(),
                 }],
                 is_custom_message: true,
+                schema_location: None,
             }],
             &[],
         );
@@ -198,5 +239,39 @@ mod tests {
             Some("enabled")
         );
         assert_eq!(mapped.flat_diagnostics()[0].contexts.len(), 1);
+    }
+
+    #[test]
+    fn schema_only_check_diagnostics_map_to_the_cft_file_span() {
+        let source = "check Integrity { false; }";
+        let modules = parse_modules([CftFile::new(
+            ModuleId::from("rules"),
+            std::path::PathBuf::from("schema/rules.cft"),
+            source,
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+        let mapped = map_check_diagnostics_with_origins(
+            Some(&schema),
+            vec![CheckDiagnostic {
+                diagnostic: CfdDiagnostic::error(CfdErrorCode::CheckFailed, "failed"),
+                contexts: vec![CheckDiagnosticContext::Check {
+                    name: "Integrity".to_string(),
+                }],
+                is_custom_message: false,
+                schema_location: Some(coflow_checker::CheckSchemaLocation {
+                    module: ModuleId::from("rules"),
+                    span: Span::new(18, 24),
+                }),
+            }],
+            &[],
+        );
+
+        assert!(matches!(
+            &mapped.diagnostics[0].primary.as_ref().expect("primary").location,
+            SourceLocation::FileSpan { path, .. }
+                if path == &std::path::PathBuf::from("schema/rules.cft")
+        ));
+        assert_eq!(mapped.diagnostics[0].contexts[0].kind, "check");
+        assert_eq!(mapped.diagnostics[0].contexts[0].name.as_deref(), Some("Integrity"));
     }
 }

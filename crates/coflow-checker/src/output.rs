@@ -1,10 +1,17 @@
 use coflow_data_model::{CfdDiagnostics, CfdRecordId};
+use coflow_cft::CheckName;
 
 use crate::{CheckDiagnostic, CheckSnapshot, DependencyCollection, DependencyGraph};
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CheckExecutionId {
+    Record(CfdRecordId),
+    TopLevel(CheckName),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootedCheckDiagnostic {
-    pub root: CfdRecordId,
+    pub root: CheckExecutionId,
     pub diagnostic: CheckDiagnostic,
 }
 
@@ -13,6 +20,7 @@ pub struct CheckExecutionStats {
     pub requested_roots: usize,
     pub executed_rounds: usize,
     pub dimension_projected_records: usize,
+    pub executed_top_level_checks: usize,
     pub dependency_collection: DependencyCollection,
 }
 

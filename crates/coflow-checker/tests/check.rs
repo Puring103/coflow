@@ -13,6 +13,185 @@ use std::collections::BTreeSet;
 use coflow_checker::{CheckRequest, DependencyCollection};
 use common::*;
 
+#[test]
+fn named_top_level_checks_execute_once_and_enumerate_derived_records() {
+    let schema = compile_schema(
+        r#"
+        abstract type Item { price: int; }
+        type Weapon : Item {}
+        check ItemIntegrity {
+            records(Item).len() > 0: "at least one item is required";
+            all item in records(Item) {
+                item.price > 0: f"{item.id} has an invalid price";
+            }
+        }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("sword", "Weapon", [("price", LoadedValueDraft::from(-1_i64))]);
+    let model = build_model(&schema, builder);
+
+    let output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    );
+    assert_eq!(output.statistics.requested_roots, 2);
+    assert_eq!(output.diagnostics.len(), 1, "{output:#?}");
+    assert_eq!(
+        output.diagnostics[0].root,
+        coflow_checker::CheckExecutionId::TopLevel(coflow_cft::CheckName::new("ItemIntegrity").unwrap())
+    );
+    assert_eq!(output.diagnostics[0].diagnostic.diagnostic.message, "sword has an invalid price");
+    assert!(matches!(
+        output.diagnostics[0].diagnostic.contexts.as_slice(),
+        [coflow_checker::CheckDiagnosticContext::Check { name }, coflow_checker::CheckDiagnosticContext::Quantifier { .. }]
+            if name == "ItemIntegrity"
+    ));
+    assert!(output.diagnostics[0].diagnostic.schema_location.is_some());
+    assert!(output.dependencies.reads_from.contains_key(
+        &coflow_checker::CheckExecutionId::TopLevel(
+            coflow_cft::CheckName::new("ItemIntegrity").unwrap()
+        )
+    ));
+}
+
+#[test]
+fn collection_level_top_check_runs_for_an_empty_model() {
+    let schema = compile_schema(
+        "type Item {} check Required { records(Item).len() > 0: \"missing item\"; }",
+    );
+    let model = build_model(&schema, CfdDataModel::builder(&schema));
+    let output = coflow_checker::run_checks(&schema, &model, CheckRequest::all());
+
+    assert_eq!(output.diagnostics.len(), 1);
+    let diagnostic = &output.diagnostics[0].diagnostic;
+    assert_eq!(diagnostic.diagnostic.message, "missing item");
+    assert!(diagnostic.diagnostic.primary.is_none());
+    assert!(diagnostic.schema_location.is_some());
+}
+
+#[test]
+fn record_membership_changes_invalidate_top_level_snapshots() {
+    let schema = compile_schema(
+        r#"
+        type Item { price: int; }
+        check Integrity {
+            all item in records(Item) { item.price > 0; }
+        }
+        "#,
+    );
+    let empty = build_model(&schema, CfdDataModel::builder(&schema));
+    let initial = coflow_checker::run_checks(
+        &schema,
+        &empty,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    );
+    let previous = initial
+    .snapshot
+    .expect("snapshot");
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("bad", "Item", [("price", LoadedValueDraft::from(-1_i64))]);
+    let model = build_model(&schema, builder);
+    let changed = model.records().next().expect("record").1.coordinate();
+    let output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::incremental(
+            &previous,
+            &coflow_checker::CheckChangeSet::from_records(&schema, [changed]),
+        ),
+    );
+
+    assert!(output.diagnostics.iter().any(|diagnostic| matches!(
+        diagnostic.root,
+        coflow_checker::CheckExecutionId::TopLevel(_)
+    )));
+    assert_eq!(
+        output
+            .snapshot
+            .expect("replacement snapshot")
+            .render_diagnostics(&model)
+            .expect("stable diagnostics")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn top_level_incremental_reads_use_path_overlap() {
+    let schema = compile_schema(
+        r#"
+        type Item { price: int; label: string; }
+        check Integrity {
+            all item in records(Item) { item.price > 0; }
+        }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [
+            ("price", LoadedValueDraft::from(1_i64)),
+            ("label", LoadedValueDraft::from("old")),
+        ],
+    );
+    let model = build_model(&schema, builder);
+    let coordinate = model.records().next().expect("record").1.coordinate();
+    let initial = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
+    );
+    let top_root = coflow_checker::CheckExecutionId::TopLevel(
+        coflow_cft::CheckName::new("Integrity").unwrap(),
+    );
+    assert_eq!(
+        initial.dependencies.reads_from.get(&top_root),
+        Some(&BTreeSet::from([coflow_checker::RecordReadDependency {
+            record: model.records().next().expect("record").0,
+            path: CfdPath::root().field("price"),
+        }]))
+    );
+    let previous = initial
+    .snapshot
+    .expect("snapshot");
+
+    let unrelated = coflow_checker::CheckChangeSet {
+        records: std::collections::BTreeMap::from([(
+            coordinate.clone(),
+            coflow_checker::ChangedPaths::Paths(BTreeSet::from([
+                CfdPath::root().field("label"),
+            ])),
+        )]),
+        memberships: BTreeSet::new(),
+    };
+    let unrelated_output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::incremental(&previous, &unrelated),
+    );
+    assert_eq!(unrelated_output.statistics.executed_top_level_checks, 0);
+
+    let related = coflow_checker::CheckChangeSet {
+        records: std::collections::BTreeMap::from([(
+            coordinate,
+            coflow_checker::ChangedPaths::Paths(BTreeSet::from([
+                CfdPath::root().field("price"),
+            ])),
+        )]),
+        memberships: BTreeSet::new(),
+    };
+    let related_output = coflow_checker::run_checks(
+        &schema,
+        &model,
+        CheckRequest::incremental(&previous, &related),
+    );
+    assert_eq!(related_output.statistics.executed_top_level_checks, 1);
+}
+
 fn build_model(_schema: &CftSchema, builder: CfdModelBuilder<'_>) -> CfdDataModel {
     builder.build().expect("data model should build")
 }
@@ -344,10 +523,10 @@ fn coalescing_collects_dependencies_only_from_the_selected_branch() {
     let reads = output
         .dependencies
         .reads_from
-        .get(&reader)
+        .get(&coflow_checker::CheckExecutionId::Record(reader))
         .expect("reader dependencies");
-    assert!(reads.contains(&selected));
-    assert!(!reads.contains(&fallback));
+    assert!(reads.iter().any(|read| read.record == selected));
+    assert!(!reads.iter().any(|read| read.record == fallback));
 }
 
 #[test]
@@ -465,7 +644,7 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
 
     assert!(
         diagnostics.iter().all(|rooted| {
-            rooted.root == reader
+            rooted.root == coflow_checker::CheckExecutionId::Record(reader)
                 && rooted
                     .diagnostic
                     .diagnostic
@@ -477,8 +656,8 @@ fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
     );
     assert!(graph
         .reads_from
-        .get(&reader)
-        .is_some_and(|reads| reads.contains(&target)));
+        .get(&coflow_checker::CheckExecutionId::Record(reader))
+        .is_some_and(|reads| reads.iter().any(|read| read.record == target)));
     assert!(snapshot.is_reusable());
 }
 
@@ -541,7 +720,7 @@ fn empty_targets_and_empty_incremental_changes_perform_no_work() {
     let unchanged = coflow_checker::run_checks(
         &schema,
         &model,
-        CheckRequest::incremental(&previous, &BTreeSet::new()),
+        CheckRequest::incremental(&previous, &coflow_checker::CheckChangeSet::default()),
     );
     assert_eq!(unchanged.statistics.requested_roots, 0);
     assert_eq!(unchanged.statistics.executed_rounds, 0);
@@ -650,7 +829,10 @@ fn assert_incremental_matches_full(
     let incremental = coflow_checker::run_checks(
         schema,
         &current_model,
-        CheckRequest::incremental(&previous, &BTreeSet::from([changed])),
+        CheckRequest::incremental(
+            &previous,
+            &coflow_checker::CheckChangeSet::from_records(&schema, [changed]),
+        ),
     )
     .snapshot
     .expect("incremental snapshot")
@@ -723,7 +905,10 @@ fn incremental_snapshot_executes_only_affected_roots_and_matches_fresh_full_outp
     let incremental = coflow_checker::run_checks(
         &schema,
         &current_model,
-        CheckRequest::incremental(&previous, &changed),
+        CheckRequest::incremental(
+            &previous,
+            &coflow_checker::CheckChangeSet::from_records(&schema, changed),
+        ),
     );
     assert_eq!(incremental.statistics.requested_roots, 2);
     assert_eq!(incremental.statistics.executed_rounds, 2);

@@ -29,6 +29,7 @@ pub(in crate::schema) struct SchemaDeclarations {
     pub(super) types: BTreeMap<TypeName, CftType>,
     pub(super) enums: BTreeMap<EnumName, CftEnum>,
     pub(super) checks: BTreeMap<CheckName, CftTopLevelCheck>,
+    pub(super) sources: BTreeMap<ModuleId, crate::schema::CftSchemaSource>,
 }
 
 pub(super) struct SchemaCompiler<'a> {

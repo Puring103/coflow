@@ -62,6 +62,11 @@ impl CftSchema {
     }
 
     #[must_use]
+    pub fn source(&self, module: &crate::ModuleId) -> Option<&crate::CftSchemaSource> {
+        self.sources.get(module)
+    }
+
+    #[must_use]
     pub fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
         (actual_type == expected_type && self.types.contains_key(actual_type))
             || self

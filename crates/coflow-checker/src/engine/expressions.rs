@@ -158,7 +158,13 @@ fn eval_index_expr<'model>(
     let result = evaluator.eval_index(target, index)?;
     if let EvalValue::Record(record) = &result.value {
         if let Some(id) = record.top_record_id() {
-            evaluator.note_read_from(id);
+            evaluator.note_read_from(
+                id,
+                result.location.as_ref().map_or_else(
+                    coflow_data_model::CfdPath::root,
+                    |location| location.storage.path.clone(),
+                ),
+            );
         }
     }
     Ok(result)

@@ -3,7 +3,7 @@ use super::dimensions::{DimensionRoundView, DimensionVariantAbort};
 use super::evaluator::CheckEvaluator;
 use super::statements;
 use super::value::{EvalRecordRef, EvalValue, ValueLocation};
-use crate::{CheckDiagnostic, DependencyGraph, DimensionCheckContext};
+use crate::{CheckDiagnostic, CheckDiagnosticContext, CheckExecutionId, DependencyGraph, DimensionCheckContext};
 use coflow_cft::{CftSchema, FieldName};
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
@@ -15,7 +15,7 @@ pub(crate) struct CheckRunner<'a> {
     schema: &'a CftSchema,
     model: &'a CfdDataModel,
     diagnostics: Vec<CheckDiagnostic>,
-    diagnostic_roots: Vec<CfdRecordId>,
+    diagnostic_roots: Vec<CheckExecutionId>,
     /// When `Some`, the runner records read-from edges for each top-level
     /// record. The current root is the most recently pushed entry.
     deps: Option<DependencyGraphBuilder>,
@@ -84,7 +84,7 @@ impl<'a> CheckRunner<'a> {
         mut self,
         targets: &[CfdRecordId],
         collect_dependencies: bool,
-    ) -> (Vec<(CfdRecordId, CheckDiagnostic)>, DependencyGraph, usize) {
+    ) -> (Vec<(CheckExecutionId, CheckDiagnostic)>, DependencyGraph, usize) {
         if collect_dependencies {
             self.deps = Some(DependencyGraphBuilder::new());
         }
@@ -109,11 +109,78 @@ impl<'a> CheckRunner<'a> {
         (rooted, graph, projected_records)
     }
 
+    pub(crate) fn run_top_level(
+        mut self,
+        targets: &[coflow_cft::CheckName],
+        collect_dependencies: bool,
+    ) -> (Vec<(CheckExecutionId, CheckDiagnostic)>, DependencyGraph) {
+        if collect_dependencies {
+            self.deps = Some(DependencyGraphBuilder::new());
+        }
+        for name in targets {
+            let Some(check) = self.schema.resolve_check(name) else {
+                continue;
+            };
+            let execution = CheckExecutionId::TopLevel(name.clone());
+            let collector = if self.deps.is_some() {
+                DependencyGraphBuilder::collector_for(execution.clone())
+            } else {
+                DependencyCollector::disabled(Some(execution.clone()))
+            };
+            let mut evaluator = CheckEvaluator::new(
+                self.schema,
+                self.model,
+                None,
+                EvalValue::null(),
+                collector,
+                Rc::clone(&self.regex_cache),
+                self.structural_limits,
+            );
+            evaluator.schema_location = Some(crate::CheckSchemaLocation {
+                module: check.module.clone(),
+                span: check.block.span,
+            });
+            evaluator.contexts.push(CheckDiagnosticContext::Check {
+                name: name.to_string(),
+            });
+            let _ = statements::eval_check_block(&mut evaluator, &check.block);
+            let (diagnostics, collector) = evaluator.into_outputs();
+            self.diagnostic_roots.extend(std::iter::repeat_n(
+                execution.clone(),
+                diagnostics.len(),
+            ));
+            self.diagnostics.extend(diagnostics);
+            if let Some(deps) = self.deps.as_mut() {
+                deps.extend_root(execution, collector);
+            }
+        }
+        let mut graph = self
+            .deps
+            .take()
+            .map_or_else(DependencyGraph::default, DependencyGraphBuilder::finish);
+        if collect_dependencies {
+            for name in targets {
+                if let Some(check) = self.schema.resolve_check(name) {
+                    graph.record_sets.insert(
+                        CheckExecutionId::TopLevel(name.clone()),
+                        check.record_sets.clone(),
+                    );
+                }
+            }
+        }
+        let rooted = self
+            .diagnostic_roots
+            .into_iter()
+            .zip(self.diagnostics)
+            .collect();
+        (rooted, graph)
+    }
+
     fn run_one_record(&mut self, record_id: CfdRecordId, record: &coflow_data_model::CfdRecord) {
         let diagnostics_start = self.diagnostics.len();
         self.run_one_record_inner(record_id, record);
         self.diagnostic_roots.extend(std::iter::repeat_n(
-            record_id,
+            CheckExecutionId::Record(record_id),
             self.diagnostics.len() - diagnostics_start,
         ));
     }
@@ -181,15 +248,17 @@ impl<'a> CheckRunner<'a> {
         };
         let checks = self.schema.check_schedule(&actual_type, dimension);
         let root = EvalValue::Record(record);
-        let deps = if self.deps.is_some() {
-            DependencyGraphBuilder::collector_for(root_record)
-        } else {
-            DependencyCollector::disabled(root_record)
+        let execution = root_record.map(CheckExecutionId::Record);
+        let deps = match (&self.deps, &execution) {
+            (Some(_), Some(execution)) => {
+                DependencyGraphBuilder::collector_for(execution.clone())
+            }
+            _ => DependencyCollector::disabled(execution.clone()),
         };
         let mut evaluator = CheckEvaluator::new(
             self.schema,
             self.model,
-            root_location,
+            Some(root_location),
             root,
             deps,
             Rc::clone(&self.regex_cache),
@@ -203,8 +272,8 @@ impl<'a> CheckRunner<'a> {
         }
         let (diagnostics, collector) = evaluator.into_outputs();
         self.diagnostics.extend(diagnostics);
-        if let Some(deps) = self.deps.as_mut() {
-            deps.extend_root(root_record, collector);
+        if let (Some(deps), Some(execution)) = (self.deps.as_mut(), execution) {
+            deps.extend_root(execution, collector);
         }
     }
 

@@ -1,4 +1,5 @@
 mod check_builtins;
+mod check_visit;
 mod compiler;
 mod declarations;
 mod dimensions;
@@ -53,6 +54,7 @@ pub struct CftSchema {
     ancestor_membership_by_type: BTreeMap<TypeName, BTreeSet<TypeName>>,
     enums: BTreeMap<EnumName, CftEnum>,
     top_level_checks: BTreeMap<CheckName, CftTopLevelCheck>,
+    sources: BTreeMap<ModuleId, CftSchemaSource>,
     children_by_parent: BTreeMap<TypeName, Vec<TypeName>>,
     dimensions: BTreeMap<DimensionName, CftDimension>,
     type_by_id_as_enum: BTreeMap<EnumName, TypeName>,
@@ -69,6 +71,7 @@ impl CftSchema {
         let consts = declarations.consts;
         let enums = declarations.enums;
         let top_level_checks = declarations.checks;
+        let sources = declarations.sources;
         let types = declarations.types;
 
         let mut inheritance_root_by_type = BTreeMap::new();
@@ -124,6 +127,7 @@ impl CftSchema {
             ancestor_membership_by_type,
             enums,
             top_level_checks,
+            sources,
             children_by_parent,
             dimensions,
             type_by_id_as_enum,

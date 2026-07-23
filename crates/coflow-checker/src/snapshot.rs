@@ -6,7 +6,7 @@ use coflow_data_model::{
 };
 
 use crate::{
-    CheckDiagnostic, CheckDiagnosticContext, DependencyGraph, DimensionCheckRound,
+    CheckDiagnostic, CheckDiagnosticContext, CheckExecutionId, CheckSchemaLocation, DependencyGraph, DimensionCheckRound,
     RootedCheckDiagnostic,
 };
 
@@ -18,8 +18,14 @@ pub(crate) enum CheckRound {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct CheckRoot {
-    pub(crate) record: RecordCoordinate,
+    pub(crate) execution: StableExecutionId,
     pub(crate) round: CheckRound,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum StableExecutionId {
+    Record(RecordCoordinate),
+    TopLevel(coflow_cft::CheckName),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +38,7 @@ pub(crate) struct LogicalCheckDiagnostic {
     pub(crate) related: Vec<LogicalCheckLabel>,
     pub(crate) contexts: Vec<CheckDiagnosticContext>,
     pub(crate) is_custom_message: bool,
+    pub(crate) schema_location: Option<CheckSchemaLocation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,7 +52,14 @@ pub(crate) struct LogicalCheckLabel {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct RootCheckState {
     pub(crate) diagnostics: Vec<LogicalCheckDiagnostic>,
-    pub(crate) reads_from: BTreeSet<RecordCoordinate>,
+    pub(crate) reads_from: BTreeSet<StableRecordReadDependency>,
+    pub(crate) record_sets: BTreeSet<coflow_cft::TypeName>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct StableRecordReadDependency {
+    pub(crate) record: RecordCoordinate,
+    pub(crate) path: CfdPath,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -71,11 +85,11 @@ impl CheckSnapshot {
         &mut self,
         model: &CfdDataModel,
         round: &CheckRound,
-        targets: &[CfdRecordId],
+        targets: &[CheckExecutionId],
         diagnostics: Vec<RootedCheckDiagnostic>,
         dependencies: &DependencyGraph,
     ) -> Option<()> {
-        let mut diagnostics_by_root: BTreeMap<CfdRecordId, Vec<LogicalCheckDiagnostic>> =
+        let mut diagnostics_by_root: BTreeMap<CheckExecutionId, Vec<LogicalCheckDiagnostic>> =
             BTreeMap::new();
         for rooted in diagnostics {
             diagnostics_by_root
@@ -84,22 +98,33 @@ impl CheckSnapshot {
                 .push(stabilize_diagnostic(model, rooted.diagnostic)?);
         }
         for target in targets {
-            let coordinate = coordinate_for_id(model, *target)?;
+            let stable = stabilize_execution(model, target)?;
             let reads_from = dependencies
                 .reads_from
                 .get(target)
                 .into_iter()
-                .flat_map(|reads| reads.iter().copied())
-                .map(|id| coordinate_for_id(model, id))
+                .flat_map(|reads| reads.iter())
+                .map(|read| {
+                    Some(StableRecordReadDependency {
+                        record: coordinate_for_id(model, read.record)?,
+                        path: read.path.clone(),
+                    })
+                })
                 .collect::<Option<BTreeSet<_>>>()?;
+            let record_sets = dependencies
+                .record_sets
+                .get(target)
+                .cloned()
+                .unwrap_or_default();
             self.roots.insert(
                 CheckRoot {
-                    record: coordinate,
+                    execution: stable,
                     round: round.clone(),
                 },
                 RootCheckState {
                     diagnostics: diagnostics_by_root.remove(target).unwrap_or_default(),
                     reads_from,
+                    record_sets,
                 },
             );
         }
@@ -123,20 +148,20 @@ impl CheckSnapshot {
     #[must_use]
     pub(crate) fn affected_roots(
         &self,
-        changed: &BTreeSet<RecordCoordinate>,
+        changed: &crate::CheckChangeSet,
         rounds: &[DimensionCheckRound],
     ) -> Option<BTreeSet<CheckRoot>> {
         if !self.reusable {
             return None;
         }
         let mut affected = BTreeSet::new();
-        for record in changed {
+        for record in changed.records.keys() {
             affected.insert(CheckRoot {
-                record: record.clone(),
+                execution: StableExecutionId::Record(record.clone()),
                 round: CheckRound::Default,
             });
             affected.extend(rounds.iter().cloned().map(|round| CheckRoot {
-                record: record.clone(),
+                execution: StableExecutionId::Record(record.clone()),
                 round: CheckRound::Dimension(round),
             }));
         }
@@ -147,7 +172,16 @@ impl CheckSnapshot {
                     state
                         .reads_from
                         .iter()
-                        .any(|record| changed.contains(record))
+                        .any(|read| {
+                            changed
+                                .records
+                                .get(&read.record)
+                                .is_some_and(|paths| changed_paths_overlap(paths, &read.path))
+                        })
+                        || state
+                            .record_sets
+                            .iter()
+                            .any(|type_name| changed.memberships.contains(type_name))
                 })
                 .map(|(root, _)| root.clone()),
         );
@@ -171,9 +205,12 @@ impl CheckSnapshot {
             })
             .collect::<Vec<_>>();
         diagnostics.sort_by_key(|(root, _)| {
-            model
-                .record_by_type_key(&root.record.actual_type, &root.record.key)
-                .map_or(usize::MAX, CfdRecordId::index)
+            match &root.execution {
+                StableExecutionId::Record(record) => (0, model
+                    .record_by_type_key(&record.actual_type, &record.key)
+                    .map_or(usize::MAX, CfdRecordId::index), String::new()),
+                StableExecutionId::TopLevel(name) => (1, 0, name.to_string()),
+            }
         });
         diagnostics
             .into_iter()
@@ -190,6 +227,7 @@ fn stabilize_diagnostic(
         diagnostic,
         contexts,
         is_custom_message,
+        schema_location,
     } = diagnostic;
     let CfdDiagnostic {
         code,
@@ -214,6 +252,7 @@ fn stabilize_diagnostic(
             .collect::<Option<Vec<_>>>()?,
         contexts,
         is_custom_message,
+        schema_location,
     })
 }
 
@@ -251,7 +290,26 @@ fn render_diagnostic(
         },
         contexts: diagnostic.contexts,
         is_custom_message: diagnostic.is_custom_message,
+        schema_location: diagnostic.schema_location,
     })
+}
+
+fn changed_paths_overlap(changed: &crate::ChangedPaths, read: &CfdPath) -> bool {
+    match changed {
+        crate::ChangedPaths::All => true,
+        crate::ChangedPaths::Paths(paths) => paths.iter().any(|changed| {
+            path_is_prefix(changed, read) || path_is_prefix(read, changed)
+        }),
+    }
+}
+
+fn path_is_prefix(prefix: &CfdPath, path: &CfdPath) -> bool {
+    prefix.segments.len() <= path.segments.len()
+        && prefix
+            .segments
+            .iter()
+            .zip(&path.segments)
+            .all(|(left, right)| left == right)
 }
 
 fn render_label(model: &CfdDataModel, label: LogicalCheckLabel) -> Option<CfdLabel> {
@@ -272,4 +330,14 @@ fn coordinate_for_id(model: &CfdDataModel, id: CfdRecordId) -> Option<RecordCoor
     model
         .record(id)
         .map(coflow_data_model::CfdRecord::coordinate)
+}
+
+fn stabilize_execution(
+    model: &CfdDataModel,
+    execution: &CheckExecutionId,
+) -> Option<StableExecutionId> {
+    Some(match execution {
+        CheckExecutionId::Record(id) => StableExecutionId::Record(coordinate_for_id(model, *id)?),
+        CheckExecutionId::TopLevel(name) => StableExecutionId::TopLevel(name.clone()),
+    })
 }

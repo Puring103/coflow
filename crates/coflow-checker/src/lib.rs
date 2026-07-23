@@ -39,11 +39,11 @@ mod snapshot;
 use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 pub use coflow_structure::StructuralLimits;
-pub use dependencies::DependencyGraph;
-pub use diagnostics::{CheckDiagnostic, CheckDiagnosticContext};
+pub use dependencies::{DependencyGraph, RecordReadDependency};
+pub use diagnostics::{CheckDiagnostic, CheckDiagnosticContext, CheckSchemaLocation};
 pub use dimensions::{DimensionCheckRound, DimensionCheckRoundError};
-pub use output::{CheckExecutionStats, CheckOutput, RootedCheckDiagnostic};
-pub use request::{CheckRequest, CheckTargets, DependencyCollection};
+pub use output::{CheckExecutionId, CheckExecutionStats, CheckOutput, RootedCheckDiagnostic};
+pub use request::{ChangedPaths, CheckChangeSet, CheckRequest, CheckTargets, DependencyCollection};
 pub(crate) use snapshot::CheckRound;
 pub use snapshot::CheckSnapshot;
 
