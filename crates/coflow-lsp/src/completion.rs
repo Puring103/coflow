@@ -3,7 +3,7 @@ use coflow_cft::CftConstValue;
 use serde_json::{json, Map, Value};
 
 use crate::documentation::{
-    AnnotationCompletion, ANNOTATIONS, BUILTIN_FUNCTIONS, KEYWORDS, LITERALS, PRIMITIVE_TYPES,
+    builtin_functions, AnnotationCompletion, ANNOTATIONS, KEYWORDS, LITERALS, PRIMITIVE_TYPES,
 };
 use crate::position::{byte_offset_from_position, LspPosition};
 use crate::{
@@ -186,8 +186,7 @@ fn literal_completion_items(include_null: bool) -> Vec<Value> {
 }
 
 fn function_completion_items() -> Vec<Value> {
-    BUILTIN_FUNCTIONS
-        .iter()
+    builtin_functions()
         .map(|(label, documentation)| {
             let mut item = completion_item(
                 label,

@@ -1,7 +1,7 @@
 use super::access;
 use super::builtins::{self, Builtin, CallSignature, CallSignatureError, CallTarget};
 use super::deps::DependencyCollector;
-use super::diagnostics::{CheckDiagnostic, CheckDiagnosticContext, format_value_for_message};
+use super::diagnostics::{format_value_for_message, CheckDiagnostic, CheckDiagnosticContext};
 use super::dimensions::{self, DimensionVariantAbort};
 use super::evaluation_trace::EvaluationTrace;
 use super::ops::{self, OpsResult};
@@ -386,6 +386,23 @@ impl<'model> CheckEvaluator<'model> {
                 };
                 self.eval_ops(result)
             }
+            Builtin::StartsWith
+            | Builtin::EndsWith
+            | Builtin::IsBlank
+            | Builtin::Abs
+            | Builtin::IsFinite
+            | Builtin::ApproxEqual
+            | Builtin::ContainsKey
+            | Builtin::ContainsValue
+            | Builtin::IsSorted
+            | Builtin::IsStrictlySorted
+            | Builtin::Intersects
+            | Builtin::IsDisjoint
+            | Builtin::IsSubsetOf
+            | Builtin::IsSupersetOf => {
+                let receiver_value = self.eval_expr(&args[0])?;
+                self.eval_extended_builtin(builtin, receiver_value, &args[1..])
+            }
         }
     }
 
@@ -441,6 +458,108 @@ impl<'model> CheckEvaluator<'model> {
                     builtins::matches_value(receiver_value, pattern, &mut cache)
                 };
                 self.eval_ops(result)
+            }
+            Builtin::StartsWith
+            | Builtin::EndsWith
+            | Builtin::IsBlank
+            | Builtin::Abs
+            | Builtin::IsFinite
+            | Builtin::ApproxEqual
+            | Builtin::ContainsKey
+            | Builtin::ContainsValue
+            | Builtin::IsSorted
+            | Builtin::IsStrictlySorted
+            | Builtin::Intersects
+            | Builtin::IsDisjoint
+            | Builtin::IsSubsetOf
+            | Builtin::IsSupersetOf => self.eval_extended_builtin(builtin, receiver_value, args),
+        }
+    }
+
+    fn eval_extended_builtin(
+        &mut self,
+        builtin: Builtin,
+        receiver: LocatedEvalValue<'model>,
+        args: &[CftSchemaCheckExpr],
+    ) -> EvalResult<LocatedEvalValue<'model>> {
+        match builtin {
+            Builtin::StartsWith | Builtin::EndsWith => {
+                self.charge_collection_work(&receiver)?;
+                let argument = self.eval_expr(&args[0])?;
+                self.eval_ops(builtins::string_predicate_value(
+                    builtin,
+                    receiver,
+                    &argument.value,
+                ))
+            }
+            Builtin::IsBlank => {
+                self.charge_collection_work(&receiver)?;
+                self.eval_ops(builtins::is_blank_value(receiver))
+            }
+            Builtin::Abs => self.eval_ops(builtins::abs_value(receiver)),
+            Builtin::IsFinite => self.eval_ops(builtins::is_finite_value(receiver)),
+            Builtin::ApproxEqual => {
+                let other = self.eval_expr(&args[0])?;
+                let epsilon = self.eval_expr(&args[1])?;
+                self.eval_ops(builtins::approx_equal_value(
+                    receiver,
+                    &other.value,
+                    &epsilon.value,
+                ))
+            }
+            Builtin::ContainsKey | Builtin::ContainsValue => {
+                self.charge_collection_work(&receiver)?;
+                let value = self.eval_expr(&args[0])?;
+                let result = if builtin == Builtin::ContainsKey {
+                    builtins::contains_value(&receiver, &value.value, self.model, &mut self.budget)
+                } else {
+                    builtins::contains_value_in_dict(
+                        &receiver,
+                        &value.value,
+                        self.model,
+                        &mut self.budget,
+                    )
+                };
+                Ok(LocatedEvalValue::new(
+                    EvalValue::bool(self.eval_ops(result)?),
+                    receiver.location.clone(),
+                ))
+            }
+            Builtin::IsSorted | Builtin::IsStrictlySorted => {
+                self.charge_collection_work(&receiver)?;
+                let sorted = builtins::sorted_value(
+                    &receiver,
+                    self.model,
+                    &mut self.budget,
+                    builtin == Builtin::IsStrictlySorted,
+                );
+                Ok(LocatedEvalValue::new(
+                    EvalValue::bool(self.eval_ops(sorted)?),
+                    receiver.location.clone(),
+                ))
+            }
+            Builtin::Intersects
+            | Builtin::IsDisjoint
+            | Builtin::IsSubsetOf
+            | Builtin::IsSupersetOf => {
+                self.charge_collection_work(&receiver)?;
+                let other = self.eval_expr(&args[0])?;
+                self.charge_collection_work(&other)?;
+                let result = builtins::set_relation_value(
+                    builtin,
+                    &receiver,
+                    &other,
+                    self.model,
+                    &mut self.budget,
+                );
+                Ok(LocatedEvalValue::new(
+                    EvalValue::bool(self.eval_ops(result)?),
+                    receiver.location.clone(),
+                ))
+            }
+            _ => {
+                self.diag(CfdErrorCode::CheckEvalTypeError, "invalid extended builtin");
+                Err(EvalAbort::Error)
             }
         }
     }

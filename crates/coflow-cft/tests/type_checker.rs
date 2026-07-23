@@ -40,7 +40,6 @@ fn type_checker_reports_name_field_enum_function_quantifier_index_and_regex_erro
     assert_has_code(&err, CftErrorCode::FieldAccessOnNonObject);
     assert_has_code(&err, CftErrorCode::TypeUnknownEnumVariant);
     assert_has_code(&err, CftErrorCode::ComparisonTypeMismatch);
-    assert_has_code(&err, CftErrorCode::FunctionArgTypeMismatch);
     assert_has_code(&err, CftErrorCode::QuantifierRequiresCollection);
     assert_has_code(&err, CftErrorCode::IndexTypeMismatch);
     assert_has_code(&err, CftErrorCode::RegexPatternMustBeLiteral);
@@ -640,5 +639,33 @@ fn type_checker_accepts_scalar_formatted_values_and_rejects_collections() {
             .filter(|diag| diag.code == CftErrorCode::OperatorTypeMismatch)
             .count(),
         2
+    );
+}
+
+#[test]
+fn type_checker_rejects_invalid_extended_builtin_types() {
+    let err = compile_one(
+        r#"
+        type Item {
+            nullable_nums: [int?];
+            floats: [float];
+            text: string;
+            count: int;
+            check {
+                nullable_nums.isSorted();
+                floats.intersects(floats);
+                text.abs() == 0;
+                count.startsWith("1");
+            }
+        }
+        "#,
+    )
+    .expect_err("unsupported extended builtin types must fail");
+    assert!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::FunctionArgTypeMismatch)
+            .count()
+            >= 4
     );
 }

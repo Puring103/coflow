@@ -1,7 +1,8 @@
 use super::CheckTypeAnalyzer;
 use crate::diagnostics::CftErrorCode;
 use crate::schema::compiler::inferred_type::{
-    min_max_supported, types_comparable, unique_supported, unwrap_nullable, InferredType,
+    min_max_supported, set_element_supported, sorted_element_supported, types_comparable,
+    unique_supported, unwrap_nullable, InferredType,
 };
 use crate::schema::{CftCheckBuiltin, CftValueType};
 use crate::syntax::ast::{CheckExpr, CheckExprKind, NameRef};
@@ -75,6 +76,38 @@ impl CheckTypeAnalyzer<'_, '_> {
             Some(CftCheckBuiltin::Matches) => {
                 self.check_matches_method(receiver, args, span, &receiver_ty)
             }
+            Some(CftCheckBuiltin::StartsWith | CftCheckBuiltin::EndsWith) => {
+                self.check_string_predicate_method(receiver, args, span, &receiver_ty)
+            }
+            Some(CftCheckBuiltin::IsBlank) => {
+                self.check_receiver_method(receiver, args, span, &receiver_ty, 0, "string", |ty| {
+                    matches!(ty.value_type(), Some(CftValueType::String))
+                })
+            }
+            Some(CftCheckBuiltin::Abs) => self.check_abs_method(receiver, args, span, &receiver_ty),
+            Some(CftCheckBuiltin::IsFinite) => {
+                self.check_receiver_method(receiver, args, span, &receiver_ty, 0, "float", |ty| {
+                    matches!(ty.value_type(), Some(CftValueType::Float))
+                })
+            }
+            Some(CftCheckBuiltin::ApproxEqual) => {
+                self.check_approx_equal_method(receiver, args, span, &receiver_ty)
+            }
+            Some(CftCheckBuiltin::ContainsKey) => {
+                self.check_dict_contains_method(receiver, args, span, &receiver_ty, true)
+            }
+            Some(CftCheckBuiltin::ContainsValue) => {
+                self.check_dict_contains_method(receiver, args, span, &receiver_ty, false)
+            }
+            Some(CftCheckBuiltin::IsSorted | CftCheckBuiltin::IsStrictlySorted) => {
+                self.check_sorted_method(receiver, args, span, &receiver_ty)
+            }
+            Some(
+                CftCheckBuiltin::Intersects
+                | CftCheckBuiltin::IsDisjoint
+                | CftCheckBuiltin::IsSubsetOf
+                | CftCheckBuiltin::IsSupersetOf,
+            ) => self.check_set_relation_method(receiver, args, span, &receiver_ty),
             None => {
                 self.diag(
                     CftErrorCode::UnknownFunction,
@@ -105,6 +138,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         let receiver_ty = unwrap_nullable(receiver_ty);
         if receiver_ty.array_element().is_none()
             && receiver_ty.dict_types().is_none()
+            && !matches!(receiver_ty.value_type(), Some(CftValueType::String))
             && !receiver_ty.is_unknown()
         {
             self.diag(
@@ -131,7 +165,15 @@ impl CheckTypeAnalyzer<'_, '_> {
         }
         let value_ty = self.check_expr_value(&args[0]);
         let receiver_ty = unwrap_nullable(receiver_ty);
-        if let Some(elem) = receiver_ty.array_element() {
+        if matches!(receiver_ty.value_type(), Some(CftValueType::String)) {
+            if !types_comparable(&value_ty, &InferredType::string()) && !value_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::FunctionArgTypeMismatch,
+                    args[0].span,
+                    "contains argument must be string",
+                );
+            }
+        } else if let Some(elem) = receiver_ty.array_element() {
             if !types_comparable(&elem, &value_ty) && !value_ty.is_unknown() {
                 self.diag(
                     CftErrorCode::FunctionArgTypeMismatch,
@@ -370,5 +412,212 @@ impl CheckTypeAnalyzer<'_, '_> {
             );
             Err(())
         }
+    }
+
+    fn check_string_predicate_method(
+        &mut self,
+        receiver: &CheckExpr,
+        args: &[CheckExpr],
+        span: Span,
+        receiver_ty: &InferredType,
+    ) -> InferredType {
+        if self.expect_arity(args, 1, span).is_err() {
+            return InferredType::bool();
+        }
+        let arg_ty = self.check_expr_value(&args[0]);
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if !types_comparable(&receiver_ty, &InferredType::string()) && !receiver_ty.is_unknown() {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                receiver.span,
+                "method receiver must be string",
+            );
+        }
+        if !types_comparable(&arg_ty, &InferredType::string()) && !arg_ty.is_unknown() {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                args[0].span,
+                "method argument must be string",
+            );
+        }
+        InferredType::bool()
+    }
+
+    fn check_receiver_method(
+        &mut self,
+        receiver: &CheckExpr,
+        args: &[CheckExpr],
+        span: Span,
+        receiver_ty: &InferredType,
+        arity: usize,
+        expected: &str,
+        supports: impl FnOnce(&InferredType) -> bool,
+    ) -> InferredType {
+        if self.expect_arity(args, arity, span).is_err() {
+            return InferredType::bool();
+        }
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if !supports(&receiver_ty) && !receiver_ty.is_unknown() {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                receiver.span,
+                format!("method receiver must be {expected}"),
+            );
+        }
+        InferredType::bool()
+    }
+
+    fn check_abs_method(
+        &mut self,
+        receiver: &CheckExpr,
+        args: &[CheckExpr],
+        span: Span,
+        receiver_ty: &InferredType,
+    ) -> InferredType {
+        if self.expect_arity(args, 0, span).is_err() {
+            return InferredType::Unknown;
+        }
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if matches!(
+            receiver_ty.value_type(),
+            Some(CftValueType::Int | CftValueType::Float)
+        ) {
+            receiver_ty
+        } else {
+            if !receiver_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::FunctionArgTypeMismatch,
+                    receiver.span,
+                    "abs receiver must be int or float",
+                );
+            }
+            InferredType::Unknown
+        }
+    }
+
+    fn check_approx_equal_method(
+        &mut self,
+        receiver: &CheckExpr,
+        args: &[CheckExpr],
+        span: Span,
+        receiver_ty: &InferredType,
+    ) -> InferredType {
+        if self.expect_arity(args, 2, span).is_err() {
+            return InferredType::bool();
+        }
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if !types_comparable(&receiver_ty, &InferredType::float()) && !receiver_ty.is_unknown() {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                receiver.span,
+                "approxEqual receiver must be float",
+            );
+        }
+        for arg in args {
+            let ty = self.check_expr_value(arg);
+            if !types_comparable(&ty, &InferredType::float()) && !ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::FunctionArgTypeMismatch,
+                    arg.span,
+                    "approxEqual arguments must be float",
+                );
+            }
+        }
+        InferredType::bool()
+    }
+
+    fn check_dict_contains_method(
+        &mut self,
+        receiver: &CheckExpr,
+        args: &[CheckExpr],
+        span: Span,
+        receiver_ty: &InferredType,
+        key: bool,
+    ) -> InferredType {
+        if self.expect_arity(args, 1, span).is_err() {
+            return InferredType::bool();
+        }
+        let arg_ty = self.check_expr_value(&args[0]);
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if let Some((key_ty, value_ty)) = receiver_ty.dict_types() {
+            let expected = if key { key_ty } else { value_ty };
+            if !types_comparable(&expected, &arg_ty) && !arg_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::FunctionArgTypeMismatch,
+                    args[0].span,
+                    "dict contains argument type mismatch",
+                );
+            }
+        } else if !receiver_ty.is_unknown() {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                receiver.span,
+                "method receiver must be dict",
+            );
+        }
+        InferredType::bool()
+    }
+
+    fn check_sorted_method(
+        &mut self,
+        receiver: &CheckExpr,
+        args: &[CheckExpr],
+        span: Span,
+        receiver_ty: &InferredType,
+    ) -> InferredType {
+        if self.expect_arity(args, 0, span).is_err() {
+            return InferredType::bool();
+        }
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        if let Some(element) = receiver_ty.array_element() {
+            if !sorted_element_supported(&element) {
+                self.diag(
+                    CftErrorCode::FunctionArgTypeMismatch,
+                    receiver.span,
+                    "sorting requires a non-nullable int, bool, string, or enum array",
+                );
+            }
+        } else if !receiver_ty.is_unknown() {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                receiver.span,
+                "sorting requires an array",
+            );
+        }
+        InferredType::bool()
+    }
+
+    fn check_set_relation_method(
+        &mut self,
+        receiver: &CheckExpr,
+        args: &[CheckExpr],
+        span: Span,
+        receiver_ty: &InferredType,
+    ) -> InferredType {
+        if self.expect_arity(args, 1, span).is_err() {
+            return InferredType::bool();
+        }
+        let other_ty = unwrap_nullable(&self.check_expr_value(&args[0]));
+        let receiver_ty = unwrap_nullable(receiver_ty);
+        match (receiver_ty.array_element(), other_ty.array_element()) {
+            (Some(left), Some(right)) => {
+                if !set_element_supported(&left) || !types_comparable(&left, &right) {
+                    self.diag(
+                        CftErrorCode::FunctionArgTypeMismatch,
+                        receiver.span,
+                        "set relation requires compatible int, bool, string, or enum arrays",
+                    );
+                }
+            }
+            _ if !receiver_ty.is_unknown() && !other_ty.is_unknown() => {
+                self.diag(
+                    CftErrorCode::FunctionArgTypeMismatch,
+                    receiver.span,
+                    "set relation requires two arrays",
+                );
+            }
+            _ => {}
+        }
+        InferredType::bool()
     }
 }

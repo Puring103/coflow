@@ -238,3 +238,23 @@ pub(super) fn min_max_supported(ty: &InferredType) -> bool {
         Some(CftValueType::Int | CftValueType::Float | CftValueType::Enum(_))
     )
 }
+
+pub(super) fn set_element_supported(ty: &InferredType) -> bool {
+    matches!(
+        unwrap_nullable(ty).value_type(),
+        Some(CftValueType::Int | CftValueType::Bool | CftValueType::String | CftValueType::Enum(_))
+    )
+}
+
+pub(super) fn sorted_element_supported(ty: &InferredType) -> bool {
+    !ty.is_nullable()
+        && matches!(
+            ty.value_type(),
+            Some(
+                CftValueType::Int
+                    | CftValueType::Bool
+                    | CftValueType::String
+                    | CftValueType::Enum(_)
+            )
+        )
+}

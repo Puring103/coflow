@@ -230,3 +230,45 @@ fn aggregate_len_keeps_a_borrowed_cursor_without_materializing_items() {
     run_model_checks_with_limits(&model, &schema, options(100, 16, 100))
         .expect("len should retain only the aggregate cursor and never visit its elements");
 }
+
+#[test]
+fn set_comparisons_charge_each_candidate_and_preserve_reversed_operand_locations() {
+    let schema = compile_schema(
+        r"
+            type Item {
+                left: [int];
+                right: [int];
+                check { left.isSupersetOf(right); }
+            }
+        ",
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [
+            (
+                "left",
+                LoadedValueDraft::Array(vec![1_i64.into(), 2_i64.into(), 3_i64.into()]),
+            ),
+            (
+                "right",
+                LoadedValueDraft::Array(vec![9_i64.into(), 8_i64.into(), 7_i64.into()]),
+            ),
+        ],
+    );
+    let model = builder.build().expect("model builds");
+
+    let err = run_model_checks_with_limits(&model, &schema, options(100, 100, 6))
+        .expect_err("candidate comparisons must consume work after both collection charges");
+    let diagnostic = err
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == CfdErrorCode::CheckBudgetExceeded)
+        .expect("budget diagnostic");
+
+    assert_eq!(
+        diagnostic.primary.as_ref().map(|label| label.path.clone()),
+        Some(CfdPath::root().field("right").index(0))
+    );
+}
