@@ -234,7 +234,7 @@ fn walk_check(
         let (span, children) = match node {
             CheckNode::Stmt(stmt) => {
                 let children = match stmt {
-                    CheckStmt::Expr(expr) => vec![CheckNode::Expr(expr)],
+                    CheckStmt::Expr { condition, .. } => vec![CheckNode::Expr(condition)],
                     CheckStmt::When {
                         condition, body, ..
                     } => std::iter::once(CheckNode::Expr(condition))

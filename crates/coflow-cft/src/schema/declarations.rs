@@ -79,8 +79,18 @@ pub struct CftSchemaCheckBlock {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct CftSchemaCheckMessage {
+    pub value: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum CftSchemaCheckStmt {
-    Expr(CftSchemaCheckExpr),
+    Expr {
+        condition: CftSchemaCheckExpr,
+        message: Option<CftSchemaCheckMessage>,
+        span: Span,
+    },
     Quantifier {
         kind: CftSchemaQuantifierKind,
         binding: String,

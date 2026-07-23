@@ -196,8 +196,18 @@ pub struct CheckBlock {
 }
 
 #[derive(Debug, Clone)]
+pub struct CheckMessage {
+    pub value: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
 pub enum CheckStmt {
-    Expr(CheckExpr),
+    Expr {
+        condition: CheckExpr,
+        message: Option<CheckMessage>,
+        span: Span,
+    },
     Quantifier {
         kind: QuantifierKind,
         binding: NameRef,
@@ -216,8 +226,9 @@ impl CheckStmt {
     #[must_use]
     pub fn span(&self) -> Span {
         match self {
-            Self::Expr(expr) => expr.span,
-            Self::Quantifier { span, .. } | Self::When { span, .. } => *span,
+            Self::Expr { span, .. }
+            | Self::Quantifier { span, .. }
+            | Self::When { span, .. } => *span,
         }
     }
 }

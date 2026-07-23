@@ -9,6 +9,7 @@
 
 mod common;
 use common::*;
+use coflow_cft::CftSchemaCheckStmt;
 
 #[test]
 fn lexer_reports_invalid_character() {
@@ -76,6 +77,51 @@ fn parser_accepts_core_syntax() {
     let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
     assert!(schema.resolve_type("Item").is_some());
     assert!(schema.resolve_enum("Permission").is_some());
+}
+
+#[test]
+fn check_expression_messages_are_preserved_in_schema() {
+    let modules = add_source(
+        r#"
+        type Item {
+            price: int;
+            check {
+                price > 0: "price must be positive";
+                price < 100;
+            }
+        }
+        "#,
+    )
+    .unwrap();
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
+    let check = schema
+        .resolve_type("Item")
+        .and_then(|ty| ty.check.as_ref())
+        .expect("check block");
+    let CftSchemaCheckStmt::Expr {
+        message: Some(message),
+        span,
+        ..
+    } = &check.stmts[0]
+    else {
+        panic!("expected check expression message");
+    };
+    assert_eq!(message.value, "price must be positive");
+    assert!(span.start < message.span.start);
+    assert!(message.span.end <= span.end);
+
+    let CftSchemaCheckStmt::Expr { message: None, .. } = &check.stmts[1] else {
+        panic!("expected message-less check expression");
+    };
+}
+
+#[test]
+fn check_expression_message_must_be_a_string_literal() {
+    let err = add_source("type Item { price: int; check { price > 0: price; } }").unwrap_err();
+    assert_has_code(&err, CftErrorCode::InvalidCheckStatement);
+    assert!(err.diagnostics[0]
+        .message
+        .contains("check message must be a string literal"));
 }
 
 #[test]

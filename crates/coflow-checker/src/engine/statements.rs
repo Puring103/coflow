@@ -63,7 +63,15 @@ fn eval_stmts(evaluator: &mut CheckEvaluator<'_>, stmts: &[CftSchemaCheckStmt]) 
 
 fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> EvalFlow {
     match stmt {
-        CftSchemaCheckStmt::Expr(expr) => eval_expr_stmt(evaluator, expr),
+        CftSchemaCheckStmt::Expr {
+            condition,
+            message,
+            ..
+        } => eval_expr_stmt(
+            evaluator,
+            condition,
+            message.as_ref().map(|message| message.value.as_str()),
+        ),
         CftSchemaCheckStmt::When {
             condition, body, ..
         } => eval_when_stmt(evaluator, condition, body),
@@ -77,7 +85,11 @@ fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> E
     }
 }
 
-fn eval_expr_stmt(evaluator: &mut CheckEvaluator<'_>, expr: &CftSchemaCheckExpr) -> EvalFlow {
+fn eval_expr_stmt(
+    evaluator: &mut CheckEvaluator<'_>,
+    expr: &CftSchemaCheckExpr,
+    custom_message: Option<&str>,
+) -> EvalFlow {
     let (result, trace) = evaluator.eval_expr_with_trace(expr);
     match result {
         Ok(value) if matches!(value.value.scalar(), Some(ScalarValue::Bool(true))) => {
@@ -93,7 +105,9 @@ fn eval_expr_stmt(evaluator: &mut CheckEvaluator<'_>, expr: &CftSchemaCheckExpr)
                     )
                 })
                 .with_context(&evaluator.contexts);
-            let message = explanation.message();
+            let message = custom_message
+                .map(str::to_owned)
+                .unwrap_or_else(|| explanation.message());
             evaluator.diag_at_preformatted(explanation.code, explanation.location, message);
             EvalFlow::Continue
         }
