@@ -31,9 +31,7 @@ impl CheckDiagnosticContext {
     pub fn human_message(&self) -> String {
         match self {
             Self::When { expression } => format!("在 when {expression} 内"),
-            Self::Quantifier {
-                binding, item, ..
-            } => format!("绑定 {binding} 位于 {item}"),
+            Self::Quantifier { binding, item, .. } => format!("绑定 {binding} 位于 {item}"),
             Self::Dimension { dimension, variant } => format!("{dimension}={variant}"),
         }
     }
@@ -52,11 +50,8 @@ impl CheckDiagnostic {
         for context in &self.contexts {
             match context {
                 CheckDiagnosticContext::Dimension { .. } => {
-                    self.diagnostic.message = format!(
-                        "[{}] {}",
-                        context.human_message(),
-                        self.diagnostic.message
-                    );
+                    self.diagnostic.message =
+                        format!("[{}] {}", context.human_message(), self.diagnostic.message);
                 }
                 _ => {
                     self.diagnostic.message.push_str("\n上下文: ");
@@ -189,9 +184,7 @@ pub(crate) fn cmp_op_str(op: CftSchemaCmpOp) -> &'static str {
 pub(crate) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
     match stmt {
         CftSchemaCheckStmt::Expr {
-            condition,
-            message,
-            ..
+            condition, message, ..
         } => {
             let rendered = render_expr(condition);
             message.as_ref().map_or(rendered.clone(), |message| {
@@ -243,8 +236,17 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
         CftSchemaCheckExprKind::Field { expr, name } => {
             format!("{}.{}", render_expr(expr), name)
         }
+        CftSchemaCheckExprKind::SafeField { expr, name } => {
+            format!("{}?.{}", render_expr(expr), name)
+        }
         CftSchemaCheckExprKind::Index { expr, index } => {
             format!("{}[{}]", render_expr(expr), render_expr(index))
+        }
+        CftSchemaCheckExprKind::SafeIndex { expr, index } => {
+            format!("{}?[{}]", render_expr(expr), render_expr(index))
+        }
+        CftSchemaCheckExprKind::Coalesce { lhs, rhs } => {
+            format!("{} ?? {}", render_expr(lhs), render_expr(rhs))
         }
         CftSchemaCheckExprKind::Is { expr, predicate } => {
             let predicate = match predicate {

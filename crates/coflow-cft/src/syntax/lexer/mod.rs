@@ -192,6 +192,10 @@ impl<'a> Lexer<'a> {
                     self.pos += 1;
                     TokenKind::Bang
                 }
+                '?' if self.starts_with("??") => {
+                    self.pos += 2;
+                    TokenKind::QuestionQuestion
+                }
                 '?' => {
                     self.pos += 1;
                     TokenKind::Question
@@ -417,10 +421,7 @@ impl<'a> Lexer<'a> {
         ))
     }
 
-    fn lex_formatted_string(
-        &mut self,
-        tokens: &mut Vec<Token>,
-    ) -> Result<(), CftDiagnostics> {
+    fn lex_formatted_string(&mut self, tokens: &mut Vec<Token>) -> Result<(), CftDiagnostics> {
         let start = self.pos;
         self.pos += 2;
         tokens.push(Token {

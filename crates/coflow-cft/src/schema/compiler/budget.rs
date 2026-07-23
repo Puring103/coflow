@@ -235,19 +235,21 @@ fn walk_check(
             CheckNode::Stmt(stmt) => {
                 let children = match stmt {
                     CheckStmt::Expr {
-                        condition,
-                        message,
-                        ..
+                        condition, message, ..
                     } => std::iter::once(CheckNode::Expr(condition))
-                        .chain(message.iter().flat_map(|message| match &message.kind {
-                            CheckMessageKind::String(_) => Vec::new(),
-                            CheckMessageKind::Formatted(segments) => segments
-                                .iter()
-                                .filter_map(|segment| match segment {
-                                    CheckFormatSegment::Text(_, _) => None,
-                                    CheckFormatSegment::Expr(expr) => Some(CheckNode::Expr(expr)),
-                                })
-                                .collect(),
+                        .chain(message.iter().flat_map(|message| {
+                            match &message.kind {
+                                CheckMessageKind::String(_) => Vec::new(),
+                                CheckMessageKind::Formatted(segments) => segments
+                                    .iter()
+                                    .filter_map(|segment| match segment {
+                                        CheckFormatSegment::Text(_, _) => None,
+                                        CheckFormatSegment::Expr(expr) => {
+                                            Some(CheckNode::Expr(expr))
+                                        }
+                                    })
+                                    .collect(),
+                            }
                         }))
                         .collect(),
                     CheckStmt::When {
@@ -274,12 +276,13 @@ fn walk_check(
 fn check_expr_children(expr: &CheckExpr) -> Vec<CheckNode<'_>> {
     match &expr.kind {
         CheckExprKind::Field { expr, .. }
+        | CheckExprKind::SafeField { expr, .. }
         | CheckExprKind::Is { expr, .. }
         | CheckExprKind::Unary { expr, .. } => vec![CheckNode::Expr(expr)],
-        CheckExprKind::Index { expr, index } => {
+        CheckExprKind::Index { expr, index } | CheckExprKind::SafeIndex { expr, index } => {
             vec![CheckNode::Expr(expr), CheckNode::Expr(index)]
         }
-        CheckExprKind::BinOp { lhs, rhs, .. } => {
+        CheckExprKind::BinOp { lhs, rhs, .. } | CheckExprKind::Coalesce { lhs, rhs } => {
             vec![CheckNode::Expr(lhs), CheckNode::Expr(rhs)]
         }
         CheckExprKind::CmpChain { first, rest } => std::iter::once(CheckNode::Expr(first))

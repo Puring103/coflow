@@ -92,6 +92,32 @@ fn bitwise_or_xor_and_share_one_left_associative_precedence_level() {
     assert!(matches!(inner_rhs.kind, CftSchemaCheckExprKind::Int(2)));
 }
 
+#[test]
+fn null_coalescing_is_right_associative_and_below_logical_or() {
+    let schema = compile_one(
+        r"
+            type Rule {
+                first: bool? = null;
+                second: bool? = null;
+                check { first ?? second ?? false; }
+            }
+        ",
+    )
+    .unwrap();
+
+    let expr = first_check_expr(&schema, "Rule");
+    let CftSchemaCheckExprKind::Coalesce { rhs, .. } = &expr.kind else {
+        panic!("expected outer coalesce, got {expr:?}");
+    };
+    assert!(matches!(rhs.kind, CftSchemaCheckExprKind::Coalesce { .. }));
+
+    let error = compile_one("type Rule { check { true || false ?? false; } }").unwrap_err();
+    assert!(error
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message == "left operand of `??` must be nullable"));
+}
+
 fn first_check_expr<'a>(schema: &'a CftSchema, type_name: &str) -> &'a CftSchemaCheckExpr {
     let ty = schema.resolve_type(type_name).expect("type");
     let check = ty.check.as_ref().expect("check block");

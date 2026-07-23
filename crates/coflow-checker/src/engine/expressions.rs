@@ -2,9 +2,7 @@ use super::evaluator::{CheckEvaluator, EvalResult};
 use super::ops;
 use super::type_predicates;
 use super::value::{EvalValue, LocatedEvalValue};
-use coflow_cft::{
-    CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
-};
+use coflow_cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment};
 use coflow_structure::StructureKind;
 
 pub(super) fn eval_expr<'model>(
@@ -29,8 +27,33 @@ pub(super) fn eval_expr<'model>(
         CftSchemaCheckExprKind::Field { expr: inner, name } => {
             eval_field_expr(evaluator, inner, name)
         }
+        CftSchemaCheckExprKind::SafeField { expr: inner, name } => {
+            let target = evaluator.eval_expr(inner)?;
+            if matches!(target.value.scalar(), Some(super::value::ScalarValue::Null)) {
+                Ok(target)
+            } else {
+                evaluator.eval_field(target, name)
+            }
+        }
         CftSchemaCheckExprKind::Index { expr: inner, index } => {
             eval_index_expr(evaluator, inner, index)
+        }
+        CftSchemaCheckExprKind::SafeIndex { expr: inner, index } => {
+            let target = evaluator.eval_expr(inner)?;
+            if matches!(target.value.scalar(), Some(super::value::ScalarValue::Null)) {
+                Ok(target)
+            } else {
+                let index = evaluator.eval_expr(index)?;
+                evaluator.eval_index(target, index)
+            }
+        }
+        CftSchemaCheckExprKind::Coalesce { lhs, rhs } => {
+            let value = evaluator.eval_expr(lhs)?;
+            if matches!(value.value.scalar(), Some(super::value::ScalarValue::Null)) {
+                evaluator.eval_expr(rhs)
+            } else {
+                Ok(value)
+            }
         }
         CftSchemaCheckExprKind::Is {
             expr: inner,

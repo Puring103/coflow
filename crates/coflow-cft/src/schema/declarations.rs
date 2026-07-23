@@ -136,9 +136,21 @@ pub enum CftSchemaCheckExprKind {
         expr: Box<CftSchemaCheckExpr>,
         name: FieldName,
     },
+    SafeField {
+        expr: Box<CftSchemaCheckExpr>,
+        name: FieldName,
+    },
     Index {
         expr: Box<CftSchemaCheckExpr>,
         index: Box<CftSchemaCheckExpr>,
+    },
+    SafeIndex {
+        expr: Box<CftSchemaCheckExpr>,
+        index: Box<CftSchemaCheckExpr>,
+    },
+    Coalesce {
+        lhs: Box<CftSchemaCheckExpr>,
+        rhs: Box<CftSchemaCheckExpr>,
     },
     Is {
         expr: Box<CftSchemaCheckExpr>,

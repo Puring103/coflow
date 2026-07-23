@@ -80,9 +80,7 @@ impl<'schema, 'budget> DimensionCheckAnalyzer<'schema, 'budget> {
         self.charge()?;
         Ok(match stmt {
             CftSchemaCheckStmt::Expr {
-                condition,
-                message,
-                ..
+                condition, message, ..
             } => {
                 let mut out = self.expr_dimensions(condition)?;
                 if let Some(message) = message {
@@ -134,9 +132,11 @@ impl<'schema, 'budget> DimensionCheckAnalyzer<'schema, 'budget> {
             }
             CftSchemaCheckExprKind::Name(name) => self.name_dimensions(name),
             CftSchemaCheckExprKind::Field { expr, .. }
+            | CftSchemaCheckExprKind::SafeField { expr, .. }
             | CftSchemaCheckExprKind::Is { expr, .. }
             | CftSchemaCheckExprKind::Unary { expr, .. } => self.expr_dimensions(expr)?,
-            CftSchemaCheckExprKind::Index { expr, index } => {
+            CftSchemaCheckExprKind::Index { expr, index }
+            | CftSchemaCheckExprKind::SafeIndex { expr, index } => {
                 let mut out = self.expr_dimensions(expr)?;
                 out.extend(self.expr_dimensions(index)?);
                 out
@@ -147,7 +147,8 @@ impl<'schema, 'budget> DimensionCheckAnalyzer<'schema, 'budget> {
                 out.extend(self.args_dimensions(args)?);
                 out
             }
-            CftSchemaCheckExprKind::BinOp { lhs, rhs, .. } => {
+            CftSchemaCheckExprKind::BinOp { lhs, rhs, .. }
+            | CftSchemaCheckExprKind::Coalesce { lhs, rhs } => {
                 let mut out = self.expr_dimensions(lhs)?;
                 out.extend(self.expr_dimensions(rhs)?);
                 out
