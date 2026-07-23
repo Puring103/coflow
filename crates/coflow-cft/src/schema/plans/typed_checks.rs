@@ -1,6 +1,6 @@
-use super::dimension_checks;
+use super::check_dependencies;
 use crate::schema::{CftSchema, LocatedBudgetError};
-use crate::{CftSchemaCheckBlock, CftType, CftValueType, DimensionName, FieldName, TypeName};
+use crate::{CftSchemaCheckBlock, CftType, CftValueType, FieldName, TypeName};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 pub(crate) struct TypedCheckPlan {
     owners_by_actual: BTreeMap<TypeName, Vec<TypeName>>,
     nested_fields_by_actual: BTreeMap<TypeName, BTreeSet<FieldName>>,
-    dimension_statements_by_owner: BTreeMap<TypeName, BTreeMap<DimensionName, Vec<usize>>>,
+    dependencies_by_owner: BTreeMap<TypeName, check_dependencies::CheckDependencyPlan>,
 }
 
 impl TypedCheckPlan {
@@ -46,17 +46,17 @@ impl TypedCheckPlan {
             owners_by_actual.insert(actual_type.clone(), owners);
         }
         let nested_fields_by_actual = compile_nested_fields(types, &owners_by_actual, budget)?;
-        let mut dimension_statements_by_owner = BTreeMap::new();
+        let mut dependencies_by_owner = BTreeMap::new();
         for name in types.keys() {
-            dimension_statements_by_owner.insert(
+            dependencies_by_owner.insert(
                 name.clone(),
-                dimension_checks::dimension_checks_for_type(types, name, budget)?,
+                check_dependencies::check_dependencies_for_type(types, name, budget)?,
             );
         }
         Ok(Self {
             owners_by_actual,
             nested_fields_by_actual,
-            dimension_statements_by_owner,
+            dependencies_by_owner,
         })
     }
 
@@ -77,10 +77,9 @@ impl TypedCheckPlan {
     }
 
     fn dimension_statement_indices(&self, owner: &TypeName, dimension: &str) -> Option<&[usize]> {
-        self.dimension_statements_by_owner
+        self.dependencies_by_owner
             .get(owner)?
-            .get(dimension)
-            .map(Vec::as_slice)
+            .statement_indices(dimension)
     }
 }
 
