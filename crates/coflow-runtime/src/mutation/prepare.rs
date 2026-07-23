@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use coflow_api::DiagnosticSet;
 use coflow_api::WriteFieldPathSegment;
 use coflow_cft::{CftValueType, RecordKey};
-use coflow_data_model::{CfdPathSegment, CfdValue, PendingInsertRef};
+use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue, PendingInsertRef};
 
 use crate::write_rules;
 use crate::writes;
@@ -326,6 +326,9 @@ pub(super) fn prepare_set_on_pending_insert(
     Ok(PreparedMutationOp::FoldedSetField {
         record: validated_record_coordinate(actual_type, key)?,
         write_file: insert_file.to_string(),
+        path: CfdPath {
+            segments: path.to_vec(),
+        },
     })
 }
 
