@@ -272,3 +272,34 @@ fn set_comparisons_charge_each_candidate_and_preserve_reversed_operand_locations
         Some(CfdPath::root().field("right").index(0))
     );
 }
+
+#[test]
+fn record_set_enumeration_charges_work_and_temporary_nodes_per_member() {
+    let schema = compile_schema(
+        r#"
+            type Item { value: int; }
+            check ItemCount { records(Item).len() == 4; }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    for index in 0..4 {
+        builder.add_record(
+            format!("item_{index}"),
+            "Item",
+            [("value", LoadedValueDraft::from(i64::from(index)))],
+        );
+    }
+    let model = builder.build().expect("model builds");
+
+    let err = run_model_checks_with_limits(&model, &schema, options(100, 7, 100))
+        .expect_err("record handles must consume temporary structure nodes");
+    assert_has_code(&err, CfdErrorCode::CheckBudgetExceeded);
+    run_model_checks_with_limits(&model, &schema, options(100, 16, 100))
+        .expect("the adjacent practical node budget accepts the record set");
+
+    let err = run_model_checks_with_limits(&model, &schema, options(100, 100, 3))
+        .expect_err("record enumeration must consume work per member");
+    assert_has_code(&err, CfdErrorCode::CheckBudgetExceeded);
+    run_model_checks_with_limits(&model, &schema, options(100, 100, 8))
+        .expect("the adjacent practical work budget accepts the record set");
+}

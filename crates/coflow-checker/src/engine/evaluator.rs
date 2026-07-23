@@ -189,6 +189,22 @@ impl<'model> CheckEvaluator<'model> {
         })
     }
 
+    pub(super) fn charge_nodes_at(
+        &mut self,
+        kind: StructureKind,
+        nodes: u64,
+        location: Option<ValueLocation>,
+    ) -> EvalResult<()> {
+        self.budget.charge_nodes(kind, nodes).map_err(|error| {
+            self.diag_at(
+                CfdErrorCode::CheckBudgetExceeded,
+                location,
+                error.to_string(),
+            );
+            EvalAbort::Error
+        })
+    }
+
     pub(super) fn charge_collection_work(
         &mut self,
         value: &LocatedEvalValue<'model>,

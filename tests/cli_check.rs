@@ -125,6 +125,68 @@ fn full_project_check_failure_uses_check_diagnostics_in_json_output() {
 }
 
 #[test]
+fn top_level_formatted_custom_message_survives_human_and_json_outputs() {
+    let root = temp_project_dir("top-level-custom-message");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"
+            type Item { price: int; }
+            check ItemPrices {
+                all item in records(Item) {
+                    item.price > 0:
+                        f"item {item.id} has invalid price {item.price}";
+                }
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        "sword: Item { price: 0, }\n",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\n",
+    )
+    .expect("write config");
+
+    let human = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run human check");
+    assert!(!human.status.success());
+    let stderr = String::from_utf8_lossy(&human.stderr);
+    assert!(
+        stderr.contains("message\n  item sword has invalid price 0"),
+        "stderr: {stderr}"
+    );
+    assert!(!stderr.contains("actual value"), "stderr: {stderr}");
+
+    let json_output = coflow()
+        .args([
+            "check",
+            root.to_str().expect("utf8 temp path"),
+            "--json",
+        ])
+        .output()
+        .expect("run json check");
+    assert!(!json_output.status.success());
+    let json: Value = serde_json::from_slice(&json_output.stdout).expect("diagnostics json");
+    let diagnostic = &json["diagnostics"][0];
+    assert_eq!(diagnostic["message"], "item sword has invalid price 0");
+    let contexts = diagnostic["contexts"]
+        .as_array()
+        .unwrap_or_else(|| panic!("contexts array: {diagnostic:?}"));
+    assert!(contexts.iter().any(|context| context["kind"] == "check"));
+    assert!(contexts
+        .iter()
+        .any(|context| context["kind"] == "quantifier"));
+}
+
+#[test]
 fn full_project_check_rejects_duplicate_csv_headers_and_mappings() {
     let root = temp_project_dir("check-duplicate-csv-headers");
     let _cleanup = TempDirCleanup(root.clone());
