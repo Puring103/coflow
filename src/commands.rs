@@ -508,5 +508,6 @@ fn project_diagnostic(
             message: None,
         }),
         related: Vec::new(),
+        contexts: Vec::new(),
     }
 }

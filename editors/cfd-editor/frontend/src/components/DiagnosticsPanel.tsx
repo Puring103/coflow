@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { diagnosticKey, type DiagnosticItem } from '../wire'
+import { diagnosticDisplayMessage, diagnosticKey, type DiagnosticItem } from '../wire'
 import { Icon } from './Icon'
 
 interface Props {
@@ -193,7 +193,7 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpab
                           aria-hidden
                         />
                       </span>
-                      <span className="diag-msg">{d.message}</span>
+                      <span className="diag-msg">{diagnosticDisplayMessage(d)}</span>
                       {d.code && <span className="diag-code">{d.code}</span>}
                       {showFieldJump ? (
                         <button

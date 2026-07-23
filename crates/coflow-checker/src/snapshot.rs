@@ -5,7 +5,10 @@ use coflow_data_model::{
     RecordCoordinate, RecordOrigin,
 };
 
-use crate::{DependencyGraph, DimensionCheckRound, RootedCheckDiagnostic};
+use crate::{
+    CheckDiagnostic, CheckDiagnosticContext, DependencyGraph, DimensionCheckRound,
+    RootedCheckDiagnostic,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum CheckRound {
@@ -27,6 +30,8 @@ pub(crate) struct LogicalCheckDiagnostic {
     pub(crate) message: String,
     pub(crate) primary: Option<LogicalCheckLabel>,
     pub(crate) related: Vec<LogicalCheckLabel>,
+    pub(crate) contexts: Vec<CheckDiagnosticContext>,
+    pub(crate) is_custom_message: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,7 +155,7 @@ impl CheckSnapshot {
     }
 
     #[must_use]
-    pub fn render_diagnostics(&self, model: &CfdDataModel) -> Option<Vec<CfdDiagnostic>> {
+    pub fn render_diagnostics(&self, model: &CfdDataModel) -> Option<Vec<CheckDiagnostic>> {
         if !self.reusable {
             return None;
         }
@@ -179,8 +184,13 @@ impl CheckSnapshot {
 
 fn stabilize_diagnostic(
     model: &CfdDataModel,
-    diagnostic: CfdDiagnostic,
+    diagnostic: CheckDiagnostic,
 ) -> Option<LogicalCheckDiagnostic> {
+    let CheckDiagnostic {
+        diagnostic,
+        contexts,
+        is_custom_message,
+    } = diagnostic;
     let CfdDiagnostic {
         code,
         stage,
@@ -202,6 +212,8 @@ fn stabilize_diagnostic(
             .into_iter()
             .map(|label| stabilize_label(model, label))
             .collect::<Option<Vec<_>>>()?,
+        contexts,
+        is_custom_message,
     })
 }
 
@@ -220,21 +232,25 @@ fn stabilize_label(model: &CfdDataModel, label: CfdLabel) -> Option<LogicalCheck
 fn render_diagnostic(
     model: &CfdDataModel,
     diagnostic: LogicalCheckDiagnostic,
-) -> Option<CfdDiagnostic> {
-    Some(CfdDiagnostic {
-        code: diagnostic.code,
-        stage: diagnostic.stage,
-        severity: diagnostic.severity,
-        message: diagnostic.message,
-        primary: match diagnostic.primary {
-            Some(label) => Some(render_label(model, label)?),
-            None => None,
+) -> Option<CheckDiagnostic> {
+    Some(CheckDiagnostic {
+        diagnostic: CfdDiagnostic {
+            code: diagnostic.code,
+            stage: diagnostic.stage,
+            severity: diagnostic.severity,
+            message: diagnostic.message,
+            primary: match diagnostic.primary {
+                Some(label) => Some(render_label(model, label)?),
+                None => None,
+            },
+            related: diagnostic
+                .related
+                .into_iter()
+                .map(|label| render_label(model, label))
+                .collect::<Option<Vec<_>>>()?,
         },
-        related: diagnostic
-            .related
-            .into_iter()
-            .map(|label| render_label(model, label))
-            .collect::<Option<Vec<_>>>()?,
+        contexts: diagnostic.contexts,
+        is_custom_message: diagnostic.is_custom_message,
     })
 }
 

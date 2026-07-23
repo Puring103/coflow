@@ -83,7 +83,7 @@ fn diagnostics_for_record(
             fields.push(FieldDiagnostic {
                 severity: normalized_severity(&diagnostic.severity).to_string(),
                 field_path: field_path.clone(),
-                message: diagnostic.message.clone(),
+                message: diagnostic.display_message(),
             });
         }
         match diagnostic.severity.as_str() {

@@ -29,6 +29,7 @@ pub fn plain_error(
         message: message.into(),
         primary: None,
         related: Vec::new(),
+        contexts: Vec::new(),
     })
 }
 
@@ -55,6 +56,7 @@ pub fn file_error(
             message: None,
         }),
         related: Vec::new(),
+        contexts: Vec::new(),
     })
 }
 
@@ -72,5 +74,6 @@ fn project_diagnostic(config_path: &Path, diagnostic: ProjectDiagnostic) -> Diag
             message: None,
         }),
         related: Vec::new(),
+        contexts: Vec::new(),
     }
 }

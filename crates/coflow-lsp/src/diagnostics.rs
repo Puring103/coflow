@@ -49,7 +49,12 @@ pub fn lsp_diagnostic(diagnostic: &coflow_api::Diagnostic) -> Value {
         "source".to_string(),
         json!(format!("coflow {}", diagnostic.stage)),
     );
-    out.insert("message".to_string(), json!(&diagnostic.message));
+    let mut message = diagnostic.message.clone();
+    for context in &diagnostic.contexts {
+        message.push_str("\n上下文: ");
+        message.push_str(&context.human_message());
+    }
+    out.insert("message".to_string(), json!(message));
 
     if !related.is_empty() {
         out.insert("relatedInformation".to_string(), Value::Array(related));

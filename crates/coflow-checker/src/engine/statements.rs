@@ -1,5 +1,6 @@
 use super::diagnostics::{
-    format_cfd_path_for_message, one_line_message, render_expr, render_stmt, CheckExplanation,
+    format_cfd_path_for_message, render_expr, render_stmt, CheckDiagnosticContext,
+    CheckExplanation,
 };
 use super::evaluator::{CheckEvaluator, EvalAbort, EvalFlow};
 use super::explanations;
@@ -103,8 +104,7 @@ fn eval_expr_stmt(
                         render_expr(expr),
                         value.location.clone(),
                     )
-                })
-                .with_context(&evaluator.contexts);
+                });
             let message = match custom_message {
                 Some(CftSchemaCheckMessage {
                     kind: CftSchemaCheckMessageKind::String(message),
@@ -120,7 +120,11 @@ fn eval_expr_stmt(
                 },
                 None => explanation.message(),
             };
-            evaluator.diag_at_preformatted(explanation.code, explanation.location, message);
+            if custom_message.is_some() {
+                evaluator.diag_at_custom_message(explanation.code, explanation.location, message);
+            } else {
+                evaluator.diag_at_preformatted(explanation.code, explanation.location, message);
+            }
             EvalFlow::Continue
         }
         Ok(value) => {
@@ -145,7 +149,9 @@ fn eval_when_stmt(
         Ok(value) if matches!(value.value.scalar(), Some(ScalarValue::Bool(true))) => {
             evaluator
                 .contexts
-                .push(format!("在 when {} 内", render_expr(condition)));
+                .push(CheckDiagnosticContext::When {
+                    expression: render_expr(condition),
+                });
             let flow = eval_stmts(evaluator, body);
             let _ = evaluator.contexts.pop();
             flow
@@ -227,7 +233,6 @@ fn eval_quantifier<'model>(
     } = execution;
     let quantifier_diagnostic_start = evaluator.diagnostics.len();
     let mut matched = 0_usize;
-    let mut any_failures = Vec::new();
     let mut none_match_locations: Vec<Option<ValueLocation>> = Vec::new();
     let mut first_item_location = None;
     for index in 0..item_count {
@@ -250,13 +255,19 @@ fn eval_quantifier<'model>(
         let mut scope = BTreeMap::new();
         scope.insert(binding.to_string(), item.clone());
         evaluator.scopes.push(scope);
-        let item_context = format!(
-            "绑定 {binding} 位于 {}",
-            item.location.as_ref().map_or_else(
+        let item_context = CheckDiagnosticContext::Quantifier {
+            kind: match kind {
+                CftSchemaQuantifierKind::All => "all",
+                CftSchemaQuantifierKind::Any => "any",
+                CftSchemaQuantifierKind::None => "none",
+            }
+            .to_string(),
+            binding: binding.to_string(),
+            item: item.location.as_ref().map_or_else(
                 || render_expr(collection),
                 |location| { format_cfd_path_for_message(&location.blame.path) }
-            )
-        );
+            ),
+        };
         evaluator.contexts.push(item_context);
         let flow = eval_stmts(evaluator, body);
         let passed = flow == EvalFlow::Continue && evaluator.diagnostics.len() == diagnostic_start;
@@ -275,10 +286,7 @@ fn eval_quantifier<'model>(
         match kind {
             CftSchemaQuantifierKind::All => {}
             CftSchemaQuantifierKind::Any => {
-                let trial_failures = evaluator.diagnostics.split_off(diagnostic_start);
-                if !passed {
-                    any_failures.extend(trial_failures);
-                }
+                let _ = evaluator.diagnostics.split_off(diagnostic_start);
             }
             CftSchemaQuantifierKind::None => {
                 evaluator.diagnostics.truncate(diagnostic_start);
@@ -302,9 +310,6 @@ fn eval_quantifier<'model>(
         stmt,
         quantifier_diagnostic_start,
         matched,
-        any_failures
-            .first()
-            .map(|diagnostic| diagnostic.message.as_str()),
         none_match_locations,
     );
     EvalFlow::Continue
@@ -320,7 +325,6 @@ fn finish_quantifier(
     stmt: &CftSchemaCheckStmt,
     quantifier_diagnostic_start: usize,
     matched: usize,
-    first_any_failure: Option<&str>,
     none_match_locations: Vec<Option<ValueLocation>>,
 ) {
     match kind {
@@ -328,13 +332,7 @@ fn finish_quantifier(
             rewrite_all_failures(evaluator, stmt, quantifier_diagnostic_start);
         }
         CftSchemaQuantifierKind::Any if matched == 0 => {
-            emit_any_failure(
-                evaluator,
-                item_count,
-                first_item_location,
-                stmt,
-                first_any_failure,
-            );
+            emit_any_failure(evaluator, item_count, first_item_location, stmt);
         }
         CftSchemaQuantifierKind::Any => {}
         CftSchemaQuantifierKind::None if matched > 0 => {
@@ -350,22 +348,28 @@ fn rewrite_all_failures(
     quantifier_diagnostic_start: usize,
 ) {
     for diagnostic in &mut evaluator.diagnostics[quantifier_diagnostic_start..] {
-        if diagnostic.code != CfdErrorCode::CheckBoolExpectedTrue
-            && diagnostic.code != CfdErrorCode::CheckComparisonFailed
-            && diagnostic.code != CfdErrorCode::CheckNegationFailed
-            && diagnostic.code != CfdErrorCode::CheckAndFailed
-            && diagnostic.code != CfdErrorCode::CheckOrFailed
-            && diagnostic.code != CfdErrorCode::CheckTypePredicateFailed
-            && diagnostic.code != CfdErrorCode::CheckNullPredicateFailed
-            && diagnostic.code != CfdErrorCode::CheckContainsFailed
-            && diagnostic.code != CfdErrorCode::CheckUniqueFailed
-            && diagnostic.code != CfdErrorCode::CheckMatchesFailed
-            && diagnostic.code != CfdErrorCode::CheckFailed
+        if diagnostic.diagnostic.code != CfdErrorCode::CheckBoolExpectedTrue
+            && diagnostic.diagnostic.code != CfdErrorCode::CheckComparisonFailed
+            && diagnostic.diagnostic.code != CfdErrorCode::CheckNegationFailed
+            && diagnostic.diagnostic.code != CfdErrorCode::CheckAndFailed
+            && diagnostic.diagnostic.code != CfdErrorCode::CheckOrFailed
+            && diagnostic.diagnostic.code != CfdErrorCode::CheckTypePredicateFailed
+            && diagnostic.diagnostic.code != CfdErrorCode::CheckNullPredicateFailed
+            && diagnostic.diagnostic.code != CfdErrorCode::CheckContainsFailed
+            && diagnostic.diagnostic.code != CfdErrorCode::CheckUniqueFailed
+            && diagnostic.diagnostic.code != CfdErrorCode::CheckMatchesFailed
+            && diagnostic.diagnostic.code != CfdErrorCode::CheckFailed
         {
             continue;
         }
-        diagnostic.code = CfdErrorCode::CheckAllQuantifierFailed;
-        diagnostic.message = format!("校验失败: {}\n{}", render_stmt(stmt), diagnostic.message);
+        diagnostic.diagnostic.code = CfdErrorCode::CheckAllQuantifierFailed;
+        if !diagnostic.is_custom_message {
+            diagnostic.diagnostic.message = format!(
+                "校验失败: {}\n{}",
+                render_stmt(stmt),
+                diagnostic.diagnostic.message
+            );
+        }
     }
 }
 
@@ -374,20 +378,14 @@ fn emit_any_failure(
     item_count: usize,
     first_item_location: Option<ValueLocation>,
     stmt: &CftSchemaCheckStmt,
-    first_any_failure: Option<&str>,
 ) {
-    let mut context = evaluator.contexts.clone();
-    if let Some(message) = first_any_failure {
-        context.push(format!("失败样例: {}", one_line_message(message)));
-    }
     let explanation = CheckExplanation::new(
         CfdErrorCode::CheckAnyQuantifierFailed,
         render_stmt(stmt),
         first_item_location,
     )
     .with_actual(format!("0 / {item_count} 个元素匹配"))
-    .with_expected("至少 1 个元素满足")
-    .with_context(&context);
+    .with_expected("至少 1 个元素满足");
     evaluator.diag_at_preformatted(
         explanation.code,
         explanation.location.clone(),
@@ -414,8 +412,7 @@ fn emit_none_failures(
                 |location| format_cfd_path_for_message(&location.blame.path),
             )
         ))
-        .with_expected("没有元素满足")
-        .with_context(&evaluator.contexts);
+        .with_expected("没有元素满足");
         let message = explanation.message();
         evaluator.diag_at_preformatted(explanation.code, explanation.location, message);
     }

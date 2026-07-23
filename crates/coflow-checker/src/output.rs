@@ -1,11 +1,11 @@
-use coflow_data_model::{CfdDiagnostic, CfdDiagnostics, CfdRecordId};
+use coflow_data_model::{CfdDiagnostics, CfdRecordId};
 
-use crate::{CheckSnapshot, DependencyCollection, DependencyGraph};
+use crate::{CheckDiagnostic, CheckSnapshot, DependencyCollection, DependencyGraph};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootedCheckDiagnostic {
     pub root: CfdRecordId,
-    pub diagnostic: CfdDiagnostic,
+    pub diagnostic: CheckDiagnostic,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -42,7 +42,7 @@ impl CheckOutput {
             Err(CfdDiagnostics::new(
                 self.diagnostics
                     .into_iter()
-                    .map(|rooted| rooted.diagnostic)
+                    .map(|rooted| rooted.diagnostic.into_legacy_diagnostic())
                     .collect(),
             ))
         }

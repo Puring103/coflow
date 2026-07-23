@@ -448,6 +448,7 @@ impl WriteProjectSession {
                     message: "selected field was not found".to_string(),
                     primary: None,
                     related: Vec::new(),
+                    contexts: Vec::new(),
                 })
             })?;
         crate::mutation::render_cell_text_value(value)

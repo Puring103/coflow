@@ -276,5 +276,6 @@ fn one_error(code: &'static str, stage: &'static str, message: impl Into<String>
         message: message.into(),
         primary: None,
         related: Vec::new(),
+        contexts: Vec::new(),
     })
 }

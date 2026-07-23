@@ -291,6 +291,7 @@ pub(super) fn artifact_diagnostic(path: &Path, message: impl Into<String>) -> Di
             message: None,
         }),
         related: Vec::new(),
+        contexts: Vec::new(),
     }
 }
 

@@ -443,5 +443,6 @@ fn one_data_file_error(code: &'static str, message: impl Into<String>) -> Diagno
         message: message.into(),
         primary: None,
         related: Vec::new(),
+        contexts: Vec::new(),
     })
 }

@@ -444,6 +444,7 @@ fn directory_option_diagnostic(
             message: None,
         }),
         related: Vec::new(),
+        contexts: Vec::new(),
     }
 }
 
@@ -506,6 +507,7 @@ fn project_diagnostic(config_path: &Path, message: impl Into<String>) -> Diagnos
             message: None,
         }),
         related: Vec::new(),
+        contexts: Vec::new(),
     }
 }
 
