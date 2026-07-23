@@ -1,4 +1,4 @@
-use super::annotations::{find_annotation, has_annotation};
+use super::annotations::{field_dimension_name, find_annotation, has_annotation};
 use super::SchemaCompiler;
 use crate::schema::{
     CftConst, CftConstValue, CftEnum, CftEnumVariant, CftField, CftFieldDimension, CftSchemaBinOp,
@@ -12,7 +12,7 @@ use crate::syntax::ast::{
     CheckStmt, CmpOp, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, TypePredicate, TypeRef,
     TypeRefKind, UnaryOp,
 };
-use crate::{BucketName, CheckName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
+use crate::{BucketName, CheckName, ConstName, EnumName, EnumVariantName, FieldName, TypeName};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -179,23 +179,12 @@ impl SchemaCompiler<'_> {
     }
 
     fn build_schema_field(&self, field: &FieldDef, owner_type: &TypeName) -> CftField {
-        let localized = find_annotation(&field.annotations, "localized");
-        let dimension_annotation = find_annotation(&field.annotations, "dimension");
-        let dimension = localized
-            .map(|_| CftFieldDimension {
-                dimension: DimensionName::from_validated("language"),
-                bucket: localized_bucket(field),
-            })
-            .or_else(|| {
-                let annotation = dimension_annotation?;
-                let Some(AnnotationArg::String(name, _)) = annotation.args.first() else {
-                    return None;
-                };
-                Some(CftFieldDimension {
-                    dimension: DimensionName::from_validated(name.clone()),
-                    bucket: None,
-                })
-            });
+        let dimension = field_dimension_name(field).map(|dimension| CftFieldDimension {
+            bucket: (dimension.as_str() == "language")
+                .then(|| localized_bucket(field))
+                .flatten(),
+            dimension,
+        });
         CftField {
             declaring_type: owner_type.clone(),
             name: FieldName::from_validated(field.name.clone()),
@@ -306,6 +295,11 @@ impl SchemaCompiler<'_> {
                 .map(|stmt| self.convert_check_stmt(module, stmt))
                 .collect(),
             span: check.span,
+            dimension_statements: self
+                .check_dimensions
+                .get(&(module.clone(), check.span.start, check.span.end))
+                .cloned()
+                .unwrap_or_default(),
         }
     }
 

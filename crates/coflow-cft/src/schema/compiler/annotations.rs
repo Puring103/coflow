@@ -393,3 +393,14 @@ pub(super) fn find_annotation<'a>(
         .iter()
         .find(|annotation| annotation.name == name)
 }
+
+pub(super) fn field_dimension_name(field: &FieldDef) -> Option<crate::DimensionName> {
+    if find_annotation(&field.annotations, "localized").is_some() {
+        return Some(crate::DimensionName::from_validated("language"));
+    }
+    let annotation = find_annotation(&field.annotations, "dimension")?;
+    let Some(AnnotationArg::String(name, _)) = annotation.args.first() else {
+        return None;
+    };
+    Some(crate::DimensionName::from_validated(name.clone()))
+}

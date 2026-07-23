@@ -428,6 +428,28 @@ fn dimension_check_schedule_includes_inherited_dimension_checks() {
 }
 
 #[test]
+fn top_level_check_exposes_schema_guided_dimension_statements() {
+    let schema = compile_one_with_dimensions(
+        r#"
+            type Item {
+                @localized
+                name: string;
+            }
+            check ItemRules {
+                records(Item).len() > 0;
+                all item in records(Item) { item.name != ""; }
+            }
+        "#,
+        valid_dimensions([("language", vec!["zh".to_string()])]),
+    )
+    .expect("schema compiles");
+    let check = schema.resolve_check("ItemRules").expect("top-level check");
+
+    assert_eq!(check.statement_indices("language"), Some(&[1][..]));
+    assert_eq!(check.statement_indices("platform"), None);
+}
+
+#[test]
 fn schema_exposes_canonical_inheritance_relationships() {
     let schema = compile_one(
         r#"

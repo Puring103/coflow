@@ -1,4 +1,3 @@
-use super::check_dependencies;
 use crate::schema::{CftSchema, LocatedBudgetError};
 use crate::{CftSchemaCheckBlock, CftType, CftValueType, FieldName, TypeName};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
@@ -8,7 +7,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 pub(crate) struct TypedCheckPlan {
     owners_by_actual: BTreeMap<TypeName, Vec<TypeName>>,
     nested_fields_by_actual: BTreeMap<TypeName, BTreeSet<FieldName>>,
-    dependencies_by_owner: BTreeMap<TypeName, check_dependencies::CheckDependencyPlan>,
 }
 
 impl TypedCheckPlan {
@@ -46,17 +44,9 @@ impl TypedCheckPlan {
             owners_by_actual.insert(actual_type.clone(), owners);
         }
         let nested_fields_by_actual = compile_nested_fields(types, &owners_by_actual, budget)?;
-        let mut dependencies_by_owner = BTreeMap::new();
-        for name in types.keys() {
-            dependencies_by_owner.insert(
-                name.clone(),
-                check_dependencies::check_dependencies_for_type(types, name, budget)?,
-            );
-        }
         Ok(Self {
             owners_by_actual,
             nested_fields_by_actual,
-            dependencies_by_owner,
         })
     }
 
@@ -76,11 +66,6 @@ impl TypedCheckPlan {
             .is_some_and(|fields| fields.contains(field_name))
     }
 
-    fn dimension_statement_indices(&self, owner: &TypeName, dimension: &str) -> Option<&[usize]> {
-        self.dependencies_by_owner
-            .get(owner)?
-            .statement_indices(dimension)
-    }
 }
 
 fn compile_nested_fields(
@@ -200,6 +185,17 @@ pub struct ScheduledCheckBlock<'schema> {
 
 impl<'schema> ScheduledCheckBlock<'schema> {
     #[must_use]
+    pub const fn new(
+        block: &'schema CftSchemaCheckBlock,
+        statement_indices: &'schema [usize],
+    ) -> Self {
+        Self {
+            block,
+            statement_indices: Some(statement_indices),
+        }
+    }
+
+    #[must_use]
     pub const fn block(&self) -> &'schema CftSchemaCheckBlock {
         self.block
     }
@@ -234,8 +230,9 @@ impl<'schema> Iterator for TypedCheckSchedule<'schema, '_> {
                 if let (Some(block), Some(statement_indices)) = (
                     meta.check.as_ref(),
                     self.schema
-                        .typed_checks
-                        .dimension_statement_indices(owner, dimension),
+                        .resolve_type(owner)
+                        .and_then(|owner| owner.check.as_ref())
+                        .and_then(|check| check.statement_indices(dimension)),
                 ) {
                     return Some(ScheduledCheckBlock {
                         block,

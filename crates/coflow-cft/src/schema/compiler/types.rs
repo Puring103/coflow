@@ -94,6 +94,7 @@ impl SchemaCompiler<'_> {
                         field.name.clone(),
                         FieldInfo {
                             inferred_type: declared_ty,
+                            dimension: super::annotations::field_dimension_name(field),
                         },
                     );
                 }

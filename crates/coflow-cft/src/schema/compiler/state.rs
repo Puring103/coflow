@@ -37,6 +37,7 @@ pub(super) struct EnumInfo<'a> {
 #[derive(Debug, Clone)]
 pub(super) struct FieldInfo {
     pub(super) inferred_type: InferredType,
+    pub(super) dimension: Option<crate::DimensionName>,
 }
 
 #[derive(Debug, Clone)]
