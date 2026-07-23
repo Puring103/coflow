@@ -113,6 +113,9 @@ pub(crate) fn check_expression_completion_items(
     document: &LspDocument,
     offset: usize,
 ) -> Vec<Value> {
+    if is_records_type_context(&document.source, offset) {
+        return named_type_completion_items(build);
+    }
     if is_method_completion_context(&document.source, offset) {
         return function_completion_items();
     }
@@ -137,6 +140,13 @@ pub(crate) fn check_expression_completion_items(
                 None,
             ));
         }
+    } else {
+        items.push(completion_item(
+            "records",
+            COMPLETION_KIND_FUNCTION,
+            "Top-level record set query",
+            Some("Return all top-level records assignable to a static object type."),
+        ));
     }
 
     for binding in quantifier_bindings_at(document, offset) {
@@ -149,6 +159,19 @@ pub(crate) fn check_expression_completion_items(
     }
 
     items
+}
+
+fn is_records_type_context(source: &str, offset: usize) -> bool {
+    let Some(prefix) = source.get(..offset.min(source.len())) else {
+        return false;
+    };
+    let prefix = prefix.trim_end_matches(char::is_whitespace);
+    let prefix = prefix.trim_end_matches(is_ident_continue);
+    let prefix = prefix.trim_end_matches(char::is_whitespace);
+    let Some(prefix) = prefix.strip_suffix('(') else {
+        return false;
+    };
+    last_ident(prefix).is_some_and(|ident| ident == "records")
 }
 
 fn keyword_completion_items(labels: &[&str]) -> Vec<Value> {

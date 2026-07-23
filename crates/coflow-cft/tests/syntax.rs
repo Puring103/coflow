@@ -296,6 +296,27 @@ fn parser_recovers_at_the_next_top_level_declaration() {
 }
 
 #[test]
+fn damaged_records_query_recovers_at_following_declarations() {
+    let source = r#"
+        type Item { value: int; }
+        check Broken {
+            all item in records( { item.value > 0; }
+        }
+        type Valid { name: string; }
+        const = 1;
+    "#;
+    let diagnostics = add_source(source).expect_err("records argument and const are invalid");
+    let valid_offset = source.find("type Valid").expect("following valid type");
+
+    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .primary
+            .as_ref()
+            .is_some_and(|label| label.span.start > valid_offset)
+    }));
+}
+
+#[test]
 fn parser_rejects_invalid_chain_comparison() {
     let err = add_source("type A { value: int; check { 0 < value > 10; } }").unwrap_err();
     assert_has_code(&err, CftErrorCode::InvalidChainComparison);
