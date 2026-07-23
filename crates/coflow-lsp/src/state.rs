@@ -240,10 +240,16 @@ pub(crate) fn quantifier_bindings_at(document: &LspDocument, offset: usize) -> V
         return bindings;
     };
     for item in &ast.items {
-        if let Item::Type(ty) = item {
-            if let Some(check) = &ty.check {
-                collect_quantifier_bindings(&check.stmts, offset, &mut bindings);
+        match item {
+            Item::Type(ty) => {
+                if let Some(check) = &ty.check {
+                    collect_quantifier_bindings(&check.stmts, offset, &mut bindings);
+                }
             }
+            Item::Check(check) => {
+                collect_quantifier_bindings(&check.block.stmts, offset, &mut bindings);
+            }
+            Item::Const(_) | Item::Enum(_) => {}
         }
     }
     bindings

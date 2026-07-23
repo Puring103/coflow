@@ -342,6 +342,21 @@ fn add_ast_semantic_tokens(
                     }
                 }
             }
+            Item::Check(check) => {
+                for annotation in &check.annotations {
+                    add_annotation_semantic(document, annotation, tokens);
+                }
+                push_semantic_span(
+                    &document.source,
+                    check.name_span,
+                    SEM_FUNCTION,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                for stmt in &check.block.stmts {
+                    add_check_stmt_semantic(build, document, stmt, tokens);
+                }
+            }
         }
     }
 }

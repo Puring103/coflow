@@ -99,7 +99,7 @@ pub(crate) fn top_level_completion_items(line_prefix: &str) -> Vec<Value> {
     let labels: &[&str] = if top_level_needs_type_keyword(line_prefix) {
         &["type"]
     } else {
-        &["const", "enum", "type", "abstract", "sealed"]
+        &["const", "enum", "type", "abstract", "sealed", "check"]
     };
     keyword_completion_items(labels)
 }
@@ -375,7 +375,7 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
                             "CFT enum",
                             None,
                         )),
-                        Item::Const(_) => {}
+                        Item::Const(_) | Item::Check(_) => {}
                     }
                 }
             }
@@ -510,7 +510,10 @@ pub(crate) fn completion_scope(document: &LspDocument, offset: usize) -> Complet
                 }
                 return CompletionScope::TypeBody;
             }
-            Item::Const(_) | Item::Enum(_) | Item::Type(_) => {}
+            Item::Check(check) if check.span.start <= offset && offset <= check.span.end => {
+                return CompletionScope::CheckBlock;
+            }
+            Item::Const(_) | Item::Enum(_) | Item::Type(_) | Item::Check(_) => {}
         }
     }
 

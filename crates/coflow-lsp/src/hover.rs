@@ -190,6 +190,11 @@ fn annotation_at(document: &LspDocument, offset: usize) -> Option<&Annotation> {
                     }
                 }
             }
+            Item::Check(check) => {
+                if let Some(annotation) = find_in(&check.annotations, offset) {
+                    return Some(annotation);
+                }
+            }
         }
     }
     None
