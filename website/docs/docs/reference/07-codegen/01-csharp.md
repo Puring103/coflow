@@ -99,7 +99,7 @@ if (tables.TbItem.TryGet("sword_fire", out var found))
 
 示例：
 
-```text
+```cft
 type item_config {
   display_name: string;
 }
@@ -173,7 +173,7 @@ object 字段会在加载时直接解析为最终对象，不生成 `xxxKey` 或
 
 `@idAsEnum` 会把指定 type 的 record key 转成 enum：
 
-```text
+```cft
 @idAsEnum(ItemId)
 type Item {
   name: string;
@@ -190,7 +190,7 @@ enum ItemId {}
 
 `@singleton` type 不生成 `Tb*` table 访问器，而是在入口类上直接生成属性：
 
-```text
+```cft
 @singleton
 type GameConfig {
   max_level: int;
@@ -212,7 +212,7 @@ singleton 属性名使用 record key 原文。
 
 `@localized` 字段生成 `Localized<T>`：
 
-```text
+```cft
 type Item {
   @localized
   name: string;

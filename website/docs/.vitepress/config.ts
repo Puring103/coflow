@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
+import cfdGrammar from '../../../editors/vscode-coflow/syntaxes/cfd.tmLanguage.json'
+import cftGrammar from '../../../editors/vscode-coflow/syntaxes/cft.tmLanguage.json'
 
 const pagesBase = process.env.VITEPRESS_BASE ?? (process.env.GITHUB_ACTIONS ? '/coflow/' : '/')
 const projectUrl = 'https://github.com/Puring103/coflow'
@@ -9,6 +11,12 @@ export default withMermaid(defineConfig({
   description: 'A typed, validated, AI-friendly game configuration workflow.',
   base: pagesBase,
   cleanUrls: true,
+  markdown: {
+    languages: [
+      { ...cftGrammar, name: 'cft', aliases: ['CFT'] },
+      { ...cfdGrammar, name: 'cfd', aliases: ['CFD'] }
+    ]
+  },
   mermaid: {
     theme: 'default',
     flowchart: {
