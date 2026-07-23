@@ -294,6 +294,8 @@ fn rebuild_data_pipeline(
     impact: &MutationImpact,
     diagnostics: &mut DiagnosticsStore,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
+    let changed_records = impact.changed_records();
+    let check_changes = impact.check_change_set(&ctx.schema);
     let (mut output, mut indexes) = match load_cached_data(
         ctx,
         &previous.source_data,
@@ -302,7 +304,7 @@ fn rebuild_data_pipeline(
         !ctx.has_dimension_fields(),
         false,
         (!impact.structural_change).then_some(&previous.check_state),
-        &impact.changed_records,
+        &check_changes,
     ) {
         Ok(loaded) => loaded,
         Err(load_failure) => {
@@ -325,7 +327,7 @@ fn rebuild_data_pipeline(
     let mut dimensions = commit_dimensions_if_needed(
         ctx,
         &output,
-        (!impact.structural_change).then_some(&impact.changed_records),
+        (!impact.structural_change).then_some(&changed_records),
         diagnostics,
     );
     record_dimension_work(&mut execution_stats, &dimensions);
@@ -364,7 +366,7 @@ fn rebuild_data_pipeline(
             true,
             true,
             (!impact.structural_change).then_some(&previous.check_state),
-            &impact.changed_records,
+            &check_changes,
         ) {
             Ok((reloaded, reloaded_indexes)) => {
                 execution_stats.merge(reloaded.statistics);
@@ -467,7 +469,7 @@ fn load_cached_data(
     run_checks: bool,
     refresh_implicit_dimension_sources: bool,
     previous_checks: Option<&CheckState>,
-    changed_records: &BTreeSet<crate::RecordCoordinate>,
+    check_changes: &coflow_checker::CheckChangeSet,
 ) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
     let mut indexes = SessionIndexBuilder::default();
     let output = match reload_project_data_from_cache(
@@ -484,7 +486,7 @@ fn load_cached_data(
         },
         refresh_implicit_dimension_sources,
         previous_checks,
-        changed_records,
+        check_changes,
     ) {
         Ok(output) => output,
         Err(diagnostics) => {

@@ -16,6 +16,7 @@ use std::sync::Arc;
 use crate::checks::{
     run_full_project_checks, run_incremental_project_checks, CheckState, ProjectCheckOutput,
 };
+use coflow_checker::CheckChangeSet;
 use crate::dimensions;
 use crate::indexes::{
     DiagnosticLogicalLocation, FileIndex, PendingRecordRef, RecordIndexBuilder,
@@ -243,7 +244,7 @@ pub(crate) fn reload_project_data_from_cache(
     options: LoadProjectDataOptions,
     refresh_implicit_dimension_sources: bool,
     previous_checks: Option<&CheckState>,
-    changed_records: &BTreeSet<RecordCoordinate>,
+    check_changes: &CheckChangeSet,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut statistics = ProjectExecutionStats::default();
     let mut source_data = SourceDataCache {
@@ -339,7 +340,7 @@ pub(crate) fn reload_project_data_from_cache(
         source_data,
         options.run_checks,
         previous_checks,
-        changed_records,
+        check_changes,
         statistics,
     )
 }
@@ -642,7 +643,7 @@ fn build_output_from_cache(
     source_data: SourceDataCache,
     run_checks: bool,
     previous_checks: Option<&CheckState>,
-    changed_records: &BTreeSet<RecordCoordinate>,
+    check_changes: &CheckChangeSet,
     mut statistics: ProjectExecutionStats,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records = Vec::new();
@@ -696,7 +697,7 @@ fn build_output_from_cache(
             &model,
             &origins,
             previous_checks,
-            changed_records,
+            check_changes,
             &mut statistics,
         )
     } else {
@@ -723,13 +724,13 @@ fn run_cached_project_checks(
     model: &CfdDataModel,
     origins: &[RecordOrigin],
     previous_checks: Option<&CheckState>,
-    changed_records: &BTreeSet<RecordCoordinate>,
+    check_changes: &CheckChangeSet,
     statistics: &mut ProjectExecutionStats,
 ) -> ProjectCheckOutput {
     previous_checks.map_or_else(
         || run_full_project_checks(schema, model, origins),
         |previous| {
-            run_incremental_project_checks(schema, model, origins, previous, changed_records)
+            run_incremental_project_checks(schema, model, origins, previous, check_changes)
                 .unwrap_or_else(|| {
                     statistics
                         .mark_full_fallback(IncrementalFallbackReason::IncompleteDependencyState);

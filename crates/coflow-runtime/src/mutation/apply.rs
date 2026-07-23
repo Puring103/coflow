@@ -127,7 +127,12 @@ fn execute_generation_mutation(
         cursor = end;
     }
 
-    let impact = MutationImpact::from_outcomes(staged.iter().map(|applied| &applied.outcome));
+    let impact = MutationImpact::from_operations(
+        executable
+            .iter()
+            .zip(&staged)
+            .map(|(item, applied)| (&item.planned.op, &applied.outcome)),
+    );
     let rebuilt = match rebuild_after_mutation(session, registry, &impact) {
         Ok(rebuilt) => rebuilt,
         Err(mut diagnostics) => {
@@ -269,7 +274,9 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
         PreparedMutationOp::SetField {
             record, write_file, ..
         }
-        | PreparedMutationOp::FoldedSetField { record, write_file } => {
+        | PreparedMutationOp::FoldedSetField {
+            record, write_file, ..
+        } => {
             ("set_field", Some(record.clone()), Some(write_file.clone()))
         }
         PreparedMutationOp::WriteDimensionValue {

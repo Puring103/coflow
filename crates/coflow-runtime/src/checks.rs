@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use coflow_api::{byte_range, map_diagnostics_with_origins, DiagnosticContext, DiagnosticSet, Label, SourceLocation};
 use coflow_cft::CftSchema;
@@ -58,16 +58,12 @@ pub(crate) fn run_incremental_project_checks(
     model: &CfdDataModel,
     origins: &[RecordOrigin],
     previous: &CheckState,
-    changed: &BTreeSet<RecordCoordinate>,
+    changed: &CheckChangeSet,
 ) -> Option<ProjectCheckOutput> {
     let output = run_checks(
         schema,
         model,
-        CheckRequest::incremental(
-            previous,
-            &CheckChangeSet::from_records(schema, changed.iter().cloned()),
-        )
-        .with_rounds(dimension_check_rounds(schema)),
+        CheckRequest::incremental(previous, changed).with_rounds(dimension_check_rounds(schema)),
     );
     render_check_snapshot(schema, model, origins, output.snapshot?, output.statistics)
 }
