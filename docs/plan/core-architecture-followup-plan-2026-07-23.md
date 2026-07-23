@@ -193,15 +193,16 @@ CFD language types.
 
 ### 3.8 P3: Historical design material is mixed with current architecture guidance
 
-Completed plans, superseded plans, audits and current guidance coexist under `docs/plan` and
-`docs/superpowers`. They contain useful decision history but do not clearly identify which document
-describes the current architecture.
+The first cleanup removed the legacy `docs/superpowers` implementation plans and completed audits.
+The remaining material under `docs/plan` still mixes active proposals with historical decision
+context and does not consistently identify which document describes the current architecture.
 
 Required outcome:
 
 - Maintain one concise current architecture document and decision index.
 - Mark completed plans with final status and links to superseding documents.
-- Move obsolete implementation plans to an archive directory without rewriting their history.
+- Remove obsolete implementation plans after their durable decisions are reflected in current
+  architecture or reference documentation.
 - Keep `README.md` user-facing, consistent with repository policy.
 
 ## 4. Implementation Phases
