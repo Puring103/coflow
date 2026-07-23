@@ -14,9 +14,9 @@ mod types;
 pub use entry::build_schema;
 
 use self::checks::CheckTypeAnalyzer;
-use self::state::{ConstInfo, EnumInfo, FieldInfo, Symbol, TypeInfo};
+use self::state::{CheckInfo, ConstInfo, EnumInfo, FieldInfo, Symbol, TypeInfo};
 use crate::module::{CftModuleSet, ModuleId};
-use crate::schema::{CftConst, CftEnum, CftType, ConstName, EnumName, TypeName};
+use crate::schema::{CheckName, CftConst, CftEnum, CftTopLevelCheck, CftType, ConstName, EnumName, TypeName};
 use crate::syntax::ast::{ConstLiteral, TypeRefKind};
 use crate::syntax::Span;
 use crate::{CftDiagnostic, CftDiagnostics, CftErrorCode};
@@ -28,6 +28,7 @@ pub(in crate::schema) struct SchemaDeclarations {
     pub(super) consts: BTreeMap<ConstName, CftConst>,
     pub(super) types: BTreeMap<TypeName, CftType>,
     pub(super) enums: BTreeMap<EnumName, CftEnum>,
+    pub(super) checks: BTreeMap<CheckName, CftTopLevelCheck>,
 }
 
 pub(super) struct SchemaCompiler<'a> {
@@ -37,6 +38,7 @@ pub(super) struct SchemaCompiler<'a> {
     consts: BTreeMap<String, ConstInfo<'a>>,
     types: BTreeMap<String, TypeInfo<'a>>,
     enums: BTreeMap<String, EnumInfo<'a>>,
+    checks: BTreeMap<String, CheckInfo<'a>>,
     full_fields: BTreeMap<String, BTreeMap<String, FieldInfo>>,
     inheritance_chains: BTreeMap<String, Vec<String>>,
     quantifier_bindings:
@@ -53,6 +55,7 @@ impl<'a> SchemaCompiler<'a> {
             consts: BTreeMap::new(),
             types: BTreeMap::new(),
             enums: BTreeMap::new(),
+            checks: BTreeMap::new(),
             full_fields: BTreeMap::new(),
             inheritance_chains: BTreeMap::new(),
             quantifier_bindings: BTreeMap::new(),
@@ -130,6 +133,11 @@ impl<'a> SchemaCompiler<'a> {
                 checker.check_stmts(&check.stmts);
             }
         });
+        let checks: Vec<_> = self.checks.values().cloned().collect();
+        for info in checks {
+            let mut checker = CheckTypeAnalyzer::top_level(self, info.module.clone());
+            checker.check_stmts(&info.def.block.stmts);
+        }
     }
 
     pub(super) fn push_diag(

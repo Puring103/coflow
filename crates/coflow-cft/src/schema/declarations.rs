@@ -1,7 +1,9 @@
 use super::CftValueType;
 use crate::module::ModuleId;
 use crate::syntax::Span;
-use crate::{BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
+use crate::{
+    BucketName, CheckName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName,
+};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -10,6 +12,14 @@ pub struct CftConst {
     pub module: ModuleId,
     pub name: ConstName,
     pub value: CftConstValue,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CftTopLevelCheck {
+    pub module: ModuleId,
+    pub name: CheckName,
+    pub block: CftSchemaCheckBlock,
     pub span: Span,
 }
 

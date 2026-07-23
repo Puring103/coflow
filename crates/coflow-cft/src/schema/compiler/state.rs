@@ -1,7 +1,7 @@
 use super::inferred_type::InferredType;
 use crate::module::ModuleId;
 use crate::schema::CftConstValue;
-use crate::syntax::ast::{ConstDef, EnumDef, TypeDef};
+use crate::syntax::ast::{ConstDef, EnumDef, TopLevelCheckDef, TypeDef};
 use crate::syntax::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,6 +16,12 @@ pub(super) struct ConstInfo<'a> {
 pub(super) struct TypeInfo<'a> {
     pub(super) module: ModuleId,
     pub(super) def: &'a TypeDef,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct CheckInfo<'a> {
+    pub(super) module: ModuleId,
+    pub(super) def: &'a TopLevelCheckDef,
 }
 
 #[derive(Debug, Clone)]

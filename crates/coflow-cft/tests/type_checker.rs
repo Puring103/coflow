@@ -12,6 +12,43 @@ mod common;
 use common::*;
 
 #[test]
+fn top_level_check_has_no_implicit_record_scope() {
+    let err = compile_one(
+        r#"
+        type Item { price: int; }
+        check ItemIntegrity {
+            price > 0;
+            id != "";
+        }
+        "#,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == CftErrorCode::UnknownValueName)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn top_level_check_accepts_global_consts_and_enums() {
+    compile_one(
+        r#"
+        const LIMIT = 3;
+        enum Mode { Normal }
+        check ProjectIntegrity {
+            LIMIT > 0;
+            Mode.Normal == Mode.Normal;
+        }
+        "#,
+    )
+    .unwrap();
+}
+
+#[test]
 fn type_checker_reports_name_field_enum_function_quantifier_index_and_regex_errors() {
     let source = r#"
         const PAT = "^[a";

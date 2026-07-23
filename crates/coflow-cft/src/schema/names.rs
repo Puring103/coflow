@@ -151,6 +151,7 @@ cft_name!(FieldName, "field name", standard_name, trusted);
 cft_name!(EnumName, "enum name", standard_name, trusted);
 cft_name!(EnumVariantName, "enum variant name", standard_name, trusted);
 cft_name!(ConstName, "const name", standard_name, trusted);
+cft_name!(CheckName, "check name", standard_name, trusted);
 cft_name!(DimensionName, "dimension name", standard_name, trusted);
 cft_name!(BucketName, "dimension bucket", standard_name, trusted);
 cft_name!(RecordKey, "record key", standard_name);

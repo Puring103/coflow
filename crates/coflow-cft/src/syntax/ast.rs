@@ -16,6 +16,7 @@ pub enum Item {
     Const(ConstDef),
     Enum(EnumDef),
     Type(TypeDef),
+    Check(TopLevelCheckDef),
 }
 
 impl Item {
@@ -25,8 +26,18 @@ impl Item {
             Self::Const(definition) => definition.span,
             Self::Enum(definition) => definition.span,
             Self::Type(definition) => definition.span,
+            Self::Check(definition) => definition.span,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct TopLevelCheckDef {
+    pub name: String,
+    pub name_span: Span,
+    pub block: CheckBlock,
+    pub annotations: Vec<Annotation>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]

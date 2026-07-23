@@ -5,14 +5,14 @@ use crate::schema::{
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
     CftSchemaCheckMessage, CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp,
     CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp,
-    CftType, CftValueType,
+    CftTopLevelCheck, CftType, CftValueType,
 };
 use crate::syntax::ast::{
     AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
     CheckStmt, CmpOp, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, TypePredicate, TypeRef,
     TypeRefKind, UnaryOp,
 };
-use crate::{BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
+use crate::{BucketName, CheckName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -22,7 +22,24 @@ impl SchemaCompiler<'_> {
             consts: self.build_consts(),
             enums: self.build_enums(),
             types: self.build_types(),
+            checks: self.build_checks(),
         }
+    }
+
+    fn build_checks(&self) -> BTreeMap<CheckName, CftTopLevelCheck> {
+        self.checks
+            .iter()
+            .map(|(name, info)| {
+                let name = CheckName::from_validated(name.clone());
+                let check = CftTopLevelCheck {
+                    module: info.module.clone(),
+                    name: name.clone(),
+                    block: self.convert_check_block(&info.module, &info.def.block),
+                    span: info.def.span,
+                };
+                (name, check)
+            })
+            .collect()
     }
 
     fn build_consts(&self) -> BTreeMap<ConstName, CftConst> {

@@ -19,8 +19,14 @@ use std::collections::HashMap;
 
 pub(super) struct CheckTypeAnalyzer<'a, 'b> {
     compiler: &'a mut SchemaCompiler<'b>,
-    type_info: &'a TypeInfo<'b>,
+    module: crate::ModuleId,
+    scope: CheckScope,
     locals: Vec<HashMap<String, InferredType>>,
+}
+
+enum CheckScope {
+    Record(String),
+    TopLevel,
 }
 
 fn is_formattable(ty: &InferredType) -> bool {
@@ -53,7 +59,20 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     pub(super) fn new(compiler: &'a mut SchemaCompiler<'b>, type_info: &'a TypeInfo<'b>) -> Self {
         Self {
             compiler,
-            type_info,
+            module: type_info.module.clone(),
+            scope: CheckScope::Record(type_info.def.name.clone()),
+            locals: Vec::new(),
+        }
+    }
+
+    pub(super) fn top_level(
+        compiler: &'a mut SchemaCompiler<'b>,
+        module: crate::ModuleId,
+    ) -> Self {
+        Self {
+            compiler,
+            module,
+            scope: CheckScope::TopLevel,
             locals: Vec::new(),
         }
     }
@@ -208,7 +227,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                     }
                 };
                 self.compiler.quantifier_bindings.insert(
-                    (self.type_info.module.clone(), span.start, span.end),
+                    (self.module.clone(), span.start, span.end),
                     layout,
                 );
                 self.locals.push(scope);
@@ -317,13 +336,15 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 return ty.clone();
             }
         }
-        if let Some(fields) = self.compiler.full_fields.get(&self.type_info.def.name) {
-            if let Some(field) = fields.get(name) {
-                return field.inferred_type.clone();
+        if let CheckScope::Record(type_name) = &self.scope {
+            if let Some(fields) = self.compiler.full_fields.get(type_name) {
+                if let Some(field) = fields.get(name) {
+                    return field.inferred_type.clone();
+                }
             }
-        }
-        if name == "id" {
-            return InferredType::string();
+            if name == "id" {
+                return InferredType::string();
+            }
         }
         if let Some(info) = self.compiler.consts.get(name) {
             return InferredType::from_const(&info.value);
@@ -576,7 +597,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     fn diag(&mut self, code: CftErrorCode, span: Span, message: impl Into<String>) {
         self.compiler.diagnostics.push(CftDiagnostic::error(
             code,
-            self.type_info.module.clone(),
+            self.module.clone(),
             span,
             message,
         ));

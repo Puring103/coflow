@@ -161,6 +161,13 @@ fn cases() -> Vec<Case> {
             codes: &[CftErrorCode::DuplicateCheckBlock],
         },
         Case {
+            name: "duplicate top-level check",
+            phase: Phase::Compile,
+            source: "check A { true; } check A { true; }",
+            adjacent_valid_source: "check A { true; } check B { true; }",
+            codes: &[CftErrorCode::DuplicateTopLevelCheck],
+        },
+        Case {
             name: "syntax structure limit exceeded",
             phase: Phase::StrictParse,
             source: "type A { value: [int]; }",
