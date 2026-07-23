@@ -498,7 +498,9 @@ fn add_check_stmt_semantic(
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     match stmt {
-        CheckStmt::Expr(expr) => add_check_expr_semantic(build, document, expr, tokens),
+        CheckStmt::Expr { condition, .. } => {
+            add_check_expr_semantic(build, document, condition, tokens);
+        }
         CheckStmt::Quantifier {
             binding,
             collection,

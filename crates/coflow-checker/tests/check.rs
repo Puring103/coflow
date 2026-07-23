@@ -32,6 +32,39 @@ fn assert_message_contains(diags: &CfdDiagnostics, text: &str) {
 }
 
 #[test]
+fn custom_check_message_replaces_generated_explanation() {
+    let schema = compile_schema(
+        r#"
+        type Item {
+            price: int;
+            check {
+                price > 0: "price must be positive";
+                price < 100: "this message must not be emitted";
+            }
+        }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "sword",
+        "Item",
+        [("price", LoadedValueDraft::from(-1_i64))],
+    );
+    let model = build_model(&schema, builder);
+    let diagnostics = run_model_checks(&model, &schema).expect_err("check must fail");
+
+    assert_eq!(diagnostics.diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(
+        diagnostics.diagnostics[0].message,
+        "price must be positive"
+    );
+    assert_eq!(
+        diagnostics.diagnostics[0].code,
+        CfdErrorCode::CheckComparisonFailed
+    );
+}
+
+#[test]
 fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
     let schema = compile_schema(
         r#"

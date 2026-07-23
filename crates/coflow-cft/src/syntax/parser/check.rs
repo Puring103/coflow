@@ -2,8 +2,8 @@ use super::{negate_u64_to_i64, Parsed, Parser};
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::module::ModuleId;
 use crate::syntax::ast::{
-    BinOp, CheckBlock, CheckExpr, CheckExprKind, CheckStmt, CmpOp, QuantifierKind, TypePredicate,
-    UnaryOp,
+    BinOp, CheckBlock, CheckExpr, CheckExprKind, CheckMessage, CheckStmt, CmpOp, QuantifierKind,
+    TypePredicate, UnaryOp,
 };
 use crate::syntax::lexer::TokenKind;
 use crate::syntax::Span;
@@ -56,15 +56,39 @@ impl Parser<'_> {
             return self.parse_when_stmt();
         }
         let expr = self.parse_or_expr()?;
+        let message = if self.eat(&TokenKind::Colon).is_some() {
+            let token = self.peek().clone();
+            let TokenKind::String(value) = token.kind else {
+                return self.err_at(
+                    CftErrorCode::InvalidCheckStatement,
+                    token.span,
+                    "check message must be a string literal",
+                );
+            };
+            self.bump();
+            Some(CheckMessage {
+                value,
+                span: token.span,
+            })
+        } else {
+            None
+        };
         if self.eat(&TokenKind::Semicolon).is_none() {
             return self.err(
                 CftErrorCode::InvalidCheckStatement,
                 "check expression statements must end with `;`",
             );
         }
-        let span = expr.value.span;
+        let span = expr
+            .value
+            .span
+            .join(message.as_ref().map_or(expr.value.span, |message| message.span));
         self.node(StructureKind::CheckAst, span, [expr.depth], || {
-            CheckStmt::Expr(expr.value)
+            CheckStmt::Expr {
+                condition: expr.value,
+                message,
+                span,
+            }
         })
     }
 

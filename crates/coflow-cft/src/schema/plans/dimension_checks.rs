@@ -79,7 +79,7 @@ impl<'schema, 'budget> DimensionCheckAnalyzer<'schema, 'budget> {
     ) -> Result<BTreeSet<DimensionName>, LocatedBudgetError> {
         self.charge()?;
         Ok(match stmt {
-            CftSchemaCheckStmt::Expr(expr) => self.expr_dimensions(expr)?,
+            CftSchemaCheckStmt::Expr { condition, .. } => self.expr_dimensions(condition)?,
             CftSchemaCheckStmt::Quantifier {
                 binding,
                 collection,

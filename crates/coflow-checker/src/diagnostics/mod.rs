@@ -130,7 +130,16 @@ pub(crate) fn cmp_op_str(op: CftSchemaCmpOp) -> &'static str {
 
 pub(crate) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
     match stmt {
-        CftSchemaCheckStmt::Expr(expr) => render_expr(expr),
+        CftSchemaCheckStmt::Expr {
+            condition,
+            message,
+            ..
+        } => {
+            let rendered = render_expr(condition);
+            message.as_ref().map_or(rendered.clone(), |message| {
+                format!("{rendered}: {:?}", message.value)
+            })
+        }
         CftSchemaCheckStmt::Quantifier {
             kind,
             binding,

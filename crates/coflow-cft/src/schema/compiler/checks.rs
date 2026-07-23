@@ -35,9 +35,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
 
     fn check_stmt(&mut self, stmt: &CheckStmt) {
         match stmt {
-            CheckStmt::Expr(expr) => {
-                let ty = self.check_expr_value(expr);
-                self.expect_bool(&ty, expr.span);
+            CheckStmt::Expr { condition, .. } => {
+                let ty = self.check_expr_value(condition);
+                self.expect_bool(&ty, condition.span);
             }
             CheckStmt::When {
                 condition, body, ..

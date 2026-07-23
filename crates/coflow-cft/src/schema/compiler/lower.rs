@@ -2,7 +2,8 @@ use super::annotations::{find_annotation, has_annotation};
 use super::SchemaCompiler;
 use crate::schema::{
     CftConst, CftConstValue, CftEnum, CftEnumVariant, CftField, CftFieldDimension, CftSchemaBinOp,
-    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
+    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckMessage,
+    CftSchemaCheckStmt,
     CftSchemaCmpOp, CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate,
     CftSchemaUnaryOp, CftType, CftValueType,
 };
@@ -247,7 +248,18 @@ pub(super) fn convert_check_block(check: &crate::syntax::ast::CheckBlock) -> Cft
 
 fn convert_check_stmt(stmt: &CheckStmt) -> CftSchemaCheckStmt {
     match stmt {
-        CheckStmt::Expr(expr) => CftSchemaCheckStmt::Expr(convert_check_expr(expr)),
+        CheckStmt::Expr {
+            condition,
+            message,
+            span,
+        } => CftSchemaCheckStmt::Expr {
+            condition: convert_check_expr(condition),
+            message: message.as_ref().map(|message| CftSchemaCheckMessage {
+                value: message.value.clone(),
+                span: message.span,
+            }),
+            span: *span,
+        },
         CheckStmt::Quantifier {
             kind,
             binding,

@@ -268,7 +268,7 @@ fn collect_quantifier_bindings(stmts: &[CheckStmt], offset: usize, bindings: &mu
                     collect_quantifier_bindings(body, offset, bindings);
                 }
             }
-            CheckStmt::Expr(_) => {}
+            CheckStmt::Expr { .. } => {}
         }
     }
 }

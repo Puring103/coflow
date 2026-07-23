@@ -95,7 +95,10 @@ fn bitwise_or_xor_and_share_one_left_associative_precedence_level() {
 fn first_check_expr<'a>(schema: &'a CftSchema, type_name: &str) -> &'a CftSchemaCheckExpr {
     let ty = schema.resolve_type(type_name).expect("type");
     let check = ty.check.as_ref().expect("check block");
-    let CftSchemaCheckStmt::Expr(expr) = &check.stmts[0] else {
+    let CftSchemaCheckStmt::Expr {
+        condition: expr, ..
+    } = &check.stmts[0]
+    else {
         panic!("expected expression statement");
     };
     expr
