@@ -85,39 +85,133 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 self.check_stmts(body);
             }
             CheckStmt::Quantifier {
-                binding,
+                bindings,
                 collection,
                 body,
                 span,
                 ..
             } => {
-                if crate::is_cft_reserved_identifier(&binding.name) {
-                    self.diag(
-                        CftErrorCode::ReservedIdentifier,
-                        binding.span,
-                        format!("`{}` is a reserved identifier", binding.name),
-                    );
+                for binding in bindings {
+                    if crate::is_cft_reserved_identifier(&binding.name) {
+                        self.diag(
+                            CftErrorCode::ReservedIdentifier,
+                            binding.span,
+                            format!("`{}` is a reserved identifier", binding.name),
+                        );
+                    }
+                    if bindings
+                        .iter()
+                        .filter(|candidate| candidate.name == binding.name)
+                        .count()
+                        > 1
+                        || self
+                            .locals
+                            .iter()
+                            .rev()
+                            .any(|scope| scope.contains_key(&binding.name))
+                    {
+                        self.diag(
+                            CftErrorCode::InvalidQuantifierBindings,
+                            binding.span,
+                            format!(
+                                "quantifier binding `{}` is duplicated or shadows an outer binding",
+                                binding.name
+                            ),
+                        );
+                    }
                 }
                 let col_ty = self.check_expr_value(collection);
                 let col_ty = unwrap_nullable(&col_ty);
-                let item_ty = match col_ty {
-                    InferredType::Value(CftValueType::Array(inner)) => InferredType::Value(*inner),
-                    InferredType::Value(CftValueType::Dict(key, value)) => InferredType::Entry(
-                        Box::new(InferredType::Value(*key)),
-                        Box::new(InferredType::Value(*value)),
+                let (scope, layout) = match (col_ty, bindings.as_slice()) {
+                    (InferredType::Value(CftValueType::Array(inner)), [binding]) => (
+                        HashMap::from([(binding.name.clone(), InferredType::Value(*inner))]),
+                        crate::schema::CftSchemaQuantifierBindings::Single {
+                            binding: binding.name.clone(),
+                        },
                     ),
-                    InferredType::Unknown => InferredType::Unknown,
+                    (InferredType::Value(CftValueType::Array(inner)), [item, index]) => (
+                        HashMap::from([
+                            (item.name.clone(), InferredType::Value(*inner)),
+                            (index.name.clone(), InferredType::int()),
+                        ]),
+                        crate::schema::CftSchemaQuantifierBindings::Array {
+                            item: item.name.clone(),
+                            index: index.name.clone(),
+                        },
+                    ),
+                    (InferredType::Value(CftValueType::Dict(key, value)), [binding]) => (
+                        HashMap::from([(
+                            binding.name.clone(),
+                            InferredType::Entry(
+                                Box::new(InferredType::Value(*key)),
+                                Box::new(InferredType::Value(*value)),
+                            ),
+                        )]),
+                        crate::schema::CftSchemaQuantifierBindings::Single {
+                            binding: binding.name.clone(),
+                        },
+                    ),
+                    (
+                        InferredType::Value(CftValueType::Dict(key, value)),
+                        [key_binding, value_binding],
+                    ) => (
+                        HashMap::from([
+                            (key_binding.name.clone(), InferredType::Value(*key)),
+                            (value_binding.name.clone(), InferredType::Value(*value)),
+                        ]),
+                        crate::schema::CftSchemaQuantifierBindings::Dict {
+                            key: key_binding.name.clone(),
+                            value: value_binding.name.clone(),
+                        },
+                    ),
+                    (InferredType::Unknown, [binding]) => (
+                        HashMap::from([(binding.name.clone(), InferredType::Unknown)]),
+                        crate::schema::CftSchemaQuantifierBindings::Single {
+                            binding: binding.name.clone(),
+                        },
+                    ),
+                    (InferredType::Unknown, [first, second]) => (
+                        HashMap::from([
+                            (first.name.clone(), InferredType::Unknown),
+                            (second.name.clone(), InferredType::Unknown),
+                        ]),
+                        crate::schema::CftSchemaQuantifierBindings::Array {
+                            item: first.name.clone(),
+                            index: second.name.clone(),
+                        },
+                    ),
                     _ => {
                         self.diag(
                             CftErrorCode::QuantifierRequiresCollection,
                             *span,
                             "quantifier target must be an array or dict",
                         );
-                        InferredType::Unknown
+                        match bindings.as_slice() {
+                            [binding] => (
+                                HashMap::from([(binding.name.clone(), InferredType::Unknown)]),
+                                crate::schema::CftSchemaQuantifierBindings::Single {
+                                    binding: binding.name.clone(),
+                                },
+                            ),
+                            [first, second] => (
+                                HashMap::from([
+                                    (first.name.clone(), InferredType::Unknown),
+                                    (second.name.clone(), InferredType::Unknown),
+                                ]),
+                                crate::schema::CftSchemaQuantifierBindings::Array {
+                                    item: first.name.clone(),
+                                    index: second.name.clone(),
+                                },
+                            ),
+                            _ => return,
+                        }
                     }
                 };
-                self.locals
-                    .push(HashMap::from([(binding.name.clone(), item_ty)]));
+                self.compiler.quantifier_bindings.insert(
+                    (self.type_info.module.clone(), span.start, span.end),
+                    layout,
+                );
+                self.locals.push(scope);
                 self.check_stmts(body);
                 self.locals.pop();
             }

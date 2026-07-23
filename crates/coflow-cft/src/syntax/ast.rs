@@ -222,7 +222,7 @@ pub enum CheckStmt {
     },
     Quantifier {
         kind: QuantifierKind,
-        binding: NameRef,
+        bindings: Vec<NameRef>,
         collection: CheckExpr,
         body: Vec<CheckStmt>,
         span: Span,

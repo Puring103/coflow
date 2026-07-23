@@ -1,14 +1,13 @@
 use super::diagnostics::{
-    format_cfd_path_for_message, render_expr, render_stmt, CheckDiagnosticContext,
-    CheckExplanation,
+    format_cfd_path_for_message, render_expr, render_stmt, CheckDiagnosticContext, CheckExplanation,
 };
 use super::evaluator::{CheckEvaluator, EvalAbort, EvalFlow};
 use super::explanations;
 use super::quantifiers;
-use super::value::{LocatedEvalValue, ScalarValue, ValueLocation};
+use super::value::{EvalValue, LocatedEvalValue, ScalarValue, ValueLocation};
 use coflow_cft::{
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckMessage, CftSchemaCheckMessageKind,
-    CftSchemaCheckStmt, CftSchemaQuantifierKind, ScheduledCheckBlock,
+    CftSchemaCheckStmt, CftSchemaQuantifierBindings, CftSchemaQuantifierKind, ScheduledCheckBlock,
 };
 use coflow_data_model::CfdErrorCode;
 use coflow_structure::StructureKind;
@@ -65,24 +64,18 @@ fn eval_stmts(evaluator: &mut CheckEvaluator<'_>, stmts: &[CftSchemaCheckStmt]) 
 fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> EvalFlow {
     match stmt {
         CftSchemaCheckStmt::Expr {
-            condition,
-            message,
-            ..
-        } => eval_expr_stmt(
-            evaluator,
-            condition,
-            message.as_ref(),
-        ),
+            condition, message, ..
+        } => eval_expr_stmt(evaluator, condition, message.as_ref()),
         CftSchemaCheckStmt::When {
             condition, body, ..
         } => eval_when_stmt(evaluator, condition, body),
         CftSchemaCheckStmt::Quantifier {
             kind,
-            binding,
+            bindings,
             collection,
             body,
             ..
-        } => eval_quantifier_stmt(evaluator, *kind, binding, collection, body, stmt),
+        } => eval_quantifier_stmt(evaluator, *kind, bindings, collection, body, stmt),
     }
 }
 
@@ -147,11 +140,9 @@ fn eval_when_stmt(
 ) -> EvalFlow {
     match evaluator.eval_expr(condition) {
         Ok(value) if matches!(value.value.scalar(), Some(ScalarValue::Bool(true))) => {
-            evaluator
-                .contexts
-                .push(CheckDiagnosticContext::When {
-                    expression: render_expr(condition),
-                });
+            evaluator.contexts.push(CheckDiagnosticContext::When {
+                expression: render_expr(condition),
+            });
             let flow = eval_stmts(evaluator, body);
             let _ = evaluator.contexts.pop();
             flow
@@ -175,7 +166,7 @@ fn eval_when_stmt(
 fn eval_quantifier_stmt(
     evaluator: &mut CheckEvaluator<'_>,
     kind: CftSchemaQuantifierKind,
-    binding: &str,
+    bindings: &CftSchemaQuantifierBindings,
     collection: &CftSchemaCheckExpr,
     body: &[CftSchemaCheckStmt],
     stmt: &CftSchemaCheckStmt,
@@ -197,7 +188,7 @@ fn eval_quantifier_stmt(
         evaluator,
         QuantifierExecution {
             kind,
-            binding,
+            bindings,
             collection_value: &collection_value,
             item_count,
             body,
@@ -210,7 +201,7 @@ fn eval_quantifier_stmt(
 #[derive(Clone, Copy)]
 struct QuantifierExecution<'a, 'model> {
     kind: CftSchemaQuantifierKind,
-    binding: &'a str,
+    bindings: &'a CftSchemaQuantifierBindings,
     collection_value: &'a LocatedEvalValue<'model>,
     item_count: usize,
     body: &'a [CftSchemaCheckStmt],
@@ -224,7 +215,7 @@ fn eval_quantifier<'model>(
 ) -> EvalFlow {
     let QuantifierExecution {
         kind,
-        binding,
+        bindings,
         collection_value,
         item_count,
         body,
@@ -252,9 +243,11 @@ fn eval_quantifier<'model>(
             return EvalFlow::HardStop;
         }
         let diagnostic_start = evaluator.diagnostics.len();
-        let mut scope = BTreeMap::new();
-        scope.insert(binding.to_string(), item.clone());
+        let Some(scope) = quantifier_scope(evaluator, bindings, &item, index) else {
+            return EvalFlow::HardStop;
+        };
         evaluator.scopes.push(scope);
+        let binding_display = quantifier_binding_display(bindings);
         let item_context = CheckDiagnosticContext::Quantifier {
             kind: match kind {
                 CftSchemaQuantifierKind::All => "all",
@@ -262,10 +255,10 @@ fn eval_quantifier<'model>(
                 CftSchemaQuantifierKind::None => "none",
             }
             .to_string(),
-            binding: binding.to_string(),
+            binding: binding_display,
             item: item.location.as_ref().map_or_else(
                 || render_expr(collection),
-                |location| { format_cfd_path_for_message(&location.blame.path) }
+                |location| format_cfd_path_for_message(&location.blame.path),
             ),
         };
         evaluator.contexts.push(item_context);
@@ -313,6 +306,60 @@ fn eval_quantifier<'model>(
         none_match_locations,
     );
     EvalFlow::Continue
+}
+
+fn quantifier_binding_display(bindings: &CftSchemaQuantifierBindings) -> String {
+    match bindings {
+        CftSchemaQuantifierBindings::Single { binding } => binding.clone(),
+        CftSchemaQuantifierBindings::Array { item, index } => format!("{item}, {index}"),
+        CftSchemaQuantifierBindings::Dict { key, value } => format!("{key}, {value}"),
+    }
+}
+
+fn quantifier_scope<'model>(
+    evaluator: &mut CheckEvaluator<'model>,
+    bindings: &CftSchemaQuantifierBindings,
+    item: &LocatedEvalValue<'model>,
+    index: usize,
+) -> Option<BTreeMap<String, LocatedEvalValue<'model>>> {
+    match bindings {
+        CftSchemaQuantifierBindings::Single { binding } => {
+            Some(BTreeMap::from([(binding.clone(), item.clone())]))
+        }
+        CftSchemaQuantifierBindings::Array {
+            item: item_binding,
+            index: index_binding,
+        } => Some(BTreeMap::from([
+            (item_binding.clone(), item.clone()),
+            (
+                index_binding.clone(),
+                LocatedEvalValue::new(EvalValue::int(index as i64), item.location.clone()),
+            ),
+        ])),
+        CftSchemaQuantifierBindings::Dict {
+            key: key_binding,
+            value: value_binding,
+        } => {
+            let EvalValue::Entry(entry) = item.value.clone() else {
+                evaluator.diag_at(
+                    CfdErrorCode::CheckEvalTypeError,
+                    item.location.clone(),
+                    "dict quantifier binding layout requires a dict entry",
+                );
+                return None;
+            };
+            Some(BTreeMap::from([
+                (
+                    key_binding.clone(),
+                    LocatedEvalValue::new(*entry.key, item.location.clone()),
+                ),
+                (
+                    value_binding.clone(),
+                    LocatedEvalValue::new(entry.value, item.location.clone()),
+                ),
+            ]))
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

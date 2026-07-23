@@ -512,18 +512,20 @@ fn add_check_stmt_semantic(
             }
         }
         CheckStmt::Quantifier {
-            binding,
+            bindings,
             collection,
             body,
             ..
         } => {
-            push_semantic_span(
-                &document.source,
-                binding.span,
-                SEM_PARAMETER,
-                MOD_DECLARATION,
-                tokens,
-            );
+            for binding in bindings {
+                push_semantic_span(
+                    &document.source,
+                    binding.span,
+                    SEM_PARAMETER,
+                    MOD_DECLARATION,
+                    tokens,
+                );
+            }
             add_check_expr_semantic(build, document, collection, tokens);
             for stmt in body {
                 add_check_stmt_semantic(build, document, stmt, tokens);

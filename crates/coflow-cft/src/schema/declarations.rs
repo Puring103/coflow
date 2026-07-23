@@ -105,7 +105,7 @@ pub enum CftSchemaCheckStmt {
     },
     Quantifier {
         kind: CftSchemaQuantifierKind,
-        binding: String,
+        bindings: CftSchemaQuantifierBindings,
         collection: CftSchemaCheckExpr,
         body: Vec<CftSchemaCheckStmt>,
         span: Span,
@@ -115,6 +115,13 @@ pub enum CftSchemaCheckStmt {
         body: Vec<CftSchemaCheckStmt>,
         span: Span,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CftSchemaQuantifierBindings {
+    Single { binding: String },
+    Array { item: String, index: String },
+    Dict { key: String, value: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]

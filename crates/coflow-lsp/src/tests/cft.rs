@@ -213,7 +213,7 @@ type Item {\n\
   attrs: {string: int} = {};\n\
   target: Target;\n\
   other: Target;\n\
-  check { all value in xs { value > LIMIT; } }\n\
+  check { all value, index in xs { value > LIMIT && index >= 0; } }\n\
 }\n";
     let (_cleanup, build) = test_lsp_build("lsp-completion-boundaries", source);
     let document = first_document(&build);
@@ -315,6 +315,7 @@ type Item {\n\
     ));
     assert!(check_labels.contains(&"id".to_string()));
     assert!(check_labels.contains(&"value".to_string()));
+    assert!(check_labels.contains(&"index".to_string()));
     assert!(check_labels.contains(&"target".to_string()));
     assert!(check_labels.contains(&"LIMIT".to_string()));
     assert!(!check_labels.contains(&"len".to_string()));

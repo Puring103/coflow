@@ -529,6 +529,14 @@ fn cases() -> Vec<Case> {
             codes: &[CftErrorCode::QuantifierRequiresCollection],
         },
         Case {
+            name: "invalid quantifier bindings",
+            phase: Phase::Compile,
+            source: "type A { items: [int]; check { all item, item in items { true; } } }",
+            adjacent_valid_source:
+                "type A { items: [int]; check { all item, index in items { item >= index; } } }",
+            codes: &[CftErrorCode::InvalidQuantifierBindings],
+        },
+        Case {
             name: "unique unsupported element type",
             phase: Phase::Compile,
             source: "type A { items: [float]; check { items.isUnique(); } }",

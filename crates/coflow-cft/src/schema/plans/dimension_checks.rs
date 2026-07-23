@@ -91,13 +91,24 @@ impl<'schema, 'budget> DimensionCheckAnalyzer<'schema, 'budget> {
                 out
             }
             CftSchemaCheckStmt::Quantifier {
-                binding,
+                bindings,
                 collection,
                 body,
                 ..
             } => {
                 let mut out = self.expr_dimensions(collection)?;
-                self.scopes.push(BTreeSet::from([binding.clone()]));
+                let names = match bindings {
+                    crate::schema::CftSchemaQuantifierBindings::Single { binding } => {
+                        BTreeSet::from([binding.clone()])
+                    }
+                    crate::schema::CftSchemaQuantifierBindings::Array { item, index } => {
+                        BTreeSet::from([item.clone(), index.clone()])
+                    }
+                    crate::schema::CftSchemaQuantifierBindings::Dict { key, value } => {
+                        BTreeSet::from([key.clone(), value.clone()])
+                    }
+                };
+                self.scopes.push(names);
                 for stmt in body {
                     out.extend(self.stmt_dimensions(stmt)?);
                 }

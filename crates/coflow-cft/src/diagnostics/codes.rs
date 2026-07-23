@@ -106,6 +106,7 @@ pub enum CftErrorCode {
     ShiftRequiresInt,
     RegexPatternMustBeLiteral,
     InvalidRegexPattern,
+    InvalidQuantifierBindings,
 }
 
 impl CftErrorCode {
@@ -187,6 +188,7 @@ impl CftErrorCode {
             Self::ShiftRequiresInt => (CftStage::Type, "CFT-TYPE-018"),
             Self::RegexPatternMustBeLiteral => (CftStage::Type, "CFT-TYPE-019"),
             Self::InvalidRegexPattern => (CftStage::Type, "CFT-TYPE-020"),
+            Self::InvalidQuantifierBindings => (CftStage::Type, "CFT-TYPE-021"),
         }
     }
 

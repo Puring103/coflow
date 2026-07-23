@@ -133,7 +133,11 @@ impl SchemaCompiler<'_> {
                 own_fields: fields,
                 all_fields,
                 field_by_name,
-                check: info.def.check.as_ref().map(convert_check_block),
+                check: info
+                    .def
+                    .check
+                    .as_ref()
+                    .map(|check| self.convert_check_block(&info.module, check)),
                 span: info.def.span,
             };
             types.insert(type_name, schema);
@@ -240,60 +244,76 @@ pub(super) fn const_value(value: &ConstLiteral) -> CftConstValue {
         ConstLiteral::String(value, _) => CftConstValue::String(value.clone()),
     }
 }
-pub(super) fn convert_check_block(check: &crate::syntax::ast::CheckBlock) -> CftSchemaCheckBlock {
-    CftSchemaCheckBlock {
-        stmts: check.stmts.iter().map(convert_check_stmt).collect(),
-        span: check.span,
+impl SchemaCompiler<'_> {
+    fn convert_check_block(
+        &self,
+        module: &crate::ModuleId,
+        check: &crate::syntax::ast::CheckBlock,
+    ) -> CftSchemaCheckBlock {
+        CftSchemaCheckBlock {
+            stmts: check
+                .stmts
+                .iter()
+                .map(|stmt| self.convert_check_stmt(module, stmt))
+                .collect(),
+            span: check.span,
+        }
     }
-}
 
-fn convert_check_stmt(stmt: &CheckStmt) -> CftSchemaCheckStmt {
-    match stmt {
-        CheckStmt::Expr {
-            condition,
-            message,
-            span,
-        } => CftSchemaCheckStmt::Expr {
-            condition: convert_check_expr(condition),
-            message: message.as_ref().map(|message| CftSchemaCheckMessage {
-                kind: match &message.kind {
-                    CheckMessageKind::String(value) => {
-                        CftSchemaCheckMessageKind::String(value.clone())
-                    }
-                    CheckMessageKind::Formatted(segments) => {
-                        CftSchemaCheckMessageKind::Formatted(convert_format_segments(segments))
-                    }
-                },
-                span: message.span,
-            }),
-            span: *span,
-        },
-        CheckStmt::Quantifier {
-            kind,
-            binding,
-            collection,
-            body,
-            span,
-        } => CftSchemaCheckStmt::Quantifier {
-            kind: match kind {
-                crate::syntax::ast::QuantifierKind::All => CftSchemaQuantifierKind::All,
-                crate::syntax::ast::QuantifierKind::Any => CftSchemaQuantifierKind::Any,
-                crate::syntax::ast::QuantifierKind::None => CftSchemaQuantifierKind::None,
+    fn convert_check_stmt(&self, module: &crate::ModuleId, stmt: &CheckStmt) -> CftSchemaCheckStmt {
+        match stmt {
+            CheckStmt::Expr {
+                condition,
+                message,
+                span,
+            } => CftSchemaCheckStmt::Expr {
+                condition: convert_check_expr(condition),
+                message: message.as_ref().map(|message| CftSchemaCheckMessage {
+                    kind: match &message.kind {
+                        CheckMessageKind::String(value) => {
+                            CftSchemaCheckMessageKind::String(value.clone())
+                        }
+                        CheckMessageKind::Formatted(segments) => {
+                            CftSchemaCheckMessageKind::Formatted(convert_format_segments(segments))
+                        }
+                    },
+                    span: message.span,
+                }),
+                span: *span,
             },
-            binding: binding.name.clone(),
-            collection: convert_check_expr(collection),
-            body: body.iter().map(convert_check_stmt).collect(),
-            span: *span,
-        },
-        CheckStmt::When {
-            condition,
-            body,
-            span,
-        } => CftSchemaCheckStmt::When {
-            condition: convert_check_expr(condition),
-            body: body.iter().map(convert_check_stmt).collect(),
-            span: *span,
-        },
+            CheckStmt::Quantifier {
+                kind,
+                bindings: _,
+                collection,
+                body,
+                span,
+            } => CftSchemaCheckStmt::Quantifier {
+                kind: match kind {
+                    crate::syntax::ast::QuantifierKind::All => CftSchemaQuantifierKind::All,
+                    crate::syntax::ast::QuantifierKind::Any => CftSchemaQuantifierKind::Any,
+                    crate::syntax::ast::QuantifierKind::None => CftSchemaQuantifierKind::None,
+                },
+                bindings: self.quantifier_bindings[&(module.clone(), span.start, span.end)].clone(),
+                collection: convert_check_expr(collection),
+                body: body
+                    .iter()
+                    .map(|stmt| self.convert_check_stmt(module, stmt))
+                    .collect(),
+                span: *span,
+            },
+            CheckStmt::When {
+                condition,
+                body,
+                span,
+            } => CftSchemaCheckStmt::When {
+                condition: convert_check_expr(condition),
+                body: body
+                    .iter()
+                    .map(|stmt| self.convert_check_stmt(module, stmt))
+                    .collect(),
+                span: *span,
+            },
+        }
     }
 }
 
