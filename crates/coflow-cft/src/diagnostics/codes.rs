@@ -108,6 +108,7 @@ pub enum CftErrorCode {
     RegexPatternMustBeLiteral,
     InvalidRegexPattern,
     InvalidQuantifierBindings,
+    InvalidRecordSetQuery,
 }
 
 impl CftErrorCode {
@@ -191,6 +192,7 @@ impl CftErrorCode {
             Self::RegexPatternMustBeLiteral => (CftStage::Type, "CFT-TYPE-019"),
             Self::InvalidRegexPattern => (CftStage::Type, "CFT-TYPE-020"),
             Self::InvalidQuantifierBindings => (CftStage::Type, "CFT-TYPE-021"),
+            Self::InvalidRecordSetQuery => (CftStage::Type, "CFT-TYPE-022"),
         }
     }
 

@@ -346,6 +346,9 @@ fn convert_check_expr(expr: &CheckExpr) -> CftSchemaCheckExpr {
                 CftSchemaCheckExprKind::FormattedString(convert_format_segments(segments))
             }
             CheckExprKind::Name(name) => CftSchemaCheckExprKind::Name(name.clone()),
+            CheckExprKind::Records { type_name } => CftSchemaCheckExprKind::Records {
+                type_name: TypeName::from_validated(type_name.name.clone()),
+            },
             CheckExprKind::Field { expr: inner, name } => CftSchemaCheckExprKind::Field {
                 expr: Box::new(convert_check_expr(inner)),
                 name: FieldName::from_validated(name.name.clone()),

@@ -249,6 +249,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 InferredType::string()
             }
             CheckExprKind::Name(name) => self.resolve_value_name(name, expr.span),
+            CheckExprKind::Records { type_name } => self.check_records(type_name),
             CheckExprKind::Unary { op, expr: inner } => {
                 let ty = self.check_expr_value(inner);
                 self.check_unary(*op, &ty, expr.span)
@@ -285,6 +286,17 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 let inner_ty = self.check_expr_value(inner);
                 self.check_is(&inner_ty, predicate, expr.span);
                 InferredType::bool()
+            }
+            CheckExprKind::Call { name, args } if name.name == "records" => {
+                for arg in args {
+                    let _ = self.check_expr_value(arg);
+                }
+                self.diag(
+                    CftErrorCode::InvalidRecordSetQuery,
+                    expr.span,
+                    "records expects exactly one static object type name",
+                );
+                InferredType::Unknown
             }
             CheckExprKind::Call { name, args } => self.check_call(name, args, expr.span),
             CheckExprKind::MethodCall {
@@ -358,6 +370,28 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             format!("unknown value `{name}`"),
         );
         InferredType::Unknown
+    }
+
+    fn check_records(&mut self, type_name: &NameRef) -> InferredType {
+        if !matches!(self.scope, CheckScope::TopLevel) {
+            self.diag(
+                CftErrorCode::InvalidRecordSetQuery,
+                type_name.span,
+                "records is only available in named top-level checks",
+            );
+            return InferredType::Unknown;
+        }
+        if !self.compiler.types.contains_key(&type_name.name) {
+            self.diag(
+                CftErrorCode::InvalidRecordSetQuery,
+                type_name.span,
+                format!("`{}` is not an object type", type_name.name),
+            );
+            return InferredType::Unknown;
+        }
+        InferredType::array(InferredType::record_ref(InferredType::object(
+            crate::TypeName::from_validated(type_name.name.clone()),
+        )))
     }
 
     fn check_field(&mut self, inner: &CheckExpr, name: &NameRef, span: Span) -> InferredType {

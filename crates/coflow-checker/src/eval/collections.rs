@@ -1,6 +1,6 @@
 use coflow_cft::CftValueType;
-use coflow_data_model::{CfdDataModel, CfdDictKey, CfdValue};
-use coflow_structure::{StructuralBudget, TraversalCursor};
+use coflow_data_model::{CfdDataModel, CfdDictKey, CfdRecordId, CfdValue};
+use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 
 use super::location::{ModelCursor, ValueLocation};
 use super::value::{
@@ -17,6 +17,7 @@ pub(crate) enum EvalItems {
     },
     DictKeys(EvalEntries),
     DictValues(EvalEntries),
+    Records(Vec<CfdRecordId>),
 }
 
 impl EvalItems {
@@ -24,6 +25,7 @@ impl EvalItems {
         match self {
             Self::ModelArray { len, .. } => *len,
             Self::DictKeys(entries) | Self::DictValues(entries) => entries.len(),
+            Self::Records(records) => records.len(),
         }
     }
 
@@ -62,6 +64,22 @@ impl EvalItems {
             })),
             Self::DictValues(entries) => {
                 entries.projected_value_at(index, element_type, projected_location, model, budget)
+            }
+            Self::Records(records) => {
+                let Some(record) = records.get(index).copied() else {
+                    return Ok(None);
+                };
+                let location = ValueLocation::root(record);
+                budget
+                    .enter(TraversalCursor::root(), StructureKind::DataValue, 1)
+                    .map_err(|error| LocatedBudgetExceeded {
+                        error,
+                        location: Box::new(Some(location.clone())),
+                    })?;
+                Ok(Some(LocatedEvalValue::new(
+                    EvalValue::Record(super::value::EvalRecordRef::Resolved(location.clone())),
+                    Some(location),
+                )))
             }
         }
     }

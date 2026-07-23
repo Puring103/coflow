@@ -24,6 +24,18 @@ pub(super) fn eval_expr<'model>(
             Ok(LocatedEvalValue::value(EvalValue::string(value)))
         }
         CftSchemaCheckExprKind::Name(name) => evaluator.eval_name(name),
+        CftSchemaCheckExprKind::Records { type_name } => {
+            let records = evaluator.model.assignable_records(evaluator.schema, type_name);
+            evaluator.charge_work_at(
+                StructureKind::CheckEvaluation,
+                u64::try_from(records.len()).unwrap_or(u64::MAX),
+                None,
+            )?;
+            Ok(LocatedEvalValue::value(EvalValue::Array {
+                items: super::value::EvalItems::Records(records),
+                element_type: Some(coflow_cft::CftValueType::RecordRef(type_name.clone())),
+            }))
+        }
         CftSchemaCheckExprKind::Field { expr: inner, name } => {
             eval_field_expr(evaluator, inner, name)
         }

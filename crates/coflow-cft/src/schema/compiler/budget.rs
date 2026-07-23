@@ -310,6 +310,7 @@ fn check_expr_children(expr: &CheckExpr) -> Vec<CheckNode<'_>> {
         | CheckExprKind::Bool(_)
         | CheckExprKind::Null
         | CheckExprKind::String(_)
-        | CheckExprKind::Name(_) => Vec::new(),
+        | CheckExprKind::Name(_)
+        | CheckExprKind::Records { .. } => Vec::new(),
     }
 }

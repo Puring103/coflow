@@ -149,6 +149,9 @@ pub enum CftSchemaCheckExprKind {
     String(String),
     FormattedString(Vec<CftSchemaCheckFormatSegment>),
     Name(String),
+    Records {
+        type_name: TypeName,
+    },
     Field {
         expr: Box<CftSchemaCheckExpr>,
         name: FieldName,

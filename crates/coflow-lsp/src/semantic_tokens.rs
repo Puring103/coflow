@@ -586,6 +586,15 @@ fn add_check_expr_semantic(
                 tokens,
             );
         }
+        CheckExprKind::Records { type_name } => {
+            push_semantic_span(
+                &document.source,
+                type_name.span,
+                SEM_TYPE,
+                MOD_REFERENCE | MOD_SCHEMA,
+                tokens,
+            );
+        }
         CheckExprKind::Field { expr, name } => {
             if let CheckExprKind::Name(enum_name) = &expr.kind {
                 if enum_variant_exists(build, enum_name, &name.name) {
