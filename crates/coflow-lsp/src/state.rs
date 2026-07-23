@@ -253,13 +253,17 @@ fn collect_quantifier_bindings(stmts: &[CheckStmt], offset: usize, bindings: &mu
     for stmt in stmts {
         match stmt {
             CheckStmt::Quantifier {
-                binding,
+                bindings: quantifier_bindings,
                 body,
                 span,
                 ..
             } => {
                 if span.start <= offset && offset <= span.end {
-                    bindings.push(binding.name.clone());
+                    bindings.extend(
+                        quantifier_bindings
+                            .iter()
+                            .map(|binding| binding.name.clone()),
+                    );
                     collect_quantifier_bindings(body, offset, bindings);
                 }
             }

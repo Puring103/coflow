@@ -351,6 +351,71 @@ fn coalescing_collects_dependencies_only_from_the_selected_branch() {
 }
 
 #[test]
+fn quantifier_dual_bindings_follow_array_and_dict_order() {
+    let schema = compile_schema(
+        r#"
+        type Item {
+            numbers: [int];
+            scores: {string: int};
+            check {
+                all item, index in numbers {
+                    item == index + 1: f"item {index} has value {item}";
+                }
+                all key, value in scores { key == "power"; value == 7; }
+                all entry in scores { entry.key == "power"; entry.value == 7; }
+            }
+        }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "passing",
+        "Item",
+        [
+            (
+                "numbers",
+                LoadedValueDraft::Array(vec![1_i64.into(), 2_i64.into()]),
+            ),
+            (
+                "scores",
+                LoadedValueDraft::dict([(LoadedDictKeyDraft::from("power"), 7_i64.into())]),
+            ),
+        ],
+    );
+    let model = builder.build().expect("model builds");
+    run_model_checks(&model, &schema).expect("dual and legacy bindings should pass");
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "failing",
+        "Item",
+        [
+            (
+                "numbers",
+                LoadedValueDraft::Array(vec![1_i64.into(), 9_i64.into()]),
+            ),
+            (
+                "scores",
+                LoadedValueDraft::dict([(LoadedDictKeyDraft::from("power"), 7_i64.into())]),
+            ),
+        ],
+    );
+    let model = builder.build().expect("model builds");
+    let output = coflow_checker::run_checks(&schema, &model, CheckRequest::all());
+    let diagnostic = output
+        .diagnostics
+        .iter()
+        .map(|rooted| &rooted.diagnostic)
+        .find(|diagnostic| diagnostic.diagnostic.message == "item 1 has value 9")
+        .expect("custom dual-binding message");
+    assert!(diagnostic.contexts.iter().any(|context| matches!(
+        context,
+        coflow_checker::CheckDiagnosticContext::Quantifier { binding, .. }
+            if binding == "item, index"
+    )));
+}
+
+#[test]
 fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
     let schema = compile_schema(
         r#"

@@ -131,6 +131,44 @@ fn type_checker_accepts_safe_access_and_rejects_invalid_nullable_operators() {
 }
 
 #[test]
+fn quantifier_dual_bindings_are_typed_and_invalid_layouts_are_rejected() {
+    compile_one(
+        r#"
+        type Item {
+            numbers: [int];
+            scores: {string: int};
+            check {
+                all item, index in numbers { item >= index; }
+                all key, value in scores { key != ""; value >= 0; }
+                all entry in scores { entry.key != ""; entry.value >= 0; }
+            }
+        }
+        "#,
+    )
+    .expect("array, dict, and legacy entry layouts should compile");
+
+    let duplicate =
+        compile_one("type Item { xs: [int]; check { all value, value in xs { true; } } }")
+            .unwrap_err();
+    assert_has_code(&duplicate, CftErrorCode::InvalidQuantifierBindings);
+
+    let shadow = compile_one(
+        r#"
+        type Item {
+            xs: [int];
+            check { all value in xs { all value, index in xs { true; } } }
+        }
+        "#,
+    )
+    .unwrap_err();
+    assert_has_code(&shadow, CftErrorCode::InvalidQuantifierBindings);
+
+    let too_many =
+        compile_one("type Item { xs: [int]; check { all a, b, c in xs { true; } } }").unwrap_err();
+    assert_has_code(&too_many, CftErrorCode::InvalidCheckStatement);
+}
+
+#[test]
 fn type_checker_allows_is_null_for_nullable_operands() {
     compile_one(
         r#"

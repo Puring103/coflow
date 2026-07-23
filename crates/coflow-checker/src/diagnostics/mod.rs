@@ -199,7 +199,7 @@ pub(crate) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
         }
         CftSchemaCheckStmt::Quantifier {
             kind,
-            binding,
+            bindings,
             collection,
             body,
             ..
@@ -210,6 +210,15 @@ pub(crate) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
                 CftSchemaQuantifierKind::None => "none",
             };
             let body = body.iter().map(render_stmt).collect::<Vec<_>>().join("; ");
+            let binding = match bindings {
+                coflow_cft::CftSchemaQuantifierBindings::Single { binding } => binding.clone(),
+                coflow_cft::CftSchemaQuantifierBindings::Array { item, index } => {
+                    format!("{item}, {index}")
+                }
+                coflow_cft::CftSchemaQuantifierBindings::Dict { key, value } => {
+                    format!("{key}, {value}")
+                }
+            };
             format!(
                 "{kind} {binding} in {} {{ {body}; }}",
                 render_expr(collection)

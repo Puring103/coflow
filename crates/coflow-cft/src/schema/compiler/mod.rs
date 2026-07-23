@@ -39,6 +39,8 @@ pub(super) struct SchemaCompiler<'a> {
     enums: BTreeMap<String, EnumInfo<'a>>,
     full_fields: BTreeMap<String, BTreeMap<String, FieldInfo>>,
     inheritance_chains: BTreeMap<String, Vec<String>>,
+    quantifier_bindings:
+        BTreeMap<(ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
     budget: StructuralBudget,
 }
 
@@ -53,6 +55,7 @@ impl<'a> SchemaCompiler<'a> {
             enums: BTreeMap::new(),
             full_fields: BTreeMap::new(),
             inheritance_chains: BTreeMap::new(),
+            quantifier_bindings: BTreeMap::new(),
             budget: StructuralBudget::new(StructuralLimits::default()),
         }
     }

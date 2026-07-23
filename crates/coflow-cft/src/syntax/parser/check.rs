@@ -128,7 +128,16 @@ impl Parser<'_> {
     ) -> Result<Parsed<CheckStmt>, CftDiagnostics> {
         let keyword = self.bump().span;
         let start = keyword.start;
-        let binding = self.expect_ident()?;
+        let mut bindings = vec![self.expect_ident()?];
+        if self.eat(&TokenKind::Comma).is_some() {
+            bindings.push(self.expect_ident()?);
+            if self.at(&TokenKind::Comma) {
+                return self.err(
+                    CftErrorCode::InvalidCheckStatement,
+                    "quantifiers accept one or two bindings",
+                );
+            }
+        }
         self.expect_simple(&TokenKind::In, CftErrorCode::ExpectedToken)?;
         let collection = self.parse_or_expr()?;
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
@@ -145,7 +154,7 @@ impl Parser<'_> {
             [collection.depth, body.depth],
             || CheckStmt::Quantifier {
                 kind,
-                binding,
+                bindings,
                 collection: collection.value,
                 body: body.value,
                 span,
