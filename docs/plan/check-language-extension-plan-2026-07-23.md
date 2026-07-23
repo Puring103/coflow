@@ -66,6 +66,7 @@ check {
 本计划不接受“新路径旁挂旧路径”的长期实现。下列重构属于功能交付本身，不作为后续清理项：
 
 - syntax AST 与 schema AST 各自建立统一的 check expression/statement visitor/walk 设施，分别供 parser-side 工具/LSP 与 schema-side 预算/依赖分析使用；允许各 consumer 保留自己的状态与结果，但不得各自维护容易漏 variant 的手写递归骨架。新增 AST variant 时，编译期 exhaustive match 或 visitor 完整性测试必须使所有 consumer 同时暴露缺口。
+- syntax visitor 的迁移范围明确包括 semantic tokens、definition/hover 定位、completion 的 enclosing scope/binding 收集、formatting 和 document symbols；consumer 可以在 hook 中决定 token 分类或维护 offset 范围，但不得保留 `CheckStmt`/`CheckExprKind` 的子树递归。parser 本身按优先级构造 AST，不属于 visitor consumer。schema visitor 必须支持可失败回调和量词 body 的 enter/exit scope hook，使预算、静态依赖和 record-set 收集都复用同一结构遍历。
 - 把 scalar 的稳定文本表示集中为一个 checker/value-formatting helper，自动诊断、f-string 和量词 context display 共用它；不得在三个 renderer 中分别定义 float、enum、null 和字符串的格式。
 - builtin 的名称、receiver、参数、返回类型、文档键和运行期实现标识由单一 registry metadata 驱动。schema 类型检查、LSP completion/hover 和 checker dispatch 不再维护彼此独立的名称表；添加注册表完整性测试，保证每个公开 builtin 恰有一个运行期实现和文档项。
 - structured diagnostic context 只在 checker 内部逻辑诊断到 `coflow-api::Diagnostic` 的映射边界转换一次。CLI、JSON、LSP 和 editor 消费 canonical 字段并各自渲染，不允许 runtime 或 host 再解析 message、拼接后又拆分 context。
@@ -106,6 +107,8 @@ check {
 - visitor/walker 使用 exhaustive enum dispatch，不能用默认分支吞掉未来 AST variant；需要跳过子树时由 visitor 明确返回控制结果。
 - builtin registry 保存声明性元数据和稳定执行 ID，但不把复杂类型规则塞进字符串或回调闭包；共享的 receiver/element capability 由 typed helper 表达，特殊规则仍以 exhaustive ID dispatch 实现并有完整性测试。
 - path dependency 使用规范化的 typed path segment，不以拼接字符串表示字段、array index 或 dict key；ancestor/descendant overlap 只有一个实现，并由 mutation、snapshot invalidation 共用。
+- runtime mutation 影响以单一 canonical `MutationImpact` 保存：`records: BTreeMap<RecordCoordinate, ChangedPaths>`、record-set membership delta、受影响文件和结构变化原因。现有索引/生成所需的 record coordinate set 必须从该 map 的 key 投影，不能继续把 `changed_records` 与 path map 双写为两个事实来源。字段写入（包括 spread 后解析到实际 source record 的写入）产生规范化精确路径；插入、删除、rename、provider 无法报告细节的外部重写和 full reload 显式产生 `ChangedPaths::All`。reorder 只有在记录集合或数据语义确实变化时影响 check，不以 UI 顺序变化伪造字段路径。
+- `MutationImpact` 到 `CheckChangeSet` 的转换是 runtime/checker 唯一边界转换，并由 schema assignability 一次性扩展 membership ancestor；load、session rebuild、preflight/staging 不得各自重建另一份 checker change set。转换测试必须覆盖同一 record 多次写入的 path union、`All` 吸收 `Paths`、rename 的 old/new identity、派生类型 membership 和 source-target 坐标重定向。
 - snapshot 不缓存可从 canonical schema/model 低成本且确定性重建的派生状态；必须缓存的计划或索引要绑定 schema/model generation，并测试 generation 变化后的失效。
 - 集合关系、record enumeration 和依赖匹配必须同时说明正确性复杂度与预算复杂度。实现不得留下无预算保护的隐藏二次扫描；若采用二次扫描是为了支持不可哈希的合法值，需有边界测试和注释说明，否则应使用受预算约束的 set/index。
 - 不为尚未纳入范围的环检测、动态正则、计数量词或通用查询预留半成品 trait、AST variant、feature flag 或空 dispatch 分支。
