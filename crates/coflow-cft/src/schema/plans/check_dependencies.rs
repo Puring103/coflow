@@ -150,7 +150,8 @@ impl<'schema, 'budget> CheckDependencyAnalyzer<'schema, 'budget> {
             | CftSchemaCheckExprKind::Float(_)
             | CftSchemaCheckExprKind::Bool(_)
             | CftSchemaCheckExprKind::Null
-            | CftSchemaCheckExprKind::String(_) => BTreeSet::new(),
+            | CftSchemaCheckExprKind::String(_)
+            | CftSchemaCheckExprKind::Records { .. } => BTreeSet::new(),
             CftSchemaCheckExprKind::FormattedString(segments) => {
                 self.format_dimensions(segments)?
             }

@@ -168,6 +168,13 @@ fn cases() -> Vec<Case> {
             codes: &[CftErrorCode::DuplicateTopLevelCheck],
         },
         Case {
+            name: "invalid record set query",
+            phase: Phase::Compile,
+            source: "type A { check { records(A).len() > 0; } }",
+            adjacent_valid_source: "type A {} check Q { records(A).len() >= 0; }",
+            codes: &[CftErrorCode::InvalidRecordSetQuery],
+        },
+        Case {
             name: "syntax structure limit exceeded",
             phase: Phase::StrictParse,
             source: "type A { value: [int]; }",

@@ -38,6 +38,29 @@ fn schema_exposes_named_top_level_checks() {
 }
 
 #[test]
+fn schema_retains_records_as_a_static_special_form() {
+    let schema = compile_one(
+        "type Item {} check Integrity { records(Item).len() >= 0; }",
+    )
+    .expect("schema compiles");
+    let check = schema.resolve_check("Integrity").expect("check");
+    let CftSchemaCheckStmt::Expr { condition, .. } = &check.block.stmts[0] else {
+        panic!("expression statement");
+    };
+    let coflow_cft::CftSchemaCheckExprKind::CmpChain { first, .. } = &condition.kind else {
+        panic!("comparison");
+    };
+    let coflow_cft::CftSchemaCheckExprKind::MethodCall { receiver, .. } = &first.kind else {
+        panic!("len call");
+    };
+    assert!(matches!(
+        &receiver.kind,
+        coflow_cft::CftSchemaCheckExprKind::Records { type_name }
+            if type_name.as_str() == "Item"
+    ));
+}
+
+#[test]
 fn schema_exposes_typed_quantifier_binding_layouts() {
     let schema = compile_one(
         r#"

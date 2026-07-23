@@ -51,6 +51,17 @@ impl CfdDataModel {
             .map(|(index, record)| (CfdRecordId::new(index), record))
     }
 
+    /// Returns top-level records assignable to `expected_type` in stable
+    /// `(actual_type, record_key)` order.
+    #[must_use]
+    pub fn assignable_records(&self, schema: &CftSchema, expected_type: &str) -> Vec<CfdRecordId> {
+        self.tables
+            .iter()
+            .filter(|(actual_type, _)| schema.is_assignable(actual_type, expected_type))
+            .flat_map(|(_, table)| table.primary_index.values().copied())
+            .collect()
+    }
+
     #[must_use]
     pub fn table(&self, type_name: &str) -> Option<&CfdTable> {
         self.tables.get(type_name)

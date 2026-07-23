@@ -49,6 +49,46 @@ fn top_level_check_accepts_global_consts_and_enums() {
 }
 
 #[test]
+fn top_level_records_query_types_record_bindings() {
+    compile_one(
+        r#"
+        type Item { price: int; }
+        check ItemIntegrity {
+            all item, index in records(Item) {
+                item.price > 0 && item.id != "" && index >= 0;
+            }
+        }
+        "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn records_query_rejects_invalid_scopes_and_arguments() {
+    let err = compile_one(
+        r#"
+        enum Kind { A }
+        type Item {
+            check { records(Item).len() > 0; }
+        }
+        check InvalidQueries {
+            records(Kind).len() > 0;
+            records("Item").len() > 0;
+            records(Item, Item).len() > 0;
+        }
+        "#,
+    )
+    .unwrap_err();
+    assert!(
+        err.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == CftErrorCode::InvalidRecordSetQuery)
+            .count()
+            >= 4
+    );
+}
+
+#[test]
 fn type_checker_reports_name_field_enum_function_quantifier_index_and_regex_errors() {
     let source = r#"
         const PAT = "^[a";

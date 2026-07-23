@@ -242,6 +242,7 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
         CftSchemaCheckExprKind::String(value) => format!("\"{value}\""),
         CftSchemaCheckExprKind::FormattedString(segments) => render_formatted_string(segments),
         CftSchemaCheckExprKind::Name(name) => name.clone(),
+        CftSchemaCheckExprKind::Records { type_name } => format!("records({type_name})"),
         CftSchemaCheckExprKind::Field { expr, name } => {
             format!("{}.{}", render_expr(expr), name)
         }

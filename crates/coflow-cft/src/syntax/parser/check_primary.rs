@@ -38,9 +38,26 @@ impl Parser<'_> {
                 let depths = args.iter().map(|arg| arg.depth).collect::<Vec<_>>();
                 expr = self.node(StructureKind::CheckAst, opener, depths, || CheckExpr {
                     span: Span::new(call_name.span.start, end),
-                    kind: CheckExprKind::Call {
-                        name: call_name,
-                        args: args.into_iter().map(|arg| arg.value).collect(),
+                    kind: if call_name.name == "records" && args.len() == 1 {
+                        let argument = &args[0].value;
+                        if let CheckExprKind::Name(name) = &argument.kind {
+                            CheckExprKind::Records {
+                                type_name: NameRef {
+                                    name: name.clone(),
+                                    span: argument.span,
+                                },
+                            }
+                        } else {
+                            CheckExprKind::Call {
+                                name: call_name,
+                                args: args.into_iter().map(|arg| arg.value).collect(),
+                            }
+                        }
+                    } else {
+                        CheckExprKind::Call {
+                            name: call_name,
+                            args: args.into_iter().map(|arg| arg.value).collect(),
+                        }
                     },
                 })?;
             } else if self.at(&TokenKind::Question) && self.next_at(&TokenKind::Dot) {

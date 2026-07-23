@@ -278,6 +278,9 @@ pub enum CheckExprKind {
     String(String),
     FormattedString(Vec<CheckFormatSegment>),
     Name(String),
+    Records {
+        type_name: NameRef,
+    },
     Field {
         expr: Box<CheckExpr>,
         name: NameRef,
