@@ -77,7 +77,7 @@ impl EvalItems {
                         location: Box::new(Some(location.clone())),
                     })?;
                 Ok(Some(LocatedEvalValue::new(
-                    EvalValue::Record(super::value::EvalRecordRef::Resolved(location.clone())),
+                    EvalValue::Record(super::value::EvalRecordRef::RecordSet(location.clone())),
                     Some(location),
                 )))
             }

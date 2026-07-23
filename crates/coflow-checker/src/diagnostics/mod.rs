@@ -12,6 +12,7 @@ pub(crate) mod trace;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckDiagnosticContext {
+    Check { name: String },
     When {
         expression: String,
     },
@@ -30,6 +31,7 @@ impl CheckDiagnosticContext {
     #[must_use]
     pub fn human_message(&self) -> String {
         match self {
+            Self::Check { name } => format!("check {name}"),
             Self::When { expression } => format!("在 when {expression} 内"),
             Self::Quantifier { binding, item, .. } => format!("绑定 {binding} 位于 {item}"),
             Self::Dimension { dimension, variant } => format!("{dimension}={variant}"),
@@ -42,6 +44,13 @@ pub struct CheckDiagnostic {
     pub diagnostic: coflow_data_model::CfdDiagnostic,
     pub contexts: Vec<CheckDiagnosticContext>,
     pub is_custom_message: bool,
+    pub schema_location: Option<CheckSchemaLocation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckSchemaLocation {
+    pub module: coflow_cft::ModuleId,
+    pub span: coflow_cft::Span,
 }
 
 impl CheckDiagnostic {
@@ -69,6 +78,7 @@ impl From<coflow_data_model::CfdDiagnostic> for CheckDiagnostic {
             diagnostic,
             contexts: Vec::new(),
             is_custom_message: false,
+            schema_location: None,
         }
     }
 }

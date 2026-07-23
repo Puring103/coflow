@@ -382,7 +382,10 @@ fn overlay_record_refs_resolve_without_storage_records() {
     let incremental = coflow_checker::run_checks(
         &schema,
         &model,
-        CheckRequest::incremental(&snapshot, &std::collections::BTreeSet::from([target]))
+        CheckRequest::incremental(
+            &snapshot,
+            &coflow_checker::CheckChangeSet::from_records(&schema, [target]),
+        )
             .with_rounds(rounds),
     );
     assert_eq!(incremental.statistics.requested_roots, 2);
@@ -566,7 +569,10 @@ fn assert_incremental_dimension_matches_full(
     let incremental = coflow_checker::run_checks(
         schema,
         &current_model,
-        CheckRequest::incremental(&previous, &std::collections::BTreeSet::from([changed]))
+        CheckRequest::incremental(
+            &previous,
+            &coflow_checker::CheckChangeSet::from_records(&schema, [changed]),
+        )
             .with_rounds(rounds.iter().cloned()),
     )
     .snapshot
@@ -681,5 +687,5 @@ fn dependency_graph_has_no_synthetic_record_edges() {
     assert_eq!(model.record_count(), 1);
     assert!(graph.reads_from.values().all(|targets| targets
         .iter()
-        .all(|target| target.index() < model.record_count())));
+        .all(|target| target.record.index() < model.record_count())));
 }

@@ -19,7 +19,7 @@ use super::value::EvalRecordRef;
 pub(super) struct CheckEvaluator<'model> {
     pub(super) schema: &'model CftSchema,
     pub(super) model: &'model CfdDataModel,
-    pub(super) check_origin: ValueLocation,
+    pub(super) check_origin: Option<ValueLocation>,
     pub(super) current: EvalValue<'model>,
     pub(super) scopes: Vec<BTreeMap<String, LocatedEvalValue<'model>>>,
     pub(super) contexts: Vec<CheckDiagnosticContext>,
@@ -30,6 +30,7 @@ pub(super) struct CheckEvaluator<'model> {
     regex_cache: Rc<RefCell<builtins::RegexCache>>,
     budget: StructuralBudget,
     eval_stack: Vec<TraversalCursor>,
+    pub(super) schema_location: Option<crate::CheckSchemaLocation>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +52,7 @@ impl<'model> CheckEvaluator<'model> {
     pub(super) fn new(
         schema: &'model CftSchema,
         model: &'model CfdDataModel,
-        check_origin: ValueLocation,
+        check_origin: Option<ValueLocation>,
         current: EvalValue<'model>,
         mut deps: DependencyCollector,
         regex_cache: Rc<RefCell<builtins::RegexCache>>,
@@ -62,7 +63,7 @@ impl<'model> CheckEvaluator<'model> {
             _ => None,
         };
         if let Some(record_id) = initial_top {
-            deps.note_read_from(record_id);
+            deps.note_read_from(record_id, coflow_data_model::CfdPath::root());
         }
         Self {
             schema,
@@ -78,6 +79,7 @@ impl<'model> CheckEvaluator<'model> {
             regex_cache,
             budget: StructuralBudget::new(structural_limits),
             eval_stack: Vec::new(),
+            schema_location: None,
         }
     }
 
@@ -85,15 +87,16 @@ impl<'model> CheckEvaluator<'model> {
         (self.diagnostics, self.deps)
     }
 
-    pub(super) fn note_read_from(&mut self, target: CfdRecordId) {
-        self.deps.note_read_from(target);
+    pub(super) fn note_read_from(&mut self, target: CfdRecordId, path: coflow_data_model::CfdPath) {
+        self.deps.note_read_from(target, path);
     }
 
     fn note_value_read(&mut self, value: &LocatedEvalValue<'model>) {
-        if let EvalValue::Record(record) = &value.value {
-            if let Some(id) = record.top_record_id() {
-                self.note_read_from(id);
-            }
+        if matches!(&value.value, EvalValue::Record(record) if record.is_record_set_handle()) {
+            return;
+        }
+        if let Some(location) = &value.location {
+            self.note_read_from(location.storage.record, location.storage.path.clone());
         }
     }
 
@@ -121,7 +124,13 @@ impl<'model> CheckEvaluator<'model> {
             &mut self.budget,
         ) {
             Ok(Some(record_id)) => {
-                self.note_read_from(record_id);
+                self.note_read_from(
+                    record_id,
+                    located.location.as_ref().map_or_else(
+                        coflow_data_model::CfdPath::root,
+                        |location| location.storage.path.clone(),
+                    ),
+                );
                 Ok(())
             }
             Ok(None) => Ok(()),
@@ -704,27 +713,33 @@ impl<'model> CheckEvaluator<'model> {
         location: Option<ValueLocation>,
         message: impl Into<String>,
     ) {
-        let location = location.unwrap_or_else(|| self.check_origin.clone());
-        let mut diagnostic = CfdDiagnostic::error(code, message.into())
-            .with_primary(Some(location.blame.record), location.blame.path.clone());
-        for reference in &location.references {
-            diagnostic = diagnostic.with_related(
-                Some(reference.record),
-                reference.path.clone(),
-                "referenced from here",
-            );
-        }
-        if location.storage != location.blame && !location.references.contains(&location.storage) {
-            diagnostic = diagnostic.with_related(
-                Some(location.storage.record),
-                location.storage.path,
-                "value stored here",
-            );
+        let location = location.or_else(|| self.check_origin.clone());
+        let mut diagnostic = CfdDiagnostic::error(code, message.into());
+        if let Some(location) = location {
+            diagnostic = diagnostic
+                .with_primary(Some(location.blame.record), location.blame.path.clone());
+            for reference in &location.references {
+                diagnostic = diagnostic.with_related(
+                    Some(reference.record),
+                    reference.path.clone(),
+                    "referenced from here",
+                );
+            }
+            if location.storage != location.blame
+                && !location.references.contains(&location.storage)
+            {
+                diagnostic = diagnostic.with_related(
+                    Some(location.storage.record),
+                    location.storage.path,
+                    "value stored here",
+                );
+            }
         }
         self.diagnostics.push(CheckDiagnostic {
             diagnostic,
             contexts: self.contexts.clone(),
             is_custom_message: false,
+            schema_location: self.schema_location.clone(),
         });
     }
 

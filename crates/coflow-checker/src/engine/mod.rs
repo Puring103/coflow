@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use coflow_cft::CftSchema;
 use coflow_data_model::{CfdDataModel, CfdRecordId};
 
-use crate::snapshot::CheckRoot;
+use crate::snapshot::{CheckRoot, StableExecutionId};
 use crate::{
     CheckExecutionStats, CheckOutput, CheckRequest, CheckRound, CheckSnapshot, CheckTargets,
     DependencyCollection, DependencyGraph, DimensionCheckContext, DimensionCheckRound,
@@ -34,7 +34,7 @@ pub(crate) fn execute(
 ) -> CheckOutput {
     request.rounds = deduplicate_preserving_order(request.rounds);
     let collect_dependencies = request.dependency_collection == DependencyCollection::Reads;
-    let selection = select_targets(model, request.targets, &request.rounds);
+    let selection = select_targets(schema, model, request.targets, &request.rounds);
     let requested_roots = selection.requested_roots();
     let executed_rounds = selection.executed_rounds();
     if executed_rounds == 0 {
@@ -55,6 +55,24 @@ pub(crate) fn execute(
     let mut diagnostics = Vec::new();
     let mut dependencies = DependencyGraph::default();
     let mut dimension_projected_records = 0;
+
+    if !selection.top_level_targets.is_empty() {
+        let execution = run_top_level_checks(
+            schema,
+            model,
+            &selection.top_level_targets,
+            collect_dependencies,
+            request.structural_limits,
+        );
+        record_top_level_execution(
+            &mut replacement,
+            model,
+            &selection.top_level_targets,
+            &execution,
+        );
+        diagnostics.extend(execution.diagnostics);
+        dependencies.merge(execution.dependencies);
+    }
 
     if !selection.default_targets.is_empty() {
         let execution = run_default_round(
@@ -114,12 +132,14 @@ pub(crate) fn execute(
             requested_roots,
             executed_rounds,
             dimension_projected_records,
+            executed_top_level_checks: selection.top_level_targets.len(),
             dependency_collection: request.dependency_collection,
         },
     }
 }
 
 struct TargetSelection<'a> {
+    top_level_targets: Vec<coflow_cft::CheckName>,
     default_targets: Vec<CfdRecordId>,
     dimension_targets: Vec<(DimensionCheckRound, Vec<CfdRecordId>)>,
     previous: Option<&'a CheckSnapshot>,
@@ -128,7 +148,7 @@ struct TargetSelection<'a> {
 
 impl TargetSelection<'_> {
     fn requested_roots(&self) -> usize {
-        self.default_targets
+        self.top_level_targets.len() + self.default_targets
             .iter()
             .copied()
             .chain(
@@ -141,7 +161,7 @@ impl TargetSelection<'_> {
     }
 
     fn executed_rounds(&self) -> usize {
-        self.default_targets.len()
+        self.top_level_targets.len() + self.default_targets.len()
             + self
                 .dimension_targets
                 .iter()
@@ -151,25 +171,28 @@ impl TargetSelection<'_> {
 }
 
 fn select_targets<'a>(
+    schema: &CftSchema,
     model: &CfdDataModel,
     targets: CheckTargets<'a>,
     rounds: &[DimensionCheckRound],
 ) -> TargetSelection<'a> {
     match targets {
-        CheckTargets::All => full_selection(model, rounds),
+        CheckTargets::All => full_selection(schema, model, rounds),
         CheckTargets::Records(targets) => {
             selection_for_targets(deduplicate_preserving_order(targets.to_vec()), rounds)
         }
         CheckTargets::Incremental { previous, changed } => {
             select_incremental_targets(model, previous, changed, rounds)
-                .unwrap_or_else(|| full_selection(model, rounds))
+                .unwrap_or_else(|| full_selection(schema, model, rounds))
         }
     }
 }
 
-fn full_selection<'a>(model: &CfdDataModel, rounds: &[DimensionCheckRound]) -> TargetSelection<'a> {
+fn full_selection<'a>(schema: &CftSchema, model: &CfdDataModel, rounds: &[DimensionCheckRound]) -> TargetSelection<'a> {
     let targets = model.records().map(|(id, _)| id).collect();
-    selection_for_targets(targets, rounds)
+    let mut selection = selection_for_targets(targets, rounds);
+    selection.top_level_targets = schema.all_checks().map(|check| check.name.clone()).collect();
+    selection
 }
 
 fn selection_for_targets<'a>(
@@ -182,6 +205,7 @@ fn selection_for_targets<'a>(
         .map(|round| (round, targets.clone()))
         .collect();
     TargetSelection {
+        top_level_targets: Vec::new(),
         default_targets: targets,
         dimension_targets,
         previous: None,
@@ -192,19 +216,29 @@ fn selection_for_targets<'a>(
 fn select_incremental_targets<'a>(
     model: &CfdDataModel,
     previous: &'a CheckSnapshot,
-    changed: &BTreeSet<coflow_data_model::RecordCoordinate>,
+    changed: &crate::CheckChangeSet,
     rounds: &[DimensionCheckRound],
 ) -> Option<TargetSelection<'a>> {
     let changed = expand_materialization_changes(model, changed);
     let replaced = previous.affected_roots(&changed, rounds)?;
     let mut default_targets = Vec::new();
+    let mut top_level_targets = Vec::new();
     let mut dimension_targets = rounds
         .iter()
         .cloned()
         .map(|round| (round, Vec::new()))
         .collect::<Vec<_>>();
     for root in &replaced {
-        let id = model.record_by_type_key(&root.record.actual_type, &root.record.key)?;
+        let id = match &root.execution {
+            StableExecutionId::Record(record) => {
+                Some(model.record_by_type_key(&record.actual_type, &record.key)?)
+            }
+            StableExecutionId::TopLevel(name) => {
+                top_level_targets.push(name.clone());
+                None
+            }
+        };
+        let Some(id) = id else { continue; };
         match &root.round {
             CheckRound::Default => default_targets.push(id),
             CheckRound::Dimension(round) => {
@@ -218,11 +252,31 @@ fn select_incremental_targets<'a>(
         }
     }
     Some(TargetSelection {
+        top_level_targets,
         default_targets,
         dimension_targets,
         previous: Some(previous),
         replaced,
     })
+}
+
+fn run_top_level_checks(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    targets: &[coflow_cft::CheckName],
+    collect_dependencies: bool,
+    structural_limits: StructuralLimits,
+) -> RoundExecution {
+    let (diagnostics, dependencies) = CheckRunner::new(schema, model, structural_limits)
+        .run_top_level(targets, collect_dependencies);
+    RoundExecution {
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|(root, diagnostic)| RootedCheckDiagnostic { root, diagnostic })
+            .collect(),
+        dependencies,
+        dimension_projected_records: 0,
+    }
 }
 
 struct RoundExecution {
@@ -293,12 +347,43 @@ fn record_execution(
     targets: &[CfdRecordId],
     execution: &RoundExecution,
 ) {
+    let execution_targets = targets
+        .iter()
+        .copied()
+        .map(crate::CheckExecutionId::Record)
+        .collect::<Vec<_>>();
     if replacement.as_mut().is_some_and(|snapshot| {
         snapshot
             .insert_execution(
                 model,
                 round,
-                targets,
+                &execution_targets,
+                execution.diagnostics.clone(),
+                &execution.dependencies,
+            )
+            .is_none()
+    }) {
+        *replacement = None;
+    }
+}
+
+fn record_top_level_execution(
+    replacement: &mut Option<CheckSnapshot>,
+    model: &CfdDataModel,
+    targets: &[coflow_cft::CheckName],
+    execution: &RoundExecution,
+) {
+    let execution_targets = targets
+        .iter()
+        .cloned()
+        .map(crate::CheckExecutionId::TopLevel)
+        .collect::<Vec<_>>();
+    if replacement.as_mut().is_some_and(|snapshot| {
+        snapshot
+            .insert_execution(
+                model,
+                &CheckRound::Default,
+                &execution_targets,
                 execution.diagnostics.clone(),
                 &execution.dependencies,
             )
@@ -318,21 +403,25 @@ fn deduplicate_preserving_order<T: Clone + Ord>(values: Vec<T>) -> Vec<T> {
 
 fn expand_materialization_changes(
     model: &CfdDataModel,
-    changed: &BTreeSet<coflow_data_model::RecordCoordinate>,
-) -> BTreeSet<coflow_data_model::RecordCoordinate> {
-    let source_ids = changed.iter().filter_map(|coordinate| {
+    changed: &crate::CheckChangeSet,
+) -> crate::CheckChangeSet {
+    let source_ids = changed.records.keys().filter_map(|coordinate| {
         model.record_by_type_key(&coordinate.actual_type, &coordinate.key)
     });
     let mut expanded = changed.clone();
-    expanded.extend(
-        model
+    let dependents = model
             .materialization_dependents(source_ids)
             .into_iter()
             .filter_map(|id| {
                 model
                     .record(id)
                     .map(coflow_data_model::CfdRecord::coordinate)
-            }),
-    );
+            });
+    for coordinate in dependents {
+        expanded
+            .records
+            .entry(coordinate)
+            .or_insert(crate::ChangedPaths::All);
+    }
     expanded
 }

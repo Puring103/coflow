@@ -1,6 +1,7 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_data_model::{CfdRecordId, RecordCoordinate};
+use coflow_data_model::{CfdPath, CfdRecordId, RecordCoordinate};
+use coflow_cft::{CftSchema, TypeName};
 use coflow_structure::StructuralLimits;
 
 use crate::{CheckSnapshot, DimensionCheckRound};
@@ -11,8 +12,39 @@ pub enum CheckTargets<'a> {
     Records(&'a [CfdRecordId]),
     Incremental {
         previous: &'a CheckSnapshot,
-        changed: &'a BTreeSet<RecordCoordinate>,
+        changed: &'a CheckChangeSet,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangedPaths {
+    All,
+    Paths(BTreeSet<CfdPath>),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CheckChangeSet {
+    pub records: BTreeMap<RecordCoordinate, ChangedPaths>,
+    pub memberships: BTreeSet<TypeName>,
+}
+
+impl CheckChangeSet {
+    #[must_use]
+    pub fn from_records(
+        schema: &CftSchema,
+        records: impl IntoIterator<Item = RecordCoordinate>,
+    ) -> Self {
+        let mut changes = Self::default();
+        for record in records {
+            let actual_type = record.actual_type.clone();
+            changes.memberships.insert(actual_type.clone());
+            if let Some(ancestors) = schema.ancestor_type_names(&actual_type) {
+                changes.memberships.extend(ancestors.iter().cloned());
+            }
+            changes.records.insert(record, ChangedPaths::All);
+        }
+        changes
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -56,7 +88,7 @@ impl<'a> CheckRequest<'a> {
     #[must_use]
     pub fn incremental(
         previous: &'a CheckSnapshot,
-        changed: &'a BTreeSet<RecordCoordinate>,
+        changed: &'a CheckChangeSet,
     ) -> Self {
         Self {
             targets: CheckTargets::Incremental { previous, changed },

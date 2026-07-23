@@ -46,7 +46,7 @@ pub use schema::{
     CftEnumVariant, CftField, CftFieldDimension, CftNameError, CftSchema, CftSchemaBinOp,
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
     CftSchemaCheckMessage, CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp,
-    CftSchemaDefaultValue, CftSchemaQuantifierBindings, CftSchemaQuantifierKind, CftTopLevelCheck,
+    CftSchemaDefaultValue, CftSchemaQuantifierBindings, CftSchemaQuantifierKind, CftSchemaSource, CftTopLevelCheck,
     CftSchemaTypePredicate, CftSchemaUnaryOp, CftType, CftValueType, CheckName, ConstName, DimensionName,
     EnumName, EnumVariantName, FieldName, RecordKey, ScheduledCheckBlock, TypeName,
     TypedCheckSchedule, ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan,

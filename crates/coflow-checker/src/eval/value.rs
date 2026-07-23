@@ -222,6 +222,7 @@ impl<'a> LocatedEvalValue<'a> {
 #[derive(Debug, Clone)]
 pub(crate) enum EvalRecordRef {
     Resolved(ValueLocation),
+    RecordSet(ValueLocation),
     /// A `CfdValue::Ref` whose target could not be resolved (target type/key
     /// missing from the model). Reads through this ref return `None`, so
     /// callers surface a check diagnostic instead of crashing.
@@ -231,9 +232,10 @@ pub(crate) enum EvalRecordRef {
 impl PartialEq for EvalRecordRef {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Resolved(lhs), Self::Resolved(rhs)) => lhs.storage == rhs.storage,
+            (Self::Resolved(lhs) | Self::RecordSet(lhs), Self::Resolved(rhs) | Self::RecordSet(rhs)) => lhs.storage == rhs.storage,
             (Self::Unresolved, Self::Unresolved) => true,
-            (Self::Resolved(_), Self::Unresolved) | (Self::Unresolved, Self::Resolved(_)) => false,
+            (Self::Resolved(_) | Self::RecordSet(_), Self::Unresolved)
+            | (Self::Unresolved, Self::Resolved(_) | Self::RecordSet(_)) => false,
         }
     }
 }
@@ -244,27 +246,27 @@ impl EvalRecordRef {
         model: &'model CfdDataModel,
     ) -> Option<&'model BTreeMap<FieldName, CfdValue>> {
         match self {
-            Self::Resolved(location) => resolved_object_fields(model, &location.storage),
+            Self::Resolved(location) | Self::RecordSet(location) => resolved_object_fields(model, &location.storage),
             Self::Unresolved => None,
         }
     }
 
     pub(crate) fn actual_type<'model>(&self, model: &'model CfdDataModel) -> Option<&'model str> {
         match self {
-            Self::Resolved(location) => resolved_object_type(model, &location.storage),
+            Self::Resolved(location) | Self::RecordSet(location) => resolved_object_type(model, &location.storage),
             Self::Unresolved => None,
         }
     }
 
     pub(crate) fn key<'model>(&self, model: &'model CfdDataModel) -> Option<&'model str> {
         match self {
-            Self::Resolved(location)
+            Self::Resolved(location) | Self::RecordSet(location)
                 if location.storage.dimension.is_none()
                     && location.storage.path.segments.is_empty() =>
             {
                 model.record(location.storage.record).map(CfdRecord::key)
             }
-            Self::Resolved(_) => None,
+            Self::Resolved(_) | Self::RecordSet(_) => None,
             Self::Unresolved => None,
         }
     }
@@ -297,21 +299,25 @@ impl EvalRecordRef {
 
     pub(crate) fn location(&self) -> Option<ValueLocation> {
         match self {
-            Self::Resolved(location) => Some(location.clone()),
+            Self::Resolved(location) | Self::RecordSet(location) => Some(location.clone()),
             Self::Unresolved => None,
         }
     }
 
     pub(crate) fn top_record_id(&self) -> Option<CfdRecordId> {
         match self {
-            Self::Resolved(location)
+            Self::Resolved(location) | Self::RecordSet(location)
                 if location.storage.dimension.is_none()
                     && location.storage.path.segments.is_empty() =>
             {
                 Some(location.storage.record)
             }
-            Self::Resolved(_) | Self::Unresolved => None,
+            Self::Resolved(_) | Self::RecordSet(_) | Self::Unresolved => None,
         }
+    }
+
+    pub(crate) const fn is_record_set_handle(&self) -> bool {
+        matches!(self, Self::RecordSet(_))
     }
 }
 

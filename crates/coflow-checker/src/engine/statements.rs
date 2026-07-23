@@ -62,6 +62,13 @@ fn eval_stmts(evaluator: &mut CheckEvaluator<'_>, stmts: &[CftSchemaCheckStmt]) 
 }
 
 fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> EvalFlow {
+    if let Some(location) = evaluator.schema_location.as_mut() {
+        location.span = match stmt {
+            CftSchemaCheckStmt::Expr { span, .. }
+            | CftSchemaCheckStmt::Quantifier { span, .. }
+            | CftSchemaCheckStmt::When { span, .. } => *span,
+        };
+    }
     match stmt {
         CftSchemaCheckStmt::Expr {
             condition, message, ..

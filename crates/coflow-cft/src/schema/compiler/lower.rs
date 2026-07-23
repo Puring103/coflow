@@ -23,6 +23,19 @@ impl SchemaCompiler<'_> {
             enums: self.build_enums(),
             types: self.build_types(),
             checks: self.build_checks(),
+            sources: self
+                .modules
+                .modules()
+                .map(|(id, module)| {
+                    (
+                        id.clone(),
+                        crate::schema::CftSchemaSource {
+                            path: module.path().to_path_buf(),
+                            source: module.shared_source(),
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 
@@ -31,11 +44,14 @@ impl SchemaCompiler<'_> {
             .iter()
             .map(|(name, info)| {
                 let name = CheckName::from_validated(name.clone());
+                let block = self.convert_check_block(&info.module, &info.def.block);
+                let record_sets = collect_record_sets(&block);
                 let check = CftTopLevelCheck {
                     module: info.module.clone(),
                     name: name.clone(),
-                    block: self.convert_check_block(&info.module, &info.def.block),
+                    block,
                     span: info.def.span,
+                    record_sets,
                 };
                 (name, check)
             })
@@ -243,6 +259,18 @@ impl SchemaCompiler<'_> {
             .get(variant_name)
             .copied()
     }
+}
+
+fn collect_record_sets(block: &CftSchemaCheckBlock) -> std::collections::BTreeSet<TypeName> {
+    struct Collector(std::collections::BTreeSet<TypeName>);
+    impl crate::schema::check_visit::CheckVisitor for Collector {
+        fn visit_records(&mut self, type_name: &TypeName) {
+            self.0.insert(type_name.clone());
+        }
+    }
+    let mut collector = Collector(std::collections::BTreeSet::new());
+    crate::schema::check_visit::CheckVisitor::visit_block(&mut collector, block);
+    collector.0
 }
 
 fn localized_bucket(field: &FieldDef) -> Option<BucketName> {
