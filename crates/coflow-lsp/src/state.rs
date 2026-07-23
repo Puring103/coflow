@@ -1,4 +1,5 @@
-use coflow_cft::syntax::ast::{CheckStmt, Item};
+use coflow_cft::syntax::ast::{CheckExpr, CheckStmt, Item, NameRef};
+use coflow_cft::syntax::CheckVisitor;
 use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftType, CftValueType, ModuleId};
 use coflow_project::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
@@ -235,50 +236,54 @@ fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
 }
 
 pub(crate) fn quantifier_bindings_at(document: &LspDocument, offset: usize) -> Vec<String> {
-    let mut bindings = Vec::new();
+    struct BindingVisitor {
+        offset: usize,
+        bindings: Vec<String>,
+    }
+
+    impl CheckVisitor for BindingVisitor {
+        type Error = std::convert::Infallible;
+
+        fn visit_stmt(&mut self, stmt: &CheckStmt) -> Result<(), Self::Error> {
+            let span = stmt.span();
+            if span.start <= self.offset && self.offset <= span.end {
+                self.walk_stmt(stmt)?;
+            }
+            Ok(())
+        }
+
+        fn visit_expr(&mut self, _expr: &CheckExpr) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn enter_quantifier_body(&mut self, bindings: &[NameRef]) -> Result<(), Self::Error> {
+            self.bindings
+                .extend(bindings.iter().map(|binding| binding.name.clone()));
+            Ok(())
+        }
+    }
+
+    let mut visitor = BindingVisitor {
+        offset,
+        bindings: Vec::new(),
+    };
     let Some(ast) = document.ast() else {
-        return bindings;
+        return visitor.bindings;
     };
     for item in &ast.items {
         match item {
             Item::Type(ty) => {
                 if let Some(check) = &ty.check {
-                    collect_quantifier_bindings(&check.stmts, offset, &mut bindings);
+                    let result = visitor.visit_block(check);
+                    debug_assert!(result.is_ok());
                 }
             }
             Item::Check(check) => {
-                collect_quantifier_bindings(&check.block.stmts, offset, &mut bindings);
+                let result = visitor.visit_block(&check.block);
+                debug_assert!(result.is_ok());
             }
             Item::Const(_) | Item::Enum(_) => {}
         }
     }
-    bindings
-}
-
-fn collect_quantifier_bindings(stmts: &[CheckStmt], offset: usize, bindings: &mut Vec<String>) {
-    for stmt in stmts {
-        match stmt {
-            CheckStmt::Quantifier {
-                bindings: quantifier_bindings,
-                body,
-                span,
-                ..
-            } => {
-                if span.start <= offset && offset <= span.end {
-                    bindings.extend(
-                        quantifier_bindings
-                            .iter()
-                            .map(|binding| binding.name.clone()),
-                    );
-                    collect_quantifier_bindings(body, offset, bindings);
-                }
-            }
-            CheckStmt::When { body, span, .. } => {
-                if span.start <= offset && offset <= span.end {
-                    collect_quantifier_bindings(body, offset, bindings);
-                }
-            }
-            CheckStmt::Expr { .. } => {}
-        }
-    }
+    visitor.bindings
 }
