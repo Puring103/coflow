@@ -30,4 +30,4 @@ coflow check .
 coflow build .
 ```
 
-`build` 在 staging 中生成并验证所有产物，成功后才替换稳定输出目录和 active manifest。详细安全边界见 [项目流水线](../reference/02-project-pipeline.md)。
+`build` 生成并验证所有产物，全部成功后才替换输出目录。详细安全边界见 [项目流水线](../reference/02-project-pipeline.md)。

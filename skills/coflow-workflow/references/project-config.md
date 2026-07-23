@@ -201,7 +201,7 @@ Excel 和 CSV 中 record key 与所有已映射字段都为空的数据行会被
 
 ### 表格配置示例
 
-如果 Excel sheet 名、表头和 CFT 类型/字段完全一致，可以只写文件路径：
+如果 sheet 名、表头和 CFT 类型/字段完全一致，只需配置文件路径：
 
 ```yaml
 schema: schema/
@@ -215,20 +215,7 @@ outputs:
     dir: generated/data
 ```
 
-例如 `items.xlsx` 中有一个名为 `Item` 的 sheet：
-
-| id | name | rarity | price |
-| --- | --- | --- | --- |
-| potion | Potion | Common | 50 |
-| sword | Iron Sword | Rare | 120 |
-
-它会按以下规则读取：
-
-- `Item` sheet 对应 CFT 类型 `Item`。
-- `id` 列作为 record key。
-- `name`、`rarity`、`price` 表头分别映射到同名 CFT 字段。
-
-如果策划表使用展示名表头，可以用 `columns` 映射：
+表头与字段名不同时，使用 `columns` 映射：
 
 ```yaml
 sources:
@@ -243,54 +230,7 @@ sources:
           价格: price
 ```
 
-对应表格：
-
-| 物品ID | 名称 | 稀有度 | 价格 |
-| --- | --- | --- | --- |
-| potion | Potion | Common | 50 |
-| sword | Iron Sword | Rare | 120 |
-
-这里：
-
-- `sheet: 物品表` 表示读取 Excel 中的 `物品表`。
-- `type: Item` 表示这些行加载为 CFT 类型 `Item`。
-- `key: 物品ID` 表示 `物品ID` 列是 record key。
-- `columns` 把展示名表头映射到 CFT 字段名。
-
-同一个 workbook 可以配置多个 sheet：
-
-```yaml
-sources:
-  - path: data/gameplay.xlsx
-    sheets:
-      - sheet: 物品表
-        type: Item
-        key: 物品ID
-        columns:
-          名称: name
-          稀有度: rarity
-      - sheet: 怪物表
-        type: Monster
-        key: 怪物ID
-        columns:
-          等级: level
-          掉落: drop
-```
-
-目录 source 适合把多个 Excel/CSV/CFD 文件放在同一个数据目录：
-
-```yaml
-sources:
-  - path: data
-    sheets:
-      - sheet: 物品表
-        type: Item
-        key: 物品ID
-        columns:
-          名称: name
-```
-
-如果 `data/` 中同时存在 `items.xlsx`、`monsters.csv` 和 `story.cfd`，Coflow 会递归发现支持的文件。上面的 `sheets` 配置只影响表格类 source；`story.cfd` 仍按照 CFD 文本中的记录类型加载。
+完整的 sheet 映射、表头、`@expand` 和多 sheet 示例见[表格 Source](https://puring103.github.io/coflow/docs/reference/04-sources/02-table)。
 
 ## `outputs`
 

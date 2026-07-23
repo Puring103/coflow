@@ -25,7 +25,29 @@ coflow data patch . --patch '<json>'
 coflow check .
 ```
 
-`data patch` 对整批操作执行 preflight 和 transaction。任一 writer、重建或提交失败时，已写来源会被补偿，旧 generation 保持可用。
+`data patch` 会把一批操作作为一个整体写入。任一操作失败时不会保留部分修改。
+
+## 常见任务
+
+修改一条记录的字段：
+
+```powershell
+coflow data patch . --patch '{"ops":[{"op":"set_field","record":{"type":"Item","key":"sword"},"path":[{"kind":"field","value":"price"}],"value":125}]}'
+```
+
+schema 新增字段后同步 CSV 表头：
+
+```powershell
+coflow data sync-header . --file data/items.csv --type Item
+coflow check .
+```
+
+大范围整理 CFD 文件时，先预览检查结果，再执行写入：
+
+```powershell
+Get-Content data/items.cfd | coflow data write-file . --file data/items.cfd --dry-run --check
+Get-Content data/items.cfd | coflow data write-file . --file data/items.cfd --check
+```
 
 ## 处理诊断
 

@@ -49,6 +49,89 @@ sources:
 或插入等写操作时必须通过 `--sheet` 指定目标；Coflow 不会按配置顺序静默选择
 第一张 sheet。显式给出的 sheet 若配置成另一个 type，也会在写入前报错。
 
+## 配置案例
+
+### 默认映射
+
+当 sheet 名与 CFT type 相同、表头与字段名相同时，只需配置文件路径：
+
+```yaml
+sources:
+  - path: data/items.xlsx
+```
+
+`items.xlsx` 中的 `Item` sheet：
+
+| id | name | rarity | price |
+| --- | --- | --- | --- |
+| potion | Potion | Common | 50 |
+| sword | Iron Sword | Rare | 120 |
+
+Coflow 将 sheet 映射为 `Item` type，将 `id` 作为 record key，其余列映射到同名字段。
+
+### 展示名表头
+
+表格使用面向策划的名称时，通过 `type`、`key` 和 `columns` 映射：
+
+```yaml
+sources:
+  - path: data/items.xlsx
+    sheets:
+      - sheet: 物品表
+        type: Item
+        key: 物品ID
+        columns:
+          名称: name
+          稀有度: rarity
+          价格: price
+```
+
+对应表格：
+
+| 物品ID | 名称 | 稀有度 | 价格 |
+| --- | --- | --- | --- |
+| potion | Potion | Common | 50 |
+| sword | Iron Sword | Rare | 120 |
+
+未列入 `columns` 的表头仍会按原名称匹配字段，因此只需配置实际发生重命名的列。
+
+### 一个 workbook 包含多个 type
+
+```yaml
+sources:
+  - path: data/gameplay.xlsx
+    sheets:
+      - sheet: 物品表
+        type: Item
+        key: 物品ID
+        columns:
+          名称: name
+          稀有度: rarity
+      - sheet: 怪物表
+        type: Monster
+        key: 怪物ID
+        columns:
+          等级: level
+          掉落: drop
+```
+
+每个 sheet 独立映射 type 和 key 列。读取顺序与 `sheets` 中的声明顺序一致。
+
+### 目录中混合多种数据源
+
+```yaml
+sources:
+  - path: data
+    sheets:
+      - sheet: 物品表
+        type: Item
+        key: 物品ID
+        columns:
+          名称: name
+```
+
+如果 `data/` 中包含 `items.xlsx`、`monsters.csv` 和 `story.cfd`，Coflow 会递归发现这些文件。`sheets` 映射作用于表格文件；CFD records 仍由文本中的类型声明决定。
+
 ## `#` 控制列
 
 表格可以包含名为 `#` 的控制列。数据行中该列单元格去掉首尾空白后等于 `##` 时，整行跳过。

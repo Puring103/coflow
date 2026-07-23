@@ -75,7 +75,7 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 | Stage | 说明 |
 | --- | --- |
 | `CLI` | 命令级错误 |
-| `PROJECT` | 项目配置和命令 preflight |
+| `PROJECT` | 项目配置和命令执行前检查 |
 | `LEX` | CFT 词法 |
 | `SYN` | CFT 语法 |
 | `SCHEMA` | CFT schema 编译 |
@@ -87,8 +87,8 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 | `DATA` | DataModel 构建 |
 | `REF` | `&Type` 记录引用解析 |
 | `CHECK` | CFT `check {}` 运行期校验 |
-| `CODEGEN` | 代码生成 preflight |
-| `ARTIFACT` | artifact path、generation 写入/验证、active manifest、lock state |
+| `CODEGEN` | 代码生成配置与内容检查 |
+| `ARTIFACT` | 产物路径、写入和验证 |
 | `WRITE` | 通用 writer 能力错误 |
 
 ## 非阻塞收集规则
@@ -107,7 +107,7 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 | DataModel | 子阶段内聚合；无效 model 阻塞引用和 check |
 | 引用解析 | 子阶段内聚合；未解析引用阻塞 check |
 | Check | 跨 block 和 record 聚合；硬运行期错误只停止当前 block |
-| Codegen / artifact preflight | 尽量聚合 |
+| Codegen / 产物检查 | 尽量聚合 |
 
 ## 修复顺序
 

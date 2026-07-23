@@ -184,7 +184,7 @@ enum ItemId {}
 
 生成后，`TbItem` 的 key 类型会从 `string` 变为 `ItemId`，引用该 type 的字段也会使用对应 enum。
 
-`@idAsEnum` lock state 位于 `.coflow/artifacts/active.json`，与 data/code generation 在同一次 manifest 激活中发布，用来稳定 enum variant 的整数值。Coflow 在最终激活前原子更新 `coflow.yaml` 同级的 `coflow.enum.lock.json`，它是可提交到版本库的非权威镜像；已有 active manifest 始终优先，没有本地 manifest 的干净 clone 才从该文件恢复 lock state。`coflow build` 会加载数据并补全新增 variant；单独运行 `codegen` 不加载数据源，因此只读取已有 lock state。
+`coflow.yaml` 同级的 `coflow.enum.lock.json` 用于保持 enum variant 的整数值稳定，应提交到版本库。`coflow build` 会根据数据补全新增 variant；单独运行 `codegen` 只使用已有编号。
 
 ## `@singleton`
 
@@ -261,7 +261,7 @@ codegen 会在写文件前检查：
 - `@idAsEnum` variant 是否能生成合法 C# enum member。
 - 输出目录是否可安全接管。
 
-存在诊断时，不会激活新的 generation，也不会更新 active manifest 中的 lock state。
+存在诊断时，不会替换现有代码产物或更新 `@idAsEnum` 编号。
 
 ## 运行时定位
 

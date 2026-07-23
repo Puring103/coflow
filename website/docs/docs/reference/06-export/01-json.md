@@ -24,8 +24,6 @@ generated/data/
 
 没有记录的 table 不写空 `[]` 文件。
 
-导出遍历按 `begin/end/key/scalar` 事件直接写入每个 table 的 JSON 文本，不构造整项目 JSON 树。若编码失败，诊断消息会包含 table、record key 和完整嵌套字段路径。
-
 ## 编码规则
 
 | CFT 类型 | JSON 表示 | 示例 |
@@ -124,9 +122,7 @@ JSON object key 必须是字符串，因此 Coflow 会把字典 key 统一转成
 
 ## 输出目录
 
-`outputs.data.dir` 是导出成功后的实际数据目录。Coflow 先写入并校验 staging 和不可变 generation，再替换该目录；完成后通过项目目录下 `.coflow/artifacts/active.json` 一次激活 data、code 和 `@idAsEnum` lock state。命令成功信息会输出实际数据目录。
-
-消费者直接使用配置的输出目录。后续发布会完整替换其中的内容；不要在输出目录中放置手写文件。active manifest 中的 `outputs.data.generation_dir` 指向 Coflow 保留的不可变内部 snapshot。
+`outputs.data.dir` 是消费者直接读取的数据目录。只有完整导出成功后，Coflow 才会替换目录内容；失败时现有产物保持不变。不要在该目录中放置手写文件。
 
 ## 示例
 
