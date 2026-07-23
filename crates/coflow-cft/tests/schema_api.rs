@@ -17,6 +17,27 @@ use common::*;
 use std::path::PathBuf;
 
 #[test]
+fn schema_exposes_named_top_level_checks() {
+    let schema = compile_one(
+        r#"
+        const ENABLED = true;
+        check ItemIntegrity {
+            ENABLED: "must be enabled";
+        }
+        "#,
+    )
+    .expect("schema compiles");
+
+    let check = schema
+        .resolve_check("ItemIntegrity")
+        .expect("top-level check");
+    assert_eq!(check.name.as_str(), "ItemIntegrity");
+    assert_eq!(check.module.as_str(), "main");
+    assert_eq!(schema.all_checks().count(), 1);
+    assert_eq!(check.block.stmts.len(), 1);
+}
+
+#[test]
 fn schema_exposes_typed_quantifier_binding_layouts() {
     let schema = compile_one(
         r#"

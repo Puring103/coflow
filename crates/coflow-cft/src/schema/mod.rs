@@ -52,6 +52,7 @@ pub struct CftSchema {
     ancestors_by_type: BTreeMap<TypeName, Vec<TypeName>>,
     ancestor_membership_by_type: BTreeMap<TypeName, BTreeSet<TypeName>>,
     enums: BTreeMap<EnumName, CftEnum>,
+    top_level_checks: BTreeMap<CheckName, CftTopLevelCheck>,
     children_by_parent: BTreeMap<TypeName, Vec<TypeName>>,
     dimensions: BTreeMap<DimensionName, CftDimension>,
     type_by_id_as_enum: BTreeMap<EnumName, TypeName>,
@@ -67,6 +68,7 @@ impl CftSchema {
     ) -> Result<Self, CftDiagnostics> {
         let consts = declarations.consts;
         let enums = declarations.enums;
+        let top_level_checks = declarations.checks;
         let types = declarations.types;
 
         let mut inheritance_root_by_type = BTreeMap::new();
@@ -121,6 +123,7 @@ impl CftSchema {
             ancestors_by_type,
             ancestor_membership_by_type,
             enums,
+            top_level_checks,
             children_by_parent,
             dimensions,
             type_by_id_as_enum,

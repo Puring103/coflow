@@ -1,6 +1,6 @@
 use super::annotations::has_annotation;
 use super::lower::const_value;
-use super::state::{ConstInfo, EnumInfo, Symbol, SymbolKind, TypeInfo};
+use super::state::{CheckInfo, ConstInfo, EnumInfo, Symbol, SymbolKind, TypeInfo};
 use super::SchemaCompiler;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
@@ -51,6 +51,16 @@ impl SchemaCompiler<'_> {
                                 module_id,
                                 annotation.span,
                                 "annotation has no target",
+                            );
+                        }
+                    }
+                    Item::Check(def) => {
+                        for annotation in &def.annotations {
+                            self.push_diag(
+                                CftErrorCode::InvalidAnnotationTarget,
+                                module_id,
+                                annotation.span,
+                                "annotations cannot be applied to top-level checks",
                             );
                         }
                     }
@@ -108,6 +118,32 @@ impl SchemaCompiler<'_> {
                             self.types.insert(
                                 def.name.clone(),
                                 TypeInfo {
+                                    module: module_id.clone(),
+                                    def,
+                                },
+                            );
+                        }
+                    }
+                    Item::Check(def) => {
+                        self.validate_identifier(&def.name, module_id, def.name_span);
+                        if let Some(first) = self.checks.get(&def.name) {
+                            self.diagnostics.push(
+                                CftDiagnostic::error(
+                                    CftErrorCode::DuplicateTopLevelCheck,
+                                    module_id.clone(),
+                                    def.name_span,
+                                    format!("duplicate top-level check `{}`", def.name),
+                                )
+                                .with_related(
+                                    first.module.clone(),
+                                    first.def.name_span,
+                                    "first definition is here",
+                                ),
+                            );
+                        } else {
+                            self.checks.insert(
+                                def.name.clone(),
+                                CheckInfo {
                                     module: module_id.clone(),
                                     def,
                                 },

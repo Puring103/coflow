@@ -1,5 +1,5 @@
 use crate::{
-    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftType, EnumName, EnumVariantName,
+    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftTopLevelCheck, CftType, EnumName, EnumVariantName,
     TypeName, TypedCheckSchedule, ValueDependencyPlan,
 };
 
@@ -50,6 +50,15 @@ impl CftSchema {
 
     pub fn all_consts(&self) -> impl Iterator<Item = &CftConst> {
         self.consts.values()
+    }
+
+    #[must_use]
+    pub fn resolve_check(&self, name: &str) -> Option<&CftTopLevelCheck> {
+        self.top_level_checks.get(name)
+    }
+
+    pub fn all_checks(&self) -> impl Iterator<Item = &CftTopLevelCheck> {
+        self.top_level_checks.values()
     }
 
     #[must_use]

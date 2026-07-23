@@ -64,10 +64,14 @@ impl Parser<'_> {
             || self.at(&TokenKind::Sealed)
         {
             self.parse_type(annotations).map(Item::Type).map(Some)
+        } else if self.at(&TokenKind::Check) {
+            self.parse_top_level_check(annotations)
+                .map(Item::Check)
+                .map(Some)
         } else {
             self.err(
                 CftErrorCode::InvalidTopLevelItem,
-                "top level items must be const, enum, or type definitions",
+                "top level items must be const, enum, type, or named check definitions",
             )
         }
     }
@@ -100,5 +104,6 @@ impl Parser<'_> {
             || self.at(&TokenKind::Type)
             || self.at(&TokenKind::Abstract)
             || self.at(&TokenKind::Sealed)
+            || self.at(&TokenKind::Check)
     }
 }

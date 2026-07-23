@@ -88,6 +88,10 @@ fn validate_module(
                     walk_check(budget, module, check)?;
                 }
             }
+            Item::Check(definition) => {
+                charge_annotations(budget, module, &definition.annotations)?;
+                walk_check(budget, module, &definition.block)?;
+            }
         }
     }
     Ok(())

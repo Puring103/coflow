@@ -14,6 +14,31 @@ impl Parser<'_> {
         let start = self
             .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?
             .start;
+        self.parse_check_block_after_keyword(start)
+    }
+
+    pub(super) fn parse_top_level_check(
+        &mut self,
+        annotations: Vec<crate::syntax::ast::Annotation>,
+    ) -> Result<crate::syntax::ast::TopLevelCheckDef, CftDiagnostics> {
+        let start = self
+            .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?
+            .start;
+        let name = self.expect_ident()?;
+        let block = self.parse_check_block_after_keyword(start)?;
+        Ok(crate::syntax::ast::TopLevelCheckDef {
+            name: name.name,
+            name_span: name.span,
+            span: block.span,
+            block,
+            annotations,
+        })
+    }
+
+    fn parse_check_block_after_keyword(
+        &mut self,
+        start: usize,
+    ) -> Result<CheckBlock, CftDiagnostics> {
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let stmts = self.parse_check_stmts()?;
         let end = self
