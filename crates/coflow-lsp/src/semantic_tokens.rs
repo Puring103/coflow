@@ -1,8 +1,9 @@
 use coflow_cft::syntax::ast::{
-    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
-    CheckStmt, ConstLiteral, DefaultExpr, DefaultExprKind, Item, TypeRef, TypeRefKind,
+    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, ConstLiteral, DefaultExpr,
+    DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
 use coflow_cft::syntax::lexer::{lex, TokenKind};
+use coflow_cft::syntax::CheckVisitor;
 use coflow_cft::{ModuleId, Span};
 
 use crate::position::position_from_byte;
@@ -515,55 +516,54 @@ fn add_check_stmt_semantic(
     stmt: &CheckStmt,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
-    match stmt {
-        CheckStmt::Expr {
-            condition, message, ..
-        } => {
-            add_check_expr_semantic(build, document, condition, tokens);
-            if let Some(message) = message {
-                if let CheckMessageKind::Formatted(segments) = &message.kind {
-                    add_format_segments_semantic(build, document, segments, tokens);
-                }
-            }
-        }
-        CheckStmt::Quantifier {
-            bindings,
-            collection,
-            body,
-            ..
-        } => {
+    let mut visitor = CheckSemanticVisitor {
+        build,
+        document,
+        tokens,
+    };
+    let result = visitor.visit_stmt(stmt);
+    debug_assert!(result.is_ok());
+}
+
+struct CheckSemanticVisitor<'a> {
+    build: &'a LspBuild,
+    document: &'a LspDocument,
+    tokens: &'a mut Vec<RawSemanticToken>,
+}
+
+impl CheckVisitor for CheckSemanticVisitor<'_> {
+    type Error = std::convert::Infallible;
+
+    fn visit_stmt(&mut self, stmt: &CheckStmt) -> Result<(), Self::Error> {
+        if let CheckStmt::Quantifier { bindings, .. } = stmt {
             for binding in bindings {
                 push_semantic_span(
-                    &document.source,
+                    &self.document.source,
                     binding.span,
                     SEM_PARAMETER,
                     MOD_DECLARATION,
-                    tokens,
+                    self.tokens,
                 );
             }
-            add_check_expr_semantic(build, document, collection, tokens);
-            for stmt in body {
-                add_check_stmt_semantic(build, document, stmt, tokens);
-            }
         }
-        CheckStmt::When {
-            condition, body, ..
-        } => {
-            add_check_expr_semantic(build, document, condition, tokens);
-            for stmt in body {
-                add_check_stmt_semantic(build, document, stmt, tokens);
-            }
+        self.walk_stmt(stmt)
+    }
+
+    fn visit_expr(&mut self, expr: &CheckExpr) -> Result<(), Self::Error> {
+        if !classify_check_expr(self.build, self.document, expr, self.tokens) {
+            self.walk_expr(expr)?;
         }
+        Ok(())
     }
 }
 
 #[allow(clippy::too_many_lines)]
-fn add_check_expr_semantic(
+fn classify_check_expr(
     build: &LspBuild,
     document: &LspDocument,
     expr: &CheckExpr,
     tokens: &mut Vec<RawSemanticToken>,
-) {
+) -> bool {
     match &expr.kind {
         CheckExprKind::Int(_) | CheckExprKind::Float(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_NUMBER, tokens);
@@ -574,9 +574,7 @@ fn add_check_expr_semantic(
         CheckExprKind::String(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
         }
-        CheckExprKind::FormattedString(segments) => {
-            add_format_segments_semantic(build, document, segments, tokens);
-        }
+        CheckExprKind::FormattedString(_) => {}
         CheckExprKind::Name(_) => {
             push_semantic_span(
                 &document.source,
@@ -612,10 +610,9 @@ fn add_check_expr_semantic(
                         MOD_REFERENCE | MOD_SCHEMA,
                         tokens,
                     );
-                    return;
+                    return true;
                 }
             }
-            add_check_expr_semantic(build, document, expr, tokens);
             push_semantic_span(
                 &document.source,
                 name.span,
@@ -624,8 +621,7 @@ fn add_check_expr_semantic(
                 tokens,
             );
         }
-        CheckExprKind::SafeField { expr, name } => {
-            add_check_expr_semantic(build, document, expr, tokens);
+        CheckExprKind::SafeField { name, .. } => {
             push_semantic_span(
                 &document.source,
                 name.span,
@@ -634,12 +630,8 @@ fn add_check_expr_semantic(
                 tokens,
             );
         }
-        CheckExprKind::Index { expr, index } | CheckExprKind::SafeIndex { expr, index } => {
-            add_check_expr_semantic(build, document, expr, tokens);
-            add_check_expr_semantic(build, document, index, tokens);
-        }
-        CheckExprKind::Is { expr, predicate } => {
-            add_check_expr_semantic(build, document, expr, tokens);
+        CheckExprKind::Index { .. } | CheckExprKind::SafeIndex { .. } => {}
+        CheckExprKind::Is { predicate, .. } => {
             match predicate {
                 coflow_cft::syntax::ast::TypePredicate::Type(name) => {
                     push_semantic_span(
@@ -655,7 +647,7 @@ fn add_check_expr_semantic(
                 }
             }
         }
-        CheckExprKind::Call { name, args } => {
+        CheckExprKind::Call { name, .. } => {
             let token_type = if enum_name_exists(build, &name.name) {
                 SEM_ENUM
             } else {
@@ -667,16 +659,8 @@ fn add_check_expr_semantic(
                 MOD_REFERENCE
             };
             push_semantic_span(&document.source, name.span, token_type, modifiers, tokens);
-            for arg in args {
-                add_check_expr_semantic(build, document, arg, tokens);
-            }
         }
-        CheckExprKind::MethodCall {
-            receiver,
-            name,
-            args,
-        } => {
-            add_check_expr_semantic(build, document, receiver, tokens);
+        CheckExprKind::MethodCall { name, .. } => {
             push_semantic_span(
                 &document.source,
                 name.span,
@@ -684,35 +668,11 @@ fn add_check_expr_semantic(
                 MOD_REFERENCE,
                 tokens,
             );
-            for arg in args {
-                add_check_expr_semantic(build, document, arg, tokens);
-            }
         }
-        CheckExprKind::BinOp { lhs, rhs, .. } | CheckExprKind::Coalesce { lhs, rhs } => {
-            add_check_expr_semantic(build, document, lhs, tokens);
-            add_check_expr_semantic(build, document, rhs, tokens);
-        }
-        CheckExprKind::Unary { expr, .. } => {
-            add_check_expr_semantic(build, document, expr, tokens);
-        }
-        CheckExprKind::CmpChain { first, rest } => {
-            add_check_expr_semantic(build, document, first, tokens);
-            for (_, expr) in rest {
-                add_check_expr_semantic(build, document, expr, tokens);
-            }
-        }
+        CheckExprKind::BinOp { .. }
+        | CheckExprKind::Coalesce { .. }
+        | CheckExprKind::Unary { .. }
+        | CheckExprKind::CmpChain { .. } => {}
     }
-}
-
-fn add_format_segments_semantic(
-    build: &LspBuild,
-    document: &LspDocument,
-    segments: &[CheckFormatSegment],
-    tokens: &mut Vec<RawSemanticToken>,
-) {
-    for segment in segments {
-        if let CheckFormatSegment::Expr(expr) = segment {
-            add_check_expr_semantic(build, document, expr, tokens);
-        }
-    }
+    false
 }
