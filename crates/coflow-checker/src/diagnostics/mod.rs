@@ -5,7 +5,7 @@ use coflow_cft::{
 };
 use coflow_data_model::{CfdErrorCode, CfdPath, CfdPathSegment, DimensionFieldLookupError};
 
-use crate::eval::{EvalValue, ScalarValue, ValueLocation};
+use crate::eval::{EvalValue, ValueLocation};
 
 pub(crate) mod explanations;
 pub(crate) mod trace;
@@ -373,17 +373,7 @@ pub(crate) fn format_cfd_path_for_message(path: &CfdPath) -> String {
 /// message: strings are quoted, collections summarize, records show their key.
 pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
     if let Some(scalar) = value.scalar() {
-        return match scalar {
-            ScalarValue::Null => "null".to_string(),
-            ScalarValue::Bool(v) => v.to_string(),
-            ScalarValue::Int(v) => v.to_string(),
-            ScalarValue::Float(v) => v.to_string(),
-            ScalarValue::String(s) => format!("\"{s}\""),
-            ScalarValue::Enum(e) => match &e.variant {
-                Some(variant) => format!("{}.{}", e.enum_name, variant),
-                None => format!("{}({})", e.enum_name, e.value),
-            },
-        };
+        return crate::eval::format_scalar(scalar, crate::eval::ScalarFormat::Diagnostic);
     }
     match value {
         EvalValue::Model(_) | EvalValue::DictKey(_) | EvalValue::Temporary(_) => {
