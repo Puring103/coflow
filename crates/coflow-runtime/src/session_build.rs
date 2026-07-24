@@ -303,7 +303,7 @@ fn rebuild_data_pipeline(
         false,
         !ctx.has_dimension_fields(),
         false,
-        (!impact.structural_change).then_some(&previous.check_state),
+        Some(&previous.check_state),
         &check_changes,
     ) {
         Ok(loaded) => loaded,
@@ -365,7 +365,7 @@ fn rebuild_data_pipeline(
             refresh_dimension_topology,
             true,
             true,
-            (!impact.structural_change).then_some(&previous.check_state),
+            Some(&previous.check_state),
             &check_changes,
         ) {
             Ok((reloaded, reloaded_indexes)) => {
