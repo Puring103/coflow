@@ -13,14 +13,12 @@ mod transaction;
 mod writer;
 
 use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
-use coflow_checker::{ChangedPaths, CheckChangeSet};
-use coflow_cft::{CftSchema, TypeName};
-use coflow_data_model::{CfdPath, CfdRecord, CfdValue};
+use coflow_cft::{DimensionName, FieldName, TypeName, VariantName};
+use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{ProjectSession, RecordCoordinate};
 use crate::indexes::RecordRef;
-use crate::IncrementalFallbackReason;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
 use rebuild::{rebuild_session_after_write, MutationRebuild};
 pub(crate) use stage::{
@@ -31,10 +29,36 @@ pub(crate) use transaction::MutationTransaction;
 #[derive(Debug, Default)]
 pub(crate) struct MutationImpact {
     pub(crate) affected_files: BTreeSet<String>,
-    pub(crate) record_changes: BTreeMap<RecordCoordinate, ChangedPaths>,
+    pub(crate) record_changes: BTreeMap<RecordCoordinate, ChangedRecordFields>,
     membership_types: BTreeSet<TypeName>,
     pub(crate) structural_change: bool,
-    pub(crate) fallback_reason: Option<IncrementalFallbackReason>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ChangedRecordFields {
+    All,
+    Fields(BTreeSet<ChangedField>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ChangedField {
+    pub(crate) field: FieldName,
+    pub(crate) projection: ChangedProjection,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum ChangedProjection {
+    Base,
+    Dimension {
+        dimension: DimensionName,
+        variant: VariantName,
+    },
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct CheckImpact {
+    pub(crate) records: BTreeMap<RecordCoordinate, ChangedRecordFields>,
+    pub(crate) record_sets: BTreeSet<TypeName>,
 }
 
 impl MutationImpact {
@@ -56,35 +80,23 @@ impl MutationImpact {
                 impact
                     .record_changes
                     .entry(touched.clone())
-                    .or_insert(ChangedPaths::All);
+                    .or_insert(ChangedRecordFields::All);
             }
             if let Some(inserted) = &outcome.inserted {
                 impact.structural_change = true;
-                impact
-                    .fallback_reason
-                    .get_or_insert(IncrementalFallbackReason::RecordInserted);
                 impact.add_structural_record(inserted);
             }
             if let Some(deleted) = &outcome.deleted {
                 impact.structural_change = true;
-                impact
-                    .fallback_reason
-                    .get_or_insert(IncrementalFallbackReason::RecordDeleted);
                 impact.add_structural_record(deleted);
             }
             if let Some((old, new)) = &outcome.renamed {
                 impact.structural_change = true;
-                impact
-                    .fallback_reason
-                    .get_or_insert(IncrementalFallbackReason::RecordRenamed);
                 impact.add_structural_record(old);
                 impact.add_structural_record(new);
             }
             if outcome.reordered {
                 impact.structural_change = true;
-                impact
-                    .fallback_reason
-                    .get_or_insert(IncrementalFallbackReason::RecordReordered);
             }
         }
         impact
@@ -94,7 +106,7 @@ impl MutationImpact {
         self.record_changes.keys().cloned().collect()
     }
 
-    pub(crate) fn check_change_set(&self, schema: &CftSchema) -> CheckChangeSet {
+    pub(crate) fn check_impact(&self, schema: &coflow_cft::CftSchema) -> CheckImpact {
         let mut memberships = BTreeSet::new();
         for actual_type in &self.membership_types {
             memberships.insert(actual_type.clone());
@@ -102,9 +114,9 @@ impl MutationImpact {
                 memberships.extend(ancestors.iter().cloned());
             }
         }
-        CheckChangeSet {
+        CheckImpact {
             records: self.record_changes.clone(),
-            memberships,
+            record_sets: memberships,
         }
     }
 
@@ -115,22 +127,30 @@ impl MutationImpact {
                 write_record, path, ..
             } => self.add_path(
                 write_record.clone(),
-                CfdPath {
+                &CfdPath {
                     segments: path.clone(),
                 },
             ),
             PreparedMutationOp::FoldedSetField { record, path, .. } => {
-                self.add_path(record.clone(), path.clone());
+                self.add_path(record.clone(), path);
             }
             PreparedMutationOp::WriteDimensionValue {
                 record, coordinate, ..
-            } => self.add_path(record.clone(), coordinate.path.clone()),
+            } => self.add_field(
+                record.clone(),
+                ChangedField {
+                    field: coordinate.field.clone(),
+                    projection: ChangedProjection::Dimension {
+                        dimension: coordinate.dimension.clone(),
+                        variant: coordinate.variant.clone(),
+                    },
+                },
+            ),
             PreparedMutationOp::InsertRecord {
                 actual_type, key, ..
-            } => self.add_structural_record(&RecordCoordinate::new(
-                actual_type.clone(),
-                key.clone(),
-            )),
+            } => {
+                self.add_structural_record(&RecordCoordinate::new(actual_type.clone(), key.clone()))
+            }
             PreparedMutationOp::CancelledInsert { record, .. }
             | PreparedMutationOp::DeleteRecord { record, .. }
             | PreparedMutationOp::FoldedDeleteRecord { record, .. } => {
@@ -164,21 +184,38 @@ impl MutationImpact {
         }
     }
 
-    fn add_path(&mut self, record: RecordCoordinate, path: CfdPath) {
+    fn add_path(&mut self, record: RecordCoordinate, path: &CfdPath) {
+        let Some(field) = path.segments.iter().find_map(|segment| match segment {
+            CfdPathSegment::Field(field) => FieldName::new(field).ok(),
+            CfdPathSegment::Index(_) | CfdPathSegment::DictKey(_) => None,
+        }) else {
+            self.add_all(record);
+            return;
+        };
+        self.add_field(
+            record,
+            ChangedField {
+                field,
+                projection: ChangedProjection::Base,
+            },
+        );
+    }
+
+    fn add_field(&mut self, record: RecordCoordinate, field: ChangedField) {
         match self.record_changes.entry(record) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(ChangedPaths::Paths(BTreeSet::from([path])));
+                entry.insert(ChangedRecordFields::Fields(BTreeSet::from([field])));
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                if let ChangedPaths::Paths(paths) = entry.get_mut() {
-                    paths.insert(path);
+                if let ChangedRecordFields::Fields(fields) = entry.get_mut() {
+                    fields.insert(field);
                 }
             }
         }
     }
 
     fn add_all(&mut self, record: RecordCoordinate) {
-        self.record_changes.insert(record, ChangedPaths::All);
+        self.record_changes.insert(record, ChangedRecordFields::All);
     }
 
     fn add_structural_record(&mut self, record: &RecordCoordinate) {
@@ -247,9 +284,15 @@ mod tests {
         let impact = MutationImpact::from_operations(operations);
         assert_eq!(
             impact.record_changes.get(&record),
-            Some(&ChangedPaths::Paths(BTreeSet::from([
-                CfdPath::root().field("name"),
-                CfdPath::root().field("price"),
+            Some(&ChangedRecordFields::Fields(BTreeSet::from([
+                ChangedField {
+                    field: FieldName::new("name").expect("field"),
+                    projection: ChangedProjection::Base,
+                },
+                ChangedField {
+                    field: FieldName::new("price").expect("field"),
+                    projection: ChangedProjection::Base,
+                },
             ])))
         );
         assert!(impact.membership_types.is_empty());
@@ -262,11 +305,15 @@ mod tests {
             deleted: Some(record.clone()),
             ..Default::default()
         };
-        let impact = MutationImpact::from_operations([
-            (&price, &touched),
-            (&deleted, &deleted_outcome),
-        ]);
-        assert_eq!(impact.record_changes.get(&record), Some(&ChangedPaths::All));
-        assert_eq!(impact.membership_types, BTreeSet::from([record.actual_type]));
+        let impact =
+            MutationImpact::from_operations([(&price, &touched), (&deleted, &deleted_outcome)]);
+        assert_eq!(
+            impact.record_changes.get(&record),
+            Some(&ChangedRecordFields::All)
+        );
+        assert_eq!(
+            impact.membership_types,
+            BTreeSet::from([record.actual_type])
+        );
     }
 }

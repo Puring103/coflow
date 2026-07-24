@@ -7,7 +7,7 @@ use coflow_cft::{CftModuleSet, CftSchema};
 use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 
-use crate::checks::CheckState;
+use crate::checks::CheckDiagnosticStore;
 use crate::dimensions;
 use crate::dimensions::{DimensionGenerationTransaction, DimensionRuntimePlan};
 use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
@@ -218,7 +218,7 @@ struct LoadedSessionData {
     model: CfdDataModel,
     indexes: SessionIndexes,
     source_data: SourceDataCache,
-    check_state: CheckState,
+    check_state: CheckDiagnosticStore,
     changed_dimension_paths: Vec<PathBuf>,
     execution_stats: ProjectExecutionStats,
 }
@@ -229,7 +229,7 @@ impl LoadedSessionData {
             model: empty_model(schema)?,
             indexes: SessionIndexes::default(),
             source_data: SourceDataCache::default(),
-            check_state: CheckState::default(),
+            check_state: CheckDiagnosticStore::default(),
             changed_dimension_paths: Vec::new(),
             execution_stats: ProjectExecutionStats::default(),
         })
@@ -254,7 +254,7 @@ fn build_data_pipeline(
                 model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
-                check_state: CheckState::default(),
+                check_state: CheckDiagnosticStore::default(),
                 changed_dimension_paths: Vec::new(),
                 execution_stats: ProjectExecutionStats::default(),
             });
@@ -295,7 +295,7 @@ fn rebuild_data_pipeline(
     diagnostics: &mut DiagnosticsStore,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
     let changed_records = impact.changed_records();
-    let check_changes = impact.check_change_set(&ctx.schema);
+    let check_impact = impact.check_impact(&ctx.schema);
     let (mut output, mut indexes) = match load_cached_data(
         ctx,
         &previous.source_data,
@@ -304,7 +304,7 @@ fn rebuild_data_pipeline(
         !ctx.has_dimension_fields(),
         false,
         Some(&previous.check_state),
-        &check_changes,
+        &check_impact,
     ) {
         Ok(loaded) => loaded,
         Err(load_failure) => {
@@ -316,14 +316,14 @@ fn rebuild_data_pipeline(
                 model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
-                check_state: CheckState::default(),
+                check_state: CheckDiagnosticStore::default(),
                 changed_dimension_paths: Vec::new(),
                 execution_stats: ProjectExecutionStats::default(),
             });
         }
     };
 
-    let mut execution_stats = rebuild_execution_stats(&output, impact);
+    let mut execution_stats = output.statistics;
     let mut dimensions = commit_dimensions_if_needed(
         ctx,
         &output,
@@ -366,7 +366,7 @@ fn rebuild_data_pipeline(
             true,
             true,
             Some(&previous.check_state),
-            &check_changes,
+            &check_impact,
         ) {
             Ok((reloaded, reloaded_indexes)) => {
                 execution_stats.merge(reloaded.statistics);
@@ -468,8 +468,8 @@ fn load_cached_data(
     include_implicit_dimension_sources: bool,
     run_checks: bool,
     refresh_implicit_dimension_sources: bool,
-    previous_checks: Option<&CheckState>,
-    check_changes: &coflow_checker::CheckChangeSet,
+    previous_checks: Option<&CheckDiagnosticStore>,
+    check_impact: &crate::writes::CheckImpact,
 ) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
     let mut indexes = SessionIndexBuilder::default();
     let output = match reload_project_data_from_cache(
@@ -486,7 +486,7 @@ fn load_cached_data(
         },
         refresh_implicit_dimension_sources,
         previous_checks,
-        check_changes,
+        check_impact,
     ) {
         Ok(output) => output,
         Err(diagnostics) => {
@@ -534,7 +534,7 @@ fn build_read_only_data(
                 model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
-                check_state: CheckState::default(),
+                check_state: CheckDiagnosticStore::default(),
                 changed_dimension_paths: Vec::new(),
                 execution_stats: ProjectExecutionStats::default(),
             });
@@ -599,17 +599,6 @@ const fn record_dimension_work(
         .saturating_add(dimensions.written_sources);
 }
 
-fn rebuild_execution_stats(
-    output: &ProjectLoadOutput,
-    impact: &MutationImpact,
-) -> ProjectExecutionStats {
-    let mut statistics = output.statistics;
-    if let Some(reason) = impact.fallback_reason {
-        statistics.mark_full_fallback(reason);
-    }
-    statistics
-}
-
 fn rollback_dimensions_after_failed_pipeline(
     ctx: &SessionBuildContext<'_>,
     dimension_transaction: &mut Option<DimensionGenerationTransaction>,
@@ -629,7 +618,7 @@ fn assemble_session(
     diagnostics: DiagnosticsStore,
     indexes: SessionIndexes,
     source_data: SourceDataCache,
-    check_state: CheckState,
+    check_state: CheckDiagnosticStore,
     execution_stats: ProjectExecutionStats,
 ) -> ProjectSession {
     ProjectSession {

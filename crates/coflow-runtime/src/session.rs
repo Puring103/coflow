@@ -12,7 +12,7 @@ use coflow_data_model::{
 };
 use coflow_project::{path_to_slash, Project};
 
-use crate::checks::CheckState;
+use crate::checks::CheckDiagnosticStore;
 use crate::dimensions::{dimensions_for_project, DimensionInfo, DimensionRuntimePlan};
 use crate::files::{self, DimensionGroup, FileTreeNode, FileTreeOptions};
 use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
@@ -34,7 +34,7 @@ pub(crate) struct ProjectSession {
     pub(crate) files: FileIndex,
     pub(crate) loader_extensions: BTreeSet<String>,
     pub(crate) source_data: SourceDataCache,
-    pub(crate) check_state: CheckState,
+    pub(crate) check_state: CheckDiagnosticStore,
     pub(crate) execution_stats: ProjectExecutionStats,
 }
 

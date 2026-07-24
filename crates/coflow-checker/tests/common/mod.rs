@@ -44,7 +44,13 @@ pub(crate) fn run_model_checks(
     model: &CfdDataModel,
     schema: &CftSchema,
 ) -> Result<(), CfdDiagnostics> {
-    coflow_checker::run_checks(schema, model, coflow_checker::CheckRequest::all()).into_result()
+    coflow_checker::execute_checks(
+        schema,
+        model,
+        base_tasks(schema, model),
+        coflow_checker::CheckLimits::default(),
+    )
+    .into_result()
 }
 
 pub(crate) fn run_model_checks_with_limits(
@@ -52,10 +58,43 @@ pub(crate) fn run_model_checks_with_limits(
     schema: &CftSchema,
     structural_limits: StructuralLimits,
 ) -> Result<(), CfdDiagnostics> {
-    coflow_checker::run_checks(
+    coflow_checker::execute_checks(
         schema,
         model,
-        coflow_checker::CheckRequest::all().with_structural_limits(structural_limits),
+        base_tasks(schema, model),
+        coflow_checker::CheckLimits {
+            structure: structural_limits,
+            ..coflow_checker::CheckLimits::default()
+        },
     )
     .into_result()
+}
+
+pub(crate) fn base_tasks(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+) -> Vec<coflow_checker::CheckTask> {
+    let mut tasks = std::collections::BTreeSet::new();
+    for (record, value) in model.records() {
+        tasks.extend(
+            schema
+                .check_statements_for_actual_type(value.actual_type())
+                .map(|statement| coflow_checker::CheckTask {
+                    statement,
+                    target: coflow_checker::CheckTarget::Record(record),
+                    projection: coflow_checker::CheckProjection::Base,
+                }),
+        );
+    }
+    tasks.extend(
+        schema
+            .all_check_statements()
+            .filter(|statement| matches!(statement.owner, coflow_cft::CheckOwner::Project(_)))
+            .map(|statement| coflow_checker::CheckTask {
+                statement: statement.id,
+                target: coflow_checker::CheckTarget::Project,
+                projection: coflow_checker::CheckProjection::Base,
+            }),
+    );
+    tasks.into_iter().collect()
 }

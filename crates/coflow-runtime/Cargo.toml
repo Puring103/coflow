@@ -31,3 +31,11 @@ walkdir = "2"
 [dev-dependencies]
 coflow-builtins = { path = "../coflow-builtins" }
 coflow-loader-csv = { path = "../coflow-loader-csv" }
+
+[[bench]]
+name = "check_planning"
+harness = false
+
+[[bench]]
+name = "check_execution"
+harness = false

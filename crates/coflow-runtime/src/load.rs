@@ -14,16 +14,17 @@ use std::fmt::Write as _;
 use std::sync::Arc;
 
 use crate::checks::{
-    run_full_project_checks, run_incremental_project_checks, CheckState, ProjectCheckOutput,
+    run_full_project_checks, run_incremental_project_checks, CheckDiagnosticStore,
+    ProjectCheckOutput,
 };
-use coflow_checker::CheckChangeSet;
 use crate::dimensions;
 use crate::indexes::{
     DiagnosticLogicalLocation, FileIndex, PendingRecordRef, RecordIndexBuilder,
     ResolvedSourceEntry, SessionIndexBuilder, SourceId, SourceIndex,
 };
 use crate::source_resolution::{ResolvedLoaderSource, SourceResolver};
-use crate::{IncrementalFallbackReason, ProjectExecutionStats, RecordCoordinate};
+use crate::writes::CheckImpact;
+use crate::{ProjectExecutionStats, RecordCoordinate};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ProjectLoadOutput {
@@ -31,7 +32,7 @@ pub(crate) struct ProjectLoadOutput {
     pub(crate) diagnostics: DiagnosticSet,
     pub(crate) logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
     pub(crate) source_data: SourceDataCache,
-    pub(crate) check_state: CheckState,
+    pub(crate) check_state: CheckDiagnosticStore,
     pub(crate) statistics: ProjectExecutionStats,
 }
 
@@ -114,7 +115,7 @@ pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput,
         diagnostics: DiagnosticSet::empty(),
         logical_locations: BTreeMap::new(),
         source_data: SourceDataCache::default(),
-        check_state: CheckState::default(),
+        check_state: CheckDiagnosticStore::default(),
         statistics: ProjectExecutionStats::default(),
     })
 }
@@ -217,7 +218,7 @@ pub(crate) fn load_project_data(
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
-            state: CheckState::default(),
+            state: CheckDiagnosticStore::default(),
             statistics: coflow_checker::CheckExecutionStats::default(),
         }
     };
@@ -243,8 +244,8 @@ pub(crate) fn reload_project_data_from_cache(
     reload_paths: &BTreeSet<String>,
     options: LoadProjectDataOptions,
     refresh_implicit_dimension_sources: bool,
-    previous_checks: Option<&CheckState>,
-    check_changes: &CheckChangeSet,
+    previous_checks: Option<&CheckDiagnosticStore>,
+    check_impact: &CheckImpact,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut statistics = ProjectExecutionStats::default();
     let mut source_data = SourceDataCache {
@@ -340,7 +341,7 @@ pub(crate) fn reload_project_data_from_cache(
         source_data,
         options.run_checks,
         previous_checks,
-        check_changes,
+        check_impact,
         statistics,
     )
 }
@@ -642,8 +643,8 @@ fn build_output_from_cache(
     indexes: &mut SessionIndexBuilder,
     source_data: SourceDataCache,
     run_checks: bool,
-    previous_checks: Option<&CheckState>,
-    check_changes: &CheckChangeSet,
+    previous_checks: Option<&CheckDiagnosticStore>,
+    check_impact: &CheckImpact,
     mut statistics: ProjectExecutionStats,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records = Vec::new();
@@ -697,14 +698,14 @@ fn build_output_from_cache(
             &model,
             &origins,
             previous_checks,
-            check_changes,
+            check_impact,
             &mut statistics,
         )
     } else {
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
-            state: CheckState::default(),
+            state: CheckDiagnosticStore::default(),
             statistics: coflow_checker::CheckExecutionStats::default(),
         }
     };
@@ -723,20 +724,13 @@ fn run_cached_project_checks(
     schema: &CftSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
-    previous_checks: Option<&CheckState>,
-    check_changes: &CheckChangeSet,
-    statistics: &mut ProjectExecutionStats,
+    previous_checks: Option<&CheckDiagnosticStore>,
+    check_impact: &CheckImpact,
+    _statistics: &mut ProjectExecutionStats,
 ) -> ProjectCheckOutput {
     previous_checks.map_or_else(
         || run_full_project_checks(schema, model, origins),
-        |previous| {
-            run_incremental_project_checks(schema, model, origins, previous, check_changes)
-                .unwrap_or_else(|| {
-                    statistics
-                        .mark_full_fallback(IncrementalFallbackReason::IncompleteDependencyState);
-                    run_full_project_checks(schema, model, origins)
-                })
-        },
+        |previous| run_incremental_project_checks(schema, model, origins, previous, check_impact),
     )
 }
 
@@ -763,7 +757,7 @@ fn record_model_work(
         .saturating_add(model.spread_edges().count());
     statistics.check_roots_executed = statistics
         .check_roots_executed
-        .saturating_add(check.statistics.executed_rounds);
+        .saturating_add(check.statistics.executed_tasks);
     statistics.dimension_records_projected = statistics
         .dimension_records_projected
         .saturating_add(check.statistics.dimension_projected_records);

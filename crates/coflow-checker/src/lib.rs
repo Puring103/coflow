@@ -26,43 +26,32 @@
     clippy::use_self
 )]
 
-mod dependencies;
 mod diagnostics;
 mod dimensions;
 mod engine;
 mod eval;
 mod operations;
 mod output;
-mod request;
-mod snapshot;
+mod task;
 
 use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 pub use coflow_structure::StructuralLimits;
-pub use dependencies::{DependencyGraph, RecordReadDependency};
 pub use diagnostics::{CheckDiagnostic, CheckDiagnosticContext, CheckSchemaLocation};
-pub use dimensions::{DimensionCheckRound, DimensionCheckRoundError};
-pub use output::{CheckExecutionId, CheckExecutionStats, CheckOutput, RootedCheckDiagnostic};
-pub use request::{ChangedPaths, CheckChangeSet, CheckRequest, CheckTargets, DependencyCollection};
-pub(crate) use snapshot::CheckRound;
-pub use snapshot::CheckSnapshot;
+pub use output::{CheckExecutionStats, CheckOutput, CheckTaskResult};
+pub use task::{CheckLimits, CheckProjection, CheckTarget, CheckTask};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DimensionCheckContext {
-    pub(crate) dimension: coflow_cft::DimensionName,
-    pub(crate) variant: coflow_cft::VariantName,
-}
-
-/// Executes the requested CFT `check` roots and dimension rounds.
+/// Executes the requested CFT `check` statement tasks and projections.
 ///
 /// Empty targets perform no work. Diagnostics always retain the record that
 /// initiated evaluation, including failures reported on values reached through
 /// references.
 #[must_use]
-pub fn run_checks(
+pub fn execute_checks(
     schema: &CftSchema,
     model: &CfdDataModel,
-    request: CheckRequest<'_>,
+    tasks: impl IntoIterator<Item = CheckTask>,
+    limits: CheckLimits,
 ) -> CheckOutput {
-    engine::execute(schema, model, request)
+    engine::execute_tasks(schema, model, tasks, limits)
 }

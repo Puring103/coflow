@@ -71,7 +71,7 @@ Excel、CSV 和 CFD 中的错误会尽可能保留文件、sheet、记录、字�
 - 写入失败时，本批已经产生的文件修改会被撤销，`applied` 为空。
 - 只有 CFT `check {}` 业务诊断时，修改可以保留；调用方通过 `check_ok` 和 `diagnostics` 继续修正。
 - `affected_files` 是本次实际写入并去重后的 source 文件集合。
-- mutation impact 按记录保存规范化字段路径；增量 checker 只重跑读取路径相交或 record-set membership 变化的规则。插入、删除、rename 和无法精确描述的外部重写显式回退为整条记录变化。
+- mutation impact 按记录保存顶层字段与可选 dimension variant 投影；runtime 通过 CFT 编译期静态索引生成 check tasks。插入、删除、rename、类型迁移和无法精确描述的外部重写产生整条记录及对应 record-set 变化。
 
 只读和检查流程不会生成或重写维度托管文件。完整产物构建可以生成缺失的维度文件，并在
 生成后对最终数据再次执行校验。
