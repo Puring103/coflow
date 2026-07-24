@@ -83,4 +83,4 @@ pub use schema_inspect::{
 };
 pub use session::ProjectSchemaSession;
 pub(crate) use session::ProjectSession;
-pub use statistics::{IncrementalFallbackReason, ProjectExecutionStats};
+pub use statistics::ProjectExecutionStats;

@@ -25,7 +25,9 @@ pub(super) fn eval_expr<'model>(
         }
         CftSchemaCheckExprKind::Name(name) => evaluator.eval_name(name),
         CftSchemaCheckExprKind::Records { type_name } => {
-            let records = evaluator.model.assignable_records(evaluator.schema, type_name);
+            let records = evaluator
+                .model
+                .assignable_records(evaluator.schema, type_name);
             evaluator.charge_work_at(
                 StructureKind::CheckEvaluation,
                 u64::try_from(records.len()).unwrap_or(u64::MAX),
@@ -124,9 +126,9 @@ pub(super) fn eval_formatted_segments(
 }
 
 fn format_interpolated_scalar(value: &EvalValue<'_>) -> Option<String> {
-    value.scalar().map(|scalar| {
-        super::value::format_scalar(scalar, super::value::ScalarFormat::Display)
-    })
+    value
+        .scalar()
+        .map(|scalar| super::value::format_scalar(scalar, super::value::ScalarFormat::Display))
 }
 
 fn eval_field_expr<'model>(
@@ -153,17 +155,6 @@ fn eval_index_expr<'model>(
     let target = evaluator.eval_expr(inner)?;
     let index = evaluator.eval_expr(index)?;
     let result = evaluator.eval_index(target, index)?;
-    if let EvalValue::Record(record) = &result.value {
-        if let Some(id) = record.top_record_id() {
-            evaluator.note_read_from(
-                id,
-                result.location.as_ref().map_or_else(
-                    coflow_data_model::CfdPath::root,
-                    |location| location.storage.path.clone(),
-                ),
-            );
-        }
-    }
     Ok(result)
 }
 

@@ -1,5 +1,4 @@
 mod check_builtins;
-mod check_visit;
 mod compiler;
 mod declarations;
 mod dimensions;
@@ -13,10 +12,10 @@ pub use compiler::build_schema;
 pub use declarations::*;
 pub use dimensions::{CftDimensionInput, CftDimensionInputError, CftDimensionInputs};
 pub use names::*;
-use plans::TypedCheckPlan;
+use plans::CheckIndex;
 pub use plans::{
-    ScheduledCheckBlock, TypedCheckSchedule, ValueDependencyCycle, ValueDependencyMode,
-    ValueDependencyPlan, ValueDependencyStep,
+    CheckStatementRef, ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan,
+    ValueDependencyStep,
 };
 pub use queries::CftEnumValue;
 pub use value_type::CftValueType;
@@ -58,7 +57,7 @@ pub struct CftSchema {
     children_by_parent: BTreeMap<TypeName, Vec<TypeName>>,
     dimensions: BTreeMap<DimensionName, CftDimension>,
     type_by_id_as_enum: BTreeMap<EnumName, TypeName>,
-    typed_checks: TypedCheckPlan,
+    check_index: CheckIndex,
     value_dependencies: ValueDependencyPlan,
 }
 
@@ -115,7 +114,7 @@ impl CftSchema {
                     .map(|enum_name| (enum_name.clone(), ty.name.clone()))
             })
             .collect();
-        let typed_checks = TypedCheckPlan::compile(&types, budget)
+        let check_index = CheckIndex::compile(&types, &top_level_checks, budget)
             .map_err(LocatedBudgetError::into_diagnostics)?;
         let value_dependencies = ValueDependencyPlan::compile(&types, budget)
             .map_err(LocatedBudgetError::into_diagnostics)?;
@@ -131,7 +130,7 @@ impl CftSchema {
             children_by_parent,
             dimensions,
             type_by_id_as_enum,
-            typed_checks,
+            check_index,
             value_dependencies,
         })
     }

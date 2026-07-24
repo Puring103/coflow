@@ -515,7 +515,6 @@ fn mutation_rebuild_reloads_only_affected_sources() {
     assert_eq!(execution.records_validated, 2);
     assert_eq!(execution.records_materialized, 2);
     assert_eq!(execution.records_reused, 0);
-    assert!(!execution.full_fallback);
     let state = fixture.state.lock().expect("lock fixture state");
     assert_eq!(state.counts.loads, 3);
     drop(state);
@@ -546,7 +545,7 @@ fn incremental_checks_match_full_checks_for_dependent_records() {
     assert!(report.write_ok, "diagnostics: {:?}", report.diagnostics);
     assert!(report.check_ok, "diagnostics: {:?}", report.diagnostics);
     assert!(session.queries().diagnostics().by_stage("CHECK").is_empty());
-    assert_eq!(session.queries().execution_stats().check_roots_executed, 2);
+    assert_eq!(session.queries().execution_stats().check_roots_executed, 3);
     let full = fixture.open();
     assert_eq!(
         session.queries().diagnostics().flat_diagnostics(),

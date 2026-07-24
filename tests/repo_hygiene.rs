@@ -225,6 +225,82 @@ fn tracked_files_do_not_include_generated_outputs() {
     );
 }
 
+#[test]
+fn removed_checker_architecture_symbols_do_not_return() {
+    let forbidden = [
+        concat!("Check", "Snapshot"),
+        concat!("Check", "Request"),
+        concat!("Check", "Targets"),
+        concat!("Check", "ChangeSet"),
+        concat!("Changed", "Paths"),
+        concat!("Dependency", "Collection"),
+        concat!("Dependency", "Graph"),
+        concat!("DependencyGraph", "Builder"),
+        concat!("Dependency", "Collector"),
+        concat!("RecordRead", "Dependency"),
+        concat!("StableRecordRead", "Dependency"),
+        concat!("Check", "Round"),
+        concat!("Check", "Root"),
+        concat!("CheckExecution", "Id"),
+        concat!("StableExecution", "Id"),
+        concat!("RootCheck", "State"),
+        concat!("DimensionCheck", "Round"),
+        concat!("DimensionCheck", "Context"),
+        concat!("Round", "Execution"),
+        concat!("Target", "Selection"),
+        concat!("RootedCheck", "Diagnostic"),
+        concat!("Check", "Runner"),
+        concat!("TypedCheck", "Plan"),
+        concat!("TypedCheck", "Schedule"),
+        concat!("ScheduledCheck", "Block"),
+        concat!("select_", "targets"),
+        concat!("full_", "selection"),
+        concat!("selection_for_", "targets"),
+        concat!("select_incremental_", "targets"),
+        concat!("run_default_", "round"),
+        concat!("run_dimension_", "round"),
+        concat!("run_top_level_", "checks"),
+        concat!("record_", "execution"),
+        concat!("record_top_level_", "execution"),
+        concat!("changed_paths_", "overlap"),
+        concat!("path_is_", "prefix"),
+        concat!("note_read", "_from"),
+        concat!("note_value", "_read"),
+        concat!("affected", "_roots"),
+        concat!("merge_", "replacement"),
+    ];
+    let roots = [Path::new("crates"), Path::new("src"), Path::new("editors")];
+    let mut offenders = Vec::new();
+    for root in roots {
+        visit_rust_files(root, &mut |path, source| {
+            for symbol in forbidden {
+                if source.contains(symbol) {
+                    offenders.push(format!("{}: {symbol}", path.display()));
+                }
+            }
+        });
+    }
+    assert!(
+        offenders.is_empty(),
+        "removed checker architecture symbols returned: {offenders:#?}"
+    );
+}
+
+fn visit_rust_files(root: &Path, visitor: &mut impl FnMut(&Path, &str)) {
+    let entries =
+        std::fs::read_dir(root).unwrap_or_else(|error| panic!("read {}: {error}", root.display()));
+    for entry in entries {
+        let path = entry.expect("directory entry").path();
+        if path.is_dir() {
+            visit_rust_files(&path, visitor);
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            let source = std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            visitor(&path, &source);
+        }
+    }
+}
+
 fn read_manifest(path: &Path) -> Table {
     let bytes = std::fs::read(path)
         .unwrap_or_else(|error| panic!("read manifest {}: {error}", path.display()));

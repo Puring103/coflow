@@ -95,6 +95,8 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 
 “非阻塞”表示 Coflow 会在不依赖无效中间数据的前提下继续收集诊断；不表示会在输入无效时生成产物。
 
+增量数据检查的诊断集合由 runtime 管理。checker 按 task 返回本次诊断，runtime 以 statement、target 和 base/dimension projection 为替换范围；未执行 task 的历史诊断保持不变，已恢复 task 的旧诊断会被空结果移除。DataModel 重建时，runtime 使用稳定记录坐标重映射保留诊断中的记录位置。
+
 | 阶段 | 收集行为 |
 | --- | --- |
 | 项目配置 | 独立字段会尽量一起报告 |
