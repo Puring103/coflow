@@ -217,6 +217,58 @@ fn structural_mutations_report_specific_full_fallback_reasons() {
 }
 
 #[test]
+fn structural_mutations_increment_only_affected_check_roots() {
+    let fixture = TempProject::with_data(
+        "structural-check-invalidation",
+        r#"
+            abstract type Item {
+                name: string;
+                check { !name.isBlank(); }
+            }
+            type Weapon : Item {}
+            type Note { name: string; }
+            check ItemNames {
+                all item in records(Item) { !item.name.isBlank(); }
+            }
+            check NoteNames {
+                all note in records(Note) { !note.name.isBlank(); }
+            }
+        "#,
+        r#"
+            sword: Weapon { name: "Sword" }
+            note: Note { name: "Note" }
+        "#,
+    );
+    let mut session = runtime()
+        .open_write_session(fixture.open())
+        .expect("open write session");
+
+    session
+        .insert_record(
+            "data/items.cfd",
+            None,
+            "shield",
+            "Weapon",
+            &BTreeMap::from([("name".to_string(), CfdValue::String("Shield".into()))]),
+        )
+        .expect("insert derived record");
+    assert_eq!(session.queries().execution_stats().check_roots_executed, 2);
+    assert!(session.queries().diagnostics().by_stage("CHECK").is_empty());
+
+    session
+        .rename_record_key("Weapon", "shield", "guard")
+        .expect("rename derived record");
+    assert_eq!(session.queries().execution_stats().check_roots_executed, 2);
+    assert!(session.queries().diagnostics().by_stage("CHECK").is_empty());
+
+    session
+        .delete_record("Weapon", "guard")
+        .expect("delete derived record");
+    assert_eq!(session.queries().execution_stats().check_roots_executed, 1);
+    assert!(session.queries().diagnostics().by_stage("CHECK").is_empty());
+}
+
+#[test]
 fn failed_write_preserves_revision_and_generation() {
     let fixture = TempProject::new("write-failure");
     let mut session = runtime()

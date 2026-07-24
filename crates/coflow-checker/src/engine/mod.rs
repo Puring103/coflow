@@ -289,7 +289,7 @@ fn select_incremental_targets<'a>(
     for root in &replaced {
         let id = match &root.execution {
             StableExecutionId::Record(record) => {
-                Some(model.record_by_type_key(&record.actual_type, &record.key)?)
+                model.record_by_type_key(&record.actual_type, &record.key)
             }
             StableExecutionId::TopLevel(name) => {
                 match &root.round {
