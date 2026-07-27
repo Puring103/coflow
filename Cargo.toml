@@ -46,7 +46,7 @@ members = [
     "crates/coflow-lsp",
     "crates/coflow-structure",
     "editors/cfd-editor/src-tauri",
-    "editors/coflow-extension-api",
+    "editors/cfd-editor/extension-api",
 ]
 resolver = "2"
 

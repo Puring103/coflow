@@ -1,5 +1,5 @@
 [package]
-name = "coflow-extension-api"
+name = "extension-api"
 version = "0.7.4"
 edition = "2021"
 description = "Versioned extension manifest protocol for Coflow editors."
