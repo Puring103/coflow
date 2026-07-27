@@ -53,7 +53,7 @@ import {
   type FieldPathSegment,
   type FieldValue,
 } from './wire'
-import { recordMatchesSearch } from './value/fieldValue'
+import { recordMatchesFullTextSearch, recordMatchesSearch } from './value/fieldValue'
 import { isEditableFile } from './utils/editable'
 import { EditorLookupController } from './state/editorLookups'
 import {
@@ -343,6 +343,7 @@ export default function App() {
     return () => ro.disconnect()
   }, [workspaceTabs])
   const [globalSearch, setGlobalSearch] = useState('')
+  const [tableFullTextSearch, setTableFullTextSearch] = useState(false)
   const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
   const recordGroupIdSequence = useRef(0)
   const recordGroupSaveSequence = useRef(0)
@@ -1646,18 +1647,24 @@ export default function App() {
       ? activeFileData.records.filter(r => recordActualType(r) === activeType)
       : activeFileData.records
     if (!globalSearch.trim()) return { typeCount: inType.length, matchedCount: inType.length }
-    const matched = inType.filter(record => recordMatchesSearch(record, globalSearch))
+    const matchesSearch = currentRoute?.view === 'table' && tableFullTextSearch
+      ? recordMatchesFullTextSearch
+      : recordMatchesSearch
+    const matched = inType.filter(record => matchesSearch(record, globalSearch))
     return { typeCount: inType.length, matchedCount: matched.length }
-  }, [activeFileData, activeType, globalSearch])
+  }, [activeFileData, activeType, currentRoute?.view, globalSearch, tableFullTextSearch])
 
   // A hidden row must not remain keyboard-selected after search narrows the
   // active set. Close a hidden table inspector, and keep record mode on the
   // first record that is still visible.
   useEffect(() => {
     if (!activeFileData || !currentRoute || !globalSearch.trim()) return
+    const matchesSearch = currentRoute.view === 'table' && tableFullTextSearch
+      ? recordMatchesFullTextSearch
+      : recordMatchesSearch
     const visible = activeFileData.records.filter(record => (
       (!activeType || recordActualType(record) === activeType)
-      && recordMatchesSearch(record, globalSearch)
+      && matchesSearch(record, globalSearch)
     ))
     setInspectorSelection(current => {
       if (!current || current.filePath !== currentRoute.file) return current
@@ -1692,7 +1699,7 @@ export default function App() {
     ) {
       router.replace({ view: 'record', file: currentRoute.file, viewId: currentRoute.viewId, coordinate: visible[0].coordinate })
     }
-  }, [activeFileData, activeType, currentRoute, globalSearch, router])
+  }, [activeFileData, activeType, currentRoute, globalSearch, router, tableFullTextSearch])
 
   // Stable callbacks for TableView so React.memo can bail out on re-renders
   // caused by inspector panel state changes (collapsed, open, width).
@@ -2222,7 +2229,7 @@ export default function App() {
                 <label className="pane-search">
                   <Icon name="search" size={13} />
                   <input
-                    placeholder="按 key / 字段值搜索…"
+                    placeholder="按 Key 搜索…"
                     value={globalSearch}
                     onChange={e => setGlobalSearch(e.target.value)}
                     aria-label="跨文件搜索"
@@ -2520,7 +2527,7 @@ export default function App() {
                 <Icon name="search" size={13} className="global-search-icon" aria-hidden />
                 <input
                   ref={globalSearchRef}
-                  placeholder="搜索记录… (Ctrl+F)"
+                  placeholder="按 Key 搜索… (Ctrl+F)"
                   value={globalSearch}
                   onChange={e => setGlobalSearch(e.target.value)}
                   onKeyDown={e => {
@@ -2540,6 +2547,16 @@ export default function App() {
                     <Icon name="close" size={13} aria-hidden />
                   </button>
                 )}
+                {currentRoute.view === 'table' && (
+                  <label className="table-full-text-toggle" title="搜索数组、字典和对象中的嵌套内容">
+                    <input
+                      type="checkbox"
+                      checked={tableFullTextSearch}
+                      onChange={e => setTableFullTextSearch(e.target.checked)}
+                    />
+                    全文
+                  </label>
+                )}
                 <span
                   className="global-search-count"
                   title={globalSearch ? `匹配 ${matchedCount} 条 / 共 ${typeCount} 条` : `共 ${typeCount} 条`}
@@ -2556,6 +2573,7 @@ export default function App() {
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     searchQuery={globalSearch}
+                    fullTextSearch={tableFullTextSearch}
                     recordGroups={resolvedView?.groupFilter ? [] : recordGroups}
                     collapsedGroupKeys={collapsedRecordGroups}
                     onToggleGroup={toggleRecordGroup}
