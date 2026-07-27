@@ -207,6 +207,8 @@ fn annotation_for_value(
     let mut annotation = FieldAnnotation::default();
     if let Some(shape) = declared_shape {
         annotation.declared_type = Some(shape.display_label.clone());
+        annotation.label.clone_from(&shape.label);
+        annotation.description.clone_from(&shape.description);
         annotation
             .ref_target_type
             .clone_from(&shape.ref_target_type);

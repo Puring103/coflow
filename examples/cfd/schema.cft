@@ -1,10 +1,21 @@
+@label("元素属性")
+@description("物品和怪物使用的元素分类。")
 enum Element {
+  @label("火焰")
+  @description("与冰霜相对的元素属性。")
   Fire = 1,
+  @label("冰霜")
+  @description("与火焰相对的元素属性。")
   Ice = 2,
 }
 
+@label("基础属性")
 type Stats {
+  @label("生命值")
+  @description("必须为正数。")
   hp: int;
+  @label("攻击力")
+  @description("基础攻击数值，必须为正数。")
   attack: int;
 
   check{
@@ -13,77 +24,136 @@ type Stats {
   }
 }
 
+@label("物品")
+@description("可在表格视图中编辑的基础物品记录。")
 type Item {
+  @label("名称")
+  @description("物品在游戏中显示的名称。")
   name: string;
+  @label("元素")
+  @description("物品关联的元素属性。")
   element: Element;
+  @label("售价")
+  @description("出售该物品获得的金币数。")
   price: int;
+  @label("标签")
+  @description("用于筛选和分类的标签列表。")
   tags: [string] = [];
 }
 
 abstract type Reward {}
 
+@label("物品奖励")
 type ItemReward : Reward {
+  @label("物品")
   item: &Item;
+  @label("数量")
   count: int = 1;
 }
 
+@label("货币奖励")
 type CurrencyReward : Reward {
+  @label("货币")
   currency: string = "gold";
+  @label("金额")
   amount: int;
 }
 
+@label("掉落表")
 type DropTable {
+  @label("奖励列表")
   rewards: [Reward];
+  @label("元素权重")
   weights: {Element: int};
 }
 
+@label("怪物")
+@description("展示嵌套对象、字典和掉落表的编辑器视图。")
 type Monster {
+  @label("名称")
+  @description("怪物在游戏中显示的名称。")
   name: string;
+  @label("属性")
+  @description("怪物的生命值和攻击力。")
   stats: Stats;
+  @label("元素弱点")
+  @description("按元素定义的伤害倍率。")
   weaknesses: {Element: float};
+  @label("掉落表")
+  @description("击败怪物后可获得的奖励。")
   drop: DropTable;
 }
 
+@label("遭遇")
 type Encounter {
+  @label("怪物")
   monster: &Monster;
+  @label("首个奖励")
   first_reward: &Reward;
+  @label("推荐物品")
   featured_item: &Item;
+  @label("弱点提示倍率")
   weakness_hint: float;
 }
 
 # The CFD editor's built-in chemical-equation reading plugin recognizes this
 # field and renders it as a chemical equation. Other fields remain ordinary
 # game-data fields and are not controlled by the plugin.
+@label("化学物质")
 enum ChemicalMaterial {
+  @label("氢气")
+  @description("化学式 H2。")
   H2,
+  @label("氧气")
+  @description("化学式 O2。")
   O2,
+  @label("水")
+  @description("化学式 H2O。")
   H2O,
 }
 
+@label("物态")
 enum MaterialState {
+  @label("气态")
   Gas,
+  @label("液态")
   Liquid,
+  @label("固态")
   Solid,
 }
 
+@label("化学项参数")
 type ChemicalTermParameters {
+  @label("系数")
   coefficient: int = 1;
+  @label("物态")
   state: MaterialState = MaterialState.Gas;
 }
 
+@label("化学项")
 type ChemicalTerm {
+  @label("物质")
   material: ChemicalMaterial;
+  @label("参数")
   parameters: ChemicalTermParameters;
 }
 
+@label("化学表达式")
 type ChemicalExpression {
+  @label("反应物")
   inputs: [ChemicalTerm];
+  @label("生成物")
   outputs: [ChemicalTerm];
 }
 
+@label("化学方程式")
 type ChemicalEquation {
+  @label("名称")
   name: string;
+  @label("说明")
   description: string = "";
+  @label("方程式")
   expression: ChemicalExpression;
+  @label("温度 (C)")
   temperature_c: float = 25.0;
 }

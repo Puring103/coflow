@@ -348,6 +348,12 @@ pub struct FieldCell {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct FieldAnnotation {
+    /// Optional schema display name for this field; storage continues to use the field name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Optional schema documentation shown by the editor as contextual help.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spread_info: Option<SpreadInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -392,10 +398,24 @@ pub struct FieldAnnotation {
     pub children: BTreeMap<String, Self>,
 }
 
+/// Stable enum variant identity plus schema-provided presentation metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct EnumVariantOption {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
 impl FieldAnnotation {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.spread_info.is_none()
+            && self.label.is_none()
+            && self.description.is_none()
             && self.ref_target_file.is_none()
             && self.enum_int_value.is_none()
             && self.declared_type.is_none()

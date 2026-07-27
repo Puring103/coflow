@@ -62,6 +62,38 @@ fn require_not_contains(contents: &str, needle: &str) -> Result<(), String> {
     }
 }
 
+#[test]
+fn emits_display_metadata_as_csharp_documentation_and_description_attributes() -> Result<(), String> {
+    let schema = compile_schema(r#"
+        @label("状态")
+        enum Status { @label("启用") Enabled = 1, }
+        @description("物品说明。")
+        type Item { @label("售价") price: int; }
+    "#)?;
+    let files = generate_csharp(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let enum_file = generated_file(&files, "Status.cs")?;
+    require_contains(enum_file, "/// <summary>状态</summary>")?;
+    require_contains(enum_file, "[Description(\"启用\")]")?;
+    let type_file = generated_file(&files, "Item.cs")?;
+    require_contains(type_file, "/// <summary>物品说明。</summary>")?;
+    require_contains(type_file, "[Description(\"售价\")]")
+}
+
+#[test]
+fn escapes_display_metadata_for_csharp_source_and_xml_documentation() -> Result<(), String> {
+    let schema = compile_schema(r#"
+        @label("A \"quoted\" \\ label")
+        @description("uses <tag> & data")
+        type Item {}
+    "#)?;
+    let files = generate_csharp(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let type_file = generated_file(&files, "Item.cs")?;
+    require_contains(type_file, "/// <summary>uses &lt;tag&gt; &amp; data</summary>")?;
+    require_contains(type_file, "[Description(\"A \\\"quoted\\\" \\\\ label\")]")
+}
+
 fn generated_output(files: &[GeneratedFile]) -> String {
     files
         .iter()

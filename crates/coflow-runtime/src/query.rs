@@ -306,7 +306,22 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub fn field_shape(self, actual_type: &str, field_name: &str) -> Option<FieldShapeInfo> {
         let field = self.session.schema().field(actual_type, field_name)?;
-        Some(field_shape(self.session.schema(), &field.value_type))
+        let mut shape = field_shape(self.session.schema(), &field.value_type);
+        if let Some(display) = &field.display {
+            shape.label.clone_from(&display.label);
+            shape.description.clone_from(&display.description);
+        }
+        Some(shape)
+    }
+
+    #[must_use]
+    pub fn enum_variant_options(self, enum_name: &str) -> Vec<(String, Option<String>, Option<String>)> {
+        self.session.schema().resolve_enum(enum_name).map_or_else(Vec::new, |schema_enum| {
+            schema_enum.variants.iter().map(|variant| {
+                let display = variant.display.as_ref();
+                (variant.name.to_string(), display.and_then(|meta| meta.label.clone()), display.and_then(|meta| meta.description.clone()))
+            }).collect()
+        })
     }
 
     #[must_use]
@@ -522,6 +537,8 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
     };
     FieldShapeInfo {
         display_label: ty.display_label(),
+        label: None,
+        description: None,
         ref_target_type,
         enum_type,
         nullable: matches!(ty, CftValueType::Nullable(_)),

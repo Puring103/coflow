@@ -341,6 +341,15 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Enum],
                 args: AnnotationArgs::None,
             },
+            "label" | "description" => Self {
+                targets: &[
+                    AnnotationTarget::Type,
+                    AnnotationTarget::Enum,
+                    AnnotationTarget::EnumVariant,
+                    AnnotationTarget::Field,
+                ],
+                args: AnnotationArgs::OneString,
+            },
             "expand" => Self {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::None,
