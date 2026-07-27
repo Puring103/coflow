@@ -6,9 +6,12 @@ use coflow_checker::{execute_checks, CheckLimits, CheckProjection, CheckTarget, 
 use common::*;
 
 fn type_statements(schema: &CftSchema, owner: &str) -> Vec<CheckStatementId> {
+    let owner = CheckOwner::Type(TypeName::new(owner).unwrap());
     schema
-        .check_statements_for_owner(&CheckOwner::Type(TypeName::new(owner).unwrap()))
-        .to_vec()
+        .all_check_statements()
+        .filter(|statement| statement.owner == owner)
+        .map(|statement| statement.id)
+        .collect()
 }
 
 #[test]
@@ -212,7 +215,7 @@ fn mismatched_statement_target_returns_an_internal_diagnostic() {
 }
 
 #[test]
-fn task_and_request_budgets_report_every_unexecuted_task() {
+fn task_limit_rejects_the_request_and_work_limit_reports_unexecuted_tasks() {
     let schema = compile_schema("type Item { check { true; } }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("a", "Item", std::iter::empty::<(&str, LoadedValueDraft)>());
@@ -237,12 +240,25 @@ fn task_and_request_budgets_report_every_unexecuted_task() {
             ..CheckLimits::default()
         },
     );
-    assert_eq!(task_limited.statistics.executed_tasks, 1);
-    assert_eq!(task_limited.statistics.rejected_tasks, 1);
-    assert!(task_limited.results[1].diagnostics[0]
+    assert_eq!(task_limited.statistics.executed_tasks, 0);
+    assert_eq!(task_limited.statistics.rejected_tasks, 2);
+    assert!(task_limited.results.is_empty());
+    assert!(task_limited.request_diagnostics[0]
         .diagnostic
         .message
         .contains("task limit"));
+
+    let exactly_limited = execute_checks(
+        &schema,
+        &model,
+        tasks.clone(),
+        CheckLimits {
+            max_tasks: 2,
+            ..CheckLimits::default()
+        },
+    );
+    assert_eq!(exactly_limited.statistics.executed_tasks, 2);
+    assert!(exactly_limited.request_diagnostics.is_empty());
 
     let work_limited = execute_checks(
         &schema,

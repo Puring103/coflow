@@ -4,8 +4,8 @@ use coflow_cft::CftSchema;
 use coflow_checker::{execute_checks, CheckLimits};
 use coflow_data_model::CfdDataModel;
 use common::{
-    assert_scoped_equivalent, dimension_fixture, fixture, full_tasks, incremental_tasks,
-    nested_fixture, sample_pair, worst_fixture, Scenario,
+    dimension_fixture, fixture, full_tasks, incremental_tasks, nested_fixture, sample_pair,
+    worst_fixture, Scenario,
 };
 use std::hint::black_box;
 
@@ -96,7 +96,9 @@ fn bench_case(
             ));
         },
     );
-    let diagnostics = assert_scoped_equivalent(schema, model, &full, &incremental);
+    let diagnostics = execute_checks(schema, model, full.clone(), CheckLimits::default())
+        .diagnostics()
+        .count();
     let full_total = full_plan + full_execute;
     let incremental_total = incremental_plan + incremental_execute;
     let speedup = full_total.as_secs_f64() / incremental_total.as_secs_f64().max(f64::EPSILON);

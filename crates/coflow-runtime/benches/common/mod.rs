@@ -1,14 +1,11 @@
 #![allow(dead_code, clippy::expect_used, clippy::panic)]
 
-use coflow_cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, CheckDependency,
-    CheckField, CheckOwner, FieldName, ModuleId, TypeName,
-};
-use coflow_checker::{
-    execute_checks, CheckDiagnostic, CheckLimits, CheckProjection, CheckTarget, CheckTask,
-};
+use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
+use coflow_checker::CheckTask;
 use coflow_data_model::{CfdDataModel, LoadedDictKeyDraft, LoadedValueDraft};
-use std::collections::{BTreeMap, BTreeSet};
+use coflow_runtime::check_benchmark_support::{
+    plan_full, plan_incremental, BenchmarkFieldChange, BenchmarkProjection,
+};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy)]
@@ -215,21 +212,7 @@ fn compile(source: &str, dimensions: CftDimensionInputs) -> CftSchema {
 }
 
 pub(crate) fn full_tasks(schema: &CftSchema, model: &CfdDataModel) -> Vec<CheckTask> {
-    let mut tasks = BTreeSet::new();
-    for (record, value) in model.records() {
-        for statement in schema.check_statements_for_actual_type(value.actual_type()) {
-            insert_statement_tasks(schema, statement, CheckTarget::Record(record), &mut tasks);
-        }
-    }
-    let project_statements = schema
-        .all_check_statements()
-        .filter(|info| matches!(info.owner, CheckOwner::Project(_)))
-        .map(|info| info.id)
-        .collect::<Vec<_>>();
-    for statement in project_statements {
-        insert_statement_tasks(schema, statement, CheckTarget::Project, &mut tasks);
-    }
-    finish_tasks(schema, tasks)
+    plan_full(schema, model)
 }
 
 pub(crate) fn incremental_tasks(
@@ -237,148 +220,48 @@ pub(crate) fn incremental_tasks(
     model: &CfdDataModel,
     scenario: Scenario,
 ) -> Vec<CheckTask> {
-    match scenario {
-        Scenario::DirectField => direct_tasks(schema, model, "price"),
-        Scenario::IndependentField => direct_tasks(schema, model, "score"),
-        Scenario::CrossTypeFanout | Scenario::WorstCaseFanout => {
-            fanout_tasks(schema, model, "Character", "level")
+    let (fields, record_sets) = match scenario {
+        Scenario::DirectField => (vec![field_change("Item", &item_key(0), "price")], Vec::new()),
+        Scenario::IndependentField => {
+            (vec![field_change("Item", &item_key(0), "score")], Vec::new())
         }
-        Scenario::ProjectRecordSet => {
-            let dependency = CheckDependency::RecordSet(TypeName::new("Item").expect("type"));
-            let mut tasks = BTreeSet::new();
-            for statement in schema.check_statements_for_dependency(&dependency) {
-                insert_statement_tasks(schema, statement, CheckTarget::Project, &mut tasks);
-            }
-            finish_tasks(schema, tasks)
-        }
+        Scenario::CrossTypeFanout | Scenario::WorstCaseFanout => (
+            vec![field_change("Character", "hero_000", "level")],
+            Vec::new(),
+        ),
+        Scenario::ProjectRecordSet => (Vec::new(), vec!["Item".to_string()]),
         Scenario::NestedObject => {
-            let record = first_item(model);
-            let mut tasks = BTreeSet::new();
-            for statement in schema.check_statements_for_nested_field(
-                &TypeName::new("Item").expect("type"),
-                &FieldName::new("parts").expect("field"),
-            ) {
-                insert_statement_tasks(schema, statement, CheckTarget::Record(record), &mut tasks);
-            }
-            finish_tasks(schema, tasks)
+            (vec![field_change("Item", &item_key(0), "parts")], Vec::new())
         }
-        Scenario::Batch(count) => {
-            let dependency = field_dependency("Item", "price");
-            let statements = schema
-                .check_statements_for_dependency(&dependency)
-                .collect::<Vec<_>>();
-            let mut tasks = BTreeSet::new();
-            for index in 0..count.min(item_count(model)) {
-                let record = model
-                    .record_by_type_key("Item", &item_key(index))
-                    .expect("item");
-                for statement in &statements {
-                    insert_statement_tasks(
-                        schema,
-                        *statement,
-                        CheckTarget::Record(record),
-                        &mut tasks,
-                    );
-                }
-            }
-            finish_tasks(schema, tasks)
-        }
-        Scenario::DimensionVariant => {
-            let dependency = field_dependency("Item", "name");
-            let record = first_item(model);
-            let mut tasks = BTreeSet::new();
-            for statement in schema.check_statements_for_dependency(&dependency) {
-                tasks.insert(CheckTask {
-                    target: CheckTarget::Record(record),
-                    statement,
-                    projection: CheckProjection::Dimension {
-                        dimension: coflow_cft::DimensionName::new("language").expect("dimension"),
-                        variant: coflow_cft::VariantName::new("v0").expect("variant"),
-                    },
-                });
-            }
-            finish_tasks(schema, tasks)
-        }
+        Scenario::Batch(count) => (
+            (0..count.min(item_count(model)))
+                .map(|index| field_change("Item", &item_key(index), "price"))
+                .collect(),
+            Vec::new(),
+        ),
+        Scenario::DimensionVariant => (
+            vec![BenchmarkFieldChange {
+                actual_type: "Item".to_string(),
+                key: item_key(0),
+                field: "name".to_string(),
+                projection: BenchmarkProjection::Dimension {
+                    dimension: "language".to_string(),
+                    variant: "v0".to_string(),
+                },
+            }],
+            Vec::new(),
+        ),
+    };
+    plan_incremental(schema, model, fields, record_sets).expect("benchmark impact")
+}
+
+fn field_change(actual_type: &str, key: &str, field: &str) -> BenchmarkFieldChange {
+    BenchmarkFieldChange {
+        actual_type: actual_type.to_string(),
+        key: key.to_string(),
+        field: field.to_string(),
+        projection: BenchmarkProjection::Base,
     }
-}
-
-fn direct_tasks(schema: &CftSchema, model: &CfdDataModel, field: &str) -> Vec<CheckTask> {
-    let dependency = field_dependency("Item", field);
-    let record = first_item(model);
-    let mut tasks = BTreeSet::new();
-    for statement in schema.check_statements_for_dependency(&dependency) {
-        insert_statement_tasks(schema, statement, CheckTarget::Record(record), &mut tasks);
-    }
-    finish_tasks(schema, tasks)
-}
-
-fn fanout_tasks(
-    schema: &CftSchema,
-    model: &CfdDataModel,
-    owner: &str,
-    field: &str,
-) -> Vec<CheckTask> {
-    let dependency = field_dependency(owner, field);
-    let statements = schema
-        .check_statements_for_dependency(&dependency)
-        .collect::<Vec<_>>();
-    let mut tasks = BTreeSet::new();
-    for (record, value) in model.records() {
-        if value.actual_type() != "Item" {
-            continue;
-        }
-        for statement in &statements {
-            insert_statement_tasks(schema, *statement, CheckTarget::Record(record), &mut tasks);
-        }
-    }
-    finish_tasks(schema, tasks)
-}
-
-fn insert_statement_tasks(
-    schema: &CftSchema,
-    statement: coflow_cft::CheckStatementId,
-    target: CheckTarget,
-    tasks: &mut BTreeSet<CheckTask>,
-) {
-    let info = schema.check_statement(statement).expect("statement").info;
-    tasks.insert(CheckTask {
-        target,
-        statement,
-        projection: CheckProjection::Base,
-    });
-    for dimension in &info.dimensions {
-        if let Some(meta) = schema.resolve_dimension(dimension) {
-            for variant in &meta.variants {
-                tasks.insert(CheckTask {
-                    target,
-                    statement,
-                    projection: CheckProjection::Dimension {
-                        dimension: dimension.clone(),
-                        variant: variant.clone(),
-                    },
-                });
-            }
-        }
-    }
-}
-
-fn finish_tasks(schema: &CftSchema, tasks: BTreeSet<CheckTask>) -> Vec<CheckTask> {
-    let mut tasks = tasks.into_iter().collect::<Vec<_>>();
-    tasks.sort_by(|left, right| left.execution_cmp(right, schema));
-    tasks
-}
-
-fn field_dependency(owner: &str, field: &str) -> CheckDependency {
-    CheckDependency::Field(CheckField {
-        owner: TypeName::new(owner).expect("type"),
-        field: FieldName::new(field).expect("field"),
-    })
-}
-
-fn first_item(model: &CfdDataModel) -> coflow_data_model::CfdRecordId {
-    model
-        .record_by_type_key("Item", &item_key(0))
-        .expect("first item")
 }
 
 fn item_count(model: &CfdDataModel) -> usize {
@@ -387,32 +270,6 @@ fn item_count(model: &CfdDataModel) -> usize {
 
 fn item_key(index: usize) -> String {
     format!("item_{index:05}")
-}
-
-pub(crate) fn assert_scoped_equivalent(
-    schema: &CftSchema,
-    model: &CfdDataModel,
-    full: &[CheckTask],
-    incremental: &[CheckTask],
-) -> usize {
-    let full_output = execute_checks(schema, model, full.to_vec(), CheckLimits::default());
-    let mut merged = full_output
-        .results
-        .iter()
-        .map(|result| (result.task.clone(), result.diagnostics.clone()))
-        .collect::<BTreeMap<CheckTask, Vec<CheckDiagnostic>>>();
-    let incremental_output =
-        execute_checks(schema, model, incremental.to_vec(), CheckLimits::default());
-    for result in incremental_output.results {
-        merged.insert(result.task, result.diagnostics);
-    }
-    let expected = full_output
-        .results
-        .into_iter()
-        .map(|result| (result.task, result.diagnostics))
-        .collect::<BTreeMap<_, _>>();
-    assert_eq!(merged, expected, "incremental scoped results diverged");
-    expected.values().map(Vec::len).sum()
 }
 
 pub(crate) fn sample(mut operation: impl FnMut()) -> (Duration, Duration, Duration) {

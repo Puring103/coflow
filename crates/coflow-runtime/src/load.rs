@@ -23,7 +23,7 @@ use crate::indexes::{
     ResolvedSourceEntry, SessionIndexBuilder, SourceId, SourceIndex,
 };
 use crate::source_resolution::{ResolvedLoaderSource, SourceResolver};
-use crate::writes::CheckImpact;
+use crate::checks::impact::CheckImpact;
 use crate::{ProjectExecutionStats, RecordCoordinate};
 
 #[derive(Debug, Clone)]

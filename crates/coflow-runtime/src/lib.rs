@@ -16,6 +16,9 @@
 #![allow(clippy::multiple_crate_versions)]
 
 mod checks;
+#[cfg(feature = "internal-check-bench")]
+#[doc(hidden)]
+pub mod check_benchmark_support;
 mod data_files;
 mod data_patch;
 mod data_read;

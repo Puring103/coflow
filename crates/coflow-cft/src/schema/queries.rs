@@ -148,10 +148,6 @@ impl CftSchema {
         self.check_index.for_actual_type(actual_type)
     }
 
-    pub fn check_statements_for_owner(&self, owner: &CheckOwner) -> &[CheckStatementId] {
-        self.check_index.for_owner(owner)
-    }
-
     pub fn check_hosts_for_nested_type(
         &self,
         nested_type: &str,

@@ -10,7 +10,9 @@ use super::state::{SymbolKind, TypeInfo};
 use super::SchemaCompiler;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::schema::CftValueType;
-use crate::schema::{CheckDependency, CheckField};
+use crate::schema::{
+    CheckDependency, CheckDependencyLocality, CheckField, CheckStatementDependencies,
+};
 use crate::syntax::ast::{
     CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt, NameRef,
     TypePredicate,
@@ -24,8 +26,7 @@ pub(super) struct CheckTypeAnalyzer<'a, 'b> {
     scope: CheckScope,
     locals: Vec<HashMap<String, InferredType>>,
     dimensions: BTreeSet<crate::DimensionName>,
-    dependencies: BTreeSet<CheckDependency>,
-    cross_record_dependencies: BTreeSet<CheckDependency>,
+    dependencies: CheckStatementDependencies,
 }
 
 enum CheckScope {
@@ -67,8 +68,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             scope: CheckScope::Record(type_info.def.name.clone()),
             locals: Vec::new(),
             dimensions: BTreeSet::new(),
-            dependencies: BTreeSet::new(),
-            cross_record_dependencies: BTreeSet::new(),
+            dependencies: CheckStatementDependencies::default(),
         }
     }
 
@@ -79,8 +79,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             scope: CheckScope::TopLevel,
             locals: Vec::new(),
             dimensions: BTreeSet::new(),
-            dependencies: BTreeSet::new(),
-            cross_record_dependencies: BTreeSet::new(),
+            dependencies: CheckStatementDependencies::default(),
         }
     }
 
@@ -89,16 +88,13 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         stmts: &[CheckStmt],
     ) -> (
         BTreeMap<crate::DimensionName, Vec<usize>>,
-        Vec<BTreeSet<CheckDependency>>,
-        Vec<BTreeSet<CheckDependency>>,
+        Vec<CheckStatementDependencies>,
     ) {
         let mut by_dimension = BTreeMap::<crate::DimensionName, Vec<usize>>::new();
         let mut dependencies = Vec::with_capacity(stmts.len());
-        let mut cross_record_dependencies = Vec::with_capacity(stmts.len());
         for (index, stmt) in stmts.iter().enumerate() {
             self.dimensions.clear();
-            self.dependencies.clear();
-            self.cross_record_dependencies.clear();
+            self.dependencies = CheckStatementDependencies::default();
             self.check_stmt(stmt);
             for dimension in &self.dimensions {
                 by_dimension
@@ -107,9 +103,8 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                     .push(index);
             }
             dependencies.push(self.dependencies.clone());
-            cross_record_dependencies.push(self.cross_record_dependencies.clone());
         }
-        (by_dimension, dependencies, cross_record_dependencies)
+        (by_dimension, dependencies)
     }
 
     pub(super) fn check_stmts(&mut self, stmts: &[CheckStmt]) {
@@ -390,19 +385,23 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 .and_then(|fields| fields.get(name))
                 .cloned();
             if let Some(field) = field {
-                self.dependencies.insert(CheckDependency::Field(CheckField {
-                    owner: field.declaring_type.clone(),
-                    field: crate::FieldName::from_validated(name.to_string()),
-                }));
+                self.dependencies.insert(
+                    CheckDependency::Field(CheckField {
+                        owner: field.declaring_type.clone(),
+                        field: crate::FieldName::from_validated(name.to_string()),
+                    }),
+                    CheckDependencyLocality::Local,
+                );
                 if let Some(dimension) = field.dimension {
                     self.dimensions.insert(dimension);
                 }
                 return field.inferred_type;
             }
             if name == "id" {
-                self.dependencies.insert(CheckDependency::RecordSet(
-                    crate::TypeName::from_validated(type_name.clone()),
-                ));
+                self.dependencies.insert(
+                    CheckDependency::RecordSet(crate::TypeName::from_validated(type_name.clone())),
+                    CheckDependencyLocality::Local,
+                );
                 return InferredType::string();
             }
         }
@@ -437,10 +436,10 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             );
             return InferredType::Unknown;
         }
-        self.dependencies
-            .insert(CheckDependency::RecordSet(crate::TypeName::from_validated(
-                type_name.name.clone(),
-            )));
+        self.dependencies.insert(
+            CheckDependency::RecordSet(crate::TypeName::from_validated(type_name.name.clone())),
+            CheckDependencyLocality::Local,
+        );
         InferredType::array(InferredType::record_ref(InferredType::object(
             crate::TypeName::from_validated(type_name.name.clone()),
         )))
@@ -485,8 +484,10 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         };
         let type_name = target;
         if name.name == "id" {
-            self.dependencies
-                .insert(CheckDependency::RecordSet(type_name.clone()));
+            self.dependencies.insert(
+                CheckDependency::RecordSet(type_name.clone()),
+                CheckDependencyLocality::CrossRecord,
+            );
             return;
         }
         let owner = self
@@ -499,8 +500,8 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             owner,
             field: crate::FieldName::from_validated(name.name.clone()),
         });
-        self.dependencies.insert(dependency.clone());
-        self.cross_record_dependencies.insert(dependency);
+        self.dependencies
+            .insert(dependency, CheckDependencyLocality::CrossRecord);
     }
 
     fn check_field_type(

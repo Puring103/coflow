@@ -16,7 +16,6 @@ pub(crate) struct CheckIndex {
     statements: Vec<CheckStatementInfo>,
     by_dependency: BTreeMap<CheckDependency, BTreeSet<CheckStatementId>>,
     cross_record_dependencies: BTreeSet<(CheckStatementId, CheckDependency)>,
-    by_owner: BTreeMap<CheckOwner, Vec<CheckStatementId>>,
     by_actual_type: BTreeMap<TypeName, BTreeSet<CheckStatementId>>,
     owners_by_actual_type: BTreeMap<TypeName, Vec<TypeName>>,
     nested_hosts_by_type: BTreeMap<TypeName, BTreeSet<TypeName>>,
@@ -71,7 +70,7 @@ impl CheckIndex {
             };
             let dependencies = block
                 .and_then(|block| block.statement_dependencies.get(root_index))
-                .cloned()
+                .map(|dependencies| dependencies.dependencies().cloned().collect())
                 .unwrap_or_default();
             let dimensions = block
                 .map(|block| {
@@ -97,11 +96,11 @@ impl CheckIndex {
                     .insert(id);
             }
             if let Some(dependencies) =
-                block.and_then(|block| block.statement_cross_record_dependencies.get(root_index))
+                block.and_then(|block| block.statement_dependencies.get(root_index))
             {
                 cross_record_dependencies.extend(
                     dependencies
-                        .iter()
+                        .cross_record_dependencies()
                         .cloned()
                         .map(|dependency| (id, dependency)),
                 );
@@ -170,7 +169,6 @@ impl CheckIndex {
             statements,
             by_dependency,
             cross_record_dependencies,
-            by_owner,
             by_actual_type,
             owners_by_actual_type,
             nested_hosts_by_type,
@@ -214,10 +212,6 @@ impl CheckIndex {
             .get(actual_type)
             .into_iter()
             .flat_map(|ids| ids.iter().copied())
-    }
-
-    pub(in crate::schema) fn for_owner(&self, owner: &CheckOwner) -> &[CheckStatementId] {
-        self.by_owner.get(owner).map_or(&[], Vec::as_slice)
     }
 
     pub(in crate::schema) fn hosts_for_nested_type(
