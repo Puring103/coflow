@@ -13,11 +13,14 @@ mod transaction;
 mod writer;
 
 use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
-use coflow_cft::{DimensionName, FieldName, TypeName, VariantName};
+use coflow_cft::{FieldName, TypeName};
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{ProjectSession, RecordCoordinate};
+use crate::checks::impact::{
+    ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact,
+};
 use crate::indexes::RecordRef;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
 use rebuild::{rebuild_session_after_write, MutationRebuild};
@@ -32,33 +35,6 @@ pub(crate) struct MutationImpact {
     pub(crate) record_changes: BTreeMap<RecordCoordinate, ChangedRecordFields>,
     membership_types: BTreeSet<TypeName>,
     pub(crate) structural_change: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ChangedRecordFields {
-    All,
-    Fields(BTreeSet<ChangedField>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct ChangedField {
-    pub(crate) field: FieldName,
-    pub(crate) projection: ChangedProjection,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum ChangedProjection {
-    Base,
-    Dimension {
-        dimension: DimensionName,
-        variant: VariantName,
-    },
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct CheckImpact {
-    pub(crate) records: BTreeMap<RecordCoordinate, ChangedRecordFields>,
-    pub(crate) record_sets: BTreeSet<TypeName>,
 }
 
 impl MutationImpact {

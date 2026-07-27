@@ -48,13 +48,9 @@ pub(super) struct SchemaCompiler<'a> {
         BTreeMap<(ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
     check_dimensions:
         BTreeMap<(ModuleId, usize, usize), BTreeMap<crate::DimensionName, Vec<usize>>>,
-    check_dependencies: BTreeMap<
+    check_statement_dependencies: BTreeMap<
         (ModuleId, usize, usize),
-        Vec<std::collections::BTreeSet<crate::schema::CheckDependency>>,
-    >,
-    check_cross_record_dependencies: BTreeMap<
-        (ModuleId, usize, usize),
-        Vec<std::collections::BTreeSet<crate::schema::CheckDependency>>,
+        Vec<crate::schema::CheckStatementDependencies>,
     >,
     budget: StructuralBudget,
 }
@@ -73,8 +69,7 @@ impl<'a> SchemaCompiler<'a> {
             inheritance_chains: BTreeMap::new(),
             quantifier_bindings: BTreeMap::new(),
             check_dimensions: BTreeMap::new(),
-            check_dependencies: BTreeMap::new(),
-            check_cross_record_dependencies: BTreeMap::new(),
+            check_statement_dependencies: BTreeMap::new(),
             budget: StructuralBudget::new(StructuralLimits::default()),
         }
     }
@@ -146,19 +141,14 @@ impl<'a> SchemaCompiler<'a> {
         self.each_type(|this, info| {
             if let Some(check) = &info.def.check {
                 let mut checker = CheckTypeAnalyzer::new(this, info);
-                let (dimensions, dependencies, cross_record_dependencies) =
-                    checker.check_root_stmts(&check.stmts);
+                let (dimensions, dependencies) = checker.check_root_stmts(&check.stmts);
                 this.check_dimensions.insert(
                     (info.module.clone(), check.span.start, check.span.end),
                     dimensions,
                 );
-                this.check_dependencies.insert(
+                this.check_statement_dependencies.insert(
                     (info.module.clone(), check.span.start, check.span.end),
                     dependencies,
-                );
-                this.check_cross_record_dependencies.insert(
-                    (info.module.clone(), check.span.start, check.span.end),
-                    cross_record_dependencies,
                 );
             }
         });
@@ -169,8 +159,7 @@ impl<'a> SchemaCompiler<'a> {
             .collect();
         for (_name, info) in checks {
             let mut checker = CheckTypeAnalyzer::top_level(self, info.module.clone());
-            let (dimensions, dependencies, cross_record_dependencies) =
-                checker.check_root_stmts(&info.def.block.stmts);
+            let (dimensions, dependencies) = checker.check_root_stmts(&info.def.block.stmts);
             self.check_dimensions.insert(
                 (
                     info.module.clone(),
@@ -179,21 +168,13 @@ impl<'a> SchemaCompiler<'a> {
                 ),
                 dimensions,
             );
-            self.check_dependencies.insert(
+            self.check_statement_dependencies.insert(
                 (
                     info.module.clone(),
                     info.def.block.span.start,
                     info.def.block.span.end,
                 ),
                 dependencies,
-            );
-            self.check_cross_record_dependencies.insert(
-                (
-                    info.module.clone(),
-                    info.def.block.span.start,
-                    info.def.block.span.end,
-                ),
-                cross_record_dependencies,
             );
         }
     }

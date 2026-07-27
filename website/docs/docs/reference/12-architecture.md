@@ -73,9 +73,9 @@ DataSource 将 CFD、CSV、Excel 等外部数据转换为统一的 input records
 
 `coflow-cft` 在编译每个 check 根 statement 时，静态收集所有可能分支涉及的顶层字段、record set 和 dimension，并建立依赖到 statement 的反向索引。索引同时包含继承关系和内联 object 的顶层宿主关系；短路、`when`、量词和格式化消息不会改变静态依赖集合。
 
-`coflow-runtime` 将写入影响归一化为顶层字段变化、dimension variant 投影和 record-set 成员变化，再从 schema 索引生成明确的 `CheckTask`。同宿主字段变化只调度变化记录；跨类型依赖保守调度 statement owner 的全部宿主记录。完整检查和增量检查使用同一种 task。
+`coflow-runtime` 将写入影响归一化为顶层字段变化、dimension variant 投影和 record-set 成员变化，再从 schema 索引生成明确的 `CheckTask`。同宿主字段变化只调度变化记录；跨类型依赖保守调度 statement owner 的全部宿主记录。完整检查和增量检查使用同一种 task。规划和执行共享 task 上限；超限时整次规划被拒绝，不会执行不完整的 task 前缀。
 
-`coflow-checker` 只执行传入的 statement、record/project target 和 base/dimension projection，不保存上一代结果，也不选择增量目标。runtime 按 task scope 保存和替换诊断，并在 DataModel 重建后按稳定记录坐标重映射诊断位置。schema-only 顶层诊断使用 module source catalog 映射到 CFT 文件；具体成员失败以数据位置为 primary，并关联规则声明位置。
+`coflow-checker` 只执行传入的 statement、record/project target 和 base/dimension projection，不保存上一代结果，也不选择增量目标。task 诊断按 task 返回，无法归属到单个 task 的预算或请求错误作为 request diagnostics 返回。runtime 按 task scope 保存和替换诊断；规划失败时保留既有 task 诊断并附加 request diagnostic，在 DataModel 重建后按稳定记录坐标重映射诊断位置。schema-only 顶层诊断使用 module source catalog 映射到 CFT 文件；具体成员失败以数据位置为 primary，并关联规则声明位置。
 
 ### 7. Runtime Generation
 

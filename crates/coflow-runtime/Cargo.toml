@@ -11,6 +11,7 @@ workspace = true
 
 [features]
 default = []
+internal-check-bench = []
 ts-export = [
     "dep:ts-rs",
     "coflow-api/ts-export",
@@ -35,7 +36,9 @@ coflow-loader-csv = { path = "../coflow-loader-csv" }
 [[bench]]
 name = "check_planning"
 harness = false
+required-features = ["internal-check-bench"]
 
 [[bench]]
 name = "check_execution"
 harness = false
+required-features = ["internal-check-bench"]

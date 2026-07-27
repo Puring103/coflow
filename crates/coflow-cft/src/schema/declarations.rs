@@ -42,6 +42,40 @@ pub enum CheckDependency {
     RecordSet(TypeName),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum CheckDependencyLocality {
+    Local,
+    CrossRecord,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct CheckStatementDependencies {
+    uses: BTreeMap<CheckDependency, CheckDependencyLocality>,
+}
+
+impl CheckStatementDependencies {
+    pub(crate) fn insert(
+        &mut self,
+        dependency: CheckDependency,
+        locality: CheckDependencyLocality,
+    ) {
+        self.uses
+            .entry(dependency)
+            .and_modify(|existing| *existing = (*existing).max(locality))
+            .or_insert(locality);
+    }
+
+    pub(crate) fn dependencies(&self) -> impl Iterator<Item = &CheckDependency> {
+        self.uses.keys()
+    }
+
+    pub(crate) fn cross_record_dependencies(&self) -> impl Iterator<Item = &CheckDependency> {
+        self.uses.iter().filter_map(|(dependency, locality)| {
+            (*locality == CheckDependencyLocality::CrossRecord).then_some(dependency)
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckStatementInfo {
     pub id: CheckStatementId,
@@ -137,8 +171,7 @@ pub struct CftSchemaCheckBlock {
     pub stmts: Vec<CftSchemaCheckStmt>,
     pub span: Span,
     pub(crate) dimension_statements: BTreeMap<DimensionName, Vec<usize>>,
-    pub(crate) statement_dependencies: Vec<BTreeSet<CheckDependency>>,
-    pub(crate) statement_cross_record_dependencies: Vec<BTreeSet<CheckDependency>>,
+    pub(crate) statement_dependencies: Vec<CheckStatementDependencies>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

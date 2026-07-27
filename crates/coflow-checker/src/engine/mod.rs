@@ -29,11 +29,25 @@ pub(crate) fn execute_tasks(
     tasks: impl IntoIterator<Item = CheckTask>,
     limits: CheckLimits,
 ) -> CheckOutput {
-    let mut tasks = tasks
-        .into_iter()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut unique = BTreeSet::new();
+    for task in tasks {
+        unique.insert(task);
+        if unique.len() > limits.max_tasks {
+            return CheckOutput {
+                results: Vec::new(),
+                request_diagnostics: vec![internal_diagnostic(format!(
+                    "check task limit {} exceeded",
+                    limits.max_tasks
+                ))],
+                statistics: CheckExecutionStats {
+                    requested_tasks: unique.len(),
+                    rejected_tasks: unique.len(),
+                    ..CheckExecutionStats::default()
+                },
+            };
+        }
+    }
+    let mut tasks = unique.into_iter().collect::<Vec<_>>();
     tasks.sort_by(|left, right| left.execution_cmp(right, schema));
     let prepared = tasks
         .iter()
@@ -64,18 +78,7 @@ pub(crate) fn execute_tasks(
     let mut results = Vec::with_capacity(tasks.len());
     let mut projected_records = BTreeSet::new();
 
-    for (index, task) in tasks.into_iter().enumerate() {
-        if index >= limits.max_tasks {
-            statistics.rejected_tasks += 1;
-            results.push(CheckTaskResult {
-                diagnostics: vec![internal_diagnostic(format!(
-                    "check task limit {} exceeded",
-                    limits.max_tasks
-                ))],
-                task,
-            });
-            continue;
-        }
+    for task in tasks {
         if statistics.work_used >= limits.max_request_work {
             statistics.rejected_tasks += 1;
             results.push(CheckTaskResult {
@@ -125,6 +128,7 @@ pub(crate) fn execute_tasks(
 
     CheckOutput {
         results,
+        request_diagnostics: Vec::new(),
         statistics,
     }
 }

@@ -32,12 +32,20 @@ fn model(schema: &CftSchema) -> CfdDataModel {
     builder.build().expect("model")
 }
 
+fn item_statement(schema: &CftSchema) -> coflow_cft::CheckStatementId {
+    let owner = CheckOwner::Type(TypeName::new("Item").unwrap());
+    schema
+        .all_check_statements()
+        .find(|statement| statement.owner == owner)
+        .expect("item statement")
+        .id
+}
+
 #[test]
 fn dimension_projection_reads_the_requested_variant_and_attaches_context() {
     let schema = schema();
     let model = model(&schema);
-    let statement =
-        schema.check_statements_for_owner(&CheckOwner::Type(TypeName::new("Item").unwrap()))[0];
+    let statement = item_statement(&schema);
     let output = execute_checks(
         &schema,
         &model,
@@ -68,8 +76,7 @@ fn dimension_projection_reads_the_requested_variant_and_attaches_context() {
 fn base_projection_does_not_read_dimension_overlay() {
     let schema = schema();
     let model = model(&schema);
-    let statement =
-        schema.check_statements_for_owner(&CheckOwner::Type(TypeName::new("Item").unwrap()))[0];
+    let statement = item_statement(&schema);
     let output = execute_checks(
         &schema,
         &model,
@@ -87,8 +94,7 @@ fn base_projection_does_not_read_dimension_overlay() {
 fn unrelated_dimension_projection_is_rejected() {
     let schema = schema();
     let model = model(&schema);
-    let statement =
-        schema.check_statements_for_owner(&CheckOwner::Type(TypeName::new("Item").unwrap()))[0];
+    let statement = item_statement(&schema);
     let output = execute_checks(
         &schema,
         &model,

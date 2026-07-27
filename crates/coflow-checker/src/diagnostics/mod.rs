@@ -27,23 +27,11 @@ pub enum CheckDiagnosticContext {
     },
 }
 
-impl CheckDiagnosticContext {
-    #[must_use]
-    pub fn human_message(&self) -> String {
-        match self {
-            Self::Check { name } => format!("check {name}"),
-            Self::When { expression } => format!("在 when {expression} 内"),
-            Self::Quantifier { binding, item, .. } => format!("绑定 {binding} 位于 {item}"),
-            Self::Dimension { dimension, variant } => format!("{dimension}={variant}"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckDiagnostic {
     pub diagnostic: coflow_data_model::CfdDiagnostic,
     pub contexts: Vec<CheckDiagnosticContext>,
-    pub is_custom_message: bool,
+    pub(crate) is_custom_message: bool,
     pub schema_location: Option<CheckSchemaLocation>,
 }
 
@@ -51,25 +39,6 @@ pub struct CheckDiagnostic {
 pub struct CheckSchemaLocation {
     pub module: coflow_cft::ModuleId,
     pub span: coflow_cft::Span,
-}
-
-impl CheckDiagnostic {
-    #[must_use]
-    pub fn into_legacy_diagnostic(mut self) -> coflow_data_model::CfdDiagnostic {
-        for context in &self.contexts {
-            match context {
-                CheckDiagnosticContext::Dimension { .. } => {
-                    self.diagnostic.message =
-                        format!("[{}] {}", context.human_message(), self.diagnostic.message);
-                }
-                _ => {
-                    self.diagnostic.message.push_str("\n上下文: ");
-                    self.diagnostic.message.push_str(&context.human_message());
-                }
-            }
-        }
-        self.diagnostic
-    }
 }
 
 impl From<coflow_data_model::CfdDiagnostic> for CheckDiagnostic {

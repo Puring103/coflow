@@ -283,15 +283,12 @@ impl SchemaCompiler<'_> {
                 .cloned()
                 .unwrap_or_default(),
             statement_dependencies: self
-                .check_dependencies
+                .check_statement_dependencies
                 .get(&(module.clone(), check.span.start, check.span.end))
                 .cloned()
-                .unwrap_or_else(|| vec![std::collections::BTreeSet::new(); check.stmts.len()]),
-            statement_cross_record_dependencies: self
-                .check_cross_record_dependencies
-                .get(&(module.clone(), check.span.start, check.span.end))
-                .cloned()
-                .unwrap_or_else(|| vec![std::collections::BTreeSet::new(); check.stmts.len()]),
+                .unwrap_or_else(|| {
+                    vec![crate::schema::CheckStatementDependencies::default(); check.stmts.len()]
+                }),
         }
     }
 

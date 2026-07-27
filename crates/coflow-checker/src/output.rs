@@ -1,5 +1,4 @@
 use crate::{CheckDiagnostic, CheckTask};
-use coflow_data_model::CfdDiagnostics;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CheckExecutionStats {
@@ -19,37 +18,23 @@ pub struct CheckTaskResult {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CheckOutput {
     pub results: Vec<CheckTaskResult>,
+    pub request_diagnostics: Vec<CheckDiagnostic>,
     pub statistics: CheckExecutionStats,
 }
 
 impl CheckOutput {
     #[must_use]
     pub fn is_success(&self) -> bool {
-        self.results
-            .iter()
-            .all(|result| result.diagnostics.is_empty())
+        self.request_diagnostics.is_empty()
+            && self
+                .results
+                .iter()
+                .all(|result| result.diagnostics.is_empty())
     }
 
     pub fn diagnostics(&self) -> impl Iterator<Item = &CheckDiagnostic> {
-        self.results.iter().flat_map(|result| &result.diagnostics)
-    }
-
-    /// Converts failed checks into the aggregate diagnostic result.
-    ///
-    /// # Errors
-    ///
-    /// Returns all diagnostics produced by the requested tasks.
-    pub fn into_result(self) -> Result<(), CfdDiagnostics> {
-        let diagnostics = self
-            .results
-            .into_iter()
-            .flat_map(|result| result.diagnostics)
-            .map(CheckDiagnostic::into_legacy_diagnostic)
-            .collect::<Vec<_>>();
-        if diagnostics.is_empty() {
-            Ok(())
-        } else {
-            Err(CfdDiagnostics::new(diagnostics))
-        }
+        self.request_diagnostics
+            .iter()
+            .chain(self.results.iter().flat_map(|result| &result.diagnostics))
     }
 }

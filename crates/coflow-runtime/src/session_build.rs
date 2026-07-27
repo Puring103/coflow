@@ -469,7 +469,7 @@ fn load_cached_data(
     run_checks: bool,
     refresh_implicit_dimension_sources: bool,
     previous_checks: Option<&CheckDiagnosticStore>,
-    check_impact: &crate::writes::CheckImpact,
+    check_impact: &crate::checks::impact::CheckImpact,
 ) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
     let mut indexes = SessionIndexBuilder::default();
     let output = match reload_project_data_from_cache(

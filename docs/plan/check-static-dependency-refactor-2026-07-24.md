@@ -272,6 +272,7 @@ pub fn execute_checks(
 
 pub struct CheckOutput {
     pub results: Vec<CheckTaskResult>,
+    pub request_diagnostics: Vec<CheckDiagnostic>,
     pub statistics: CheckExecutionStats,
 }
 
@@ -281,7 +282,7 @@ pub struct CheckTaskResult {
 }
 ```
 
-按 task 分组返回诊断只用于保留执行归属，不表示 checker 管理诊断集合。checker 不接收 previous output，不返回 invalidation、snapshot 或 merged diagnostics。
+按 task 分组返回诊断只用于保留执行归属，不表示 checker 管理诊断集合。无法归属到单个 task 的预算或请求错误进入 `request_diagnostics`。checker 不接收 previous output，不返回 invalidation、snapshot 或 merged diagnostics。
 
 ### 6.2 内部模块
 
@@ -519,7 +520,7 @@ rg -n "CheckSnapshot|CheckRequest|CheckTargets|CheckChangeSet|ChangedPaths|Depen
 
 ### 10.5 静态债务测试
 
-- `repo_hygiene` 增加旧 symbol 禁止列表。
+- 迁移完成时用第 8.3 节的 `rg` 删除清单做一次性审计；不在 `repo_hygiene` 长期维护历史 symbol 黑名单。
 - 检查 `coflow-checker` 不依赖 runtime mutation 类型。
 - 检查 evaluator 不包含 dependency collection 字段。
 - 检查 checker public API 不出现 previous/snapshot/incremental/round。
@@ -541,9 +542,11 @@ crates/coflow-runtime/benches/check_execution.rs
 命令：
 
 ```powershell
-cargo bench -p coflow-runtime --bench check_planning
-cargo bench -p coflow-runtime --bench check_execution
+cargo bench -p coflow-runtime --features internal-check-bench --bench check_planning
+cargo bench -p coflow-runtime --features internal-check-bench --bench check_execution
 ```
+
+`internal-check-bench` 只公开 benchmark 调用 production planner 所需的内部 adapter，不属于产品兼容路径或迁移 feature flag。
 
 ### 11.2 必测场景
 

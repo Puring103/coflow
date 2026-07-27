@@ -44,13 +44,12 @@ pub(crate) fn run_model_checks(
     model: &CfdDataModel,
     schema: &CftSchema,
 ) -> Result<(), CfdDiagnostics> {
-    coflow_checker::execute_checks(
+    check_result(coflow_checker::execute_checks(
         schema,
         model,
         base_tasks(schema, model),
         coflow_checker::CheckLimits::default(),
-    )
-    .into_result()
+    ))
 }
 
 pub(crate) fn run_model_checks_with_limits(
@@ -58,7 +57,7 @@ pub(crate) fn run_model_checks_with_limits(
     schema: &CftSchema,
     structural_limits: StructuralLimits,
 ) -> Result<(), CfdDiagnostics> {
-    coflow_checker::execute_checks(
+    check_result(coflow_checker::execute_checks(
         schema,
         model,
         base_tasks(schema, model),
@@ -66,8 +65,21 @@ pub(crate) fn run_model_checks_with_limits(
             structure: structural_limits,
             ..coflow_checker::CheckLimits::default()
         },
-    )
-    .into_result()
+    ))
+}
+
+fn check_result(output: coflow_checker::CheckOutput) -> Result<(), CfdDiagnostics> {
+    let diagnostics = output
+        .results
+        .into_iter()
+        .flat_map(|result| result.diagnostics)
+        .map(|diagnostic| diagnostic.diagnostic)
+        .collect::<Vec<_>>();
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(CfdDiagnostics::new(diagnostics))
+    }
 }
 
 pub(crate) fn base_tasks(
