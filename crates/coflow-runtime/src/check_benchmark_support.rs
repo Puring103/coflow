@@ -9,7 +9,7 @@ use coflow_data_model::CfdDataModel;
 use crate::checks::impact::{
     ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact,
 };
-use crate::checks::{plan_full_checks, plan_incremental_checks};
+use crate::checks::{plan_full_checks, plan_full_checks_bounded, plan_incremental_checks};
 use crate::RecordCoordinate;
 
 #[derive(Debug, Clone)]
@@ -28,6 +28,19 @@ pub enum BenchmarkProjection {
 
 pub fn plan_full(schema: &coflow_cft::CftSchema, model: &CfdDataModel) -> Vec<CheckTask> {
     plan_full_checks(schema, model)
+}
+
+/// Plans a full check through the production bounded planner.
+///
+/// # Errors
+///
+/// Returns the configured task limit when planning exceeds it.
+pub fn plan_full_with_limit(
+    schema: &coflow_cft::CftSchema,
+    model: &CfdDataModel,
+    max_tasks: usize,
+) -> Result<Vec<CheckTask>, usize> {
+    plan_full_checks_bounded(schema, model, max_tasks)
 }
 
 /// Plans field and record-set changes through the production runtime planner.

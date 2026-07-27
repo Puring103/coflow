@@ -22,6 +22,15 @@ use planning::{
 use render::render_check_store;
 pub(crate) use store::CheckDiagnosticStore;
 
+#[cfg(feature = "internal-check-bench")]
+pub(crate) fn plan_full_checks_bounded(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    max_tasks: usize,
+) -> Result<Vec<CheckTask>, usize> {
+    plan_full_checks_with_limit(schema, model, max_tasks).map_err(|error| error.max_tasks)
+}
+
 #[derive(Debug)]
 pub(crate) struct ProjectCheckOutput {
     pub(crate) diagnostics: DiagnosticSet,

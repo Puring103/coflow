@@ -544,6 +544,7 @@ crates/coflow-runtime/benches/check_execution.rs
 ```powershell
 cargo bench -p coflow-runtime --features internal-check-bench --bench check_planning
 cargo bench -p coflow-runtime --features internal-check-bench --bench check_execution
+cargo bench -p coflow-runtime --features internal-check-bench --bench check_limits
 ```
 
 `internal-check-bench` 只公开 benchmark 调用 production planner 所需的内部 adapter，不属于产品兼容路径或迁移 feature flag。
