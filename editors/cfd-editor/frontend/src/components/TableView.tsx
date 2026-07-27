@@ -38,9 +38,10 @@ import {
   type FieldPathSegment,
   type FieldValue,
 } from '../wire'
-import { DataCardCompact, EnumDirectSelect, RefDirectSelect } from './DataCard'
+import { DataCardCompact, EnumDirectSelect, RefDirectSelect, highlightSearchText } from './DataCard'
 import {
   parseFieldValueText,
+  recordMatchesFullTextSearch,
   recordMatchesSearch,
   summaryOf as valueSummary,
 } from '../value/fieldValue'
@@ -88,6 +89,8 @@ interface Props {
   diagnostics?: DiagnosticItem[]
   /** Pre-populate the search filter from the parent global search bar. */
   searchQuery?: string
+  /** Search nested field values as well as the standard record summary. */
+  fullTextSearch?: boolean
   recordGroups?: readonly EditorRecordGroup[]
   collapsedGroupKeys?: ReadonlySet<string>
   onToggleGroup?: (groupKey: string) => void
@@ -159,7 +162,7 @@ interface TableContextMenu {
   showGroupTargets: boolean
 }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
@@ -408,6 +411,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   onDiagnosticBadgeClickRef.current = onDiagnosticBadgeClick
   const syntaxEditRef = useRef(syntaxEdit)
   syntaxEditRef.current = syntaxEdit
+  const highlightQueryRef = useRef(fullTextSearch ? globalFilter : '')
+  highlightQueryRef.current = fullTextSearch ? globalFilter : ''
   const onParseCellTextRef = useRef(onParseCellText)
   onParseCellTextRef.current = onParseCellText
   const columns = useMemo(() => {
@@ -417,7 +422,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         id: 'key',
         header: () => (
           <span className="th-label">
-            <span className="th-label-name">Key</span>
+            <span className="th-label-name">{highlightSearchText('Key', highlightQueryRef.current)}</span>
             <span className="th-label-type th-label-type-key">key</span>
           </span>
         ),
@@ -431,6 +436,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               <Icon name="grip" size={13} className="record-drag-handle" aria-hidden />
               <EditableKeyCell
                 value={info.getValue()}
+                highlightQuery={highlightQueryRef.current}
                 editable={canRename}
                 onCommit={canRename && renameFn ? next => renameFn(info.row.original.coordinate, next) : undefined}
               />
@@ -459,7 +465,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               className="th-label"
               style={{ '--field-color': fieldTypeColor(declared ?? name) } as React.CSSProperties}
             >
-              <span className="th-label-name" title={display?.description}>{label}</span>
+              <span className="th-label-name" title={display?.description}>{highlightSearchText(label, highlightQueryRef.current)}</span>
               {declared && (
                 <span className="th-label-type" title={`类型：${declared}`}>{declared}</span>
               )}
@@ -533,6 +539,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   enumType={cellEnumType(f)}
                   nullable={cellNullable(f)}
                   declaredType={cellDeclaredType(f)}
+                  highlightQuery={highlightQueryRef.current}
                   onCommit={cellEditable && writeFn ? next => writeFn(row.original.coordinate, [fieldPathField(name)], next) : undefined}
                   onEditingFinished={() => tableScrollRef.current?.focus({ preventScroll: true })}
                 />
@@ -548,12 +555,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     // (diagnostics, records, callbacks) is read via refs above.
   }, [allFieldNames, columnSizeHints, columnDeclaredTypes, columnDisplay, columnWidths, canEdit, canRename])
 
-  // Global filter: match key or any scalar field value (via summaryOf).
+  // Global filter optionally traverses nested collections and object fields.
   const globalFilterFn = useMemo(
     () => (row: { original: RecordRow }, _columnId: string, filterValue: string) => {
-      return recordMatchesSearch(row.original, filterValue)
+      return fullTextSearch
+        ? recordMatchesFullTextSearch(row.original, filterValue)
+        : recordMatchesSearch(row.original, filterValue)
     },
-  [],
+  [fullTextSearch],
   )
 
   const table = useReactTable({
@@ -1714,7 +1723,7 @@ function CellSyntaxEditor({
 }
 
 function EditableCell({
-  value, label, editable, refTargetType, enumType, nullable, declaredType, onCommit, onEditingFinished,
+  value, label, editable, refTargetType, enumType, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
 }: {
   value: FieldValue
   label?: string
@@ -1723,6 +1732,7 @@ function EditableCell({
   enumType?: string
   nullable?: boolean
   declaredType?: string
+  highlightQuery?: string
   onCommit?: (next: FieldValue) => void
   onEditingFinished?: () => void
 }) {
@@ -1802,7 +1812,7 @@ function EditableCell({
       } : undefined}
       title={canEdit ? '双击编辑' : undefined}
     >
-      <DataCardCompact value={value} label={label} declaredType={declaredType} surface="table-cell" />
+      <DataCardCompact value={value} label={label} declaredType={declaredType} surface="table-cell" highlightQuery={highlightQuery} />
     </div>
   )
 }
@@ -1852,10 +1862,11 @@ function CellTextEditor({
 }
 
 function EditableKeyCell({
-  value, editable, onCommit,
+  value, editable, highlightQuery, onCommit,
 }: {
   value: string
   editable: boolean
+  highlightQuery?: string
   onCommit?: (next: string) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -1901,7 +1912,7 @@ function EditableKeyCell({
       } : undefined}
       title={editable ? '双击重命名 Key' : undefined}
     >
-      {value}
+      {highlightSearchText(value, highlightQuery)}
     </span>
   )
 }
