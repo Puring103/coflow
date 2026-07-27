@@ -462,9 +462,9 @@ dependencies = [
  "coflow-builtins",
  "coflow-cft",
  "coflow-data-model",
- "coflow-extension-api",
  "coflow-project",
  "coflow-runtime",
+ "extension-api",
  "notify",
  "rust_xlsxwriter",
  "serde",
@@ -719,13 +719,6 @@ dependencies = [
  "rmp",
  "rmpv",
  "serde_json",
-]
-
-[[package]]
-name = "coflow-extension-api"
-version = "0.7.4"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -1287,6 +1280,13 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "extension-api"
+version = "0.7.4"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

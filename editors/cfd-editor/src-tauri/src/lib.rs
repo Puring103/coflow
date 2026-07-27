@@ -8,7 +8,7 @@ mod host;
 mod watcher;
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
-use coflow_extension_api::ExtensionManifest;
+use extension_api::ExtensionManifest;
 use coflow_runtime::{
     DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
 };
