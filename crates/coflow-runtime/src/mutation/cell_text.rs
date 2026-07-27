@@ -58,6 +58,9 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::Dia
             .ok_or_else(|| one_value_error("cell float must be finite")),
         LoadedValueDraft::String(value) => Ok(Value::String(value)),
         LoadedValueDraft::EnumVariant { variant, .. } => Ok(Value::String(variant)),
+        LoadedValueDraft::EnumValue { enum_name, value } => {
+            Ok(Value::String(format!("{enum_name}({value})")))
+        }
         LoadedValueDraft::RecordRef(key) => {
             let mut object = Map::new();
             object.insert("$ref".to_string(), Value::String(key));
@@ -106,6 +109,9 @@ fn input_dict_key_to_json(key: LoadedDictKeyDraft) -> Value {
         LoadedDictKeyDraft::String(value) => Value::String(value),
         LoadedDictKeyDraft::Int(value) => Value::Number(Number::from(value)),
         LoadedDictKeyDraft::EnumVariant { variant, .. } => Value::String(variant),
+        LoadedDictKeyDraft::EnumValue { enum_name, value } => {
+            Value::String(format!("{enum_name}({value})"))
+        }
     }
 }
 
@@ -140,6 +146,19 @@ mod tests {
                 "owner": { "$ref": "hero" },
                 "labels": { "$dict": [{ "key": 2, "value": "rare" }] }
             }),
+        );
+    }
+
+    #[test]
+    fn preserves_unnamed_enum_values_as_symbolic_strings() {
+        let value = LoadedValueDraft::EnumValue {
+            enum_name: "Permissions".to_string(),
+            value: 5,
+        };
+
+        assert_eq!(
+            input_value_to_json(value).expect("convert enum input"),
+            json!("Permissions(5)"),
         );
     }
 }

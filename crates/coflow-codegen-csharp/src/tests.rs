@@ -84,6 +84,35 @@ fn generate_messagepack(
     generate_csharp_messagepack(schema, options)
 }
 
+fn generate_protobuf(
+    schema: &CftSchema,
+    options: &CsharpCodegenOptions,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    generate_csharp_protobuf(schema, options)
+}
+
+#[test]
+fn codegen_protobuf_emits_dependency_free_wire_loader() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            enum Rarity { Common = 0, Rare = 2, }
+            type Item {
+                rarity: Rarity;
+                tags: [string];
+                attrs: {string: int};
+            }
+        "#,
+    )?;
+    let files = generate_protobuf(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|error| error.to_string())?;
+    let output = generated_output(&files);
+
+    require_contains(&output, "internal static class CoflowProtobuf")?;
+    require_contains(&output, "message.Repeated(16)")?;
+    require_contains(&output, "CoflowProtobuf.ReadEnum<Rarity>")?;
+    require_not_contains(&output, "Google.Protobuf")
+}
+
 fn generate_json_with_id_as_enum_variants(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,

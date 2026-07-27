@@ -1,5 +1,5 @@
 use crate::diagnostics::{CsvDiagnostic, CsvDiagnostics, CsvLocation};
-use crate::format::parse;
+use crate::format::parse_delimited;
 use coflow_cft::CftSchema;
 use coflow_data_model::LoadedRecordDraft;
 use coflow_loader_table_core::{
@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 pub struct CsvSource {
     pub file: PathBuf,
     pub sheets: Vec<CsvSheet>,
+    delimiter: char,
 }
 
 impl CsvSource {
@@ -22,7 +23,14 @@ impl CsvSource {
         Self {
             file: file.into(),
             sheets,
+            delimiter: ',',
         }
+    }
+
+    #[must_use]
+    pub fn with_delimiter(mut self, delimiter: char) -> Self {
+        self.delimiter = delimiter;
+        self
     }
 }
 
@@ -146,7 +154,7 @@ fn table_source_from_csv(source: &CsvSource) -> Result<TableSource, CsvDiagnosti
             CsvLocation::new(source.file.clone()),
         )],
     })?;
-    let rows = parse(&text).map_err(|err| CsvDiagnostics {
+    let rows = parse_delimited(&text, source.delimiter).map_err(|err| CsvDiagnostics {
         diagnostics: vec![CsvDiagnostic::csv(
             "CSV-PARSE",
             "CSV",

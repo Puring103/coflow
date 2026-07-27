@@ -146,6 +146,7 @@ pub struct CsharpLoader {
     pub key_property: String,
     pub key_read_expr: String,
     pub key_messagepack_read_expr: String,
+    pub key_protobuf_read_expr: String,
     pub is_table: bool,
     /// True when the type lands in a top-level JSON / msgpack file as an
     /// array of records. Tables and singletons both qualify; abstract /
@@ -172,6 +173,8 @@ pub struct CsharpLoadField {
     pub inline_read_expr: String,
     pub messagepack_read_expr: String,
     pub inline_messagepack_read_expr: String,
+    pub protobuf_read_expr: String,
+    pub inline_protobuf_read_expr: String,
     pub default_expr: Option<String>,
     pub missing_expr: Option<String>,
     pub is_required: bool,
@@ -183,6 +186,7 @@ pub struct CsharpLoadField {
 pub struct CsharpPolymorphicCase {
     pub type_name: String,
     pub source_name: String,
+    pub protobuf_tag: usize,
 }
 
 #[derive(Debug, Serialize)]

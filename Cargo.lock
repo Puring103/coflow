@@ -629,12 +629,18 @@ name = "coflow-builtins"
 version = "0.7.4"
 dependencies = [
  "coflow-api",
+ "coflow-codegen-cpp",
  "coflow-codegen-csharp",
+ "coflow-codegen-gdscript",
+ "coflow-codegen-lua",
+ "coflow-codegen-rust",
  "coflow-exporter-json",
  "coflow-exporter-messagepack",
+ "coflow-exporter-protobuf",
  "coflow-loader-cfd",
  "coflow-loader-csv",
  "coflow-loader-excel",
+ "coflow-loader-json",
 ]
 
 [[package]]
@@ -665,6 +671,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "coflow-codegen-core"
+version = "0.7.4"
+dependencies = [
+ "coflow-api",
+ "coflow-cft",
+ "coflow-data-model",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "coflow-codegen-cpp"
+version = "0.7.4"
+dependencies = [
+ "coflow-api",
+ "coflow-cft",
+ "coflow-codegen-core",
+ "serde_json",
+]
+
+[[package]]
 name = "coflow-codegen-csharp"
 version = "0.7.4"
 dependencies = [
@@ -675,6 +702,37 @@ dependencies = [
  "serde_json",
  "tera",
  "unicode-ident",
+]
+
+[[package]]
+name = "coflow-codegen-gdscript"
+version = "0.7.4"
+dependencies = [
+ "coflow-api",
+ "coflow-cft",
+ "coflow-codegen-core",
+ "serde_json",
+]
+
+[[package]]
+name = "coflow-codegen-lua"
+version = "0.7.4"
+dependencies = [
+ "coflow-api",
+ "coflow-cft",
+ "coflow-codegen-core",
+ "serde_json",
+]
+
+[[package]]
+name = "coflow-codegen-rust"
+version = "0.7.4"
+dependencies = [
+ "coflow-api",
+ "coflow-cft",
+ "coflow-codegen-core",
+ "serde_json",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -722,6 +780,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "coflow-exporter-protobuf"
+version = "0.7.4"
+dependencies = [
+ "coflow-api",
+ "coflow-cft",
+ "coflow-data-model",
+ "serde_json",
+]
+
+[[package]]
 name = "coflow-loader-cfd"
 version = "0.7.4"
 dependencies = [
@@ -756,6 +824,18 @@ dependencies = [
  "serde_json",
  "umya-spreadsheet",
  "zip 7.2.0",
+]
+
+[[package]]
+name = "coflow-loader-json"
+version = "0.7.4"
+dependencies = [
+ "coflow-api",
+ "coflow-cft",
+ "coflow-data-model",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

@@ -11,6 +11,10 @@ pub enum LoadedValueDraft {
         enum_name: String,
         variant: String,
     },
+    EnumValue {
+        enum_name: String,
+        value: i64,
+    },
     Object {
         actual_type: Option<String>,
         fields: BTreeMap<String, LoadedValueDraft>,
@@ -153,6 +157,7 @@ pub enum LoadedDictKeyDraft {
     String(String),
     Int(i64),
     EnumVariant { enum_name: String, variant: String },
+    EnumValue { enum_name: String, value: i64 },
 }
 
 impl LoadedDictKeyDraft {

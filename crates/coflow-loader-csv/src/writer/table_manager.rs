@@ -8,10 +8,10 @@ use std::fs;
 
 use super::{diag, CsvWriter};
 use crate::options::{
-    csv_sheet_config_from_options, csv_sheet_for_type_from_options, csv_source_options,
-    csv_type_for_sheet_from_options,
+    csv_sheet_config_from_options, csv_sheet_for_type_from_options,
+    csv_type_for_sheet_from_options, delimited_source_options,
 };
-use crate::{parse, write};
+use crate::{parse_delimited, write_delimited};
 
 pub static CSV_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
     id: "csv",
@@ -21,9 +21,21 @@ pub static CSV_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDe
     addressing: TableAddressing::Sheet,
 };
 
+pub static TSV_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
+    id: "tsv",
+    display_name: "TSV table",
+    file_extensions: &["tsv"],
+    aliases: &[],
+    addressing: TableAddressing::Sheet,
+};
+
 impl TableManager for CsvWriter {
     fn descriptor(&self) -> &'static TableManagerDescriptor {
-        &CSV_TABLE_MANAGER_DESCRIPTOR
+        if self.provider_id == "tsv" {
+            &TSV_TABLE_MANAGER_DESCRIPTOR
+        } else {
+            &CSV_TABLE_MANAGER_DESCRIPTOR
+        }
     }
 
     fn type_for_sheet(
@@ -31,7 +43,7 @@ impl TableManager for CsvWriter {
         source: &coflow_api::ResolvedSource,
         sheet: Option<&str>,
     ) -> Result<Option<String>, DiagnosticSet> {
-        csv_type_for_sheet_from_options(csv_source_options(source)?, sheet)
+        csv_type_for_sheet_from_options(delimited_source_options(source, self.provider_id)?, sheet)
     }
 
     fn sheet_for_type(
@@ -39,7 +51,10 @@ impl TableManager for CsvWriter {
         source: &coflow_api::ResolvedSource,
         actual_type: &str,
     ) -> Result<Option<String>, DiagnosticSet> {
-        csv_sheet_for_type_from_options(csv_source_options(source)?, actual_type)
+        csv_sheet_for_type_from_options(
+            delimited_source_options(source, self.provider_id)?,
+            actual_type,
+        )
     }
 
     fn header_options(
@@ -49,7 +64,7 @@ impl TableManager for CsvWriter {
         actual_type: &str,
     ) -> Result<TableHeaderOptions, DiagnosticSet> {
         Ok(table_header_options(csv_sheet_config_from_options(
-            csv_source_options(source)?,
+            delimited_source_options(source, self.provider_id)?,
             sheet,
             actual_type,
         )?))
@@ -76,7 +91,7 @@ impl TableManager for CsvWriter {
             })?;
         }
         let rows = vec![request.headers.to_vec()];
-        fs::write(path, write(&rows)).map_err(|err| {
+        fs::write(path, write_delimited(&rows, self.delimiter)).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-TABLE",
                 format!("failed to write `{}`: {err}", path.display()),
@@ -102,7 +117,7 @@ impl TableManager for CsvWriter {
                 format!("failed to read `{}`: {err}", path.display()),
             ))
         })?;
-        let mut rows = parse(&text).map_err(|err| {
+        let mut rows = parse_delimited(&text, self.delimiter).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-TABLE",
                 format!("failed to parse `{}`: {err}", path.display()),
@@ -111,7 +126,7 @@ impl TableManager for CsvWriter {
         let old_header = rows.first().cloned().unwrap_or_default();
         let plan = HeaderReconciliationPlan::new(&old_header, request.headers);
         rows = plan.project_rows(&rows);
-        fs::write(path, write(&rows)).map_err(|err| {
+        fs::write(path, write_delimited(&rows, self.delimiter)).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-TABLE",
                 format!("failed to write `{}`: {err}", path.display()),

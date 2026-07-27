@@ -15,7 +15,7 @@ use std::fs;
 use std::path::Path;
 
 use super::{diag, CsvWriter};
-use crate::{parse, write};
+use crate::{parse_delimited, write_delimited};
 
 pub(super) static CSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: DimensionSourceManagerDescriptor =
     DimensionSourceManagerDescriptor {
@@ -23,9 +23,19 @@ pub(super) static CSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: DimensionSourceManage
         display_name: "CSV dimension source",
     };
 
+pub(super) static TSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: DimensionSourceManagerDescriptor =
+    DimensionSourceManagerDescriptor {
+        id: "tsv",
+        display_name: "TSV dimension source",
+    };
+
 impl DimensionSourceManager for CsvWriter {
     fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor {
-        &CSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
+        if self.provider_id == "tsv" {
+            &TSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
+        } else {
+            &CSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
+        }
     }
 
     fn load_dimension_source(
@@ -34,7 +44,7 @@ impl DimensionSourceManager for CsvWriter {
         request: &DimensionSourceLoadRequest<'_>,
     ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
         let path = (&request.source.location).path();
-        let rows = read_dimension_rows(path)?;
+        let rows = read_dimension_rows(path, self.delimiter)?;
         let Some(header) = rows.first() else {
             return Ok(DimensionSourceLoadResult::default());
         };
@@ -127,12 +137,17 @@ impl DimensionSourceManager for CsvWriter {
         &self,
         request: &DimensionSourceOptionsRequest<'_>,
     ) -> Result<DecodedSourceOptions, DiagnosticSet> {
-        crate::options::decode_csv_source_options(&json!({
+        let options = json!({
             "sheets": [{
                 "sheet": request.sheet,
                 "type": request.actual_type,
             }]
-        }))
+        });
+        if self.provider_id == "tsv" {
+            crate::options::decode_tsv_source_options(&options)
+        } else {
+            crate::options::decode_csv_source_options(&options)
+        }
     }
 
     fn write_dimension_value(
@@ -150,7 +165,7 @@ impl DimensionSourceManager for CsvWriter {
                 ),
             ))
         })?;
-        let mut rows = parse(&text).map_err(|err| {
+        let mut rows = parse_delimited(&text, self.delimiter).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION-WRITE",
                 format!(
@@ -208,7 +223,7 @@ impl DimensionSourceManager for CsvWriter {
             Some(CfdValue::Null) => "null".to_string(),
             Some(value) => render_dimension_csv_value(value),
         };
-        let body = write(&rows);
+        let body = write_delimited(&rows, self.delimiter);
         write_if_changed(path, &body, "CSV-DIMENSION-WRITE")
     }
 
@@ -227,7 +242,7 @@ impl DimensionSourceManager for CsvWriter {
                 ),
             ))
         })?;
-        let mut rows = parse(&text).map_err(|err| {
+        let mut rows = parse_delimited(&text, self.delimiter).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION-WRITE",
                 format!(
@@ -275,7 +290,11 @@ impl DimensionSourceManager for CsvWriter {
         } else {
             rows.remove(*row_index);
         }
-        write_if_changed(path, &write(&rows), "CSV-DIMENSION-WRITE")
+        write_if_changed(
+            path,
+            &write_delimited(&rows, self.delimiter),
+            "CSV-DIMENSION-WRITE",
+        )
     }
 
     fn sync_dimension_source(
@@ -289,7 +308,8 @@ impl DimensionSourceManager for CsvWriter {
             .iter()
             .map(|entry| entry.key.as_str())
             .collect::<BTreeSet<_>>();
-        let existing = read_existing_dimension_csv(path, request.variants, &expected_keys)?;
+        let existing =
+            read_existing_dimension_csv(path, request.variants, &expected_keys, self.delimiter)?;
         let mut rows = Vec::new();
         let mut header = vec!["id".to_string(), "default".to_string()];
         header.extend(request.variants.iter().cloned());
@@ -307,12 +327,12 @@ impl DimensionSourceManager for CsvWriter {
             }
             rows.push(record);
         }
-        let body = write(&rows);
+        let body = write_delimited(&rows, self.delimiter);
         write_if_changed(path, &body, "CSV-DIMENSION")
     }
 }
 
-fn read_dimension_rows(path: &Path) -> Result<Vec<Vec<String>>, DiagnosticSet> {
+fn read_dimension_rows(path: &Path, delimiter: char) -> Result<Vec<Vec<String>>, DiagnosticSet> {
     let text = fs::read_to_string(path).map_err(|err| {
         DiagnosticSet::one(diag(
             "CSV-DIMENSION",
@@ -322,7 +342,7 @@ fn read_dimension_rows(path: &Path) -> Result<Vec<Vec<String>>, DiagnosticSet> {
             ),
         ))
     })?;
-    parse(&text).map_err(|err| {
+    parse_delimited(&text, delimiter).map_err(|err| {
         DiagnosticSet::one(diag(
             "CSV-DIMENSION",
             format!(
@@ -343,6 +363,7 @@ fn read_existing_dimension_csv(
     path: &Path,
     variants: &[String],
     expected_keys: &BTreeSet<&str>,
+    delimiter: char,
 ) -> Result<BTreeMap<String, DimensionCsvRow>, DiagnosticSet> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
@@ -357,7 +378,7 @@ fn read_existing_dimension_csv(
             )));
         }
     };
-    let rows = parse(&text).map_err(|err| {
+    let rows = parse_delimited(&text, delimiter).map_err(|err| {
         DiagnosticSet::one(diag(
             "CSV-DIMENSION",
             format!(

@@ -56,6 +56,18 @@ impl Validator<'_, '_> {
             LoadedDictKeyDraft::EnumVariant { enum_name, variant } => CfdDictKey::Enum(
                 self.resolve_enum_value(enum_name, variant, record, path.clone())?,
             ),
+            LoadedDictKeyDraft::EnumValue { enum_name, value } => CfdDictKey::Enum(
+                coflow_cft::CftEnumValue {
+                    enum_name: coflow_cft::EnumName::new(enum_name.clone()).ok()?,
+                    variant: self
+                        .schema
+                        .cft()
+                        .enum_value_from_int(enum_name, *value)
+                        .and_then(|value| value.variant),
+                    value: *value,
+                }
+                .into(),
+            ),
         };
         match crate::semantics::validate_dict_key_for_schema(self.schema.cft(), ty, &value) {
             Ok(()) => Some(value),

@@ -75,18 +75,52 @@ internal static class CoflowJson
     internal static bool ReadBool(JToken token) => token.Value<bool>();
 
     internal static TEnum ReadEnum<TEnum>(JToken token)
-        where TEnum : struct, Enum =>
-        (TEnum)Enum.ToObject(typeof(TEnum), ReadInt(token));
+        where TEnum : struct, Enum
+    {
+        if (token.Type == JTokenType.Integer)
+        {
+            return (TEnum)Enum.ToObject(typeof(TEnum), ReadInt(token));
+        }
+
+        return ReadSymbolicEnum<TEnum>(ReadString(token));
+    }
 
     internal static TEnum ReadStringEnum<TEnum>(JToken token)
         where TEnum : struct, Enum =>
         (TEnum)Enum.Parse(typeof(TEnum), ReadString(token));
 
+    private static TEnum ReadSymbolicEnum<TEnum>(string text)
+        where TEnum : struct, Enum
+    {
+        var separator = text.LastIndexOf('.');
+        if (separator >= 0)
+        {
+            return (TEnum)Enum.Parse(typeof(TEnum), text.Substring(separator + 1));
+        }
+
+        var open = text.LastIndexOf('(');
+        if (open >= 0 && text.EndsWith(")", StringComparison.Ordinal))
+        {
+            var numeric = {{ project.int_type }}.Parse(
+                text.Substring(open + 1, text.Length - open - 2),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture);
+            return (TEnum)Enum.ToObject(typeof(TEnum), numeric);
+        }
+
+        return (TEnum)Enum.Parse(typeof(TEnum), text);
+    }
+
     internal static {{ project.int_type }} ReadIntKey(string key) =>
         {{ project.int_type }}.Parse(key, NumberStyles.Integer, CultureInfo.InvariantCulture);
 
     internal static TEnum ReadEnumKey<TEnum>(string key)
-        where TEnum : struct, Enum =>
-        (TEnum)Enum.ToObject(typeof(TEnum), ReadIntKey(key));
+        where TEnum : struct, Enum
+    {
+        {{ project.int_type }} numeric;
+        return {{ project.int_type }}.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out numeric)
+            ? (TEnum)Enum.ToObject(typeof(TEnum), numeric)
+            : ReadSymbolicEnum<TEnum>(key);
+    }
 }
 }

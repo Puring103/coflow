@@ -10,7 +10,7 @@ use coflow_api::{
 };
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs};
 use coflow_data_model::{RecordOrigin, SourceDocument};
-use coflow_loader_csv::{parse, write, CsvLoader, CsvWriter};
+use coflow_loader_csv::{parse, parse_delimited, write, CsvLoader, CsvWriter, TsvLoader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use table_conformance::table_conformance_cases;
@@ -44,6 +44,45 @@ fn csv_origin(path: &Path, row: usize) -> RecordOrigin {
         id_column: 1,
         field_columns: Default::default(),
     }
+}
+
+#[test]
+fn tsv_table_manager_preserves_tab_delimiter() {
+    let path = temp_csv("tsv-header").with_extension("tsv");
+    std::fs::write(&path, "id\told\na\tvalue\n").expect("seed tsv");
+    let source = ResolvedSource {
+        provider_id: "tsv".to_string(),
+        location: SourceLocationSpec::new(path.clone()),
+        options: TsvLoader
+            .decode_options(&serde_json::Value::Null)
+            .expect("decode tsv options"),
+        display_name: path.display().to_string(),
+    };
+
+    CsvWriter::new_tsv()
+        .sync_header(
+            TableContext {
+                project_root: std::env::temp_dir().as_path(),
+            },
+            &SyncHeaderRequest {
+                source: &source,
+                sheet: Some("Items"),
+                actual_type: "Item",
+                headers: &["id".to_string(), "name".to_string()],
+                schema: None,
+            },
+        )
+        .expect("sync tsv header");
+
+    let text = std::fs::read_to_string(path).expect("read tsv");
+    assert!(text.contains('\t'));
+    assert_eq!(
+        parse_delimited(&text, '\t').expect("parse tsv"),
+        vec![
+            vec!["id".to_string(), "name".to_string()],
+            vec!["a".to_string(), String::new()],
+        ]
+    );
 }
 
 #[test]

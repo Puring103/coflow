@@ -1,0 +1,20 @@
+[package]
+name = "coflow-exporter-protobuf"
+version = "0.7.4"
+edition = "2021"
+description = "Protobuf exporter for Coflow data models."
+license = "Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+coflow-api = { path = "../coflow-api" }
+coflow-cft = { path = "../coflow-cft" }
+coflow-data-model = { path = "../coflow-data-model" }
+serde_json = "1"
+
+[dev-dependencies]
+coflow-cft = { path = "../coflow-cft" }
+coflow-data-model = { path = "../coflow-data-model" }

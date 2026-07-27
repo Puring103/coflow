@@ -84,6 +84,9 @@ fn format_input_dict_key(key: &LoadedDictKeyDraft) -> String {
         LoadedDictKeyDraft::EnumVariant { enum_name, variant } => {
             format!("{enum_name}.{variant}")
         }
+        LoadedDictKeyDraft::EnumValue { enum_name, value } => {
+            format!("{enum_name}({value})")
+        }
     }
 }
 

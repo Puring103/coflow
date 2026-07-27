@@ -287,6 +287,25 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 )?;
                 Some(ValueDraft::Value(value))
             }
+            (CftValueType::Enum(expected), LoadedValueDraft::EnumValue { enum_name, value }) => {
+                let enum_value = coflow_cft::CftEnumValue {
+                    enum_name: coflow_cft::EnumName::new(enum_name.clone()).ok()?,
+                    variant: self
+                        .schema
+                        .cft()
+                        .enum_value_from_int(enum_name, *value)
+                        .and_then(|value| value.variant),
+                    value: *value,
+                };
+                let value = CfdValue::Enum(enum_value.into());
+                self.validate_materialized_value(
+                    &CftValueType::Enum(expected.clone()),
+                    &value,
+                    record,
+                    path,
+                )?;
+                Some(ValueDraft::Value(value))
+            }
             (CftValueType::RecordRef(expected), LoadedValueDraft::RecordRef(key)) => {
                 Some(ValueDraft::PendingRef {
                     expected_type: expected.clone(),
@@ -620,6 +639,7 @@ fn input_value_kind(value: &LoadedValueDraft) -> &'static str {
         LoadedValueDraft::Float(_) => "float",
         LoadedValueDraft::String(_) => "string",
         LoadedValueDraft::EnumVariant { .. } => "enum",
+        LoadedValueDraft::EnumValue { .. } => "enum",
         LoadedValueDraft::Object { .. } => "object",
         LoadedValueDraft::ObjectSpread { .. } => "object spread",
         LoadedValueDraft::RecordRef(_) => "record ref",

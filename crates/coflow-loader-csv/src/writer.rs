@@ -26,8 +26,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::options::{csv_sheet_config_from_options, csv_source_options, CsvSourceOptions};
-use crate::parse;
+use crate::options::{csv_sheet_config_from_options, delimited_source_options, CsvSourceOptions};
+use crate::parse_delimited;
 use plan::apply_plan;
 
 pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
@@ -44,21 +44,59 @@ pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     },
 };
 
+pub static TSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
+    id: "tsv",
+    display_name: "TSV file",
+    capabilities: WriterCapabilities {
+        provider_id: String::new(),
+        can_edit_field: true,
+        can_edit_key: true,
+        can_insert_record: true,
+        can_delete_record: true,
+        can_reorder_records: true,
+        requires_full_refresh_after_write: true,
+    },
+};
+
 /// Writer for local CSV files. Stateless: each call reads the file fresh and
 /// writes back, so external edits are picked up automatically.
-#[derive(Debug, Default)]
-pub struct CsvWriter;
+#[derive(Debug, Clone, Copy)]
+pub struct CsvWriter {
+    delimiter: char,
+    provider_id: &'static str,
+}
+
+impl Default for CsvWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl CsvWriter {
     #[must_use]
     pub fn new() -> Self {
-        Self
+        Self {
+            delimiter: ',',
+            provider_id: "csv",
+        }
+    }
+
+    #[must_use]
+    pub fn new_tsv() -> Self {
+        Self {
+            delimiter: '\t',
+            provider_id: "tsv",
+        }
     }
 }
 
 impl SourceWriter for CsvWriter {
     fn descriptor(&self) -> &'static WriterDescriptor {
-        &CSV_WRITER_DESCRIPTOR
+        if self.provider_id == "tsv" {
+            &TSV_WRITER_DESCRIPTOR
+        } else {
+            &CSV_WRITER_DESCRIPTOR
+        }
     }
 
     fn write_field(
@@ -75,7 +113,7 @@ impl SourceWriter for CsvWriter {
             model: ctx.model,
         })
         .map_err(table_write_diagnostics_to_api)?;
-        apply_plan(&plan)?;
+        apply_plan(&plan, self.delimiter)?;
         Ok(WriteOutcome::default())
     }
 
@@ -93,8 +131,9 @@ impl SourceWriter for CsvWriter {
             path,
             sheet,
             request.actual_type,
-            csv_source_options(request.source)?,
+            delimited_source_options(request.source, self.provider_id)?,
             request.schema,
+            self.delimiter,
         )?;
         let plan = plan_insert_record(&TableInsertRecord {
             document: SourceDocument::new(path.clone()),
@@ -110,7 +149,7 @@ impl SourceWriter for CsvWriter {
             }),
         })
         .map_err(table_write_diagnostics_to_api)?;
-        apply_plan(&plan)?;
+        apply_plan(&plan, self.delimiter)?;
         Ok(WriteOutcome::default())
     }
 
@@ -144,7 +183,7 @@ impl SourceWriter for CsvWriter {
         ensure_table_origin_path(request.origin, path)?;
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
-        apply_plan(&plan)?;
+        apply_plan(&plan, self.delimiter)?;
         Ok(WriteOutcome::default())
     }
 
@@ -201,7 +240,7 @@ impl SourceWriter for CsvWriter {
             }
         };
         let plan = plan_reorder_records(operation).map_err(table_write_diagnostics_to_api)?;
-        apply_plan(&plan)?;
+        apply_plan(&plan, self.delimiter)?;
         Ok(WriteOutcome::default())
     }
 }
@@ -235,6 +274,7 @@ fn read_csv_layout(
     actual_type: &str,
     options: &CsvSourceOptions,
     schema: &coflow_cft::CftSchema,
+    delimiter: char,
 ) -> Result<CsvLayout, DiagnosticSet> {
     let text = fs::read_to_string(path).map_err(|err| {
         DiagnosticSet::one(diag(
@@ -242,7 +282,7 @@ fn read_csv_layout(
             format!("failed to read `{}`: {err}", path.display()),
         ))
     })?;
-    let rows = parse(&text).map_err(|err| {
+    let rows = parse_delimited(&text, delimiter).map_err(|err| {
         DiagnosticSet::one(diag(
             "CSV-WRITE",
             format!("failed to parse `{}`: {err}", path.display()),

@@ -116,3 +116,12 @@ fn parses_and_writes_rfc4180_csv_for_shared_callers() -> TestResult {
     assert_eq!(coflow_loader_csv::write(&rows), source);
     Ok(())
 }
+
+#[test]
+fn parses_and_writes_tsv_with_quoted_tabs() -> TestResult {
+    let source = "id\ttext\nitem_1\t\"hello\tworld\"\n";
+    let rows = coflow_loader_csv::parse_delimited(source, '\t')?;
+    assert_eq!(rows[1], vec!["item_1", "hello\tworld"]);
+    assert_eq!(coflow_loader_csv::write_delimited(&rows, '\t'), source);
+    Ok(())
+}

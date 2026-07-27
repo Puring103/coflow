@@ -12,8 +12,14 @@ workspace = true
 [dependencies]
 coflow-api = { path = "../coflow-api" }
 coflow-codegen-csharp = { path = "../coflow-codegen-csharp" }
+coflow-codegen-rust = { path = "../coflow-codegen-rust" }
+coflow-codegen-cpp = { path = "../coflow-codegen-cpp" }
+coflow-codegen-lua = { path = "../coflow-codegen-lua" }
+coflow-codegen-gdscript = { path = "../coflow-codegen-gdscript" }
 coflow-exporter-json = { path = "../coflow-exporter-json" }
 coflow-exporter-messagepack = { path = "../coflow-exporter-messagepack" }
+coflow-exporter-protobuf = { path = "../coflow-exporter-protobuf" }
 coflow-loader-cfd = { path = "../coflow-loader-cfd" }
 coflow-loader-csv = { path = "../coflow-loader-csv" }
+coflow-loader-json = { path = "../coflow-loader-json" }
 coflow-loader-excel = { path = "../coflow-loader-excel" }

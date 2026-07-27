@@ -48,10 +48,16 @@ pub fn register_default_providers(
 pub fn default_provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
     let mut bundle = coflow_loader_excel::provider_bundle()?;
     bundle.merge(coflow_loader_csv::provider_bundle()?)?;
+    bundle.merge(coflow_loader_json::provider_bundle()?)?;
     bundle.merge(coflow_loader_cfd::provider_bundle()?)?;
     bundle.merge(coflow_exporter_json::provider_bundle()?)?;
     bundle.merge(coflow_exporter_messagepack::provider_bundle()?)?;
+    bundle.merge(coflow_exporter_protobuf::provider_bundle()?)?;
     bundle.merge(coflow_codegen_csharp::provider_bundle()?)?;
+    bundle.merge(coflow_codegen_rust::provider_bundle()?)?;
+    bundle.merge(coflow_codegen_cpp::provider_bundle()?)?;
+    bundle.merge(coflow_codegen_lua::provider_bundle()?)?;
+    bundle.merge(coflow_codegen_gdscript::provider_bundle()?)?;
     Ok(bundle)
 }
 
@@ -80,6 +86,34 @@ mod tests {
                 .id,
             "csharp-messagepack"
         );
+        assert_eq!(
+            registry
+                .select_loader("csharp", "protobuf", None)
+                .expect("Protobuf loader")
+                .descriptor()
+                .id,
+            "csharp-protobuf"
+        );
+        assert_eq!(
+            registry
+                .select_loader("cpp", "protobuf", None)
+                .expect("C++ Protobuf loader")
+                .descriptor()
+                .id,
+            "cpp-protobuf"
+        );
+        assert_eq!(
+            registry
+                .select_loader("rust", "protobuf", None)
+                .expect("Rust Protobuf loader")
+                .descriptor()
+                .id,
+            "rust-protobuf"
+        );
+        assert!(registry.select_loader("lua", "protobuf", None).is_none());
+        assert!(registry
+            .select_loader("gdscript", "protobuf", None)
+            .is_none());
         assert!(registry.select_loader("csharp", "yaml", None).is_none());
     }
 }

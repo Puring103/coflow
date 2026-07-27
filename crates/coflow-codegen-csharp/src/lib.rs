@@ -162,6 +162,18 @@ pub fn generate_csharp_messagepack(
     generate_complete(schema, options, render::CsharpLoaderKind::MessagePack)
 }
 
+/// Generates C# declarations and a schema-specific Protobuf loader.
+///
+/// # Errors
+///
+/// Returns an error when generation fails.
+pub fn generate_csharp_protobuf(
+    schema: &CftSchema,
+    options: &CsharpCodegenOptions,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    generate_complete(schema, options, render::CsharpLoaderKind::Protobuf)
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CsharpCodeGenerator;
 
@@ -170,6 +182,9 @@ pub struct CsharpJsonLoaderGenerator;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CsharpMessagePackLoaderGenerator;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CsharpProtobufLoaderGenerator;
 
 pub const CSHARP_CODEGEN_DESCRIPTOR: CodegenDescriptor = CodegenDescriptor {
     id: "csharp",
@@ -191,6 +206,12 @@ pub const CSHARP_MESSAGEPACK_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescrip
     data: "messagepack",
 };
 
+pub const CSHARP_PROTOBUF_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+    id: "csharp-protobuf",
+    code: "csharp",
+    data: "protobuf",
+};
+
 /// Declares the C# code and loader generator roles implemented by this package.
 ///
 /// # Errors
@@ -201,6 +222,7 @@ pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
     bundle.add_codegen(CsharpCodeGenerator)?;
     bundle.add_loader(CsharpJsonLoaderGenerator)?;
     bundle.add_loader(CsharpMessagePackLoaderGenerator)?;
+    bundle.add_loader(CsharpProtobufLoaderGenerator)?;
     Ok(bundle)
 }
 
@@ -323,6 +345,43 @@ impl LoaderGenerator for CsharpMessagePackLoaderGenerator {
     }
 }
 
+impl LoaderGenerator for CsharpProtobufLoaderGenerator {
+    fn descriptor(&self) -> &'static LoaderDescriptor {
+        &CSHARP_PROTOBUF_LOADER_DESCRIPTOR
+    }
+
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedOutputOptions, DiagnosticSet> {
+        decode_loader_options(self.descriptor().id, options)
+    }
+
+    fn generate(
+        &self,
+        ctx: LoaderGenerationContext<'_>,
+        options: &DecodedOutputOptions,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        options.require::<()>(self.descriptor().id)?;
+        if ctx.schema.all_dimensions().next().is_some() {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "CSHARP-PROTOBUF-LOCALIZATION",
+                "CODEGEN",
+                "C# Protobuf loader does not yet support localized dimension tables",
+            )));
+        }
+        generate_loader_artifacts(ctx, render::CsharpLoaderKind::Protobuf)
+    }
+
+    fn merge_object_layout_artifacts(
+        &self,
+        common: ArtifactSet,
+        loader: ArtifactSet,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        merge_object_layout_csharp_artifacts(common, loader)
+    }
+}
+
 fn merge_object_layout_csharp_artifacts(
     common: ArtifactSet,
     loader: ArtifactSet,
@@ -364,10 +423,7 @@ fn merge_object_layout_csharp_artifacts(
     })
 }
 
-fn merge_csharp_contents(
-    common: &mut String,
-    loader: &str,
-) -> Result<(), CsharpCodegenError> {
+fn merge_csharp_contents(common: &mut String, loader: &str) -> Result<(), CsharpCodegenError> {
     let namespace_start = loader.find("namespace ").ok_or_else(|| {
         CsharpCodegenError::new("C# loader companion is missing a namespace declaration")
     })?;
