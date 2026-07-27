@@ -58,6 +58,7 @@ pub struct CftType {
     pub is_struct: bool,
     pub is_singleton: bool,
     pub id_as_enum: Option<EnumName>,
+    pub display: Option<CftDisplayMetadata>,
     pub(crate) own_fields: Vec<Arc<CftField>>,
     pub(crate) all_fields: Vec<Arc<CftField>>,
     pub(crate) field_by_name: BTreeMap<FieldName, usize>,
@@ -79,6 +80,7 @@ pub struct CftField {
     pub default: Option<CftSchemaDefaultValue>,
     pub is_expand: bool,
     pub dimension: Option<CftFieldDimension>,
+    pub display: Option<CftDisplayMetadata>,
     pub span: Span,
 }
 
@@ -280,6 +282,7 @@ pub struct CftEnum {
     pub(crate) variant_by_name: BTreeMap<EnumVariantName, usize>,
     pub(crate) variant_by_value: BTreeMap<i64, usize>,
     pub is_flag: bool,
+    pub display: Option<CftDisplayMetadata>,
     pub span: Span,
 }
 
@@ -287,7 +290,22 @@ pub struct CftEnum {
 pub struct CftEnumVariant {
     pub name: EnumVariantName,
     pub value: i64,
+    pub display: Option<CftDisplayMetadata>,
     pub span: Span,
+}
+
+/// Human-facing metadata which never changes schema identity or stored data.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CftDisplayMetadata {
+    pub label: Option<String>,
+    pub description: Option<String>,
+}
+
+impl CftDisplayMetadata {
+    #[must_use]
+    pub fn summary(&self) -> Option<&str> {
+        self.description.as_deref().or(self.label.as_deref())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

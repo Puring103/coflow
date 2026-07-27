@@ -306,6 +306,29 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.file_path, activeType, columnKeySignature(data)])
 
+  // Display metadata follows the same structural lifetime as declared types:
+  // the schema owns it, while record values only carry it to the table.
+  const columnDisplay = useMemo(() => {
+    const map: Record<string, { label?: string, description?: string }> = {}
+    const snapshot = dataForCellsRef.current
+    for (const name of allFieldNames) {
+      for (const record of snapshot.records) {
+        if (recordActualType(record) !== activeType) continue
+        const annotation = fieldCell(record, name)?.annotation
+        if (!annotation) continue
+        if (annotation.label || annotation.description) {
+          map[name] = {
+            label: annotation.label ?? undefined,
+            description: annotation.description ?? undefined,
+          }
+          break
+        }
+      }
+    }
+    return map
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.file_path, activeType, columnKeySignature(data)])
+
   // Compute column widths once per (file, activeType, column set) and freeze
   // them for the session. Recomputing on every `data.records` update meant a
   // ref-cell edit could change the column's max-summary length by a few px
@@ -354,14 +377,15 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       }
       const summaryWidth = maxContent + chrome
       const typeChipWidth = declaredForHeader ? measureMono(declaredForHeader) + 16 : 0
-      const headerWidth = measure(column.name) + PLAIN_CHROME + 12 /* sort caret */ + typeChipWidth
+      const headerLabel = columnDisplay[column.name]?.label ?? column.name
+      const headerWidth = measure(headerLabel) + PLAIN_CHROME + 12 /* sort caret */ + typeChipWidth
       const minimumWidth = hasComplexValue ? 300 : MIN
       hints[column.name] = Math.min(VALUE_MAX, Math.max(minimumWidth, Math.ceil(Math.max(summaryWidth, headerWidth))))
     }
     return hints
     // Deps intentionally stable: file, active type, column identity/count,
     // and record count. Content edits don't move the layout.
-  }, [data.file_path, activeType, columnKeySignature(data), data.records.length])
+  }, [data.file_path, activeType, columnKeySignature(data), data.records.length, columnDisplay])
 
   const canEdit = !readOnly && !!onWriteField
   const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
@@ -426,6 +450,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       }),
       ...allFieldNames.map(name => {
         const declared = columnDeclaredTypes[name]
+        const display = columnDisplay[name]
+        const label = display?.label ?? name
         return helper.display({
           id: name,
           header: () => (
@@ -433,7 +459,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               className="th-label"
               style={{ '--field-color': fieldTypeColor(declared ?? name) } as React.CSSProperties}
             >
-              <span className="th-label-name">{name}</span>
+              <span className="th-label-name" title={display?.description}>{label}</span>
               {declared && (
                 <span className="th-label-type" title={`类型：${declared}`}>{declared}</span>
               )}
@@ -520,7 +546,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     // Only structural changes (column set, active type, computed widths,
     // permission flags) rebuild the column defs. Edit-time state
     // (diagnostics, records, callbacks) is read via refs above.
-  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, columnWidths, canEdit, canRename])
+  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, columnDisplay, columnWidths, canEdit, canRename])
 
   // Global filter: match key or any scalar field value (via summaryOf).
   const globalFilterFn = useMemo(

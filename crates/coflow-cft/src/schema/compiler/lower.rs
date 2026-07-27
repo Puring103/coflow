@@ -1,14 +1,14 @@
 use super::annotations::{field_dimension_name, find_annotation, has_annotation};
 use super::SchemaCompiler;
 use crate::schema::{
-    CftConst, CftConstValue, CftEnum, CftEnumVariant, CftField, CftFieldDimension, CftSchemaBinOp,
+    CftConst, CftConstValue, CftDisplayMetadata, CftEnum, CftEnumVariant, CftField, CftFieldDimension, CftSchemaBinOp,
     CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
     CftSchemaCheckMessage, CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp,
     CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp,
     CftTopLevelCheck, CftType, CftValueType,
 };
 use crate::syntax::ast::{
-    AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
+    Annotation, AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
     CheckStmt, CmpOp, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, TypePredicate, TypeRef,
     TypeRefKind, UnaryOp,
 };
@@ -90,6 +90,7 @@ impl SchemaCompiler<'_> {
                         .get(&variant.name)
                         .copied()
                         .map_or(0, |value| value),
+                    display: display_metadata(&variant.annotations),
                     span: variant.span,
                 })
                 .collect::<Vec<_>>();
@@ -111,6 +112,7 @@ impl SchemaCompiler<'_> {
                 variant_by_name,
                 variant_by_value,
                 is_flag: has_annotation(&info.def.annotations, "flag"),
+                display: display_metadata(&info.def.annotations),
                 span: info.def.span,
             };
             enums.insert(name, schema);
@@ -163,6 +165,7 @@ impl SchemaCompiler<'_> {
                 is_struct: has_annotation(&info.def.annotations, "struct"),
                 is_singleton,
                 id_as_enum,
+                display: display_metadata(&info.def.annotations),
                 own_fields: fields,
                 all_fields,
                 field_by_name,
@@ -195,6 +198,7 @@ impl SchemaCompiler<'_> {
                 .and_then(|default| self.schema_default_value(default)),
             is_expand: has_annotation(&field.annotations, "expand"),
             dimension,
+            display: display_metadata(&field.annotations),
             span: field.span,
         }
     }
@@ -519,4 +523,18 @@ pub(super) fn build_schema_value_type(
             CftValueType::Nullable(Box::new(build_schema_value_type(inner, is_enum)))
         }
     }
+}
+
+fn display_metadata(annotations: &[Annotation]) -> Option<CftDisplayMetadata> {
+    let string_arg = |name| {
+        find_annotation(annotations, name)
+            .and_then(|annotation| annotation.args.first())
+            .and_then(|arg| match arg {
+                AnnotationArg::String(value, _) => Some(value.clone()),
+                _ => None,
+            })
+    };
+    let label = string_arg("label");
+    let description = string_arg("description");
+    (label.is_some() || description.is_some()).then_some(CftDisplayMetadata { label, description })
 }

@@ -38,6 +38,31 @@ fn schema_exposes_named_top_level_checks() {
 }
 
 #[test]
+fn schema_retains_display_metadata_on_supported_declarations() {
+    let schema = compile_one(
+        r#"
+        @label("状态")
+        @description("当前状态。")
+        enum Status {
+            @label("启用")
+            Enabled = 1,
+        }
+        @label("物品")
+        type Item {
+            @description("物品价格。")
+            price: int;
+        }
+        "#,
+    ).expect("schema compiles");
+
+    assert_eq!(schema.resolve_type("Item").and_then(|item| item.display.as_ref()).and_then(|meta| meta.label.as_deref()), Some("物品"));
+    assert_eq!(schema.resolve_type("Item").and_then(|item| item.field("price")).and_then(|field| field.display.as_ref()).and_then(|meta| meta.summary()), Some("物品价格。"));
+    let status = schema.resolve_enum("Status").expect("enum");
+    assert_eq!(status.display.as_ref().and_then(|meta| meta.description.as_deref()), Some("当前状态。"));
+    assert_eq!(status.variants[0].display.as_ref().and_then(|meta| meta.label.as_deref()), Some("启用"));
+}
+
+#[test]
 fn schema_retains_records_as_a_static_special_form() {
     let schema = compile_one(
         "type Item {} check Integrity { records(Item).len() >= 0; }",
