@@ -247,6 +247,7 @@ var englishName = item.Name.For("en");
 | --- | --- | --- |
 | `json` | `csharp-json` | Newtonsoft.Json loader |
 | `messagepack` | `csharp-messagepack` | MessagePack-CSharp loader |
+| `protobuf` | `csharp-protobuf` | 无外部 runtime 依赖的 schema-specific loader |
 
 生成代码按 object 字段引用关系排序加载 table，确保被引用 table 先建立索引。存在 table 级循环引用时，C# codegen 会报错。
 

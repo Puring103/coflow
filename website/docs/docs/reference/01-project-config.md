@@ -105,6 +105,8 @@ sources:
 - `.xlsm`
 - `.xls`
 - `.csv`
+- `.tsv`
+- `.json`
 - `.cfd`
 
 支持的文件类型不是 `coflow.yaml` 中的固定白名单，而是由当前应用提供的 source provider
@@ -276,7 +278,7 @@ outputs:
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `type` | 是 | 数据导出 provider，目前支持 `json` 和 `messagepack`。 |
+| `type` | 是 | 数据导出 provider，目前支持 `json`、`messagepack` 和 `protobuf`。 |
 | `dir` | 是 | 数据输出目录。 |
 
 JSON 示例：
@@ -303,7 +305,7 @@ outputs:
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `type` | 是 | 代码生成 provider，目前支持 `csharp`。 |
+| `type` | 是 | 代码生成 provider，目前支持 `csharp`、`cpp`、`lua`、`gdscript` 和 `rust`。 |
 | `dir` | 是 | 代码输出目录。 |
 | `namespace` | 否 | C# 代码命名空间。 |
 
@@ -331,6 +333,13 @@ loader 负责为一个 target 的 code/data 组合生成加载代码。当前内
 | --- | --- | --- |
 | `csharp-json` | `csharp` | `json` |
 | `csharp-messagepack` | `csharp` | `messagepack` |
+| `csharp-protobuf` | `csharp` | `protobuf` |
+| `cpp-json` | `cpp` | `json` |
+| `cpp-protobuf` | `cpp` | `protobuf` |
+| `lua-json` | `lua` | `json` |
+| `gdscript-json` | `gdscript` | `json` |
+| `rust-json` | `rust` | `json` |
+| `rust-protobuf` | `rust` | `protobuf` |
 
 `loader` 可以省略；Coflow 会按注册顺序选择与 target 的 `code.type` 和 `data.type` 精确匹配的 loader。显式配置时，loader 必须与同一 target 的 code/data 组合兼容。没有 `code` 的 data-only target 不能配置 `loader`。
 
