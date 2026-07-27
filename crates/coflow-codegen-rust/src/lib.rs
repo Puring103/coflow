@@ -193,8 +193,8 @@ fn render_types(model: &CodegenModel) -> String {
          use std::collections::BTreeMap;\n\
          use std::marker::PhantomData;\n\n\
          #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]\n\
-         pub struct RecordId<T> { pub key: String, marker: PhantomData<fn() -> T> }\n\
-         impl<T> RecordId<T> { pub fn new(key: String) -> Self { Self { key, marker: PhantomData } } }\n\n\
+         pub struct RecordId<T, K> { pub key: K, marker: PhantomData<fn() -> T> }\n\
+         impl<T, K> RecordId<T, K> { pub fn new(key: K) -> Self { Self { key, marker: PhantomData } } }\n\n\
          #[derive(Debug, Clone, PartialEq)]\n\
          pub struct Localized<T> { pub default: T }\n\
          impl<T> Localized<T> { pub fn new(default: T) -> Self { Self { default } } }\n\n",
@@ -205,7 +205,7 @@ fn render_types(model: &CodegenModel) -> String {
     for ty in &model.types {
         render_type(&mut out, ty, model);
     }
-    for ty in model.types.iter().filter(|ty| ty.concrete_types.len() > 1) {
+    for ty in model.types.iter().filter(|ty| ty.is_polymorphic()) {
         let wrapper = format!("{}Value", pascal(&ty.name));
         let _ = writeln!(
             out,
@@ -216,13 +216,24 @@ fn render_types(model: &CodegenModel) -> String {
             let _ = writeln!(out, "    {name}({name}),");
         }
         out.push_str("}\n\n");
+        let borrowed = format!("{}Ref", pascal(&ty.name));
+        let _ = writeln!(
+            out,
+            "#[derive(Debug, Clone, Copy)]\npub enum {borrowed}<'a> {{"
+        );
+        for actual in &ty.concrete_types {
+            let name = pascal(actual);
+            let _ = writeln!(out, "    {name}(&'a {name}),");
+        }
+        out.push_str("}\n\n");
     }
     out.push_str("#[derive(Debug, Default)]\npub struct CoflowTables {\n");
     for table in &model.table_names {
         let _ = writeln!(
             out,
-            "    pub {}: BTreeMap<String, {}>,",
+            "    pub {}: BTreeMap<{}, {}>,",
             rust_ident(&snake(table)),
+            rust_record_id_type(table, model),
             pascal(table)
         );
     }
@@ -234,13 +245,36 @@ fn render_types(model: &CodegenModel) -> String {
             pascal(singleton)
         );
     }
+    out.push_str("}\n\nimpl CoflowTables {\n");
+    for ty in &model.types {
+        let function = format!("resolve_{}", snake(&ty.name));
+        let target = pascal(&ty.name);
+        let key = rust_record_id_type(&ty.name, model);
+        if ty.is_polymorphic() {
+            let borrowed = format!("{target}Ref");
+            let _ = writeln!(out, "    pub fn {function}<'a>(&'a self, id: &RecordId<{target}, {key}>) -> Option<{borrowed}<'a>> {{");
+            for actual in &ty.concrete_types {
+                if model.table_names.contains(actual) {
+                    let table = rust_ident(&snake(actual));
+                    let variant = pascal(actual);
+                    let _ = writeln!(out, "        if let Some(value) = self.{table}.get(&id.key) {{ return Some({borrowed}::{variant}(value)); }}");
+                }
+            }
+            out.push_str("        None\n    }\n");
+        } else if let Some(actual) = ty.concrete_types.first() {
+            if model.table_names.contains(actual) {
+                let table = rust_ident(&snake(actual));
+                let _ = writeln!(out, "    pub fn {function}<'a>(&'a self, id: &RecordId<{target}, {key}>) -> Option<&'a {target}> {{ self.{table}.get(&id.key) }}");
+            }
+        }
+    }
     out.push_str("}\n");
     out
 }
 
 fn render_enum(out: &mut String, item: &CodegenEnum) {
     let name = pascal(&item.name);
-    if item.is_flags {
+    if item.is_flags || item.is_id_as_enum {
         let _ = writeln!(
             out,
             "#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]\npub struct {name}(pub i64);"
@@ -273,8 +307,8 @@ fn render_type(out: &mut String, ty: &CodegenType, model: &CodegenModel) {
         out,
         "#[derive(Debug, Clone, PartialEq)]\npub struct {name} {{"
     );
-    if !ty.is_abstract {
-        out.push_str("    pub id: String,\n");
+    if !ty.is_abstract && !ty.is_struct {
+        let _ = writeln!(out, "    pub id: {},", rust_record_id_type(&ty.name, model));
     }
     for field in &ty.all_fields {
         let mut field_type = rust_type(&field.value_type, model);
@@ -298,11 +332,15 @@ fn rust_type(value: &CftValueType, model: &CodegenModel) -> String {
         CftValueType::Bool => "bool".to_string(),
         CftValueType::String => "String".to_string(),
         CftValueType::Enum(name) => pascal(name),
-        CftValueType::RecordRef(name) => format!("RecordId<{}>", pascal(name)),
+        CftValueType::RecordRef(name) => format!(
+            "RecordId<{}, {}>",
+            pascal(name),
+            rust_record_id_type(name, model)
+        ),
         CftValueType::Object(name) => model.type_by_name(name).map_or_else(
             || pascal(name),
             |ty| {
-                if ty.concrete_types.len() > 1 {
+                if ty.is_polymorphic() {
                     format!("{}Value", pascal(name))
                 } else {
                     pascal(name)
@@ -317,6 +355,43 @@ fn rust_type(value: &CftValueType, model: &CodegenModel) -> String {
         ),
         CftValueType::Nullable(inner) => format!("Option<{}>", rust_type(inner, model)),
     }
+}
+
+fn rust_record_id_type(type_name: &str, model: &CodegenModel) -> String {
+    model
+        .type_by_name(type_name)
+        .and_then(|ty| ty.id_as_enum.as_ref())
+        .map_or_else(|| "String".to_string(), |name| pascal(name))
+}
+
+fn rust_json_id_expression(type_name: &str, value: &str, model: &CodegenModel) -> String {
+    model
+        .type_by_name(type_name)
+        .and_then(|ty| ty.id_as_enum.as_ref())
+        .map_or_else(
+            || format!("string({value})?"),
+            |name| format!("parse_{}(&Value::String(string({value})?))?", snake(name)),
+        )
+}
+
+fn rust_protobuf_id_expression(type_name: &str, value: &str, model: &CodegenModel) -> String {
+    model
+        .type_by_name(type_name)
+        .and_then(|ty| ty.id_as_enum.as_ref())
+        .map_or_else(
+            || format!("text({value})?"),
+            |name| format!("parse_id_{}(&text({value})?)?", snake(name)),
+        )
+}
+
+fn rust_inline_id_expression(type_name: &str, model: &CodegenModel) -> String {
+    model
+        .type_by_name(type_name)
+        .and_then(|ty| ty.id_as_enum.as_ref())
+        .map_or_else(
+            || "String::new()".to_string(),
+            |name| format!("{}(0)", pascal(name)),
+        )
 }
 
 fn render_json_loader(model: &CodegenModel) -> String {
@@ -341,7 +416,7 @@ fn render_json_loader(model: &CodegenModel) -> String {
     for ty in &model.types {
         render_type_parser(&mut out, ty, model);
     }
-    for ty in model.types.iter().filter(|ty| ty.concrete_types.len() > 1) {
+    for ty in model.types.iter().filter(|ty| ty.is_polymorphic()) {
         render_polymorphic_parser(&mut out, ty);
     }
     out.push_str("pub fn load(directory: &Path) -> Result<CoflowTables, String> {\n    let mut database = CoflowTables::default();\n");
@@ -372,7 +447,7 @@ fn render_enum_parser(out: &mut String, item: &CodegenEnum) {
         out,
         "fn {function}(value: &Value) -> Result<{name}, String> {{"
     );
-    if item.is_flags {
+    if item.is_flags || item.is_id_as_enum {
         let _ = writeln!(
             out,
             "    if let Some(raw) = value.as_i64() {{ return Ok({name}(raw)); }}"
@@ -394,7 +469,7 @@ fn render_enum_parser(out: &mut String, item: &CodegenEnum) {
     }
     out.push_str("    let text = value.as_str().ok_or_else(|| \"expected symbolic enum string\".to_string())?;\n    match text {\n");
     for variant in &item.variants {
-        let expression = if item.is_flags {
+        let expression = if item.is_flags || item.is_id_as_enum {
             format!("{name}({})", variant.value)
         } else {
             format!("{name}::{}", pascal(&variant.name))
@@ -404,6 +479,9 @@ fn render_enum_parser(out: &mut String, item: &CodegenEnum) {
             "        \"{}.{}\" => Ok({expression}),",
             item.name, variant.name
         );
+        if item.is_id_as_enum {
+            let _ = writeln!(out, "        {:?} => Ok({expression}),", variant.name);
+        }
     }
     if item.is_flags {
         let _ = writeln!(
@@ -422,11 +500,28 @@ fn render_enum_parser(out: &mut String, item: &CodegenEnum) {
 }
 
 fn render_type_parser(out: &mut String, ty: &CodegenType, model: &CodegenModel) {
+    render_json_type_parser(out, ty, model, true);
+    render_json_type_parser(out, ty, model, false);
+}
+
+fn render_json_type_parser(out: &mut String, ty: &CodegenType, model: &CodegenModel, table: bool) {
+    if table && (ty.is_abstract || ty.is_struct) {
+        return;
+    }
     let name = pascal(&ty.name);
-    let function = format!("parse_{}", snake(&ty.name));
+    let function = if table {
+        format!("parse_{}", snake(&ty.name))
+    } else {
+        format!("parse_{}_inline", snake(&ty.name))
+    };
     let _ = writeln!(out, "fn {function}(value: &Value) -> Result<{name}, String> {{\n    let object = object(value)?;\n    Ok({name} {{");
-    if !ty.is_abstract {
-        out.push_str("        id: string(field(object, \"id\")?)?,\n");
+    if !ty.is_abstract && !ty.is_struct {
+        let id = if table {
+            rust_json_id_expression(&ty.name, "field(object, \"id\")?", model)
+        } else {
+            rust_inline_id_expression(&ty.name, model)
+        };
+        let _ = writeln!(out, "        id: {id},");
     }
     for field_meta in &ty.all_fields {
         let field_name = rust_ident(&snake(&field_meta.name));
@@ -448,7 +543,7 @@ fn render_polymorphic_parser(out: &mut String, ty: &CodegenType) {
         let actual_name = pascal(actual);
         let _ = writeln!(
             out,
-            "        \"{actual}\" => Ok({name}Value::{actual_name}(parse_{}(value)?)),",
+            "        \"{actual}\" => Ok({name}Value::{actual_name}(parse_{}_inline(value)?)),",
             snake(actual)
         );
     }
@@ -465,15 +560,16 @@ fn parse_expression(value_type: &CftValueType, value: &str, model: &CodegenModel
         CftValueType::String => format!("string({value})?"),
         CftValueType::Enum(name) => format!("parse_{}({value})?", snake(name)),
         CftValueType::RecordRef(name) => {
-            format!("RecordId::<{}>::new(string({value})?)", pascal(name))
+            let id = rust_json_id_expression(name, value, model);
+            format!("RecordId::<{}, _>::new({id})", pascal(name))
         }
         CftValueType::Object(name) => model.type_by_name(name).map_or_else(
-            || format!("parse_{}({value})?", snake(name)),
+            || format!("parse_{}_inline({value})?", snake(name)),
             |ty| {
-                if ty.concrete_types.len() > 1 {
+                if ty.is_polymorphic() {
                     format!("parse_{}_value({value})?", snake(name))
                 } else {
-                    format!("parse_{}({value})?", snake(name))
+                    format!("parse_{}_inline({value})?", snake(name))
                 }
             },
         ),
@@ -545,7 +641,7 @@ fn render_protobuf_loader(model: &CodegenModel) -> String {
             out,
             "fn {function}(value: i64) -> Result<{name}, String> {{"
         );
-        if item.is_flags {
+        if item.is_flags || item.is_id_as_enum {
             let _ = writeln!(out, "    Ok({name}(value))");
         } else {
             out.push_str("    match value {\n");
@@ -563,18 +659,36 @@ fn render_protobuf_loader(model: &CodegenModel) -> String {
             );
         }
         out.push_str("}\n\n");
+        if item.is_id_as_enum {
+            let _ = writeln!(
+                out,
+                "fn parse_id_{}(value: &str) -> Result<{name}, String> {{ match value {{",
+                snake(&item.name)
+            );
+            for variant in &item.variants {
+                let _ = writeln!(
+                    out,
+                    "    {:?} => Ok({name}({})),",
+                    variant.name, variant.value
+                );
+            }
+            let _ = writeln!(
+                out,
+                "    _ => Err(format!(\"unknown {name} id `{{value}}`\")),\n}}\n}}\n"
+            );
+        }
     }
     for ty in model.types.iter().filter(|ty| !ty.is_abstract) {
         render_protobuf_type_parser(&mut out, ty, model);
     }
-    for ty in model.types.iter().filter(|ty| ty.concrete_types.len() > 1) {
+    for ty in model.types.iter().filter(|ty| ty.is_polymorphic()) {
         let name = pascal(&ty.name);
         let function = format!("decode_{}_value", snake(&ty.name));
         let _ = writeln!(out, "fn {function}(input: &[u8]) -> Result<{name}Value, String> {{\n    let message = decode(input)?;");
         for (index, actual) in ty.concrete_types.iter().enumerate() {
             let actual_name = pascal(actual);
             let tag = index + 1;
-            let _ = writeln!(out, "    if let Some(value) = optional(&message, {tag}) {{ return Ok({name}Value::{actual_name}(decode_{}(bytes(value)?)?)); }}", snake(actual));
+            let _ = writeln!(out, "    if let Some(value) = optional(&message, {tag}) {{ return Ok({name}Value::{actual_name}(decode_{}_inline(bytes(value)?)?)); }}", snake(actual));
         }
         out.push_str("    Err(\"missing polymorphic Protobuf value\".to_string())\n}\n\n");
     }
@@ -594,11 +708,33 @@ fn render_protobuf_loader(model: &CodegenModel) -> String {
 }
 
 fn render_protobuf_type_parser(out: &mut String, ty: &CodegenType, model: &CodegenModel) {
+    render_protobuf_record_parser(out, ty, model, true);
+    render_protobuf_record_parser(out, ty, model, false);
+}
+
+fn render_protobuf_record_parser(
+    out: &mut String,
+    ty: &CodegenType,
+    model: &CodegenModel,
+    table: bool,
+) {
+    if table && (ty.is_abstract || ty.is_struct) {
+        return;
+    }
     let name = pascal(&ty.name);
-    let function = format!("decode_{}", snake(&ty.name));
+    let function = if table {
+        format!("decode_{}", snake(&ty.name))
+    } else {
+        format!("decode_{}_inline", snake(&ty.name))
+    };
     let _ = writeln!(out, "fn {function}(input: &[u8]) -> Result<{name}, String> {{\n    let message = decode(input)?;\n    Ok({name} {{");
     if !ty.is_struct {
-        out.push_str("        id: text(required(&message, 1)?)?,\n");
+        let id = if table {
+            rust_protobuf_id_expression(&ty.name, "required(&message, 1)?", model)
+        } else {
+            rust_inline_id_expression(&ty.name, model)
+        };
+        let _ = writeln!(out, "        id: {id},");
     }
     let mut fields = ty.all_fields.iter().collect::<Vec<_>>();
     fields.sort_by(|left, right| left.name.cmp(&right.name));
@@ -647,15 +783,16 @@ fn protobuf_singular_expression(
         CftValueType::String => format!("text({value})?"),
         CftValueType::Enum(name) => format!("decode_{}(sint({value})?)?", snake(name)),
         CftValueType::RecordRef(name) => {
-            format!("RecordId::<{}>::new(text({value})?)", pascal(name))
+            let id = rust_protobuf_id_expression(name, value, model);
+            format!("RecordId::<{}, _>::new({id})", pascal(name))
         }
         CftValueType::Object(name) => model.type_by_name(name).map_or_else(
-            || format!("decode_{}(bytes({value})?)?", snake(name)),
+            || format!("decode_{}_inline(bytes({value})?)?", snake(name)),
             |ty| {
-                if ty.concrete_types.len() > 1 {
+                if ty.is_polymorphic() {
                     format!("decode_{}_value(bytes({value})?)?", snake(name))
                 } else {
-                    format!("decode_{}(bytes({value})?)?", snake(name))
+                    format!("decode_{}_inline(bytes({value})?)?", snake(name))
                 }
             },
         ),
@@ -800,5 +937,29 @@ mod tests {
 
         syn::parse_file(&render_types(&model)).expect("generated types syntax");
         syn::parse_file(&render_protobuf_loader(&model)).expect("generated loader syntax");
+    }
+
+    #[test]
+    fn generated_rust_uses_typed_ids_and_single_case_polymorphism() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "@idAsEnum(ItemId) abstract type Item {} type Weapon : Item {} enum ItemId {} @struct sealed type Details { note: string; } type Holder { item: &Item; value: Item; details: Details; }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+        let variants = serde_json::json!({"ItemId": [{"name": "sword", "value": 0}]});
+        let model = CodegenModel::build(&schema, None, &variants).expect("model");
+
+        let types = render_types(&model);
+        let protobuf = render_protobuf_loader(&model);
+        assert!(types.contains("pub id: ItemId"));
+        assert!(types.contains("RecordId<Item, ItemId>"));
+        assert!(types.contains("pub enum ItemValue"));
+        assert!(types.contains("pub enum ItemRef<'a>"));
+        assert!(types.contains("pub fn resolve_item<'a>"));
+        assert!(!types.contains("pub details: BTreeMap"));
+        assert!(protobuf.contains("fn decode_item_value"));
+        assert!(protobuf.contains("parse_id_item_id"));
+        syn::parse_file(&types).expect("generated types syntax");
+        syn::parse_file(&protobuf).expect("generated protobuf syntax");
     }
 }

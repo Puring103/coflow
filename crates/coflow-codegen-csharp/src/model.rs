@@ -30,6 +30,7 @@ pub struct CsharpSingleton {
 #[derive(Debug, Serialize)]
 pub struct CsharpEnum {
     pub name: String,
+    pub source_name: String,
     pub is_flags: bool,
     pub summary: Option<String>,
     pub obsolete: bool,
@@ -39,6 +40,7 @@ pub struct CsharpEnum {
 #[derive(Debug, Serialize)]
 pub struct CsharpEnumVariant {
     pub name: String,
+    pub source_name: String,
     pub value: i64,
     pub summary: Option<String>,
     pub obsolete: bool,

@@ -122,5 +122,35 @@ internal static class CoflowJson
             ? (TEnum)Enum.ToObject(typeof(TEnum), numeric)
             : ReadSymbolicEnum<TEnum>(key);
     }
+{% for enum in project.enums %}
+    internal static {{ enum.name }} Read{{ enum.name }}(JToken token)
+    {
+        if (token.Type == JTokenType.Integer)
+        {
+            return ({{ enum.name }})Enum.ToObject(typeof({{ enum.name }}), ReadInt(token));
+        }
+
+        return Read{{ enum.name }}Text(ReadString(token));
+    }
+
+    internal static {{ enum.name }} Read{{ enum.name }}Key(string key)
+    {
+        {{ project.int_type }} numeric;
+        return {{ project.int_type }}.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out numeric)
+            ? ({{ enum.name }})Enum.ToObject(typeof({{ enum.name }}), numeric)
+            : Read{{ enum.name }}Text(key);
+    }
+
+    private static {{ enum.name }} Read{{ enum.name }}Text(string text)
+    {
+        switch (text)
+        {
+{% for variant in enum.variants %}            case "{{ enum.source_name }}.{{ variant.source_name }}":
+                return {{ enum.name }}.{{ variant.name }};
+{% endfor %}            default:
+                return ReadSymbolicEnum<{{ enum.name }}>(text);
+        }
+    }
+{% endfor %}
 }
 }

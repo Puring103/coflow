@@ -113,6 +113,24 @@ fn codegen_protobuf_emits_dependency_free_wire_loader() -> Result<(), String> {
     require_not_contains(&output, "Google.Protobuf")
 }
 
+#[test]
+fn codegen_json_maps_source_enum_symbols_to_generated_member_names() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            enum item_rarity { some_value = 0, }
+            type Item { rarity: item_rarity; attrs: {item_rarity: int}; }
+        "#,
+    )?;
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|error| error.to_string())?;
+    let output = generated_output(&files);
+
+    require_contains(&output, "case \"item_rarity.some_value\":")?;
+    require_contains(&output, "return ItemRarity.SomeValue;")?;
+    require_contains(&output, "CoflowJson.ReadItemRarity(token)")?;
+    require_contains(&output, "CoflowJson.ReadItemRarityKey(key)")
+}
+
 fn generate_json_with_id_as_enum_variants(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,

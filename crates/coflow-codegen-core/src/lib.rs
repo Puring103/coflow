@@ -50,6 +50,13 @@ pub struct CodegenType {
     pub concrete_types: Vec<String>,
 }
 
+impl CodegenType {
+    #[must_use]
+    pub fn is_polymorphic(&self) -> bool {
+        self.is_abstract || self.concrete_types.len() > 1
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CodegenField {
     pub declaring_type: String,
@@ -162,7 +169,7 @@ impl CodegenModel {
 
         let table_names = types
             .iter()
-            .filter(|ty| !ty.is_abstract && !ty.is_singleton)
+            .filter(|ty| !ty.is_abstract && !ty.is_struct && !ty.is_singleton)
             .map(|ty| ty.name.clone())
             .collect();
         let singleton_names = types

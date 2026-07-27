@@ -174,12 +174,20 @@ fn render_types(model: &CodegenModel) -> String {
         out.push_str("}\n\n");
     }
     for ty in &model.types {
-        let _ = writeln!(out, "class {} extends RefCounted:", pascal(&ty.name));
+        let parent = ty
+            .parent
+            .as_ref()
+            .map_or_else(|| "RefCounted".to_string(), |parent| pascal(parent));
+        let _ = writeln!(out, "class {} extends {}:", pascal(&ty.name), parent);
         out.push_str("\tvar _coflow_type: String = \"\"\n");
-        if !ty.is_abstract {
-            out.push_str("\tvar id: String = \"\"\n");
+        if ty.parent.is_none() && !ty.is_struct {
+            if let Some(id_enum) = &ty.id_as_enum {
+                let _ = writeln!(out, "\tvar id: {}", pascal(id_enum));
+            } else {
+                out.push_str("\tvar id: String = \"\"\n");
+            }
         }
-        for field in &ty.all_fields {
+        for field in &ty.own_fields {
             let _ = writeln!(
                 out,
                 "\tvar {}: {}",
@@ -200,6 +208,7 @@ fn render_types(model: &CodegenModel) -> String {
     for item in &model.enums {
         let _ = writeln!(out, "\t{:?}: {{", item.name);
         for variant in &item.variants {
+            let _ = writeln!(out, "\t\t{:?}: {},", variant.name, variant.value);
             let _ = writeln!(
                 out,
                 "\t\t{:?}: {},",
@@ -208,6 +217,12 @@ fn render_types(model: &CodegenModel) -> String {
             );
         }
         out.push_str("\t},\n");
+    }
+    out.push_str("}\n\nstatic var ID_ENUMS: Dictionary = {\n");
+    for ty in &model.types {
+        if let Some(id_enum) = &ty.id_as_enum {
+            let _ = writeln!(out, "\t{:?}: {:?},", ty.name, id_enum);
+        }
     }
     out.push_str("}\n\nstatic var FIELDS: Dictionary = {\n");
     for ty in &model.types {
@@ -253,6 +268,12 @@ fn render_json_loader(model: &CodegenModel) -> String {
 			if abs(numeric) <= SAFE_INTEGER: return numeric
 	return null
 
+static func _hydrate_key(value: String, descriptor: Dictionary):
+	if descriptor.kind == "string": return value
+	if descriptor.kind == "int" and value.is_valid_int(): return value.to_int()
+	if descriptor.kind == "enum": return _parse_enum(descriptor.name, value)
+	return null
+
 static func _hydrate(value, descriptor: Dictionary, database: Dictionary):
 	if descriptor.has("localized"):
 		return { "default": _hydrate(value, descriptor.value, database) }
@@ -262,7 +283,9 @@ static func _hydrate(value, descriptor: Dictionary, database: Dictionary):
 		return int(value)
 	if kind in ["float", "bool", "string"]: return value
 	if kind == "enum": return _parse_enum(descriptor.name, value)
-	if kind == "ref": return { "_coflow_ref": descriptor.name, "id": value }
+	if kind == "ref":
+		var id = _parse_enum(descriptor.id_enum, value) if descriptor.id_enum != null else value
+		return { "_coflow_ref": descriptor.name, "id": id }
 	if kind == "nullable":
 		return null if value == null else _hydrate(value, descriptor.value, database)
 	if kind == "array":
@@ -271,7 +294,9 @@ static func _hydrate(value, descriptor: Dictionary, database: Dictionary):
 		return result
 	if kind == "dict":
 		var result := {}
-		for key in value: result[key] = _hydrate(value[key], descriptor.value, database)
+		for key in value:
+			var converted_key = _hydrate_key(key, descriptor.key)
+			result[converted_key] = _hydrate(value[key], descriptor.value, database)
 		return result
 	if kind == "object": return _hydrate_record(value, value.get("$type", descriptor.name), database)
 	return null
@@ -280,7 +305,9 @@ static func _hydrate_record(raw: Dictionary, type_name: String, database: Dictio
 	var record = _new_record(type_name)
 	if record == null: return null
 	record._coflow_type = type_name
-	if "id" in raw: record.id = raw.id
+	if "id" in raw:
+		var id_enum = Types.ID_ENUMS.get(type_name)
+		record.id = _parse_enum(id_enum, raw.id) if id_enum != null else raw.id
 	for field in Types.FIELDS.get(type_name, []):
 		record.set(field.name, _hydrate(raw.get(field.name), field.descriptor, database))
 	return record
@@ -291,7 +318,11 @@ static func _resolve(value, descriptor: Dictionary, database: Dictionary):
 		value.default = _resolve(value.default, descriptor.value, database)
 		return value
 	var kind: String = descriptor.kind
-	if kind == "ref": return database.get(descriptor.name, {}).get(value.id)
+	if kind == "ref":
+		for target in descriptor.targets:
+			var record = database.get(target, {}).get(value.id)
+			if record != null: return record
+		return null
 	if kind == "nullable": return _resolve(value, descriptor.value, database)
 	if kind == "array":
 		for index in range(value.size()): value[index] = _resolve(value[index], descriptor.value, database)
@@ -337,7 +368,7 @@ static func load(directory: String):
             snake(singleton),
             singleton
         );
-        let _ = writeln!(out, "\tif raw_{} and not raw_{}.is_empty(): result.{} = _hydrate_record(raw_{}[0], {:?}, database)", snake(singleton), snake(singleton), snake(singleton), snake(singleton), singleton);
+        let _ = writeln!(out, "\tif raw_{} and not raw_{}.is_empty():\n\t\tresult.{} = _hydrate_record(raw_{}[0], {:?}, database)\n\t\t_resolve_record(result.{}, {:?}, database)", snake(singleton), snake(singleton), snake(singleton), snake(singleton), singleton, snake(singleton), singleton);
     }
     out.push_str("\treturn result\n");
     out
@@ -367,15 +398,33 @@ fn descriptor(value: &CftValueType, model: &CodegenModel, localized: bool) -> St
         CftValueType::Float => "{ \"kind\": \"float\" }".to_string(),
         CftValueType::Bool => "{ \"kind\": \"bool\" }".to_string(),
         CftValueType::String => "{ \"kind\": \"string\" }".to_string(),
-        CftValueType::Enum(name) => format!("{{ \"kind\": \"enum\", \"name\": {name:?} }}"),
-        CftValueType::RecordRef(name) => format!("{{ \"kind\": \"ref\", \"name\": {name:?} }}"),
-        CftValueType::Object(name) => format!("{{ \"kind\": \"object\", \"name\": {name:?} }}"),
+        CftValueType::Enum(name) => {
+            format!("{{ \"kind\": \"enum\", \"name\": {:?} }}", name.as_str())
+        }
+        CftValueType::RecordRef(name) => {
+            let targets = model.type_by_name(name).map_or_else(String::new, |ty| {
+                ty.concrete_types
+                    .iter()
+                    .map(|target| format!("{target:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            });
+            let id_enum = model
+                .type_by_name(name)
+                .and_then(|ty| ty.id_as_enum.as_ref())
+                .map_or_else(|| "null".to_string(), |name| format!("{name:?}"));
+            format!("{{ \"kind\": \"ref\", \"name\": {:?}, \"id_enum\": {id_enum}, \"targets\": [ {targets} ] }}", name.as_str())
+        }
+        CftValueType::Object(name) => {
+            format!("{{ \"kind\": \"object\", \"name\": {:?} }}", name.as_str())
+        }
         CftValueType::Array(inner) => format!(
             "{{ \"kind\": \"array\", \"value\": {} }}",
             descriptor(inner, model, false)
         ),
-        CftValueType::Dict(_, inner) => format!(
-            "{{ \"kind\": \"dict\", \"value\": {} }}",
+        CftValueType::Dict(key, inner) => format!(
+            "{{ \"kind\": \"dict\", \"key\": {}, \"value\": {} }}",
+            descriptor(key, model, false),
             descriptor(inner, model, false)
         ),
         CftValueType::Nullable(inner) => format!(
@@ -423,4 +472,34 @@ fn snake(value: &str) -> String {
 
 fn upper_snake(value: &str) -> String {
     snake(value).to_uppercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{render_json_loader, render_types};
+    use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+    use coflow_codegen_core::CodegenModel;
+
+    #[test]
+    fn generated_gdscript_preserves_inheritance_and_runtime_key_types() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "@idAsEnum(ItemId) abstract type Item {} type Weapon : Item {} enum ItemId {} enum Slot { Main = 0, } @struct sealed type Details { note: string; } @singleton type Settings { item: &Item; } type Holder { item: &Item; attrs: {Slot: int}; details: Details; }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+        let variants = serde_json::json!({"ItemId": [{"name": "sword", "value": 0}]});
+        let model = CodegenModel::build(&schema, None, &variants).expect("model");
+
+        let types = render_types(&model);
+        let loader = render_json_loader(&model);
+        assert!(types.contains("class Weapon extends Item:"));
+        assert!(types.contains("var id: ItemId"));
+        assert!(types.contains("\"sword\": 0"));
+        assert!(types.contains("\"key\": {"));
+        assert!(types.contains("\"name\": \"Slot\""), "{types}");
+        assert!(!types.contains("var details: Dictionary = {}"));
+        assert!(loader.contains("var converted_key = _hydrate_key(key, descriptor.key)"));
+        assert!(loader.contains("for target in descriptor.targets:"));
+        assert!(loader.contains("_resolve_record(result.settings, \"Settings\", database)"));
+    }
 }

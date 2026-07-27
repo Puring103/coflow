@@ -63,3 +63,96 @@ fn assigns_user_tags_by_canonical_field_name() {
     assert!(contract.contains("string alpha = 16;"));
     assert!(contract.contains("sint64 zed = 17;"));
 }
+
+#[test]
+fn nested_nullable_collection_bytes_match_generated_wrapper_contract() {
+    let modules = parse_modules([CftFile::from_source(
+        ModuleId::from("main"),
+        "type Item { attrs: {string: [string]?}; }",
+    )]);
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "x",
+        "Item",
+        [(
+            "attrs",
+            LoadedValueDraft::dict([(
+                "slot".into(),
+                LoadedValueDraft::Array(vec!["a".into(), "b".into()]),
+            )]),
+        )],
+    );
+    let model = builder.build().expect("model");
+
+    let artifacts = export_protobuf_artifacts(&schema, &model).expect("protobuf export");
+    let contract = artifacts
+        .files()
+        .iter()
+        .find(|file| file.relative_path.to_string_lossy() == "_schema/coflow.proto")
+        .expect("contract");
+    let ArtifactContent::Text(contract) = &contract.content else {
+        panic!("contract should be text");
+    };
+    assert!(contract.contains("ItemAttrsEntryValueNullable value = 2;"));
+    assert!(contract.contains("optional ItemAttrsEntryValueValueArray value = 1;"));
+    assert!(contract.contains("repeated string items = 1;"));
+
+    let data = artifacts
+        .files()
+        .iter()
+        .find(|file| file.relative_path.to_string_lossy() == "Item.pb")
+        .expect("table data");
+    let ArtifactContent::Bytes(data) = &data.content else {
+        panic!("table should contain bytes");
+    };
+    assert_eq!(
+        data,
+        &[
+            0x0a, 0x16, 0x0a, 0x01, b'x', 0x82, 0x01, 0x10, 0x0a, 0x04, b's', b'l', b'o', b't',
+            0x12, 0x08, 0x0a, 0x06, 0x0a, 0x01, b'a', 0x0a, 0x01, b'b',
+        ]
+    );
+}
+
+#[test]
+fn rejects_projected_protobuf_name_collisions() {
+    let modules = parse_modules([CftFile::from_source(
+        ModuleId::from("main"),
+        "type FooBar {} type foo_bar {}",
+    )]);
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+    let model = CfdDataModel::builder(&schema).build().expect("model");
+
+    let error = export_protobuf_artifacts(&schema, &model).expect_err("collision");
+    assert!(error
+        .to_string()
+        .contains("duplicate Protobuf name `FooBar`"));
+}
+
+#[test]
+fn struct_types_only_emit_inline_messages() {
+    let modules = parse_modules([CftFile::from_source(
+        ModuleId::from("main"),
+        "@struct sealed type Details { note: string; } type Item { details: Details; }",
+    )]);
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+    let model = CfdDataModel::builder(&schema).build().expect("model");
+
+    let artifacts = export_protobuf_artifacts(&schema, &model).expect("protobuf export");
+    let contract = artifacts
+        .files()
+        .iter()
+        .find(|file| file.relative_path.to_string_lossy() == "_schema/coflow.proto")
+        .expect("contract");
+    let ArtifactContent::Text(contract) = &contract.content else {
+        panic!("contract should be text");
+    };
+
+    assert!(contract.contains("message Details {"));
+    assert!(!contract.contains("message DetailsTable {"));
+    assert!(!artifacts
+        .files()
+        .iter()
+        .any(|file| file.relative_path.to_string_lossy() == "Details.pb"));
+}

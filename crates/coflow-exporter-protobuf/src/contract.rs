@@ -14,6 +14,7 @@ pub(crate) struct Record {
     pub(crate) message_name: String,
     pub(crate) table_name: String,
     pub(crate) has_id: bool,
+    pub(crate) has_table: bool,
     pub(crate) fields: Vec<Field>,
 }
 
@@ -50,6 +51,7 @@ struct Builder<'a> {
     schema: &'a CftSchema,
     helpers: Vec<Message>,
     helper_names: BTreeSet<String>,
+    message_names: BTreeSet<String>,
 }
 
 impl Contract {
@@ -59,16 +61,38 @@ impl Contract {
                 "Protobuf export does not yet support localized dimension tables",
             ));
         }
+        let mut message_names = BTreeSet::new();
+        for ty in schema.all_types().filter(|ty| !ty.is_abstract) {
+            let message_name = pascal(ty.name.as_str());
+            validate_identifier("message", ty.name.as_str(), &message_name)?;
+            insert_projected_name(
+                &mut message_names,
+                "message",
+                ty.name.as_str(),
+                &message_name,
+            )?;
+            if !ty.is_struct {
+                let table_name = format!("{message_name}Table");
+                insert_projected_name(
+                    &mut message_names,
+                    "message",
+                    &format!("{} table", ty.name),
+                    &table_name,
+                )?;
+            }
+        }
         let mut builder = Builder {
             schema,
             helpers: Vec::new(),
             helper_names: BTreeSet::new(),
+            message_names,
         };
         let mut records = Vec::new();
         for ty in schema.all_types().filter(|ty| !ty.is_abstract) {
             let message_name = pascal(ty.name.as_str());
             let mut fields = ty.all_fields().collect::<Vec<_>>();
             fields.sort_by(|left, right| left.name.cmp(&right.name));
+            let mut field_names = BTreeSet::new();
             let fields = fields
                 .into_iter()
                 .enumerate()
@@ -83,6 +107,14 @@ impl Contract {
                             ))
                         })?;
                     let context = format!("{}{}", message_name, pascal(field.name.as_str()));
+                    let projected_name = snake(field.name.as_str());
+                    validate_identifier("field", field.name.as_str(), &projected_name)?;
+                    insert_projected_name(
+                        &mut field_names,
+                        "field",
+                        field.name.as_str(),
+                        &projected_name,
+                    )?;
                     let proto =
                         builder.field(&field.value_type, &context, field.name.as_str(), number)?;
                     Ok(Field {
@@ -97,6 +129,7 @@ impl Contract {
                 table_name: format!("{message_name}Table"),
                 message_name,
                 has_id: !ty.is_struct,
+                has_table: !ty.is_struct,
                 fields,
             });
         }
@@ -151,7 +184,7 @@ impl Builder<'_> {
                         },
                     ],
                     oneof_name: None,
-                });
+                })?;
                 (helper, FieldLabel::Repeated)
             }
             other => (self.singular_type(other, context)?, FieldLabel::Singular),
@@ -182,21 +215,40 @@ impl Builder<'_> {
                             self.schema.concrete_assignable_types(name).ok_or_else(|| {
                                 ProtobufExportError::new(format!("unknown type `{name}`"))
                             })?;
+                        let mut field_names = BTreeSet::new();
                         let fields = concrete
                             .iter()
                             .enumerate()
-                            .map(|(index, actual)| ProtoField {
-                                name: snake(actual),
-                                number: u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1),
-                                type_name: pascal(actual),
-                                label: FieldLabel::Singular,
+                            .map(|(index, actual)| {
+                                let name = snake(actual);
+                                validate_identifier("oneof field", actual.as_str(), &name)?;
+                                insert_projected_name(
+                                    &mut field_names,
+                                    "oneof field",
+                                    actual.as_str(),
+                                    &name,
+                                )?;
+                                let number = u32::try_from(index)
+                                    .ok()
+                                    .and_then(|index| index.checked_add(1))
+                                    .ok_or_else(|| {
+                                        ProtobufExportError::new(format!(
+                                            "type `{name}` has too many Protobuf alternatives"
+                                        ))
+                                    })?;
+                                Ok(ProtoField {
+                                    name,
+                                    number,
+                                    type_name: pascal(actual),
+                                    label: FieldLabel::Singular,
+                                })
                             })
-                            .collect();
+                            .collect::<Result<Vec<_>, ProtobufExportError>>()?;
                         self.add_helper(Message {
                             name: helper.clone(),
                             fields,
                             oneof_name: Some("value".to_string()),
-                        });
+                        })?;
                     }
                     Ok(helper)
                 } else {
@@ -215,7 +267,7 @@ impl Builder<'_> {
                         label: FieldLabel::Optional,
                     }],
                     oneof_name: None,
-                });
+                })?;
                 Ok(helper)
             }
             CftValueType::Array(inner) => {
@@ -230,7 +282,7 @@ impl Builder<'_> {
                         label: FieldLabel::Repeated,
                     }],
                     oneof_name: None,
-                });
+                })?;
                 Ok(helper)
             }
             CftValueType::Dict(key, value) => {
@@ -254,7 +306,7 @@ impl Builder<'_> {
                         },
                     ],
                     oneof_name: None,
-                });
+                })?;
                 let helper = format!("{context}Dict");
                 self.add_helper(Message {
                     name: helper.clone(),
@@ -265,17 +317,101 @@ impl Builder<'_> {
                         label: FieldLabel::Repeated,
                     }],
                     oneof_name: None,
-                });
+                })?;
                 Ok(helper)
             }
         }
     }
 
-    fn add_helper(&mut self, message: Message) {
-        if self.helper_names.insert(message.name.clone()) {
-            self.helpers.push(message);
+    fn add_helper(&mut self, message: Message) -> Result<(), ProtobufExportError> {
+        validate_identifier("helper message", &message.name, &message.name)?;
+        if !self.message_names.insert(message.name.clone()) {
+            return Err(ProtobufExportError::new(format!(
+                "generated Protobuf message name `{}` collides with another schema symbol",
+                message.name
+            )));
         }
+        self.helper_names.insert(message.name.clone());
+        self.helpers.push(message);
+        Ok(())
     }
+}
+
+fn insert_projected_name(
+    names: &mut BTreeSet<String>,
+    kind: &str,
+    source_name: &str,
+    projected_name: &str,
+) -> Result<(), ProtobufExportError> {
+    if names.insert(projected_name.to_string()) {
+        Ok(())
+    } else {
+        Err(ProtobufExportError::new(format!(
+            "{kind} `{source_name}` projects to duplicate Protobuf name `{projected_name}`"
+        )))
+    }
+}
+
+fn validate_identifier(
+    kind: &str,
+    source_name: &str,
+    projected_name: &str,
+) -> Result<(), ProtobufExportError> {
+    let mut characters = projected_name.chars();
+    let valid_start = characters
+        .next()
+        .is_some_and(|character| character == '_' || character.is_ascii_alphabetic());
+    let valid_rest =
+        characters.all(|character| character == '_' || character.is_ascii_alphanumeric());
+    if !valid_start || !valid_rest || protobuf_keywords().contains(&projected_name) {
+        return Err(ProtobufExportError::new(format!(
+            "{kind} `{source_name}` projects to invalid Protobuf identifier `{projected_name}`"
+        )));
+    }
+    Ok(())
+}
+
+fn protobuf_keywords() -> &'static [&'static str] {
+    &[
+        "bool",
+        "bytes",
+        "double",
+        "enum",
+        "extend",
+        "extensions",
+        "fixed32",
+        "fixed64",
+        "float",
+        "group",
+        "import",
+        "int32",
+        "int64",
+        "map",
+        "max",
+        "message",
+        "oneof",
+        "option",
+        "optional",
+        "package",
+        "public",
+        "repeated",
+        "required",
+        "reserved",
+        "returns",
+        "rpc",
+        "service",
+        "sfixed32",
+        "sfixed64",
+        "sint32",
+        "sint64",
+        "stream",
+        "string",
+        "syntax",
+        "to",
+        "uint32",
+        "uint64",
+        "weak",
+    ]
 }
 
 pub(crate) fn pascal(value: &str) -> String {

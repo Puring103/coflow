@@ -135,12 +135,9 @@ fn load_json_source(
             format!("failed to read JSON source `{}`: {error}", path.display()),
         )
     })?;
-    let root = serde_json::from_str::<JsonNode>(&text).map_err(|error| {
-        file_error(
-            path,
-            format!("failed to parse JSON source `{}`: {error}", path.display()),
-        )
-    })?;
+    let source_map = JsonSourceMap::build(&text);
+    let root =
+        serde_json::from_str::<JsonNode>(&text).map_err(|error| parse_error(path, &error))?;
     let declared_type = options.record_type.clone().or_else(|| {
         path.file_stem()
             .and_then(|name| name.to_str())
@@ -172,7 +169,14 @@ fn load_json_source(
     };
     let mut records = Vec::with_capacity(items.len());
     for (index, item) in items.into_iter().enumerate() {
-        records.push(lower_record(schema, path, &declared_type, item, index)?);
+        records.push(lower_record(
+            schema,
+            path,
+            &source_map,
+            &declared_type,
+            item,
+            index,
+        )?);
     }
     Ok(records)
 }
@@ -180,6 +184,7 @@ fn load_json_source(
 fn lower_record(
     schema: &CftSchema,
     path: &Path,
+    source_map: &JsonSourceMap,
     declared_type: &str,
     node: JsonNode,
     index: usize,
@@ -187,6 +192,7 @@ fn lower_record(
     let JsonNode::Object(mut object) = node else {
         return Err(path_error(
             path,
+            Some(source_map),
             format!("$[{index}]"),
             "record must be an object",
         ));
@@ -194,6 +200,7 @@ fn lower_record(
     let key = take_string(&mut object, "id").ok_or_else(|| {
         path_error(
             path,
+            Some(source_map),
             format!("$[{index}].id"),
             "record requires a string `id`",
         )
@@ -203,11 +210,19 @@ fn lower_record(
     if !schema.is_assignable(&actual_type, declared_type) {
         return Err(path_error(
             path,
+            Some(source_map),
             format!("$[{index}].$type"),
             format!("type `{actual_type}` is not assignable to `{declared_type}`"),
         ));
     }
-    let fields = lower_object_fields(schema, path, &actual_type, object, &format!("$[{index}]"))?;
+    let fields = lower_object_fields(
+        schema,
+        path,
+        source_map,
+        &actual_type,
+        object,
+        &format!("$[{index}]"),
+    )?;
     Ok(
         LoadedRecordDraft::new(key, actual_type, fields).with_origin(RecordOrigin::File {
             path: path.to_path_buf(),
@@ -219,6 +234,7 @@ fn lower_record(
 fn lower_object_fields(
     schema: &CftSchema,
     path: &Path,
+    source_map: &JsonSourceMap,
     actual_type: &str,
     object: BTreeMap<String, JsonNode>,
     json_path: &str,
@@ -226,6 +242,7 @@ fn lower_object_fields(
     let Some(type_meta) = schema.resolve_type(actual_type) else {
         return Err(path_error(
             path,
+            Some(source_map),
             json_path,
             format!("unknown object type `{actual_type}`"),
         ));
@@ -235,6 +252,7 @@ fn lower_object_fields(
         let Some(field) = type_meta.field(&name) else {
             return Err(path_error(
                 path,
+                Some(source_map),
                 format!("{json_path}.{name}"),
                 format!("type `{actual_type}` has no field `{name}`"),
             ));
@@ -244,6 +262,7 @@ fn lower_object_fields(
             lower_value(
                 schema,
                 path,
+                source_map,
                 &field.value_type,
                 value,
                 &format!("{json_path}.{name}"),
@@ -256,6 +275,7 @@ fn lower_object_fields(
 fn lower_value(
     schema: &CftSchema,
     path: &Path,
+    source_map: &JsonSourceMap,
     ty: &CftValueType,
     node: JsonNode,
     json_path: &str,
@@ -264,7 +284,7 @@ fn lower_value(
         return if matches!(node, JsonNode::Null) {
             Ok(LoadedValueDraft::Null)
         } else {
-            lower_value(schema, path, inner, node, json_path)
+            lower_value(schema, path, source_map, inner, node, json_path)
         };
     }
     match (ty, node) {
@@ -277,6 +297,7 @@ fn lower_value(
             parse_enum_text(enum_name, &value).ok_or_else(|| {
                 path_error(
                     path,
+                    Some(source_map),
                     json_path,
                     format!("invalid `{enum_name}` value `{value}`"),
                 )
@@ -293,7 +314,14 @@ fn lower_value(
             .into_iter()
             .enumerate()
             .map(|(index, value)| {
-                lower_value(schema, path, inner, value, &format!("{json_path}[{index}]"))
+                lower_value(
+                    schema,
+                    path,
+                    source_map,
+                    inner,
+                    value,
+                    &format!("{json_path}[{index}]"),
+                )
             })
             .collect::<Result<Vec<_>, _>>()
             .map(LoadedValueDraft::Array),
@@ -302,11 +330,17 @@ fn lower_value(
             .map(|(key, value)| {
                 Ok((
                     lower_dict_key(key_ty, &key).ok_or_else(|| {
-                        path_error(path, json_path, format!("invalid dictionary key `{key}`"))
+                        path_error(
+                            path,
+                            Some(source_map),
+                            json_path,
+                            format!("invalid dictionary key `{key}`"),
+                        )
                     })?,
                     lower_value(
                         schema,
                         path,
+                        source_map,
                         value_ty,
                         value,
                         &format!("{json_path}[{key:?}]"),
@@ -320,11 +354,12 @@ fn lower_value(
             if !schema.is_assignable(&actual, declared) {
                 return Err(path_error(
                     path,
+                    Some(source_map),
                     json_path,
                     format!("type `{actual}` is not assignable to `{declared}`"),
                 ));
             }
-            let fields = lower_object_fields(schema, path, &actual, object, json_path)?;
+            let fields = lower_object_fields(schema, path, source_map, &actual, object, json_path)?;
             Ok(LoadedValueDraft::Object {
                 actual_type: (actual != declared.as_str()).then_some(actual),
                 fields,
@@ -332,6 +367,7 @@ fn lower_value(
         }
         (expected, actual) => Err(path_error(
             path,
+            Some(source_map),
             json_path,
             format!("expected `{expected}`, found {}", actual.kind()),
         )),
@@ -391,26 +427,227 @@ fn config_error(message: impl Into<String>) -> DiagnosticSet {
 }
 
 fn file_error(path: &Path, message: impl Into<String>) -> DiagnosticSet {
-    path_error(path, "$", message)
+    path_error(path, None, "$", message)
 }
 
 fn path_error(
     path: &Path,
+    source_map: Option<&JsonSourceMap>,
     json_path: impl Into<String>,
     message: impl Into<String>,
 ) -> DiagnosticSet {
+    let json_path = json_path.into();
+    let (start_line, start_character, end_line, end_character) = source_map
+        .and_then(|source_map| source_map.location(&json_path))
+        .unwrap_or((0, 0, 0, 1));
     DiagnosticSet::one(
         Diagnostic::error("JSON-SOURCE", "JSON", message).with_primary(Label {
             location: SourceLocation::FileSpan {
                 path: PathBuf::from(path),
-                start_line: 0,
-                start_character: 0,
-                end_line: 0,
-                end_character: 1,
+                start_line,
+                start_character,
+                end_line,
+                end_character,
             },
-            message: Some(json_path.into()),
+            message: Some(json_path),
         }),
     )
+}
+
+fn parse_error(path: &Path, error: &serde_json::Error) -> DiagnosticSet {
+    let line = error.line().saturating_sub(1);
+    let character = error.column().saturating_sub(1);
+    DiagnosticSet::one(
+        Diagnostic::error(
+            "JSON-SOURCE",
+            "JSON",
+            format!("failed to parse JSON source `{}`: {error}", path.display()),
+        )
+        .with_primary(Label {
+            location: SourceLocation::FileSpan {
+                path: path.to_path_buf(),
+                start_line: line,
+                start_character: character,
+                end_line: line,
+                end_character: character.saturating_add(1),
+            },
+            message: Some("$".to_string()),
+        }),
+    )
+}
+
+struct JsonSourceMap {
+    text: String,
+    line_starts: Vec<usize>,
+    spans: BTreeMap<String, (usize, usize)>,
+}
+
+impl JsonSourceMap {
+    fn build(text: &str) -> Self {
+        let mut parser = JsonSpanParser {
+            text,
+            offset: 0,
+            spans: BTreeMap::new(),
+        };
+        let _ = parser.parse_value("$");
+        let mut line_starts = vec![0];
+        for (index, byte) in text.bytes().enumerate() {
+            if byte == b'\n' {
+                line_starts.push(index + 1);
+            }
+        }
+        Self {
+            text: text.to_string(),
+            line_starts,
+            spans: parser.spans,
+        }
+    }
+
+    fn location(&self, path: &str) -> Option<(usize, usize, usize, usize)> {
+        let mut candidate = path;
+        let (start, end) = loop {
+            if let Some(span) = self.spans.get(candidate) {
+                break *span;
+            }
+            let dot = candidate.rfind('.');
+            let bracket = candidate.rfind('[');
+            let truncate = match (dot, bracket) {
+                (Some(left), Some(right)) => left.max(right),
+                (Some(index), None) | (None, Some(index)) => index,
+                (None, None) => return None,
+            };
+            candidate = &candidate[..truncate];
+        };
+        let (start_line, start_character) = self.line_character(start);
+        let (end_line, end_character) = self.line_character(end);
+        Some((start_line, start_character, end_line, end_character))
+    }
+
+    fn line_character(&self, offset: usize) -> (usize, usize) {
+        let line = self
+            .line_starts
+            .partition_point(|start| *start <= offset)
+            .saturating_sub(1);
+        let line_start = self.line_starts[line];
+        let character = self.text[line_start..offset.min(self.text.len())]
+            .chars()
+            .count();
+        (line, character)
+    }
+}
+
+struct JsonSpanParser<'a> {
+    text: &'a str,
+    offset: usize,
+    spans: BTreeMap<String, (usize, usize)>,
+}
+
+impl JsonSpanParser<'_> {
+    fn parse_value(&mut self, path: &str) -> Option<()> {
+        self.skip_whitespace();
+        let start = self.offset;
+        match self.peek()? {
+            b'{' => self.parse_object(path)?,
+            b'[' => self.parse_array(path)?,
+            b'"' => {
+                self.parse_string()?;
+            }
+            _ => {
+                while self.peek().is_some_and(|byte| {
+                    !byte.is_ascii_whitespace() && !matches!(byte, b',' | b']' | b'}')
+                }) {
+                    self.offset += 1;
+                }
+            }
+        }
+        self.spans.insert(path.to_string(), (start, self.offset));
+        Some(())
+    }
+
+    fn parse_object(&mut self, path: &str) -> Option<()> {
+        self.offset += 1;
+        self.skip_whitespace();
+        if self.peek() == Some(b'}') {
+            self.offset += 1;
+            return Some(());
+        }
+        loop {
+            self.skip_whitespace();
+            let key_start = self.offset;
+            self.parse_string()?;
+            let key = serde_json::from_str::<String>(&self.text[key_start..self.offset]).ok()?;
+            self.skip_whitespace();
+            if self.peek()? != b':' {
+                return None;
+            }
+            self.offset += 1;
+            let field_path = format!("{path}.{key}");
+            self.parse_value(&field_path)?;
+            if let Some(span) = self.spans.get(&field_path).copied() {
+                self.spans.insert(format!("{path}[{key:?}]"), span);
+            }
+            self.skip_whitespace();
+            match self.peek()? {
+                b',' => self.offset += 1,
+                b'}' => {
+                    self.offset += 1;
+                    return Some(());
+                }
+                _ => return None,
+            }
+        }
+    }
+
+    fn parse_array(&mut self, path: &str) -> Option<()> {
+        self.offset += 1;
+        self.skip_whitespace();
+        if self.peek() == Some(b']') {
+            self.offset += 1;
+            return Some(());
+        }
+        let mut index = 0usize;
+        loop {
+            self.parse_value(&format!("{path}[{index}]"))?;
+            index += 1;
+            self.skip_whitespace();
+            match self.peek()? {
+                b',' => self.offset += 1,
+                b']' => {
+                    self.offset += 1;
+                    return Some(());
+                }
+                _ => return None,
+            }
+        }
+    }
+
+    fn parse_string(&mut self) -> Option<()> {
+        if self.peek()? != b'"' {
+            return None;
+        }
+        self.offset += 1;
+        while let Some(byte) = self.peek() {
+            self.offset += 1;
+            match byte {
+                b'"' => return Some(()),
+                b'\\' => {
+                    self.offset += 1;
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn skip_whitespace(&mut self) {
+        while self.peek().is_some_and(|byte| byte.is_ascii_whitespace()) {
+            self.offset += 1;
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.text.as_bytes().get(self.offset).copied()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -523,6 +760,7 @@ impl<'de> Visitor<'de> for JsonNodeVisitor {
 #[cfg(test)]
 mod tests {
     use super::{load_json_source, JsonSourceOptions};
+    use coflow_api::SourceLocation;
     use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
     use coflow_data_model::{CfdDataModel, CfdValue};
     use std::fs;
@@ -569,6 +807,39 @@ mod tests {
         let error = serde_json::from_str::<super::JsonNode>(r#"{"id":"a","id":"b"}"#)
             .expect_err("duplicate property");
         assert!(error.to_string().contains("duplicate JSON property `id`"));
+        Ok(())
+    }
+
+    #[test]
+    fn semantic_diagnostics_point_to_the_json_value() -> TestResult {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "type Item { count: int; }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default())
+            .map_err(|error| format!("schema: {error:?}"))?;
+        let dir = tempdir().map_err(|error| error.to_string())?;
+        let path = dir.path().join("Item.json");
+        fs::write(
+            &path,
+            "[\n  {\n    \"id\": \"x\",\n    \"count\": \"bad\"\n  }\n]",
+        )
+        .map_err(|error| error.to_string())?;
+
+        let error = load_json_source(&schema, &path, &JsonSourceOptions { record_type: None })
+            .expect_err("invalid count");
+        let primary = error.diagnostics[0].primary.as_ref().ok_or("primary")?;
+        assert_eq!(primary.message.as_deref(), Some("$[0].count"));
+        assert!(matches!(
+            primary.location,
+            SourceLocation::FileSpan {
+                start_line: 3,
+                start_character: 13,
+                end_line: 3,
+                end_character: 18,
+                ..
+            }
+        ));
         Ok(())
     }
 }

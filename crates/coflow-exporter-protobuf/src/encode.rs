@@ -10,7 +10,7 @@ pub(crate) fn encode_tables(
     model: &CfdDataModel,
 ) -> Result<Vec<ArtifactFile>, ProtobufExportError> {
     let mut files = Vec::new();
-    for record_contract in &contract.records {
+    for record_contract in contract.records.iter().filter(|record| record.has_table) {
         let mut table = Vec::new();
         for (_, record) in model.records_of_type(&record_contract.source_name) {
             let mut payload = Vec::new();
@@ -161,7 +161,7 @@ fn encode_repeated_value(
         CftValueType::Nullable(inner) => {
             let mut wrapper = Vec::new();
             if !matches!(value, CfdValue::Null) {
-                encode_field_value(contract, schema, inner, value, 1, &mut wrapper)?;
+                encode_repeated_value(contract, schema, inner, value, 1, &mut wrapper)?;
             }
             write_bytes(tag, &wrapper, out);
             Ok(())

@@ -17,9 +17,11 @@ pub(crate) fn render_contract(contract: &Contract) -> String {
             render_field(&mut out, &field.proto, "  ");
         }
         out.push_str("}\n\n");
-        let _ = writeln!(out, "message {} {{", record.table_name);
-        let _ = writeln!(out, "  repeated {} records = 1;", record.message_name);
-        out.push_str("}\n\n");
+        if record.has_table {
+            let _ = writeln!(out, "message {} {{", record.table_name);
+            let _ = writeln!(out, "  repeated {} records = 1;", record.message_name);
+            out.push_str("}\n\n");
+        }
     }
     out
 }

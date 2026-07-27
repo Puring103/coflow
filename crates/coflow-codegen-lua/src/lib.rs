@@ -20,7 +20,7 @@ use coflow_api::{
     LoaderGenerator, ProviderBundle, ProviderRegistrationError,
 };
 use coflow_cft::CftValueType;
-use coflow_codegen_core::CodegenModel;
+use coflow_codegen_core::{CodegenModel, CodegenType};
 use std::fmt::Write;
 
 const LUA_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
@@ -182,8 +182,12 @@ fn render_types(model: &CodegenModel) -> String {
     out.push('\n');
     for ty in &model.types {
         let _ = writeln!(out, "---@class {}", pascal(&ty.name));
-        if !ty.is_abstract {
-            out.push_str("---@field id string\n");
+        if !ty.is_abstract && !ty.is_struct {
+            if ty.id_as_enum.is_some() {
+                out.push_str("---@field id integer\n");
+            } else {
+                out.push_str("---@field id string\n");
+            }
         }
         for field in &ty.all_fields {
             let _ = writeln!(
@@ -195,12 +199,26 @@ fn render_types(model: &CodegenModel) -> String {
         }
         let _ = writeln!(out, "local {} = {{}}", pascal(&ty.name));
         let _ = writeln!(out, "{}.__index = {}", pascal(&ty.name), pascal(&ty.name));
+        if let Some(parent) = &ty.parent {
+            let _ = writeln!(
+                out,
+                "setmetatable({}, {{ __index = {} }})",
+                pascal(&ty.name),
+                pascal(parent)
+            );
+        }
         let _ = writeln!(out, "M[{:?}] = {}", pascal(&ty.name), pascal(&ty.name));
+        let id_enum = ty
+            .id_as_enum
+            .as_ref()
+            .map_or_else(|| "nil".to_string(), |name| format!("{name:?}"));
         let _ = writeln!(
             out,
-            "M.types[{:?}] = {{ class = {}, fields = {{",
+            "M.types[{:?}] = {{ class = {}, has_id = {}, id_enum = {}, fields = {{",
             ty.name,
-            pascal(&ty.name)
+            pascal(&ty.name),
+            !ty.is_struct,
+            id_enum
         );
         for field in &ty.all_fields {
             let _ = writeln!(
@@ -256,6 +274,17 @@ local function parse_enum(name, value)
 end
 
 local hydrate
+local function hydrate_key(value, descriptor)
+  if descriptor.kind == "string" then return value end
+  if descriptor.kind == "int" then
+    local numeric = tonumber(value)
+    if numeric and numeric % 1 == 0 and math.abs(numeric) <= SAFE_INTEGER then return numeric end
+    return nil, "invalid integer dictionary key " .. tostring(value)
+  end
+  if descriptor.kind == "enum" then return parse_enum(descriptor.name, value) end
+  return nil, "unsupported dictionary key type"
+end
+
 hydrate = function(value, descriptor, database)
   if descriptor.localized then
     local inner, err = hydrate(value, descriptor.value, database)
@@ -273,7 +302,13 @@ hydrate = function(value, descriptor, database)
   elseif kind == "enum" then
     return parse_enum(descriptor.name, value)
   elseif kind == "ref" then
-    return { _coflow_ref = descriptor.name, id = value }
+    local id = value
+    if descriptor.id_enum then
+      local err
+      id, err = parse_enum(descriptor.id_enum, value)
+      if err then return nil, err end
+    end
+    return { _coflow_ref = descriptor.name, id = id }
   elseif kind == "nullable" then
     if value == nil or value == json.null then return nil end
     return hydrate(value, descriptor.value, database)
@@ -288,9 +323,11 @@ hydrate = function(value, descriptor, database)
   elseif kind == "dict" then
     local result = {}
     for key, item in pairs(value) do
+      local converted_key, key_err = hydrate_key(key, descriptor.key)
+      if key_err then return nil, key_err end
       local converted, err = hydrate(item, descriptor.value, database)
       if err then return nil, err end
-      result[key] = converted
+      result[converted_key] = converted
     end
     return result
   elseif kind == "object" then
@@ -304,7 +341,15 @@ function M.hydrate_record(raw, type_name, database)
   if not metadata then return nil, "unknown Coflow type " .. tostring(type_name) end
   local record = setmetatable({}, metadata.class)
   record._coflow_type = type_name
-  record.id = raw.id
+  if metadata.has_id then
+    if metadata.id_enum then
+      local id, err = parse_enum(metadata.id_enum, raw.id)
+      if err then return nil, err end
+      record.id = id
+    else
+      record.id = raw.id
+    end
+  end
   for _, field in ipairs(metadata.fields) do
     local converted, err = hydrate(raw[field.name], field.descriptor, database)
     if err then return nil, type_name .. "." .. field.name .. ": " .. err end
@@ -322,8 +367,11 @@ resolve = function(value, descriptor, database)
   end
   local kind = descriptor.kind
   if kind == "ref" then
-    local records = database[value._coflow_ref]
-    return records and records[value.id] or nil
+    for _, target in ipairs(descriptor.targets) do
+      local records = database[target]
+      if records and records[value.id] then return records[value.id] end
+    end
+    return nil
   elseif kind == "nullable" then
     return resolve(value, descriptor.value, database)
   elseif kind == "array" then
@@ -407,20 +455,42 @@ fn lua_descriptor(value: &CftValueType, model: &CodegenModel, localized: bool) -
         CftValueType::Float => "{ kind = \"float\" }".to_string(),
         CftValueType::Bool => "{ kind = \"bool\" }".to_string(),
         CftValueType::String => "{ kind = \"string\" }".to_string(),
-        CftValueType::Enum(name) => format!("{{ kind = \"enum\", name = {name:?} }}"),
-        CftValueType::RecordRef(name) => format!("{{ kind = \"ref\", name = {name:?} }}"),
+        CftValueType::Enum(name) => {
+            format!("{{ kind = \"enum\", name = {:?} }}", name.as_str())
+        }
+        CftValueType::RecordRef(name) => {
+            let targets = model.type_by_name(name).map_or_else(String::new, |ty| {
+                ty.concrete_types
+                    .iter()
+                    .map(|target| format!("{target:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            });
+            let id_enum = model
+                .type_by_name(name)
+                .and_then(|ty| ty.id_as_enum.as_ref())
+                .map_or_else(|| "nil".to_string(), |name| format!("{name:?}"));
+            format!(
+                "{{ kind = \"ref\", name = {:?}, id_enum = {id_enum}, targets = {{ {targets} }} }}",
+                name.as_str()
+            )
+        }
         CftValueType::Object(name) => {
             let polymorphic = model
                 .type_by_name(name)
-                .is_some_and(|ty| ty.concrete_types.len() > 1);
-            format!("{{ kind = \"object\", name = {name:?}, polymorphic = {polymorphic} }}")
+                .is_some_and(CodegenType::is_polymorphic);
+            format!(
+                "{{ kind = \"object\", name = {:?}, polymorphic = {polymorphic} }}",
+                name.as_str()
+            )
         }
         CftValueType::Array(inner) => format!(
             "{{ kind = \"array\", value = {} }}",
             lua_descriptor(inner, model, false)
         ),
-        CftValueType::Dict(_, inner) => format!(
-            "{{ kind = \"dict\", value = {} }}",
+        CftValueType::Dict(key, inner) => format!(
+            "{{ kind = \"dict\", key = {}, value = {} }}",
+            lua_descriptor(key, model, false),
             lua_descriptor(inner, model, false)
         ),
         CftValueType::Nullable(inner) => format!(
@@ -449,4 +519,33 @@ fn pascal(value: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{render_json_loader, render_types};
+    use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+    use coflow_codegen_core::CodegenModel;
+
+    #[test]
+    fn generated_lua_converts_dict_keys_and_resolves_typed_base_refs() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "@idAsEnum(ItemId) abstract type Item {} type Weapon : Item {} enum ItemId {} enum Slot { Main = 0, } @struct sealed type Details { note: string; } type Holder { item: &Item; attrs: {Slot: int}; details: Details; }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+        let variants = serde_json::json!({"ItemId": [{"name": "sword", "value": 0}]});
+        let model = CodegenModel::build(&schema, None, &variants).expect("model");
+
+        let types = render_types(&model);
+        let loader = render_json_loader(&model);
+        assert!(types.contains("id_enum = \"ItemId\""));
+        assert!(types.contains("setmetatable(Weapon, { __index = Item })"));
+        assert!(types.contains("id_enum = \"ItemId\", targets = { \"Weapon\" }"));
+        assert!(types.contains("kind = \"dict\", key = { kind = \"enum\", name = \"Slot\" }"));
+        assert!(!types.contains("M.tables[\"Details\"]"));
+        assert!(loader.contains("local converted_key, key_err = hydrate_key(key, descriptor.key)"));
+        assert!(loader.contains("for _, target in ipairs(descriptor.targets) do"));
+        assert!(loader.contains("record.id = id"));
+    }
 }

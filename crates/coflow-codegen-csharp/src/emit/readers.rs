@@ -45,7 +45,7 @@ pub(super) fn read_token_expr(
             view.csharp_enum_name(name)
         )),
         CftValueType::Enum(name) => Ok(format!(
-            "CoflowJson.ReadEnum<{}>({token})",
+            "CoflowJson.Read{}({token})",
             view.csharp_enum_name(name)
         )),
         CftValueType::RecordRef(name) => {
@@ -87,7 +87,7 @@ fn read_dict_key_expr(
         CftValueType::String => Ok(key.to_string()),
         CftValueType::Int => Ok(format!("CoflowJson.ReadIntKey({key})")),
         CftValueType::Enum(name) => Ok(format!(
-            "CoflowJson.ReadEnumKey<{}>({key})",
+            "CoflowJson.Read{}Key({key})",
             view.csharp_enum_name(name)
         )),
         _ => Err(CsharpCodegenError::new(
