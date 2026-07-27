@@ -3,8 +3,8 @@ mod common;
 use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
 use common::{
-    dimension_fixture, fixture, full_tasks, incremental_tasks, nested_fixture, sample,
-    worst_fixture, Scenario,
+    diagnostic_fixture, dimension_fixture, fixture, full_tasks, incremental_tasks,
+    inheritance_fixture, nested_fixture, sample, worst_fixture, Scenario,
 };
 use std::hint::black_box;
 
@@ -19,6 +19,8 @@ fn main() {
 
     let (schema, model) = fixture(5_000);
     for scenario in [
+        Scenario::EmptyImpact,
+        Scenario::DuplicateImpact,
         Scenario::CrossTypeFanout,
         Scenario::IndependentField,
         Scenario::ProjectRecordSet,
@@ -28,6 +30,8 @@ fn main() {
     ] {
         let changes = match scenario {
             Scenario::Batch(count) => count,
+            Scenario::EmptyImpact => 0,
+            Scenario::DuplicateImpact => 100,
             _ => 1,
         };
         bench_case(&schema, &model, scenario, 5_000, 0, changes);
@@ -38,15 +42,20 @@ fn main() {
 
     for variants in [2, 5, 10] {
         let (schema, model) = dimension_fixture(5_000, variants);
-        bench_case(
-            &schema,
-            &model,
+        for scenario in [
             Scenario::DimensionVariant,
-            5_000,
-            variants,
-            1,
-        );
+            Scenario::DimensionBase,
+            Scenario::DimensionNonDimension,
+        ] {
+            bench_case(&schema, &model, scenario, 5_000, variants, 1);
+        }
     }
+
+    let (schema, model) = inheritance_fixture(5_000);
+    bench_case(&schema, &model, Scenario::InheritedField, 5_000, 0, 1);
+
+    let (schema, model) = diagnostic_fixture(1_000);
+    bench_case(&schema, &model, Scenario::DiagnosticDense, 1_000, 0, 1);
 
     let (schema, model) = worst_fixture(5_000);
     bench_case(&schema, &model, Scenario::WorstCaseFanout, 5_000, 0, 1);

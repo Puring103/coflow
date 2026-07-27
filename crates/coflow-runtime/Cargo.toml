@@ -42,3 +42,8 @@ required-features = ["internal-check-bench"]
 name = "check_execution"
 harness = false
 required-features = ["internal-check-bench"]
+
+[[bench]]
+name = "check_limits"
+harness = false
+required-features = ["internal-check-bench"]

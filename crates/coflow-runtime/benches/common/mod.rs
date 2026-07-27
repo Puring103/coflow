@@ -10,20 +10,28 @@ use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Scenario {
+    EmptyImpact,
     DirectField,
+    DuplicateImpact,
     CrossTypeFanout,
     IndependentField,
     ProjectRecordSet,
     NestedObject,
     Batch(usize),
     DimensionVariant,
+    DimensionBase,
+    DimensionNonDimension,
+    InheritedField,
+    DiagnosticDense,
     WorstCaseFanout,
 }
 
 impl Scenario {
     pub(crate) const fn name(self) -> &'static str {
         match self {
+            Self::EmptyImpact => "empty_impact",
             Self::DirectField => "direct_field",
+            Self::DuplicateImpact => "duplicate_impact",
             Self::CrossTypeFanout => "cross_type_fanout",
             Self::IndependentField => "independent_field",
             Self::ProjectRecordSet => "project_record_set",
@@ -33,6 +41,10 @@ impl Scenario {
             Self::Batch(100) => "batch_100",
             Self::Batch(_) => "batch",
             Self::DimensionVariant => "dimension_variant",
+            Self::DimensionBase => "dimension_base",
+            Self::DimensionNonDimension => "dimension_non_dimension",
+            Self::InheritedField => "inherited_field",
+            Self::DiagnosticDense => "diagnostic_dense",
             Self::WorstCaseFanout => "worst_case_fanout",
         }
     }
@@ -179,6 +191,67 @@ pub(crate) fn dimension_fixture(
     (schema, model)
 }
 
+pub(crate) fn inheritance_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
+    let schema = compile(
+        r#"
+            abstract type Base {
+                value: int;
+                check {
+                    value >= 0;
+                    value < 100;
+                }
+            }
+            type Item : Base {}
+        "#,
+        CftDimensionInputs::default(),
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    for index in 0..record_count {
+        builder.add_record(item_key(index), "Item", [("value", 1_i64.into())]);
+    }
+    let model = builder.build().expect("model");
+    (schema, model)
+}
+
+pub(crate) fn diagnostic_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
+    let schema = compile(
+        r#"
+            type Item {
+                nums: [int];
+                check {
+                    all value, index in nums {
+                        value > 0: f"value {value} at {index} must be positive";
+                    }
+                }
+            }
+        "#,
+        CftDimensionInputs::default(),
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    for index in 0..record_count {
+        builder.add_record(
+            item_key(index),
+            "Item",
+            [("nums", LoadedValueDraft::Array(vec![0_i64.into(); 32]))],
+        );
+    }
+    let model = builder.build().expect("model");
+    (schema, model)
+}
+
+pub(crate) fn limit_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
+    let schema = compile(
+        "type Item { value: int; check { value >= 0; } }",
+        CftDimensionInputs::default(),
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    for index in 0..record_count {
+        builder.add_record(item_key(index), "Item", [("value", 1_i64.into())]);
+    }
+    let model = builder.build().expect("model");
+    (schema, model)
+}
+
 pub(crate) fn worst_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
     let checks = (0..18)
         .map(|threshold| format!("owner.level > {threshold};"))
@@ -221,18 +294,28 @@ pub(crate) fn incremental_tasks(
     scenario: Scenario,
 ) -> Vec<CheckTask> {
     let (fields, record_sets) = match scenario {
-        Scenario::DirectField => (vec![field_change("Item", &item_key(0), "price")], Vec::new()),
-        Scenario::IndependentField => {
-            (vec![field_change("Item", &item_key(0), "score")], Vec::new())
-        }
+        Scenario::EmptyImpact => (Vec::new(), Vec::new()),
+        Scenario::DirectField => (
+            vec![field_change("Item", &item_key(0), "price")],
+            Vec::new(),
+        ),
+        Scenario::DuplicateImpact => (
+            vec![field_change("Item", &item_key(0), "price"); 100],
+            Vec::new(),
+        ),
+        Scenario::IndependentField => (
+            vec![field_change("Item", &item_key(0), "score")],
+            Vec::new(),
+        ),
         Scenario::CrossTypeFanout | Scenario::WorstCaseFanout => (
             vec![field_change("Character", "hero_000", "level")],
             Vec::new(),
         ),
         Scenario::ProjectRecordSet => (Vec::new(), vec!["Item".to_string()]),
-        Scenario::NestedObject => {
-            (vec![field_change("Item", &item_key(0), "parts")], Vec::new())
-        }
+        Scenario::NestedObject => (
+            vec![field_change("Item", &item_key(0), "parts")],
+            Vec::new(),
+        ),
         Scenario::Batch(count) => (
             (0..count.min(item_count(model)))
                 .map(|index| field_change("Item", &item_key(index), "price"))
@@ -249,6 +332,23 @@ pub(crate) fn incremental_tasks(
                     variant: "v0".to_string(),
                 },
             }],
+            Vec::new(),
+        ),
+        Scenario::DimensionBase => (vec![field_change("Item", &item_key(0), "name")], Vec::new()),
+        Scenario::DimensionNonDimension => (
+            vec![field_change("Item", &item_key(0), "price")],
+            Vec::new(),
+        ),
+        Scenario::InheritedField | Scenario::DiagnosticDense => (
+            vec![field_change(
+                "Item",
+                &item_key(0),
+                if matches!(scenario, Scenario::InheritedField) {
+                    "value"
+                } else {
+                    "nums"
+                },
+            )],
             Vec::new(),
         ),
     };
