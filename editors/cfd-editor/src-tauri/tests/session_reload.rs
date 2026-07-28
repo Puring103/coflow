@@ -8,6 +8,7 @@
 use cfd_editor_lib::editor::{
     BatchWriteFieldInput, CollectionEdit, CreateFieldSource, CreateRequiredInput, SessionStore,
 };
+use coflow_cft::{RecordKey, TypeName};
 use coflow_data_model::{CfdObject, CfdPathSegment, CfdValue};
 use coflow_runtime::RecordCoordinate;
 use std::collections::BTreeMap;
@@ -34,12 +35,18 @@ shield: Item { name: "Shield" }"#,
             snapshot.session_id,
             &[
                 BatchWriteFieldInput {
-                    coordinate: RecordCoordinate::new("Item", "sword"),
+                    coordinate: RecordCoordinate::new(
+                        TypeName::new("Item").expect("type"),
+                        RecordKey::new("sword").expect("key"),
+                    ),
                     field_path: path.clone(),
                     new_value: CfdValue::String("Shared".to_string()),
                 },
                 BatchWriteFieldInput {
-                    coordinate: RecordCoordinate::new("Item", "shield"),
+                    coordinate: RecordCoordinate::new(
+                        TypeName::new("Item").expect("type"),
+                        RecordKey::new("shield").expect("key"),
+                    ),
                     field_path: path,
                     new_value: CfdValue::String("Shared".to_string()),
                 },
@@ -480,7 +487,7 @@ dimensions:
     assert_eq!(dimension_records.field, "name");
     assert_eq!(dimension_records.variants, ["zh", "en"]);
     assert_eq!(dimension_records.rows.len(), 1);
-    assert_eq!(dimension_records.rows[0].coordinate.key, "potion");
+    assert_eq!(dimension_records.rows[0].coordinate.key.as_str(), "potion");
     assert_eq!(
         dimension_records.rows[0].default_value,
         CfdValue::String("Potion".to_string())
@@ -837,11 +844,23 @@ fn object_annotations_preserve_schema_field_order() {
         .get_file_records(snapshot.session_id, "data/items.cfd")
         .expect("load file records");
     let row = &records.records[0];
-    let stats = row.fields.iter().find(|field| field.name == "stats").expect("stats field");
-    let history = row.fields.iter().find(|field| field.name == "history").expect("history field");
+    let stats = row
+        .fields
+        .iter()
+        .find(|field| field.name == "stats")
+        .expect("stats field");
+    let history = row
+        .fields
+        .iter()
+        .find(|field| field.name == "history")
+        .expect("history field");
 
     assert_eq!(
-        stats.annotation.as_ref().expect("stats annotation").field_order,
+        stats
+            .annotation
+            .as_ref()
+            .expect("stats annotation")
+            .field_order,
         ["zulu", "alpha", "middle"]
     );
     assert_eq!(

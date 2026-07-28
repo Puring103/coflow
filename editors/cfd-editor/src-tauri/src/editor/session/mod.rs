@@ -42,12 +42,12 @@ use crate::editor::settings::{
     write_project_settings,
 };
 use crate::editor::types::{
-    BatchWriteFieldInput, BatchWriteFieldEditOutcome, BatchWriteFieldOutcome, CollectionEdit,
-    CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome,
-    DeletedRecordSnapshot, EditorError, EditorProjectSettings, FileRecords, FileTypeOption,
-    EditorRecordGroup, GraphData, GraphQuery, InsertRecordOutcome, PluginSchemaField,
-    PluginSchemaType, ProjectSnapshot, RecordColumn, RecordRow, RefTarget, RenameRecordOutcome,
-    ReorderRecordsOutcome, ViewConfig, WriteFieldOutcome,
+    BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit,
+    CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome, DeletedRecordSnapshot,
+    EditorError, EditorProjectSettings, EditorRecordGroup, FileRecords, FileTypeOption, GraphData,
+    GraphQuery, InsertRecordOutcome, PluginSchemaField, PluginSchemaType, ProjectSnapshot,
+    RecordColumn, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
+    WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -181,7 +181,10 @@ impl SessionStore {
         id: u32,
     ) -> Result<Vec<coflow_runtime::DimensionInfo>, EditorError> {
         let entry = self.session(id)?;
-        let session = entry.state.read().map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
         Ok(session.queries().dimensions())
     }
 
@@ -245,6 +248,7 @@ impl SessionStore {
 
     /// Update just the `column_widths` of one custom table view in place,
     /// without round-tripping the whole view list (called on drag).
+    #[allow(clippy::needless_pass_by_value)]
     pub fn set_view_column_widths(
         &self,
         id: u32,

@@ -6,9 +6,7 @@ use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use coflow_checker::CheckTask;
 use coflow_data_model::CfdDataModel;
 
-use crate::checks::impact::{
-    ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact,
-};
+use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
 use crate::checks::{plan_full_checks, plan_full_checks_bounded, plan_incremental_checks};
 use crate::RecordCoordinate;
 
@@ -62,12 +60,10 @@ pub fn plan_incremental(
         );
         let projection = match change.projection {
             BenchmarkProjection::Base => ChangedProjection::Base,
-            BenchmarkProjection::Dimension { dimension, variant } => {
-                ChangedProjection::Dimension {
-                    dimension: DimensionName::new(dimension).map_err(|error| error.to_string())?,
-                    variant: VariantName::new(variant).map_err(|error| error.to_string())?,
-                }
-            }
+            BenchmarkProjection::Dimension { dimension, variant } => ChangedProjection::Dimension {
+                dimension: DimensionName::new(dimension).map_err(|error| error.to_string())?,
+                variant: VariantName::new(variant).map_err(|error| error.to_string())?,
+            },
         };
         let changed = ChangedField {
             field: FieldName::new(change.field).map_err(|error| error.to_string())?,

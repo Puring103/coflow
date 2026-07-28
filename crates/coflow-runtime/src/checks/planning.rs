@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_cft::{
-    CftSchema, CheckDependency, CheckField, CheckOwner, CheckStatementInfo,
-};
+use coflow_cft::{CftSchema, CheckDependency, CheckField, CheckOwner, CheckStatementInfo};
 use coflow_checker::{CheckProjection, CheckTarget, CheckTask};
 use coflow_data_model::{CfdDataModel, CfdRecordId};
 
@@ -118,13 +116,7 @@ pub(super) fn plan_incremental_checks_with_limit(
         let dependency = CheckDependency::RecordSet(changed_type.clone());
         for statement in schema.check_statements_for_dependency(&dependency) {
             if let Some(info) = schema.check_statement(statement).map(|value| value.info) {
-                insert_owner_tasks(
-                    schema,
-                    model,
-                    info,
-                    &ChangedProjection::Base,
-                    &mut tasks,
-                );
+                insert_owner_tasks(schema, model, info, &ChangedProjection::Base, &mut tasks);
             }
         }
     }
@@ -143,7 +135,7 @@ struct CheckTaskBuilder {
 }
 
 impl CheckTaskBuilder {
-    fn new(max_tasks: usize) -> Self {
+    const fn new(max_tasks: usize) -> Self {
         Self {
             tasks: BTreeSet::new(),
             max_tasks,

@@ -250,7 +250,8 @@ fn semantic_tokens_do_not_treat_unknown_ref_annotation_arg_as_type() {
 type Item { @ref(Target) target: string; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-semantic-unknown-ref-annotation", source);
     let document = first_document(&build);
-    let target_offset = source.find("@ref(Target)").expect("unknown ref annotation") + "@ref(".len();
+    let target_offset =
+        source.find("@ref(Target)").expect("unknown ref annotation") + "@ref(".len();
     let target_start = position_from_byte(source, target_offset);
     let target_len = "Target".len();
     let raw_tokens = semantic_raw_tokens(&build, document);

@@ -84,7 +84,7 @@ impl SourceWriter for CsvWriter {
         _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         // CSV has exactly one sheet (the file itself). If the caller picked
         // a sheet name, accept it as a label; otherwise fall back to the
         // file stem so the resulting plan's `sheet` field is non-empty.
@@ -140,7 +140,7 @@ impl SourceWriter for CsvWriter {
         _ctx: WriteContext<'_>,
         request: &DeleteRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         ensure_table_origin_path(request.origin, path)?;
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
@@ -161,7 +161,7 @@ impl SourceWriter for CsvWriter {
         _ctx: WriteContext<'_>,
         request: &ReorderRecordsRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         let operation = match request.operation {
             ReorderRecordsOperation::Swap { first, second } => {
                 if first.actual_type != second.actual_type {

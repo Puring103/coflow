@@ -8,7 +8,6 @@ mod host;
 mod watcher;
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
-use extension_api::ExtensionManifest;
 use coflow_runtime::{
     DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
 };
@@ -19,6 +18,7 @@ use editor::{
     ProjectSnapshot, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
     WriteDimensionValueOutcome, WriteFieldOutcome,
 };
+use extension_api::ExtensionManifest;
 use host::EditorHost;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -215,7 +215,9 @@ fn load_frontend_plugin_bundle(manifest_path: &Path) -> Result<FrontendPluginBun
 }
 
 fn project_plugins_path(project_root: &Path) -> PathBuf {
-    project_root.join(PROJECT_PLUGIN_DIR).join(PROJECT_PLUGIN_FILE)
+    project_root
+        .join(PROJECT_PLUGIN_DIR)
+        .join(PROJECT_PLUGIN_FILE)
 }
 
 fn read_project_plugins(project_root: &Path) -> Result<ProjectPluginsFile, EditorError> {
@@ -226,19 +228,27 @@ fn read_project_plugins(project_root: &Path) -> Result<ProjectPluginsFile, Edito
             ..ProjectPluginsFile::default()
         });
     }
-    let contents = std::fs::read_to_string(&path)
-        .map_err(|error| EditorError::other(format!("failed to read {}: {error}", path.display())))?;
+    let contents = std::fs::read_to_string(&path).map_err(|error| {
+        EditorError::other(format!("failed to read {}: {error}", path.display()))
+    })?;
     serde_json::from_str(&contents)
         .map_err(|error| EditorError::other(format!("failed to parse {}: {error}", path.display())))
 }
 
-fn write_project_plugins(project_root: &Path, plugins: &ProjectPluginsFile) -> Result<(), EditorError> {
+fn write_project_plugins(
+    project_root: &Path,
+    plugins: &ProjectPluginsFile,
+) -> Result<(), EditorError> {
     let path = project_plugins_path(project_root);
-    let parent = path.parent().ok_or_else(|| EditorError::other("project plugin path has no parent"))?;
-    std::fs::create_dir_all(parent)
-        .map_err(|error| EditorError::other(format!("failed to create {}: {error}", parent.display())))?;
-    let contents = serde_json::to_string_pretty(plugins)
-        .map_err(|error| EditorError::other(format!("failed to encode project plugins: {error}")))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| EditorError::other("project plugin path has no parent"))?;
+    std::fs::create_dir_all(parent).map_err(|error| {
+        EditorError::other(format!("failed to create {}: {error}", parent.display()))
+    })?;
+    let contents = serde_json::to_string_pretty(plugins).map_err(|error| {
+        EditorError::other(format!("failed to encode project plugins: {error}"))
+    })?;
     std::fs::write(&path, contents)
         .map_err(|error| EditorError::other(format!("failed to write {}: {error}", path.display())))
 }
@@ -246,13 +256,20 @@ fn write_project_plugins(project_root: &Path, plugins: &ProjectPluginsFile) -> R
 fn relative_project_path(project_root: &Path, target: &Path) -> Result<PathBuf, EditorError> {
     let root = std::fs::canonicalize(project_root)
         .map_err(|error| EditorError::other(format!("failed to resolve project root: {error}")))?;
-    let target = std::fs::canonicalize(target)
-        .map_err(|error| EditorError::other(format!("failed to resolve plugin manifest: {error}")))?;
+    let target = std::fs::canonicalize(target).map_err(|error| {
+        EditorError::other(format!("failed to resolve plugin manifest: {error}"))
+    })?;
     let root_parts = root.components().collect::<Vec<_>>();
     let target_parts = target.components().collect::<Vec<_>>();
-    let shared = root_parts.iter().zip(&target_parts).take_while(|(left, right)| left == right).count();
+    let shared = root_parts
+        .iter()
+        .zip(&target_parts)
+        .take_while(|(left, right)| left == right)
+        .count();
     if shared == 0 {
-        return Err(EditorError::other("project and plugin manifest must be on the same volume"));
+        return Err(EditorError::other(
+            "project and plugin manifest must be on the same volume",
+        ));
     }
     let mut relative = PathBuf::new();
     for _ in shared..root_parts.len() {
@@ -267,19 +284,27 @@ fn relative_project_path(project_root: &Path, target: &Path) -> Result<PathBuf, 
 fn resolve_project_manifest(project_root: &Path, manifest: &str) -> Result<PathBuf, EditorError> {
     let path = Path::new(manifest);
     if path.is_absolute() {
-        return Err(EditorError::other("project plugin manifest must use a relative path"));
+        return Err(EditorError::other(
+            "project plugin manifest must use a relative path",
+        ));
     }
     std::fs::canonicalize(project_root.join(path)).map_err(|error| {
-        EditorError::other(format!("failed to resolve project plugin manifest `{manifest}`: {error}"))
+        EditorError::other(format!(
+            "failed to resolve project plugin manifest `{manifest}`: {error}"
+        ))
     })
 }
 
-fn project_bundle(project_root: &Path, entry: &ProjectPluginEntry) -> Result<FrontendPluginBundle, EditorError> {
+fn project_bundle(
+    project_root: &Path,
+    entry: &ProjectPluginEntry,
+) -> Result<FrontendPluginBundle, EditorError> {
     let manifest = resolve_project_manifest(project_root, &entry.manifest)?;
     let mut bundle = load_frontend_plugin_bundle(&manifest)?;
     if bundle.id != entry.id {
         return Err(EditorError::other(format!(
-            "project plugin `{}` does not match manifest id `{}`", entry.id, bundle.id
+            "project plugin `{}` does not match manifest id `{}`",
+            entry.id, bundle.id
         )));
     }
     bundle.scope = PluginScope::Project;
@@ -287,10 +312,15 @@ fn project_bundle(project_root: &Path, entry: &ProjectPluginEntry) -> Result<Fro
     Ok(bundle)
 }
 
-fn install_project_frontend_plugin_bundle(project_root: &Path, manifest: &Path) -> Result<FrontendPluginBundle, EditorError> {
+fn install_project_frontend_plugin_bundle(
+    project_root: &Path,
+    manifest: &Path,
+) -> Result<FrontendPluginBundle, EditorError> {
     let mut bundle = load_frontend_plugin_bundle(manifest)?;
     if !valid_plugin_id(&bundle.id) {
-        return Err(EditorError::other("plugin id may only contain ASCII letters, digits, hyphens, and underscores"));
+        return Err(EditorError::other(
+            "plugin id may only contain ASCII letters, digits, hyphens, and underscores",
+        ));
     }
     let relative = relative_project_path(project_root, manifest)?;
     let mut config = read_project_plugins(project_root)?;
@@ -308,9 +338,15 @@ fn install_project_frontend_plugin_bundle(project_root: &Path, manifest: &Path) 
     Ok(bundle)
 }
 
-fn list_project_frontend_plugin_bundles(project_root: &Path) -> Result<Vec<FrontendPluginBundle>, EditorError> {
+fn list_project_frontend_plugin_bundles(
+    project_root: &Path,
+) -> Result<Vec<FrontendPluginBundle>, EditorError> {
     let config = read_project_plugins(project_root)?;
-    let mut bundles = config.plugins.iter().map(|entry| project_bundle(project_root, entry)).collect::<Result<Vec<_>, _>>()?;
+    let mut bundles = config
+        .plugins
+        .iter()
+        .map(|entry| project_bundle(project_root, entry))
+        .collect::<Result<Vec<_>, _>>()?;
     bundles.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(bundles)
 }
@@ -320,14 +356,23 @@ fn remove_project_frontend_plugin(project_root: &Path, id: &str) -> Result<(), E
     let before = config.plugins.len();
     config.plugins.retain(|entry| entry.id != id);
     if config.plugins.len() == before {
-        return Err(EditorError::not_found(format!("project plugin `{id}` not found")));
+        return Err(EditorError::not_found(format!(
+            "project plugin `{id}` not found"
+        )));
     }
     write_project_plugins(project_root, &config)
 }
 
-fn update_project_frontend_plugin_enabled(project_root: &Path, id: &str, enabled: bool) -> Result<(), EditorError> {
+fn update_project_frontend_plugin_enabled(
+    project_root: &Path,
+    id: &str,
+    enabled: bool,
+) -> Result<(), EditorError> {
     let mut config = read_project_plugins(project_root)?;
-    let entry = config.plugins.iter_mut().find(|entry| entry.id == id)
+    let entry = config
+        .plugins
+        .iter_mut()
+        .find(|entry| entry.id == id)
         .ok_or_else(|| EditorError::not_found(format!("project plugin `{id}` not found")))?;
     entry.enabled = enabled;
     write_project_plugins(project_root, &config)
@@ -1047,7 +1092,10 @@ mod frontend_plugin_tests {
     #[test]
     fn project_plugins_store_external_manifests_as_relative_paths() {
         let root = temp_plugin_dir("project-root");
-        let plugin_dir = root.parent().expect("temp root parent").join("shared-plugin");
+        let plugin_dir = root
+            .parent()
+            .expect("temp root parent")
+            .join("shared-plugin");
         fs::create_dir_all(&root).expect("create project root");
         fs::create_dir_all(plugin_dir.join("dist")).expect("create plugin directory");
         let manifest = plugin_dir.join("plugin.json");

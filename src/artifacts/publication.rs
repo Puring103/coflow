@@ -496,7 +496,7 @@ mod tests {
             &project,
             vec![(DATA_OUTPUT_SLOT.to_string(), baseline)],
             &[],
-            EnumLockUpdate::Replace(old_lock.clone()),
+            EnumLockUpdate::Replace(old_lock),
         )
         .expect("publish baseline artifacts");
         assert_eq!(

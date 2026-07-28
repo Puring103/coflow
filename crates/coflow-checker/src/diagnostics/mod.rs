@@ -12,7 +12,9 @@ pub(crate) mod trace;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckDiagnosticContext {
-    Check { name: String },
+    Check {
+        name: String,
+    },
     When {
         expression: String,
     },
@@ -166,15 +168,18 @@ pub(crate) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
             condition, message, ..
         } => {
             let rendered = render_expr(condition);
-            message.as_ref().map_or(rendered.clone(), |message| {
-                let message = match &message.kind {
-                    CftSchemaCheckMessageKind::String(value) => format!("{value:?}"),
-                    CftSchemaCheckMessageKind::Formatted(segments) => {
-                        render_formatted_string(segments)
-                    }
-                };
-                format!("{rendered}: {message}")
-            })
+            message.as_ref().map_or_else(
+                || rendered.clone(),
+                |message| {
+                    let message = match &message.kind {
+                        CftSchemaCheckMessageKind::String(value) => format!("{value:?}"),
+                        CftSchemaCheckMessageKind::Formatted(segments) => {
+                            render_formatted_string(segments)
+                        }
+                    };
+                    format!("{rendered}: {message}")
+                },
+            )
         }
         CftSchemaCheckStmt::Quantifier {
             kind,

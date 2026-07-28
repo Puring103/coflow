@@ -18,9 +18,7 @@ use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{ProjectSession, RecordCoordinate};
-use crate::checks::impact::{
-    ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact,
-};
+use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
 use crate::indexes::RecordRef;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
 use rebuild::{rebuild_session_after_write, MutationRebuild};
@@ -125,7 +123,10 @@ impl MutationImpact {
             PreparedMutationOp::InsertRecord {
                 actual_type, key, ..
             } => {
-                self.add_structural_record(&RecordCoordinate::new(actual_type.clone(), key.clone()))
+                self.add_structural_record(&RecordCoordinate::new(
+                    actual_type.clone(),
+                    key.clone(),
+                ));
             }
             PreparedMutationOp::CancelledInsert { record, .. }
             | PreparedMutationOp::DeleteRecord { record, .. }
@@ -226,6 +227,8 @@ pub(crate) fn rebuild_after_mutation(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
     use crate::mutation::PreparedMutationOp;
     use coflow_cft::RecordKey;

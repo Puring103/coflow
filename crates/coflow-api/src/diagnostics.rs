@@ -519,6 +519,8 @@ fn spreadsheet_column_name(column: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::{Diagnostic, DiagnosticContext};
 
     #[test]
@@ -526,7 +528,10 @@ mod tests {
         let legacy = r#"{"code":"X","stage":"TEST","severity":"error","message":"failed","primary":null,"related":[]}"#;
         let diagnostic: Diagnostic = serde_json::from_str(legacy).expect("legacy diagnostic");
         assert!(diagnostic.contexts.is_empty());
-        assert_eq!(serde_json::to_value(&diagnostic).expect("serialize")["contexts"], serde_json::Value::Null);
+        assert_eq!(
+            serde_json::to_value(&diagnostic).expect("serialize")["contexts"],
+            serde_json::Value::Null
+        );
 
         let with_unknown = r#"{"code":"X","stage":"TEST","severity":"error","message":"failed","primary":null,"related":[],"contexts":[{"kind":"future","name":"kept"}]}"#;
         let diagnostic: Diagnostic =

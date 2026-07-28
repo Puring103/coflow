@@ -2,6 +2,7 @@ use super::ast::{
     CheckBlock, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt, NameRef,
 };
 
+#[allow(clippy::missing_errors_doc)]
 pub trait CheckVisitor {
     type Error;
 
@@ -80,8 +81,7 @@ pub trait CheckVisitor {
             | CheckExprKind::SafeField { expr, .. }
             | CheckExprKind::Is { expr, .. }
             | CheckExprKind::Unary { expr, .. } => self.visit_expr(expr)?,
-            CheckExprKind::Index { expr, index }
-            | CheckExprKind::SafeIndex { expr, index } => {
+            CheckExprKind::Index { expr, index } | CheckExprKind::SafeIndex { expr, index } => {
                 self.visit_expr(expr)?;
                 self.visit_expr(index)?;
             }
@@ -94,9 +94,7 @@ pub trait CheckVisitor {
                     self.visit_expr(arg)?;
                 }
             }
-            CheckExprKind::MethodCall {
-                receiver, args, ..
-            } => {
+            CheckExprKind::MethodCall { receiver, args, .. } => {
                 self.visit_expr(receiver)?;
                 for arg in args {
                     self.visit_expr(arg)?;
