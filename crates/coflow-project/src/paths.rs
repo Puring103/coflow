@@ -89,7 +89,11 @@ pub fn normalize_path(path: &Path) -> PathBuf {
             match component {
                 Component::CurDir => {}
                 Component::ParentDir => {
-                    out.pop();
+                    if matches!(out.components().next_back(), Some(Component::Normal(_))) {
+                        out.pop();
+                    } else if !out.has_root() {
+                        out.push(Component::ParentDir.as_os_str());
+                    }
                 }
                 other => out.push(other.as_os_str()),
             }
