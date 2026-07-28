@@ -1012,6 +1012,14 @@ fn path_helpers_normalize_nonexistent_paths_and_slash_components() {
         PathBuf::from("other").join("file.cft")
     );
     assert_eq!(
+        normalize_path(Path::new("../schema/main.cft")),
+        PathBuf::from("..").join("schema").join("main.cft")
+    );
+    assert_eq!(
+        normalize_path(Path::new("schema/../../shared/main.cft")),
+        PathBuf::from("..").join("shared").join("main.cft")
+    );
+    assert_eq!(
         path_to_slash(Path::new("schema").join("nested").join("a.cft").as_path()),
         "schema/nested/a.cft"
     );
