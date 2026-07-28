@@ -15,3 +15,4 @@
 
 mod artifacts;
 pub mod commands;
+pub mod data_patch;

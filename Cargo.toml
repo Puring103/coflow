@@ -87,6 +87,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
 coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
+coflow-cft = { path = "crates/coflow-cft" }
 coflow-data-model = { path = "crates/coflow-data-model" }
 coflow-exporter-json = { path = "crates/coflow-exporter-json" }
 coflow-loader-csv = { path = "crates/coflow-loader-csv" }

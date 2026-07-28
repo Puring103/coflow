@@ -1,8 +1,7 @@
 use crate::diagnostics::cli_error;
+use coflow::data_patch::DataPatchReport;
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
-use coflow_runtime::{
-    DataFileReport, DataGetReport, DataListReport, DataPatchReport, DataSourcesReport,
-};
+use coflow_runtime::{DataFileReport, DataGetReport, DataListReport, DataSourcesReport};
 use std::io::{self, Write};
 
 pub(super) use crate::write_file::write_json;

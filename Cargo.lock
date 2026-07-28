@@ -596,6 +596,7 @@ dependencies = [
  "clap",
  "coflow-api",
  "coflow-builtins",
+ "coflow-cft",
  "coflow-codegen-csharp",
  "coflow-data-model",
  "coflow-exporter-json",
