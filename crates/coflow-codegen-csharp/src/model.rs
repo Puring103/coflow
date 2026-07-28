@@ -4,9 +4,6 @@ use serde::Serialize;
 pub struct CsharpProject {
     pub namespace: String,
     pub database_class: String,
-    pub data_format: String,
-    pub uses_json: bool,
-    pub uses_messagepack: bool,
     pub uses_localization: bool,
     pub int_type: &'static str,
     pub float_type: &'static str,
@@ -84,7 +81,6 @@ pub struct CsharpConstructorAssignment {
 pub struct CsharpDatabase {
     pub tables: Vec<CsharpTable>,
     pub constructor_parameters: Vec<CsharpParameter>,
-    pub load_steps: Vec<String>,
     pub constructor_args: Vec<String>,
     pub context_fields: Vec<CsharpContextField>,
     pub context_lookups: Vec<CsharpContextLookup>,

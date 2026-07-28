@@ -8,6 +8,24 @@ export function recordsSupportGraph(records: readonly RecordRow[]): boolean {
   )))
 }
 
+/**
+ * Top-level field names that carry references (directly, or as array/dict
+ * elements). These are the fields that can render as graph edges, so the
+ * view editor offers them as selectable relations — derived from record data
+ * so it works even before the graph itself has been loaded.
+ */
+export function relationFieldNames(records: readonly RecordRow[]): string[] {
+  const names = new Set<string>()
+  for (const record of records) {
+    for (const field of record.fields) {
+      if (annotationContainsReference(field.annotation) || valueContainsReference(field.value)) {
+        names.add(field.name)
+      }
+    }
+  }
+  return [...names]
+}
+
 function annotationContainsReference(annotation: FieldAnnotation | null | undefined): boolean {
   if (!annotation) return false
   if (annotation.ref_target_type) return true

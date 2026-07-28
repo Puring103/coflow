@@ -46,10 +46,8 @@ impl<'a> SourceResolver<'a> {
         source: &SourceConfig,
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        if source.source_type.is_none()
-            && matches!(configured.location, SourceLocationSpec::Path(ref path) if path.is_dir())
-        {
-            return self.resolve_directory(configured);
+        if configured.location.path().is_dir() {
+            return self.resolve_directory(configured, source.source_type.as_deref());
         }
         let provider = self.select(configured, source.source_type.as_deref())?;
         self.decode_and_expand(&provider, configured)
@@ -61,15 +59,18 @@ impl<'a> SourceResolver<'a> {
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let source_type =
             (!configured.provider_id.is_empty()).then_some(configured.provider_id.as_str());
+        if configured.location.path().is_dir() {
+            return self.resolve_directory(configured, source_type);
+        }
         let provider = self.select(configured, source_type)?;
         self.decode_and_expand(&provider, configured)
     }
 
     pub(crate) fn resolve_dimension_sources(
         &self,
-        fields: &[crate::dimensions::DimensionField],
+        plan: &crate::dimensions::DimensionRuntimePlan,
     ) -> Result<Vec<(ResolvedLoaderSource, crate::dimensions::DimensionField)>, DiagnosticSet> {
-        dimensions::resolve_dimension_sources(self, fields)
+        dimensions::resolve_dimension_sources(self, plan)
     }
 
     pub(crate) fn resolve_exact_at(
@@ -132,8 +133,18 @@ impl<'a> SourceResolver<'a> {
     fn resolve_directory(
         &self,
         configured: &ConfiguredSource,
+        forced_provider: Option<&str>,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(directory) = &configured.location;
+        let directory = configured.location.path();
+        let selected_provider = forced_provider
+            .map(|provider_id| self.select(configured, Some(provider_id)))
+            .transpose()?;
+        let decoded_directory = selected_provider
+            .as_ref()
+            .map(|provider| {
+                decode_configured_source(provider.as_ref(), configured, &self.project.config_path)
+            })
+            .transpose()?;
         let files = discover_directory_files(directory).map_err(|error| {
             DiagnosticSet::one(project_diagnostic(
                 &self.project.config_path,
@@ -157,28 +168,50 @@ impl<'a> SourceResolver<'a> {
             let file_source = ConfiguredSource {
                 provider_id: String::new(),
                 display_name: path.display().to_string(),
-                location: SourceLocationSpec::Path(path.clone()),
+                location: SourceLocationSpec::new(path.clone()),
                 options: configured.options.clone(),
                 source_index: configured.source_index,
             };
-            let Some(provider) = self.select_optional(&file_source)? else {
-                continue;
+            let provider = if let Some(provider) = &selected_provider {
+                let extensions = provider.descriptor().extensions;
+                let matches_extension = path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extensions.contains(&extension));
+                if !extensions.is_empty() && !matches_extension {
+                    continue;
+                }
+                Arc::clone(provider)
+            } else {
+                let Some(provider) = self.select_optional(&file_source)? else {
+                    continue;
+                };
+                provider
             };
             selected.push((path, provider));
         }
-        validate_directory_options(
-            &configured.options,
-            selected.iter().map(|(_, provider)| provider.as_ref()),
-            &self.project.config_path,
-            configured.source_index,
-        )?;
+        if selected_provider.is_none() {
+            validate_directory_options(
+                &configured.options,
+                selected.iter().map(|(_, provider)| provider.as_ref()),
+                &self.project.config_path,
+                configured.source_index,
+            )?;
+        }
 
         let mut resolved = Vec::new();
         for (path, provider) in selected {
+            if let Some(template) = &decoded_directory {
+                let mut source = template.clone();
+                source.display_name = path.display().to_string();
+                source.location = SourceLocationSpec::new(path);
+                resolved.extend(self.expand_decoded(&provider, &source)?);
+                continue;
+            }
             let mut file_source = ConfiguredSource {
-                provider_id: String::new(),
+                provider_id: provider.descriptor().id.to_string(),
                 display_name: path.display().to_string(),
-                location: SourceLocationSpec::Path(path),
+                location: SourceLocationSpec::new(path),
                 options: configured.options.clone(),
                 source_index: configured.source_index,
             };
@@ -232,11 +265,19 @@ impl<'a> SourceResolver<'a> {
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let decoded =
             decode_configured_source(provider.as_ref(), configured, &self.project.config_path)?;
+        self.expand_decoded(provider, &decoded)
+    }
+
+    fn expand_decoded(
+        &self,
+        provider: &Arc<dyn SourceProvider>,
+        decoded: &ResolvedSource,
+    ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let context = SourceResolveContext {
             project_root: &self.project.root_dir,
         };
         provider
-            .resolve(context, &decoded)?
+            .resolve(context, decoded)?
             .into_iter()
             .map(|source| {
                 validate_resolved_source(provider.as_ref(), &source)?;
@@ -271,8 +312,8 @@ fn configured_source(
     source: &SourceConfig,
     source_index: Option<usize>,
 ) -> ConfiguredSource {
-    let SourceLocationSpec::Path(path) = source.location();
-    let location = SourceLocationSpec::Path(project.resolve_path(path));
+    let path = (source.location()).path();
+    let location = SourceLocationSpec::new(project.resolve_path(path));
     let display_name = path.display().to_string();
     ConfiguredSource {
         provider_id: source.source_type.clone().unwrap_or_default(),
@@ -403,6 +444,7 @@ fn directory_option_diagnostic(
             message: None,
         }),
         related: Vec::new(),
+        contexts: Vec::new(),
     }
 }
 
@@ -430,7 +472,7 @@ fn loader_selection_diagnostic(
     spec: &ConfiguredSource,
     error: SourceProviderSelectionError,
 ) -> Diagnostic {
-    let SourceLocationSpec::Path(path) = &spec.location;
+    let path = spec.location.path();
     let source = path.display().to_string();
     match error {
         SourceProviderSelectionError::UnknownSourceProvider { id } => project_diagnostic(
@@ -465,6 +507,7 @@ fn project_diagnostic(config_path: &Path, message: impl Into<String>) -> Diagnos
             message: None,
         }),
         related: Vec::new(),
+        contexts: Vec::new(),
     }
 }
 
@@ -522,7 +565,7 @@ mod tests {
         };
         let configured = ConfiguredSource {
             provider_id: DESCRIPTOR.id.to_string(),
-            location: SourceLocationSpec::Path("contract.source".into()),
+            location: SourceLocationSpec::new("contract.source"),
             options: Value::Null,
             display_name: "contract.source".to_string(),
             source_index: Some(0),
@@ -542,7 +585,7 @@ mod tests {
         };
         let source = ResolvedSource {
             provider_id: "other-provider".to_string(),
-            location: SourceLocationSpec::Path("contract.source".into()),
+            location: SourceLocationSpec::new("contract.source"),
             options: DecodedSourceOptions::new(DESCRIPTOR.id, ()),
             display_name: "contract.source".to_string(),
         };

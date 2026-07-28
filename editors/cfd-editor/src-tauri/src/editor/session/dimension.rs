@@ -1,7 +1,6 @@
-use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use coflow_runtime::{
-    DimensionValueCoordinate, DimensionValueExpectation, DimensionValueState, DimensionValueView,
-    MutationOp, MutationRequest, MutationValue,
+    DimensionName, DimensionValueCoordinate, DimensionValueExpectation, DimensionValueState,
+    DimensionValueView, FieldName, MutationOp, MutationRequest, MutationValue, VariantName,
 };
 
 use crate::editor::types::{
@@ -40,10 +39,8 @@ impl SessionStore {
             let Some(default_value) = view.record.field(&source_field).cloned() else {
                 continue;
             };
-            let actual_type = TypeName::new(target.coordinate.actual_type.clone())
-                .map_err(|error| EditorError::other(error.to_string()))?;
-            let record_key = RecordKey::new(target.coordinate.key.clone())
-                .map_err(|error| EditorError::other(error.to_string()))?;
+            let actual_type = target.coordinate.actual_type.clone();
+            let record_key = target.coordinate.key.clone();
             let mut values = std::collections::BTreeMap::new();
             for variant in &dimension.variants {
                 let coordinate = DimensionValueCoordinate {

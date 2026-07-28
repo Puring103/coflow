@@ -3,7 +3,7 @@
 //! JavaScript cannot represent the full `i64` range as `number`, while the
 //! editor's generated TypeScript bindings expose these fields as `bigint`.
 //! Serializing as strings preserves the full range and deserializing accepts
-//! both strings and legacy numeric JSON.
+//! both decimal strings and numeric JSON.
 
 use serde::de::{self, Visitor};
 use serde::{Deserializer, Serializer};

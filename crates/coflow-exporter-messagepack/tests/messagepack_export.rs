@@ -9,7 +9,7 @@
 
 use coflow_api::{ArtifactContent, DataExporter};
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
-use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
+use coflow_data_model::{CfdDataModel, LoadedDictKeyDraft, LoadedValueDraft};
 use coflow_exporter_messagepack::export_messagepack_artifacts;
 use rmpv::Value;
 use std::collections::BTreeMap;
@@ -95,19 +95,25 @@ fn exports_tables_as_messagepack_arrays_with_json_export_shape() -> TestResult {
         "iron_sword",
         "Item",
         [
-            ("rarity", CfdInputValue::enum_variant("Rarity", "Rare")),
+            ("rarity", LoadedValueDraft::enum_variant("Rarity", "Rare")),
             (
                 "tags",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from("weapon"),
-                    CfdInputValue::from("melee"),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from("weapon"),
+                    LoadedValueDraft::from("melee"),
                 ]),
             ),
             (
                 "attrs",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from("attack"), CfdInputValue::from(12_i64)),
-                    (CfdInputDictKey::from("level"), CfdInputValue::from(3_i64)),
+                LoadedValueDraft::dict([
+                    (
+                        LoadedDictKeyDraft::from("attack"),
+                        LoadedValueDraft::from(12_i64),
+                    ),
+                    (
+                        LoadedDictKeyDraft::from("level"),
+                        LoadedValueDraft::from(3_i64),
+                    ),
                 ]),
             ),
         ],
@@ -158,7 +164,7 @@ fn exports_refs_raw_keys_and_polymorphic_objects_with_type_tag_first() -> TestRe
     builder.add_record(
         "iron_sword",
         "Item",
-        [("name", CfdInputValue::from("Iron Sword"))],
+        [("name", LoadedValueDraft::from("Iron Sword"))],
     );
     builder.add_record(
         "drop_1",
@@ -166,25 +172,25 @@ fn exports_refs_raw_keys_and_polymorphic_objects_with_type_tag_first() -> TestRe
         [
             (
                 "rewards",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::object(
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::object(
                         "ItemReward",
                         [
-                            ("item", CfdInputValue::record_ref("iron_sword")),
-                            ("count", CfdInputValue::from(2_i64)),
+                            ("item", LoadedValueDraft::record_ref("iron_sword")),
+                            ("count", LoadedValueDraft::from(2_i64)),
                         ],
                     ),
-                    CfdInputValue::object(
+                    LoadedValueDraft::object(
                         "CurrencyReward",
-                        [("amount", CfdInputValue::from(50_i64))],
+                        [("amount", LoadedValueDraft::from(50_i64))],
                     ),
                 ]),
             ),
             (
                 "weights",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from(70_i64),
-                    CfdInputValue::from(30_i64),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from(70_i64),
+                    LoadedValueDraft::from(30_i64),
                 ]),
             ),
         ],
@@ -256,18 +262,21 @@ fn exports_nullable_values_and_arrays_as_messagepack_values() -> TestResult {
         [
             (
                 "maybe_stats",
-                CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(10_i64))]),
+                LoadedValueDraft::object_with_declared_type([(
+                    "hp",
+                    LoadedValueDraft::from(10_i64),
+                )]),
             ),
             (
                 "maybe_tags",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from("alpha"),
-                    CfdInputValue::from("beta"),
+                LoadedValueDraft::Array(vec![
+                    LoadedValueDraft::from("alpha"),
+                    LoadedValueDraft::from("beta"),
                 ]),
             ),
             (
                 "maybe_attrs",
-                CfdInputValue::dict([("score".into(), CfdInputValue::from(7_i64))]),
+                LoadedValueDraft::dict([("score".into(), LoadedValueDraft::from(7_i64))]),
             ),
         ],
     );
@@ -275,9 +284,9 @@ fn exports_nullable_values_and_arrays_as_messagepack_values() -> TestResult {
         "h2",
         "Holder",
         [
-            ("maybe_stats", CfdInputValue::Null),
-            ("maybe_tags", CfdInputValue::Null),
-            ("maybe_attrs", CfdInputValue::Null),
+            ("maybe_stats", LoadedValueDraft::Null),
+            ("maybe_tags", LoadedValueDraft::Null),
+            ("maybe_attrs", LoadedValueDraft::Null),
         ],
     );
     let model = build_model(builder)?;

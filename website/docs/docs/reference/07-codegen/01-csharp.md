@@ -8,21 +8,23 @@ C# codegen 根据编译后的 CFT schema 生成只读运行时 API。生成代�
 
 ```yaml
 outputs:
-  data:
-    type: json
-    dir: generated/data
-  code:
-    type: csharp
-    dir: generated/csharp
-    namespace: Game.Config
-    int_32: false
-    float_32: false
+  - data:
+      type: json
+      dir: generated/data
+    code:
+      type: csharp
+      dir: generated/csharp
+      namespace: Game.Config
+      int_32: false
+      float_32: false
+    loader:
+      type: csharp-json
 ```
 
 运行：
 
 ```powershell
-coflow codegen csharp
+coflow codegen
 ```
 
 或在完整构建中生成：
@@ -31,11 +33,7 @@ coflow codegen csharp
 coflow build
 ```
 
-命令行可以覆盖输出目录和命名空间：
-
-```powershell
-coflow codegen csharp --out generated/csharp --namespace Game.Config
-```
+输出目录、命名空间和其他 codegen 选项均从 `coflow.yaml` 读取。
 
 ## 输出目录
 
@@ -44,16 +42,18 @@ coflow codegen csharp --out generated/csharp --namespace Game.Config
 ```text
 generated/csharp/
   CoflowTables.cs
+  CoflowTables.Loader.cs
   Item.cs
+  Item.Loader.cs
   Reward.cs
   Rarity.cs
   Coflow.Runtime/
     Localization.cs
 ```
 
-`CoflowTables.cs` 是默认入口。每个 CFT type / enum 会生成对应 C# 文件。本地化字段存在时，会额外生成运行时 helper。
+`CoflowTables.cs` 是默认入口。每个 CFT type / enum 会生成对应 C# 文件。本地化字段存在时，会额外生成运行时 helper。`outputs` 使用 target 列表时，loader 成员位于配套的 `*.Loader.cs` partial 文件；使用单个对象时，loader 成员写入对应类型的 `*.cs` 文件。
 
-`outputs.code.dir` 或 `--out` 是生成成功后的实际 C# 目录。Coflow 先验证 staging 和不可变 generation，再完整替换该目录；生成成功信息会输出这个稳定目录。不可变 snapshot 记录在 `.coflow/artifacts/active.json` 的 `outputs.code.generation_dir`。不要在输出目录中放置手写代码。
+`outputs.code.dir` 指定生成后的 C# 目录。每次成功生成都会完整更新该目录，不要在其中放置手写代码。
 
 ## 入口类
 
@@ -99,7 +99,7 @@ if (tables.TbItem.TryGet("sword_fire", out var found))
 
 示例：
 
-```text
+```cft
 type item_config {
   display_name: string;
 }
@@ -173,7 +173,7 @@ object 字段会在加载时直接解析为最终对象，不生成 `xxxKey` 或
 
 `@idAsEnum` 会把指定 type 的 record key 转成 enum：
 
-```text
+```cft
 @idAsEnum(ItemId)
 type Item {
   name: string;
@@ -184,13 +184,13 @@ enum ItemId {}
 
 生成后，`TbItem` 的 key 类型会从 `string` 变为 `ItemId`，引用该 type 的字段也会使用对应 enum。
 
-`@idAsEnum` lock state 位于 `.coflow/artifacts/active.json`，与 data/code generation 在同一次 manifest 激活中发布，用来稳定 enum variant 的整数值。Coflow 在最终激活前原子更新 `coflow.yaml` 同级的 `coflow.enum.lock.json`，它是可提交到版本库的非权威镜像；已有 active manifest 始终优先，没有本地 manifest 的干净 clone 才从该文件恢复 lock state。`coflow build` 会加载数据并补全新增 variant；单独运行 `codegen csharp` 不加载数据源，因此只读取已有 lock state。
+`coflow.yaml` 同级的 `coflow.enum.lock.json` 用于保持 enum variant 的整数值稳定，应提交到版本库。`coflow build` 会根据数据补全新增 variant；单独运行 `codegen` 只使用已有编号。
 
 ## `@singleton`
 
 `@singleton` type 不生成 `Tb*` table 访问器，而是在入口类上直接生成属性：
 
-```text
+```cft
 @singleton
 type GameConfig {
   max_level: int;
@@ -212,7 +212,7 @@ singleton 属性名使用 record key 原文。
 
 `@localized` 字段生成 `Localized<T>`：
 
-```text
+```cft
 type Item {
   @localized
   name: string;
@@ -241,12 +241,12 @@ var englishName = item.Name.For("en");
 
 ## Loader 选择
 
-`outputs.data.type` 决定生成哪种 loader：
+同一个 output target 的 `data.type` 决定生成哪种 loader；也可以通过兼容的 `loader.type` 显式选择：
 
-| `outputs.data.type` | 生成 loader |
-| --- | --- |
-| `json` | Newtonsoft.Json loader |
-| `messagepack` | MessagePack-CSharp loader |
+| `data.type` | `loader.type` | 生成 loader |
+| --- | --- | --- |
+| `json` | `csharp-json` | Newtonsoft.Json loader |
+| `messagepack` | `csharp-messagepack` | MessagePack-CSharp loader |
 
 生成代码按 object 字段引用关系排序加载 table，确保被引用 table 先建立索引。存在 table 级循环引用时，C# codegen 会报错。
 
@@ -261,7 +261,7 @@ codegen 会在写文件前检查：
 - `@idAsEnum` variant 是否能生成合法 C# enum member。
 - 输出目录是否可安全接管。
 
-存在诊断时，不会激活新的 generation，也不会更新 active manifest 中的 lock state。
+存在诊断时，不会替换现有代码产物或更新 `@idAsEnum` 编号。
 
 ## 运行时定位
 

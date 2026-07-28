@@ -40,6 +40,8 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
     RecordRow {
         coordinate: view.coordinate.clone(),
         display_path: view.display_path.to_string(),
+        container_index: 0,
+        container_size: 1,
         fields,
         field_index,
         field_summaries,
@@ -53,12 +55,14 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
 pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'_>) -> RecordRow {
     let fields = record_fields(record, ctx);
     let (field_index, field_summaries) = field_indexes(&fields);
-    let coordinate = RecordCoordinate::new(record.actual_type(), record.key.clone());
+    let coordinate = record.coordinate();
     let (field_diagnostics, diagnostic_severity) =
         diagnostics_for_record(ctx.diagnostics, display_path, &coordinate);
     RecordRow {
         coordinate,
         display_path: display_path.to_string(),
+        container_index: 0,
+        container_size: 1,
         fields,
         field_index,
         field_summaries,
@@ -79,7 +83,7 @@ fn diagnostics_for_record(
             fields.push(FieldDiagnostic {
                 severity: normalized_severity(&diagnostic.severity).to_string(),
                 field_path: field_path.clone(),
-                message: diagnostic.message.clone(),
+                message: diagnostic.display_message(),
             });
         }
         match diagnostic.severity.as_str() {
@@ -113,14 +117,14 @@ fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
     let remaining_names = record
         .fields()
         .keys()
-        .filter(|name| !declared_name_set.contains(*name))
-        .cloned();
+        .map(ToString::to_string)
+        .filter(|name| !declared_name_set.contains(name));
 
     declared_names
         .into_iter()
         .chain(remaining_names)
         .filter_map(|name| {
-            let value = record.fields().get(&name)?;
+            let value = record.fields().get(name.as_str())?;
             Some(FieldCell {
                 name: name.clone(),
                 value: value.clone(),
@@ -147,7 +151,7 @@ fn build_annotation(
     ctx: &WireContext<'_>,
     parent_path: &[String],
 ) -> Option<FieldAnnotation> {
-    let host_coordinate = RecordCoordinate::new(host.actual_type(), host.key.clone());
+    let host_coordinate = host.coordinate();
     let path = CfdPath::root().field(field_name.to_string());
     let declared_shape = ctx.queries.field_shape(host.actual_type(), field_name);
     let mut annotation = annotation_for_value(
@@ -211,6 +215,8 @@ fn annotation_for_value(
         annotation
             .polymorphic_types
             .clone_from(&shape.polymorphic_types);
+        annotation.object_type.clone_from(&shape.object_type);
+        annotation.field_order.clone_from(&shape.field_order);
         // Preload the element template when the declared type is a
         // collection. Filled here (not only in the Array/Dict arms below) so
         // a nullable / empty collection still carries the template the
@@ -233,13 +239,17 @@ fn annotation_for_value(
             annotation.enum_int_value = Some(enum_value.value);
         }
         CfdValue::Object(object) => {
+            annotation.object_type = Some(object.actual_type().to_string());
+            annotation.field_order = ctx.queries.type_field_names(object.actual_type());
             for (name, child) in object.fields() {
-                let child_shape = ctx.queries.field_shape(object.actual_type(), name);
-                let child_path = path.clone().field(name.clone());
+                let child_shape = ctx.queries.field_shape(object.actual_type(), name.as_str());
+                let child_path = path.clone().field(name.as_str());
                 let child_annotation =
                     annotation_for_value(child, ctx, host, &child_path, child_shape.as_ref());
                 if !child_annotation.is_empty() {
-                    annotation.children.insert(name.clone(), child_annotation);
+                    annotation
+                        .children
+                        .insert(name.to_string(), child_annotation);
                 }
             }
         }
@@ -284,6 +294,8 @@ fn element_template(item_shape: &FieldShapeInfo) -> FieldAnnotation {
         enum_type: item_shape.enum_type.clone(),
         nullable: item_shape.nullable,
         polymorphic_types: item_shape.polymorphic_types.clone(),
+        object_type: item_shape.object_type.clone(),
+        field_order: item_shape.field_order.clone(),
         ..FieldAnnotation::default()
     };
     if let Some(inner) = item_shape.collection_item.as_deref() {

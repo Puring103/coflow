@@ -86,6 +86,7 @@ pub enum CftErrorCode {
     SingletonOnAbstractType,
     SingletonIdAsEnumConflict,
     SchemaStructureLimitExceeded,
+    DuplicateTopLevelCheck,
     UnknownValueName,
     UnknownField,
     TypeUnknownEnumVariant,
@@ -106,6 +107,8 @@ pub enum CftErrorCode {
     ShiftRequiresInt,
     RegexPatternMustBeLiteral,
     InvalidRegexPattern,
+    InvalidQuantifierBindings,
+    InvalidRecordSetQuery,
 }
 
 impl CftErrorCode {
@@ -167,6 +170,7 @@ impl CftErrorCode {
             Self::SingletonOnAbstractType => (CftStage::Schema, "CFT-SCHEMA-036"),
             Self::SingletonIdAsEnumConflict => (CftStage::Schema, "CFT-SCHEMA-037"),
             Self::SchemaStructureLimitExceeded => (CftStage::Schema, "CFT-SCHEMA-038"),
+            Self::DuplicateTopLevelCheck => (CftStage::Schema, "CFT-SCHEMA-039"),
             Self::UnknownValueName => (CftStage::Type, "CFT-TYPE-001"),
             Self::UnknownField => (CftStage::Type, "CFT-TYPE-002"),
             Self::TypeUnknownEnumVariant => (CftStage::Type, "CFT-TYPE-003"),
@@ -187,6 +191,8 @@ impl CftErrorCode {
             Self::ShiftRequiresInt => (CftStage::Type, "CFT-TYPE-018"),
             Self::RegexPatternMustBeLiteral => (CftStage::Type, "CFT-TYPE-019"),
             Self::InvalidRegexPattern => (CftStage::Type, "CFT-TYPE-020"),
+            Self::InvalidQuantifierBindings => (CftStage::Type, "CFT-TYPE-021"),
+            Self::InvalidRecordSetQuery => (CftStage::Type, "CFT-TYPE-022"),
         }
     }
 

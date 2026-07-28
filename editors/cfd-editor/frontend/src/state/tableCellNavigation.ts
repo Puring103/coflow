@@ -17,6 +17,7 @@ export function moveTableSelection(
   direction: TableDirection,
   rows: readonly RecordCoordinate[],
   columns: readonly string[],
+  extend = false,
 ): EditorSelection {
   const rowIndex = rows.findIndex(row => sameCoordinate(row, selection.coordinate))
   if (rowIndex < 0) return selection
@@ -27,9 +28,12 @@ export function moveTableSelection(
       rowIndex + (direction === 'ArrowDown' ? 1 : -1),
     ))
     if (nextIndex === rowIndex) return selection
-    return selection.kind === 'record'
+    const next = selection.kind === 'record'
       ? recordSelection(selection.filePath, rows[nextIndex])
       : valueSelection(selection.filePath, rows[nextIndex], selection.fieldPath)
+    return extend && selection.kind === 'value' && next.kind === 'value'
+      ? { ...next, rangeAnchor: selection.rangeAnchor }
+      : next
   }
 
   if (selection.kind === 'record') {
@@ -44,13 +48,19 @@ export function moveTableSelection(
   const columnIndex = field === null ? -1 : columns.indexOf(field)
   if (columnIndex < 0) return selection
   if (direction === 'ArrowLeft') {
-    return columnIndex === 0
+    const next = columnIndex === 0
       ? recordSelection(selection.filePath, rows[rowIndex])
       : valueSelection(selection.filePath, rows[rowIndex], [fieldPathField(columns[columnIndex - 1])])
+    return extend && next.kind === 'value'
+      ? { ...next, rangeAnchor: selection.rangeAnchor }
+      : next
   }
-  return columnIndex < columns.length - 1
+  const next = columnIndex < columns.length - 1
     ? valueSelection(selection.filePath, rows[rowIndex], [fieldPathField(columns[columnIndex + 1])])
     : selection
+  return extend && next.kind === 'value'
+    ? { ...next, rangeAnchor: selection.rangeAnchor }
+    : next
 }
 
 export function editIntentForKey(key: string, modified: boolean): TableEditIntent | null {

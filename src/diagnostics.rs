@@ -1,8 +1,6 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_api::{Diagnostic, DiagnosticContext, DiagnosticSet, Label, Severity, SourceLocation};
 use serde::Serialize;
 use std::path::Path;
-
-const PROJECT_DIAGNOSTIC_STAGE: &str = "PROJECT";
 
 #[must_use]
 pub fn cli_error(code: impl Into<String>, message: impl Into<String>) -> DiagnosticSet {
@@ -21,16 +19,6 @@ pub fn cli_file_error(
         },
         message: None,
     }))
-}
-
-#[must_use]
-pub fn diagnostic_messages(diagnostics: &DiagnosticSet) -> String {
-    diagnostics
-        .diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.message.as_str())
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 #[derive(Debug, Serialize)]
@@ -53,48 +41,8 @@ pub struct DiagnosticJson {
     #[serde(rename = "endCharacter")]
     pub end_character: usize,
     pub related: Vec<RelatedJson>,
-}
-
-impl DiagnosticJson {
-    #[must_use]
-    pub fn project(message: impl Into<String>) -> Self {
-        Self::plain("PROJECT-001", PROJECT_DIAGNOSTIC_STAGE, message)
-    }
-
-    #[must_use]
-    pub fn artifact(message: impl Into<String>) -> Self {
-        Self::plain("ARTIFACT-001", "ARTIFACT", message)
-    }
-
-    #[must_use]
-    pub fn codegen(
-        code: impl Into<String>,
-        stage: impl Into<String>,
-        message: impl Into<String>,
-    ) -> Self {
-        Self::plain(code, stage, message)
-    }
-
-    fn plain(
-        code: impl Into<String>,
-        stage: impl Into<String>,
-        message: impl Into<String>,
-    ) -> Self {
-        Self {
-            code: code.into(),
-            stage: stage.into(),
-            severity: "error".to_string(),
-            message: message.into(),
-            path: String::new(),
-            sheet: None,
-            cell: None,
-            start_line: 0,
-            start_character: 0,
-            end_line: 0,
-            end_character: 1,
-            related: Vec::new(),
-        }
-    }
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub contexts: Vec<DiagnosticContext>,
 }
 
 #[derive(Debug, Serialize)]
@@ -150,6 +98,7 @@ fn diagnostic_json_from_diagnostic(diagnostic: Diagnostic) -> DiagnosticJson {
             .iter()
             .map(related_json_from_label)
             .collect(),
+        contexts: diagnostic.contexts,
     }
 }
 

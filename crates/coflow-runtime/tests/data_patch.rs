@@ -494,6 +494,178 @@ fn assert_incremental_diagnostics_match_fresh(
 }
 
 #[test]
+fn runtime_moves_and_swaps_records_then_rebuilds_source_order() {
+    let root = std::env::temp_dir().join(format!("coflow-record-reorder-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data");
+    std::fs::write(root.join("schema.cft"), "type Item { value: int; }").expect("write schema");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        "a: Item { value: 1 }\nb: Item { value: 2 }\nc: Item { value: 3 }\n",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/items.cfd\n",
+    )
+    .expect("write config");
+    let mut session = session(&root);
+    let a = RecordCoordinate::try_new("Item", "a").expect("coordinate a");
+    let b = RecordCoordinate::try_new("Item", "b").expect("coordinate b");
+
+    let moved = session.move_record(&a, 2).expect("move a to end");
+    assert!(moved.reordered);
+    let order = session
+        .queries()
+        .record_views_in_file("data/items.cfd")
+        .map(|view| view.coordinate.key.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(order, ["b", "c", "a"]);
+
+    session.swap_records(&b, &a).expect("swap first and last");
+    let order = session
+        .queries()
+        .record_views_in_file("data/items.cfd")
+        .map(|view| view.coordinate.key.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(order, ["a", "c", "b"]);
+
+    let before = std::fs::read_to_string(root.join("data/items.cfd")).expect("read before");
+    assert!(session.move_record(&a, 3).is_err());
+    let after = std::fs::read_to_string(root.join("data/items.cfd")).expect("read after");
+    assert_eq!(before, after, "out-of-range move must not write the source");
+}
+
+#[test]
+fn runtime_rejects_swapping_different_record_types_in_one_file() {
+    let root =
+        std::env::temp_dir().join(format!("coflow-record-reorder-type-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { value: int; } type Skill { value: int; }",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/records.cfd"),
+        "a: Item { value: 1 }\ns: Skill { value: 2 }\n",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/records.cfd\n",
+    )
+    .expect("write config");
+    let mut session = session(&root);
+    let item = RecordCoordinate::try_new("Item", "a").expect("item coordinate");
+    let skill = RecordCoordinate::try_new("Skill", "s").expect("skill coordinate");
+    let before = std::fs::read(root.join("data/records.cfd")).expect("read before");
+
+    assert!(session.swap_records(&item, &skill).is_err());
+    assert_eq!(
+        std::fs::read(root.join("data/records.cfd")).expect("read after"),
+        before
+    );
+}
+
+#[test]
+fn runtime_transfers_record_between_cfd_and_csv_at_type_index() {
+    let root = std::env::temp_dir().join(format!("coflow-record-transfer-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { name: string; value: int; }",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/source.cfd"),
+        "a: Item { name: \"Alpha\", value: 1 }\n",
+    )
+    .expect("write cfd source");
+    std::fs::write(
+        root.join("data/destination.csv"),
+        "id,name,value\nx,Ex,10\nz,Zed,30\n",
+    )
+    .expect("write csv destination");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/source.cfd
+  - path: data/destination.csv
+    type: csv
+    sheets:
+      - sheet: Items
+        type: Item
+"#,
+    )
+    .expect("write config");
+    let mut session = session(&root);
+    let a = RecordCoordinate::try_new("Item", "a").expect("coordinate a");
+
+    let outcome = session
+        .transfer_record(&a, "data/destination.csv", Some("Items"), 1)
+        .expect("transfer cfd record into csv");
+    assert!(outcome.reordered);
+    assert_eq!(
+        outcome.affected_files,
+        ["data/source.cfd", "data/destination.csv"]
+    );
+    let destination_order = session
+        .queries()
+        .record_views_in_file("data/destination.csv")
+        .map(|view| view.coordinate.key.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(destination_order, ["x", "a", "z"]);
+    assert!(std::fs::read_to_string(root.join("data/source.cfd"))
+        .expect("read source")
+        .trim()
+        .is_empty());
+
+    session
+        .transfer_record(&a, "data/source.cfd", None, 0)
+        .expect("transfer csv record back into cfd");
+    assert_eq!(
+        session
+            .queries()
+            .record_views_in_file("data/source.cfd")
+            .map(|view| view.coordinate.key.to_string())
+            .collect::<Vec<_>>(),
+        ["a"]
+    );
+
+    let before = std::fs::read(root.join("data/source.cfd")).expect("source before failure");
+    assert!(session
+        .transfer_record(&a, "data/destination.csv", Some("Items"), 3)
+        .is_err());
+    assert_eq!(
+        std::fs::read(root.join("data/source.cfd")).expect("source after failure"),
+        before
+    );
+
+    let destination_before =
+        std::fs::read(root.join("data/destination.csv")).expect("destination before rollback");
+    std::fs::write(
+        root.join("data/source.cfd"),
+        "external: Item { name: \"External\", value: 99 }\n",
+    )
+    .expect("externally replace source record");
+    assert!(session
+        .transfer_record(&a, "data/destination.csv", Some("Items"), 1)
+        .is_err());
+    assert_eq!(
+        std::fs::read(root.join("data/destination.csv")).expect("destination after rollback"),
+        destination_before,
+        "destination insert must roll back when source deletion fails"
+    );
+    assert!(std::fs::read_to_string(root.join("data/source.cfd"))
+        .expect("source after rollback")
+        .contains("external: Item"));
+}
+
+#[test]
 fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     let root = std::env::temp_dir().join(format!("coflow-data-patch-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -1163,6 +1335,120 @@ fn rename_record_rewrites_refs_in_dimension_overlays() {
 }
 
 #[test]
+fn rename_record_rewrites_spread_sources_in_dimension_overlays() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-spread-rename-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_dimension_spread_project(&root);
+    let dimension_file = root.join("data/dimensions/platform/Holder.cfd");
+    let mut session = session(&root);
+
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::RenameRecord {
+            record: PatchRecordSelector {
+                actual_type: "Leaf".to_string(),
+                key: "base".to_string(),
+            },
+            file: None,
+            new_key: "renamed".to_string(),
+        }],
+    });
+
+    assert!(report.write_ok, "report: {report:#?}");
+    let main = std::fs::read_to_string(root.join("data/main.cfd")).expect("read main source");
+    let dimension = std::fs::read_to_string(&dimension_file).expect("read dimension source");
+    assert!(main.contains("...&renamed"), "{main}");
+    assert_eq!(dimension.matches("...&renamed").count(), 2, "{dimension}");
+    assert!(!dimension.contains("...&base"), "{dimension}");
+    assert_incremental_diagnostics_match_fresh(&session, &root);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn dimension_spread_rewrite_failure_compensates_every_source() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-dimension-spread-compensate-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_dimension_spread_project(&root);
+    let mut session = session(&root);
+    let main_file = root.join("data/main.cfd");
+    let dimension_file = root.join("data/dimensions/platform/Holder.cfd");
+    let original_main = std::fs::read(&main_file).expect("read main source");
+    std::fs::write(&dimension_file, "this is invalid CFD").expect("corrupt dimension source");
+    let corrupted_dimension = std::fs::read(&dimension_file).expect("read corrupt source");
+
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::RenameRecord {
+            record: PatchRecordSelector {
+                actual_type: "Leaf".to_string(),
+                key: "base".to_string(),
+            },
+            file: None,
+            new_key: "renamed".to_string(),
+        }],
+    });
+
+    assert!(!report.write_ok, "report: {report:#?}");
+    assert_eq!(
+        std::fs::read(&main_file).expect("read restored main"),
+        original_main
+    );
+    assert_eq!(
+        std::fs::read(&dimension_file).expect("read restored dimension"),
+        corrupted_dimension
+    );
+    assert!(session.queries().record_view("Leaf", "base").is_some());
+    assert!(session.queries().record_view("Leaf", "renamed").is_none());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn write_dimension_spread_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data/dimensions/platform")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"
+            type Leaf { value: int; }
+            type Stats { nested: Leaf; }
+
+            @singleton
+            type Holder {
+                @dimension("platform")
+                stats: Stats;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/main.cfd"),
+        "base: Leaf { value: 1 }\nHolder: Holder { stats: { nested: { ...&base } } }\n",
+    )
+    .expect("write records");
+    std::fs::write(
+        root.join("data/dimensions/platform/Holder.cfd"),
+        "stats: Holder { default: { nested: { value: 1 } }, pc: { nested: { ...&base } }, mobile: { nested: { ...&base } } }\n",
+    )
+    .expect("write dimension values");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/main.cfd
+dimensions:
+  platform:
+    variants: [pc, mobile]
+    out_dir: data/dimensions/platform
+"#,
+    )
+    .expect("write config");
+}
+
+#[test]
 fn dimension_reference_checks_match_full_diagnostics() {
     let root = std::env::temp_dir().join(format!(
         "coflow-data-patch-dimension-ref-check-incremental-{}",
@@ -1186,7 +1472,7 @@ fn dimension_reference_checks_match_full_diagnostics() {
                 path: Vec::new(),
             },
             expected: coflow_runtime::DimensionValueExpectation::Value(MutationValue::Cfd(
-                coflow_data_model::CfdValue::Ref("potion".to_string()),
+                coflow_data_model::CfdValue::record_ref("potion").unwrap(),
             )),
             value: json!({ "$ref": "bad" }),
         }],
@@ -1824,7 +2110,7 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
         .expect("holder");
     assert!(matches!(
         view.record.fields().get("owner"),
-        Some(coflow_data_model::CfdValue::Ref(target_key)) if target_key == "sword"
+        Some(coflow_data_model::CfdValue::Ref(target_key)) if target_key.as_str() == "sword"
     ));
 
     let _ = std::fs::remove_dir_all(root);
@@ -1867,7 +2153,7 @@ fn direct_write_field_rejects_values_that_violate_ref_shapes_before_file_write()
             &[coflow_api::WriteFieldPathSegment::Field(
                 "inline_item".to_string(),
             )],
-            &coflow_data_model::CfdValue::Ref("sword".to_string()),
+            &coflow_data_model::CfdValue::record_ref("sword").unwrap(),
         )
         .expect_err("direct write should fail before writer mutation");
     assert!(err
@@ -1916,7 +2202,7 @@ fn direct_write_field_rejects_missing_ref_target_before_file_write() {
             &[coflow_api::WriteFieldPathSegment::Field(
                 "owner".to_string(),
             )],
-            &coflow_data_model::CfdValue::Ref("ghost".to_string()),
+            &coflow_data_model::CfdValue::record_ref("ghost").unwrap(),
         )
         .expect_err("direct write should reject missing ref target before writer mutation");
     assert!(err.iter().any(|diagnostic| {
@@ -1970,7 +2256,7 @@ holder: Holder { item_reward: &item }
             &[coflow_api::WriteFieldPathSegment::Field(
                 "item_reward".to_string(),
             )],
-            &coflow_data_model::CfdValue::Ref("currency".to_string()),
+            &coflow_data_model::CfdValue::record_ref("currency").unwrap(),
         )
         .expect_err("direct write should reject sibling-type ref target before writer mutation");
     assert!(err.iter().any(|diagnostic| {
@@ -2098,23 +2384,27 @@ fn direct_insert_rejects_missing_ref_target_before_file_write() {
     let fields = std::collections::BTreeMap::from([
         (
             "owner".to_string(),
-            coflow_data_model::CfdValue::Ref("ghost".to_string()),
+            coflow_data_model::CfdValue::record_ref("ghost").unwrap(),
         ),
         (
             "inline_item".to_string(),
-            coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
-                "Item",
-                std::collections::BTreeMap::from([(
-                    "name".to_string(),
-                    coflow_data_model::CfdValue::String("Inline".to_string()),
-                )]),
-            ))),
+            coflow_data_model::CfdValue::Object(Box::new(
+                coflow_data_model::CfdObject::try_new(
+                    "Item",
+                    std::collections::BTreeMap::from([(
+                        "name".to_string(),
+                        coflow_data_model::CfdValue::String("Inline".to_string()),
+                    )]),
+                )
+                .unwrap(),
+            )),
         ),
         (
             "configs".to_string(),
-            coflow_data_model::CfdValue::Array(vec![coflow_data_model::CfdValue::Ref(
-                "main".to_string(),
-            )]),
+            coflow_data_model::CfdValue::Array(vec![coflow_data_model::CfdValue::record_ref(
+                "main",
+            )
+            .unwrap()]),
         ),
     ]);
 
@@ -2145,7 +2435,7 @@ fn json_patch_insert_accepts_ref_object_form() {
     .expect("write schema");
     std::fs::write(
         root.join("data").join("records.cfd"),
-        "Item { sword { name: Sword } }\n",
+        "Item { sword { name: \"Sword\" } }\n",
     )
     .expect("write data");
     std::fs::write(
@@ -2236,7 +2526,7 @@ fn direct_insert_allows_self_references() {
     let mut session = session(&root);
     let fields = std::collections::BTreeMap::from([(
         "parent".to_string(),
-        coflow_data_model::CfdValue::Ref("root".to_string()),
+        coflow_data_model::CfdValue::record_ref("root").unwrap(),
     )]);
 
     session
@@ -2249,7 +2539,7 @@ fn direct_insert_allows_self_references() {
         .expect("inserted node");
     assert_eq!(
         view.record.fields().get("parent"),
-        Some(&coflow_data_model::CfdValue::Ref("root".to_string()))
+        Some(&coflow_data_model::CfdValue::record_ref("root").unwrap())
     );
 
     let _ = std::fs::remove_dir_all(root);
@@ -2307,7 +2597,7 @@ fn batch_insert_can_reference_an_earlier_pending_insert() {
         .expect("inserted child");
     assert_eq!(
         child.record.fields().get("parent"),
-        Some(&coflow_data_model::CfdValue::Ref("root".to_string()))
+        Some(&coflow_data_model::CfdValue::record_ref("root").unwrap())
     );
 
     let _ = std::fs::remove_dir_all(root);
@@ -2373,7 +2663,7 @@ fn batch_rename_of_pending_insert_rewrites_self_references() {
         .expect("renamed node");
     assert_eq!(
         tree.record.fields().get("parent"),
-        Some(&coflow_data_model::CfdValue::Ref("tree".to_string()))
+        Some(&coflow_data_model::CfdValue::record_ref("tree").unwrap())
     );
     let child = session
         .queries()
@@ -2381,7 +2671,7 @@ fn batch_rename_of_pending_insert_rewrites_self_references() {
         .expect("dependent node");
     assert_eq!(
         child.record.fields().get("parent"),
-        Some(&coflow_data_model::CfdValue::Ref("tree".to_string()))
+        Some(&coflow_data_model::CfdValue::record_ref("tree").unwrap())
     );
 
     let _ = std::fs::remove_dir_all(root);
@@ -2804,7 +3094,7 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
     let report = session.apply_mutation(MutationRequest {
         stop_on_write_error: true,
         ops: vec![MutationOp::SetField {
-            record: RecordCoordinate::new("Loot", "starter_loot"),
+            record: RecordCoordinate::try_new("Loot", "starter_loot").unwrap(),
             file: None,
             path: vec![PatchPathSegment::Field("owner".to_string())],
             value: MutationValue::Cfd(coflow_data_model::CfdValue::Null),
@@ -2833,7 +3123,7 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
     let report = session.apply_mutation(MutationRequest {
         stop_on_write_error: true,
         ops: vec![MutationOp::SetField {
-            record: RecordCoordinate::new("Loot", "starter_loot"),
+            record: RecordCoordinate::try_new("Loot", "starter_loot").unwrap(),
             file: None,
             path: vec![PatchPathSegment::Field("owner".to_string())],
             value: MutationValue::Cfd(coflow_data_model::CfdValue::Null),
@@ -2864,20 +3154,22 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
     write_project(&root);
     let mut session = session(&root);
 
-    let bad_reward =
-        coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
+    let bad_reward = coflow_data_model::CfdValue::Object(Box::new(
+        coflow_data_model::CfdObject::try_new(
             "ItemReward",
             std::collections::BTreeMap::from([
                 (
                     "item".to_string(),
-                    coflow_data_model::CfdValue::Ref("sword".to_string()),
+                    coflow_data_model::CfdValue::record_ref("sword").unwrap(),
                 ),
                 (
                     "count".to_string(),
                     coflow_data_model::CfdValue::String("bad".to_string()),
                 ),
             ]),
-        )));
+        )
+        .unwrap(),
+    ));
 
     let report = session.apply_data_patch(DataPatchRequest {
         stop_on_write_error: true,
@@ -2895,7 +3187,7 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
     let report = session.apply_mutation(MutationRequest {
         stop_on_write_error: true,
         ops: vec![MutationOp::SetField {
-            record: RecordCoordinate::new("Loot", "starter_loot"),
+            record: RecordCoordinate::try_new("Loot", "starter_loot").unwrap(),
             file: None,
             path: vec![PatchPathSegment::Field("rewards".to_string())],
             value: MutationValue::Cfd(coflow_data_model::CfdValue::Array(vec![bad_reward])),
@@ -2937,18 +3229,20 @@ fn mutation_complete_value_rejects_missing_nested_required_fields_before_write()
     assert!(insert.write_ok);
     let before = std::fs::read_to_string(root.join("data/items.cfd")).expect("read cfd");
 
-    let incomplete_reward =
-        coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
+    let incomplete_reward = coflow_data_model::CfdValue::Object(Box::new(
+        coflow_data_model::CfdObject::try_new(
             "ItemReward",
             std::collections::BTreeMap::from([(
                 "item".to_string(),
-                coflow_data_model::CfdValue::Ref("sword".to_string()),
+                coflow_data_model::CfdValue::record_ref("sword").unwrap(),
             )]),
-        )));
+        )
+        .unwrap(),
+    ));
     let report = session.apply_mutation(MutationRequest {
         stop_on_write_error: true,
         ops: vec![MutationOp::SetField {
-            record: RecordCoordinate::new("Loot", "starter_loot"),
+            record: RecordCoordinate::try_new("Loot", "starter_loot").unwrap(),
             file: None,
             path: vec![PatchPathSegment::Field("rewards".to_string())],
             value: MutationValue::Cfd(coflow_data_model::CfdValue::Array(vec![incomplete_reward])),

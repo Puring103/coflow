@@ -12,7 +12,7 @@ namespace {{ project.namespace }}
 
 public sealed partial class {{ project.database_class }}
 {
-{% include "database_common_members.cs.tera" %}
+{% include "database_loader_members.cs.tera" %}
 }
 
 internal static class CoflowJson

@@ -15,15 +15,14 @@
 )]
 #![allow(clippy::missing_const_for_fn)]
 
-pub mod cell_value;
 mod options;
 mod table;
 pub mod writer;
 
 pub use options::{TableOptionsError, TableSourceOptions};
 pub use table::{
-    collect_table_input_records, map_label_to_table, map_table_diagnostics,
-    resolve_table_write_layout, TableDiagnostic, TableDiagnosticKind, TableDiagnostics,
-    TableInputRecords, TableLabel, TableLocation, TableSheet, TableSheetConfig, TableSource,
-    TableWriteLayout,
+    collect_table_input_records, map_label_to_table, map_label_to_table_origin,
+    map_table_diagnostics, resolve_table_write_layout, TableDiagnostic, TableDiagnosticKind,
+    TableDiagnostics, TableInputRecords, TableLabel, TableLocation, TableSheet, TableSheetConfig,
+    TableSource, TableWriteLayout,
 };

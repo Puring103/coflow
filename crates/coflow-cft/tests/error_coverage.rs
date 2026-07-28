@@ -161,6 +161,20 @@ fn cases() -> Vec<Case> {
             codes: &[CftErrorCode::DuplicateCheckBlock],
         },
         Case {
+            name: "duplicate top-level check",
+            phase: Phase::Compile,
+            source: "check A { true; } check A { true; }",
+            adjacent_valid_source: "check A { true; } check B { true; }",
+            codes: &[CftErrorCode::DuplicateTopLevelCheck],
+        },
+        Case {
+            name: "invalid record set query",
+            phase: Phase::Compile,
+            source: "type A { check { records(A).len() > 0; } }",
+            adjacent_valid_source: "type A {} check Q { records(A).len() >= 0; }",
+            codes: &[CftErrorCode::InvalidRecordSetQuery],
+        },
+        Case {
             name: "syntax structure limit exceeded",
             phase: Phase::StrictParse,
             source: "type A { value: [int]; }",
@@ -527,6 +541,14 @@ fn cases() -> Vec<Case> {
             adjacent_valid_source:
                 "type A { items: [int]; check { all item in items { item >= 0; } } }",
             codes: &[CftErrorCode::QuantifierRequiresCollection],
+        },
+        Case {
+            name: "invalid quantifier bindings",
+            phase: Phase::Compile,
+            source: "type A { items: [int]; check { all item, item in items { true; } } }",
+            adjacent_valid_source:
+                "type A { items: [int]; check { all item, index in items { item >= index; } } }",
+            codes: &[CftErrorCode::InvalidQuantifierBindings],
         },
         Case {
             name: "unique unsupported element type",

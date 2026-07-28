@@ -1,6 +1,5 @@
 use super::identifiers::{context_index_field_name, plural_records_var};
 use super::types::csharp_type;
-use crate::ir::CsharpDataFormat;
 use crate::lowering::CsharpLoweringPlan;
 use crate::model::{
     CsharpContextAssignment, CsharpContextField, CsharpContextLookup, CsharpContextLookupField,
@@ -13,18 +12,12 @@ pub fn build_csharp_database(
     view: &CsharpLoweringPlan<'_>,
     tables: &[String],
     _database_class: &str,
-    data_format: CsharpDataFormat,
 ) -> Result<CsharpDatabase, CsharpCodegenError> {
     let ordered_tables = tables.to_vec();
     let table_models = ordered_tables
         .iter()
         .map(|table_name| build_table_model(view, table_name))
         .collect::<Vec<_>>();
-    let load_extension = match data_format {
-        CsharpDataFormat::Json => "json",
-        CsharpDataFormat::MessagePack => "msgpack",
-    };
-
     let context_fields = table_models
         .iter()
         .map(|table| CsharpContextField {
@@ -66,17 +59,9 @@ pub fn build_csharp_database(
         .collect::<Vec<_>>();
 
     let context_lookups = build_context_lookups(view, tables)?;
-    let load_steps = match data_format {
-        CsharpDataFormat::Json => build_json_load_steps(&table_models, load_extension),
-        CsharpDataFormat::MessagePack => {
-            build_messagepack_load_steps(&table_models, load_extension)
-        }
-    };
-
     Ok(CsharpDatabase {
         tables: table_models,
         constructor_parameters,
-        load_steps,
         constructor_args,
         context_fields,
         context_lookups,
@@ -119,7 +104,7 @@ fn build_context_lookups(
     Ok(context_lookups)
 }
 
-fn build_json_load_steps(table_models: &[CsharpTable], load_extension: &str) -> Vec<String> {
+pub fn build_load_steps(table_models: &[CsharpTable], load_extension: &str) -> Vec<String> {
     let mut load_steps = Vec::new();
     for table in table_models {
         load_steps.push(format!(
@@ -128,37 +113,6 @@ fn build_json_load_steps(table_models: &[CsharpTable], load_extension: &str) -> 
         ));
     }
     for table in table_models {
-        load_steps.push(format!(
-            "var {} = {}.BuildIndex({});",
-            table.index_var, table.name, table.records_var
-        ));
-    }
-    let context_args = table_models
-        .iter()
-        .map(|table| table.index_var.clone())
-        .collect::<Vec<_>>();
-    let context_expr = if context_args.is_empty() {
-        "LoadContext.Empty".to_string()
-    } else {
-        format!("new LoadContext({})", context_args.join(", "))
-    };
-    load_steps.push(format!("var context = {context_expr};"));
-    for table in table_models {
-        load_steps.push(format!(
-            "{}.HydrateAll({}, {}, context);",
-            table.name, table.records_var, table.raw_rows_var
-        ));
-    }
-    load_steps
-}
-
-fn build_messagepack_load_steps(table_models: &[CsharpTable], load_extension: &str) -> Vec<String> {
-    let mut load_steps = Vec::new();
-    for table in table_models {
-        load_steps.push(format!(
-            "var ({}, {}) = {}.LoadRawTable(Path.Combine(dataDir, \"{}.{}\"));",
-            table.records_var, table.raw_rows_var, table.name, table.source_name, load_extension
-        ));
         load_steps.push(format!(
             "var {} = {}.BuildIndex({});",
             table.index_var, table.name, table.records_var

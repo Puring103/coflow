@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use coflow_api::{
-    Diagnostic, DiagnosticSet, ResolvedSource, SourceLocationSpec, WriterCapabilities,
-};
+use coflow_api::{Diagnostic, DiagnosticSet, ResolvedSource, WriterCapabilities};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExcelWorkbookFormat {
@@ -24,13 +22,10 @@ impl ExcelWorkbookFormat {
 }
 
 pub(super) fn excel_writer_capabilities(source: &ResolvedSource) -> WriterCapabilities {
-    match &source.location {
-        SourceLocationSpec::Path(path)
-            if ExcelWorkbookFormat::from_path(path) == ExcelWorkbookFormat::Xlsx =>
-        {
-            WriterCapabilities::local_full()
-        }
-        SourceLocationSpec::Path(_) => WriterCapabilities::read_only(),
+    if ExcelWorkbookFormat::from_path(source.location.path()) == ExcelWorkbookFormat::Xlsx {
+        WriterCapabilities::local_full()
+    } else {
+        WriterCapabilities::read_only()
     }
 }
 
@@ -48,7 +43,7 @@ pub(super) fn ensure_writable_excel_path(
             "`.xlsm` is read-only because the Excel writer cannot preserve VBA projects"
         }
         ExcelWorkbookFormat::Xls => {
-            "legacy `.xls` is read-only because the Excel writer emits OOXML workbooks"
+            "`.xls` is read-only because the Excel writer emits OOXML workbooks"
         }
         ExcelWorkbookFormat::Unsupported => "only `.xlsx` workbooks have a mutation implementation",
         ExcelWorkbookFormat::Xlsx => return Ok(()),

@@ -61,6 +61,7 @@ pub(super) fn lookup_source_writer(
             message: format!("no writer registered for provider `{}`", source.provider_id),
             primary: None,
             related: Vec::new(),
+            contexts: Vec::new(),
         })
     })
 }

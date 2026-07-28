@@ -795,7 +795,7 @@ Fallback：
 结果：
 
 - 截断文件：`CFD-TEXT-Syntax record key is missing`。
-- 漏写 `&`：`CFD-TEXT-Syntax typed and path references are no longer supported; use &key`。
+- 无效记录引用：`CFD-TEXT-Syntax invalid record reference`。
 - 同文件重复 key：`CFD-DATA-011 duplicate key in table Stage`，定位新增重复记录行。
 - spread 互相引用：check 仍通过，未观察到循环诊断。
 - 每次异常后均通过 `data write-file --stdin --check` 恢复。

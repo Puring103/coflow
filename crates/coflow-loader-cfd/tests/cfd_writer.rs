@@ -11,9 +11,10 @@
 )]
 
 use coflow_api::{
-    DeleteRecordRequest, InsertRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
-    SourceLocationSpec, SourceProvider, SourceWriter, SpreadRewriteTarget, WriteCellRequest,
-    WriteContext, WriteFieldPathSegment,
+    DeleteRecordRequest, InsertRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
+    ResolvedSource, RewriteRecordReferencesRequest, SourceLocationSpec, SourceProvider,
+    SourceWriter, SpreadRewriteTarget, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    WriteRecordRef,
 };
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdObject, CfdValue, RecordOrigin, TextSpan};
@@ -42,7 +43,7 @@ fn compile_schema(source: &str) -> CftSchema {
 fn empty_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "cfd".to_string(),
-        location: SourceLocationSpec::Path(path.to_path_buf()),
+        location: SourceLocationSpec::new(path.to_path_buf()),
         options: CfdLoader
             .decode_options(&serde_json::Value::Null)
             .expect("decode cfd options"),
@@ -60,6 +61,69 @@ fn origin_for(path: &Path) -> RecordOrigin {
             end_character: 0,
         }),
     }
+}
+
+#[test]
+fn reorders_records_without_changing_document_slots() {
+    let dir = temp_dir("reorder");
+    let file = dir.join("items.cfd");
+    fs::write(
+        &file,
+        "a: Item { value: 1 }\n\nb: Item { value: 2 }\n\nc: Item { value: 3 }\n",
+    )
+    .expect("write seed");
+    let schema = compile_schema("type Item { value: int; }");
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let writer = CfdWriter::new();
+    let ctx = WriteContext {
+        project_root: &dir,
+        schema: &schema,
+        model: None,
+    };
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::Swap {
+                    first: WriteRecordRef {
+                        origin: &origin,
+                        record_key: "a",
+                        actual_type: "Item",
+                    },
+                    second: WriteRecordRef {
+                        origin: &origin,
+                        record_key: "c",
+                        actual_type: "Item",
+                    },
+                },
+            },
+        )
+        .expect("swap records");
+    let swapped = fs::read_to_string(&file).expect("read swapped");
+    assert!(swapped.find("c: Item").unwrap() < swapped.find("b: Item").unwrap());
+    assert!(swapped.find("b: Item").unwrap() < swapped.find("a: Item").unwrap());
+
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::MoveBefore {
+                    record: WriteRecordRef {
+                        origin: &origin,
+                        record_key: "c",
+                        actual_type: "Item",
+                    },
+                    before: None,
+                },
+            },
+        )
+        .expect("move record");
+    let moved = fs::read_to_string(&file).expect("read moved");
+    assert!(moved.find("b: Item").unwrap() < moved.find("a: Item").unwrap());
+    assert!(moved.find("a: Item").unwrap() < moved.find("c: Item").unwrap());
 }
 
 #[test]
@@ -166,7 +230,7 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
 
     let schema = &schema;
     let writer = CfdWriter::new();
-    let request_value = CfdValue::Ref("blade".to_string());
+    let request_value = CfdValue::record_ref("blade").unwrap();
     let segments = vec![
         WriteFieldPathSegment::Field("first_clear_reward".to_string()),
         WriteFieldPathSegment::Field("item".to_string()),
@@ -301,11 +365,11 @@ picker: Holder {
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
     let _ = model
-        .lookup_assignable("Item", "target_b")
+        .lookup_assignable(&schema, "Item", "target_b")
         .expect("target_b id");
 
     let writer = CfdWriter::new();
-    let new_value = CfdValue::Ref("target_b".to_string());
+    let new_value = CfdValue::record_ref("target_b").unwrap();
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -377,7 +441,7 @@ picker: Holder {
     let schema = &schema;
 
     let writer = CfdWriter::new();
-    let new_value = CfdValue::Ref("ghost".to_string());
+    let new_value = CfdValue::record_ref("ghost").unwrap();
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -408,58 +472,8 @@ picker: Holder {
 }
 
 #[test]
-fn rejects_empty_ref_key() {
-    let dir = temp_dir("empty-ref");
-    let file = dir.join("data.cfd");
-    fs::write(
-        &file,
-        r"picker: Holder {
-  current: &x,
-}
-",
-    )
-    .expect("write seed");
-
-    let schema = compile_schema(
-        r"
-        type Item {
-          name: string;
-        }
-
-        type Holder {
-          current: &Item;
-        }
-        ",
-    );
-
-    let schema = &schema;
-
-    let writer = CfdWriter::new();
-    let new_value = CfdValue::Ref(String::new());
-    let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
-    let source = empty_source(&file);
-    let origin = origin_for(&file);
-    let model = empty_model(&schema);
-    let result = writer.write_field(
-        WriteContext {
-            project_root: &dir,
-            schema: schema,
-            model: Some(&model),
-        },
-        &WriteCellRequest {
-            origin: &origin,
-            record_key: "picker",
-            actual_type: "Holder",
-            field_path: &segments,
-            new_value: &new_value,
-            schema: schema,
-            source: &source,
-        },
-    );
-    let Err(diag) = result else {
-        panic!("empty ref should be rejected");
-    };
-    assert!(diag.iter().any(|d| d.message.contains("empty reference")));
+fn rejects_empty_reference_key_at_value_boundary() {
+    assert!(CfdValue::record_ref("").is_err());
 }
 
 fn empty_model(schema: &CftSchema) -> CfdDataModel {
@@ -509,6 +523,7 @@ fn inserts_record_at_end_of_cfd_file() {
                 actual_type: "Item",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert succeeds");
@@ -519,7 +534,7 @@ fn inserts_record_at_end_of_cfd_file() {
     assert!(after.contains("name: \"Potion\""));
     assert!(after.contains("value: 3"));
     let model = load_cfd_model(&schema, &after).expect("reload");
-    assert!(model.lookup_assignable("Item", "potion").is_some());
+    assert!(model.lookup_assignable(&schema, "Item", "potion").is_some());
 }
 
 #[test]
@@ -562,6 +577,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
                 actual_type: "Skill",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert unrelated same-key skill");
@@ -610,11 +626,11 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
     let writer = CfdWriter::new();
     let slot_fields = std::collections::BTreeMap::from([(
         "item".to_string(),
-        CfdValue::Ref("sword".to_string()),
+        CfdValue::record_ref("sword").unwrap(),
     )]);
     let fields = std::collections::BTreeMap::from([(
         "slot".to_string(),
-        CfdValue::Object(Box::new(CfdObject::new("Slot", slot_fields))),
+        CfdValue::Object(Box::new(CfdObject::try_new("Slot", slot_fields).unwrap())),
     )]);
 
     writer
@@ -631,6 +647,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
                 actual_type: "Loot",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert succeeds");
@@ -641,7 +658,9 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
         "expected & ref syntax: {after}"
     );
     let model = load_cfd_model(&schema, &after).expect("reload");
-    assert!(model.lookup_assignable("Loot", "starter").is_some());
+    assert!(model
+        .lookup_assignable(&schema, "Loot", "starter")
+        .is_some());
 }
 
 #[test]
@@ -692,8 +711,8 @@ shield: Item {
     assert!(!after.contains("sword: Item"));
     assert!(after.contains("shield: Item"));
     let model = load_cfd_model(&schema, &after).expect("reload");
-    assert!(model.lookup_assignable("Item", "sword").is_none());
-    assert!(model.lookup_assignable("Item", "shield").is_some());
+    assert!(model.lookup_assignable(&schema, "Item", "sword").is_none());
+    assert!(model.lookup_assignable(&schema, "Item", "shield").is_some());
 }
 
 #[test]
@@ -832,7 +851,7 @@ elite_monster: Monster {
     // Verify the model picks up the override.
     let model = load_cfd_model(&schema, &after).expect("re-load");
     let elite = model
-        .lookup_assignable("Monster", "elite_monster")
+        .lookup_assignable(&schema, "Monster", "elite_monster")
         .and_then(|id| model.record(id))
         .expect("elite");
     assert_eq!(

@@ -13,13 +13,15 @@ pub const DEFAULT_PROJECT_YAML: &str = r"schema: schema/
 sources: []
 
 outputs:
-  data:
-    type: json
-    dir: generated/data
-  code:
-    type: csharp
-    dir: generated/csharp
-    namespace: Game.Config
+  - data:
+      type: json
+      dir: generated/data
+    code:
+      type: csharp
+      dir: generated/csharp
+      namespace: Game.Config
+    loader:
+      type: csharp-json
 ";
 
 /// Outcome of [`init_project`]: where the new `coflow.yaml` lives.

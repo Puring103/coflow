@@ -1,4 +1,4 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, SourceLocationSpec};
+use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_project::Project;
 use std::fs;
 use std::io;
@@ -6,13 +6,16 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub(crate) struct ArtifactOutputPlan {
-    label: &'static str,
+    label: String,
     dir: PathBuf,
 }
 
 impl ArtifactOutputPlan {
-    pub(crate) const fn new(label: &'static str, dir: PathBuf) -> Self {
-        Self { label, dir }
+    pub(crate) fn new(label: impl Into<String>, dir: PathBuf) -> Self {
+        Self {
+            label: label.into(),
+            dir,
+        }
     }
 }
 
@@ -190,9 +193,7 @@ fn configured_source_paths(project: &Project) -> Vec<PathBuf> {
         .config
         .sources
         .iter()
-        .map(|source| match source.location() {
-            SourceLocationSpec::Path(path) => path,
-        })
+        .map(|source| source.location().path())
         .flat_map(|path| source_overlap_paths(&project.resolve_path(path)))
         .collect()
 }
@@ -290,6 +291,7 @@ pub(super) fn artifact_diagnostic(path: &Path, message: impl Into<String>) -> Di
             message: None,
         }),
         related: Vec::new(),
+        contexts: Vec::new(),
     }
 }
 

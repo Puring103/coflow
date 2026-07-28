@@ -1,5 +1,5 @@
 use coflow_api::FlatDiagnostic;
-use coflow_cft::{CftConstValue, CftSchema, CftSchemaDefaultValue, CftSchemaTypeRef};
+use coflow_cft::{CftConstValue, CftSchema, CftSchemaDefaultValue, CftValueType};
 use serde::Serialize;
 
 use crate::ProjectSchemaSession;
@@ -175,7 +175,7 @@ pub fn inspect_schema(
                 .flat_map(coflow_cft::CftType::all_fields)
                 .map(|field| SchemaFieldInfo {
                     name: field.name.to_string(),
-                    ty: type_ref_info(&field.ty_ref),
+                    ty: value_type_info(&field.value_type),
                     has_default: field.default.is_some(),
                     default: field.default.as_ref().map(default_value_info),
                     is_expand: field.is_expand,
@@ -261,32 +261,32 @@ fn consts(schema: &CftSchema) -> Vec<SchemaConstInfo> {
     consts
 }
 
-fn type_ref_info(ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
+fn value_type_info(ty: &CftValueType) -> SchemaTypeRefInfo {
     match ty {
-        CftSchemaTypeRef::Int => SchemaTypeRefInfo::Int,
-        CftSchemaTypeRef::Float => SchemaTypeRefInfo::Float,
-        CftSchemaTypeRef::Bool => SchemaTypeRefInfo::Bool,
-        CftSchemaTypeRef::String => SchemaTypeRefInfo::String,
-        CftSchemaTypeRef::Object(name) => SchemaTypeRefInfo::Named {
+        CftValueType::Int => SchemaTypeRefInfo::Int,
+        CftValueType::Float => SchemaTypeRefInfo::Float,
+        CftValueType::Bool => SchemaTypeRefInfo::Bool,
+        CftValueType::String => SchemaTypeRefInfo::String,
+        CftValueType::Object(name) => SchemaTypeRefInfo::Named {
             name: name.to_string(),
             target_kind: "type".to_string(),
         },
-        CftSchemaTypeRef::Enum(name) => SchemaTypeRefInfo::Named {
+        CftValueType::Enum(name) => SchemaTypeRefInfo::Named {
             name: name.to_string(),
             target_kind: "enum".to_string(),
         },
-        CftSchemaTypeRef::RecordRef(target) => SchemaTypeRefInfo::Ref {
+        CftValueType::RecordRef(target) => SchemaTypeRefInfo::Ref {
             target: target.to_string(),
         },
-        CftSchemaTypeRef::Array(inner) => SchemaTypeRefInfo::Array {
-            item: Box::new(type_ref_info(inner)),
+        CftValueType::Array(inner) => SchemaTypeRefInfo::Array {
+            item: Box::new(value_type_info(inner)),
         },
-        CftSchemaTypeRef::Dict(key, value) => SchemaTypeRefInfo::Dict {
-            key: Box::new(type_ref_info(key)),
-            value: Box::new(type_ref_info(value)),
+        CftValueType::Dict(key, value) => SchemaTypeRefInfo::Dict {
+            key: Box::new(value_type_info(key)),
+            value: Box::new(value_type_info(value)),
         },
-        CftSchemaTypeRef::Nullable(inner) => SchemaTypeRefInfo::Nullable {
-            inner: Box::new(type_ref_info(inner)),
+        CftValueType::Nullable(inner) => SchemaTypeRefInfo::Nullable {
+            inner: Box::new(value_type_info(inner)),
         },
     }
 }

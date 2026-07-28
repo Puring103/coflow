@@ -1,6 +1,5 @@
 use super::Parser;
-use crate::CfdSyntaxDiagnostic;
-use coflow_cft::Span;
+use crate::{CfdSyntaxDiagnostic, Span};
 
 pub(super) struct Token {
     pub(super) text: String,

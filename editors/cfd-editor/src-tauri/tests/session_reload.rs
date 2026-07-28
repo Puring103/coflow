@@ -8,6 +8,7 @@
 use cfd_editor_lib::editor::{
     BatchWriteFieldInput, CollectionEdit, CreateFieldSource, CreateRequiredInput, SessionStore,
 };
+use coflow_cft::{RecordKey, TypeName};
 use coflow_data_model::{CfdObject, CfdPathSegment, CfdValue};
 use coflow_runtime::RecordCoordinate;
 use std::collections::BTreeMap;
@@ -34,12 +35,18 @@ shield: Item { name: "Shield" }"#,
             snapshot.session_id,
             &[
                 BatchWriteFieldInput {
-                    coordinate: RecordCoordinate::new("Item", "sword"),
+                    coordinate: RecordCoordinate::new(
+                        TypeName::new("Item").expect("type"),
+                        RecordKey::new("sword").expect("key"),
+                    ),
                     field_path: path.clone(),
                     new_value: CfdValue::String("Shared".to_string()),
                 },
                 BatchWriteFieldInput {
-                    coordinate: RecordCoordinate::new("Item", "shield"),
+                    coordinate: RecordCoordinate::new(
+                        TypeName::new("Item").expect("type"),
+                        RecordKey::new("shield").expect("key"),
+                    ),
                     field_path: path,
                     new_value: CfdValue::String("Shared".to_string()),
                 },
@@ -406,10 +413,14 @@ missing,,,No
 
     assert_eq!(graph.available_fields, vec!["noRes", "yesRes"]);
     assert!(graph.edges.iter().any(|edge| {
-        edge.source.key == "root" && edge.target.key == "yes" && edge.field_path == "yesRes[0]"
+        edge.source.key.as_str() == "root"
+            && edge.target.key.as_str() == "yes"
+            && edge.field_path == "yesRes[0]"
     }));
     assert!(graph.edges.iter().any(|edge| {
-        edge.source.key == "root" && edge.target.key == "missing" && edge.field_path == "noRes[0]"
+        edge.source.key.as_str() == "root"
+            && edge.target.key.as_str() == "missing"
+            && edge.field_path == "noRes[0]"
     }));
 }
 
@@ -476,7 +487,7 @@ dimensions:
     assert_eq!(dimension_records.field, "name");
     assert_eq!(dimension_records.variants, ["zh", "en"]);
     assert_eq!(dimension_records.rows.len(), 1);
-    assert_eq!(dimension_records.rows[0].coordinate.key, "potion");
+    assert_eq!(dimension_records.rows[0].coordinate.key.as_str(), "potion");
     assert_eq!(
         dimension_records.rows[0].default_value,
         CfdValue::String("Potion".to_string())
@@ -524,7 +535,7 @@ fn spread_write_reports_source_and_matches_full_check_diagnostics() {
     let outcome = store
         .write_field(
             snapshot.session_id,
-            &RecordCoordinate::new("Item", "child"),
+            &RecordCoordinate::try_new("Item", "child").unwrap(),
             &[CfdPathSegment::Field("name".to_string())],
             &CfdValue::String("Changed".to_string()),
         )
@@ -614,7 +625,7 @@ fn edit_collection_appends_schema_default_item() {
     let outcome = store
         .edit_collection(
             snapshot.session_id,
-            &RecordCoordinate::new("Bag", "bag"),
+            &RecordCoordinate::try_new("Bag", "bag").unwrap(),
             &[CfdPathSegment::Field("nums".to_string())],
             CollectionEdit::ArrayAppend { value: None },
         )
@@ -661,7 +672,7 @@ fn edit_collection_appends_by_copying_last_item_before_schema_seed() {
     let outcome = store
         .edit_collection(
             snapshot.session_id,
-            &RecordCoordinate::new("Bag", "bag"),
+            &RecordCoordinate::try_new("Bag", "bag").unwrap(),
             &[CfdPathSegment::Field("nums".to_string())],
             CollectionEdit::ArrayAppend { value: None },
         )
@@ -723,7 +734,9 @@ fn row_diagnostics_are_precomputed_by_backend() {
     let item = records
         .records
         .iter()
-        .find(|row| row.coordinate.actual_type == "Item" && row.coordinate.key == "sword")
+        .find(|row| {
+            row.coordinate.actual_type.as_str() == "Item" && row.coordinate.key.as_str() == "sword"
+        })
         .expect("item row");
 
     assert!(item.diagnostic_severity.is_some());
@@ -785,6 +798,78 @@ fn file_records_follow_schema_field_definition_order() {
             .iter()
             .map(|column| column.name.as_str())
             .collect::<Vec<_>>(),
+        ["zulu", "alpha", "middle"]
+    );
+}
+
+#[test]
+fn object_annotations_preserve_schema_field_order() {
+    let root = temp_project_dir("cfd-editor-object-annotation-order");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            @struct sealed type Stats {
+                zulu: string;
+                alpha: int;
+                middle: bool;
+            }
+            type Item {
+                stats: Stats;
+                history: [Stats];
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        r#"sword: Item {
+            stats: Stats { zulu: "Z", alpha: 1, middle: true },
+            history: []
+        }"#,
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/items.cfd\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let records = store
+        .get_file_records(snapshot.session_id, "data/items.cfd")
+        .expect("load file records");
+    let row = &records.records[0];
+    let stats = row
+        .fields
+        .iter()
+        .find(|field| field.name == "stats")
+        .expect("stats field");
+    let history = row
+        .fields
+        .iter()
+        .find(|field| field.name == "history")
+        .expect("history field");
+
+    assert_eq!(
+        stats
+            .annotation
+            .as_ref()
+            .expect("stats annotation")
+            .field_order,
+        ["zulu", "alpha", "middle"]
+    );
+    assert_eq!(
+        history
+            .annotation
+            .as_ref()
+            .and_then(|annotation| annotation.item_annotation.as_deref())
+            .expect("history item annotation")
+            .field_order,
         ["zulu", "alpha", "middle"]
     );
 }
@@ -885,7 +970,7 @@ dimensions:
     let outcome = store
         .write_field(
             snapshot.session_id,
-            &RecordCoordinate::new("Item", "potion"),
+            &RecordCoordinate::try_new("Item", "potion").unwrap(),
             &[CfdPathSegment::Field("name".to_string())],
             &CfdValue::String("Elixir".to_string()),
         )
@@ -929,7 +1014,7 @@ fn write_project(root: &std::path::Path, name: &str) {
 }
 
 fn object_value(actual_type: &str, fields: BTreeMap<String, CfdValue>) -> CfdValue {
-    CfdValue::Object(Box::new(CfdObject::new(actual_type, fields)))
+    CfdValue::Object(Box::new(CfdObject::try_new(actual_type, fields).unwrap()))
 }
 
 fn load_ref_metadata_project() -> (SessionStore, TempDirCleanup, u32) {
@@ -985,7 +1070,7 @@ fn holder_row(store: &SessionStore, session_id: u32) -> cfd_editor_lib::editor::
     records
         .records
         .into_iter()
-        .find(|row| row.coordinate.actual_type == "Holder")
+        .find(|row| row.coordinate.actual_type.as_str() == "Holder")
         .expect("holder row")
 }
 
@@ -1011,6 +1096,67 @@ fn assert_record_name(store: &SessionStore, session_id: u32, expected: &str) {
         .find(|field| field.name == "name")
         .expect("name field");
     assert_eq!(cell.value, CfdValue::String(expected.to_string()));
+}
+
+#[test]
+fn transfer_record_refreshes_both_files_and_reports_authoritative_indexes() {
+    let root = temp_project_dir("cfd-editor-transfer-record");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(root.join("schema.cft"), "type Item { value: int; }").expect("write schema");
+    std::fs::write(
+        root.join("data/a.cfd"),
+        "a: Item { value: 1 }\nb: Item { value: 2 }\n",
+    )
+    .expect("write source");
+    std::fs::write(root.join("data/b.cfd"), "x: Item { value: 3 }\n").expect("write destination");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/a.cfd\n  - path: data/b.cfd\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let coordinate = RecordCoordinate::try_new("Item", "b").expect("coordinate");
+    let outcome = store
+        .transfer_record(snapshot.session_id, &coordinate, "data/b.cfd", None, 0)
+        .expect("transfer record");
+
+    assert_eq!(outcome.old_index, Some(1));
+    assert_eq!(outcome.new_index, Some(0));
+    assert_eq!(
+        outcome
+            .file_records
+            .records
+            .iter()
+            .map(|row| row.coordinate.key.as_str())
+            .collect::<Vec<_>>(),
+        ["b", "x"]
+    );
+    assert!(store
+        .get_file_records(snapshot.session_id, "data/a.cfd")
+        .expect("source records")
+        .records
+        .iter()
+        .all(|row| row.coordinate.key.as_str() != "b"));
+
+    let restored = store
+        .transfer_record(snapshot.session_id, &coordinate, "data/a.cfd", None, 1)
+        .expect("restore record");
+    assert_eq!(restored.old_index, Some(0));
+    assert_eq!(restored.new_index, Some(1));
+    assert_eq!(
+        restored
+            .file_records
+            .records
+            .iter()
+            .map(|row| row.coordinate.key.as_str())
+            .collect::<Vec<_>>(),
+        ["a", "b"]
+    );
 }
 
 fn temp_project_dir(name: &str) -> std::path::PathBuf {

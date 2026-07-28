@@ -151,8 +151,8 @@ struct NodeKey {
 impl NodeKey {
     fn from_coordinate(c: &RecordCoordinate) -> Self {
         Self {
-            actual_type: c.actual_type.clone(),
-            key: c.key.clone(),
+            actual_type: c.actual_type.to_string(),
+            key: c.key.to_string(),
         }
     }
 }

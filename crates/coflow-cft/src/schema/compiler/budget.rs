@@ -3,8 +3,8 @@ use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
 use crate::schema::LocatedBudgetError;
 use crate::syntax::ast::{
-    Annotation, CheckBlock, CheckExpr, CheckExprKind, CheckStmt, DefaultExpr, DefaultExprKind,
-    Item, TypeRef, TypeRefKind,
+    Annotation, CheckBlock, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
+    CheckStmt, DefaultExpr, DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
 use crate::syntax::Span;
 use coflow_structure::{BudgetExceeded, StructuralBudget, StructureKind, TraversalCursor};
@@ -62,7 +62,7 @@ fn validate_module(
             Item::Const(definition) => {
                 charge_annotations(budget, module, &definition.annotations)?;
                 if let Some(ty) = &definition.ty {
-                    walk_type_ref(budget, module, ty)?;
+                    walk_value_type(budget, module, ty)?;
                 }
             }
             Item::Enum(definition) => {
@@ -79,7 +79,7 @@ fn validate_module(
                 for field in &definition.fields {
                     charge_flat(budget, module, field.span, 1)?;
                     charge_annotations(budget, module, &field.annotations)?;
-                    walk_type_ref(budget, module, &field.ty)?;
+                    walk_value_type(budget, module, &field.ty)?;
                     if let Some(default) = &field.default {
                         walk_default(budget, module, default)?;
                     }
@@ -87,6 +87,10 @@ fn validate_module(
                 if let Some(check) = &definition.check {
                     walk_check(budget, module, check)?;
                 }
+            }
+            Item::Check(definition) => {
+                charge_annotations(budget, module, &definition.annotations)?;
+                walk_check(budget, module, &definition.block)?;
             }
         }
     }
@@ -148,7 +152,7 @@ fn enter(
         })
 }
 
-fn walk_type_ref(
+fn walk_value_type(
     budget: &mut StructuralBudget,
     module: &ModuleId,
     root: &TypeRef,
@@ -234,7 +238,24 @@ fn walk_check(
         let (span, children) = match node {
             CheckNode::Stmt(stmt) => {
                 let children = match stmt {
-                    CheckStmt::Expr(expr) => vec![CheckNode::Expr(expr)],
+                    CheckStmt::Expr {
+                        condition, message, ..
+                    } => std::iter::once(CheckNode::Expr(condition))
+                        .chain(message.iter().flat_map(|message| {
+                            match &message.kind {
+                                CheckMessageKind::String(_) => Vec::new(),
+                                CheckMessageKind::Formatted(segments) => segments
+                                    .iter()
+                                    .filter_map(|segment| match segment {
+                                        CheckFormatSegment::Text(_, _) => None,
+                                        CheckFormatSegment::Expr(expr) => {
+                                            Some(CheckNode::Expr(expr))
+                                        }
+                                    })
+                                    .collect(),
+                            }
+                        }))
+                        .collect(),
                     CheckStmt::When {
                         condition, body, ..
                     } => std::iter::once(CheckNode::Expr(condition))
@@ -259,12 +280,13 @@ fn walk_check(
 fn check_expr_children(expr: &CheckExpr) -> Vec<CheckNode<'_>> {
     match &expr.kind {
         CheckExprKind::Field { expr, .. }
+        | CheckExprKind::SafeField { expr, .. }
         | CheckExprKind::Is { expr, .. }
         | CheckExprKind::Unary { expr, .. } => vec![CheckNode::Expr(expr)],
-        CheckExprKind::Index { expr, index } => {
+        CheckExprKind::Index { expr, index } | CheckExprKind::SafeIndex { expr, index } => {
             vec![CheckNode::Expr(expr), CheckNode::Expr(index)]
         }
-        CheckExprKind::BinOp { lhs, rhs, .. } => {
+        CheckExprKind::BinOp { lhs, rhs, .. } | CheckExprKind::Coalesce { lhs, rhs } => {
             vec![CheckNode::Expr(lhs), CheckNode::Expr(rhs)]
         }
         CheckExprKind::CmpChain { first, rest } => std::iter::once(CheckNode::Expr(first))
@@ -276,11 +298,19 @@ fn check_expr_children(expr: &CheckExpr) -> Vec<CheckNode<'_>> {
                 .chain(args.iter().map(CheckNode::Expr))
                 .collect()
         }
+        CheckExprKind::FormattedString(segments) => segments
+            .iter()
+            .filter_map(|segment| match segment {
+                CheckFormatSegment::Text(_, _) => None,
+                CheckFormatSegment::Expr(expr) => Some(CheckNode::Expr(expr)),
+            })
+            .collect(),
         CheckExprKind::Int(_)
         | CheckExprKind::Float(_)
         | CheckExprKind::Bool(_)
         | CheckExprKind::Null
         | CheckExprKind::String(_)
-        | CheckExprKind::Name(_) => Vec::new(),
+        | CheckExprKind::Name(_)
+        | CheckExprKind::Records { .. } => Vec::new(),
     }
 }

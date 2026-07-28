@@ -5,7 +5,7 @@ use crate::diagnostics::{
 };
 use crate::state::LspBuild;
 use crate::uri::path_to_file_uri;
-use coflow_api::{DiagnosticSet, SourceLocationSpec};
+use coflow_api::DiagnosticSet;
 use coflow_cfd::parse_cfd;
 use coflow_project::{discover_directory_files, normalize_path, Project};
 use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
@@ -290,7 +290,7 @@ fn collect_cfd_sources(
     let mut sources = Vec::new();
     let mut failures = Vec::new();
     for source in &project.config.sources {
-        let SourceLocationSpec::Path(path) = source.location();
+        let path = (source.location()).path();
         let resolved = project.resolve_path(path);
         if resolved.is_dir() {
             match discover_directory_files(&resolved) {

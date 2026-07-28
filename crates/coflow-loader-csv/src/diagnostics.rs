@@ -146,6 +146,7 @@ fn csv_diagnostic_to_api(diagnostic: CsvDiagnostic) -> Diagnostic {
             .into_iter()
             .map(csv_label_to_api)
             .collect(),
+        contexts: Vec::new(),
     }
 }
 

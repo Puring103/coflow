@@ -2,7 +2,7 @@
 
 Excel source 使用 `excel` Provider 读取 `.xlsx`、`.xlsm`、`.xls` workbook，并把 sheet 转成共享表格模型。
 
-Excel 与 CSV 共享 [表格 Source](./02-table.md) 规则：第一行表头、`id` 列作为 key、`sheets` 映射、`columns` 映射、`#` 控制列和 `@expand`。
+Excel 与 CSV 共享 [表格 Source](./table-source.md) 规则：第一行表头、`id` 列作为 key、`sheets` 映射、`columns` 映射、`#` 控制列和 `@expand`。
 
 ## 配置示例
 
@@ -47,7 +47,7 @@ Excel 合并表头只有左上角单元格保留文本，后续单元格通常�
 
 Excel writer 只写 `.xlsx`。`.xlsm` 和 `.xls` 可以作为 source 读取，但其动态
 `WriterCapabilities` 为只读：当前 OOXML writer 无法保证保留 `.xlsm` 的 VBA
-project，也不能原样写回旧版二进制 `.xls`。这些格式的 field edit、record
+project，也不能原样写回二进制 `.xls`。这些格式的 field edit、record
 mutation、create-file 和 sync-header 都会在读取或修改 workbook 之前报告
 `EXCEL-FORMAT-READ-ONLY`，不会转换扩展名或覆盖原文件。
 
@@ -61,4 +61,4 @@ coflow data sync-header <project> --file data/items.xlsx --type Item --provider 
 
 普通写回失败使用 `EXCEL-WRITE` 诊断；不安全格式使用
 `EXCEL-FORMAT-READ-ONLY`。读取和解析阶段的诊断见
-[错误码](../09-diagnostics/02-codes.md)。
+[错误码](https://puring103.github.io/coflow/docs/reference/09-diagnostics/02-codes)。

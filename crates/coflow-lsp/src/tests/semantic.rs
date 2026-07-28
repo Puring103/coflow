@@ -5,8 +5,8 @@ use crate::document_symbols::document_symbols;
 use crate::semantic_tokens::{
     comment_start_in_line, encode_semantic_tokens, push_semantic_span, push_semantic_span_plain,
     semantic_raw_tokens, semantic_token_data, RawSemanticToken, MOD_DECLARATION, MOD_PATH,
-    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_NAMESPACE, SEM_OPERATOR, SEM_PROPERTY, SEM_STRING,
-    SEM_TYPE, SEM_VARIABLE,
+    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_NAMESPACE, SEM_OPERATOR, SEM_PROPERTY,
+    SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
 use crate::text::{is_after_line_comment, is_inside_string};
 use crate::uri::{hex_value, percent_decode};
@@ -133,6 +133,27 @@ type Holder {\n\
 }
 
 #[test]
+fn named_top_level_checks_are_symbols_and_semantic_declarations() {
+    let source = "check ItemIntegrity { true; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cft-top-level-check", source);
+    let document = first_document(&build);
+    let raw_tokens = semantic_raw_tokens(&build, document);
+
+    assert!(has_semantic_token(
+        source,
+        &raw_tokens,
+        "check ItemIntegrity",
+        "ItemIntegrity",
+        SEM_FUNCTION,
+        MOD_DECLARATION | MOD_SCHEMA,
+    ));
+    let symbols = document_symbols(document);
+    assert_eq!(symbols.len(), 1);
+    assert_eq!(symbols[0]["name"], "ItemIntegrity");
+    assert_eq!(symbols[0]["kind"], 12);
+}
+
+#[test]
 fn cfd_semantic_tokens_distinguish_record_refs_and_schema_fields() {
     let source = "base: Monster { stats: { hp: 10 } }\n\
 elite: Monster { target: &base }\n";
@@ -224,12 +245,13 @@ fn semantic_tokens_and_protocol_helpers_cover_malformed_boundaries() {
 }
 
 #[test]
-fn semantic_tokens_do_not_treat_legacy_ref_annotation_arg_as_type() {
+fn semantic_tokens_do_not_treat_unknown_ref_annotation_arg_as_type() {
     let source = "type Target { key: string; }\n\
 type Item { @ref(Target) target: string; }\n";
-    let (_cleanup, build) = test_lsp_build("lsp-semantic-legacy-ref-annotation", source);
+    let (_cleanup, build) = test_lsp_build("lsp-semantic-unknown-ref-annotation", source);
     let document = first_document(&build);
-    let target_offset = source.find("@ref(Target)").expect("legacy ref annotation") + "@ref(".len();
+    let target_offset =
+        source.find("@ref(Target)").expect("unknown ref annotation") + "@ref(".len();
     let target_start = position_from_byte(source, target_offset);
     let target_len = "Target".len();
     let raw_tokens = semantic_raw_tokens(&build, document);

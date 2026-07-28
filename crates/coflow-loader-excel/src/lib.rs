@@ -20,10 +20,9 @@
 
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext,
-    SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceResolveContext,
+    ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext, SourceProvider,
+    SourceProviderDescriptor, SourceResolveContext,
 };
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -73,14 +72,13 @@ impl SourceProvider for ExcelLoader {
         if source.source_type == Some(EXCEL_LOADER_DESCRIPTOR.id) {
             return ProbeResult::certain();
         }
-        if matches!(
-            source.location,
-            SourceLocationSpec::Path(path)
-                if path
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .is_some_and(|ext| EXCEL_LOADER_DESCRIPTOR.extensions.contains(&ext))
-        ) {
+        if source
+            .location
+            .path()
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| EXCEL_LOADER_DESCRIPTOR.extensions.contains(&ext))
+        {
             ProbeResult::likely()
         } else {
             ProbeResult::none()
@@ -96,10 +94,7 @@ impl SourceProvider for ExcelLoader {
         _ctx: SourceResolveContext<'_>,
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &source.location;
-        if path.is_dir() {
-            return collect_excel_sources(path, source);
-        }
+        let path = source.location.path();
         if is_excel_path(path) {
             return Ok(vec![source.clone()]);
         }
@@ -118,7 +113,7 @@ impl SourceProvider for ExcelLoader {
         ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let SourceLocationSpec::Path(file) = &source.location;
+        let file = source.location.path();
         let sheets = excel_sheets(excel_source_options(source)?);
         let excel_source = ExcelSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[excel_source])
@@ -127,45 +122,6 @@ impl SourceProvider for ExcelLoader {
             })
             .map_err(excel_diagnostics_to_api)
     }
-}
-
-fn collect_excel_sources(
-    dir: &Path,
-    source: &ResolvedSource,
-) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-    let mut entries = fs::read_dir(dir)
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "EXCEL-SOURCE",
-                "EXCEL",
-                format!("failed to read data source dir `{}`: {err}", dir.display()),
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "EXCEL-SOURCE",
-                "EXCEL",
-                format!("failed to read data source dir `{}`: {err}", dir.display()),
-            ))
-        })?;
-    entries.sort_by_key(fs::DirEntry::path);
-
-    let mut sources = Vec::new();
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            sources.extend(collect_excel_sources(&path, source)?);
-        } else if is_excel_path(&path) {
-            sources.push(ResolvedSource {
-                provider_id: EXCEL_LOADER_DESCRIPTOR.id.to_string(),
-                display_name: path.display().to_string(),
-                location: SourceLocationSpec::Path(path),
-                options: source.options.clone(),
-            });
-        }
-    }
-    Ok(sources)
 }
 
 fn is_excel_path(path: &Path) -> bool {

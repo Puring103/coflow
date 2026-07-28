@@ -36,6 +36,164 @@ fn write_project(root: &std::path::Path) {
     .expect("write config");
 }
 
+fn write_dimension_read_project(root: &std::path::Path) -> std::path::PathBuf {
+    std::fs::create_dir_all(root.join("data/dimensions/language"))
+        .expect("create dimension data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                @localized name: string;
+                @localized description: string;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.csv"),
+        "id,name,description\npotion,Potion,Restores health\n",
+    )
+    .expect("write records");
+    let existing_dimension = root.join("data/dimensions/language/Item_name.csv");
+    std::fs::write(
+        &existing_dimension,
+        "id,default,zh\npotion,Potion,Healing Potion\n",
+    )
+    .expect("write existing dimension source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: Item
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+",
+    )
+    .expect("write config");
+    existing_dimension
+}
+
+#[test]
+fn read_only_project_commands_do_not_generate_or_rewrite_dimension_sources() {
+    let commands: &[(&str, &[&str])] = &[
+        ("check", &["check"]),
+        ("data-sources", &["data", "sources"]),
+        ("data-list", &["data", "list"]),
+        ("data-get", &["data", "get"]),
+    ];
+
+    for (name, command) in commands {
+        let root = temp_project_dir(name);
+        let _cleanup = TempDirCleanup(root.clone());
+        let existing_dimension = write_dimension_read_project(&root);
+        let before = std::fs::read(&existing_dimension).expect("read dimension source before");
+        let missing_dimension = root.join("data/dimensions/language/Item_description.csv");
+        let mut args = command
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect::<Vec<_>>();
+        args.push(root.display().to_string());
+        if *name == "data-get" {
+            args.push("Item.potion".to_string());
+        }
+
+        let output = coflow()
+            .args(&args)
+            .output()
+            .expect("run read-only command");
+        assert!(
+            output.status.success(),
+            "command {args:?}\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            std::fs::read(&existing_dimension).expect("read dimension source after"),
+            before,
+            "command {args:?} rewrote an existing dimension source"
+        );
+        assert!(
+            !missing_dimension.exists(),
+            "command {args:?} generated a missing dimension source"
+        );
+    }
+}
+
+#[test]
+fn data_write_file_check_does_not_modify_managed_dimension_sources() {
+    let root = temp_project_dir("data-write-file-dimension-check");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data/dimensions/language"))
+        .expect("create dimension data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                @localized name: string;
+                @localized description: string;
+            }
+        ",
+    )
+    .expect("write schema");
+    let source = "potion: Item { name: \"Potion\", description: \"Restores health\" }\n";
+    std::fs::write(root.join("data/items.cfd"), source).expect("write records");
+    let existing_dimension = root.join("data/dimensions/language/Item_name.cfd");
+    std::fs::write(
+        &existing_dimension,
+        "potion: Item { default: \"Potion\", zh: \"Healing Potion\" }\n",
+    )
+    .expect("write existing dimension source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema.cft
+sources:
+  - path: data/items.cfd
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+",
+    )
+    .expect("write config");
+    let before = std::fs::read(&existing_dimension).expect("read dimension source before");
+    let missing_dimension = root.join("data/dimensions/language/Item_description.cfd");
+
+    let output = run_stdin_command(
+        &[
+            "data",
+            "write-file",
+            "--json",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/items.cfd",
+            "--check",
+        ],
+        source,
+    );
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read(&existing_dimension).expect("read dimension source after"),
+        before,
+        "data write-file --check rewrote an existing dimension source"
+    );
+    assert!(
+        !missing_dimension.exists(),
+        "data write-file --check generated a missing dimension source"
+    );
+}
+
 fn write_table_project(root: &std::path::Path, fields: &str, source: &str) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
@@ -69,6 +227,7 @@ fn create_items_csv_table(root: &std::path::Path) {
         .args([
             "data",
             "create-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.csv",
@@ -100,6 +259,7 @@ fn apply_data_patch_command(root: &std::path::Path, file_name: &str, patch: &Val
         .args([
             "data",
             "patch",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--patch-file",
             patch_path.to_str().expect("utf8 patch path"),
@@ -135,13 +295,18 @@ fn run_stdin_command(args: &[&str], stdin: &str) -> std::process::Output {
 }
 
 #[test]
-fn schema_inspect_outputs_json_by_default_and_includes_item_type() {
+fn schema_inspect_outputs_json_when_requested_and_includes_item_type() {
     let root = temp_project_dir("cli-schema-inspect");
     let _cleanup = TempDirCleanup(root.clone());
     write_project(&root);
 
     let output = coflow()
-        .args(["schema", "inspect", root.to_str().expect("utf8 path")])
+        .args([
+            "schema",
+            "inspect",
+            "--json",
+            root.to_str().expect("utf8 path"),
+        ])
         .output()
         .expect("run schema inspect");
 
@@ -163,6 +328,23 @@ fn schema_inspect_outputs_json_by_default_and_includes_item_type() {
 }
 
 #[test]
+fn schema_inspect_outputs_human_text_by_default() {
+    let root = temp_project_dir("cli-schema-inspect-human-default");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_project(&root);
+
+    let output = coflow()
+        .args(["schema", "inspect", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run schema inspect");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("type Item"), "stdout: {stdout}");
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+}
+
+#[test]
 fn schema_write_file_writes_existing_schema_file_from_stdin() {
     let root = temp_project_dir("cli-schema-write-file");
     let _cleanup = TempDirCleanup(root.clone());
@@ -179,10 +361,10 @@ fn schema_write_file_writes_existing_schema_file_from_stdin() {
     command.args([
         "schema",
         "write-file",
+        "--json",
         root.to_str().expect("utf8 path"),
         "--file",
         "schema.cft",
-        "--stdin",
     ]);
     let mut child = command
         .stdin(std::process::Stdio::piped())
@@ -227,10 +409,10 @@ fn schema_write_file_dry_run_does_not_write() {
     command.args([
         "schema",
         "write-file",
+        "--json",
         root.to_str().expect("utf8 path"),
         "--file",
         "schema.cft",
-        "--stdin",
         "--dry-run",
     ]);
     let mut child = command
@@ -275,10 +457,10 @@ fn schema_write_file_rejects_non_schema_file() {
     command.args([
         "schema",
         "write-file",
+        "--json",
         root.to_str().expect("utf8 path"),
         "--file",
         "data/items.cfd",
-        "--stdin",
     ]);
     let mut child = command
         .stdin(std::process::Stdio::piped())
@@ -319,10 +501,10 @@ fn schema_write_file_check_reports_schema_diagnostics() {
     command.args([
         "schema",
         "write-file",
+        "--json",
         root.to_str().expect("utf8 path"),
         "--file",
         "schema.cft",
-        "--stdin",
         "--check",
     ]);
     let mut child = command
@@ -373,6 +555,7 @@ fn data_get_can_fetch_single_complete_record() {
         .args([
             "data",
             "get",
+            "--json",
             root.to_str().expect("utf8 path"),
             "Item.sword",
         ])
@@ -409,6 +592,7 @@ fn data_get_succeeds_when_records_exist_with_project_diagnostics() {
         .args([
             "data",
             "get",
+            "--json",
             root.to_str().expect("utf8 path"),
             "Item.sword",
         ])
@@ -442,6 +626,7 @@ fn data_get_treats_single_config_file_argument_as_project_path() {
         .args([
             "data",
             "get",
+            "--json",
             "coflow.yaml",
             "--type",
             "Item",
@@ -487,6 +672,7 @@ fn data_patch_writes_then_returns_check_diagnostics_and_nonzero_exit() {
         .args([
             "data",
             "patch",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--patch-file",
             patch_path.to_str().expect("utf8 patch path"),
@@ -542,6 +728,7 @@ fn data_patch_rejects_removed_check_after_write_field() {
         .args([
             "data",
             "patch",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--patch-file",
             patch_path.to_str().expect("utf8 patch path"),
@@ -631,6 +818,7 @@ fn data_patch_cli_supports_rename_and_dict_key_paths() {
         .args([
             "data",
             "get",
+            "--json",
             root.to_str().expect("utf8 path"),
             "Loot.starter_renamed",
         ])
@@ -665,6 +853,7 @@ fn data_patch_accepts_patch_string_argument() {
         .args([
             "data",
             "patch",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--patch",
             &patch,
@@ -704,6 +893,7 @@ fn data_patch_accepts_large_patch_from_stdin() {
         &[
             "data",
             "patch",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--stdin",
         ],
@@ -747,6 +937,7 @@ fn data_patch_does_not_treat_patch_argument_as_file_path() {
         .args([
             "data",
             "patch",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--patch",
             patch_path.to_str().expect("utf8 patch path"),
@@ -781,10 +972,10 @@ fn data_write_file_writes_configured_cfd_file_from_stdin() {
         &[
             "data",
             "write-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
         ],
         next_cfd,
     );
@@ -818,10 +1009,10 @@ fn data_write_file_dry_run_does_not_write() {
         &[
             "data",
             "write-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
             "--dry-run",
         ],
         "shield: Item { name: \"Shield\", price: 80 }\n",
@@ -854,10 +1045,10 @@ fn data_write_file_dry_run_check_reports_check_skipped() {
         &[
             "data",
             "write-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
             "--dry-run",
             "--check",
         ],
@@ -894,10 +1085,10 @@ fn data_write_file_rejects_non_cfd_file() {
         &[
             "data",
             "write-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.csv",
-            "--stdin",
         ],
         "id,name,price\nshield,Shield,80\n",
     );
@@ -927,10 +1118,10 @@ fn data_write_file_rejects_file_outside_configured_sources() {
         &[
             "data",
             "write-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "other/items.cfd",
-            "--stdin",
         ],
         "shield: Item { name: \"Shield\", price: 80 }\n",
     );
@@ -964,10 +1155,10 @@ fn data_write_file_writes_file_under_explicit_cfd_source() {
         &[
             "data",
             "write-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
             "--check",
         ],
         next_cfd,
@@ -1004,10 +1195,10 @@ fn data_write_file_rejects_cfd_file_under_explicit_non_cfd_source() {
         &[
             "data",
             "write-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
         ],
         "shield: Item { name: \"Shield\", price: 80 }\n",
     );
@@ -1036,10 +1227,10 @@ fn data_write_file_check_reports_project_diagnostics_after_write() {
         &[
             "data",
             "write-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",
-            "--stdin",
             "--check",
         ],
         bad_cfd,
@@ -1082,6 +1273,7 @@ fn data_create_file_creates_csv_with_schema_header() {
         .args([
             "data",
             "create-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.csv",
@@ -1144,6 +1336,7 @@ fn data_create_file_appends_excel_sheet_to_existing_workbook() {
         .args([
             "data",
             "create-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/tables.xlsx",
@@ -1218,6 +1411,7 @@ fn data_sync_header_creates_missing_excel_sheet_in_existing_workbook() {
         .args([
             "data",
             "sync-header",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/tables.xlsx",
@@ -1359,6 +1553,7 @@ fn data_create_file_then_patch_creates_complete_csv_table() {
         .args([
             "data",
             "get",
+            "--json",
             root.to_str().expect("utf8 path"),
             "Item.potion",
         ])
@@ -1416,6 +1611,7 @@ fn data_create_file_then_patch_updates_csv_record() {
         .args([
             "data",
             "get",
+            "--json",
             root.to_str().expect("utf8 path"),
             "Item.potion",
         ])
@@ -1474,6 +1670,7 @@ fn data_create_file_then_patch_deletes_csv_record() {
         .args([
             "data",
             "get",
+            "--json",
             root.to_str().expect("utf8 path"),
             "Item.potion",
         ])
@@ -1499,6 +1696,7 @@ fn data_create_file_then_patch_deletes_csv_record() {
         .args([
             "data",
             "get",
+            "--json",
             root.to_str().expect("utf8 path"),
             "Item.elixir",
         ])
@@ -1534,6 +1732,7 @@ fn data_sync_header_adds_and_removes_csv_columns_while_preserving_rows() {
         .args([
             "data",
             "sync-header",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.csv",
@@ -1596,6 +1795,7 @@ fn data_sync_header_reorders_excel_columns_without_rebinding_rows() {
         .args([
             "data",
             "sync-header",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/tables.xlsx",
@@ -1652,6 +1852,7 @@ fn data_sync_header_rejects_duplicate_csv_headers_without_writing() {
         .args([
             "data",
             "sync-header",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.csv",
@@ -1724,6 +1925,7 @@ fn data_sync_header_rejects_duplicate_excel_headers_without_writing() {
         .args([
             "data",
             "sync-header",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/tables.xlsx",
@@ -1776,6 +1978,7 @@ fn data_create_file_creates_empty_cfd_file() {
         .args([
             "data",
             "create-file",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/new_items.cfd",
@@ -1829,6 +2032,7 @@ fn data_sync_header_updates_cfd_record_columns_without_creating_a_header() {
         .args([
             "data",
             "sync-header",
+            "--json",
             root.to_str().expect("utf8 path"),
             "--file",
             "data/items.cfd",

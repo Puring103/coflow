@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore
 import { FileTree } from './components/FileTree'
 import { TableView } from './components/TableView'
 import { RecordView } from './components/RecordView'
+import { ViewEditorDialog } from './components/ViewEditorDialog'
 import { GraphView } from './components/GraphView'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { InspectorPanel } from './components/InspectorPanel'
@@ -12,10 +13,10 @@ import { DimensionTableView } from './components/DimensionTableView'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import {
-  loadLocalReadPlugin,
-  restoreLocalReadPlugins,
+  replaceLocalReadPlugins,
+  setReadPluginDataApi,
+  setReadPluginSession,
   setReadPluginEnabled,
-  unloadLocalReadPlugin,
   useReadPluginSettings,
 } from './plugins'
 import {
@@ -32,6 +33,7 @@ import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
+import type { ViewConfig } from './bindings/ViewConfig'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
@@ -46,7 +48,8 @@ import {
   cloneValue,
   recordActualType,
   recordKey,
-  sameCoordinate,
+    coordinateId,
+    sameCoordinate,
   type FieldPathSegment,
   type FieldValue,
 } from './wire'
@@ -70,10 +73,14 @@ import {
   rebindSelection,
   removeSelection,
   updateRecordSelection,
+  updateValueSelection,
   valueSelection,
+  type CellAnchor,
   type EditorSelection,
   type RecordSelectionMode,
+  type ValueSelectionMode,
 } from './state/editorSelection'
+import type { BatchWriteFieldInput } from './bindings/BatchWriteFieldInput'
 import {
   createRecordGroup,
   moveRecordsOntoRecord,
@@ -85,7 +92,16 @@ import {
   renameRecordGroup,
   replaceGroupedCoordinate,
 } from './state/manualRecordGroups'
-import { recordsSupportGraph } from './state/graphSupport'
+import { recordsSupportGraph, relationFieldNames } from './state/graphSupport'
+import {
+  DEFAULT_RECORD_VIEW_ID,
+  DEFAULT_TABLE_VIEW_ID,
+  viewTabsFor,
+  resolveView,
+  visibleFieldsFor,
+  groupFilterPredicate,
+  type ViewTab,
+} from './state/views'
 import './style.css'
 
 const GRAPH_DEPTH = 3
@@ -101,39 +117,52 @@ function workspaceTabId(filePath: string, typeName: string): string {
   return `${filePath}\u001f${typeName}`
 }
 
+function sameValueCells(left: readonly CellAnchor[], right: readonly CellAnchor[]): boolean {
+  return left.length === right.length && left.every((cell, index) => {
+    const other = right[index]
+    return !!other
+      && coordinateId(cell.coordinate) === coordinateId(other.coordinate)
+      && JSON.stringify(cell.fieldPath) === JSON.stringify(other.fieldPath)
+  })
+}
+
+function emptySettings(): EditorProjectSettings {
+  return { views: {}, default_table_column_widths: {}, record_groups: {} }
+}
+
 function settingsWithRecordGroups(
   settings: EditorProjectSettings | null,
   filePath: string,
   actualType: string,
   groups: EditorRecordGroup[],
 ): EditorProjectSettings {
+  const base = settings ?? emptySettings()
   return {
-    table_column_widths: settings?.table_column_widths ?? {},
-    graph_enabled_fields: settings?.graph_enabled_fields ?? {},
+    ...base,
     record_groups: {
-      ...(settings?.record_groups ?? {}),
+      ...base.record_groups,
       [filePath]: {
-        ...(settings?.record_groups?.[filePath] ?? {}),
+        ...(base.record_groups?.[filePath] ?? {}),
         [actualType]: groups,
       },
     },
   }
 }
 
-function settingsWithGraphFields(
+function settingsWithViews(
   settings: EditorProjectSettings | null,
   filePath: string,
   actualType: string,
-  fields: string[],
+  views: ViewConfig[],
 ): EditorProjectSettings {
+  const base = settings ?? emptySettings()
   return {
-    table_column_widths: settings?.table_column_widths ?? {},
-    record_groups: settings?.record_groups ?? {},
-    graph_enabled_fields: {
-      ...(settings?.graph_enabled_fields ?? {}),
+    ...base,
+    views: {
+      ...base.views,
       [filePath]: {
-        ...(settings?.graph_enabled_fields?.[filePath] ?? {}),
-        [actualType]: fields,
+        ...(base.views?.[filePath] ?? {}),
+        [actualType]: views,
       },
     },
   }
@@ -190,9 +219,20 @@ function projectGraphRows(
 export default function App() {
   const pluginSettings = useReadPluginSettings()
   const restoredPlugins = useRef(false)
+  const globalPluginBundles = useRef<api.FrontendPluginBundle[]>([])
+  const [globalPluginsReady, setGlobalPluginsReady] = useState(false)
   const [pluginLoadBusy, setPluginLoadBusy] = useState(false)
   const [pluginLoadError, setPluginLoadError] = useState<string | null>(null)
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
+  useEffect(() => {
+    setReadPluginDataApi({
+      getSchema: api.getPluginSchema,
+      getRecordsByType: api.getPluginRecordsByType,
+    })
+  }, [])
+  useEffect(() => {
+    setReadPluginSession(project?.session_id ?? null)
+  }, [project?.session_id])
   useEffect(() => {
     const suppressBrowserMenu = (event: MouseEvent) => event.preventDefault()
     window.addEventListener('contextmenu', suppressBrowserMenu)
@@ -256,32 +296,74 @@ export default function App() {
   useEffect(() => {
     if (!api.isTauri || restoredPlugins.current) return
     restoredPlugins.current = true
-    api.listFrontendPlugins().then(restoreLocalReadPlugins).then(errors => {
-      if (errors.length > 0) setPluginLoadError(`部分插件未加载：${errors.join('; ')}`)
-    })
+    api.listFrontendPlugins().then(bundles => {
+      globalPluginBundles.current = bundles
+      setGlobalPluginsReady(true)
+    }).catch(error => setPluginLoadError(`加载插件失败：${errorMessage(error)}`))
   }, [])
+  useEffect(() => {
+    if (!api.isTauri || !globalPluginsReady) return
+    const sessionId = project?.session_id
+    const projectPlugins = sessionId === undefined
+      ? Promise.resolve([])
+      : api.listProjectFrontendPlugins(sessionId)
+    projectPlugins.then(async bundles => {
+      const errors = await replaceLocalReadPlugins([...globalPluginBundles.current, ...bundles])
+      if (errors.length > 0) setPluginLoadError(`部分插件未加载：${errors.join('; ')}`)
+    }).catch(error => setPluginLoadError(`加载项目插件失败：${errorMessage(error)}`))
+  }, [globalPluginsReady, project?.session_id])
   const loadPluginFromSettings = useCallback(async () => {
+    if (!project) {
+      setPluginLoadError('请先打开项目')
+      return
+    }
     const manifestPath = await api.pickFrontendPluginManifest()
     if (!manifestPath) return
     setPluginLoadBusy(true)
     setPluginLoadError(null)
     try {
-      await loadLocalReadPlugin(await api.installFrontendPlugin(manifestPath))
+      const bundle = await api.installProjectFrontendPlugin(project.session_id, manifestPath)
+      await replaceLocalReadPlugins([
+        ...globalPluginBundles.current,
+        ...await api.listProjectFrontendPlugins(project.session_id),
+      ])
+      setReadPluginEnabled(bundle.id, true)
     } catch (error) {
       setPluginLoadError(`加载插件失败：${errorMessage(error)}`)
     } finally {
       setPluginLoadBusy(false)
     }
-  }, [])
-  const uninstallPluginFromSettings = useCallback(async (id: string) => {
+  }, [project])
+  const uninstallPluginFromSettings = useCallback(async (plugin: typeof pluginSettings[number]) => {
     setPluginLoadError(null)
     try {
-      await api.uninstallFrontendPlugin(id)
-      unloadLocalReadPlugin(id)
+      if (plugin.origin === 'project') {
+        if (!project) return
+        await api.uninstallProjectFrontendPlugin(project.session_id, plugin.id)
+        await replaceLocalReadPlugins([
+          ...globalPluginBundles.current,
+          ...await api.listProjectFrontendPlugins(project.session_id),
+        ])
+      } else {
+        await api.uninstallFrontendPlugin(plugin.id)
+        globalPluginBundles.current = globalPluginBundles.current.filter(item => item.id !== plugin.id)
+        await replaceLocalReadPlugins(globalPluginBundles.current)
+      }
     } catch (error) {
       setPluginLoadError(`卸载插件失败：${errorMessage(error)}`)
     }
-  }, [])
+  }, [project, pluginSettings])
+  const togglePluginFromSettings = useCallback(async (plugin: typeof pluginSettings[number], enabled: boolean) => {
+    try {
+      if (plugin.origin === 'project') {
+        if (!project) return
+        await api.setProjectFrontendPluginEnabled(project.session_id, plugin.id, enabled)
+      }
+      setReadPluginEnabled(plugin.id, enabled)
+    } catch (error) {
+      setPluginLoadError(`更新插件状态失败：${errorMessage(error)}`)
+    }
+  }, [project])
   const [tabOverflowOpen, setTabOverflowOpen] = useState(false)
   const [tabsOverflow, setTabsOverflow] = useState(false)
   const tabScrollRef = useRef<HTMLDivElement>(null)
@@ -317,7 +399,7 @@ export default function App() {
   const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
   const recordGroupIdSequence = useRef(0)
   const recordGroupSaveSequence = useRef(0)
-  const graphFieldsSaveSequence = useRef(0)
+  const viewsSaveSequence = useRef(0)
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
@@ -360,29 +442,54 @@ export default function App() {
       })
   }, [generation])
 
-  const saveGraphEnabledFields = useCallback((
+  const saveViews = useCallback((
     filePath: string,
     actualType: string,
-    fields: string[],
+    views: ViewConfig[],
   ) => {
-    const sequence = ++graphFieldsSaveSequence.current
-    setProjectSettings(current => settingsWithGraphFields(current, filePath, actualType, fields))
+    const sequence = ++viewsSaveSequence.current
+    setProjectSettings(current => settingsWithViews(current, filePath, actualType, views))
     if (!api.isTauri) return
     const identity = generation.currentIdentity()
     if (!identity) return
-    api.setGraphEnabledFields(identity.sessionId, filePath, actualType, fields)
+    api.setViews(identity.sessionId, filePath, actualType, views)
       .then(settings => {
         if (generation.currentSession() === identity.sessionId
-          && graphFieldsSaveSequence.current === sequence) {
+          && viewsSaveSequence.current === sequence) {
           setProjectSettings(settings)
         }
       })
       .catch(error => {
         if (generation.currentSession() === identity.sessionId) {
-          setErrorMsg(`保存图谱字段失败: ${errorMessage(error)}`)
+          setErrorMsg(`保存视图失败: ${errorMessage(error)}`)
         }
       })
   }, [generation])
+
+  // View editor dialog + view-tab context menu (create/edit/delete custom views).
+  const [viewEditor, setViewEditor] = useState<
+    { mode: 'create' } | { mode: 'edit'; view: ViewConfig } | null
+  >(null)
+  const [viewMenu, setViewMenu] = useState<
+    { tab: ViewTab; x: number; y: number } | null
+  >(null)
+  const openViewEditor = useCallback((mode: 'create') => {
+    setViewMenu(null)
+    setViewEditor({ mode })
+  }, [])
+  const openViewContextMenu = useCallback((tab: ViewTab, x: number, y: number) => {
+    setViewMenu({ tab, x, y })
+  }, [])
+  useEffect(() => {
+    if (!viewMenu) return
+    const close = () => setViewMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('resize', close)
+    }
+  }, [viewMenu])
 
   // Resizable sidebar width, persisted to localStorage.
   const [sidebarW, setSidebarW] = useState<number>(() => {
@@ -441,7 +548,7 @@ export default function App() {
         setWorkspaceTabs([tab])
         setActiveWorkspaceTabId(tab.id)
         setActiveType(typeName)
-        router.push({ view: 'table', file: filePath, typeFilter: typeName })
+        router.push({ view: 'table', file: filePath, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
       }
     }
   }, [generation, lookups, router.push])
@@ -479,7 +586,7 @@ export default function App() {
         setWorkspaceTabs([tab])
         setActiveWorkspaceTabId(tab.id)
         setActiveType(typeName)
-        router.push({ view: 'table', file: firstFile, typeFilter: typeName })
+        router.push({ view: 'table', file: firstFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
       } else {
         router.clear()
       }
@@ -596,7 +703,7 @@ export default function App() {
         ])
         setActiveWorkspaceTabId(tab.id)
         setActiveType(typeName)
-        router.push({ view: 'table', file: nextFile, typeFilter: typeName })
+        router.push({ view: 'table', file: nextFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
         return
       }
       try {
@@ -618,6 +725,7 @@ export default function App() {
             : {
                 view: 'table',
                 file: nextFile,
+                viewId: DEFAULT_TABLE_VIEW_ID,
                 typeFilter: current.coordinate.actual_type,
               })
         } else {
@@ -627,7 +735,7 @@ export default function App() {
         if (generation.isCurrent(snapshot.session_id, snapshot.revision)) {
           setProject(snapshot)
           reportSessionError(snapshot.session_id, '刷新项目失败', err)
-          router.push({ view: 'table', file: nextFile, typeFilter: snapshot.file_types[nextFile]?.[0]?.name ?? '' })
+          router.push({ view: 'table', file: nextFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: snapshot.file_types[nextFile]?.[0]?.name ?? '' })
         }
       }
     },
@@ -852,12 +960,9 @@ export default function App() {
         : [...current, { id, filePath, typeName }])
       setActiveWorkspaceTabId(id)
       setActiveType(typeName)
-      const currentView = router.current?.view ?? 'table'
-      if (currentView === 'graph') {
-        router.push({ view: 'graph', file: filePath, typeFilter: typeName })
-        return
-      }
-      router.push({ view: 'table', file: filePath, typeFilter: typeName })
+      // Graph views are custom-only and keyed by (file, type), so a new file
+      // always opens on the default table view.
+      router.push({ view: 'table', file: filePath, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
     },
     [project?.file_types, router]
   )
@@ -871,7 +976,7 @@ export default function App() {
         : [...current, { id, filePath, typeName: coordinate.actual_type }])
       setActiveWorkspaceTabId(id)
       setActiveType(coordinate.actual_type)
-      router.push({ view: 'record', file: filePath, coordinate })
+      router.push({ view: 'record', file: filePath, viewId: DEFAULT_RECORD_VIEW_ID, coordinate })
     },
     [router]
   )
@@ -1217,6 +1322,29 @@ export default function App() {
     },
     [mutations, projectSettings, saveRecordGroups],
   )
+  const swapRecords = useCallback(
+    async (filePath: string, first: RecordCoordinate, second: RecordCoordinate) => {
+      await mutations.swapRecords(filePath, first, second)
+    },
+    [mutations],
+  )
+  const moveRecord = useCallback(
+    async (filePath: string, coordinate: RecordCoordinate, targetIndex: number) => {
+      await mutations.moveRecord(filePath, coordinate, targetIndex)
+    },
+    [mutations],
+  )
+  const transferRecord = useCallback(
+    async (
+      sourceFile: string,
+      destinationFile: string,
+      coordinate: RecordCoordinate,
+      targetIndex: number,
+    ) => {
+      await mutations.transferRecord(sourceFile, destinationFile, coordinate, targetIndex)
+    },
+    [mutations],
+  )
 
   const undo = useCallback(async () => {
     await mutations.undo()
@@ -1269,6 +1397,11 @@ export default function App() {
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeDimensionData = activeFile ? dimensionFileCache[activeFile] : null
   const recordGroups = projectSettings?.record_groups[activeFile ?? '']?.[activeType] ?? []
+  const activeTypeOption = useMemo(
+    () => project?.file_types[activeFile ?? '']?.find(option => option.name === activeType) ?? null,
+    [project?.file_types, activeFile, activeType],
+  )
+  const isSingletonType = activeTypeOption?.is_singleton ?? false
 
   useEffect(() => {
     setInspectorSelection(current => {
@@ -1278,7 +1411,16 @@ export default function App() {
         sameCoordinate(record.coordinate, coordinate)
         && (!activeType || recordActualType(record) === activeType)
       ))
-      if (current.kind === 'value') return inActiveType(current.coordinate) ? current : null
+      if (current.kind === 'value') {
+        if (inActiveType(current.coordinate) && inActiveType(current.rangeAnchor.coordinate)) return current
+        if (inActiveType(current.coordinate)) {
+          return valueSelection(current.filePath, current.coordinate, current.fieldPath)
+        }
+        if (inActiveType(current.rangeAnchor.coordinate)) {
+          return valueSelection(current.filePath, current.rangeAnchor.coordinate, current.rangeAnchor.fieldPath)
+        }
+        return null
+      }
       const coordinates = current.coordinates.filter(inActiveType)
       if (coordinates.length === 0) return null
       return {
@@ -1336,6 +1478,34 @@ export default function App() {
       ),
     )
   }, [activeFile, activeType, recordGroups, saveRecordGroups])
+  const dropRecordsAfterRecord = useCallback(async (
+    sources: readonly RecordCoordinate[], target: RecordCoordinate,
+  ) => {
+    if (!activeFile || !activeFileData) return
+    const sourceIds = new Set(sources
+      .filter(source => source.actual_type === target.actual_type)
+      .map(coordinateId))
+    if (sourceIds.has(coordinateId(target))) return
+    const current = activeFileData.records
+      .filter(row => row.coordinate.actual_type === target.actual_type)
+      .sort((left, right) => left.container_index - right.container_index)
+    const moving = current.filter(row => sourceIds.has(coordinateId(row.coordinate)))
+    const remaining = current.filter(row => !sourceIds.has(coordinateId(row.coordinate)))
+    const targetIndex = remaining.findIndex(row => sameCoordinate(row.coordinate, target))
+    if (moving.length === 0 || targetIndex < 0) return
+    const desired = [
+      ...remaining.slice(0, targetIndex + 1),
+      ...moving,
+      ...remaining.slice(targetIndex + 1),
+    ]
+    for (let index = 0; index < desired.length; index += 1) {
+      const currentIndex = current.findIndex(row => sameCoordinate(row.coordinate, desired[index].coordinate))
+      if (currentIndex === index) continue
+      await moveRecord(activeFile, desired[index].coordinate, index)
+      const [moved] = current.splice(currentIndex, 1)
+      current.splice(index, 0, moved)
+    }
+  }, [activeFile, activeFileData, moveRecord])
   const createManualRecordGroup = useCallback((records: readonly RecordCoordinate[]) => {
     if (!activeFile || !activeType) return
     recordGroupIdSequence.current += 1
@@ -1417,6 +1587,97 @@ export default function App() {
     if (!activeFileData) return false
     return recordsSupportGraph(activeFileData.records)
   }, [activeFileData])
+  // View tabs (default + custom) for the active (file, type).
+  const viewTabs = useMemo(
+    () => activeFile && activeType
+      ? viewTabsFor(projectSettings, activeFile, activeType, isSingletonType, graphSupported)
+      : [],
+    [projectSettings, activeFile, activeType, isSingletonType, graphSupported],
+  )
+  // The view the current route resolves to (default reserved id or custom uuid).
+  const resolvedView = useMemo(
+    () => activeFile && activeType && currentRoute
+      ? resolveView(projectSettings, activeFile, activeType, currentRoute.viewId)
+      : null,
+    [projectSettings, activeFile, activeType, currentRoute],
+  )
+  // Fields the custom view restricts to (undefined = show all).
+  const visibleFields = useMemo(
+    () => (resolvedView ? visibleFieldsFor(resolvedView) : undefined),
+    [resolvedView],
+  )
+  // Custom-view group filter applied to the table's records (whole-list
+  // filter, not a collapse). Returns the file data unchanged when the view
+  // has no valid group filter.
+  const viewFilteredFileData = useMemo(() => {
+    if (!activeFileData || !resolvedView || !resolvedView.groupFilter) return activeFileData
+    const predicate = groupFilterPredicate(resolvedView, recordGroups)
+    return { ...activeFileData, records: activeFileData.records.filter(row => predicate(row.coordinate)) }
+  }, [activeFileData, resolvedView, recordGroups])
+  // Graph root filter: keep group-member roots plus everything reachable from
+  // them via edges (only the roots are constrained, per design §4.2).
+  const viewFilteredGraph = useMemo(() => {
+    if (!activeGraph || !resolvedView || !resolvedView.groupFilter) return activeGraph
+    const predicate = groupFilterPredicate(resolvedView, recordGroups)
+    const coordKey = (c: { actual_type: string; key: string }) => `${c.actual_type}${c.key}`
+    const keep = new Set<string>()
+    for (const node of activeGraph.nodes) {
+      if (predicate(node.coordinate)) keep.add(coordKey(node.coordinate))
+    }
+    // Expand along edges until no new reachable target is added.
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const edge of activeGraph.edges) {
+        if (keep.has(coordKey(edge.source)) && !keep.has(coordKey(edge.target))) {
+          keep.add(coordKey(edge.target))
+          grew = true
+        }
+      }
+    }
+    return {
+      ...activeGraph,
+      nodes: activeGraph.nodes.filter(node => keep.has(coordKey(node.coordinate))),
+      edges: activeGraph.edges.filter(
+        edge => keep.has(coordKey(edge.source)) && keep.has(coordKey(edge.target)),
+      ),
+    }
+  }, [activeGraph, resolvedView, recordGroups])
+  // Choices offered by the view editor dialog.
+  const viewEditorFields = useMemo(
+    () => activeFileData?.columns.map(column => column.name) ?? [],
+    [activeFileData],
+  )
+  // Relations are derived from record annotations (not the graph, which may
+  // not be loaded when the dialog opens from the table view).
+  const viewEditorRelations = useMemo(
+    () => activeFileData
+      ? relationFieldNames(
+          activeFileData.records.filter(row => recordActualType(row) === activeType),
+        )
+      : [],
+    [activeFileData, activeType],
+  )
+  // Create or update a custom view: merge into the (file,type) list and save.
+  const submitViewConfig = useCallback((view: ViewConfig) => {
+    if (!activeFile || !activeType) return
+    const existing = projectSettings?.views[activeFile]?.[activeType] ?? []
+    const next = existing.some(v => v.id === view.id)
+      ? existing.map(v => (v.id === view.id ? view : v))
+      : [...existing, view]
+    saveViews(activeFile, activeType, next)
+  }, [activeFile, activeType, projectSettings, saveViews])
+
+  // Delete a custom view; if the current route pointed at it, fall back to the
+  // default table view (its column widths vanish with the ViewConfig).
+  const deleteView = useCallback((viewId: string) => {
+    if (!activeFile || !activeType) return
+    const existing = projectSettings?.views[activeFile]?.[activeType] ?? []
+    saveViews(activeFile, activeType, existing.filter(v => v.id !== viewId))
+    if (currentRoute?.viewId === viewId) {
+      router.replace({ view: 'table', file: activeFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
+    }
+  }, [activeFile, activeType, projectSettings, saveViews, currentRoute, router])
   // Set of file paths that can be opened via the record/table views. Used by
   // the diagnostics panel to decide whether "跳转" is available for a row —
   // if the diagnostic's file isn't part of the source set, we hide the button
@@ -1454,9 +1715,13 @@ export default function App() {
     setInspectorSelection(current => {
       if (!current || current.filePath !== currentRoute.file) return current
       if (current.kind === 'value') {
-        return visible.some(record => sameCoordinate(record.coordinate, current.coordinate))
-          ? current
-          : null
+        const contains = (coordinate: RecordCoordinate) => visible.some(record => sameCoordinate(record.coordinate, coordinate))
+        if (contains(current.coordinate) && contains(current.rangeAnchor.coordinate)) return current
+        if (contains(current.coordinate)) return valueSelection(current.filePath, current.coordinate, current.fieldPath)
+        if (contains(current.rangeAnchor.coordinate)) {
+          return valueSelection(current.filePath, current.rangeAnchor.coordinate, current.rangeAnchor.fieldPath)
+        }
+        return null
       }
       const coordinates = current.coordinates.filter(coordinate => (
         visible.some(record => sameCoordinate(record.coordinate, coordinate))
@@ -1478,7 +1743,7 @@ export default function App() {
       && visible.length > 0
       && !visible.some(record => sameCoordinate(record.coordinate, currentRoute.coordinate))
     ) {
-      router.replace({ view: 'record', file: currentRoute.file, coordinate: visible[0].coordinate })
+      router.replace({ view: 'record', file: currentRoute.file, viewId: currentRoute.viewId, coordinate: visible[0].coordinate })
     }
   }, [activeFileData, activeType, currentRoute, globalSearch, router])
 
@@ -1502,10 +1767,30 @@ export default function App() {
     [mutations],
   )
   const tableOnSelectValue = useCallback(
-    (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => {
-      if (currentRoute?.view === 'table') openValueInspector(currentRoute.file, coordinate, fieldPath)
+    (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], mode: ValueSelectionMode = 'replace') => {
+      if (currentRoute?.view !== 'table') return
+      setInspectorCollapsed(false)
+      setInspectorSelection(current => updateValueSelection(
+        current,
+        currentRoute.file,
+        coordinate,
+        fieldPath,
+        mode,
+      ))
     },
-    [currentRoute?.view, currentRoute?.file, openValueInspector],
+    [currentRoute?.view, currentRoute?.file],
+  )
+  const [inspectorValueCells, setInspectorValueCells] = useState<readonly CellAnchor[]>([])
+  const tableOnValueSelectionCellsChange = useCallback((cells: readonly CellAnchor[]) => {
+    setInspectorValueCells(current => sameValueCells(current, cells) ? current : cells)
+  }, [])
+  const tableOnWriteFieldBatch = useCallback(
+    async (writes: readonly BatchWriteFieldInput[]) => {
+      if (currentRoute?.view === 'table') {
+        await mutations.writeFieldBatch(currentRoute.file, writes)
+      }
+    },
+    [currentRoute?.view, currentRoute?.file, mutations],
   )
 
   const closeWorkspaceTab = useCallback((id: string) => {
@@ -1604,15 +1889,20 @@ export default function App() {
     else focusActiveView()
   }, [currentRoute?.view, focusActiveView])
   const tableColumnWidths = useMemo(() => (
-    currentRoute?.view === 'table' && activeType
-      ? definedColumnWidths(projectSettings?.table_column_widths[currentRoute.file]?.[activeType])
+    resolvedView?.kind === 'table'
+      ? definedColumnWidths(resolvedView.columnWidths)
       : undefined
-  ), [activeType, currentRoute?.file, currentRoute?.view, projectSettings])
+  ), [resolvedView])
   const tableOnColumnWidthsChange = useCallback((widths: Record<string, number>) => {
-    if (!api.isTauri || currentRoute?.view !== 'table' || !activeType) return
+    if (!api.isTauri || currentRoute?.view !== 'table' || !activeType || !resolvedView) return
     const identity = generation.currentIdentity()
     if (!identity) return
-    api.setTableColumnWidths(identity.sessionId, currentRoute.file, activeType, widths)
+    // Default table view widths live in default_table_column_widths; custom
+    // table views carry their own widths inside the ViewConfig.
+    const save = resolvedView.isDefault
+      ? api.setDefaultTableColumnWidths(identity.sessionId, currentRoute.file, activeType, widths)
+      : api.setViewColumnWidths(identity.sessionId, currentRoute.file, activeType, resolvedView.id, widths)
+    save
       .then(settings => {
         if (generation.isCurrent(identity.sessionId, identity.revision)) setProjectSettings(settings)
       })
@@ -1621,7 +1911,7 @@ export default function App() {
           setErrorMsg(`保存列宽失败: ${errorMessage(err)}`)
         }
       })
-  }, [activeType, currentRoute?.file, currentRoute?.view, generation])
+  }, [activeType, currentRoute?.file, currentRoute?.view, resolvedView, generation])
   const tableOnRenderCellText = useCallback(
     async (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => {
       const identity = generation.currentIdentity()
@@ -1680,6 +1970,13 @@ export default function App() {
       return Promise.resolve()
     },
     [currentRoute?.view, currentRoute?.file, deleteRecord],
+  )
+  const tableOnMoveRecord = useCallback(
+    (coordinate: RecordCoordinate, targetIndex: number): Promise<void> => {
+      if (currentRoute?.view === 'table') return moveRecord(currentRoute.file, coordinate, targetIndex)
+      return Promise.resolve()
+    },
+    [currentRoute?.view, currentRoute?.file, moveRecord],
   )
   const tableOnBadgeClick = useCallback(
     (coordinate: RecordCoordinate, fieldPath: string | null) => {
@@ -1746,23 +2043,23 @@ export default function App() {
     if (nextType !== activeType) setActiveType(nextType)
   }, [activeFileData?.file_path, activeFileData?.type_names, currentRoute, activeType])
 
-  function switchView(view: 'table' | 'record' | 'graph') {
+  function switchView(tab: ViewTab) {
     if (!currentRoute) return
-    setPreferredView(view)
-    if (view === 'table') {
+    setPreferredView(tab.kind)
+    if (tab.kind === 'table') {
       setFirstRecordFocusRequest(0)
       closeInspector()
     }
-    if (view === 'record') {
+    if (tab.kind === 'record') {
       const firstCoordinate =
         (activeType
           ? activeFileData?.records.find(r => recordActualType(r) === activeType)
           : activeFileData?.records[0])?.coordinate
         ?? activeFileData?.records[0]?.coordinate
       if (!firstCoordinate) return
-      router.replace({ view, file: currentRoute.file, coordinate: firstCoordinate })
+      router.replace({ view: 'record', file: currentRoute.file, viewId: tab.id, coordinate: firstCoordinate })
     } else {
-      router.replace({ view, file: currentRoute.file, typeFilter: activeType } as typeof currentRoute)
+      router.replace({ view: tab.kind, file: currentRoute.file, viewId: tab.id, typeFilter: activeType })
     }
   }
 
@@ -1780,7 +2077,7 @@ export default function App() {
         record => !activeType || recordActualType(record) === activeType,
       )?.coordinate
       if (firstCoord) {
-        router.replace({ view: 'record', file: currentRoute.file, coordinate: firstCoord })
+        router.replace({ view: 'record', file: currentRoute.file, viewId: DEFAULT_RECORD_VIEW_ID, coordinate: firstCoord })
       }
       return
     }
@@ -1790,7 +2087,7 @@ export default function App() {
           r => recordActualType(r) === activeType,
         )?.coordinate
         if (firstOfType) {
-          router.replace({ view: 'record', file: currentRoute.file, coordinate: firstOfType })
+          router.replace({ view: 'record', file: currentRoute.file, viewId: currentRoute.viewId, coordinate: firstOfType })
         }
       }
     }
@@ -1802,7 +2099,7 @@ export default function App() {
     if (!currentRoute || currentRoute.view !== 'graph') return
     if (activeFileData?.file_path !== currentRoute.file) return
     if (graphSupported) return
-    router.replace({ view: 'table', file: currentRoute.file, typeFilter: activeType })
+    router.replace({ view: 'table', file: currentRoute.file, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
   }, [currentRoute, activeFileData, graphSupported, activeType, router])
 
   return (
@@ -1828,6 +2125,17 @@ export default function App() {
             <Icon name="plus" size={13} />
             <span className="btn-label">新建</span>
           </button>
+          {project && (
+            <button
+              className="btn btn-primary btn-icon btn-build"
+              onClick={runBuild}
+              disabled={projectAction !== null}
+              title="构建项目"
+              aria-label="构建项目"
+            >
+              <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={15} className={projectAction === 'build' ? 'icon-spin' : undefined} />
+            </button>
+          )}
           <span className="topbar-divider" />
           <button
             className="btn btn-icon"
@@ -1848,51 +2156,7 @@ export default function App() {
             <Icon name="arrow-right" size={14} />
           </button>
         </div>
-        <div className="topbar-center">
-          {currentRoute && (activeFileData || activeDimensionData) ? (
-            <>
-              {activeDimensionData ? (
-                <div className="document-view-tabs" role="tablist" aria-label="视图">
-                  {(['record', 'table'] as const).map(view => (
-                    <button
-                      key={view}
-                      className={`tab-btn tab-view${dimensionView === view ? ' active' : ''}`}
-                      role="tab"
-                      aria-selected={dimensionView === view}
-                      onClick={() => setDimensionView(view)}
-                    >
-                      <Icon name={view} size={13} aria-hidden />
-                      {view === 'table' ? '表格' : '记录'}
-                    </button>
-                  ))}
-                </div>
-              ) : activeFileData && <div className="document-view-tabs" role="tablist" aria-label="视图">
-                {((['record', 'table', 'graph'] as const).filter(v => v !== 'graph' || graphSupported)).map(v => (
-                  <button
-                    key={v}
-                    className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
-                    role="tab"
-                    aria-selected={currentRoute.view === v}
-                    data-tab-id={v}
-                    onClick={() => switchView(v)}
-                  >
-                    <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
-                    {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
-                  </button>
-                ))}
-              </div>}
-              <button
-                className="btn btn-primary btn-icon btn-build"
-                onClick={runBuild}
-                disabled={!project || projectAction !== null}
-                title="构建项目"
-                aria-label="构建项目"
-              >
-                <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={15} className={projectAction === 'build' ? 'icon-spin' : undefined} />
-              </button>
-            </>
-          ) : null}
-        </div>
+        <div className="topbar-center" />
         <div className="topbar-right">
           {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
             <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
@@ -2028,7 +2292,7 @@ export default function App() {
               <div className="sidebar-header extensions-header">
                 <span>扩展</span>
                 {api.isTauri && (
-                  <button className="btn btn-icon" onClick={() => void loadPluginFromSettings()} disabled={pluginLoadBusy} title="从文件安装插件" aria-label="从文件安装插件">
+                  <button className="btn btn-icon" onClick={() => void loadPluginFromSettings()} disabled={pluginLoadBusy || !project} title="添加项目插件" aria-label="添加项目插件">
                     <Icon name="plus" size={15} />
                   </button>
                 )}
@@ -2041,16 +2305,16 @@ export default function App() {
                       <div>
                         <strong>{plugin.name}</strong>
                         <small>{plugin.description || plugin.id}</small>
-                        <em>{plugin.origin === 'local' ? '本地已安装' : '内置'}</em>
+                        <em>{plugin.origin === 'project' ? '项目插件' : '全局已安装'}</em>
                       </div>
                     </div>
                     <div className="extension-item-actions">
                       <label className="extension-toggle">
-                        <input type="checkbox" checked={plugin.enabled} onChange={event => setReadPluginEnabled(plugin.id, event.target.checked)} />
+                        <input type="checkbox" checked={plugin.enabled} onChange={event => void togglePluginFromSettings(plugin, event.target.checked)} />
                         <span>{plugin.enabled ? '已启用' : '已禁用'}</span>
                       </label>
-                      {plugin.origin === 'local' && (
-                        <button className="btn btn-icon" title="卸载插件" aria-label={`卸载 ${plugin.name}`} onClick={() => void uninstallPluginFromSettings(plugin.id)}>
+                      {(plugin.origin === 'project' || plugin.origin === 'global') && (
+                        <button className="btn btn-icon" title={plugin.origin === 'project' ? '从项目移除插件' : '卸载全局插件'} aria-label={`卸载 ${plugin.name}`} onClick={() => void uninstallPluginFromSettings(plugin)}>
                           <Icon name="close" size={13} />
                         </button>
                       )}
@@ -2225,6 +2489,58 @@ export default function App() {
               )}
             </div>
           )}
+          {currentRoute && (activeFileData || activeDimensionData) && (
+            activeDimensionData ? (
+              <div className="view-tabs-row">
+                <div className="document-view-tabs" role="tablist" aria-label="视图">
+                  {(['record', 'table'] as const).map(view => (
+                    <button
+                      key={view}
+                      className={`tab-btn tab-view${dimensionView === view ? ' active' : ''}`}
+                      role="tab"
+                      aria-selected={dimensionView === view}
+                      onClick={() => setDimensionView(view)}
+                    >
+                      <Icon name={view} size={13} aria-hidden />
+                      {view === 'table' ? '表格' : '记录'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : activeFileData && (
+              <div className="view-tabs-row">
+                <div className="document-view-tabs" role="tablist" aria-label="视图">
+                  {viewTabs.map(tab => (
+                    <button
+                      key={tab.id}
+                      className={`tab-btn tab-view${currentRoute.viewId === tab.id ? ' active' : ''}`}
+                      role="tab"
+                      aria-selected={currentRoute.viewId === tab.id}
+                      data-tab-id={tab.id}
+                      onClick={() => switchView(tab)}
+                      onContextMenu={tab.isDefault ? undefined : event => {
+                        event.preventDefault()
+                        openViewContextMenu(tab, event.clientX, event.clientY)
+                      }}
+                    >
+                      <Icon name={tab.kind} size={13} aria-hidden />
+                      {tab.name}
+                    </button>
+                  ))}
+                </div>
+                {!isSingletonType && (
+                  <button
+                    className="btn btn-icon view-tab-add"
+                    onClick={() => openViewEditor('create')}
+                    title="新建视图"
+                    aria-label="新建视图"
+                  >
+                    <Icon name="plus" size={13} aria-hidden />
+                  </button>
+                )}
+              </div>
+            )
+          )}
           {currentRoute && activeDimensionData ? (
             <DimensionTableView
               data={activeDimensionData}
@@ -2234,6 +2550,8 @@ export default function App() {
               onColorGroup={colorDimensionRecordGroup}
               onWrite={(row, variant, expected, next) =>
                 writeDimensionCell(activeDimensionData, row, variant, expected, next)}
+              onRenderCellText={tableOnRenderCellText}
+              onParseCellText={tableOnParseCellText}
               onExitLeft={focusFileTree}
               onExitUp={focusDocumentTabs}
               focusRequest={firstRecordFocusRequest}
@@ -2286,15 +2604,16 @@ export default function App() {
               <div className="view-container" ref={viewContainerRef}>
                 {currentRoute.view === 'table' && (
                   <TableView
-                    data={activeFileData}
+                    data={viewFilteredFileData ?? activeFileData}
                     activeType={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     searchQuery={globalSearch}
-                    recordGroups={recordGroups}
+                    recordGroups={resolvedView?.groupFilter ? [] : recordGroups}
                     collapsedGroupKeys={collapsedRecordGroups}
                     onToggleGroup={toggleRecordGroup}
                     onDropRecordOntoRecord={dropRecordOntoRecord}
+                    onDropRecordAfterRecord={dropRecordsAfterRecord}
                     onCreateGroup={createManualRecordGroup}
                     onDropRecordIntoGroup={dropRecordIntoGroup}
                     onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
@@ -2305,18 +2624,22 @@ export default function App() {
                       : null}
                     onSelectRecord={tableOnSelectRecord}
                     onSelectValue={tableOnSelectValue}
+                    onValueSelectionCellsChange={tableOnValueSelectionCellsChange}
                     onRenderCellText={tableOnRenderCellText}
                     onParseCellText={tableOnParseCellText}
                     onClearSelection={closeInspector}
                     onOpenRecord={tableOnOpenRecord}
                     onWriteField={tableOnWriteField}
+                    onWriteFieldBatch={tableOnWriteFieldBatch}
                     onRenameRecord={tableOnRenameRecord}
                     onInsertRecord={tableOnInsertRecord}
                     onCreateRecordDraft={tableOnCreateRecordDraft}
                     onDeleteRecord={tableOnDeleteRecord}
+                    onMoveRecord={tableOnMoveRecord}
                     onDiagnosticBadgeClick={tableOnBadgeClick}
                     columnWidths={tableColumnWidths}
                     onColumnWidthsChange={tableOnColumnWidthsChange}
+                    visibleColumns={resolvedView?.kind === 'table' && !resolvedView.isDefault ? resolvedView.columns : undefined}
                     onEnterInspector={tableOnEnterInspector}
                     focusRequest={tableFocusRequest}
                     firstRecordFocusRequest={firstRecordFocusRequest}
@@ -2337,10 +2660,12 @@ export default function App() {
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     recordSearch={globalSearch}
+                    hideRecordList={isSingletonType}
                     recordGroups={recordGroups}
                     collapsedGroupKeys={collapsedRecordGroups}
                     onToggleGroup={toggleRecordGroup}
                     onDropRecordOntoRecord={dropRecordOntoRecord}
+                    onDropRecordAfterRecord={dropRecordsAfterRecord}
                     onDropRecordIntoGroup={dropRecordIntoGroup}
                     onDropRecordIntoUngrouped={dropRecordIntoUngrouped}
                     onRenameGroup={renameManualRecordGroup}
@@ -2375,12 +2700,10 @@ export default function App() {
                 {currentRoute.view === 'graph' && (
                   activeGraph ? (
                     <GraphView
-                      graphData={activeGraph}
+                      graphData={viewFilteredGraph ?? activeGraph}
                       activeType={activeType}
-                      enabledFieldsOverride={projectSettings?.graph_enabled_fields[activeFile ?? '']?.[activeType]}
-                      onEnabledFieldsChange={fields => {
-                        if (activeFile && activeType) saveGraphEnabledFields(activeFile, activeType, fields)
-                      }}
+                      enabledFieldsOverride={resolvedView?.kind === 'graph' && !resolvedView.isDefault ? resolvedView.relations : undefined}
+                      visibleCardFields={visibleFields}
                       fileCapabilities={fileCapabilities}
                       diagnostics={project?.diagnostics}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}
@@ -2436,6 +2759,7 @@ export default function App() {
           onToggleCollapse={() => setInspectorCollapsed(v => !v)}
           data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}
           selection={inspectorSelection}
+          valueCells={inspectorValueCells}
           readOnly={inspectorCoord ? !isEditableFile(fileDataCache[inspectorCoord.file]) : true}
           diagnostics={project?.diagnostics}
           width={inspectorW}
@@ -2443,6 +2767,7 @@ export default function App() {
           onClose={closeInspector}
           onWriteField={writeField}
           onWriteFields={writeFields}
+          onWriteFieldBatch={tableOnWriteFieldBatch}
           onRenderCellText={(_filePath, coordinate, path) => tableOnRenderCellText(coordinate, path)}
           onParseCellText={(_filePath, coordinate, path, text) => tableOnParseCellText(coordinate, path, text)}
           onCollectionEdit={editCollection}
@@ -2453,6 +2778,7 @@ export default function App() {
           }}
           focusRequest={inspectorFocusRequest}
           onExitKeyboardNavigation={inspectorOnExitKeyboardNavigation}
+          visibleFields={visibleFields}
         />
         </div>
         {project && (
@@ -2484,6 +2810,51 @@ export default function App() {
         </div>
       )}
 
+      {viewMenu && (
+        <div
+          className="context-menu view-tab-menu"
+          style={{ left: viewMenu.x, top: viewMenu.y }}
+          role="menu"
+          onClick={e => e.stopPropagation()}
+        >
+          <button
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              const view = projectSettings?.views[activeFile ?? '']?.[activeType]
+                ?.find(v => v.id === viewMenu.tab.id)
+              setViewMenu(null)
+              if (view) setViewEditor({ mode: 'edit', view })
+            }}
+          >
+            <Icon name="edit" size={13} aria-hidden />
+            编辑视图
+          </button>
+          <button
+            className="ctx-item danger"
+            role="menuitem"
+            onClick={() => {
+              deleteView(viewMenu.tab.id)
+              setViewMenu(null)
+            }}
+          >
+            <Icon name="close" size={13} aria-hidden />
+            删除视图
+          </button>
+        </div>
+      )}
+
+      {viewEditor && activeFile && activeType && (
+        <ViewEditorDialog
+          initial={viewEditor.mode === 'edit' ? viewEditor.view : null}
+          availableFields={viewEditorFields}
+          availableRelations={viewEditorRelations}
+          groups={recordGroups}
+          onSubmit={submitViewConfig}
+          onClose={() => setViewEditor(null)}
+        />
+      )}
+
       {showHelp && (
         <div className="help-overlay" onClick={() => setShowHelp(false)}>
           <div
@@ -2500,12 +2871,30 @@ export default function App() {
             </h3>
             <table>
               <tbody>
+                <tr><th colSpan={2}>全局</th></tr>
                 <tr><td>Alt+←</td><td>后退</td></tr>
                 <tr><td>Alt+→</td><td>前进</td></tr>
                 <tr><td>Ctrl+Z</td><td>撤销编辑</td></tr>
                 <tr><td>Ctrl+Y / Ctrl+Shift+Z</td><td>重做编辑</td></tr>
                 <tr><td>?</td><td>显示/隐藏帮助</td></tr>
                 <tr><td>Esc</td><td>关闭弹窗</td></tr>
+                <tr><th colSpan={2}>表格 / 记录导航</th></tr>
+                <tr><td>↑ ↓ ← →</td><td>移动选中单元格</td></tr>
+                <tr><td>Shift+↑ / Shift+↓</td><td>扩展多行记录选择</td></tr>
+                <tr><td>Shift+↑↓←→（值模式）</td><td>扩展选中单元格范围</td></tr>
+                <tr><td>Ctrl+A</td><td>全选记录 / 全选单元格范围</td></tr>
+                <tr><td>Enter</td><td>打开检视器 / 切换布尔值</td></tr>
+                <tr><th colSpan={2}>单元格编辑</th></tr>
+                <tr><td>F2</td><td>编辑当前单元格</td></tr>
+                <tr><td>任意可打印字符</td><td>替换输入（直接开始编辑）</td></tr>
+                <tr><td>Delete</td><td>重置为默认值（集合类型清空）</td></tr>
+                <tr><th colSpan={2}>复制 / 粘贴</th></tr>
+                <tr><td>Ctrl+C</td><td>复制选中单元格（TSV）</td></tr>
+                <tr><td>Ctrl+X</td><td>剪切（复制后清空）</td></tr>
+                <tr><td>Ctrl+V</td><td>粘贴</td></tr>
+                <tr><td>Shift+Ctrl+V</td><td>追加粘贴（array 目标）</td></tr>
+                <tr><th colSpan={2}>Ctrl+鼠标滚轮</th></tr>
+                <tr><td>Ctrl+滚轮</td><td>缩放表格</td></tr>
               </tbody>
             </table>
             <div className="help-actions">

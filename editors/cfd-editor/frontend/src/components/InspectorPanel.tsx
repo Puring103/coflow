@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
+import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import type { CfdDictKey } from '../bindings/CfdDictKey'
 import {
@@ -25,9 +26,11 @@ import {
   buildRecordDiagnosticIndex,
   diagnosticsForRecord,
 } from '../state/recordDiagnostics'
-import type { EditorSelection } from '../state/editorSelection'
+import type { CellAnchor, EditorSelection } from '../state/editorSelection'
 import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
 import { BatchRecordEditor } from './BatchRecordEditor'
+import { BatchCellEditor } from './BatchCellEditor'
+import { projectBatchCells } from '../state/batchRecordProjection'
 
 interface Props {
   open: boolean
@@ -35,6 +38,7 @@ interface Props {
   onToggleCollapse: () => void
   data: FileRecords | null
   selection: EditorSelection | null
+  valueCells?: readonly CellAnchor[]
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
   width: number
@@ -52,6 +56,7 @@ interface Props {
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
   ) => Promise<void>
+  onWriteFieldBatch?: (writes: readonly BatchWriteFieldInput[]) => Promise<void>
   onRenderCellText?: (
     filePath: string,
     coordinate: RecordCoordinate,
@@ -77,6 +82,9 @@ interface Props {
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
   focusRequest?: number
   onExitKeyboardNavigation?: () => void
+  /** Custom view: fields visible by default. undefined => show all (default
+   *  views); a set restricts fields, with a header toggle to reveal the rest. */
+  visibleFields?: ReadonlySet<string>
 }
 
 const MIN_W = 280
@@ -88,6 +96,7 @@ export function InspectorPanel({
   onToggleCollapse,
   data,
   selection,
+  valueCells = [],
   readOnly,
   diagnostics,
   width,
@@ -95,6 +104,7 @@ export function InspectorPanel({
   onClose,
   onWriteField,
   onWriteFields,
+  onWriteFieldBatch,
   onRenderCellText,
   onParseCellText,
   onCollectionEdit,
@@ -102,8 +112,13 @@ export function InspectorPanel({
   onDiagnosticBadgeClick,
   focusRequest,
   onExitKeyboardNavigation,
+  visibleFields,
 }: Props) {
   const [dragging, setDragging] = useState(false)
+  // Session-only toggle: in a custom view, reveal all fields (incl. hidden).
+  // Not persisted; resets whenever the visible-field set changes (view switch).
+  const [showAllFields, setShowAllFields] = useState(false)
+  useEffect(() => { setShowAllFields(false) }, [visibleFields])
   const [expandedByRecord, setExpandedByRecord] = useState<ExpandedPathMap>(() => new Map())
   const widthRef = useRef(width)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -162,6 +177,18 @@ export function InspectorPanel({
       })
     : []
   const batchRecords = selectedRecords.length > 1 ? selectedRecords : null
+  const batchCells = useMemo(() => {
+    if (!data || selection?.kind !== 'value' || valueCells.length < 2) return []
+    return valueCells.flatMap(anchor => {
+      const name = anchor.fieldPath.length === 1 && anchor.fieldPath[0].kind === 'field'
+        ? anchor.fieldPath[0].value
+        : null
+      const row = data.records.find(item => sameCoordinate(item.coordinate, anchor.coordinate))
+      const cell = name ? row?.fields.find(item => item.name === name) : undefined
+      return cell ? [{ anchor, cell }] : []
+    })
+  }, [data, selection?.kind, valueCells])
+  const hasBatchCellEditor = !!projectBatchCells(batchCells.map(item => item.cell))
 
   const diagnosticIndex = useMemo(
     () => buildRecordDiagnosticIndex(
@@ -189,9 +216,19 @@ export function InspectorPanel({
   const selectedTopField = selection?.kind === 'value' && selection.fieldPath[0]?.kind === 'field'
     ? selection.fieldPath[0].value
     : null
+  // In a custom view, restrict to the view's fields unless the user toggled
+  // "show all". A specific selected top field always wins.
+  const restrictFields = !!visibleFields && !showAllFields
+  const hiddenFieldCount = visibleFields && record
+    ? record.fields.filter(field => !visibleFields.has(field.name)).length
+    : 0
   const inspectorFields = selectedTopField && record
     ? record.fields.filter(field => field.name === selectedTopField)
-    : record?.fields ?? []
+    : record
+      ? (restrictFields
+          ? record.fields.filter(field => visibleFields!.has(field.name))
+          : record.fields)
+      : []
   const inspectingValue = selection?.kind === 'value'
   const expansionOwner = data && coordinate
     ? `${data.file_path}:${coordinateId(coordinate)}`
@@ -296,6 +333,17 @@ export function InspectorPanel({
           <Icon name="chevron-right" size={13} className={collapsed ? '' : 'icon-flip-h'} />
         </button>
         {!collapsed && <span className="inspector-title">{inspectingValue ? '单元格详情' : '记录详情'}</span>}
+        {!collapsed && visibleFields && !inspectingValue && !selectedTopField && hiddenFieldCount > 0 && (
+          <button
+            className={`btn btn-icon inspector-showall-btn${showAllFields ? ' active' : ''}`}
+            onClick={() => setShowAllFields(show => !show)}
+            title={showAllFields ? '仅显示视图字段' : `显示全部字段（含隐藏的 ${hiddenFieldCount} 个）`}
+            aria-label={showAllFields ? '仅显示视图字段' : '显示全部字段'}
+            aria-pressed={showAllFields}
+          >
+            <Icon name="filter" size={13} />
+          </button>
+        )}
         {!collapsed && (
           <button
             className="btn btn-icon"
@@ -314,7 +362,7 @@ export function InspectorPanel({
           tabIndex={-1}
           onKeyDown={onBodyKeyDown}
           onContextMenu={event => {
-            if (batchRecords || !record || !data) return
+            if (batchRecords || hasBatchCellEditor || !record || !data) return
             const row = (event.target as HTMLElement).closest<HTMLElement>('.dc-row[data-field-path-wire]')
             if (!row || !bodyRef.current?.contains(row)) return
             const path = parseWireFieldPath(row.dataset.fieldPathWire)
@@ -348,6 +396,12 @@ export function InspectorPanel({
                     path,
                     value,
                   )}
+            />
+          ) : hasBatchCellEditor ? (
+            <BatchCellEditor
+              cells={batchCells}
+              readOnly={readOnly}
+              onWriteBatch={onWriteFieldBatch}
             />
           ) : record && data ? (
             <>

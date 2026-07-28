@@ -3,6 +3,10 @@ layout: page
 title: Coflow
 ---
 
+<script setup>
+import { withBase } from 'vitepress'
+</script>
+
 <div class="home">
 
 <section class="hero">
@@ -40,7 +44,7 @@ coflow --help</code></pre>
 </div>
 
 <div class="start__cta">
-<a class="btn btn--primary" href="/docs/guide/install"><span>阅读文档</span><span aria-hidden="true">→</span></a>
+<a class="btn btn--primary" :href="withBase('/docs/guide/install')"><span>阅读文档</span><span aria-hidden="true">→</span></a>
 <a class="btn" href="https://github.com/Puring103/coflow/releases/latest" target="_blank" rel="noopener"><span>下载最新 Release</span><span aria-hidden="true">↗</span></a>
 </div>
 </aside>
@@ -91,8 +95,8 @@ coflow --help</code></pre>
 </div>
 <div class="chapter__text">
 <h3>让每一份数据留在它该在的地方</h3>
-<p>Excel 装数值、CFD 装嵌套结构、飞书协作、CSV 版本友好。Coflow 从任何一种来源都能读到同一个 runtime model。</p>
-<p class="chapter__note">当前支持 Excel、CFD、CSV、飞书表格，后续会持续扩展更多数据源。</p>
+<p>Excel 装批量数值、CFD 装嵌套结构、CSV 便于版本比较。Coflow 从任何一种本地来源都能读到同一个 runtime model。</p>
+<p class="chapter__note">当前支持 Excel、CFD 和 CSV，后续可通过 Provider Registry 扩展更多数据源。</p>
 </div>
 <div class="chapter__demo">
 <div class="sources">
@@ -269,7 +273,7 @@ lich,frozen,60</code></pre>
 <article class="pillar">
 <span class="pillar__num">04</span>
 <h3>安全写回</h3>
-<p>改动可以原样写回 Excel、CFD、飞书等原始数据源。所有 patch 都经过 schema 校验，改了哪一条、哪个字段都可复盘。</p>
+<p>改动可以写回 Excel、CSV 和 CFD 原始数据源。所有 patch 都经过 schema 校验，改了哪一条、哪个字段都可复盘。</p>
 </article>
 <article class="pillar">
 <span class="pillar__num">05</span>
@@ -290,19 +294,19 @@ lich,frozen,60</code></pre>
 <h2>程序、策划、AI 用同一套配置语义</h2>
 </header>
 <div class="paths__grid">
-<a class="path" href="/docs/guide/for-programmers">
+<a class="path" :href="withBase('/docs/guide/for-programmers')">
 <span class="path__tag">程序</span>
 <h3>配置 CI 与运行时交付</h3>
 <p>从项目结构、导出格式到 C# 代码生成，理解 Coflow 的 artifact 安全边界。</p>
 <span class="path__arrow">→</span>
 </a>
-<a class="path" href="/docs/guide/for-designers">
+<a class="path" :href="withBase('/docs/guide/for-designers')">
 <span class="path__tag">策划</span>
 <h3>继续用你熟悉的表格</h3>
-<p>用 Excel/飞书维护数值，用 CFD 表达嵌套结构，用诊断定位问题。</p>
+<p>用 Excel/CSV 维护批量数值，用 CFD 表达嵌套结构，用诊断定位问题。</p>
 <span class="path__arrow">→</span>
 </a>
-<a class="path" href="/docs/guide/ai-agent">
+<a class="path" :href="withBase('/docs/guide/ai-agent')">
 <span class="path__tag">AI Agent</span>
 <h3>让 agent 用工具修配置</h3>
 <p>通过 CLI 读 schema、查记录、提交 patch，根据 diagnostics 迭代到通过。</p>

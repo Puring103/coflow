@@ -11,7 +11,7 @@
 | 新建 CFD | `coflow data create-file --file <file> --provider cfd` |
 | schema 字段变更后同步本地文件 | `coflow data sync-header --file <file> --type <Type>` |
 | 少量记录增删改/重命名 | `coflow data patch --patch '<json>'` |
-| 复杂 CFD 整理 | `coflow data write-file --file <file.cfd> --stdin --check` |
+| 复杂 CFD 整理 | `coflow data write-file --file <file.cfd> --check` |
 
 ## 新增记录
 
@@ -127,7 +127,7 @@
 
 - 顶层记录写 `key: Type { ... }`，或放在 `Type { key { ... } }` 分组中。
 - record key 承担 id 语义，不要在顶层记录里再写 `id` 字段。
-- 记录引用只写 `&key`，不支持 `&key.field` 或索引路径。
+- 记录引用写成 `&key`，目标是由 key 标识的顶层 record。
 - 字段类型为 `&Type` 时写引用；字段类型为普通 `Type` 时写内联对象。
 - 数组、对象、字典条目用逗号分隔；表格单元格数组才使用 `|`。
 - spread 使用 `...&key` 或字典/object spread，后出现的值覆盖前面的值。

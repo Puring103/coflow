@@ -14,14 +14,18 @@ import type { DimensionValueView } from './bindings/DimensionValueView'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
+import type { ViewConfig } from './bindings/ViewConfig'
 import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
 import type { RefTarget } from './bindings/RefTarget'
 import type { RenameRecordOutcome } from './bindings/RenameRecordOutcome'
+import type { ReorderRecordsOutcome } from './bindings/ReorderRecordsOutcome'
 import type { WriteFieldOutcome } from './bindings/WriteFieldOutcome'
 import type { WriteDimensionValueOutcome } from './bindings/WriteDimensionValueOutcome'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
+import type { RecordRow } from './bindings/RecordRow'
+import type { PluginSchemaType } from './bindings/PluginSchemaType'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
 
 export const isTauri = '__TAURI_INTERNALS__' in window
@@ -71,6 +75,14 @@ export async function initProject(dir: string): Promise<ProjectSnapshot> {
 
 export async function getFileRecords(sessionId: number, filePath: string): Promise<FileRecords> {
   return invokeCommand<FileRecords>('get_file_records', { sessionId, filePath })
+}
+
+export async function getPluginSchema(sessionId: number): Promise<PluginSchemaType[]> {
+  return invokeCommand<PluginSchemaType[]>('get_plugin_schema', { sessionId })
+}
+
+export async function getPluginRecordsByType(sessionId: number, typeName: string): Promise<RecordRow[]> {
+  return invokeCommand<RecordRow[]>('get_plugin_records_by_type', { sessionId, typeName })
 }
 
 export interface GraphQueryOptions {
@@ -127,16 +139,32 @@ export async function getDimensionFileRecords(
   return invokeCommand<DimensionFileRecords>('get_dimension_file_records', { sessionId, filePath })
 }
 
-export async function setTableColumnWidths(
+export async function setDefaultTableColumnWidths(
   sessionId: number,
   filePath: string,
   actualType: string,
   widths: Record<string, number>,
 ): Promise<EditorProjectSettings> {
-  return invokeCommand<EditorProjectSettings>('set_table_column_widths', {
+  return invokeCommand<EditorProjectSettings>('set_default_table_column_widths', {
     sessionId,
     filePath,
     actualType,
+    widths,
+  })
+}
+
+export async function setViewColumnWidths(
+  sessionId: number,
+  filePath: string,
+  actualType: string,
+  viewId: string,
+  widths: Record<string, number>,
+): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('set_view_column_widths', {
+    sessionId,
+    filePath,
+    actualType,
+    viewId,
     widths,
   })
 }
@@ -148,6 +176,8 @@ export interface FrontendPluginBundle {
   description: string
   version: string
   source: string
+  scope: 'global' | 'project'
+  enabled: boolean
 }
 
 export async function pickFrontendPluginManifest(): Promise<string | null> {
@@ -171,6 +201,22 @@ export async function uninstallFrontendPlugin(id: string): Promise<void> {
   return invokeCommand<void>('uninstall_frontend_plugin', { id })
 }
 
+export async function installProjectFrontendPlugin(sessionId: number, manifestPath: string): Promise<FrontendPluginBundle> {
+  return invokeCommand<FrontendPluginBundle>('install_project_frontend_plugin', { sessionId, manifestPath })
+}
+
+export async function listProjectFrontendPlugins(sessionId: number): Promise<FrontendPluginBundle[]> {
+  return invokeCommand<FrontendPluginBundle[]>('list_project_frontend_plugins', { sessionId })
+}
+
+export async function uninstallProjectFrontendPlugin(sessionId: number, id: string): Promise<void> {
+  return invokeCommand<void>('uninstall_project_frontend_plugin', { sessionId, id })
+}
+
+export async function setProjectFrontendPluginEnabled(sessionId: number, id: string, enabled: boolean): Promise<void> {
+  return invokeCommand<void>('set_project_frontend_plugin_enabled', { sessionId, id, enabled })
+}
+
 export async function setRecordGroups(
   sessionId: number,
   filePath: string,
@@ -185,17 +231,17 @@ export async function setRecordGroups(
   })
 }
 
-export async function setGraphEnabledFields(
+export async function setViews(
   sessionId: number,
   filePath: string,
   actualType: string,
-  fields: string[],
+  views: ViewConfig[],
 ): Promise<EditorProjectSettings> {
-  return invokeCommand<EditorProjectSettings>('set_graph_enabled_fields', {
+  return invokeCommand<EditorProjectSettings>('set_views', {
     sessionId,
     filePath,
     actualType,
-    fields,
+    views,
   })
 }
 
@@ -338,6 +384,42 @@ export async function deleteRecord(
   return invokeCommand<DeleteRecordOutcome>('delete_record', {
     sessionId,
     coordinate,
+  })
+}
+
+export async function swapRecords(
+  sessionId: number,
+  first: RecordCoordinate,
+  second: RecordCoordinate,
+): Promise<ReorderRecordsOutcome> {
+  return invokeCommand<ReorderRecordsOutcome>('swap_records', { sessionId, first, second })
+}
+
+export async function moveRecord(
+  sessionId: number,
+  coordinate: RecordCoordinate,
+  targetIndex: number,
+): Promise<ReorderRecordsOutcome> {
+  return invokeCommand<ReorderRecordsOutcome>('move_record', {
+    sessionId,
+    coordinate,
+    targetIndex,
+  })
+}
+
+export async function transferRecord(
+  sessionId: number,
+  coordinate: RecordCoordinate,
+  destinationFile: string,
+  destinationSheet: string | null,
+  targetIndex: number,
+): Promise<ReorderRecordsOutcome> {
+  return invokeCommand<ReorderRecordsOutcome>('transfer_record', {
+    sessionId,
+    coordinate,
+    destinationFile,
+    destinationSheet,
+    targetIndex,
   })
 }
 

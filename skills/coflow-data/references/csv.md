@@ -1,6 +1,6 @@
 # CSV Source
 
-CSV source 使用 `csv` Provider 读取 `.csv` 文件，并套用共享 [表格 Source](./02-table.md) 规则。
+CSV source 使用 `csv` Provider 读取 `.csv` 文件，并套用共享 [表格 Source](./table-source.md) 规则。
 
 CSV 适合维护单表、纯文本、易于 diff 的配置数据。它不支持 Excel workbook 的多 sheet 结构，但仍使用相同的表头、key、控制列、`@expand` 和单元格值规则。
 
@@ -40,4 +40,4 @@ coflow data sync-header <project> --file data/items.csv --type Item
 
 `data sync-header` 会重写表头，保留同名列数据，新增列填空，删除 schema 中不存在的列。
 
-写回失败使用 `CSV-WRITE` 诊断。读取和解析阶段的诊断见 [错误码](../09-diagnostics/02-codes.md)。
+写回失败使用 `CSV-WRITE` 诊断。读取和解析阶段的诊断见 [错误码](https://puring103.github.io/coflow/docs/reference/09-diagnostics/02-codes)。

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { FieldCell } from '../bindings/FieldCell'
 import type { RecordRow } from '../bindings/RecordRow'
-import { fieldValuesEqual, projectBatchRecordFields } from './batchRecordProjection'
+import { fieldValuesEqual, projectBatchCells, projectBatchRecordFields } from './batchRecordProjection'
 
 const cell = (name: string, value: FieldCell['value'], declaredType = 'string'): FieldCell => ({
   name,
@@ -17,12 +17,16 @@ const cell = (name: string, value: FieldCell['value'], declaredType = 'string'):
     read_only: false,
     item_annotation: null,
     polymorphic_types: [],
+    object_type: null,
+    field_order: [],
     children: {},
   },
 })
 const row = (key: string, fields: FieldCell[]): RecordRow => ({
   coordinate: { actual_type: 'Item', key },
   display_path: 'data/items.cfd',
+  container_index: 0,
+  container_size: 1,
   fields,
   field_index: {},
   field_summaries: {},
@@ -55,5 +59,14 @@ describe('batch record projection', () => {
       row('b', [cell('name', { kind: 'string', value: 'B' }, 'LocalizedText')]),
     ])
     expect(fields).toEqual([])
+  })
+
+  it('projects a same-type cell range and rejects differing editor annotations', () => {
+    const left = cell('first', { kind: 'string', value: 'A' })
+    const right = cell('second', { kind: 'string', value: 'B' })
+    expect(projectBatchCells([left, right])).toMatchObject({ state: 'mixed', editable: true })
+
+    right.annotation = { ...right.annotation!, ref_target_type: 'Other' }
+    expect(projectBatchCells([left, right])).toBeNull()
   })
 })

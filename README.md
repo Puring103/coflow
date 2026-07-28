@@ -69,17 +69,17 @@ examples/rpg/generated/data
 examples/rpg/generated/csharp
 ```
 
-Coflow 每次构建都会先写入并验证 staging 和 `.coflow/artifacts/generations/` 中的不可变 generation，再完整替换配置指定的 data/code 输出目录，最后原子替换 `.coflow/artifacts/active.json`。命令成功信息会输出稳定输出目录；不要在这些目录中放置手写文件。使用 `coflow clean [CONFIG_OR_DIR]` 清理历史 generation 和中断遗留的 staging；当前活动 generation 会保留。
+Coflow 只会在完整构建成功后替换配置指定的 data/code 输出目录；失败时现有产物保持不变。输出目录由 Coflow 管理，不要在其中放置手写文件。使用 `coflow clean [CONFIG_OR_DIR]` 清理构建产生的临时数据。
 
 单独运行某个阶段：
 
 ```powershell
 coflow cft check examples/rpg
-coflow export json examples/rpg
-coflow codegen csharp examples/rpg
+coflow export examples/rpg
+coflow codegen examples/rpg
 ```
 
-使用 MessagePack 时把 `outputs.data.type` 改为 `messagepack` 后重新 build 即可。
+使用 MessagePack 时把 output target 的 `data.type` 改为 `messagepack` 后重新 build 即可。
 
 ---
 
@@ -94,13 +94,15 @@ sources:
   - path: data          # 目录源，自动发现 .xlsx / .csv / .cfd
 
 outputs:
-  data:
-    type: json
-    dir: generated/data
-  code:
-    type: csharp
-    dir: generated/csharp
-    namespace: Example.Rpg.Config
+  - data:
+      type: json
+      dir: generated/data
+    code:
+      type: csharp
+      dir: generated/csharp
+      namespace: Example.Rpg.Config
+    loader:
+      type: csharp-json
 ```
 
 需要显式映射 sheet、类型和列头时：
@@ -119,9 +121,9 @@ sources:
           Skill ID: id
 ```
 
-`sources` 支持 `path`（本地文件或目录）或 `url`（远端 source）；`type` 是可选的 provider id，省略时按后缀推断。目录源可同时包含 Excel、CSV 和 CFD 文件；`sheets` 只作用于 Excel。
+`sources` 使用 `path` 指向本地文件或目录；`type` 是可选的 provider id，省略时按后缀推断。目录源可同时包含 Excel、CSV 和 CFD 文件；`sheets` 只作用于 Excel。
 
-`outputs.data.type` 支持 `json` / `messagepack`；`outputs.code.type` 目前支持 `csharp`。`outputs.*` 除 `type`、`dir` 外的字段会作为 provider options 传入（例如 C# codegen 的 `namespace`）。
+`outputs` 可以是 output target 列表，也可以是包含 `data`、`code` 和 `loader` 的单个对象。每个 target 必须有 `data`，`code` 和 `loader` 可选；省略 `loader` 时会按 code/data 组合自动选择。`data.type` 支持 `json` / `messagepack`，`code.type` 支持 `csharp`。
 
 启用维度和变体（例如本地化）：
 
@@ -207,7 +209,7 @@ check 支持 `len` / `contains` / `isUnique` / `min` / `max` / `sum` / `keys` / 
 - CFT 字段类型是 `&Item` / `[&Item]` / `{string: &Item}` 时，单元格写 `&sword_01` 这类 key-only 引用。
 - CFT 字段是普通对象（`Stats`、`Reward`）时，单元格写 `Stats{hp: 100, attack: 50}`；多态对象用 `ConcreteType{...}`。
 - 裸字符串保持字符串语义。JSON / MessagePack 中，引用字段导出为纯 key 字符串（`"sword_01"`，不是 `"Item.sword_01"`）。
-- `coflow build` 会把 `@idAsEnum` lock state 与 data/code generation 一起激活，并在最终激活前于 `coflow.yaml` 同级原子更新非权威的 `coflow.enum.lock.json` 镜像；此文件应提交到版本库，让干净 clone 恢复稳定整数值。
+- `coflow build` 会更新 `coflow.yaml` 同级的 `coflow.enum.lock.json`，用于保持 `@idAsEnum` 的整数值稳定；此文件应提交到版本库。
 
 ---
 
@@ -218,22 +220,21 @@ check 支持 `len` / `contains` / `isUnique` / `min` / `max` / `sum` / `keys` / 
 coflow init my-config
 coflow check examples/rpg
 coflow build examples/rpg
-coflow export json examples/rpg --out generated/data
-coflow export messagepack examples/rpg --out generated/data
-coflow codegen csharp examples/rpg --out generated/csharp --namespace Game.Config
+coflow export examples/rpg
+coflow codegen examples/rpg
 coflow lsp examples/rpg
 
-# AI / 自动化入口（默认输出 JSON）
-coflow schema inspect examples/rpg
-coflow schema files examples/rpg
-coflow schema write-file examples/rpg --file schema/main.cft --stdin --check
-coflow data sources examples/rpg
-coflow data list examples/rpg --type Item
-coflow data get examples/rpg Item.sword
-coflow data create-file examples/rpg --file data/items.csv --type Item --provider csv
-coflow data sync-header examples/rpg --file data/items.csv --type Item
-coflow data write-file examples/rpg --file data/items.cfd --stdin --check
-coflow data patch examples/rpg --patch-file patch.json
+# AI / 自动化入口（显式使用 JSON 输出）
+coflow schema inspect examples/rpg --json
+coflow schema files examples/rpg --json
+coflow schema write-file examples/rpg --file schema/main.cft --check --json
+coflow data sources examples/rpg --json
+coflow data list examples/rpg --type Item --json
+coflow data get examples/rpg Item.sword --json
+coflow data create-file examples/rpg --file data/items.csv --type Item --provider csv --json
+coflow data sync-header examples/rpg --file data/items.csv --type Item --json
+coflow data write-file examples/rpg --file data/items.cfd --check --json
+coflow data patch examples/rpg --patch-file patch.json --json
 ```
 
 data 命令区分：

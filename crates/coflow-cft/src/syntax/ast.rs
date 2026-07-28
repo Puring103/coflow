@@ -3,8 +3,6 @@
 // consume them. They are part of the canonical AST shape and are exercised by
 // downstream tooling (IDE diagnostics, codegen). Suppress the resulting
 // `dead_code` warnings here rather than in individual definitions.
-#![allow(dead_code)]
-
 use crate::syntax::Span;
 
 #[derive(Debug, Clone)]
@@ -18,6 +16,7 @@ pub enum Item {
     Const(ConstDef),
     Enum(EnumDef),
     Type(TypeDef),
+    Check(TopLevelCheckDef),
 }
 
 impl Item {
@@ -27,8 +26,18 @@ impl Item {
             Self::Const(definition) => definition.span,
             Self::Enum(definition) => definition.span,
             Self::Type(definition) => definition.span,
+            Self::Check(definition) => definition.span,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct TopLevelCheckDef {
+    pub name: String,
+    pub name_span: Span,
+    pub block: CheckBlock,
+    pub annotations: Vec<Annotation>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -198,11 +207,33 @@ pub struct CheckBlock {
 }
 
 #[derive(Debug, Clone)]
-pub enum CheckStmt {
+pub struct CheckMessage {
+    pub kind: CheckMessageKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum CheckMessageKind {
+    String(String),
+    Formatted(Vec<CheckFormatSegment>),
+}
+
+#[derive(Debug, Clone)]
+pub enum CheckFormatSegment {
+    Text(String, Span),
     Expr(CheckExpr),
+}
+
+#[derive(Debug, Clone)]
+pub enum CheckStmt {
+    Expr {
+        condition: CheckExpr,
+        message: Option<CheckMessage>,
+        span: Span,
+    },
     Quantifier {
         kind: QuantifierKind,
-        binding: NameRef,
+        bindings: Vec<NameRef>,
         collection: CheckExpr,
         body: Vec<CheckStmt>,
         span: Span,
@@ -218,8 +249,9 @@ impl CheckStmt {
     #[must_use]
     pub fn span(&self) -> Span {
         match self {
-            Self::Expr(expr) => expr.span,
-            Self::Quantifier { span, .. } | Self::When { span, .. } => *span,
+            Self::Expr { span, .. } | Self::Quantifier { span, .. } | Self::When { span, .. } => {
+                *span
+            }
         }
     }
 }
@@ -244,14 +276,30 @@ pub enum CheckExprKind {
     Bool(bool),
     Null,
     String(String),
+    FormattedString(Vec<CheckFormatSegment>),
     Name(String),
+    Records {
+        type_name: NameRef,
+    },
     Field {
+        expr: Box<CheckExpr>,
+        name: NameRef,
+    },
+    SafeField {
         expr: Box<CheckExpr>,
         name: NameRef,
     },
     Index {
         expr: Box<CheckExpr>,
         index: Box<CheckExpr>,
+    },
+    SafeIndex {
+        expr: Box<CheckExpr>,
+        index: Box<CheckExpr>,
+    },
+    Coalesce {
+        lhs: Box<CheckExpr>,
+        rhs: Box<CheckExpr>,
     },
     Is {
         expr: Box<CheckExpr>,

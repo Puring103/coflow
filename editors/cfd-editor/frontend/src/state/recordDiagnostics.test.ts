@@ -29,6 +29,7 @@ function diagnostic(
     actual_type: actualType,
     record_key: target.coordinate.key,
     field_path: fieldPath,
+    contexts: [],
   }
 }
 

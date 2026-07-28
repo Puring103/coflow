@@ -1,4 +1,4 @@
-use coflow_data_model::{CfdDictKey, CfdInputDictKey, CfdPath, CfdPathSegment};
+use coflow_data_model::{CfdDictKey, CfdPath, CfdPathSegment, LoadedDictKeyDraft};
 use coflow_runtime::{dict_key_path_text, format_field_path};
 
 #[test]
@@ -29,7 +29,7 @@ fn canonical_path_preserves_field_index_and_escaped_dict_key_identity() {
 
 #[test]
 fn unvalidated_string_dict_keys_use_the_same_canonical_escape_rules() {
-    let path = CfdPath::root().dict_key_input(&CfdInputDictKey::String(
+    let path = CfdPath::root().dict_key_input(&LoadedDictKeyDraft::String(
         "quote\"slash\\line\nnext\tcell".to_string(),
     ));
     assert_eq!(

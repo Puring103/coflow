@@ -11,13 +11,15 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
-    CreateTableRequest, DeleteRecordRequest, InsertRecordRequest, ResolvedSource,
-    SourceLocationSpec, SourceProvider, SourceWriter, SyncHeaderRequest, TableContext,
-    TableManager, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    CreateTableRequest, DeleteRecordRequest, InsertRecordRequest, ReorderRecordsOperation,
+    ReorderRecordsRequest, ResolvedSource, SourceLocationSpec, SourceProvider, SourceWriter,
+    SyncHeaderRequest, TableContext, TableManager, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteRecordRef,
 };
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
-    CfdDataModel, CfdInputRecord, CfdInputValue, CfdObject, CfdValue, RecordOrigin, SourceDocument,
+    CfdDataModel, CfdObject, CfdValue, LoadedRecordDraft, LoadedValueDraft, RecordOrigin,
+    SourceDocument,
 };
 use coflow_loader_excel::{ExcelLoader, ExcelWriter};
 use rust_xlsxwriter::{Workbook, XlsxError};
@@ -64,7 +66,7 @@ fn origin_for_sword(path: &Path) -> RecordOrigin {
     field_columns.insert(vec!["name".to_string()], 2);
     field_columns.insert(vec!["value".to_string()], 3);
     RecordOrigin::Table {
-        document: SourceDocument::Local(path.to_path_buf()),
+        document: SourceDocument::new(path.to_path_buf()),
         sheet: "Items".to_string(),
         row: 2,
         id_column: 1,
@@ -77,7 +79,7 @@ fn origin_for_shield(path: &Path) -> RecordOrigin {
     field_columns.insert(vec!["name".to_string()], 2);
     field_columns.insert(vec!["value".to_string()], 3);
     RecordOrigin::Table {
-        document: SourceDocument::Local(path.to_path_buf()),
+        document: SourceDocument::new(path.to_path_buf()),
         sheet: "Items".to_string(),
         row: 3,
         id_column: 1,
@@ -88,7 +90,7 @@ fn origin_for_shield(path: &Path) -> RecordOrigin {
 fn empty_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "excel".to_string(),
-        location: SourceLocationSpec::Path(path.to_path_buf()),
+        location: SourceLocationSpec::new(path.to_path_buf()),
         options: ExcelLoader
             .decode_options(&serde_json::Value::Null)
             .expect("decode excel options"),
@@ -180,7 +182,7 @@ fn writer_capabilities_are_derived_from_workbook_format() {
     let writer = ExcelWriter::new();
     let writable_source = empty_source(Path::new("items.xlsx"));
     let macro_source = empty_source(Path::new("items.xlsm"));
-    let legacy_source = empty_source(Path::new("items.xls"));
+    let binary_source = empty_source(Path::new("items.xls"));
 
     let writable = writer.capabilities(&writable_source);
     assert!(writable.can_edit_field);
@@ -190,7 +192,7 @@ fn writer_capabilities_are_derived_from_workbook_format() {
 
     for read_only in [
         writer.capabilities(&macro_source),
-        writer.capabilities(&legacy_source),
+        writer.capabilities(&binary_source),
     ] {
         assert!(!read_only.can_edit_field);
         assert!(!read_only.can_edit_key);
@@ -351,14 +353,17 @@ fn write_terrain_workbook_with_expand(path: &PathBuf) -> Result<(), XlsxError> {
 }
 
 fn expanded_env_value(shc: f64, temperature: f64, diffusion: f64) -> CfdValue {
-    CfdValue::Object(Box::new(CfdObject::new(
-        "EnvCfg",
-        BTreeMap::from([
-            ("shc".to_string(), CfdValue::Float(shc)),
-            ("temperature".to_string(), CfdValue::Float(temperature)),
-            ("diffusion".to_string(), CfdValue::Float(diffusion)),
-        ]),
-    )))
+    CfdValue::Object(Box::new(
+        CfdObject::try_new(
+            "EnvCfg",
+            BTreeMap::from([
+                ("shc".to_string(), CfdValue::Float(shc)),
+                ("temperature".to_string(), CfdValue::Float(temperature)),
+                ("diffusion".to_string(), CfdValue::Float(diffusion)),
+            ]),
+        )
+        .unwrap(),
+    ))
 }
 
 #[test]
@@ -486,26 +491,26 @@ fn writes_collection_element_by_rewriting_owning_cell() {
     let schema = &schema;
     let source = empty_source(&path);
     let origin = RecordOrigin::Table {
-        document: SourceDocument::Local(path.clone()),
+        document: SourceDocument::new(path.clone()),
         sheet: "Items".to_string(),
         row: 2,
         id_column: 1,
         field_columns: BTreeMap::from([(vec!["tags".to_string()], 2)]),
     };
-    let input = CfdInputRecord::new(
+    let input = LoadedRecordDraft::new(
         "sword",
         "Item",
         [(
             "tags",
-            CfdInputValue::Array(vec![
-                CfdInputValue::String("old".to_string()),
-                CfdInputValue::String("keep".to_string()),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::String("old".to_string()),
+                LoadedValueDraft::String("keep".to_string()),
             ]),
         )],
     )
     .with_origin(origin.clone());
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(input);
+    builder.add_loaded_record(input);
     let model = builder.build().expect("model");
 
     let new_value = CfdValue::String("new".to_string());
@@ -688,6 +693,7 @@ fn inserts_record_row_and_loader_can_read_it() {
                 actual_type: "Item",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert succeeds");
@@ -738,6 +744,7 @@ fn inserts_record_with_expanded_object_into_child_columns() {
                 actual_type: "Terrain",
                 fields: &fields,
                 schema: schema,
+                before: None,
             },
         )
         .expect("insert expanded record succeeds");
@@ -816,5 +823,104 @@ fn refuses_delete_when_row_key_changed() {
     assert!(diag
         .iter()
         .any(|d| d.message.contains("expected key `sword`")));
+    assert_eq!(read_cell(&path, "Items", 3, 1), "shield");
+}
+
+#[test]
+fn inserts_record_before_guarded_excel_anchor() {
+    let path = temp_xlsx("insert-before");
+    write_seed_workbook(&path).expect("seed");
+    let schema = schema_for_items();
+    let source = empty_source(&path);
+    let shield = origin_for_shield(&path);
+    let fields = BTreeMap::from([
+        ("name".to_string(), CfdValue::String("Potion".to_string())),
+        ("value".to_string(), CfdValue::Int(3)),
+    ]);
+
+    ExcelWriter::new()
+        .insert_record(
+            WriteContext {
+                project_root: &std::env::temp_dir(),
+                schema: &schema,
+                model: None,
+            },
+            &InsertRecordRequest {
+                source: &source,
+                sheet: Some("Items"),
+                record_key: "potion",
+                actual_type: "Item",
+                fields: &fields,
+                schema: &schema,
+                before: Some(WriteRecordRef {
+                    origin: &shield,
+                    record_key: "shield",
+                    actual_type: "Item",
+                }),
+            },
+        )
+        .expect("insert before shield");
+
+    assert_eq!(read_cell(&path, "Items", 2, 1), "sword");
+    assert_eq!(read_cell(&path, "Items", 3, 1), "potion");
+    assert_eq!(read_cell(&path, "Items", 4, 1), "shield");
+}
+
+#[test]
+fn swaps_and_moves_excel_rows_with_values() {
+    let path = temp_xlsx("reorder");
+    write_seed_workbook(&path).expect("seed");
+    let schema = empty_schema();
+    let source = empty_source(&path);
+    let sword = origin_for_sword(&path);
+    let shield = origin_for_shield(&path);
+    let writer = ExcelWriter::new();
+    let project_root = std::env::temp_dir();
+    let ctx = WriteContext {
+        project_root: &project_root,
+        schema: &schema,
+        model: None,
+    };
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::Swap {
+                    first: WriteRecordRef {
+                        origin: &sword,
+                        record_key: "sword",
+                        actual_type: "Item",
+                    },
+                    second: WriteRecordRef {
+                        origin: &shield,
+                        record_key: "shield",
+                        actual_type: "Item",
+                    },
+                },
+            },
+        )
+        .expect("swap rows");
+    assert_eq!(read_cell(&path, "Items", 2, 1), "shield");
+    assert_eq!(read_cell(&path, "Items", 2, 2), "Round");
+    assert_eq!(read_cell(&path, "Items", 3, 1), "sword");
+
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::MoveBefore {
+                    record: WriteRecordRef {
+                        origin: &sword,
+                        record_key: "shield",
+                        actual_type: "Item",
+                    },
+                    before: None,
+                },
+            },
+        )
+        .expect("move row to end");
+    assert_eq!(read_cell(&path, "Items", 2, 1), "sword");
     assert_eq!(read_cell(&path, "Items", 3, 1), "shield");
 }

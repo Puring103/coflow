@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import type { FrontendPluginBundle } from '../api'
+import type { PluginSchemaType } from '../bindings/PluginSchemaType'
+import type { RecordRow } from '../bindings/RecordRow'
 import type {
   ExtensionActivate,
   ExtensionHost,
@@ -14,6 +16,29 @@ const scriptUrls = new Map<string, string>()
 const listeners = new Set<() => void>()
 let enabledIds = storedPluginIds()
 let revision = 0
+let currentSessionId: number | null = null
+let dataApi: {
+  getSchema(sessionId: number): Promise<PluginSchemaType[]>
+  getRecordsByType(sessionId: number, typeName: string): Promise<RecordRow[]>
+} | null = null
+
+export function setReadPluginSession(sessionId: number | null) {
+  currentSessionId = sessionId
+}
+
+export function setReadPluginDataApi(api: NonNullable<typeof dataApi>) {
+  dataApi = api
+}
+
+function requireSessionId(): number {
+  if (currentSessionId === null) throw new Error('no Coflow project is open')
+  return currentSessionId
+}
+
+function requireDataApi(): NonNullable<typeof dataApi> {
+  if (dataApi === null) throw new Error('plugin data API is unavailable')
+  return dataApi
+}
 
 function storedPluginIds(): Set<string> {
   try {
@@ -39,6 +64,12 @@ function matchesTarget(renderer: FieldRenderer, context: ReadRenderContext): boo
 function pluginHost(renderers: FieldRenderer[]): ExtensionHost {
   return {
     apiVersion: 1,
+    schema: {
+      getTypes: () => requireDataApi().getSchema(requireSessionId()),
+    },
+    records: {
+      getByType: typeName => requireDataApi().getRecordsByType(requireSessionId(), typeName),
+    },
     renderers: {
       register(renderer) {
         if (!renderer.id || !renderer.target || typeof renderer.mount !== 'function') {
@@ -81,11 +112,12 @@ export async function loadLocalReadPlugin(bundle: FrontendPluginBundle): Promise
       version: bundle.version,
       renderers,
       dispose: definition?.dispose,
-      origin: 'local',
+      origin: bundle.scope,
       manifestPath: bundle.manifest_path,
+      enabled: bundle.scope === 'project' ? bundle.enabled : true,
     })
     scriptUrls.set(bundle.id, url)
-    enabledIds.add(bundle.id)
+    if (bundle.scope !== 'project') enabledIds.add(bundle.id)
     localStorage.setItem(ENABLED_STORAGE_KEY, JSON.stringify([...enabledIds]))
     notify()
   } catch (error) {
@@ -119,7 +151,14 @@ export async function restoreLocalReadPlugins(bundles: FrontendPluginBundle[]): 
   return errors
 }
 
+export async function replaceLocalReadPlugins(bundles: FrontendPluginBundle[]): Promise<string[]> {
+  for (const plugin of [...plugins]) unloadLocalReadPlugin(plugin.id)
+  return restoreLocalReadPlugins(bundles)
+}
+
 export function setReadPluginEnabled(id: string, enabled: boolean) {
+  const plugin = plugins.find(item => item.id === id)
+  if (plugin?.origin === 'project') plugin.enabled = enabled
   if (enabled) enabledIds.add(id)
   else enabledIds.delete(id)
   localStorage.setItem(ENABLED_STORAGE_KEY, JSON.stringify([...enabledIds]))
@@ -132,7 +171,7 @@ export function useReadPlugins(): readonly ReadPlugin[] {
     () => revision,
     () => 0,
   )
-  return useMemo(() => plugins.filter(plugin => enabledIds.has(plugin.id)), [currentRevision])
+  return useMemo(() => plugins.filter(plugin => plugin.origin === 'project' ? plugin.enabled : enabledIds.has(plugin.id)), [currentRevision])
 }
 
 export function useReadPluginSettings(): ReadonlyArray<ReadPlugin & { enabled: boolean }> {
@@ -141,7 +180,7 @@ export function useReadPluginSettings(): ReadonlyArray<ReadPlugin & { enabled: b
     () => revision,
     () => 0,
   )
-  return plugins.map(plugin => ({ ...plugin, enabled: enabledIds.has(plugin.id) }))
+  return plugins.map(plugin => ({ ...plugin, enabled: plugin.origin === 'project' ? plugin.enabled : enabledIds.has(plugin.id) }))
 }
 
 export function useFieldRenderer(context: ReadRenderContext): FieldRenderer | undefined {

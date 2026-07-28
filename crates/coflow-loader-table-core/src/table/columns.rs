@@ -1,4 +1,4 @@
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -26,7 +26,7 @@ pub(super) struct ResolvedColumn {
     pub(super) index: usize,
     pub(super) excel_column: usize,
     pub(super) field: String,
-    pub(super) field_type: CftSchemaTypeRef,
+    pub(super) field_type: CftValueType,
     pub(super) expand: Option<Vec<ExpandedSubColumn>>,
 }
 
@@ -35,7 +35,7 @@ pub(super) struct ExpandedSubColumn {
     pub(super) index: usize,
     pub(super) excel_column: usize,
     pub(super) field: String,
-    pub(super) field_type: CftSchemaTypeRef,
+    pub(super) field_type: CftValueType,
 }
 
 pub(super) fn field_columns_from_resolved(
@@ -62,7 +62,7 @@ pub(super) fn resolve_columns(
     source_name: &Path,
     sheet: &TableSheetConfig,
     type_name: &str,
-    fields: &BTreeMap<String, CftSchemaTypeRef>,
+    fields: &BTreeMap<String, CftValueType>,
     header_row: &[String],
     header_excel_row: usize,
     header_excel_col: usize,
@@ -85,10 +85,10 @@ struct ColumnResolution<'a> {
     source_name: &'a Path,
     sheet: &'a TableSheetConfig,
     type_name: &'a str,
-    fields: &'a BTreeMap<String, CftSchemaTypeRef>,
+    fields: &'a BTreeMap<String, CftValueType>,
     header_excel_row: usize,
     header: Vec<(usize, usize, String)>,
-    expand_fields: BTreeMap<String, BTreeMap<String, CftSchemaTypeRef>>,
+    expand_fields: BTreeMap<String, BTreeMap<String, CftValueType>>,
     expand_inner_order: BTreeMap<String, Vec<String>>,
     columns: Vec<ResolvedColumn>,
     id_column: Option<IdColumn>,
@@ -107,7 +107,7 @@ impl<'a> ColumnResolution<'a> {
         source_name: &'a Path,
         sheet: &'a TableSheetConfig,
         type_name: &'a str,
-        fields: &'a BTreeMap<String, CftSchemaTypeRef>,
+        fields: &'a BTreeMap<String, CftValueType>,
         header_row: &[String],
         header_excel_row: usize,
         header_excel_col: usize,
@@ -405,7 +405,7 @@ struct ExpandedColumnRequest<'a> {
     parent_excel_column: usize,
     parent_header: &'a str,
     parent_field: &'a str,
-    child_fields: &'a BTreeMap<String, CftSchemaTypeRef>,
+    child_fields: &'a BTreeMap<String, CftValueType>,
     inner_order: &'a [String],
 }
 
@@ -421,7 +421,7 @@ fn is_key_column(column_text: &str, field: &str, key_column: &str, has_explicit_
 fn expand_field_index(
     schema: &CftSchema,
     type_name: &str,
-) -> BTreeMap<String, BTreeMap<String, CftSchemaTypeRef>> {
+) -> BTreeMap<String, BTreeMap<String, CftValueType>> {
     let mut out = BTreeMap::new();
     let Some(schema_type) = schema.resolve_type(type_name) else {
         return out;
@@ -430,7 +430,7 @@ fn expand_field_index(
         if !field.is_expand {
             continue;
         }
-        let CftSchemaTypeRef::Object(inner_type) = field.ty_ref.non_nullable() else {
+        let CftValueType::Object(inner_type) = field.value_type.non_nullable() else {
             continue;
         };
         let Some(inner_type) = schema.resolve_type(inner_type) else {
@@ -438,7 +438,7 @@ fn expand_field_index(
         };
         let inner_fields = inner_type
             .all_fields()
-            .map(|inner| (inner.name.to_string(), inner.ty_ref.clone()))
+            .map(|inner| (inner.name.to_string(), inner.value_type.clone()))
             .collect();
         out.insert(field.name.to_string(), inner_fields);
     }
@@ -454,7 +454,7 @@ fn expand_field_order_index(schema: &CftSchema, type_name: &str) -> BTreeMap<Str
         if !field.is_expand {
             continue;
         }
-        let CftSchemaTypeRef::Object(inner_type) = field.ty_ref.non_nullable() else {
+        let CftValueType::Object(inner_type) = field.value_type.non_nullable() else {
             continue;
         };
         let Some(inner_type) = schema.resolve_type(inner_type) else {

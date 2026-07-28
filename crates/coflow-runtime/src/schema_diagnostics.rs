@@ -79,6 +79,7 @@ fn diagnostic_from_cft(
             .iter()
             .map(|label| label_from_cft(label, sources, paths))
             .collect(),
+        contexts: Vec::new(),
     }
 }
 

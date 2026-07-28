@@ -1,4 +1,4 @@
-use super::checked_type::CheckedType;
+use super::inferred_type::InferredType;
 use super::state::SymbolKind;
 use super::SchemaCompiler;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
@@ -246,14 +246,15 @@ impl SchemaCompiler<'_> {
         }
     }
 
-    fn expand_target_is_concrete_inline_object(&self, ty: &CheckedType) -> bool {
-        match ty {
-            CheckedType::Unknown => true,
-            CheckedType::Type(name) => self.types.get(name).is_some_and(|info| {
-                !info.def.is_abstract && !has_annotation(&info.def.annotations, "singleton")
-            }),
-            _ => false,
+    fn expand_target_is_concrete_inline_object(&self, ty: &InferredType) -> bool {
+        if ty.is_unknown() {
+            return true;
         }
+        ty.object_name().is_some_and(|name| {
+            self.types.get(name.as_str()).is_some_and(|info| {
+                !info.def.is_abstract && !has_annotation(&info.def.annotations, "singleton")
+            })
+        })
     }
 
     fn validate_id_as_enum_name(
@@ -391,4 +392,15 @@ pub(super) fn find_annotation<'a>(
     annotations
         .iter()
         .find(|annotation| annotation.name == name)
+}
+
+pub(super) fn field_dimension_name(field: &FieldDef) -> Option<crate::DimensionName> {
+    if find_annotation(&field.annotations, "localized").is_some() {
+        return Some(crate::DimensionName::from_validated("language"));
+    }
+    let annotation = find_annotation(&field.annotations, "dimension")?;
+    let Some(AnnotationArg::String(name, _)) = annotation.args.first() else {
+        return None;
+    };
+    Some(crate::DimensionName::from_validated(name.clone()))
 }

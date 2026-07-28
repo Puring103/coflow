@@ -1,19 +1,22 @@
 # 给策划的配置维护路径
 
-本页面向配置策划、系统策划和内容维护者，说明 Coflow 如何支持日常配置生产。
+Coflow 不要求所有数据都改成同一种格式。策划可以继续在 Excel 中批量编辑数值，在 CSV 中维护易于版本比较的单表，在 CFD 中表达复杂嵌套结构。
 
-## 需要回答的问题
+## 需要理解的概念
 
-- 哪些数据适合继续放在 Excel 或飞书表格。
-- 什么时候使用 CFD 文本配置维护复杂结构。
-- record key、字段、引用和默认值如何理解。
-- 出错时如何根据诊断定位到文件、sheet、行列、record 和字段。
-- 可视化编辑器、VS Code/LSP 和 AI agent 分别能辅助哪些工作。
+- CFT type 定义一类数据的字段和规则。
+- record key 是稳定身份，引用指向 key，而不是可变的显示名。
+- 默认值由 schema 统一定义，source 只需维护例外值。
+- `check {}` 表达业务规则，失败会精确定位到 record 和字段。
 
-## 推荐阅读顺序
+## 日常流程
 
-1. [安装](/docs/guide/install)
-2. [示例](/docs/guide/examples)
-3. [最佳工作流](/docs/guide/best-workflow)
-4. [数据维护](/docs/guide/data-authoring)
-5. [编辑器与 LSP](/docs/guide/editor)
+1. 从编辑器或 `coflow data list` 确认要修改的记录。
+2. 在原始 Excel、CSV 或 CFD 文件中编辑，或使用结构化 patch。
+3. 运行 `coflow check <project>`。
+4. 根据诊断的文件、sheet、行列、record 和 field path 修复问题。
+5. 检查通过后再提交变更。
+
+可视化编辑器用于表格、记录、关系图和诊断浏览；VS Code/LSP 更适合直接编辑 CFT/CFD；AI agent 应使用 CLI 查询和 writer API，不应跳过校验。
+
+建议继续阅读 [数据维护](data-authoring.md)、[编辑器与 LSP](editor.md) 和 [最佳工作流](best-workflow.md)。

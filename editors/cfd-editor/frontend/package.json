@@ -13,7 +13,6 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
-    "@tanstack/match-sorter-utils": "^8.19.4",
     "@tanstack/react-table": "^8",
     "@tanstack/react-virtual": "^3.14.3",
     "@tauri-apps/api": "^2",

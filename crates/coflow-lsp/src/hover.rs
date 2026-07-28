@@ -54,7 +54,7 @@ pub(crate) fn hover_at(
                     "CFT field `{}`.`{}`: `{}`.",
                     type_name,
                     field.name,
-                    field.ty_ref.display_label()
+                    field.value_type.display_label()
                 ),
                 &byte_range(&document.source, word.start, word.end),
             ));
@@ -98,7 +98,7 @@ pub(crate) fn hover_at(
                         "CFT field `{}`.`{}`: `{}`.",
                         current_type.name,
                         field.name,
-                        field.ty_ref.display_label()
+                        field.value_type.display_label()
                     ),
                     &byte_range(&document.source, word.start, word.end),
                 ));
@@ -188,6 +188,11 @@ fn annotation_at(document: &LspDocument, offset: usize) -> Option<&Annotation> {
                     if let Some(annotation) = find_in(&field.annotations, offset) {
                         return Some(annotation);
                     }
+                }
+            }
+            Item::Check(check) => {
+                if let Some(annotation) = find_in(&check.annotations, offset) {
+                    return Some(annotation);
                 }
             }
         }

@@ -20,9 +20,9 @@ export type FieldPathSegment = CfdPathSegment
 export type DiagnosticItem = FlatDiagnostic
 
 export type Route =
-  | { view: 'table'; file: string; typeFilter?: string }
-  | { view: 'record'; file: string; coordinate: RecordCoordinate }
-  | { view: 'graph'; file: string; typeFilter?: string }
+  | { view: 'table'; file: string; viewId: string; typeFilter?: string }
+  | { view: 'record'; file: string; viewId: string; coordinate: RecordCoordinate }
+  | { view: 'graph'; file: string; viewId: string; typeFilter?: string }
 
 export type GraphNodeView = GraphNode & {
   id: string
@@ -61,7 +61,7 @@ export function recordFields(object: CfdObject): FieldCell[] {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, value]) => ({
       name,
-      value: value ?? nullValue(),
+      value,
       annotation: null,
     }))
 }
@@ -156,8 +156,10 @@ export function fieldPathDictKey(value: string): FieldPathSegment {
 }
 
 export function makeObjectValue(actualType: string, fields: FieldCell[] = []): FieldValue {
-  const fieldMap: { [key: string]: FieldValue | undefined } = {}
-  for (const field of fields) fieldMap[field.name] = field.value
+  const fieldMap: Record<string, FieldValue> = {}
+  for (const field of fields) {
+    if (field.value !== undefined) fieldMap[field.name] = field.value
+  }
   return {
     kind: 'object',
     value: {
@@ -229,6 +231,22 @@ export function diagnosticSeverity(severity: string): 'error' | 'warning' | 'inf
   return severity === 'error' || severity === 'warning' ? severity : 'info'
 }
 
+export function diagnosticDisplayMessage(diagnostic: DiagnosticItem): string {
+  const lines = [diagnostic.message]
+  for (const context of diagnostic.contexts ?? []) {
+    let detail = context.kind
+    if (context.kind === 'check' && context.name) detail = `check ${context.name}`
+    else if (context.kind === 'when' && context.expression) detail = `在 when ${context.expression} 内`
+    else if (context.kind === 'quantifier' && context.binding && context.item) {
+      detail = `绑定 ${context.binding} 位于 ${context.item}`
+    } else if (context.kind === 'dimension' && context.dimension && context.variant) {
+      detail = `${context.dimension}=${context.variant}`
+    }
+    lines.push(`上下文: ${detail}`)
+  }
+  return lines.join('\n')
+}
+
 /** Stable identity for a diagnostic. Same anchor + code + message ⇒ same key,
  *  so a focus request survives project snapshot refreshes even without an
  *  explicit ID field on FlatDiagnostic. */
@@ -240,7 +258,7 @@ export function diagnosticKey(diagnostic: DiagnosticItem): string {
     diagnostic.field_path ?? '',
     diagnostic.severity,
     diagnostic.code,
-    diagnostic.message,
+    diagnosticDisplayMessage(diagnostic),
   ].join('')
 }
 
@@ -447,10 +465,10 @@ export function cloneValue(value: FieldValue): FieldValue {
   }
 }
 
-function cloneFieldMap(fields: { [key: string]: FieldValue | undefined }): { [key: string]: FieldValue | undefined } {
-  const out: { [key: string]: FieldValue | undefined } = {}
+function cloneFieldMap(fields: Record<string, FieldValue>): Record<string, FieldValue> {
+  const out: Record<string, FieldValue> = {}
   for (const [key, value] of Object.entries(fields)) {
-    out[key] = value ? cloneValue(value) : value
+    out[key] = cloneValue(value)
   }
   return out
 }

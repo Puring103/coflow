@@ -1,6 +1,7 @@
 pub(crate) fn format_cft(source: &str) -> String {
     let mut output = String::new();
     let mut indent = 0usize;
+    let mut continuation = false;
     let ended_with_newline = source.ends_with('\n');
 
     for raw_line in source.lines() {
@@ -12,10 +13,11 @@ pub(crate) fn format_cft(source: &str) -> String {
         if starts_with_closing_delimiter(trimmed) {
             indent = indent.saturating_sub(1);
         }
-        output.push_str(&"  ".repeat(indent));
+        output.push_str(&"  ".repeat(indent + usize::from(continuation)));
         output.push_str(trimmed);
         output.push('\n');
         indent = adjusted_indent(indent, trimmed);
+        continuation = trimmed.ends_with(':');
     }
 
     if !ended_with_newline && output.ends_with('\n') {

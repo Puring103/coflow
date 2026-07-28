@@ -1,6 +1,6 @@
 use crate::{DecodedSourceOptions, Diagnostic, DiagnosticSet, ResolvedSource};
 use coflow_cft::{CftDimension, CftField, CftSchema, CftType, RecordKey, VariantName};
-use coflow_data_model::{CfdInputDimensionValue, CfdValue};
+use coflow_data_model::{CfdValue, DimensionValueDraft};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -206,7 +206,7 @@ pub struct DimensionSourceLoadRequest<'a> {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DimensionSourceLoadResult {
-    pub values: Vec<CfdInputDimensionValue>,
+    pub values: Vec<DimensionValueDraft>,
 }
 
 #[derive(Debug, Clone)]
@@ -224,6 +224,17 @@ pub struct RewriteDimensionRecordRequest<'a> {
     pub schema: DimensionSourceSchema<'a>,
     pub old_key: &'a RecordKey,
     pub new_key: Option<&'a RecordKey>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RewriteDimensionReferencesRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub schema: DimensionSourceSchema<'a>,
+    pub source_key: &'a RecordKey,
+    pub variant: &'a VariantName,
+    pub object_path: &'a [coflow_data_model::CfdPathSegment],
+    pub old_key: &'a RecordKey,
+    pub new_key: &'a RecordKey,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -283,6 +294,22 @@ pub trait DimensionSourceManager: Send + Sync {
         _request: &RewriteDimensionRecordRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
         Err(unsupported_table_operation("rewriting dimension records"))
+    }
+
+    /// Rewrite spread-source references inside one dimension variant value.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the physical dimension value cannot be found
+    /// or its provider syntax cannot represent the rewrite.
+    fn rewrite_dimension_references(
+        &self,
+        _ctx: TableContext<'_>,
+        _request: &RewriteDimensionReferencesRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        Err(unsupported_table_operation(
+            "rewriting dimension references",
+        ))
     }
 
     /// Decodes provider options for a generated dimension source.

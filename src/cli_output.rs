@@ -1,4 +1,4 @@
-use coflow::diagnostics::{diagnostic_json_from_set, DiagnosticJson};
+use crate::diagnostics::{diagnostic_json_from_set, DiagnosticJson};
 use coflow_project::Project;
 use serde::Serialize;
 use std::io::{self, Write};

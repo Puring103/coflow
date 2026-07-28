@@ -44,9 +44,9 @@ dimensions:
 
 ## 维度字段
 
-维度字段通过 CFT 注解声明。当前可用注解是 `@localized`，它把字段归入 `language` 维度：
+维度字段通过 CFT 注解声明。`@localized` 是 `language` 维度的便捷写法：
 
-```text
+```cft
 type Item {
   @localized
   name: string;
@@ -64,19 +64,20 @@ type Item {
 
 如果 schema 中存在 `@localized` 字段，但没有配置 `dimensions.language`，Coflow 会报告缺失维度 binding 的 CFT schema 诊断。
 
-## Record Overlay
+其他维度使用 `@dimension("name")`：
 
-维度是编译后 schema 的一等对象。字段直接保存 dimension binding，DataModel 把额外变体值附着到原 owner record：
-
-```text
-Item.potion.fields.name                    = "Potion"
-Item.potion.dimension_fields.name.zh       = "药水"
-Item.potion.dimension_fields.name.en       = "Potion"
+```cft
+type Item {
+  @dimension("platform")
+  price: int;
+}
 ```
 
-不会生成合成 type、storage record、runtime module 或独立 dimension value store。Schema inspect、记录列表和关系图只展示用户声明的 type 和 record。
+注解中的名称必须对应 `coflow.yaml` 中已声明的维度。一个字段不能同时使用 `@localized` 和 `@dimension`。
 
-默认值只来自普通 source field；维度文件中的 `default` 是用于同步和人工核对的物理镜像，不会作为第二份 default 加载。
+## 默认值与变体
+
+普通数据源中的字段值是默认值，维度文件中的 `default` 列用于展示和同步这个默认值。它不会创建另一份独立配置。
 
 ## 维度文件
 
@@ -102,9 +103,9 @@ staff_ice,Ice Staff,冰杖,Ice Staff
 | `default` | 源数据中的默认值，由 Coflow 刷新 |
 | 变体列 | 对应 variant 的值，由人工或翻译流程维护 |
 
-singleton type 的同一维度字段合并到一份 CFD 文件，每个字段一条 record；生成、加载和写入都以整份物理文件为事务边界。
+singleton type 的同一维度字段会合并到一份 CFD 文件，每个字段一条 record。
 
-维度文件由 runtime 自动发现，不需要手动写进 `sources`。Provider 按原 `CftField` 类型直接解析变体值，并把值与 CSV cell 或 CFD span origin 一起交给 owner record overlay。
+维度文件由 Coflow 自动发现，不需要手动写进 `sources`。变体值仍按原字段类型解析。
 
 ## 生成与保留策略
 
@@ -148,17 +149,15 @@ Item_nameVariants.json
 ]
 ```
 
-缺失或显式为 `null` 的变体导出为 `null`。继承该字段的子 type record 会进入声明类型对应的 Variants 表；singleton 字段使用字段名作为 `id`。这些表来自 record overlay 投影，不会重新引入合成 schema type 或 DataModel record。
+缺失或显式为 `null` 的变体导出为 `null`。继承该字段的子 type record 会进入声明类型对应的 Variants 表；singleton 字段使用字段名作为 `id`。
 
-配置 C# codegen 时，每张 Variants 表还会生成对应的
-`{声明类型}{字段名}Variants.cs` 和 `CoflowTables.Tb{声明类型}{字段名}Variants`，
-其 loader 使用带下划线的 Variants 数据文件名。
+启用代码生成时，生成结果会包含对应 Variants 表的读取 API。具体类型和命名规则取决于所选代码生成目标。
 
 ## 本地化作为语言维度
 
 本地化就是 `language` 维度的一种使用方式。`@localized` 声明字段随语言变化：
 
-```text
+```cft
 type Item {
   @localized
   name: string;
@@ -167,7 +166,7 @@ type Item {
 
 也可以指定 bucket：
 
-```text
+```cft
 type Item {
   @localized("ui")
   icon_text: string;
@@ -184,43 +183,25 @@ type Item {
 
 ## Check 行为
 
-Schema 编译时会为每个实际 type 建立 typed check schedule。默认值轮按父 type
-到子 type 的顺序执行完整继承链上的 `check {}`，并继续检查普通嵌套对象。
+默认值和每个已提供的语言变体都会按 CFT 类型规则执行相关 `check {}`。继承链上的规则会从父类型到子类型依次执行。
 
-每个语言变体只执行静态读取了 `@localized` 字段的 check 语句，而不会重复执行与
-`language` 无关的语句。子 type record 会同时执行父 type 中与语言相关的语句；量词
-绑定等局部名称会按词法作用域分析，不会因为与字段同名而被误判成维度读取。
+与维度字段无关的规则只需要执行一次；读取维度字段的规则会在对应变体上下文中执行。
 
 语言变体轮读取 `@localized` 字段时：
 
 - 变体值存在：使用该值，其他非维度字段仍读取源 record。
 - 变体值缺失：保持 missing，不回退到默认值。
-- 变体值解析为 `null`：本轮跳过依赖该字段的语句和方法调用，不回退到默认值。
+- 变体值解析为 `null`：该变体投影跳过依赖该字段的语句和方法调用，不回退到默认值。
 - 整个对象、数组或字典字段被 `@localized` 标记时，变体值的完整子树会在逻辑字段路径上执行嵌套 type check。
-- 只有嵌套对象内部的字段被 `@localized` 标记、而外层对象字段本身不是维度字段时，不会因此为外层 record 启动额外语言轮。
+- 只有嵌套对象内部的字段被 `@localized` 标记、而外层对象字段本身不是维度字段时，不会因此重复检查整个外层 record。
 
-因此，不读取任何 `@localized` 字段的规则只在默认值轮执行一次；一个语言字段缺少
-变体值也不会让相同规则用默认值再执行一次。
+因此，不读取任何维度字段的规则只在默认值上下文执行一次；一个语言字段缺少变体值也不会自动改用默认值再次执行。
 
 语言轮产生的诊断会带上语言上下文，例如 `[language=zh]`。
 
-## C# 运行时
+## 代码生成
 
-C# codegen 会把 `@localized` 字段包装为 `Localized<T>`：
-
-```csharp
-public Localized<string> Name { get; }
-```
-
-使用方式：
-
-```csharp
-var defaultName = item.Name.Default;
-var currentName = item.Name.Value;
-var englishName = item.Name.For("en");
-```
-
-`Localized<T>` 保存 key 和默认值。宿主可以替换或扩展生成的 `Localization` helper，以接入自己的语言切换和翻译表加载方式。
+启用代码生成时，维度字段会生成能够读取默认值、当前变体和指定变体的访问 API。具体 API 形态由代码生成目标决定，详见对应目标的代码生成文档。
 
 ## 常见错误
 

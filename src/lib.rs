@@ -15,7 +15,3 @@
 
 mod artifacts;
 pub mod commands;
-pub mod data_commands;
-pub mod diagnostics;
-pub mod schema_commands;
-pub mod skill_commands;

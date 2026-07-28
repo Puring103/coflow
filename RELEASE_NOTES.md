@@ -1,3 +1,46 @@
+# Coflow 0.8.0
+
+## Highlights
+
+### More Expressive Project Checks
+
+- Added named top-level checks and `records(Type)` queries for project-wide
+  validation rules.
+- Added nullable-safe access, null coalescing, formatted strings, typed
+  quantifier bindings, expanded validation functions, and custom check
+  messages.
+- Improved incremental check scheduling so record-set and dimension rules
+  rerun only when their relevant data changes.
+
+### Faster Data Editing
+
+- Added record reordering and cross-file record transfers.
+- Added table cell range selection, drag selection, clipboard editing, and
+  batch inspector editing in the CFD Editor.
+- Added saved custom views, view-specific field filtering, singleton-aware
+  views, field reordering, and improved dimension editing.
+
+### Editor Extensions
+
+- Added project plugin references and read-only project data queries for CFD
+  Editor frontend plugins.
+
+### CLI And Diagnostics
+
+- Made terminal-friendly output the default for CLI commands.
+- Improved project-scoped artifact commands, enum lock handling, record query
+  diagnostics, and language-server support for project-wide checks.
+
+## Compatibility
+
+- CFD string values must now be quoted. Update existing bare string values to
+  use quoted CFD string syntax before upgrading.
+- This release includes substantial runtime, data-model, and checker
+  architecture changes. Run `coflow check` and `coflow build` in CI before
+  deploying an existing project with this version.
+
+---
+
 # Coflow 0.7.4
 
 ## Highlights

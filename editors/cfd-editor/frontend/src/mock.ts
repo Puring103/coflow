@@ -23,6 +23,7 @@ const MOCK_CFD_CAPS: WriterCapabilities = {
   can_edit_key: true,
   can_insert_record: true,
   can_delete_record: true,
+  can_reorder_records: true,
   requires_full_refresh_after_write: true,
 }
 
@@ -60,6 +61,7 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
       first_source_descendant: 'data/item.cfd',
       children: [
         { name: 'item.cfd', path: 'data/item.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/item.cfd', children: [] },
+        { name: 'archive.cfd', path: 'data/archive.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/archive.cfd', children: [] },
         { name: 'npc.cfd', path: 'data/npc.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/npc.cfd', children: [] },
       ],
     },
@@ -71,11 +73,14 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
   ],
   file_types: {
     'data/item.cfd': [
-      { name: 'Item', display_name: 'Items', record_count: 2 },
-      { name: 'Weapon', display_name: 'Weapons', record_count: 1 },
+      { name: 'Item', display_name: 'Items', record_count: 2, is_singleton: false },
+      { name: 'Weapon', display_name: 'Weapons', record_count: 1, is_singleton: false },
     ],
     'data/npc.cfd': [
-      { name: 'Npc', display_name: 'Npc', record_count: 2 },
+      { name: 'Npc', display_name: 'Npc', record_count: 2, is_singleton: false },
+    ],
+    'data/archive.cfd': [
+      { name: 'Item', display_name: 'Items', record_count: 0, is_singleton: false },
     ],
   },
   diagnostics: [
@@ -88,16 +93,18 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
       actual_type: 'Npc',
       record_key: 'Npc_001',
       field_path: 'reward_item',
+      contexts: [],
     },
     {
       severity: 'warning',
       code: 'unused_field',
       stage: 'check',
-      message: 'item.cfd: field "legacy_id" is not in schema',
+      message: 'item.cfd: field "unknown_id" is not in schema',
       file_path: 'data/item.cfd',
       actual_type: 'Item',
       record_key: 'Item_001',
-      field_path: 'legacy_id',
+      field_path: 'unknown_id',
+      contexts: [],
     },
   ],
 }
@@ -109,6 +116,13 @@ const refVal = refValue
 const boolVal = boolValue
 
 export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
+  'data/archive.cfd': withColumns({
+    revision: 1,
+    file_path: 'data/archive.cfd',
+    type_names: ['Item'],
+    capabilities: MOCK_CFD_CAPS,
+    records: [],
+  }),
   'data/item.cfd': withColumns({
     revision: 1,
     file_path: 'data/item.cfd',
@@ -121,7 +135,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
         { name: 'max_stack', value: intVal(99), annotation: null },
         { name: 'quality', value: enumVal('Quality', 'Common', 0), annotation: null },
         { name: 'stackable', value: boolVal(true), annotation: null },
-        { name: 'legacy_id', value: nullValue(), annotation: null },
+        { name: 'unknown_id', value: nullValue(), annotation: null },
       ]),
       row('Item', 'Item_002', [
         { name: 'name', value: strVal('中级药水'), annotation: null },
@@ -129,7 +143,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
         { name: 'max_stack', value: intVal(50), annotation: null },
         { name: 'quality', value: enumVal('Quality', 'Uncommon', 1), annotation: null },
         { name: 'stackable', value: boolVal(true), annotation: null },
-        { name: 'legacy_id', value: nullValue(), annotation: null },
+        { name: 'unknown_id', value: nullValue(), annotation: null },
       ]),
       row('Weapon', 'Sword_001', [
         { name: 'name', value: strVal('铁剑'), annotation: null },
@@ -174,8 +188,8 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
 }
 
 export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
-  table_column_widths: {},
-  graph_enabled_fields: {},
+  views: {},
+  default_table_column_widths: {},
   record_groups: {
     'data/item.cfd': {
       Item: [{
@@ -272,6 +286,8 @@ function row(actualType: string, key: string, fields: RecordRow['fields']): Reco
   return {
     coordinate: { actual_type: actualType, key },
     display_path: `${actualType}.${key}`,
+    container_index: 0,
+    container_size: 1,
     fields,
     field_index,
     field_summaries,

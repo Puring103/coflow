@@ -19,6 +19,7 @@ pub mod artifacts;
 pub mod codegen;
 pub mod data_output;
 pub mod diagnostics;
+pub mod loader_generation;
 pub mod operations;
 pub mod provider;
 pub mod registry;
@@ -31,16 +32,17 @@ pub use codegen::{CodeGenerator, CodegenContext, CodegenDescriptor};
 pub use data_output::{DataExporter, ExportContext, ExporterDescriptor};
 pub use diagnostics::{
     byte_position, byte_range, map_diagnostics_with_origins, origins_of, path_to_slash,
-    source_location_display_path, spreadsheet_cell_name, Diagnostic, DiagnosticSet, FlatDiagnostic,
-    Label, Severity, SourceLocation, TextPosition, TextRange,
+    source_location_display_path, spreadsheet_cell_name, Diagnostic, DiagnosticContext,
+    DiagnosticSet, FlatDiagnostic, Label, Severity, SourceLocation, TextPosition, TextRange,
 };
+pub use loader_generation::{LoaderDescriptor, LoaderGenerationContext, LoaderGenerator};
 pub use operations::{
     CreateTableRequest, DimensionSourceEntry, DimensionSourceLoadRequest,
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    DimensionSourceSchema, RewriteDimensionRecordRequest, SyncHeaderRequest, TableAddressing,
-    TableContext, TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
-    WriteDimensionValueRequest,
+    DimensionSourceSchema, RewriteDimensionRecordRequest, RewriteDimensionReferencesRequest,
+    SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions, TableManager,
+    TableManagerDescriptor, TableOperationResult, WriteDimensionValueRequest,
 };
 pub use provider::{
     DecodedOutputOptions, DecodedSourceOptions, LoadedSource, ProbeConfidence, ProbeResult,
@@ -51,8 +53,9 @@ pub use registry::{
     ProviderBundle, ProviderRegistrationError, ProviderRegistry, SourceProviderSelectionError,
 };
 pub use writer::{
-    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest,
-    SourceTransaction, SourceTransactionCompensation, SourceWriter, SpreadRewriteTarget,
-    WriteBatchFailure, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
+    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
+    ReorderRecordsRequest, RewriteRecordReferencesRequest, SourceTransaction,
+    SourceTransactionCompensation, SourceWriter, SpreadRewriteTarget, WriteBatchFailure,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriteRecordRef,
     WriterCapabilities, WriterDescriptor,
 };

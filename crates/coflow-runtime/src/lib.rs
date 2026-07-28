@@ -15,6 +15,9 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
+#[cfg(feature = "internal-check-bench")]
+#[doc(hidden)]
+pub mod check_benchmark_support;
 mod checks;
 mod data_files;
 mod data_patch;
@@ -33,6 +36,7 @@ mod schema_inspect;
 mod session;
 mod session_build;
 mod source_resolution;
+mod statistics;
 mod write_rules;
 mod writes;
 
@@ -56,6 +60,8 @@ pub use files::{DimensionGroup, FileTreeNode, FileTreeOptions};
 pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef};
 // Re-export helpers that hosts (tauri editor, CLI) call when translating
 // engine data to a wire format so they don't diverge in path formatting.
+pub use coflow_cft::{DimensionName, FieldName, VariantName};
+pub use coflow_data_model::RecordCoordinate;
 pub use load::format_cfd_path as format_field_path;
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
@@ -67,7 +73,7 @@ pub use query::ProjectQueries;
 pub use records::{
     dict_key_path_text, value_summary, DimensionValueOrigin, DimensionValueState,
     DimensionValueView, EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo, RecordReferenceInfo,
-    RecordTarget, RecordView, RefTargetInfo, WriteOutcome,
+    RecordView, RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{
     BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
@@ -78,5 +84,6 @@ pub use schema_inspect::{
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,
 };
+pub use session::ProjectSchemaSession;
 pub(crate) use session::ProjectSession;
-pub use session::{ProjectSchemaSession, RecordCoordinate};
+pub use statistics::ProjectExecutionStats;

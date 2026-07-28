@@ -17,7 +17,7 @@ use crate::model::{CsharpLoadField, CsharpLoader, CsharpPolymorphicCase};
 use crate::names::escape_csharp_string;
 use crate::CsharpCodegenError;
 use coflow_cft::CftField;
-use coflow_cft::CftSchemaTypeRef;
+use coflow_cft::CftValueType;
 
 pub(super) fn loader_method(
     type_name: &str,
@@ -83,7 +83,7 @@ pub(super) fn dimension_loader_method(
     view: &CsharpLoweringPlan<'_>,
 ) -> Result<CsharpLoader, CsharpCodegenError> {
     let mut used_local_names = loader_reserved_local_names(table.fields.iter());
-    let key_ty = CftSchemaTypeRef::String;
+    let key_ty = CftValueType::String;
     let fields = table
         .fields
         .iter()
@@ -168,18 +168,18 @@ fn load_field(
     view: &CsharpLoweringPlan<'_>,
 ) -> Result<CsharpLoadField, CsharpCodegenError> {
     let local_name = field_local_name(&field.name, used_local_names)?;
-    let default_expr = default_value_expr(field.default.as_ref(), &field.ty_ref, view)?;
+    let default_expr = default_value_expr(field.default.as_ref(), &field.value_type, view)?;
     let missing_expr = default_expr.as_ref().map_or_else(
         || {
-            if field.ty_ref.is_nullable() {
+            if field.value_type.is_nullable() {
                 None
             } else {
-                collection_default_expr(field.ty_ref.non_nullable(), view).ok()
+                collection_default_expr(field.value_type.non_nullable(), view).ok()
             }
         },
         |default| Some(default.clone()),
     );
-    let inner_property_type = csharp_property_type(&field.ty_ref, view);
+    let inner_property_type = csharp_property_type(&field.value_type, view);
     let property_type = if field.dimension.is_some() {
         format!("Localized<{inner_property_type}>")
     } else {
@@ -220,7 +220,7 @@ fn load_field(
         type_name: property_type,
         assignment_target: backing_field_name(
             &csharp_public_member_name(&field.name),
-            &field.ty_ref,
+            &field.value_type,
             view,
         )
         .unwrap_or_else(|| csharp_public_member_name(&field.name)),
@@ -231,13 +231,13 @@ fn load_field(
         is_required: missing_expr.is_none(),
         default_expr,
         missing_expr,
-        requires_context: field_type_requires_context(&field.ty_ref, view)?,
+        requires_context: field_type_requires_context(&field.value_type, view)?,
         has_name: format!("has{}", csharp_public_member_name(&field.name)),
     })
 }
 
 pub(super) fn field_type_requires_context(
-    ty: &CftSchemaTypeRef,
+    ty: &CftValueType,
     view: &CsharpLoweringPlan<'_>,
 ) -> Result<bool, CsharpCodegenError> {
     let mut visited = BTreeSet::new();
@@ -245,34 +245,34 @@ pub(super) fn field_type_requires_context(
 }
 
 fn field_type_requires_context_inner(
-    ty: &CftSchemaTypeRef,
+    ty: &CftValueType,
     view: &CsharpLoweringPlan<'_>,
     visited: &mut BTreeSet<String>,
 ) -> Result<bool, CsharpCodegenError> {
     match ty {
-        CftSchemaTypeRef::RecordRef(name) => Ok(view.is_ref_target_loadable(name)),
-        CftSchemaTypeRef::Object(name) => {
+        CftValueType::RecordRef(name) => Ok(view.is_ref_target_loadable(name)),
+        CftValueType::Object(name) => {
             if !visited.insert(name.to_string()) {
                 return Ok(false);
             }
             for concrete in view.concrete_assignable_types(name)? {
                 for field in view.fields(concrete)? {
-                    if field_type_requires_context_inner(&field.ty_ref, view, visited)? {
+                    if field_type_requires_context_inner(&field.value_type, view, visited)? {
                         return Ok(true);
                     }
                 }
             }
             Ok(false)
         }
-        CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
+        CftValueType::Array(inner) | CftValueType::Nullable(inner) => {
             field_type_requires_context_inner(inner, view, visited)
         }
-        CftSchemaTypeRef::Dict(_, value) => field_type_requires_context_inner(value, view, visited),
-        CftSchemaTypeRef::Enum(_)
-        | CftSchemaTypeRef::Int
-        | CftSchemaTypeRef::Float
-        | CftSchemaTypeRef::Bool
-        | CftSchemaTypeRef::String => Ok(false),
+        CftValueType::Dict(_, value) => field_type_requires_context_inner(value, view, visited),
+        CftValueType::Enum(_)
+        | CftValueType::Int
+        | CftValueType::Float
+        | CftValueType::Bool
+        | CftValueType::String => Ok(false),
     }
 }
 

@@ -8,4 +8,4 @@
  * [`crate::SourceWriter::capabilities`] for the authoritative per-source
  * result when support depends on the resolved storage format.
  */
-export type WriterCapabilities = { provider_id: string, can_edit_field: boolean, can_edit_key: boolean, can_insert_record: boolean, can_delete_record: boolean, requires_full_refresh_after_write: boolean, };
+export type WriterCapabilities = { provider_id: string, can_edit_field: boolean, can_edit_key: boolean, can_insert_record: boolean, can_delete_record: boolean, can_reorder_records: boolean, requires_full_refresh_after_write: boolean, };

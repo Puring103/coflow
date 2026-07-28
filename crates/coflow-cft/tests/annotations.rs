@@ -123,7 +123,7 @@ fn id_is_reserved_as_a_field_name() {
 }
 
 #[test]
-fn old_record_annotations_are_rejected() {
+fn unknown_record_annotations_are_rejected() {
     for source in [
         "type Skill { @id key: string; }",
         "type Skill { @index name: string; }",
@@ -154,17 +154,24 @@ fn expand_on_concrete_type_field_still_compiles() {
 
 #[test]
 fn expand_on_non_concrete_field_is_rejected() {
-    let err = compile_one(
+    for source in [
         r#"
             type Anchor {
                 @expand
                 value: int;
             }
         "#,
-    )
-    .expect_err("@expand requires a concrete type");
-
-    assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
+        r#"
+            type Position { x: float; y: float; }
+            type Anchor {
+                @expand
+                pos: Position?;
+            }
+        "#,
+    ] {
+        let err = compile_one(source).expect_err("@expand requires a concrete type");
+        assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
+    }
 }
 
 #[test]

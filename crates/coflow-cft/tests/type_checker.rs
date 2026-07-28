@@ -12,6 +12,83 @@ mod common;
 use common::*;
 
 #[test]
+fn top_level_check_has_no_implicit_record_scope() {
+    let err = compile_one(
+        r#"
+        type Item { price: int; }
+        check ItemIntegrity {
+            price > 0;
+            id != "";
+        }
+        "#,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == CftErrorCode::UnknownValueName)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn top_level_check_accepts_global_consts_and_enums() {
+    compile_one(
+        r#"
+        const LIMIT = 3;
+        enum Mode { Normal }
+        check ProjectIntegrity {
+            LIMIT > 0;
+            Mode.Normal == Mode.Normal;
+        }
+        "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn top_level_records_query_types_record_bindings() {
+    compile_one(
+        r#"
+        type Item { price: int; }
+        check ItemIntegrity {
+            all item, index in records(Item) {
+                item.price > 0 && item.id != "" && index >= 0;
+            }
+        }
+        "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn records_query_rejects_invalid_scopes_and_arguments() {
+    let err = compile_one(
+        r#"
+        enum Kind { A }
+        type Item {
+            check { records(Item).len() > 0; }
+        }
+        check InvalidQueries {
+            records(Kind).len() > 0;
+            records("Item").len() > 0;
+            records(Item, Item).len() > 0;
+        }
+        "#,
+    )
+    .unwrap_err();
+    assert!(
+        err.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == CftErrorCode::InvalidRecordSetQuery)
+            .count()
+            >= 4
+    );
+}
+
+#[test]
 fn type_checker_reports_name_field_enum_function_quantifier_index_and_regex_errors() {
     let source = r#"
         const PAT = "^[a";
@@ -40,7 +117,6 @@ fn type_checker_reports_name_field_enum_function_quantifier_index_and_regex_erro
     assert_has_code(&err, CftErrorCode::FieldAccessOnNonObject);
     assert_has_code(&err, CftErrorCode::TypeUnknownEnumVariant);
     assert_has_code(&err, CftErrorCode::ComparisonTypeMismatch);
-    assert_has_code(&err, CftErrorCode::FunctionArgTypeMismatch);
     assert_has_code(&err, CftErrorCode::QuantifierRequiresCollection);
     assert_has_code(&err, CftErrorCode::IndexTypeMismatch);
     assert_has_code(&err, CftErrorCode::RegexPatternMustBeLiteral);
@@ -83,6 +159,90 @@ fn type_checker_accepts_nullable_guarded_access_and_object_fields() {
     "#;
 
     compile_one(source).unwrap();
+}
+
+#[test]
+fn type_checker_accepts_safe_access_and_rejects_invalid_nullable_operators() {
+    compile_one(
+        r#"
+        type Item { value: int; }
+        type Holder {
+            maybe: Item? = null;
+            numbers: [int]? = null;
+            check {
+                (maybe?.value ?? 0) >= 0;
+                (numbers?[0] ?? 0) >= 0;
+            }
+        }
+        "#,
+    )
+    .expect("safe access and matching fallback should compile");
+
+    let error = compile_one(
+        r#"
+        type Item { value: int; }
+        type Holder {
+            item: Item;
+            numbers: [int];
+            maybe: int? = null;
+            check {
+                item?.value > 0;
+                numbers?[0] > 0;
+                (maybe ?? "wrong") > 0;
+                (1 ?? 0) > 0;
+            }
+        }
+        "#,
+    )
+    .unwrap_err();
+    assert_has_code(&error, CftErrorCode::OperatorTypeMismatch);
+    assert!(
+        error
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == CftErrorCode::OperatorTypeMismatch)
+            .count()
+            >= 4,
+        "{error:#?}"
+    );
+}
+
+#[test]
+fn quantifier_dual_bindings_are_typed_and_invalid_layouts_are_rejected() {
+    compile_one(
+        r#"
+        type Item {
+            numbers: [int];
+            scores: {string: int};
+            check {
+                all item, index in numbers { item >= index; }
+                all key, value in scores { key != ""; value >= 0; }
+                all entry in scores { entry.key != ""; entry.value >= 0; }
+            }
+        }
+        "#,
+    )
+    .expect("array, dict, and legacy entry layouts should compile");
+
+    let duplicate =
+        compile_one("type Item { xs: [int]; check { all value, value in xs { true; } } }")
+            .unwrap_err();
+    assert_has_code(&duplicate, CftErrorCode::InvalidQuantifierBindings);
+
+    let shadow = compile_one(
+        r#"
+        type Item {
+            xs: [int];
+            check { all value in xs { all value, index in xs { true; } } }
+        }
+        "#,
+    )
+    .unwrap_err();
+    assert_has_code(&shadow, CftErrorCode::InvalidQuantifierBindings);
+
+    let too_many =
+        compile_one("type Item { xs: [int]; check { all a, b, c in xs { true; } } }").unwrap_err();
+    assert_has_code(&too_many, CftErrorCode::InvalidCheckStatement);
 }
 
 #[test]
@@ -502,7 +662,7 @@ fn type_checker_suppresses_cascaded_operator_errors_when_operand_is_unknown() {
 }
 
 #[test]
-fn type_checker_rejects_old_unique_name_without_compatibility_alias() {
+fn type_checker_rejects_unknown_unique_method_name() {
     let err = compile_one(
         r#"
             type Holder {
@@ -511,7 +671,7 @@ fn type_checker_rejects_old_unique_name_without_compatibility_alias() {
             }
         "#,
     )
-    .expect_err("old unique method name should be removed");
+    .expect_err("unknown unique method name should be rejected");
 
     assert_has_code(&err, CftErrorCode::UnknownFunction);
 }
@@ -600,5 +760,73 @@ fn type_checker_reports_array_contains_dict_contains_and_matches_arg_edges() {
             .filter(|diag| diag.code == CftErrorCode::FunctionArgTypeMismatch)
             .count(),
         3
+    );
+}
+
+#[test]
+fn type_checker_accepts_scalar_formatted_values_and_rejects_collections() {
+    compile_one(
+        r#"
+        enum Rarity { Common, Rare, }
+        type Item {
+            level: int;
+            enabled: bool;
+            rarity: Rarity;
+            note: string?;
+            check {
+                id == f"{level}:{enabled}:{rarity}:{note}:{null}";
+            }
+        }
+        "#,
+    )
+    .expect("scalar, enum, nullable scalar, and null interpolation should compile");
+
+    let err = compile_one(
+        r#"
+        type Item {
+            nums: [int];
+            attrs: {string: int};
+            check {
+                id == f"{nums}";
+                id == f"{attrs}";
+            }
+        }
+        "#,
+    )
+    .expect_err("collection interpolation must fail type checking");
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::OperatorTypeMismatch)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn type_checker_rejects_invalid_extended_builtin_types() {
+    let err = compile_one(
+        r#"
+        type Item {
+            nullable_nums: [int?];
+            floats: [float];
+            text: string;
+            count: int;
+            check {
+                nullable_nums.isSorted();
+                floats.intersects(floats);
+                text.abs() == 0;
+                count.startsWith("1");
+            }
+        }
+        "#,
+    )
+    .expect_err("unsupported extended builtin types must fail");
+    assert!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::FunctionArgTypeMismatch)
+            .count()
+            >= 4
     );
 }

@@ -1,5 +1,6 @@
 use crate::{
-    CodeGenerator, DataExporter, DimensionSourceManager, SourceProvider, SourceWriter, TableManager,
+    CodeGenerator, DataExporter, DimensionSourceManager, LoaderGenerator, SourceProvider,
+    SourceWriter, TableManager,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -123,6 +124,26 @@ impl ProviderRegistry {
         let id = codegen.descriptor().id;
         let codegen: Arc<dyn CodeGenerator> = codegen;
         insert_provider(&mut self.codegens, "codegen", id, codegen)
+    }
+
+    /// Registers a shared generated-code loader instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when another loader with the same provider id has
+    /// already been registered.
+    pub fn register_loader_arc<L>(
+        &mut self,
+        loader: Arc<L>,
+    ) -> Result<(), ProviderRegistrationError>
+    where
+        L: LoaderGenerator + 'static,
+    {
+        let id = loader.descriptor().id;
+        let loader: Arc<dyn LoaderGenerator> = loader;
+        insert_provider(&mut self.loaders, "loader generator", id, loader)?;
+        self.loader_order.push(id);
+        Ok(())
     }
 }
 

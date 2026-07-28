@@ -43,7 +43,7 @@ sources:
 
 1. `coflow-project` 读取 `coflow.yaml` 并解析路径。
 2. `coflow-runtime` 根据 source 的 `type` 和 `path` 选择 Provider。
-3. Provider 执行 resolve / preflight / load。
+3. Provider 检查 source 配置并读取 records。
 4. Loader 输出统一的 input records。
 5. DataModel 合并所有来源的记录，解析引用，执行 CFT `check {}`。
 
@@ -53,12 +53,12 @@ Provider 不决定业务合法性。字段是否存在、类型是否匹配、�
 
 | 页面 | 内容 |
 | --- | --- |
-| [表格 Source](./02-table.md) | Excel、CSV 共享的表头、sheet、key、`@expand` 和单元格规则 |
-| [Excel Source](./03-excel.md) | Excel workbook 读取、单元格转换和合并表头规则 |
-| [CSV Source](./04-csv.md) | CSV 文件加载和写回边界 |
-| [单元格值语法](../03-language/03-cell-value.md) | 表格单元格中的标量、对象、数组、字典、引用和多态对象语法 |
-| [Provider API](./06-provider-api.md) | loader、writer、exporter、codegen 的公共接口边界 |
-| [CFD 语法参考](../03-language/02-cfd.md) | `.cfd` 文本数据语法 |
+| [表格 Source](./table-source.md) | Excel、CSV 共享的表头、sheet、key、`@expand` 和单元格规则 |
+| [Excel Source](./excel.md) | Excel workbook 读取、单元格转换和合并表头规则 |
+| [CSV Source](./csv.md) | CSV 文件加载和写回边界 |
+| [单元格值语法](./cell-value.md) | 表格单元格中的标量、对象、数组、字典、引用和多态对象语法 |
+| [Provider API](https://puring103.github.io/coflow/docs/reference/04-sources/06-provider-api) | loader、writer、exporter、codegen 的公共接口边界 |
+| [CFD 语法参考](./cfd.md) | `.cfd` 文本数据语法 |
 
 ## 引用关系
 

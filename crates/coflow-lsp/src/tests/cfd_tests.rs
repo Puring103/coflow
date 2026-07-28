@@ -260,7 +260,7 @@ fn cfd_definition_request_resolves_examples_cfd_basic_monster() {
 }
 
 #[test]
-fn cfd_definition_request_returns_null_for_removed_path_refs() {
+fn cfd_definition_request_returns_null_for_invalid_record_references() {
     let schema_source = "type Stats {\n  hp: int;\n}\n\
 type Monster {\n  key: string;\n  stats: Stats;\n}\n\
 type Holder {\n  key: string;\n  hp: int;\n}\n";
@@ -301,7 +301,7 @@ type Holder {\n  key: string;\n  hp: int;\n}\n";
 }
 
 #[test]
-fn cfd_definition_request_returns_null_for_removed_spread_path_refs() {
+fn cfd_definition_request_returns_null_for_invalid_spread_references() {
     let schema_source = "type Stats {\n  hp: int;\n}\n\
 type Monster {\n  key: string;\n  stats: Stats;\n}\n";
     let (_cleanup, project) = test_project_with_config(

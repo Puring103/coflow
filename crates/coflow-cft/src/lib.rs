@@ -41,14 +41,16 @@ pub use diagnostics::{
 };
 pub use module::{parse_modules, CftFile, CftModule, CftModuleSet, ModuleId};
 pub use schema::{
-    build_schema, BucketName, CftConst, CftConstValue, CftDimension, CftDimensionInput,
-    CftDimensionInputError, CftDimensionInputs, CftEnum, CftEnumValue, CftEnumVariant, CftField,
-    CftFieldDimension, CftNameError, CftSchema, CftSchemaBinOp, CftSchemaCheckBlock,
-    CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp,
-    CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaTypeRef,
-    CftSchemaUnaryOp, CftType, ConstName, DimensionName, EnumName, EnumVariantName, FieldName,
-    RecordKey, ScheduledCheckBlock, TypeName, TypedCheckPlan, TypedCheckSchedule,
-    ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
+    build_schema, BucketName, CftCheckBuiltin, CftConst, CftConstValue, CftDimension,
+    CftDimensionInput, CftDimensionInputError, CftDimensionInputs, CftEnum, CftEnumValue,
+    CftEnumVariant, CftField, CftFieldDimension, CftNameError, CftSchema, CftSchemaBinOp,
+    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
+    CftSchemaCheckMessage, CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp,
+    CftSchemaDefaultValue, CftSchemaQuantifierBindings, CftSchemaQuantifierKind, CftSchemaSource,
+    CftSchemaTypePredicate, CftSchemaUnaryOp, CftTopLevelCheck, CftType, CftValueType,
+    CheckDependency, CheckField, CheckName, CheckOwner, CheckStatementId, CheckStatementInfo,
+    CheckStatementRef, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, RecordKey,
+    TypeName, ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
     VariantName,
 };
 pub use syntax::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error, Span};
