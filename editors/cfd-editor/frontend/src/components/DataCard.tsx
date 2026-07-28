@@ -190,10 +190,10 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, label, declaredType, surface = 'table-cell' }: { value: FieldValue; label?: string; declaredType?: string; surface?: FieldRenderSurface }) {
+export function DataCardCompact({ value, label, declaredType, surface = 'table-cell', highlightQuery }: { value: FieldValue; label?: string; declaredType?: string; surface?: FieldRenderSurface; highlightQuery?: string }) {
   const fallback = isComplexValue(value)
-    ? <MarkdownValueTree value={value} label={value.kind === 'array' ? undefined : label} depth={0} />
-    : <ValueChip value={value} />
+    ? <MarkdownValueTree value={value} label={value.kind === 'array' ? undefined : label} depth={0} highlightQuery={highlightQuery} />
+    : <ValueChip value={value} highlightQuery={highlightQuery} />
   const nullable = declaredType?.endsWith('?') ?? false
   const renderer = useFieldRenderer({ value, type: declaredType ?? '', nullable, surface })
   return (
@@ -201,10 +201,11 @@ export function DataCardCompact({ value, label, declaredType, surface = 'table-c
   )
 }
 
-function MarkdownValueTree({ value, label, depth }: {
+function MarkdownValueTree({ value, label, depth, highlightQuery }: {
   value: FieldValue & { kind: 'object' | 'array' | 'dict' }
   label?: string
   depth: number
+  highlightQuery?: string
 }) {
   const entries = treeEntries(value)
   const depthClass = `markdown-tree-depth-${Math.min(depth, 2)}`
@@ -213,13 +214,13 @@ function MarkdownValueTree({ value, label, depth }: {
 
   return (
     <div className={`markdown-value-tree ${depthClass}${label ? ' has-branch-label' : ''}${inlineScalarArray ? ' inline-scalar-array' : ''}`}>
-      {label && <div className="markdown-tree-branch-label">{label}</div>}
+      {label && <div className="markdown-tree-branch-label">{highlightSearchText(label, highlightQuery)}</div>}
       {entries.length === 0 ? (
         <div className="markdown-tree-empty">—</div>
       ) : (
         <div className="markdown-tree-items">
           {entries.map((entry, index) => (
-            <MarkdownTreeItem key={`${entry.marker}:${index}`} entry={entry} depth={depth} />
+            <MarkdownTreeItem key={`${entry.marker}:${index}`} entry={entry} depth={depth} highlightQuery={highlightQuery} />
           ))}
         </div>
       )}
@@ -234,16 +235,16 @@ interface MarkdownTreeEntry {
   value: FieldValue
 }
 
-function MarkdownTreeItem({ entry, depth }: { entry: MarkdownTreeEntry; depth: number }) {
+function MarkdownTreeItem({ entry, depth, highlightQuery }: { entry: MarkdownTreeEntry; depth: number; highlightQuery?: string }) {
   const complex = isComplexValue(entry.value) ? entry.value : null
   return (
     <div className={`markdown-tree-item${complex ? ' complex-item' : ''}`}>
-      <span className={`markdown-tree-marker marker-${entry.markerKind}`}>{entry.marker}</span>
+      <span className={`markdown-tree-marker marker-${entry.markerKind}`}>{highlightSearchText(entry.marker, highlightQuery)}</span>
       <div className="markdown-tree-content">
         {complex ? (
-          <MarkdownValueTree value={complex} label={entry.branchLabel} depth={depth + 1} />
+          <MarkdownValueTree value={complex} label={entry.branchLabel} depth={depth + 1} highlightQuery={highlightQuery} />
         ) : (
-          <span className="markdown-tree-leaf"><ValueChip value={entry.value} /></span>
+          <span className="markdown-tree-leaf"><ValueChip value={entry.value} highlightQuery={highlightQuery} /></span>
         )}
       </div>
     </div>
@@ -290,10 +291,10 @@ function dictTreeKey(key: DictKey): string {
   }
 }
 
-function ValueChip({ value }: { value: FieldValue }) {
+function ValueChip({ value, highlightQuery }: { value: FieldValue; highlightQuery?: string }) {
   switch (value.kind) {
     case 'null':
-      return <span className="vc vc-null">null</span>
+      return <span className="vc vc-null">{highlightSearchText('null', highlightQuery)}</span>
     case 'bool':
       return (
         <span className={`vc vc-bool${value.value ? ' on' : ''}`}>
@@ -302,30 +303,48 @@ function ValueChip({ value }: { value: FieldValue }) {
       )
     case 'int':
     case 'float':
-      return <span className="vc vc-num">{String(value.value)}</span>
+      return <span className="vc vc-num">{highlightSearchText(String(value.value), highlightQuery)}</span>
     case 'string':
-      return <span className="vc vc-str">{summaryOf(value)}</span>
+      return <span className="vc vc-str">{highlightSearchText(summaryOf(value), highlightQuery)}</span>
     case 'enum':
       return (
         <span className="vc vc-enum">
           <span className="vc-enum-dot" />
-          {enumVariantText(value)}
+          {highlightSearchText(enumVariantText(value), highlightQuery)}
         </span>
       )
     case 'ref':
       return (
         <span className="vc vc-ref" title={referenceKeyText(value.value)}>
           <Icon name="dot" size={9} />
-          <span className="vc-ref-key">{referenceKeyText(value.value)}</span>
+          <span className="vc-ref-key">{highlightSearchText(referenceKeyText(value.value), highlightQuery)}</span>
         </span>
       )
     case 'object':
-      return <span className="vc vc-obj">{value.value.actual_type}</span>
+      return <span className="vc vc-obj">{highlightSearchText(value.value.actual_type, highlightQuery)}</span>
     case 'array':
-      return <span className="vc vc-arr">{summaryOf(value)}</span>
+      return <span className="vc vc-arr">{highlightSearchText(summaryOf(value), highlightQuery)}</span>
     case 'dict':
-      return <span className="vc vc-dict">{summaryOf(value)}</span>
+      return <span className="vc vc-dict">{highlightSearchText(summaryOf(value), highlightQuery)}</span>
   }
+}
+
+export function highlightSearchText(text: string, query?: string): ReactNode {
+  const needle = query?.trim()
+  if (!needle) return text
+  const lowerText = text.toLocaleLowerCase()
+  const lowerNeedle = needle.toLocaleLowerCase()
+  const parts: ReactNode[] = []
+  let offset = 0
+  let index = lowerText.indexOf(lowerNeedle, offset)
+  while (index !== -1) {
+    if (index > offset) parts.push(text.slice(offset, index))
+    parts.push(<mark className="search-highlight" key={index}>{text.slice(index, index + needle.length)}</mark>)
+    offset = index + needle.length
+    index = lowerText.indexOf(lowerNeedle, offset)
+  }
+  if (offset < text.length) parts.push(text.slice(offset))
+  return parts.length > 0 ? parts : text
 }
 
 export type FieldDiagnostic = WireFieldDiagnostic
@@ -563,7 +582,9 @@ export function DataCardExpanded({
         return (
           <FieldRow
             key={fc.name}
-            label={fc.name}
+            label={fc.annotation?.label ?? fc.name}
+            fieldName={fc.name}
+            description={fc.annotation?.description ?? undefined}
             value={fc.value}
             depth={depth}
             onEdit={fieldEdit}
@@ -609,6 +630,8 @@ function rowDiagSeverity(pathKey: string | undefined): { sev: 'error' | 'warning
 
 function FieldRow({
   label,
+  fieldName,
+  description,
   value,
   depth,
   onEdit,
@@ -628,6 +651,8 @@ function FieldRow({
   dragProps,
 }: {
   label: string
+  fieldName?: string
+  description?: string
   value: FieldValue
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
@@ -685,6 +710,8 @@ function FieldRow({
     return (
       <ExpandableRow
         label={label}
+        fieldName={fieldName}
+        description={description}
         value={displayValue}
         depth={depth}
         onEdit={onEdit}
@@ -708,6 +735,8 @@ function FieldRow({
   return (
     <ScalarFieldRow
       label={label}
+      fieldName={fieldName}
+      description={description}
       value={value}
       depth={depth}
       onCommit={commit}
@@ -873,7 +902,7 @@ function defaultForScalarLike({
     return async () => {
       const variants = await lookups.loadEnumVariants(enumType)
       if (variants.ok && variants.value.length > 0) {
-        return enumValue(enumType, variants.value[0], 0n)
+        return enumValue(enumType, variants.value[0].name, 0n)
       }
       return null
     }
@@ -896,6 +925,8 @@ function defaultForScalarLike({
 
 function ScalarFieldRow({
   label,
+  fieldName,
+  description,
   value,
   depth,
   onCommit,
@@ -914,6 +945,8 @@ function ScalarFieldRow({
   pluginContext,
 }: {
   label: string
+  fieldName?: string
+  description?: string
   value: FieldValue
   depth: number
   onCommit?: (newValue: FieldValue) => void
@@ -938,13 +971,13 @@ function ScalarFieldRow({
   const canEdit = !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
-  const rowTitle = [spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
+  const rowTitle = [description, spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
 
   return (
-    <div className={`dc-row${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div className={`dc-row${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 12 }}>
         {leading}
         <span className="dc-row-label-text">{label}</span>
@@ -1110,7 +1143,7 @@ export function EnumDirectSelect({
 }) {
   const lookups = useEditorLookups()
   const enumName = value.kind === 'enum' ? value.value.enum_name : enumType
-  const [variants, setVariants] = useState<string[] | null>(null)
+  const [variants, setVariants] = useState<{ name: string, label: string | null, description: string | null }[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const current = value.kind === 'enum' ? enumVariantText(value) : NULL_SENTINEL
   const color = fieldTypeColor(enumName ?? 'enum')
@@ -1166,8 +1199,8 @@ export function EnumDirectSelect({
       placeholder="选择枚举..."
       options={[
         ...(nullable ? [{ value: NULL_SENTINEL }] : []),
-        ...(value.kind === 'enum' && !variants.includes(current) ? [{ value: current }] : []),
-        ...variants.map(v => ({ value: v })),
+        ...(value.kind === 'enum' && !variants.some(v => v.name === current) ? [{ value: current }] : []),
+        ...variants.map(v => ({ value: v.name, label: v.label ?? v.name, description: v.description ?? undefined })),
       ]}
       onCommit={commit}
       onExit={onExit}
@@ -1376,7 +1409,7 @@ function EnumSelect({
   onCancel: () => void
 }) {
   const lookups = useEditorLookups()
-  const [variants, setVariants] = useState<string[] | null>(null)
+  const [variants, setVariants] = useState<{ name: string, label: string | null, description: string | null }[] | null>(null)
   useEffect(() => {
     let alive = true
     lookups.loadEnumVariants(value.value.enum_name).then(r => { if (alive) setVariants(r.ok ? r.value : []) })
@@ -1406,8 +1439,8 @@ function EnumSelect({
       value={current}
       autoFocus
       options={[
-        ...(!variants.includes(current) ? [{ value: current }] : []),
-        ...variants.map(v => ({ value: v })),
+        ...(!variants.some(v => v.name === current) ? [{ value: current }] : []),
+        ...variants.map(v => ({ value: v.name, label: v.label ?? v.name, description: v.description ?? undefined })),
       ]}
       onCommit={onCommit}
       onExit={onCancel}
@@ -1488,6 +1521,8 @@ function RefSelect({
 
 function ExpandableRow({
   label,
+  fieldName,
+  description,
   value,
   depth,
   onEdit,
@@ -1507,6 +1542,8 @@ function ExpandableRow({
   pluginContext,
 }: {
   label: string
+  fieldName?: string
+  description?: string
   value: FieldValue
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
@@ -1544,7 +1581,7 @@ function ExpandableRow({
   const count = childCount(value)
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
-  const rowTitle = [spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
+  const rowTitle = [description, spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
@@ -1557,7 +1594,7 @@ function ExpandableRow({
 
   return (
     <>
-      <div className={`dc-row dc-row-foldout${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+      <div className={`dc-row dc-row-foldout${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 4 }}>
           {leading}
           <span className="dc-fold-arrow">
@@ -1997,7 +2034,7 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
 }) {
   const lookups = useEditorLookups()
   const [text, setText] = useState('')
-  const [variants, setVariants] = useState<string[] | null>(null)
+  const [variants, setVariants] = useState<{ name: string, label: string | null, description: string | null }[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   useEffect(() => {
     if (sampleKey.kind !== 'enum') return
@@ -2041,7 +2078,7 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
           autoFocus
           value=""
           placeholder="选择..."
-          options={variants.map(v => ({ value: v }))}
+          options={variants.map(v => ({ value: v.name, label: v.label ?? v.name, description: v.description ?? undefined }))}
           onCommit={next => {
             if (next) onCommit({ kind: 'enum', value: { enum_name: sampleKey.value.enum_name, variant: next, value: 0n } })
           }}

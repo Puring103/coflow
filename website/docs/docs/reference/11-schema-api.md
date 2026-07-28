@@ -26,9 +26,9 @@ let schema = build_schema(&modules, &dimensions)?;
 
 | 对象 | 主要信息 |
 | --- | --- |
-| `CftType` | module、name、parent、字段、check、abstract/sealed/struct/singleton/idAsEnum 语义 |
-| `CftField` | declaring type、name、已解析类型、默认值、expand、dimension、span |
-| `CftEnum` | module、name、按声明顺序排列的 variants、flag 语义、span |
+| `CftType` | module、name、parent、字段、check、abstract/sealed/struct/singleton/idAsEnum、display 语义 |
+| `CftField` | declaring type、name、已解析类型、默认值、expand、dimension、display、span |
+| `CftEnum` | module、name、按声明顺序排列的 variants、flag、display 语义、span |
 | `CftConst` | module、name、编译期值、span |
 | `CftDimension` | name、按配置顺序排列的 variants、绑定字段 |
 | `CftTopLevelCheck` | module、稳定 name、check block、静态 record-set dependencies、span |
@@ -85,8 +85,11 @@ Array / Dict / Nullable
 | `@flag` | `CftEnum.is_flag` |
 | `@expand` | `CftField.is_expand` |
 | `@localized` / `@dimension` | `CftField.dimension` |
+| `@label` / `@description` | type、field、enum 和 enum variant 的 `display: Option<CftDisplayMetadata>` |
 
 Provider 不应扫描 annotation 字符串，也不应重复执行 annotation 语法校验。
+
+`CftDisplayMetadata.label` 是面向人展示的别名，`description` 是详细说明；`summary()` 优先返回 description，否则返回 label。它们不改变声明名称或数据身份。
 
 ## Dimension
 

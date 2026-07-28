@@ -19,6 +19,7 @@ import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
 import type { RefTarget } from './bindings/RefTarget'
+import type { EnumVariantOption } from './bindings/EnumVariantOption'
 import type { RenameRecordOutcome } from './bindings/RenameRecordOutcome'
 import type { ReorderRecordsOutcome } from './bindings/ReorderRecordsOutcome'
 import type { WriteFieldOutcome } from './bindings/WriteFieldOutcome'
@@ -257,8 +258,8 @@ export async function openSourceFile(sessionId: number, filePath: string): Promi
   return invokeCommand('open_source_file', { sessionId, filePath })
 }
 
-export async function getEnumVariants(sessionId: number, enumName: string): Promise<string[]> {
-  return invokeCommand<string[]>('get_enum_variants', { sessionId, enumName })
+export async function getEnumVariants(sessionId: number, enumName: string): Promise<EnumVariantOption[]> {
+  return invokeCommand<EnumVariantOption[]>('get_enum_variants', { sessionId, enumName })
 }
 
 export async function getRefTargets(sessionId: number, targetType: string): Promise<RefTarget[]> {

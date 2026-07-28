@@ -280,7 +280,7 @@ type Item {
 
 ## 注解
 
-注解用于补充 schema 语义，影响加载器、导出和代码生成。注解写在 `type`、`enum` 或字段之前。
+注解用于补充 schema 语义，影响加载器、导出、代码生成和编辑器。注解写在 `type`、`enum`、字段或枚举变体之前。
 
 | 注解 | 适用目标 | 影响阶段 | 说明 |
 | --- | --- | --- | --- |
@@ -291,6 +291,8 @@ type Item {
 | `@localized` / `@localized("bucket")` | field | dimensions / check / codegen | 字段值按语言维度变化 |
 | `@dimension("name")` | field | dimensions / check / codegen | 字段值按指定维度变化 |
 | `@singleton` | type | data model / codegen | 数据集中该 type 只有一条 record |
+| `@label("text")` | type / enum / field / enum variant | editor / codegen | 面向人的展示名称；不改变 CFT 名称、数据键或生成代码标识符 |
+| `@description("text")` | type / enum / field / enum variant | editor / codegen | 详细说明；生成 C# XML 文档注释 |
 
 示例：
 
@@ -302,6 +304,29 @@ type Item {
 }
 
 enum ItemId {}
+```
+
+### `@label` 与 `@description`
+
+`@label` 为编辑器提供显示别名，并生成 C# 的 `DescriptionAttribute`；`@description` 作为编辑器可消费的说明元数据，并生成 C# 的 XML `<summary>`。若只写 `@label`，它也会作为 C# 摘要。两者均不改变 schema 的稳定名称、CFD 中存储的字段/枚举变体名称，或 C# 的类型和成员标识符。
+
+```cft
+@label("物品稀有度")
+@description("决定物品掉落权重和边框颜色。")
+enum Rarity {
+  @label("普通")
+  Common = 0,
+
+  @label("史诗")
+  @description("高品质物品。")
+  Epic = 3,
+}
+
+type Item {
+  @label("售价")
+  @description("商店出售时获得的金币数。")
+  price: int;
+}
 ```
 
 ### `@flag`

@@ -321,6 +321,7 @@ fn lower_dimension_tables(
                     default: None,
                     is_expand: false,
                     dimension: None,
+                    display: None,
                     span: source_field.span,
                 });
             }

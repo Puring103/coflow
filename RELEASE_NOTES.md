@@ -1,3 +1,15 @@
+# Coflow 0.8.2
+
+## Highlights
+
+### Schema And Editor Improvements
+
+- Added schema display labels and descriptions to generated editor metadata.
+- Added full-text table search in the CFD Editor, including highlighted matches in compact values.
+- Improved enum presentation and schema-aware editor field behavior.
+
+---
+
 # Coflow 0.8.1
 
 ## Highlights

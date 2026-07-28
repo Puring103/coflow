@@ -4,7 +4,10 @@ These files demonstrate CFD as a text data format for complex game configuration
 They can be loaded through the example `coflow.yaml` project or directly by the
 CFD loader tests.
 
-- `schema.cft`: small schema used by all examples.
+- `schema.cft`: small schema used by all examples. It also demonstrates editor-facing
+  `@label` / `@description` metadata on table fields, nested object fields, enum
+  variants, reference fields, and enum-keyed dictionaries. Open this project in the
+  CFD editor to see labels while writes continue to use the stable schema names.
 - `data/01-records.cfd`: basic records, same-type grouping, arrays, dictionaries,
   inline objects, and `&key` references.
 - `data/02-polymorphic-and-paths.cfd`: polymorphic grouping and

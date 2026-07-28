@@ -598,7 +598,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         }
         let other_ty = unwrap_nullable(&self.check_expr_value(&args[0]));
         let receiver_ty = unwrap_nullable(receiver_ty);
-        match (receiver_ty.array_element(), other_ty.array_element()) {
+        let arrays = match (receiver_ty.array_element(), other_ty.array_element()) {
             (Some(left), Some(right)) => {
                 if !set_element_supported(&left) || !types_comparable(&left, &right) {
                     self.diag(
@@ -607,15 +607,16 @@ impl CheckTypeAnalyzer<'_, '_> {
                         "set relation requires compatible int, bool, string, or enum arrays",
                     );
                 }
+                true
             }
-            _ if !receiver_ty.is_unknown() && !other_ty.is_unknown() => {
-                self.diag(
-                    CftErrorCode::FunctionArgTypeMismatch,
-                    receiver.span,
-                    "set relation requires two arrays",
-                );
-            }
-            _ => {}
+            _ => false,
+        };
+        if !arrays && !receiver_ty.is_unknown() && !other_ty.is_unknown() {
+            self.diag(
+                CftErrorCode::FunctionArgTypeMismatch,
+                receiver.span,
+                "set relation requires two arrays",
+            );
         }
         InferredType::bool()
     }

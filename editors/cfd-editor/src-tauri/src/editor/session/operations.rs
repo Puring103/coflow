@@ -141,13 +141,28 @@ impl SessionStore {
             .map_err(api_diagnostics_to_editor_error)
     }
 
-    pub fn get_enum_variants(&self, id: u32, enum_name: &str) -> Result<Vec<String>, EditorError> {
+    pub fn get_enum_variants(
+        &self,
+        id: u32,
+        enum_name: &str,
+    ) -> Result<Vec<crate::editor::types::EnumVariantOption>, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        Ok(session.queries().enum_variants(enum_name))
+        Ok(session
+            .queries()
+            .enum_variant_options(enum_name)
+            .into_iter()
+            .map(
+                |(name, label, description)| crate::editor::types::EnumVariantOption {
+                    name,
+                    label,
+                    description,
+                },
+            )
+            .collect())
     }
 
     /// Records assignable to `expected_type`, surfaced as `RefTarget`s so
