@@ -1047,7 +1047,7 @@ fn project_with_outputs(root: &Path, outputs: OutputsConfig) -> Project {
         config_path: root.join("coflow.yaml"),
         root_dir: root.to_path_buf(),
         config: ProjectConfig {
-            schema: SchemaConfig::One(PathBuf::from("schema/main.cft")),
+            schema: SchemaConfig::one(PathBuf::from("schema/main.cft")),
             sources: Vec::new(),
             outputs,
             dimensions: BTreeMap::new(),

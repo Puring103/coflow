@@ -36,18 +36,9 @@ pub(super) fn schema_files(
     let mut discovery = SchemaDiscovery::default();
     let mut errors = DiagnosticSet::empty();
     let policy = SchemaPathPolicy::new(root_dir);
-    match schema {
-        SchemaConfig::One(path) => {
-            if let Err(err) = push_schema_path(policy, path, &mut discovery) {
-                errors.extend(err);
-            }
-        }
-        SchemaConfig::Many(paths) => {
-            for path in paths {
-                if let Err(err) = push_schema_path(policy, path, &mut discovery) {
-                    errors.extend(err);
-                }
-            }
+    for path in schema.paths() {
+        if let Err(err) = push_schema_path(policy, path, &mut discovery) {
+            errors.extend(err);
         }
     }
     if !errors.is_empty() {
