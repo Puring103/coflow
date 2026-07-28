@@ -110,6 +110,7 @@ export async function closeSession(sessionId: number): Promise<void> {
 
 export interface DimensionFileRow {
   coordinate: RecordCoordinate
+  field: string
   owner_file_path: string
   default_value: FieldValue
   values: Record<string, DimensionValueState | undefined>
@@ -120,7 +121,6 @@ export interface DimensionFileRecords {
   file_path: string
   dimension: string
   display_name: string
-  field: string
   variants: string[]
   rows: DimensionFileRow[]
 }

@@ -1205,7 +1205,7 @@ export default function App() {
     const coordinate: DimensionValueCoordinate = {
       actual_type: row.coordinate.actual_type,
       record_key: row.coordinate.key,
-      field: data.field,
+      field: row.field,
       dimension: data.dimension,
       variant,
       path: [],
@@ -1220,6 +1220,7 @@ export default function App() {
             ...current,
             revision,
             rows: current.rows.map(currentRow => sameCoordinate(currentRow.coordinate, row.coordinate)
+              && currentRow.field === row.field
               ? { ...currentRow, values: { ...currentRow.values, [variant]: value } }
               : currentRow),
           },
