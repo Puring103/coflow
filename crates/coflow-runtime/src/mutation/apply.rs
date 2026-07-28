@@ -143,6 +143,16 @@ fn execute_generation_mutation(
             return report_without_publish(session, false, failed);
         }
     };
+    let changed_dimension_files = rebuilt
+        .changed_dimension_paths
+        .iter()
+        .map(|path| {
+            path.strip_prefix(&session.project.root_dir).map_or_else(
+                |_| path.display().to_string(),
+                coflow_project::path_to_slash,
+            )
+        })
+        .collect::<Vec<_>>();
     let new_session = rebuilt.session;
     let mut rebuild_diagnostics = blocking_rebuild_diagnostics(&new_session);
     if !rebuild_diagnostics.is_empty() {
@@ -163,7 +173,7 @@ fn execute_generation_mutation(
     let affected_files = impact
         .affected_files
         .into_iter()
-        .chain(rebuilt.changed_dimension_files)
+        .chain(changed_dimension_files)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();

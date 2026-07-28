@@ -46,14 +46,7 @@ fn plan_dimension_generation_scoped(
     fields: &[DimensionField],
     affected_fields: Option<&BTreeSet<usize>>,
 ) -> DimensionGenerationPlanResult {
-    let mut diagnostics = validate_dimension_directories(project);
-    if !diagnostics.is_empty() {
-        return DimensionGenerationPlanResult {
-            plan: DimensionGenerationPlan::default(),
-            diagnostics,
-        };
-    }
-
+    let mut diagnostics = DiagnosticSet::empty();
     let mut operations = Vec::new();
     for (dimension, config) in &project.config.dimensions {
         let result = plan_configured_dimension(
@@ -73,38 +66,6 @@ fn plan_dimension_generation_scoped(
         plan: DimensionGenerationPlan { operations },
         diagnostics,
     }
-}
-
-fn validate_dimension_directories(project: &Project) -> DiagnosticSet {
-    let mut diagnostics = DiagnosticSet::empty();
-    let owned_dirs = project
-        .config
-        .dimensions
-        .iter()
-        .filter_map(|(dimension, config)| {
-            config
-                .out_dir
-                .as_ref()
-                .map(|out_dir| (dimension.as_str(), project.resolve_path(out_dir)))
-        })
-        .collect::<Vec<_>>();
-    for (index, (dimension, path)) in owned_dirs.iter().enumerate() {
-        for (other_dimension, other_path) in owned_dirs.iter().skip(index + 1) {
-            if coflow_project::path_is_same_or_descendant(path, other_path)
-                || coflow_project::path_is_same_or_descendant(other_path, path)
-            {
-                diagnostics.push(dimension_diagnostic(
-                    &project.config_path,
-                    other_dimension,
-                    "DIM-SOURCE-007",
-                    format!(
-                        "dimensions.{other_dimension}.out_dir overlaps dimensions.{dimension}.out_dir; every dimension requires an exclusive managed directory"
-                    ),
-                ));
-            }
-        }
-    }
-    diagnostics
 }
 
 fn plan_configured_dimension(
