@@ -109,7 +109,7 @@ fn write_session_owns_registry_and_publishes_successful_generation() {
             .expect("open write session")
     };
 
-    assert_eq!(session.revision(), 0);
+    assert_eq!(session.queries().revision(), 0);
     assert_eq!(
         session
             .queries()
@@ -126,7 +126,7 @@ fn write_session_owns_registry_and_publishes_successful_generation() {
         )
         .expect("write field");
 
-    assert_eq!(session.revision(), 1);
+    assert_eq!(session.queries().revision(), 1);
     assert_eq!(session.queries().revision(), 1);
     assert_same_generation_corpus(session.queries(), session.queries());
     assert_eq!(
@@ -232,7 +232,7 @@ fn failed_write_preserves_revision_and_generation() {
     );
 
     assert!(result.is_err());
-    assert_eq!(session.revision(), 0);
+    assert_eq!(session.queries().revision(), 0);
     assert_eq!(session.queries().revision(), 0);
     assert_eq!(
         session

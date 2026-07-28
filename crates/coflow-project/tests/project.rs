@@ -279,16 +279,19 @@ outputs:
         Some("custom-loader")
     );
     assert_eq!(
-        project.config.sources[0].options["flavor"],
+        project.config.sources[0].options()["flavor"],
         serde_json::Value::String("custom".to_string())
     );
-    assert!(project.config.sources[0].options.get("options").is_none());
+    assert!(project.config.sources[0]
+        .options()
+        .get("options")
+        .is_none());
     assert_eq!(
         project.config.outputs.targets()[0].data.output_type,
         "custom-export"
     );
     assert_eq!(
-        project.config.outputs.targets()[0].data.options["compact"],
+        project.config.outputs.targets()[0].data.options()["compact"],
         serde_json::Value::Bool(true)
     );
     assert_eq!(
@@ -304,7 +307,7 @@ outputs:
             .code
             .as_ref()
             .expect("code output")
-            .options["runtime"],
+            .options()["runtime"],
         serde_json::Value::String("unity".to_string())
     );
     assert!(project.config.outputs.is_object_shape());
@@ -393,15 +396,15 @@ outputs:
         Some("custom-loader")
     );
     assert_eq!(
-        project.config.sources[0].location,
-        coflow_api::SourceLocationSpec::new(PathBuf::from("data.custom"))
+        project.config.sources[0].location(),
+        &coflow_api::SourceLocationSpec::new(PathBuf::from("data.custom"))
     );
     assert_eq!(
-        project.config.sources[0].options["flavor"],
+        project.config.sources[0].options()["flavor"],
         serde_json::Value::String("custom".to_string())
     );
     assert_eq!(
-        project.config.sources[0].options["sheets"][0]["sheet"],
+        project.config.sources[0].options()["sheets"][0]["sheet"],
         serde_json::Value::String("Item".to_string())
     );
     assert_eq!(
@@ -409,7 +412,7 @@ outputs:
             .code
             .as_ref()
             .expect("code output")
-            .options["namespace"],
+            .options()["namespace"],
         serde_json::Value::String("Game.Custom".to_string())
     );
 
@@ -494,19 +497,19 @@ outputs:
 
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
     assert_eq!(
-        project.config.sources[0].options["token"],
+        project.config.sources[0].options()["token"],
         "${COFLOW_LITERAL_TOKEN}"
     );
     assert_eq!(
-        project.config.sources[0].options["nested"]["app_id"],
+        project.config.sources[0].options()["nested"]["app_id"],
         "${COFLOW_NESTED_APP_ID}"
     );
     assert_eq!(
-        project.config.sources[0].options["nested"]["values"][0],
+        project.config.sources[0].options()["nested"]["values"][0],
         "${COFLOW_ARRAY_TOKEN}"
     );
     assert_eq!(
-        project.config.outputs.targets()[0].data.options["token"],
+        project.config.outputs.targets()[0].data.options()["token"],
         "${COFLOW_OUTPUT_TOKEN}"
     );
 
@@ -1063,11 +1066,11 @@ fn output_config(output_type: &str, dir: &str, namespace: Option<&str>) -> Outpu
             serde_json::Value::String(namespace.to_string()),
         );
     }
-    OutputConfig {
-        output_type: output_type.to_string(),
-        dir: PathBuf::from(dir),
-        options: serde_json::Value::Object(options),
-    }
+    OutputConfig::new(
+        output_type.to_string(),
+        PathBuf::from(dir),
+        serde_json::Value::Object(options),
+    )
 }
 
 #[test]

@@ -237,7 +237,7 @@ pub(super) fn validate_sources_collecting(
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
         let source_index_key = source_index.to_string();
-        let path = source.location.path();
+        let path = source.location().path();
         let resolved = resolve_project_relative(root_dir, path);
         if !resolved.is_file() && !resolved.is_dir() {
             diagnostics.push(ProjectDiagnostic::new(
@@ -272,7 +272,7 @@ fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<ProjectDia
                 ],
             ));
         }
-        if source.location.path().as_os_str().is_empty() {
+        if source.location().path().as_os_str().is_empty() {
             diagnostics.push(ProjectDiagnostic::new(
                 format!("{source_label}.path is empty"),
                 [

@@ -59,11 +59,6 @@ impl ProjectRuntime {
     }
 
     #[must_use]
-    pub const fn project(&self) -> &Project {
-        &self.project
-    }
-
-    #[must_use]
     pub fn schema(&self) -> Option<&ProjectSchemaSession> {
         self.published
             .as_ref()
@@ -205,11 +200,6 @@ impl Runtime {
     #[must_use]
     pub const fn new(registry: ProviderRegistry) -> Self {
         Self { registry }
-    }
-
-    #[must_use]
-    pub const fn registry(&self) -> &ProviderRegistry {
-        &self.registry
     }
 
     /// Builds a schema-only session without loading project data.
@@ -419,11 +409,6 @@ impl WriteProjectSession {
     #[must_use]
     pub const fn queries(&self) -> ProjectQueries<'_> {
         ProjectQueries::new(&self.session, self.revision)
-    }
-
-    #[must_use]
-    pub const fn revision(&self) -> u64 {
-        self.revision
     }
 
     /// Render one effective field value using the table cell grammar.

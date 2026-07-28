@@ -389,7 +389,7 @@ fn remote_batch_publishes_one_generation_and_commits_once() {
 
     assert!(report.write_ok);
     assert_eq!(report.applied.len(), 2);
-    assert_eq!(session.revision(), 1);
+    assert_eq!(session.queries().revision(), 1);
     assert_eq!(session_value(&session, "one"), 3);
     let state = fixture.state.lock().expect("lock fixture state");
     assert_eq!(state.remote_values["txn://one"], 3);
@@ -406,7 +406,7 @@ fn remote_batch_publishes_one_generation_and_commits_once() {
 fn same_key_rename_does_not_open_a_provider_transaction() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
     let mut session = fixture.open();
-    let initial_revision = session.revision();
+    let initial_revision = session.queries().revision();
     let coordinate = RecordCoordinate::try_new("Item", "one").expect("valid record coordinate");
 
     let report = session.apply_mutation(mutation_request(vec![MutationOp::RenameRecord {
@@ -417,7 +417,7 @@ fn same_key_rename_does_not_open_a_provider_transaction() {
 
     assert!(report.write_ok);
     assert!(!report.generation_changed);
-    assert_eq!(session.revision(), initial_revision);
+    assert_eq!(session.queries().revision(), initial_revision);
     assert_eq!(report.applied.len(), 1);
     assert_eq!(report.applied[0].outcome.touched, vec![coordinate]);
     let state = fixture.state.lock().expect("lock fixture state");
@@ -431,13 +431,13 @@ fn same_key_rename_does_not_open_a_provider_transaction() {
 fn same_field_value_does_not_open_a_provider_transaction() {
     let fixture = Fixture::remote(&[("txn://one", 1)]);
     let mut session = fixture.open();
-    let initial_revision = session.revision();
+    let initial_revision = session.queries().revision();
 
     let report = session.apply_mutation(mutation_request(vec![set_value("one", 1)]));
 
     assert!(report.write_ok);
     assert!(!report.generation_changed);
-    assert_eq!(session.revision(), initial_revision);
+    assert_eq!(session.queries().revision(), initial_revision);
     assert_eq!(report.applied.len(), 1);
     assert!(report.affected_files.is_empty());
     let state = fixture.state.lock().expect("lock fixture state");
@@ -608,7 +608,7 @@ fn local_stage_failure_restores_source_and_keeps_old_generation() {
     assert!(!report.write_ok);
     assert!(report.applied.is_empty());
     assert_eq!(report.failed[0].index, 1);
-    assert_eq!(session.revision(), 0);
+    assert_eq!(session.queries().revision(), 0);
     assert_eq!(session_value(&session, "local"), 1);
     assert_eq!(
         std::fs::read_to_string(fixture.root.join("local.txn"))
@@ -878,7 +878,7 @@ fn assert_failed_without_publish(
 ) {
     assert!(!report.write_ok);
     assert!(report.applied.is_empty());
-    assert_eq!(session.revision(), 0);
+    assert_eq!(session.queries().revision(), 0);
     assert!(
         has_diagnostic(report, code),
         "missing diagnostic `{code}`: {report:?}"

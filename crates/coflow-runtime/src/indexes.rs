@@ -49,17 +49,17 @@ pub struct DiagnosticsStore {
 
 impl DiagnosticsStore {
     #[must_use]
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self::default()
     }
 
     #[must_use]
-    pub fn from_set(diagnostics: DiagnosticSet) -> Self {
+    pub(crate) fn from_set(diagnostics: DiagnosticSet) -> Self {
         Self::from_parts(diagnostics, BTreeMap::new())
     }
 
     #[must_use]
-    pub fn from_parts(
+    pub(crate) fn from_parts(
         diagnostics: DiagnosticSet,
         logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
     ) -> Self {
@@ -74,13 +74,13 @@ impl DiagnosticsStore {
         store
     }
 
-    pub fn extend(&mut self, diagnostics: DiagnosticSet) {
+    pub(crate) fn extend(&mut self, diagnostics: DiagnosticSet) {
         let start = self.diagnostics.diagnostics.len();
         self.diagnostics.extend(diagnostics);
         self.index_diagnostics_from(start);
     }
 
-    pub fn extend_with_logical_locations(
+    pub(crate) fn extend_with_logical_locations(
         &mut self,
         diagnostics: DiagnosticSet,
         logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
@@ -186,7 +186,7 @@ pub struct DiagnosticLogicalLocation {
 
 impl DiagnosticLogicalLocation {
     #[must_use]
-    pub fn coordinate(&self) -> Option<RecordCoordinate> {
+    pub(crate) fn coordinate(&self) -> Option<RecordCoordinate> {
         RecordCoordinate::try_new(self.actual_type.clone()?, self.record_key.clone()?).ok()
     }
 }

@@ -76,8 +76,8 @@ pub struct SchemaConfig {
 #[derive(Debug, Clone)]
 pub struct SourceConfig {
     pub source_type: Option<String>,
-    pub location: SourceLocationSpec,
-    pub options: Value,
+    location: SourceLocationSpec,
+    options: Value,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -110,7 +110,7 @@ pub struct LoaderConfig {
 pub struct OutputConfig {
     pub output_type: String,
     pub dir: PathBuf,
-    pub options: Value,
+    options: Value,
 }
 
 impl SourceConfig {
@@ -154,6 +154,15 @@ impl SchemaConfig {
 
 impl OutputConfig {
     #[must_use]
+    pub const fn new(output_type: String, dir: PathBuf, options: Value) -> Self {
+        Self {
+            output_type,
+            dir,
+            options,
+        }
+    }
+
+    #[must_use]
     pub const fn options(&self) -> &Value {
         &self.options
     }
@@ -171,10 +180,6 @@ impl OutputsConfig {
     #[must_use]
     pub fn targets(&self) -> &[OutputTargetConfig] {
         &self.targets
-    }
-
-    pub fn targets_mut(&mut self) -> &mut [OutputTargetConfig] {
-        &mut self.targets
     }
 
     #[must_use]
