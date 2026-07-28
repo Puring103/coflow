@@ -266,6 +266,105 @@ pub(crate) enum PreparedMutationOp {
     },
 }
 
+impl PreparedMutationOp {
+    pub(crate) fn report_metadata(
+        &self,
+    ) -> (&'static str, Option<RecordCoordinate>, Option<String>) {
+        match self {
+            Self::InsertRecord {
+                file,
+                actual_type,
+                key,
+                ..
+            } => (
+                "insert_record",
+                Some(RecordCoordinate::new(actual_type.clone(), key.clone())),
+                Some(file.clone()),
+            ),
+            Self::CancelledInsert { record, write_file } => (
+                "insert_record",
+                Some(record.clone()),
+                Some(write_file.clone()),
+            ),
+            Self::SetField {
+                record, write_file, ..
+            }
+            | Self::FoldedSetField {
+                record, write_file, ..
+            } => ("set_field", Some(record.clone()), Some(write_file.clone())),
+            Self::WriteDimensionValue {
+                record,
+                new_value,
+                write_file,
+                ..
+            } => (
+                if new_value.is_some() {
+                    "set_dimension_value"
+                } else {
+                    "clear_dimension_value"
+                },
+                Some(record.clone()),
+                Some(write_file.clone()),
+            ),
+            Self::RenameRecord {
+                record,
+                new_key,
+                report_file,
+            } => (
+                "rename_record",
+                Some(RecordCoordinate::new(
+                    record.actual_type.clone(),
+                    new_key.clone(),
+                )),
+                report_file.clone(),
+            ),
+            Self::FoldedRenameRecord {
+                new_record,
+                write_file,
+                ..
+            } => (
+                "rename_record",
+                Some(new_record.clone()),
+                Some(write_file.clone()),
+            ),
+            Self::DeleteRecord {
+                record,
+                report_file,
+            } => ("delete_record", Some(record.clone()), report_file.clone()),
+            Self::FoldedDeleteRecord { record, write_file } => (
+                "delete_record",
+                Some(record.clone()),
+                Some(write_file.clone()),
+            ),
+            Self::SwapRecords {
+                first, report_file, ..
+            } => (
+                "swap_records",
+                Some(first.clone()),
+                Some(report_file.clone()),
+            ),
+            Self::MoveRecord {
+                record,
+                report_file,
+                ..
+            } => (
+                "move_record",
+                Some(record.clone()),
+                Some(report_file.clone()),
+            ),
+            Self::TransferRecord {
+                record,
+                destination_file,
+                ..
+            } => (
+                "transfer_record",
+                Some(record.clone()),
+                Some(destination_file.clone()),
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct MutationReport {
     pub write_ok: bool,
