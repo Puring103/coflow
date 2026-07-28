@@ -192,7 +192,7 @@ impl DiagnosticLogicalLocation {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct SourceIndex {
+pub(crate) struct SourceIndex {
     pub(crate) entries: Vec<ResolvedSourceEntry>,
 }
 
@@ -236,7 +236,7 @@ pub(crate) struct SourceId(pub(crate) usize);
 
 impl SourceId {
     #[must_use]
-    pub const fn index(self) -> usize {
+    pub(crate) const fn index(self) -> usize {
         self.0
     }
 }
@@ -246,7 +246,7 @@ impl SourceId {
 /// The authoritative key is `(actual_type, key)`.
 ///
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RecordIndex {
+pub(crate) struct RecordIndex {
     by_id: BTreeMap<CfdRecordId, RecordRef>,
     by_coordinate: BTreeMap<RecordCoordinate, CfdRecordId>,
     files: BTreeMap<String, Vec<CfdRecordId>>,
@@ -272,29 +272,29 @@ pub(crate) struct PendingRecordRef {
 
 impl RecordIndex {
     #[must_use]
-    pub fn get(&self, id: CfdRecordId) -> Option<&RecordRef> {
+    pub(crate) fn get(&self, id: CfdRecordId) -> Option<&RecordRef> {
         self.by_id.get(&id)
     }
 
     #[must_use]
-    pub fn get_by_coordinate(&self, actual_type: &str, key: &str) -> Option<&RecordRef> {
+    pub(crate) fn get_by_coordinate(&self, actual_type: &str, key: &str) -> Option<&RecordRef> {
         let coordinate = RecordCoordinate::try_new(actual_type, key).ok()?;
         let id = self.by_coordinate.get(&coordinate)?;
         self.by_id.get(id)
     }
 
     #[must_use]
-    pub fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
+    pub(crate) fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
         let coordinate = RecordCoordinate::try_new(actual_type, key).ok()?;
         self.by_coordinate.get(&coordinate).copied()
     }
 
     #[must_use]
-    pub fn ids_in_file(&self, file: &str) -> &[CfdRecordId] {
+    pub(crate) fn ids_in_file(&self, file: &str) -> &[CfdRecordId] {
         self.files.get(file).map_or(&[], Vec::as_slice)
     }
 
-    pub fn coordinates_in_file<'a>(
+    pub(crate) fn coordinates_in_file<'a>(
         &'a self,
         file: &str,
     ) -> impl Iterator<Item = &'a RecordCoordinate> + 'a {
@@ -304,22 +304,22 @@ impl RecordIndex {
     }
 
     #[must_use]
-    pub fn file_for_coordinate(&self, actual_type: &str, key: &str) -> Option<&str> {
+    pub(crate) fn file_for_coordinate(&self, actual_type: &str, key: &str) -> Option<&str> {
         self.get_by_coordinate(actual_type, key)
             .map(|r| r.display_path.as_str())
     }
 
     #[must_use]
-    pub const fn by_id(&self) -> &BTreeMap<CfdRecordId, RecordRef> {
+    pub(crate) const fn by_id(&self) -> &BTreeMap<CfdRecordId, RecordRef> {
         &self.by_id
     }
 
     #[must_use]
-    pub fn rejected(&self) -> &[RejectedRecordRef] {
+    pub(crate) fn rejected(&self) -> &[RejectedRecordRef] {
         &self.rejected
     }
 
-    pub fn rejected_in_file(&self, file: &str) -> impl Iterator<Item = &RejectedRecordRef> {
+    pub(crate) fn rejected_in_file(&self, file: &str) -> impl Iterator<Item = &RejectedRecordRef> {
         self.rejected_files
             .get(file)
             .into_iter()
@@ -327,7 +327,7 @@ impl RecordIndex {
             .filter_map(|index| self.rejected.get(*index))
     }
 
-    pub fn rejected_by_coordinate(
+    pub(crate) fn rejected_by_coordinate(
         &self,
         actual_type: &str,
         key: &str,
@@ -434,7 +434,7 @@ impl RecordIndex {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RecordRef {
+pub(crate) struct RecordRef {
     pub id: CfdRecordId,
     pub coordinate: RecordCoordinate,
     pub origin: RecordOrigin,
@@ -455,19 +455,19 @@ pub struct RejectedRecordRef {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct FileIndex {
+pub(crate) struct FileIndex {
     source_files: BTreeSet<String>,
     display_to_sources: BTreeMap<String, Vec<SourceId>>,
 }
 
 impl FileIndex {
     #[must_use]
-    pub const fn source_files(&self) -> &BTreeSet<String> {
+    pub(crate) const fn source_files(&self) -> &BTreeSet<String> {
         &self.source_files
     }
 
     #[must_use]
-    pub fn source_for_display(&self, display_path: &str) -> Option<SourceId> {
+    pub(crate) fn source_for_display(&self, display_path: &str) -> Option<SourceId> {
         match self.display_to_sources.get(display_path)?.as_slice() {
             [source_id] => Some(*source_id),
             _ => None,
@@ -475,7 +475,7 @@ impl FileIndex {
     }
 
     #[must_use]
-    pub fn sources_for_display(&self, display_path: &str) -> &[SourceId] {
+    pub(crate) fn sources_for_display(&self, display_path: &str) -> &[SourceId] {
         self.display_to_sources
             .get(display_path)
             .map_or(&[], Vec::as_slice)

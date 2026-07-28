@@ -40,47 +40,47 @@ pub(crate) struct ProjectSession {
 
 impl ProjectSession {
     #[must_use]
-    pub fn schema(&self) -> &CftSchema {
+    pub(crate) fn schema(&self) -> &CftSchema {
         &self.schema
     }
 
     #[must_use]
-    pub const fn model(&self) -> &CfdDataModel {
+    pub(crate) const fn model(&self) -> &CfdDataModel {
         &self.model
     }
 
     #[must_use]
-    pub const fn diagnostics(&self) -> &DiagnosticsStore {
+    pub(crate) const fn diagnostics(&self) -> &DiagnosticsStore {
         &self.diagnostics
     }
 
     #[must_use]
-    pub const fn sources(&self) -> &SourceIndex {
+    pub(crate) const fn sources(&self) -> &SourceIndex {
         &self.sources
     }
 
     #[must_use]
-    pub const fn records(&self) -> &RecordIndex {
+    pub(crate) const fn records(&self) -> &RecordIndex {
         &self.records
     }
 
     #[must_use]
-    pub const fn files(&self) -> &FileIndex {
+    pub(crate) const fn files(&self) -> &FileIndex {
         &self.files
     }
 
     #[must_use]
-    pub const fn execution_stats(&self) -> &ProjectExecutionStats {
+    pub(crate) const fn execution_stats(&self) -> &ProjectExecutionStats {
         &self.execution_stats
     }
 
     #[must_use]
-    pub fn into_diagnostics(self) -> DiagnosticSet {
+    pub(crate) fn into_diagnostics(self) -> DiagnosticSet {
         self.diagnostics.into_set()
     }
 
     #[must_use]
-    pub fn into_schema_session(self) -> ProjectSchemaSession {
+    pub(crate) fn into_schema_session(self) -> ProjectSchemaSession {
         ProjectSchemaSession {
             project: self.project,
             modules: self.modules,
@@ -90,7 +90,7 @@ impl ProjectSession {
     }
 
     #[must_use]
-    pub fn has_diagnostics(&self) -> bool {
+    pub(crate) fn has_diagnostics(&self) -> bool {
         !self.diagnostics.is_empty()
     }
 
@@ -98,7 +98,7 @@ impl ProjectSession {
     /// id. Returns `None` when no record matches — callers surface an
     /// `EditorError::NotFound` rather than panic.
     #[must_use]
-    pub fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
+    pub(crate) fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
         self.records.id_for_coordinate(actual_type, key)
     }
 
@@ -106,20 +106,20 @@ impl ProjectSession {
     /// return the wire coordinate. Lives here so model id leakage stays
     /// confined to the engine boundary.
     #[must_use]
-    pub fn coordinate_of(&self, id: CfdRecordId) -> Option<RecordCoordinate> {
+    pub(crate) fn coordinate_of(&self, id: CfdRecordId) -> Option<RecordCoordinate> {
         self.records.get(id).map(|r| r.coordinate.clone())
     }
 
     /// Look up the project-relative file that backs a record, addressed by
     /// its wire coordinate.
     #[must_use]
-    pub fn file_for_record(&self, actual_type: &str, key: &str) -> Option<&str> {
+    pub(crate) fn file_for_record(&self, actual_type: &str, key: &str) -> Option<&str> {
         self.records.file_for_coordinate(actual_type, key)
     }
 
     /// Iterate the coordinates of every top-level record in `file`. Used by
     /// hosts that render per-file record lists without exposing internal ids.
-    pub fn coordinates_in_file<'a>(
+    pub(crate) fn coordinates_in_file<'a>(
         &'a self,
         file: &str,
     ) -> impl Iterator<Item = &'a RecordCoordinate> + 'a {
@@ -129,12 +129,12 @@ impl ProjectSession {
     /// Integer value of an enum variant declared in the project schema.
     /// Returns `None` for unknown enum names or variants.
     #[must_use]
-    pub fn enum_int_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
+    pub(crate) fn enum_int_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
         self.schema().enum_variant_value(enum_name, variant)
     }
 
     #[must_use]
-    pub fn enum_variants(&self, enum_name: &str) -> Vec<String> {
+    pub(crate) fn enum_variants(&self, enum_name: &str) -> Vec<String> {
         self.schema()
             .resolve_enum(enum_name)
             .map(|meta| {
@@ -148,20 +148,20 @@ impl ProjectSession {
 
     /// Resolved dimension metadata for the project.
     #[must_use]
-    pub fn dimensions(&self) -> Vec<DimensionInfo> {
+    pub(crate) fn dimensions(&self) -> Vec<DimensionInfo> {
         dimensions_for_project(&self.project, self.dimension_plan.fields())
     }
 
     /// Lookup a single dimension by name.
     #[must_use]
-    pub fn dimension(&self, name: &str) -> Option<DimensionInfo> {
+    pub(crate) fn dimension(&self, name: &str) -> Option<DimensionInfo> {
         self.dimensions().into_iter().find(|d| d.name == name)
     }
 
     /// Compose a read-only [`RecordView`] for a coordinate. Returns `None`
     /// when no record matches — typically a stale coordinate after a rename.
     #[must_use]
-    pub fn record_view(&self, actual_type: &str, key: &str) -> Option<RecordView<'_>> {
+    pub(crate) fn record_view(&self, actual_type: &str, key: &str) -> Option<RecordView<'_>> {
         let record_ref = self.records.get_by_coordinate(actual_type, key)?;
         let record = self.model.record(record_ref.id)?;
         Some(RecordView {
@@ -176,7 +176,7 @@ impl ProjectSession {
     /// Read a record field by model path through the same path resolver the
     /// write engine uses for current-value checks.
     #[must_use]
-    pub fn field_value(
+    pub(crate) fn field_value(
         &self,
         actual_type: &str,
         key: &str,
@@ -192,7 +192,7 @@ impl ProjectSession {
     }
 
     #[must_use]
-    pub fn effective_field_write(
+    pub(crate) fn effective_field_write(
         &self,
         coordinate: &RecordCoordinate,
         path: &[CfdPathSegment],
@@ -228,7 +228,7 @@ impl ProjectSession {
     }
 
     #[must_use]
-    pub fn ref_targets(&self, expected_type: &str) -> Vec<RefTargetInfo> {
+    pub(crate) fn ref_targets(&self, expected_type: &str) -> Vec<RefTargetInfo> {
         let mut targets = Vec::new();
         let schema = self.schema();
         let Some(assignable_types) = schema.concrete_assignable_types(expected_type) else {
@@ -257,7 +257,7 @@ impl ProjectSession {
     }
 
     /// Iterate read-only views of every record backed by `file`.
-    pub fn record_views_in_file<'a>(
+    pub(crate) fn record_views_in_file<'a>(
         &'a self,
         file: &str,
     ) -> impl Iterator<Item = RecordView<'a>> + 'a {
@@ -278,7 +278,7 @@ impl ProjectSession {
     /// loader-registered extension is walked, dimension `out_dirs` become
     /// virtual subtrees).
     #[must_use]
-    pub fn file_tree(&self) -> Vec<FileTreeNode> {
+    pub(crate) fn file_tree(&self) -> Vec<FileTreeNode> {
         let mut options = FileTreeOptions {
             extra_extensions: self.loader_extensions.iter().cloned().collect(),
             dimension_groups: Vec::new(),
@@ -303,7 +303,7 @@ impl ProjectSession {
     /// extension whitelist and any dimension groups that should be lifted to
     /// the top of the tree.
     #[must_use]
-    pub fn file_tree_with(&self, options: FileTreeOptions) -> Vec<FileTreeNode> {
+    pub(crate) fn file_tree_with(&self, options: FileTreeOptions) -> Vec<FileTreeNode> {
         let ext_whitelist: BTreeSet<String> = options.extra_extensions.into_iter().collect();
         let mut skip: BTreeSet<String> = BTreeSet::new();
         for group in &options.dimension_groups {
@@ -335,7 +335,7 @@ impl ProjectSession {
     }
 
     #[must_use]
-    pub const fn loader_extensions(&self) -> &BTreeSet<String> {
+    pub(crate) const fn loader_extensions(&self) -> &BTreeSet<String> {
         &self.loader_extensions
     }
 }
