@@ -128,7 +128,7 @@ fn generate_complete(
         let common_name = loader_name.replace(".Loader.cs", ".cs");
         if let Some(common) = files
             .iter_mut()
-            .find(|file| file.relative_path == PathBuf::from(&common_name))
+            .find(|file| file.relative_path == *common_name)
         {
             merge_csharp_contents(&mut common.contents, &loader.contents)?;
         } else {
@@ -150,7 +150,7 @@ pub fn generate_csharp_json(
     generate_complete(schema, options, render::CsharpLoaderKind::Json)
 }
 
-/// Generates C# declarations and a MessagePack loader.
+/// Generates C# declarations and a `MessagePack` loader.
 ///
 /// # Errors
 ///
@@ -258,7 +258,7 @@ impl CodeGenerator for CsharpCodeGenerator {
             variants,
             non_empty_tables.as_ref(),
         )
-        .map_err(codegen_diagnostics)?;
+        .map_err(|error| codegen_diagnostics(&error))?;
         generated_artifacts(files)
     }
 }
@@ -344,7 +344,8 @@ fn merge_object_layout_csharp_artifacts(
         };
         match (&mut common_file.content, loader_file.content) {
             (ArtifactContent::Text(common), ArtifactContent::Text(loader)) => {
-                merge_csharp_contents(common, &loader).map_err(codegen_diagnostics)?;
+                merge_csharp_contents(common, &loader)
+                    .map_err(|error| codegen_diagnostics(&error))?;
             }
             _ => {
                 return Err(DiagnosticSet::one(Diagnostic::error(
@@ -364,10 +365,7 @@ fn merge_object_layout_csharp_artifacts(
     })
 }
 
-fn merge_csharp_contents(
-    common: &mut String,
-    loader: &str,
-) -> Result<(), CsharpCodegenError> {
+fn merge_csharp_contents(common: &mut String, loader: &str) -> Result<(), CsharpCodegenError> {
     let namespace_start = loader.find("namespace ").ok_or_else(|| {
         CsharpCodegenError::new("C# loader companion is missing a namespace declaration")
     })?;
@@ -428,7 +426,7 @@ fn generate_loader_artifacts(
         variants,
         non_empty_tables.as_ref(),
     )
-    .map_err(codegen_diagnostics)?;
+    .map_err(|error| codegen_diagnostics(&error))?;
     generated_artifacts(files)
 }
 
@@ -456,7 +454,7 @@ fn generated_artifacts(files: Vec<GeneratedFile>) -> Result<ArtifactSet, Diagnos
     })
 }
 
-fn codegen_diagnostics(error: CsharpCodegenError) -> DiagnosticSet {
+fn codegen_diagnostics(error: &CsharpCodegenError) -> DiagnosticSet {
     DiagnosticSet {
         diagnostics: error
             .messages()

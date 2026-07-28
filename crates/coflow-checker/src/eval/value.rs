@@ -232,7 +232,10 @@ pub(crate) enum EvalRecordRef {
 impl PartialEq for EvalRecordRef {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Resolved(lhs) | Self::RecordSet(lhs), Self::Resolved(rhs) | Self::RecordSet(rhs)) => lhs.storage == rhs.storage,
+            (
+                Self::Resolved(lhs) | Self::RecordSet(lhs),
+                Self::Resolved(rhs) | Self::RecordSet(rhs),
+            ) => lhs.storage == rhs.storage,
             (Self::Unresolved, Self::Unresolved) => true,
             (Self::Resolved(_) | Self::RecordSet(_), Self::Unresolved)
             | (Self::Unresolved, Self::Resolved(_) | Self::RecordSet(_)) => false,
@@ -246,14 +249,18 @@ impl EvalRecordRef {
         model: &'model CfdDataModel,
     ) -> Option<&'model BTreeMap<FieldName, CfdValue>> {
         match self {
-            Self::Resolved(location) | Self::RecordSet(location) => resolved_object_fields(model, &location.storage),
+            Self::Resolved(location) | Self::RecordSet(location) => {
+                resolved_object_fields(model, &location.storage)
+            }
             Self::Unresolved => None,
         }
     }
 
     pub(crate) fn actual_type<'model>(&self, model: &'model CfdDataModel) -> Option<&'model str> {
         match self {
-            Self::Resolved(location) | Self::RecordSet(location) => resolved_object_type(model, &location.storage),
+            Self::Resolved(location) | Self::RecordSet(location) => {
+                resolved_object_type(model, &location.storage)
+            }
             Self::Unresolved => None,
         }
     }
@@ -314,10 +321,6 @@ impl EvalRecordRef {
             }
             Self::Resolved(_) | Self::RecordSet(_) | Self::Unresolved => None,
         }
-    }
-
-    pub(crate) const fn is_record_set_handle(&self) -> bool {
-        matches!(self, Self::RecordSet(_))
     }
 }
 

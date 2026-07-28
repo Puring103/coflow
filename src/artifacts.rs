@@ -475,6 +475,7 @@ impl<'a> ArtifactReleaseOutput<'a> {
 }
 
 impl ValidatedArtifactReleaseOutput<'_> {
+    #[allow(clippy::too_many_lines)]
     fn generate(self) -> Result<GeneratedArtifactOutput, DiagnosticSet> {
         let (provider_id, display_name, artifacts) = match self.generator {
             ValidatedArtifactGenerator::Data {

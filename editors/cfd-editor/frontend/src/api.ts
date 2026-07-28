@@ -25,6 +25,8 @@ import type { ReorderRecordsOutcome } from './bindings/ReorderRecordsOutcome'
 import type { WriteFieldOutcome } from './bindings/WriteFieldOutcome'
 import type { WriteDimensionValueOutcome } from './bindings/WriteDimensionValueOutcome'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
+import type { RecordRow } from './bindings/RecordRow'
+import type { PluginSchemaType } from './bindings/PluginSchemaType'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
 
 export const isTauri = '__TAURI_INTERNALS__' in window
@@ -74,6 +76,14 @@ export async function initProject(dir: string): Promise<ProjectSnapshot> {
 
 export async function getFileRecords(sessionId: number, filePath: string): Promise<FileRecords> {
   return invokeCommand<FileRecords>('get_file_records', { sessionId, filePath })
+}
+
+export async function getPluginSchema(sessionId: number): Promise<PluginSchemaType[]> {
+  return invokeCommand<PluginSchemaType[]>('get_plugin_schema', { sessionId })
+}
+
+export async function getPluginRecordsByType(sessionId: number, typeName: string): Promise<RecordRow[]> {
+  return invokeCommand<RecordRow[]>('get_plugin_records_by_type', { sessionId, typeName })
 }
 
 export interface GraphQueryOptions {
@@ -167,6 +177,8 @@ export interface FrontendPluginBundle {
   description: string
   version: string
   source: string
+  scope: 'global' | 'project'
+  enabled: boolean
 }
 
 export async function pickFrontendPluginManifest(): Promise<string | null> {
@@ -188,6 +200,22 @@ export async function listFrontendPlugins(): Promise<FrontendPluginBundle[]> {
 
 export async function uninstallFrontendPlugin(id: string): Promise<void> {
   return invokeCommand<void>('uninstall_frontend_plugin', { id })
+}
+
+export async function installProjectFrontendPlugin(sessionId: number, manifestPath: string): Promise<FrontendPluginBundle> {
+  return invokeCommand<FrontendPluginBundle>('install_project_frontend_plugin', { sessionId, manifestPath })
+}
+
+export async function listProjectFrontendPlugins(sessionId: number): Promise<FrontendPluginBundle[]> {
+  return invokeCommand<FrontendPluginBundle[]>('list_project_frontend_plugins', { sessionId })
+}
+
+export async function uninstallProjectFrontendPlugin(sessionId: number, id: string): Promise<void> {
+  return invokeCommand<void>('uninstall_project_frontend_plugin', { sessionId, id })
+}
+
+export async function setProjectFrontendPluginEnabled(sessionId: number, id: string, enabled: boolean): Promise<void> {
+  return invokeCommand<void>('set_project_frontend_plugin_enabled', { sessionId, id, enabled })
 }
 
 export async function setRecordGroups(

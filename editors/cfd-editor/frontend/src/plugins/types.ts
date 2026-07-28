@@ -1,4 +1,6 @@
 import type { FieldValue } from '../wire'
+import type { PluginSchemaType } from '../bindings/PluginSchemaType'
+import type { RecordRow } from '../bindings/RecordRow'
 
 /** Places where the host currently exposes a value renderer. */
 export type FieldRenderSurface = 'table-cell' | 'record-foldout-header'
@@ -30,6 +32,13 @@ export interface FieldRenderer {
 
 export interface ExtensionHost {
   apiVersion: 1
+  schema: {
+    getTypes(): Promise<PluginSchemaType[]>
+  }
+  records: {
+    /** Returns rows whose actual type exactly matches `typeName`, across source files. */
+    getByType(typeName: string): Promise<RecordRow[]>
+  }
   renderers: {
     register(renderer: FieldRenderer): () => void
   }
@@ -48,6 +57,7 @@ export interface ReadPlugin {
   version: string
   renderers: FieldRenderer[]
   dispose?: () => void
-  origin: 'local'
+  origin: 'global' | 'project'
   manifestPath: string
+  enabled: boolean
 }

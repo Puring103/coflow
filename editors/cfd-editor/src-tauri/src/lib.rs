@@ -8,22 +8,25 @@ mod host;
 mod watcher;
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
-use coflow_extension_api::ExtensionManifest;
 use coflow_runtime::{
     DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
 };
 use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
-    EditorRecordGroup, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot,
-    RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig, WriteDimensionValueOutcome,
-    WriteFieldOutcome,
+    EditorRecordGroup, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, PluginSchemaType,
+    ProjectSnapshot, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
+    WriteDimensionValueOutcome, WriteFieldOutcome,
 };
+use extension_api::ExtensionManifest;
 use host::EditorHost;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
-#[derive(Debug, Serialize)]
+const PROJECT_PLUGIN_DIR: &str = "editor-setting";
+const PROJECT_PLUGIN_FILE: &str = "plugins.json";
+
+#[derive(Debug, Clone, Serialize)]
 struct FrontendPluginBundle {
     manifest_path: String,
     id: String,
@@ -31,6 +34,39 @@ struct FrontendPluginBundle {
     description: String,
     version: String,
     source: String,
+    scope: PluginScope,
+    enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PluginScope {
+    Global,
+    Project,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ProjectPluginsFile {
+    #[serde(default = "project_plugin_file_version")]
+    version: u32,
+    #[serde(default)]
+    plugins: Vec<ProjectPluginEntry>,
+}
+
+const fn project_plugin_file_version() -> u32 {
+    1
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectPluginEntry {
+    id: String,
+    manifest: String,
+    #[serde(default = "default_plugin_enabled")]
+    enabled: bool,
+}
+
+const fn default_plugin_enabled() -> bool {
+    true
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -55,6 +91,65 @@ async fn list_frontend_plugins(app: AppHandle) -> Result<Vec<FrontendPluginBundl
 #[tauri::command]
 async fn uninstall_frontend_plugin(id: String, app: AppHandle) -> Result<(), EditorError> {
     run_blocking(move || uninstall_frontend_plugin_bundle(&id, &app)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn install_project_frontend_plugin(
+    session_id: u32,
+    manifest_path: String,
+    host: State<'_, EditorHost>,
+) -> Result<FrontendPluginBundle, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        let project_root = host.sessions().project_root_for(session_id)?;
+        install_project_frontend_plugin_bundle(&project_root, &PathBuf::from(manifest_path))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn list_project_frontend_plugins(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<Vec<FrontendPluginBundle>, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        let project_root = host.sessions().project_root_for(session_id)?;
+        list_project_frontend_plugin_bundles(&project_root)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn uninstall_project_frontend_plugin(
+    session_id: u32,
+    id: String,
+    host: State<'_, EditorHost>,
+) -> Result<(), EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        let project_root = host.sessions().project_root_for(session_id)?;
+        remove_project_frontend_plugin(&project_root, &id)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn set_project_frontend_plugin_enabled(
+    session_id: u32,
+    id: String,
+    enabled: bool,
+    host: State<'_, EditorHost>,
+) -> Result<(), EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        let project_root = host.sessions().project_root_for(session_id)?;
+        update_project_frontend_plugin_enabled(&project_root, &id, enabled)
+    })
+    .await
 }
 
 fn load_frontend_plugin_bundle(manifest_path: &Path) -> Result<FrontendPluginBundle, EditorError> {
@@ -114,7 +209,173 @@ fn load_frontend_plugin_bundle(manifest_path: &Path) -> Result<FrontendPluginBun
         description: manifest.description,
         version: manifest.version,
         source,
+        scope: PluginScope::Global,
+        enabled: true,
     })
+}
+
+fn project_plugins_path(project_root: &Path) -> PathBuf {
+    project_root
+        .join(PROJECT_PLUGIN_DIR)
+        .join(PROJECT_PLUGIN_FILE)
+}
+
+fn read_project_plugins(project_root: &Path) -> Result<ProjectPluginsFile, EditorError> {
+    let path = project_plugins_path(project_root);
+    if !path.exists() {
+        return Ok(ProjectPluginsFile {
+            version: project_plugin_file_version(),
+            ..ProjectPluginsFile::default()
+        });
+    }
+    let contents = std::fs::read_to_string(&path).map_err(|error| {
+        EditorError::other(format!("failed to read {}: {error}", path.display()))
+    })?;
+    serde_json::from_str(&contents)
+        .map_err(|error| EditorError::other(format!("failed to parse {}: {error}", path.display())))
+}
+
+fn write_project_plugins(
+    project_root: &Path,
+    plugins: &ProjectPluginsFile,
+) -> Result<(), EditorError> {
+    let path = project_plugins_path(project_root);
+    let parent = path
+        .parent()
+        .ok_or_else(|| EditorError::other("project plugin path has no parent"))?;
+    std::fs::create_dir_all(parent).map_err(|error| {
+        EditorError::other(format!("failed to create {}: {error}", parent.display()))
+    })?;
+    let contents = serde_json::to_string_pretty(plugins).map_err(|error| {
+        EditorError::other(format!("failed to encode project plugins: {error}"))
+    })?;
+    std::fs::write(&path, contents)
+        .map_err(|error| EditorError::other(format!("failed to write {}: {error}", path.display())))
+}
+
+fn relative_project_path(project_root: &Path, target: &Path) -> Result<PathBuf, EditorError> {
+    let root = std::fs::canonicalize(project_root)
+        .map_err(|error| EditorError::other(format!("failed to resolve project root: {error}")))?;
+    let target = std::fs::canonicalize(target).map_err(|error| {
+        EditorError::other(format!("failed to resolve plugin manifest: {error}"))
+    })?;
+    let root_parts = root.components().collect::<Vec<_>>();
+    let target_parts = target.components().collect::<Vec<_>>();
+    let shared = root_parts
+        .iter()
+        .zip(&target_parts)
+        .take_while(|(left, right)| left == right)
+        .count();
+    if shared == 0 {
+        return Err(EditorError::other(
+            "project and plugin manifest must be on the same volume",
+        ));
+    }
+    let mut relative = PathBuf::new();
+    for _ in shared..root_parts.len() {
+        relative.push("..");
+    }
+    for component in &target_parts[shared..] {
+        relative.push(component.as_os_str());
+    }
+    Ok(relative)
+}
+
+fn resolve_project_manifest(project_root: &Path, manifest: &str) -> Result<PathBuf, EditorError> {
+    let path = Path::new(manifest);
+    if path.is_absolute() {
+        return Err(EditorError::other(
+            "project plugin manifest must use a relative path",
+        ));
+    }
+    std::fs::canonicalize(project_root.join(path)).map_err(|error| {
+        EditorError::other(format!(
+            "failed to resolve project plugin manifest `{manifest}`: {error}"
+        ))
+    })
+}
+
+fn project_bundle(
+    project_root: &Path,
+    entry: &ProjectPluginEntry,
+) -> Result<FrontendPluginBundle, EditorError> {
+    let manifest = resolve_project_manifest(project_root, &entry.manifest)?;
+    let mut bundle = load_frontend_plugin_bundle(&manifest)?;
+    if bundle.id != entry.id {
+        return Err(EditorError::other(format!(
+            "project plugin `{}` does not match manifest id `{}`",
+            entry.id, bundle.id
+        )));
+    }
+    bundle.scope = PluginScope::Project;
+    bundle.enabled = entry.enabled;
+    Ok(bundle)
+}
+
+fn install_project_frontend_plugin_bundle(
+    project_root: &Path,
+    manifest: &Path,
+) -> Result<FrontendPluginBundle, EditorError> {
+    let mut bundle = load_frontend_plugin_bundle(manifest)?;
+    if !valid_plugin_id(&bundle.id) {
+        return Err(EditorError::other(
+            "plugin id may only contain ASCII letters, digits, hyphens, and underscores",
+        ));
+    }
+    let relative = relative_project_path(project_root, manifest)?;
+    let mut config = read_project_plugins(project_root)?;
+    config.version = project_plugin_file_version();
+    config.plugins.retain(|entry| entry.id != bundle.id);
+    config.plugins.push(ProjectPluginEntry {
+        id: bundle.id.clone(),
+        manifest: relative.to_string_lossy().replace('\\', "/"),
+        enabled: true,
+    });
+    config.plugins.sort_by(|left, right| left.id.cmp(&right.id));
+    write_project_plugins(project_root, &config)?;
+    bundle.scope = PluginScope::Project;
+    bundle.enabled = true;
+    Ok(bundle)
+}
+
+fn list_project_frontend_plugin_bundles(
+    project_root: &Path,
+) -> Result<Vec<FrontendPluginBundle>, EditorError> {
+    let config = read_project_plugins(project_root)?;
+    let mut bundles = config
+        .plugins
+        .iter()
+        .map(|entry| project_bundle(project_root, entry))
+        .collect::<Result<Vec<_>, _>>()?;
+    bundles.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(bundles)
+}
+
+fn remove_project_frontend_plugin(project_root: &Path, id: &str) -> Result<(), EditorError> {
+    let mut config = read_project_plugins(project_root)?;
+    let before = config.plugins.len();
+    config.plugins.retain(|entry| entry.id != id);
+    if config.plugins.len() == before {
+        return Err(EditorError::not_found(format!(
+            "project plugin `{id}` not found"
+        )));
+    }
+    write_project_plugins(project_root, &config)
+}
+
+fn update_project_frontend_plugin_enabled(
+    project_root: &Path,
+    id: &str,
+    enabled: bool,
+) -> Result<(), EditorError> {
+    let mut config = read_project_plugins(project_root)?;
+    let entry = config
+        .plugins
+        .iter_mut()
+        .find(|entry| entry.id == id)
+        .ok_or_else(|| EditorError::not_found(format!("project plugin `{id}` not found")))?;
+    entry.enabled = enabled;
+    write_project_plugins(project_root, &config)
 }
 
 fn plugin_data_dir(app: &AppHandle) -> Result<PathBuf, EditorError> {
@@ -374,6 +635,30 @@ async fn get_file_records(
 ) -> Result<FileRecords, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.sessions().get_file_records(session_id, &file_path)).await
+}
+
+#[tauri::command]
+async fn get_plugin_schema(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<Vec<PluginSchemaType>, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().get_plugin_schema(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn get_plugin_records_by_type(
+    session_id: u32,
+    type_name: String,
+    host: State<'_, EditorHost>,
+) -> Result<Vec<RecordRow>, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .get_plugin_records_by_type(session_id, &type_name)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -691,6 +976,8 @@ pub fn run() -> tauri::Result<()> {
             build_project,
             open_source_file,
             get_file_records,
+            get_plugin_schema,
+            get_plugin_records_by_type,
             get_graph,
             get_enum_variants,
             get_ref_targets,
@@ -712,6 +999,10 @@ pub fn run() -> tauri::Result<()> {
             install_frontend_plugin,
             list_frontend_plugins,
             uninstall_frontend_plugin,
+            install_project_frontend_plugin,
+            list_project_frontend_plugins,
+            uninstall_project_frontend_plugin,
+            set_project_frontend_plugin_enabled,
         ])
         .run(tauri::generate_context!())
 }
@@ -745,7 +1036,10 @@ fn open_with_default_application(path: &Path) -> Result<(), EditorError> {
 mod frontend_plugin_tests {
     use std::fs;
 
-    use super::load_frontend_plugin_bundle;
+    use super::{
+        install_project_frontend_plugin_bundle, list_project_frontend_plugin_bundles,
+        load_frontend_plugin_bundle, resolve_project_manifest,
+    };
 
     fn temp_plugin_dir(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -793,5 +1087,52 @@ mod frontend_plugin_tests {
         let error = load_frontend_plugin_bundle(&manifest).expect_err("reject traversal entry");
         assert!(error.message.contains("relative path"));
         fs::remove_dir_all(dir).expect("remove plugin directory");
-}
+    }
+
+    #[test]
+    fn project_plugins_store_external_manifests_as_relative_paths() {
+        let root = temp_plugin_dir("project-root");
+        let plugin_dir = root
+            .parent()
+            .expect("temp root parent")
+            .join("shared-plugin");
+        fs::create_dir_all(&root).expect("create project root");
+        fs::create_dir_all(plugin_dir.join("dist")).expect("create plugin directory");
+        let manifest = plugin_dir.join("plugin.json");
+        fs::write(
+            &manifest,
+            r#"{"id":"shared","name":"Shared","entry":"dist/plugin.js"}"#,
+        )
+        .expect("write manifest");
+        fs::write(plugin_dir.join("dist/plugin.js"), "export default () => {}")
+            .expect("write bundle");
+
+        let bundle = install_project_frontend_plugin_bundle(&root, &manifest)
+            .expect("install project plugin");
+        assert_eq!(bundle.id, "shared");
+        assert!(matches!(bundle.scope, super::PluginScope::Project));
+        let config = fs::read_to_string(root.join("editor-setting/plugins.json"))
+            .expect("read project config");
+        assert!(config.contains("../shared-plugin/plugin.json"));
+        assert!(!config.contains(plugin_dir.to_string_lossy().as_ref()));
+        assert_eq!(
+            list_project_frontend_plugin_bundles(&root)
+                .expect("list project plugins")
+                .len(),
+            1
+        );
+        fs::remove_dir_all(root).expect("remove project root");
+        fs::remove_dir_all(plugin_dir).expect("remove plugin directory");
+    }
+
+    #[test]
+    fn project_plugin_config_rejects_absolute_manifest_paths() {
+        let root = temp_plugin_dir("absolute-path");
+        fs::create_dir_all(root.join("editor-setting")).expect("create project root");
+        let absolute = root.join("external/plugin.json");
+        let error = resolve_project_manifest(&root, absolute.to_string_lossy().as_ref())
+            .expect_err("reject absolute manifest path");
+        assert!(error.message.contains("relative path"));
+        fs::remove_dir_all(root).expect("remove project root");
+    }
 }

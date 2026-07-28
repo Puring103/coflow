@@ -26,7 +26,7 @@ export type FieldAnnotation = { label?: string | null, description?: string | nu
 /**
  * True when this cell is exposed for inspection but cannot be edited.
  */
-read_only: boolean, 
+read_only: boolean,
 /**
  * Template annotation for elements of an array/dict field. Carries the
  * declared element type (and derived ref/enum/nullable metadata) so the
@@ -34,7 +34,7 @@ read_only: boolean,
  * new element or when the collection is empty. `None` for non-collection
  * fields.
  */
-item_annotation: FieldAnnotation | null, 
+item_annotation: FieldAnnotation | null,
 /**
  * Concrete types that could occupy this field when the declared type is
  * an abstract object. Empty for non-polymorphic fields. The editor uses

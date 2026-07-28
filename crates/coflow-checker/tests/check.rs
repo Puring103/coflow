@@ -1,310 +1,93 @@
-#![allow(
-    clippy::expect_used,
-    clippy::needless_raw_string_hashes,
-    clippy::panic,
-    clippy::panic_in_result_fn,
-    clippy::too_many_lines,
-    clippy::unwrap_used
-)]
+#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 mod common;
-use std::collections::BTreeSet;
-
-use coflow_checker::{CheckRequest, DependencyCollection};
+use coflow_cft::{CheckOwner, CheckStatementId, TypeName};
+use coflow_checker::{execute_checks, CheckLimits, CheckProjection, CheckTarget, CheckTask};
 use common::*;
 
-#[test]
-fn named_top_level_checks_execute_once_and_enumerate_derived_records() {
-    let schema = compile_schema(
-        r#"
-        abstract type Item { price: int; }
-        type Weapon : Item {}
-        check ItemIntegrity {
-            records(Item).len() > 0: "at least one item is required";
-            all item in records(Item) {
-                item.price > 0: f"{item.id} has an invalid price";
-            }
-        }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Weapon", [("price", LoadedValueDraft::from(-1_i64))]);
-    let model = build_model(&schema, builder);
-
-    let output = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
-    );
-    assert_eq!(output.statistics.requested_roots, 2);
-    assert_eq!(output.diagnostics.len(), 1, "{output:#?}");
-    assert_eq!(
-        output.diagnostics[0].root,
-        coflow_checker::CheckExecutionId::TopLevel(coflow_cft::CheckName::new("ItemIntegrity").unwrap())
-    );
-    assert_eq!(output.diagnostics[0].diagnostic.diagnostic.message, "sword has an invalid price");
-    assert!(matches!(
-        output.diagnostics[0].diagnostic.contexts.as_slice(),
-        [coflow_checker::CheckDiagnosticContext::Check { name }, coflow_checker::CheckDiagnosticContext::Quantifier { .. }]
-            if name == "ItemIntegrity"
-    ));
-    assert!(output.diagnostics[0].diagnostic.schema_location.is_some());
-    assert!(output.dependencies.reads_from.contains_key(
-        &coflow_checker::CheckExecutionId::TopLevel(
-            coflow_cft::CheckName::new("ItemIntegrity").unwrap()
-        )
-    ));
+fn type_statements(schema: &CftSchema, owner: &str) -> Vec<CheckStatementId> {
+    let owner = CheckOwner::Type(TypeName::new(owner).unwrap());
+    schema
+        .all_check_statements()
+        .filter(|statement| statement.owner == owner)
+        .map(|statement| statement.id)
+        .collect()
 }
 
 #[test]
-fn collection_level_top_check_runs_for_an_empty_model() {
+fn explicit_task_executes_only_the_selected_root_statement() {
+    let schema = compile_schema(
+        "type Item { price: int; enabled: bool; check { price > 0: \"price\"; enabled: \"enabled\"; } }",
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [
+            ("price", LoadedValueDraft::from(-1_i64)),
+            ("enabled", LoadedValueDraft::from(false)),
+        ],
+    );
+    let model = builder.build().expect("model");
+    let record = record_id_at(&model, 0);
+    let statements = type_statements(&schema, "Item");
+
+    let output = execute_checks(
+        &schema,
+        &model,
+        [CheckTask {
+            statement: statements[1],
+            target: CheckTarget::Record(record),
+            projection: CheckProjection::Base,
+        }],
+        CheckLimits::default(),
+    );
+
+    assert_eq!(output.results.len(), 1);
+    assert_eq!(output.results[0].diagnostics.len(), 1);
+    assert_eq!(
+        output.results[0].diagnostics[0].diagnostic.message,
+        "enabled"
+    );
+}
+
+#[test]
+fn project_statement_runs_for_an_empty_model() {
     let schema = compile_schema(
         "type Item {} check Required { records(Item).len() > 0: \"missing item\"; }",
     );
-    let model = build_model(&schema, CfdDataModel::builder(&schema));
-    let output = coflow_checker::run_checks(&schema, &model, CheckRequest::all());
+    let model = CfdDataModel::builder(&schema).build().expect("model");
+    let statement = schema
+        .all_check_statements()
+        .find(|info| matches!(info.owner, CheckOwner::Project(_)))
+        .expect("project statement")
+        .id;
+    let output = execute_checks(
+        &schema,
+        &model,
+        [CheckTask {
+            statement,
+            target: CheckTarget::Project,
+            projection: CheckProjection::Base,
+        }],
+        CheckLimits::default(),
+    );
 
-    assert_eq!(output.diagnostics.len(), 1);
-    let diagnostic = &output.diagnostics[0].diagnostic;
+    let diagnostic = &output.results[0].diagnostics[0];
     assert_eq!(diagnostic.diagnostic.message, "missing item");
     assert!(diagnostic.diagnostic.primary.is_none());
-    assert!(diagnostic.schema_location.is_some());
+    assert!(matches!(
+        diagnostic.contexts.as_slice(),
+        [coflow_checker::CheckDiagnosticContext::Check { name }] if name == "Required"
+    ));
 }
 
 #[test]
-fn record_membership_changes_invalidate_top_level_snapshots() {
+fn nested_owner_statement_walks_every_instance_in_the_target_record() {
     let schema = compile_schema(
         r#"
-        type Item { price: int; }
-        check Integrity {
-            all item in records(Item) { item.price > 0; }
-        }
-        "#,
-    );
-    let empty = build_model(&schema, CfdDataModel::builder(&schema));
-    let initial = coflow_checker::run_checks(
-        &schema,
-        &empty,
-        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
-    );
-    let previous = initial
-    .snapshot
-    .expect("snapshot");
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("bad", "Item", [("price", LoadedValueDraft::from(-1_i64))]);
-    let model = build_model(&schema, builder);
-    let changed = model.records().next().expect("record").1.coordinate();
-    let output = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::incremental(
-            &previous,
-            &coflow_checker::CheckChangeSet::from_records(&schema, [changed]),
-        ),
-    );
-
-    assert!(output.diagnostics.iter().any(|diagnostic| matches!(
-        diagnostic.root,
-        coflow_checker::CheckExecutionId::TopLevel(_)
-    )));
-    assert_eq!(
-        output
-            .snapshot
-            .expect("replacement snapshot")
-            .render_diagnostics(&model)
-            .expect("stable diagnostics")
-            .len(),
-        1
-    );
-}
-
-#[test]
-fn top_level_incremental_reads_use_path_overlap() {
-    let schema = compile_schema(
-        r#"
-        type Item { price: int; label: string; }
-        check Integrity {
-            all item in records(Item) { item.price > 0; }
-        }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "item",
-        "Item",
-        [
-            ("price", LoadedValueDraft::from(1_i64)),
-            ("label", LoadedValueDraft::from("old")),
-        ],
-    );
-    let model = build_model(&schema, builder);
-    let coordinate = model.records().next().expect("record").1.coordinate();
-    let initial = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
-    );
-    let top_root = coflow_checker::CheckExecutionId::TopLevel(
-        coflow_cft::CheckName::new("Integrity").unwrap(),
-    );
-    assert_eq!(
-        initial.dependencies.reads_from.get(&top_root),
-        Some(&BTreeSet::from([coflow_checker::RecordReadDependency {
-            record: model.records().next().expect("record").0,
-            path: CfdPath::root().field("price"),
-        }]))
-    );
-    let previous = initial
-    .snapshot
-    .expect("snapshot");
-
-    let unrelated = coflow_checker::CheckChangeSet {
-        records: std::collections::BTreeMap::from([(
-            coordinate.clone(),
-            coflow_checker::ChangedPaths::Paths(BTreeSet::from([
-                CfdPath::root().field("label"),
-            ])),
-        )]),
-        memberships: BTreeSet::new(),
-    };
-    let unrelated_output = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::incremental(&previous, &unrelated),
-    );
-    assert_eq!(unrelated_output.statistics.executed_top_level_checks, 0);
-
-    let related = coflow_checker::CheckChangeSet {
-        records: std::collections::BTreeMap::from([(
-            coordinate,
-            coflow_checker::ChangedPaths::Paths(BTreeSet::from([
-                CfdPath::root().field("price"),
-            ])),
-        )]),
-        memberships: BTreeSet::new(),
-    };
-    let related_output = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::incremental(&previous, &related),
-    );
-    assert_eq!(related_output.statistics.executed_top_level_checks, 1);
-}
-
-fn build_model(_schema: &CftSchema, builder: CfdModelBuilder<'_>) -> CfdDataModel {
-    builder.build().expect("data model should build")
-}
-
-fn assert_first_code(diags: &CfdDiagnostics, code: CfdErrorCode) {
-    assert_eq!(diags.diagnostics[0].code, code, "{diags:#?}");
-}
-
-fn assert_message_contains(diags: &CfdDiagnostics, text: &str) {
-    assert!(
-        diags
-            .diagnostics
-            .iter()
-            .any(|diag| diag.message.contains(text)),
-        "missing `{text}` in {diags:#?}"
-    );
-}
-
-#[test]
-fn custom_check_message_replaces_generated_explanation() {
-    let schema = compile_schema(
-        r#"
-        type Item {
-            price: int;
-            check {
-                price > 0: "price must be positive";
-                price < 100: "this message must not be emitted";
-            }
-        }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(-1_i64))]);
-    let model = build_model(&schema, builder);
-    let diagnostics = run_model_checks(&model, &schema).expect_err("check must fail");
-
-    assert_eq!(diagnostics.diagnostics.len(), 1, "{diagnostics:#?}");
-    assert_eq!(diagnostics.diagnostics[0].message, "price must be positive");
-    assert_eq!(
-        diagnostics.diagnostics[0].code,
-        CfdErrorCode::CheckComparisonFailed
-    );
-}
-
-#[test]
-fn formatted_strings_work_as_values_and_failure_messages() {
-    let schema = compile_schema(
-        r#"
-        type Item {
-            category: string;
-            level: int;
-            check {
-                id == f"{category}_{level}":
-                    f"expected {category}_{level}, got {id}";
-            }
-        }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "wrong",
-        "Item",
-        [
-            ("category", LoadedValueDraft::from("weapon")),
-            ("level", LoadedValueDraft::from(3_i64)),
-        ],
-    );
-    let model = build_model(&schema, builder);
-    let diagnostics = run_model_checks(&model, &schema).expect_err("id check must fail");
-
-    assert_eq!(diagnostics.diagnostics.len(), 1, "{diagnostics:#?}");
-    assert_eq!(
-        diagnostics.diagnostics[0].message,
-        "expected weapon_3, got wrong"
-    );
-}
-
-#[test]
-fn formatted_failure_messages_are_evaluated_lazily() {
-    let schema = compile_schema(
-        r#"
-        type Item {
-            nums: [int];
-            check {
-                id != "": f"first value is {nums[0]}";
-            }
-        }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "item",
-        "Item",
-        [("nums", LoadedValueDraft::Array(Vec::new()))],
-    );
-    let model = build_model(&schema, builder);
-
-    run_model_checks(&model, &schema)
-        .expect("a true condition must not evaluate its formatted message");
-}
-
-#[test]
-fn all_quantifier_preserves_custom_message_and_structured_context() {
-    let schema = compile_schema(
-        r#"
-        type Item {
-            nums: [int];
-            check {
-                all number in nums {
-                    number > 0: f"invalid number {number}";
-                }
-            }
-        }
+            type Reward { count: int; check { count > 0: "bad reward"; } }
+            type Item { rewards: [Reward]; }
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
@@ -312,1703 +95,184 @@ fn all_quantifier_preserves_custom_message_and_structured_context() {
         "item",
         "Item",
         [(
-            "nums",
-            LoadedValueDraft::Array(vec![LoadedValueDraft::from(-2_i64)]),
+            "rewards",
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::object_with_declared_type([("count", (-1_i64).into())]),
+                LoadedValueDraft::object_with_declared_type([("count", 2_i64.into())]),
+            ]),
         )],
     );
-    let model = build_model(&schema, builder);
-    let output = coflow_checker::run_checks(&schema, &model, CheckRequest::all());
-    let diagnostic = &output.diagnostics[0].diagnostic;
+    let model = builder.build().expect("model");
+    let output = execute_checks(
+        &schema,
+        &model,
+        [CheckTask {
+            statement: type_statements(&schema, "Reward")[0],
+            target: CheckTarget::Record(record_id_at(&model, 0)),
+            projection: CheckProjection::Base,
+        }],
+        CheckLimits::default(),
+    );
 
-    assert_eq!(diagnostic.diagnostic.message, "invalid number -2");
+    assert_eq!(output.results[0].diagnostics.len(), 1);
     assert_eq!(
-        diagnostic.diagnostic.code,
-        CfdErrorCode::CheckAllQuantifierFailed
-    );
-    assert!(matches!(
-        diagnostic.contexts.as_slice(),
-        [coflow_checker::CheckDiagnosticContext::Quantifier { kind, binding, .. }]
-            if kind == "all" && binding == "number"
-    ));
-}
-
-#[test]
-fn extended_builtins_cover_strings_numbers_dicts_sorting_and_sets() {
-    let schema = compile_schema(
-        r#"
-        type Item {
-            text: string;
-            blank: string;
-            count: int;
-            ratio: float;
-            nums: [int];
-            duplicates: [int];
-            other: [int];
-            disjoint: [int];
-            words: [string];
-            flags: [bool];
-            attrs: {string: int};
-            check {
-                text.len() == 2;
-                text.contains("界");
-                text.startsWith("a");
-                text.endsWith("界");
-                blank.isBlank();
-                count.abs() == 5;
-                ratio.isFinite();
-                ratio.approxEqual(1.0, 0.001);
-                attrs.containsKey("power");
-                attrs.containsValue(7);
-                nums.isSorted();
-                nums.isStrictlySorted();
-                words.isSorted();
-                flags.isSorted();
-                duplicates.intersects(other);
-                duplicates.isDisjoint(disjoint);
-                duplicates.isSubsetOf(nums);
-                nums.isSupersetOf(duplicates);
-            }
-        }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "item",
-        "Item",
-        [
-            ("text", LoadedValueDraft::from("a界")),
-            ("blank", LoadedValueDraft::from(" \t")),
-            ("count", LoadedValueDraft::from(-5_i64)),
-            ("ratio", LoadedValueDraft::from(1.0005_f64)),
-            (
-                "nums",
-                LoadedValueDraft::Array(vec![1_i64.into(), 2_i64.into(), 3_i64.into()]),
-            ),
-            (
-                "duplicates",
-                LoadedValueDraft::Array(vec![1_i64.into(), 1_i64.into()]),
-            ),
-            (
-                "other",
-                LoadedValueDraft::Array(vec![1_i64.into(), 8_i64.into()]),
-            ),
-            ("disjoint", LoadedValueDraft::Array(vec![9_i64.into()])),
-            (
-                "words",
-                LoadedValueDraft::Array(vec!["a".into(), "b".into()]),
-            ),
-            (
-                "flags",
-                LoadedValueDraft::Array(vec![false.into(), true.into()]),
-            ),
-            (
-                "attrs",
-                LoadedValueDraft::dict([(LoadedDictKeyDraft::from("power"), 7_i64.into())]),
-            ),
-        ],
-    );
-    let model = build_model(&schema, builder);
-
-    run_model_checks(&model, &schema).expect("all extended builtin checks should pass");
-}
-
-#[test]
-fn numeric_builtin_invalid_domains_report_runtime_errors() {
-    let abs_schema = compile_schema("type Item { value: int; check { value.abs() >= 0; } }");
-    let mut builder = CfdDataModel::builder(&abs_schema);
-    builder.add_record(
-        "item",
-        "Item",
-        [("value", LoadedValueDraft::from(i64::MIN))],
-    );
-    let model = build_model(&abs_schema, builder);
-    let error = run_model_checks(&model, &abs_schema).expect_err("i64::MIN abs must fail");
-    assert_has_code(&error, CfdErrorCode::CheckEvalTypeError);
-
-    let epsilon_schema =
-        compile_schema("type Item { value: float; check { value.approxEqual(1.0, -0.1); } }");
-    let mut builder = CfdDataModel::builder(&epsilon_schema);
-    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1.0_f64))]);
-    let model = build_model(&epsilon_schema, builder);
-    let error = run_model_checks(&model, &epsilon_schema).expect_err("negative epsilon must fail");
-    assert_has_code(&error, CfdErrorCode::CheckEvalTypeError);
-}
-
-#[test]
-fn nullable_access_and_coalescing_short_circuit_without_hiding_access_errors() {
-    let schema = compile_schema(
-        r#"
-        type Child { value: int; }
-        type Holder {
-            maybe: Child? = null;
-            numbers: [int]? = null;
-            fallback: int? = null;
-            bad: [int];
-            check {
-                (maybe?.value ?? 3) == 3;
-                (numbers?[bad[99]] ?? 4) == 4;
-                (fallback ?? bad[99]) == 5;
-            }
-        }
-        "#,
-    );
-
-    let mut passing = CfdDataModel::builder(&schema);
-    passing.add_record(
-        "passing",
-        "Holder",
-        [
-            ("fallback", LoadedValueDraft::from(5_i64)),
-            ("bad", LoadedValueDraft::Array(Vec::new())),
-        ],
-    );
-    let model = build_model(&schema, passing);
-    run_model_checks(&model, &schema).expect("all skipped branches must remain unevaluated");
-
-    let mut failing = CfdDataModel::builder(&schema);
-    failing.add_record(
-        "failing",
-        "Holder",
-        [
-            ("fallback", LoadedValueDraft::Null),
-            ("bad", LoadedValueDraft::Array(Vec::new())),
-        ],
-    );
-    let model = build_model(&schema, failing);
-    let error =
-        run_model_checks(&model, &schema).expect_err("executed fallback keeps index errors");
-    assert_has_code(&error, CfdErrorCode::CheckIndexOutOfBounds);
-}
-
-#[test]
-fn coalescing_collects_dependencies_only_from_the_selected_branch() {
-    let schema = compile_schema(
-        r#"
-        type Target { value: int; }
-        type Reader {
-            selected: &Target? = null;
-            fallback: &Target;
-            check { (selected ?? fallback).value > 0; }
-        }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("selected", "Target", [("value", 1_i64.into())]);
-    builder.add_record("fallback", "Target", [("value", 1_i64.into())]);
-    builder.add_record(
-        "reader",
-        "Reader",
-        [
-            ("selected", LoadedValueDraft::record_ref("selected")),
-            ("fallback", LoadedValueDraft::record_ref("fallback")),
-        ],
-    );
-    let model = builder.build().expect("model builds");
-    let selected = model
-        .lookup_assignable(&schema, "Target", "selected")
-        .expect("selected target");
-    let fallback = model
-        .lookup_assignable(&schema, "Target", "fallback")
-        .expect("fallback target");
-    let reader = model
-        .lookup_assignable(&schema, "Reader", "reader")
-        .expect("reader");
-
-    let output = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::records(&[reader]).with_dependency_collection(DependencyCollection::Reads),
-    );
-    assert!(output.diagnostics.is_empty(), "{:#?}", output.diagnostics);
-    let reads = output
-        .dependencies
-        .reads_from
-        .get(&coflow_checker::CheckExecutionId::Record(reader))
-        .expect("reader dependencies");
-    assert!(reads.iter().any(|read| read.record == selected));
-    assert!(!reads.iter().any(|read| read.record == fallback));
-}
-
-#[test]
-fn quantifier_dual_bindings_follow_array_and_dict_order() {
-    let schema = compile_schema(
-        r#"
-        type Item {
-            numbers: [int];
-            scores: {string: int};
-            check {
-                all item, index in numbers {
-                    item == index + 1: f"item {index} has value {item}";
-                }
-                all key, value in scores { key == "power"; value == 7; }
-                all entry in scores { entry.key == "power"; entry.value == 7; }
-            }
-        }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "passing",
-        "Item",
-        [
-            (
-                "numbers",
-                LoadedValueDraft::Array(vec![1_i64.into(), 2_i64.into()]),
-            ),
-            (
-                "scores",
-                LoadedValueDraft::dict([(LoadedDictKeyDraft::from("power"), 7_i64.into())]),
-            ),
-        ],
-    );
-    let model = builder.build().expect("model builds");
-    run_model_checks(&model, &schema).expect("dual and legacy bindings should pass");
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "failing",
-        "Item",
-        [
-            (
-                "numbers",
-                LoadedValueDraft::Array(vec![1_i64.into(), 9_i64.into()]),
-            ),
-            (
-                "scores",
-                LoadedValueDraft::dict([(LoadedDictKeyDraft::from("power"), 7_i64.into())]),
-            ),
-        ],
-    );
-    let model = builder.build().expect("model builds");
-    let output = coflow_checker::run_checks(&schema, &model, CheckRequest::all());
-    let diagnostic = output
-        .diagnostics
-        .iter()
-        .map(|rooted| &rooted.diagnostic)
-        .find(|diagnostic| diagnostic.diagnostic.message == "item 1 has value 9")
-        .expect("custom dual-binding message");
-    assert!(diagnostic.contexts.iter().any(|context| matches!(
-        context,
-        coflow_checker::CheckDiagnosticContext::Quantifier { binding, .. }
-            if binding == "item, index"
-    )));
-}
-
-#[test]
-fn subset_checks_return_only_selected_diagnostics_and_dependencies() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                value: int;
-                target: &Item? = null;
-                check {
-                    value > 0;
-                    target == null || target.value > 0;
-                }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "target",
-        "Item",
-        [
-            ("value", LoadedValueDraft::from(-1_i64)),
-            ("target", LoadedValueDraft::Null),
-        ],
-    );
-    builder.add_record(
-        "reader",
-        "Item",
-        [
-            ("value", LoadedValueDraft::from(1_i64)),
-            ("target", LoadedValueDraft::record_ref("target")),
-        ],
-    );
-    let model = builder.build().expect("model builds");
-    let target = model
-        .lookup_assignable(&schema, "Item", "target")
-        .expect("target");
-    let reader = model
-        .lookup_assignable(&schema, "Item", "reader")
-        .expect("reader");
-
-    let output = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::records(&[reader]).with_dependency_collection(DependencyCollection::Reads),
-    );
-    let snapshot = output.snapshot.expect("stable snapshot");
-    let diagnostics = output.diagnostics;
-    let graph = output.dependencies;
-
-    assert!(
-        diagnostics.iter().all(|rooted| {
-            rooted.root == coflow_checker::CheckExecutionId::Record(reader)
-                && rooted
-                    .diagnostic
-                    .diagnostic
-                    .primary
-                    .as_ref()
-                    .is_some_and(|primary| primary.record == Some(target))
-        }),
-        "subset diagnostics: {diagnostics:#?}"
-    );
-    assert!(graph
-        .reads_from
-        .get(&coflow_checker::CheckExecutionId::Record(reader))
-        .is_some_and(|reads| reads.iter().any(|read| read.record == target)));
-    assert!(snapshot.is_reusable());
-}
-
-#[test]
-fn references_to_the_same_record_compare_equal_independent_of_provenance() {
-    let schema = compile_schema(
-        r#"
-            type Item { value: int; }
-            type Holder {
-                left: &Item;
-                right: &Item;
-                check { left == right; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
-    builder.add_record(
-        "holder",
-        "Holder",
-        [
-            ("left", LoadedValueDraft::record_ref("item")),
-            ("right", LoadedValueDraft::record_ref("item")),
-        ],
-    );
-    let model = builder.build().expect("model builds");
-
-    run_model_checks(&model, &schema).expect("the same target has one semantic identity");
-}
-
-#[test]
-fn empty_targets_and_empty_incremental_changes_perform_no_work() {
-    let schema = compile_schema("type Item { value: int; check { value > 0; } }");
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
-    let model = builder.build().expect("model builds");
-
-    let empty = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::records(&[]).with_dependency_collection(DependencyCollection::Reads),
-    );
-    assert_eq!(empty.statistics.requested_roots, 0);
-    assert_eq!(empty.statistics.executed_rounds, 0);
-    assert!(empty.diagnostics.is_empty());
-    assert!(empty.dependencies.reads_from.is_empty());
-    assert!(empty
-        .snapshot
-        .expect("empty stable snapshot")
-        .render_diagnostics(&model)
-        .is_some_and(|diagnostics| diagnostics.is_empty()));
-
-    let previous = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
-    )
-    .snapshot
-    .expect("full snapshot");
-    let unchanged = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::incremental(&previous, &coflow_checker::CheckChangeSet::default()),
-    );
-    assert_eq!(unchanged.statistics.requested_roots, 0);
-    assert_eq!(unchanged.statistics.executed_rounds, 0);
-    assert_eq!(unchanged.snapshot.expect("reused snapshot"), previous);
-}
-
-#[test]
-fn duplicate_targets_are_normalized_before_snapshot_capture() {
-    let schema = compile_schema("type Item { value: int; check { value > 0; } }");
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(-1_i64))]);
-    let model = builder.build().expect("model builds");
-    let item = model.records().next().expect("item").0;
-
-    let output = coflow_checker::run_checks(
-        &schema,
-        &model,
-        CheckRequest::records(&[item, item])
-            .with_dependency_collection(DependencyCollection::Reads),
-    );
-
-    assert_eq!(output.statistics.requested_roots, 1);
-    assert_eq!(output.statistics.executed_rounds, 1);
-    assert_eq!(output.diagnostics.len(), 1);
-    let rendered = output
-        .snapshot
-        .expect("stable snapshot")
-        .render_diagnostics(&model)
-        .expect("render snapshot");
-    assert_eq!(rendered.len(), 1);
-}
-
-#[test]
-fn incremental_checks_follow_quantified_record_refs() {
-    let schema = compile_schema(
-        r#"
-            type Item { value: int; }
-            type Group {
-                items: [&Item];
-                check { all item in items { item.value > 0; } }
-            }
-        "#,
-    );
-    let build_generation = |value| {
-        let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record("item", "Item", [("value", LoadedValueDraft::from(value))]);
-        builder.add_record(
-            "group",
-            "Group",
-            [(
-                "items",
-                LoadedValueDraft::Array(vec![LoadedValueDraft::record_ref("item")]),
-            )],
-        );
-        builder.build().expect("model builds")
-    };
-
-    assert_incremental_matches_full(&schema, build_generation, "item");
-}
-
-#[test]
-fn incremental_checks_follow_materialized_spread_sources() {
-    let schema = compile_schema("type Item { value: int; check { value > 0; } }");
-    let build_generation = |value| {
-        let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record("base", "Item", [("value", LoadedValueDraft::from(value))]);
-        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-            "middle",
-            "Item",
-            [LoadedValueDraft::record_ref("base")],
-            std::iter::empty::<(&str, LoadedValueDraft)>(),
-        ));
-        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-            "copy",
-            "Item",
-            [LoadedValueDraft::record_ref("middle")],
-            std::iter::empty::<(&str, LoadedValueDraft)>(),
-        ));
-        builder.build().expect("model builds")
-    };
-
-    assert_incremental_matches_full(&schema, build_generation, "base");
-}
-
-fn assert_incremental_matches_full(
-    schema: &CftSchema,
-    build_generation: impl Fn(i64) -> CfdDataModel,
-    changed_key: &str,
-) {
-    let previous_model = build_generation(1);
-    let previous = coflow_checker::run_checks(
-        schema,
-        &previous_model,
-        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
-    )
-    .snapshot
-    .expect("full snapshot");
-    let changed = previous_model
-        .records()
-        .find(|(_, record)| record.key() == changed_key)
-        .expect("changed record")
-        .1
-        .coordinate();
-
-    let current_model = build_generation(-1);
-    let incremental = coflow_checker::run_checks(
-        schema,
-        &current_model,
-        CheckRequest::incremental(
-            &previous,
-            &coflow_checker::CheckChangeSet::from_records(&schema, [changed]),
-        ),
-    )
-    .snapshot
-    .expect("incremental snapshot")
-    .render_diagnostics(&current_model)
-    .expect("render incremental");
-    let full = coflow_checker::run_checks(
-        schema,
-        &current_model,
-        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
-    )
-    .snapshot
-    .expect("fresh full snapshot")
-    .render_diagnostics(&current_model)
-    .expect("render full");
-
-    assert_eq!(incremental, full);
-}
-
-#[test]
-fn incremental_snapshot_executes_only_affected_roots_and_matches_fresh_full_output() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                value: int;
-                target: &Item? = null;
-                check {
-                    value > 0;
-                    target == null || target.value > 0;
-                }
-            }
-        "#,
-    );
-    let build_generation = |target_value| {
-        let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record(
-            "target",
-            "Item",
-            [
-                ("value", LoadedValueDraft::from(target_value)),
-                ("target", LoadedValueDraft::Null),
-            ],
-        );
-        builder.add_record(
-            "reader",
-            "Item",
-            [
-                ("value", LoadedValueDraft::from(1_i64)),
-                ("target", LoadedValueDraft::record_ref("target")),
-            ],
-        );
-        builder.build().expect("model builds")
-    };
-
-    let previous_model = build_generation(-1_i64);
-    let previous = coflow_checker::run_checks(
-        &schema,
-        &previous_model,
-        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
-    )
-    .snapshot
-    .expect("full snapshot");
-    let changed = BTreeSet::from([previous_model
-        .records()
-        .find(|(_, record)| record.key() == "target")
-        .expect("target")
-        .1
-        .coordinate()]);
-
-    let current_model = build_generation(1_i64);
-    let incremental = coflow_checker::run_checks(
-        &schema,
-        &current_model,
-        CheckRequest::incremental(
-            &previous,
-            &coflow_checker::CheckChangeSet::from_records(&schema, changed),
-        ),
-    );
-    assert_eq!(incremental.statistics.requested_roots, 2);
-    assert_eq!(incremental.statistics.executed_rounds, 2);
-    let incremental_snapshot = incremental.snapshot.expect("incremental snapshot");
-    assert!(incremental_snapshot
-        .render_diagnostics(&current_model)
-        .expect("render incremental")
-        .is_empty());
-
-    let full_snapshot = coflow_checker::run_checks(
-        &schema,
-        &current_model,
-        CheckRequest::all().with_dependency_collection(DependencyCollection::Reads),
-    )
-    .snapshot
-    .expect("fresh full snapshot");
-    assert_eq!(incremental_snapshot, full_snapshot);
-}
-
-#[test]
-fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
-    let schema = compile_schema(
-        r#"
-            const MIN_LEVEL = 1;
-            enum Rarity { Common, Rare, }
-
-            type Item {
-                rarity: Rarity;
-                check {
-                    id != "";
-                    rarity >= Rarity.Common;
-                }
-            }
-
-            type Drop {
-                item: &Item;
-                weights: [int];
-                resistances: {Rarity: float};
-
-                check {
-                    id == "drop_1";
-                    item.id == "item_1";
-                    item.rarity >= Rarity.Common;
-                    weights.len() >= MIN_LEVEL;
-                    weights.sum() == 100;
-                    all entry in resistances {
-                        entry.key >= Rarity.Common;
-                        entry.value >= 0.0;
-                    }
-                    resistances.keys().contains(Rarity.Rare);
-                }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "item_1",
-        "Item",
-        [("rarity", LoadedValueDraft::enum_variant("Rarity", "Rare"))],
-    );
-    builder.add_record(
-        "drop_1",
-        "Drop",
-        [
-            ("item", LoadedValueDraft::record_ref("item_1")),
-            (
-                "weights",
-                LoadedValueDraft::Array(vec![
-                    LoadedValueDraft::from(40_i64),
-                    LoadedValueDraft::from(60_i64),
-                ]),
-            ),
-            (
-                "resistances",
-                LoadedValueDraft::dict([
-                    (
-                        LoadedDictKeyDraft::enum_variant("Rarity", "Common"),
-                        LoadedValueDraft::from(0.5_f64),
-                    ),
-                    (
-                        LoadedDictKeyDraft::enum_variant("Rarity", "Rare"),
-                        LoadedValueDraft::from(1.0_f64),
-                    ),
-                ]),
-            ),
-        ],
-    );
-    let model = build_model(&schema, builder);
-    run_model_checks(&model, &schema).expect("checks should pass");
-}
-
-#[test]
-fn check_diagnostics_use_specific_codes_for_scalar_false_conditions() {
-    let schema = compile_schema(
-        r#"
-            abstract type Reward {}
-            type CurrencyReward : Reward {}
-            type ItemReward : Reward {}
-
-            type Item {
-                level: int;
-                enabled: bool;
-                negated: bool;
-                left: bool;
-                right: bool;
-                reward: &Reward;
-                optional: int? = null;
-                tags: [string];
-                name: string;
-                check {
-                    level > 0;
-                    enabled;
-                    !negated;
-                    left && right;
-                    left || right;
-                    reward is CurrencyReward;
-                    optional != null;
-                    tags.contains("boss");
-                    tags.isUnique();
-                    name.matches("^npc_");
-                }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "reward_1",
-        "ItemReward",
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    );
-    builder.add_record(
-        "item_1",
-        "Item",
-        [
-            ("level", LoadedValueDraft::from(0_i64)),
-            ("enabled", LoadedValueDraft::from(false)),
-            ("negated", LoadedValueDraft::from(true)),
-            ("left", LoadedValueDraft::from(false)),
-            ("right", LoadedValueDraft::from(false)),
-            ("reward", LoadedValueDraft::record_ref("reward_1")),
-            (
-                "tags",
-                LoadedValueDraft::Array(vec![
-                    LoadedValueDraft::from("mob"),
-                    LoadedValueDraft::from("mob"),
-                ]),
-            ),
-            ("name", LoadedValueDraft::from("mob_1")),
-        ],
-    );
-    let model = build_model(&schema, builder);
-    let err = run_model_checks(&model, &schema).expect_err("scalar check diagnostics should fail");
-
-    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
-    assert_has_code(&err, CfdErrorCode::CheckBoolExpectedTrue);
-    assert_has_code(&err, CfdErrorCode::CheckNegationFailed);
-    assert_has_code(&err, CfdErrorCode::CheckAndFailed);
-    assert_has_code(&err, CfdErrorCode::CheckOrFailed);
-    assert_has_code(&err, CfdErrorCode::CheckTypePredicateFailed);
-    assert_has_code(&err, CfdErrorCode::CheckNullPredicateFailed);
-    assert_has_code(&err, CfdErrorCode::CheckContainsFailed);
-    assert_has_code(&err, CfdErrorCode::CheckUniqueFailed);
-    assert_has_code(&err, CfdErrorCode::CheckMatchesFailed);
-
-    assert_message_contains(&err, "校验失败: level > 0");
-    assert_message_contains(&err, "实际值: level = 0");
-    assert_message_contains(&err, "期望: > 0");
-    assert_message_contains(&err, "校验失败: tags.contains(\"boss\")");
-    assert_message_contains(&err, "期望: 包含 \"boss\"");
-    assert_message_contains(&err, "校验失败: name.matches(\"^npc_\")");
-}
-
-#[test]
-fn check_diagnostics_use_specific_codes_for_quantifiers_and_when_context() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                any_flags: [bool];
-                none_flags: [bool];
-                all_flags: [bool];
-                gated: bool;
-                optional: int? = null;
-                check {
-                    any flag in any_flags { flag; }
-                    none flag in none_flags { flag; }
-                    all flag in all_flags { flag; }
-                    when gated {
-                        optional != null;
-                    }
-                }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "item_1",
-        "Item",
-        [
-            (
-                "any_flags",
-                LoadedValueDraft::Array(vec![
-                    LoadedValueDraft::from(false),
-                    LoadedValueDraft::from(false),
-                ]),
-            ),
-            (
-                "none_flags",
-                LoadedValueDraft::Array(vec![
-                    LoadedValueDraft::from(false),
-                    LoadedValueDraft::from(true),
-                ]),
-            ),
-            (
-                "all_flags",
-                LoadedValueDraft::Array(vec![
-                    LoadedValueDraft::from(true),
-                    LoadedValueDraft::from(false),
-                ]),
-            ),
-            ("gated", LoadedValueDraft::from(true)),
-        ],
-    );
-    let model = build_model(&schema, builder);
-    let err =
-        run_model_checks(&model, &schema).expect_err("quantifier and when diagnostics should fail");
-
-    assert_first_code(&err, CfdErrorCode::CheckAnyQuantifierFailed);
-    assert_has_code(&err, CfdErrorCode::CheckNoneQuantifierFailed);
-    assert_has_code(&err, CfdErrorCode::CheckAllQuantifierFailed);
-    assert_has_code(&err, CfdErrorCode::CheckNullPredicateFailed);
-
-    assert_message_contains(&err, "校验失败: any flag in any_flags");
-    assert_message_contains(&err, "实际值: 0 / 2 个元素匹配");
-    assert_message_contains(&err, "校验失败: none flag in none_flags");
-    assert_message_contains(&err, "校验失败: all flag in all_flags");
-    assert_message_contains(&err, "上下文: 在 when gated 内");
-}
-
-#[test]
-fn check_runner_reports_false_conditions_with_paths() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                value: int;
-                check { value > 0; }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("item_1", "Item", [("value", LoadedValueDraft::from(0_i64))]);
-    let model = build_model(&schema, builder);
-    let err = run_model_checks(&model, &schema).expect_err("check should fail");
-    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
-    assert_eq!(
-        err.diagnostics[0]
+        output.results[0].diagnostics[0]
+            .diagnostic
             .primary
             .as_ref()
             .map(|label| label.path.clone()),
-        Some(CfdPath::root().field("value"))
+        Some(CfdPath::root().field("rewards").index(0).field("count"))
     );
 }
 
 #[test]
-fn logical_and_binds_tighter_than_or_and_bitwise_precedence_remains_left_associative() {
-    let logical = compile_schema(
-        r#"
-            type Item { check { true || false && false; } }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&logical);
-    builder.add_record(
-        "item_1",
-        "Item",
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    );
-    let model = build_model(&logical, builder);
-    run_model_checks(&model, &logical).expect("logical && should bind tighter than ||");
-
-    let bitwise = compile_schema(
-        r#"
-            type Item { check { 1 | 2 & 0 == 0; } }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&bitwise);
-    builder.add_record(
-        "item_1",
-        "Item",
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    );
-    let model = build_model(&bitwise, builder);
-    run_model_checks(&model, &bitwise)
-        .expect("same-precedence bitwise operators evaluate left-to-right");
-}
-
-#[test]
-fn short_circuit_nullable_guards_and_null_access_are_reported() {
-    let guarded = compile_schema(
-        r#"
-            type Child { name: string; }
-            type Holder {
-                child: Child? = null;
-                check { child == null || child.name != ""; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&guarded);
-    builder.add_record(
-        "holder_1",
-        "Holder",
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    );
-    let model = build_model(&guarded, builder);
-    run_model_checks(&model, &guarded).expect("guarded check should pass");
-
-    let unguarded = compile_schema(
-        r#"
-            type Child { name: string; }
-            type Holder {
-                child: Child? = null;
-                check { child.name != ""; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&unguarded);
-    builder.add_record(
-        "holder_1",
-        "Holder",
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    );
-    let model = build_model(&unguarded, builder);
-    let err = run_model_checks(&model, &unguarded).expect_err("null access");
-    assert_has_code(&err, CfdErrorCode::CheckNullAccess);
-}
-
-#[test]
-fn nullable_element_builtins_handle_nulls_and_empty_values() {
-    let pass = compile_schema(
-        r#"
-            type Holder {
-                nums: [int?] = [];
-                check {
-                    nums.isUnique();
-                    nums.min() == 1;
-                    nums.max() == 3;
-                    nums.sum() == 4;
-                    nums.contains(null);
-                    nums.len() == 3;
-                }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&pass);
-    builder.add_record(
-        "holder_1",
-        "Holder",
-        [(
-            "nums",
-            LoadedValueDraft::Array(vec![
-                LoadedValueDraft::from(1_i64),
-                LoadedValueDraft::Null,
-                LoadedValueDraft::from(3_i64),
-            ]),
-        )],
-    );
-    let model = build_model(&pass, builder);
-    run_model_checks(&model, &pass).expect("checks should pass");
-
-    let empty = compile_schema(
-        r#"
-            type Holder {
-                nums: [int?] = [];
-                check { nums.min() >= 0; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&empty);
-    builder.add_record(
-        "holder_1",
-        "Holder",
-        [(
-            "nums",
-            LoadedValueDraft::Array(vec![LoadedValueDraft::Null]),
-        )],
-    );
-    let model = build_model(&empty, builder);
-    let err = run_model_checks(&model, &empty).expect_err("min over all-null values");
-    assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
-}
-
-#[test]
-fn contains_reports_runtime_type_errors_for_null_collections() {
+fn when_quantifier_and_formatted_message_stay_inside_one_task() {
     let schema = compile_schema(
-        r#"
-            type Holder {
-                items: [int]? = null;
-                check { items.contains(1); }
-            }
-        "#,
-    );
-
-    let mut valid_builder = CfdDataModel::builder(&schema);
-    valid_builder.add_record(
-        "holder_valid",
-        "Holder",
-        [(
-            "items",
-            LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
-        )],
-    );
-    let valid = build_model(&schema, valid_builder);
-    run_model_checks(&valid, &schema).expect("contains should work for a present nullable array");
-
-    let mut null_builder = CfdDataModel::builder(&schema);
-    null_builder.add_record(
-        "holder_null",
-        "Holder",
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    );
-    let null = build_model(&schema, null_builder);
-    let err = run_model_checks(&null, &schema)
-        .expect_err("contains(null, value) should be a runtime type error");
-
-    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
-    assert!(
-        !err.diagnostics.iter().any(|diagnostic| {
-            matches!(
-                diagnostic.code,
-                CfdErrorCode::CheckFailed
-                    | CfdErrorCode::CheckContainsFailed
-                    | CfdErrorCode::CheckBoolExpectedTrue
-            )
-        }),
-        "contains(null, value) must not be downgraded into a false check: {err:?}"
-    );
-}
-
-#[test]
-fn non_finite_float_comparisons_are_runtime_type_errors() {
-    let schema = compile_schema(
-        r#"
-            type Holder {
-                value: float;
-                check {
-                    value / value > 0.0;
-                    ((0.0 - 1.0) ** 0.5) > 0.0;
-                }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "holder_1",
-        "Holder",
-        [("value", LoadedValueDraft::from(0.0_f64))],
-    );
-    let model = build_model(&schema, builder);
-    let err = run_model_checks(&model, &schema)
-        .expect_err("NaN comparisons should fail as runtime type errors");
-
-    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
-    assert!(
-        !err.diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed),
-        "NaN comparisons must not be downgraded into false comparisons: {err:?}"
-    );
-}
-
-#[test]
-fn nan_is_rejected_by_every_comparison_operator() {
-    for operator in ["==", "!=", "<", "<=", ">", ">="] {
-        let schema = compile_schema(&format!(
-            r#"
-                type Holder {{
-                    check {{ ((0.0 - 1.0) ** 0.5) {operator} 0.0; }}
-                }}
-            "#
-        ));
-        let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record(
-            "holder",
-            "Holder",
-            std::iter::empty::<(&str, LoadedValueDraft)>(),
-        );
-        let model = builder.build().expect("model builds");
-        let error = run_model_checks(&model, &schema).expect_err("NaN comparison must fail");
-        assert_has_code(&error, CfdErrorCode::CheckEvalTypeError);
-    }
-}
-
-#[test]
-fn inherited_checks_and_statement_order_are_stable() {
-    let schema = compile_schema(
-        r#"
-            abstract type Base {
-                check { id != ""; }
-            }
-            type Child : Base {
-                first: int;
-                second: int;
-                check {
-                    first > 0;
-                    second > 0;
-                }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "",
-        "Child",
-        [
-            ("first", LoadedValueDraft::from(0_i64)),
-            ("second", LoadedValueDraft::from(0_i64)),
-        ],
-    );
-    let err = builder
-        .build()
-        .expect_err("empty record key should fail before checks");
-    assert_has_code(&err, CfdErrorCode::MissingIdField);
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "child_1",
-        "Child",
-        [
-            ("first", LoadedValueDraft::from(0_i64)),
-            ("second", LoadedValueDraft::from(0_i64)),
-        ],
-    );
-    let model = build_model(&schema, builder);
-    let err = run_model_checks(&model, &schema).expect_err("child checks fail");
-    let paths = err
-        .diagnostics
-        .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckComparisonFailed)
-        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        paths,
-        vec![
-            CfdPath::root().field("first"),
-            CfdPath::root().field("second"),
-        ]
-    );
-}
-
-#[test]
-fn hard_stop_in_one_check_block_does_not_skip_later_blocks() {
-    let schema = compile_schema(
-        r#"
-            abstract type Base {
-                xs: [int];
-                check { xs[0] > 0; }
-            }
-
-            type Item : Base {
-                value: int;
-                check { value > 0; }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "item_1",
-        "Item",
-        [
-            ("xs", LoadedValueDraft::Array(Vec::new())),
-            ("value", LoadedValueDraft::from(0_i64)),
-        ],
-    );
-    let model = build_model(&schema, builder);
-    let err = run_model_checks(&model, &schema).expect_err("checks should fail");
-
-    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
-    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
-}
-
-#[test]
-fn quantifiers_report_soft_failures_and_preserve_hard_errors() {
-    let soft_fail = compile_schema(
         r#"
             type Item {
+                enabled: bool;
                 nums: [int];
-                check { all value in nums { value > 0; } }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&soft_fail);
-    builder.add_record(
-        "item_1",
-        "Item",
-        [(
-            "nums",
-            LoadedValueDraft::Array(vec![
-                LoadedValueDraft::from(-1_i64),
-                LoadedValueDraft::from(-2_i64),
-            ]),
-        )],
-    );
-    let model = build_model(&soft_fail, builder);
-    let err = run_model_checks(&model, &soft_fail).expect_err("all reports each failing element");
-    let soft_fail_paths = err
-        .diagnostics
-        .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckAllQuantifierFailed)
-        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        soft_fail_paths,
-        vec![
-            CfdPath::root().field("nums").index(0),
-            CfdPath::root().field("nums").index(1),
-        ]
-    );
-
-    let hard_stop = compile_schema(
-        r#"
-            type Item {
-                rows: [[int]];
-                check { any row in rows { row[0] > 0; } }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&hard_stop);
-    builder.add_record(
-        "item_1",
-        "Item",
-        [(
-            "rows",
-            LoadedValueDraft::Array(vec![
-                LoadedValueDraft::Array(Vec::new()),
-                LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
-            ]),
-        )],
-    );
-    let model = build_model(&hard_stop, builder);
-    let err =
-        run_model_checks(&model, &hard_stop).expect_err("hard eval error should not be swallowed");
-    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
-}
-
-#[test]
-fn inline_object_checks_use_nested_paths() {
-    let schema = compile_schema(
-        r#"
-            type Stats {
-                hp: int;
-                check { hp > 0; }
-            }
-            type Monster {
-                stats: Stats;
-                check { true; }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "monster_1",
-        "Monster",
-        [(
-            "stats",
-            LoadedValueDraft::object_with_declared_type([("hp", LoadedValueDraft::from(0_i64))]),
-        )],
-    );
-    let model = build_model(&schema, builder);
-    let err = run_model_checks(&model, &schema).expect_err("nested check fails");
-    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
-    let diag = err
-        .diagnostics
-        .iter()
-        .find(|diag| diag.code == CfdErrorCode::CheckComparisonFailed)
-        .expect("check failed diagnostic");
-    assert_eq!(
-        diag.primary.as_ref().map(|label| label.path.clone()),
-        Some(CfdPath::root().field("stats").field("hp"))
-    );
-}
-
-#[test]
-fn flag_enum_bitwise_composites_and_int_ops_work() {
-    let schema = compile_schema(
-        r#"
-            @flag
-            enum Permission { Read = 1, Write = 2, Execute = 4, }
-            type Door {
-                granted: Permission;
-                value: int;
                 check {
-                    (granted & Permission.Read) != Permission(0);
-                    (granted | Permission.Execute) != Permission(0);
-                    (granted ^ Permission.Write) != Permission(0);
-                    (~granted & Permission.Execute) != Permission(0);
-                    value // 2 == 3;
-                    value % 2 == 1;
-                    2 ** 3 == 8;
+                    when enabled { all value in nums { value > 0: f"bad {value}"; } }
                 }
             }
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
-        "door_1",
-        "Door",
+        "item",
+        "Item",
         [
+            ("enabled", true.into()),
             (
-                "granted",
-                LoadedValueDraft::enum_variant("Permission", "Read"),
+                "nums",
+                LoadedValueDraft::Array(vec![1_i64.into(), (-2_i64).into()]),
             ),
-            ("value", LoadedValueDraft::from(7_i64)),
         ],
     );
-    let model = build_model(&schema, builder);
-    run_model_checks(&model, &schema).expect("operators should pass");
-}
-
-#[test]
-fn runtime_reports_index_dict_and_regex_edges() {
-    let negative_index = compile_schema(
-        r#"
-            type Item {
-                nums: [int];
-                check { nums[-1] > 0; }
-            }
-        "#,
+    let model = builder.build().expect("model");
+    let output = execute_checks(
+        &schema,
+        &model,
+        [CheckTask {
+            statement: type_statements(&schema, "Item")[0],
+            target: CheckTarget::Record(record_id_at(&model, 0)),
+            projection: CheckProjection::Base,
+        }],
+        CheckLimits::default(),
     );
-    let mut builder = CfdDataModel::builder(&negative_index);
-    builder.add_record(
-        "item_1",
-        "Item",
-        [(
-            "nums",
-            LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
-        )],
-    );
-    let model = build_model(&negative_index, builder);
-    let err = run_model_checks(&model, &negative_index).expect_err("negative index should fail");
-    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
-
-    let missing_key = compile_schema(
-        r#"
-            type Item {
-                attrs: {string: int};
-                check { attrs["missing"] > 0; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&missing_key);
-    builder.add_record(
-        "item_1",
-        "Item",
-        [(
-            "attrs",
-            LoadedValueDraft::dict([(
-                LoadedDictKeyDraft::from("present"),
-                LoadedValueDraft::from(1_i64),
-            )]),
-        )],
-    );
-    let model = build_model(&missing_key, builder);
-    let err = run_model_checks(&model, &missing_key).expect_err("missing dict key should fail");
-    assert_has_code(&err, CfdErrorCode::CheckMissingDictKey);
-
-    let regex = compile_schema(
-        r#"
-            type Item {
-                label: string;
-                check { label.matches("配置"); }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&regex);
-    builder.add_record(
-        "item_1",
-        "Item",
-        [("label", LoadedValueDraft::from("怪物配置"))],
-    );
-    let model = build_model(&regex, builder);
-    run_model_checks(&model, &regex).expect("matches should use Unicode regex semantics");
-}
-
-#[test]
-fn top_level_ref_targets_run_checks_once_by_identity() {
-    let schema = compile_schema(
-        r#"
-            type Target {
-                value: int;
-                check { value > 0; }
-            }
-
-            type Holder {
-                first: &Target;
-                second: &Target;
-                check { first.id == second.id; }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "target_1",
-        "Target",
-        [("value", LoadedValueDraft::from(0_i64))],
-    );
-    builder.add_record(
-        "holder_1",
-        "Holder",
-        [
-            ("first", LoadedValueDraft::record_ref("target_1")),
-            ("second", LoadedValueDraft::record_ref("target_1")),
-        ],
-    );
-    let model = build_model(&schema, builder);
-    let err = run_model_checks(&model, &schema).expect_err("invalid target should fail once");
-
-    let failures = err
-        .diagnostics
-        .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckComparisonFailed)
-        .collect::<Vec<_>>();
-    assert_eq!(failures.len(), 1);
     assert_eq!(
-        failures[0].primary.as_ref().and_then(|label| label.record),
-        Some(record_id_at(&model, 0))
+        output.results[0].diagnostics[0].diagnostic.message,
+        "bad -2"
     );
+    assert_eq!(output.results[0].diagnostics[0].contexts.len(), 2);
 }
 
 #[test]
-fn checks_through_refs_blame_the_target_value_and_relate_the_ref_source() {
-    let schema = compile_schema(
-        r#"
-            type Target { price: int; }
-            type Holder {
-                item: &Target;
-                check { item.price > 0; }
-            }
-        "#,
-    );
+fn duplicate_tasks_are_stably_deduplicated() {
+    let schema = compile_schema("type Item { check { false; } }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
-        "target",
-        "Target",
-        [("price", LoadedValueDraft::from(0_i64))],
+        "item",
+        "Item",
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
-    builder.add_record(
-        "holder",
-        "Holder",
-        [("item", LoadedValueDraft::record_ref("target"))],
+    let model = builder.build().expect("model");
+    let task = CheckTask {
+        statement: type_statements(&schema, "Item")[0],
+        target: CheckTarget::Record(record_id_at(&model, 0)),
+        projection: CheckProjection::Base,
+    };
+    let output = execute_checks(
+        &schema,
+        &model,
+        [task.clone(), task],
+        CheckLimits::default(),
     );
-    let model = build_model(&schema, builder);
-
-    let err =
-        run_model_checks(&model, &schema).expect_err("target price should fail the holder check");
-    let diagnostic = err
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
-        .expect("comparison diagnostic");
-
-    let primary = diagnostic.primary.as_ref().expect("primary location");
-    assert_eq!(primary.record, Some(record_id_at(&model, 0)));
-    assert_eq!(primary.path, CfdPath::root().field("price"));
-    assert_eq!(diagnostic.related.len(), 1);
-    assert_eq!(diagnostic.related[0].record, Some(record_id_at(&model, 1)));
-    assert_eq!(diagnostic.related[0].path, CfdPath::root().field("item"));
+    assert_eq!(output.statistics.requested_tasks, 1);
+    assert_eq!(output.results.len(), 1);
 }
 
 #[test]
-fn checks_preserve_every_hop_in_a_reference_chain() {
-    let schema = compile_schema(
-        r#"
-            type Leaf { value: int; }
-            type Middle { leaf: &Leaf; }
-            type Root {
-                middle: &Middle;
-                check { middle.leaf.value > 0; }
-            }
-        "#,
+fn mismatched_statement_target_returns_an_internal_diagnostic() {
+    let schema = compile_schema("type Item { check { true; } }");
+    let model = CfdDataModel::builder(&schema).build().expect("model");
+    let output = execute_checks(
+        &schema,
+        &model,
+        [CheckTask {
+            statement: type_statements(&schema, "Item")[0],
+            target: CheckTarget::Project,
+            projection: CheckProjection::Base,
+        }],
+        CheckLimits::default(),
     );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("leaf", "Leaf", [("value", LoadedValueDraft::from(0_i64))]);
-    builder.add_record(
-        "middle",
-        "Middle",
-        [("leaf", LoadedValueDraft::record_ref("leaf"))],
-    );
-    builder.add_record(
-        "root",
-        "Root",
-        [("middle", LoadedValueDraft::record_ref("middle"))],
-    );
-    let model = build_model(&schema, builder);
-
-    let err = run_model_checks(&model, &schema).expect_err("leaf value should fail the root check");
-    let diagnostic = err
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
-        .expect("comparison diagnostic");
-
-    let primary = diagnostic.primary.as_ref().expect("primary location");
-    assert_eq!(primary.record, Some(record_id_at(&model, 0)));
-    assert_eq!(primary.path, CfdPath::root().field("value"));
-    assert_eq!(diagnostic.related.len(), 2);
-    assert_eq!(diagnostic.related[0].record, Some(record_id_at(&model, 2)));
-    assert_eq!(diagnostic.related[0].path, CfdPath::root().field("middle"));
-    assert_eq!(diagnostic.related[1].record, Some(record_id_at(&model, 1)));
-    assert_eq!(diagnostic.related[1].path, CfdPath::root().field("leaf"));
+    assert_eq!(output.results[0].diagnostics.len(), 1);
+    assert!(output.results[0].diagnostics[0]
+        .diagnostic
+        .message
+        .contains("does not match"));
 }
 
 #[test]
-fn checks_keep_target_locations_through_collection_access_and_virtual_ids() {
-    let schema = compile_schema(
-        r#"
-            type Target { nums: [int]; }
-            type Holder {
-                item: &Target;
-                check {
-                    item.nums[1] > 0;
-                    item.id == "different";
-                }
-            }
-        "#,
-    );
+fn task_limit_rejects_the_request_and_work_limit_reports_unexecuted_tasks() {
+    let schema = compile_schema("type Item { check { true; } }");
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "target",
-        "Target",
-        [(
-            "nums",
-            LoadedValueDraft::Array(vec![
-                LoadedValueDraft::from(1_i64),
-                LoadedValueDraft::from(0_i64),
-            ]),
-        )],
-    );
-    builder.add_record(
-        "holder",
-        "Holder",
-        [("item", LoadedValueDraft::record_ref("target"))],
-    );
-    let model = build_model(&schema, builder);
-
-    let err =
-        run_model_checks(&model, &schema).expect_err("target collection value and id should fail");
-    let paths = err
-        .diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed)
-        .map(|diagnostic| {
-            let primary = diagnostic.primary.as_ref().expect("primary location");
-            assert_eq!(
-                primary.record,
-                Some(record_id_at(&model, 0)),
-                "diagnostic: {diagnostic:?}"
-            );
-            assert_eq!(diagnostic.related.len(), 1);
-            assert_eq!(diagnostic.related[0].record, Some(record_id_at(&model, 1)));
-            assert_eq!(diagnostic.related[0].path, CfdPath::root().field("item"));
-            primary.path.clone()
+    builder.add_record("a", "Item", std::iter::empty::<(&str, LoadedValueDraft)>());
+    builder.add_record("b", "Item", std::iter::empty::<(&str, LoadedValueDraft)>());
+    let model = builder.build().expect("model");
+    let statement = type_statements(&schema, "Item")[0];
+    let tasks = model
+        .records()
+        .map(|(record, _)| CheckTask {
+            statement,
+            target: CheckTarget::Record(record),
+            projection: CheckProjection::Base,
         })
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        paths,
-        BTreeSet::from([
-            CfdPath::root().field("id"),
-            CfdPath::root().field("nums").index(1),
-        ])
-    );
-}
+        .collect::<Vec<_>>();
 
-#[test]
-fn checks_can_access_ref_fields_inherited_from_spread() {
-    let schema = compile_schema(
-        r#"
-            type Item { price: int; }
-            type Holder {
-                item: &Item;
-                check { item.price > 0; }
-            }
-        "#,
+    let task_limited = execute_checks(
+        &schema,
+        &model,
+        tasks.clone(),
+        CheckLimits {
+            max_tasks: 1,
+            ..CheckLimits::default()
+        },
     );
+    assert_eq!(task_limited.statistics.executed_tasks, 0);
+    assert_eq!(task_limited.statistics.rejected_tasks, 2);
+    assert!(task_limited.results.is_empty());
+    assert!(task_limited.request_diagnostics[0]
+        .diagnostic
+        .message
+        .contains("task limit"));
 
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(1_i64))]);
-    builder.add_record(
-        "base",
-        "Holder",
-        [("item", LoadedValueDraft::record_ref("sword"))],
+    let exactly_limited = execute_checks(
+        &schema,
+        &model,
+        tasks.clone(),
+        CheckLimits {
+            max_tasks: 2,
+            ..CheckLimits::default()
+        },
     );
-    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-        "copy",
-        "Holder",
-        [LoadedValueDraft::record_ref("base")],
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    ));
+    assert_eq!(exactly_limited.statistics.executed_tasks, 2);
+    assert!(exactly_limited.request_diagnostics.is_empty());
 
-    let model = build_model(&schema, builder);
-    run_model_checks(&model, &schema).expect("spread-inherited ref should resolve in checks");
-
-    let nested_schema = compile_schema(
-        r#"
-            type Item { price: int; }
-            type Stats { item: &Item; }
-            type Holder {
-                stats: Stats;
-                check { stats.item.price > 0; }
-            }
-        "#,
+    let work_limited = execute_checks(
+        &schema,
+        &model,
+        tasks,
+        CheckLimits {
+            max_request_work: 1,
+            ..CheckLimits::default()
+        },
     );
-
-    let mut nested_builder = CfdDataModel::builder(&nested_schema);
-    nested_builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(1_i64))]);
-    nested_builder.add_record(
-        "base_stats",
-        "Stats",
-        [("item", LoadedValueDraft::record_ref("sword"))],
-    );
-    nested_builder.add_record(
-        "holder",
-        "Holder",
-        [(
-            "stats",
-            LoadedValueDraft::object_spread(
-                [LoadedValueDraft::record_ref("base_stats")],
-                std::iter::empty::<(&str, LoadedValueDraft)>(),
-            ),
-        )],
-    );
-
-    let nested_model = build_model(&nested_schema, nested_builder);
-    run_model_checks(&nested_model, &nested_schema)
-        .expect("nested spread-inherited ref should resolve in checks");
-
-    let mut chained_builder = CfdDataModel::builder(&schema);
-    chained_builder.add_record("sword", "Item", [("price", LoadedValueDraft::from(1_i64))]);
-    chained_builder.add_record(
-        "base",
-        "Holder",
-        [("item", LoadedValueDraft::record_ref("sword"))],
-    );
-    chained_builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-        "middle",
-        "Holder",
-        [LoadedValueDraft::record_ref("base")],
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    ));
-    chained_builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-        "copy",
-        "Holder",
-        [LoadedValueDraft::record_ref("middle")],
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    ));
-
-    let chained_model = build_model(&schema, chained_builder);
-    run_model_checks(&chained_model, &schema)
-        .expect("chained spread-inherited ref should resolve in checks");
-}
-
-#[test]
-fn empty_sum_and_float_edge_semantics_are_preserved() {
-    let empty_sum = compile_schema(
-        r#"
-            type Item {
-                nums: [int] = [];
-                check { nums.sum() == 0; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&empty_sum);
-    builder.add_record(
-        "item_1",
-        "Item",
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    );
-    let model = build_model(&empty_sum, builder);
-    run_model_checks(&model, &empty_sum).expect("empty int sum should evaluate as 0");
-
-    let float_div_zero = compile_schema(
-        r#"
-            type Item {
-                value: float;
-                check { value / 0.0 > 0.0; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&float_div_zero);
-    builder.add_record(
-        "item_1",
-        "Item",
-        [("value", LoadedValueDraft::from(1.0_f64))],
-    );
-    let model = build_model(&float_div_zero, builder);
-    run_model_checks(&model, &float_div_zero)
-        .expect("float division by zero follows f64 infinity semantics");
+    assert_eq!(work_limited.statistics.executed_tasks, 1);
+    assert_eq!(work_limited.statistics.rejected_tasks, 1);
+    assert!(work_limited.results[1].diagnostics[0]
+        .diagnostic
+        .message
+        .contains("work limit"));
 }

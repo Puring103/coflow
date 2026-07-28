@@ -96,7 +96,7 @@ impl SourceProvider for CsvLoader {
         _ctx: SourceResolveContext<'_>,
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-        let path = (&source.location).path();
+        let path = source.location.path();
         if is_csv_path(path) {
             let mut resolved = source.clone();
             resolved.provider_id = CSV_LOADER_DESCRIPTOR.id.to_string();
@@ -117,7 +117,7 @@ impl SourceProvider for CsvLoader {
         ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let file = (&source.location).path();
+        let file = source.location.path();
         let sheets = csv_sheets(csv_source_options(source)?);
         let csv_source = CsvSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[csv_source])

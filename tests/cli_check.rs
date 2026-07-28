@@ -166,11 +166,7 @@ fn top_level_formatted_custom_message_survives_human_and_json_outputs() {
     assert!(!stderr.contains("actual value"), "stderr: {stderr}");
 
     let json_output = coflow()
-        .args([
-            "check",
-            root.to_str().expect("utf8 temp path"),
-            "--json",
-        ])
+        .args(["check", root.to_str().expect("utf8 temp path"), "--json"])
         .output()
         .expect("run json check");
     assert!(!json_output.status.success());

@@ -2,12 +2,12 @@
 import type { EditorRecordGroup } from "./EditorRecordGroup";
 import type { ViewConfig } from "./ViewConfig";
 
-export type EditorProjectSettings = { 
+export type EditorProjectSettings = {
 /**
  * Custom views keyed by (filePath, actualType). Default record/table
  * views are implicit and never stored here.
  */
-views: { [key in string]?: { [key in string]?: Array<ViewConfig> } }, 
+views: { [key in string]?: { [key in string]?: Array<ViewConfig> } },
 /**
  * Column widths for the implicit default table view, keyed by
  * (filePath, actualType, columnName). Custom table views carry their

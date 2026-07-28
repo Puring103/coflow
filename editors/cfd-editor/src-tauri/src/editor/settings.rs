@@ -120,7 +120,12 @@ pub(super) fn sanitized_record_groups(groups: Vec<EditorRecordGroup>) -> Vec<Edi
             if id.is_empty() || !ids.insert(id.clone()) {
                 return None;
             }
-            let name = group.name.trim().chars().take(MAX_VIEW_NAME_LEN).collect::<String>();
+            let name = group
+                .name
+                .trim()
+                .chars()
+                .take(MAX_VIEW_NAME_LEN)
+                .collect::<String>();
             let mut group_records = BTreeSet::new();
             let records = group
                 .records
@@ -175,20 +180,26 @@ pub(super) fn sanitized_views(
         .into_iter()
         .filter_map(|view| {
             let id = view.id.trim().to_string();
-            if id.is_empty()
-                || id.starts_with(RESERVED_VIEW_ID_PREFIX)
-                || !ids.insert(id.clone())
-            {
+            if id.is_empty() || id.starts_with(RESERVED_VIEW_ID_PREFIX) || !ids.insert(id.clone()) {
                 return None;
             }
-            let name = view.name.trim().chars().take(MAX_VIEW_NAME_LEN).collect::<String>();
+            let name = view
+                .name
+                .trim()
+                .chars()
+                .take(MAX_VIEW_NAME_LEN)
+                .collect::<String>();
             let group_filter = view
                 .group_filter
                 .filter(|group_id| valid_group_ids.contains(group_id));
             let sanitized = match view.kind {
                 ViewKind::Table => ViewConfig {
                     id,
-                    name: if name.is_empty() { "未命名视图".to_string() } else { name },
+                    name: if name.is_empty() {
+                        "未命名视图".to_string()
+                    } else {
+                        name
+                    },
                     kind: ViewKind::Table,
                     group_filter,
                     columns: sanitized_field_list(view.columns),
@@ -198,7 +209,11 @@ pub(super) fn sanitized_views(
                 },
                 ViewKind::Graph => ViewConfig {
                     id,
-                    name: if name.is_empty() { "未命名视图".to_string() } else { name },
+                    name: if name.is_empty() {
+                        "未命名视图".to_string()
+                    } else {
+                        name
+                    },
                     kind: ViewKind::Graph,
                     group_filter,
                     columns: Vec::new(),

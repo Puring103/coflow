@@ -94,7 +94,7 @@ impl SourceProvider for ExcelLoader {
         _ctx: SourceResolveContext<'_>,
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-        let path = (&source.location).path();
+        let path = source.location.path();
         if is_excel_path(path) {
             return Ok(vec![source.clone()]);
         }
@@ -113,7 +113,7 @@ impl SourceProvider for ExcelLoader {
         ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let file = (&source.location).path();
+        let file = source.location.path();
         let sheets = excel_sheets(excel_source_options(source)?);
         let excel_source = ExcelSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[excel_source])

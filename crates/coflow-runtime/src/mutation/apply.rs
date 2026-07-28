@@ -276,9 +276,7 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
         }
         | PreparedMutationOp::FoldedSetField {
             record, write_file, ..
-        } => {
-            ("set_field", Some(record.clone()), Some(write_file.clone()))
-        }
+        } => ("set_field", Some(record.clone()), Some(write_file.clone())),
         PreparedMutationOp::WriteDimensionValue {
             record,
             new_value,

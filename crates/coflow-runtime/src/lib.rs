@@ -15,6 +15,9 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
+#[cfg(feature = "internal-check-bench")]
+#[doc(hidden)]
+pub mod check_benchmark_support;
 mod checks;
 mod data_files;
 mod data_patch;
@@ -83,4 +86,4 @@ pub use schema_inspect::{
 };
 pub use session::ProjectSchemaSession;
 pub(crate) use session::ProjectSession;
-pub use statistics::{IncrementalFallbackReason, ProjectExecutionStats};
+pub use statistics::ProjectExecutionStats;

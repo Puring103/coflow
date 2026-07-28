@@ -6,43 +6,18 @@ use super::explanations;
 use super::quantifiers;
 use super::value::{EvalValue, LocatedEvalValue, ScalarValue, ValueLocation};
 use coflow_cft::{
-    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckMessage, CftSchemaCheckMessageKind,
-    CftSchemaCheckStmt, CftSchemaQuantifierBindings, CftSchemaQuantifierKind, ScheduledCheckBlock,
+    CftSchemaCheckExpr, CftSchemaCheckMessage, CftSchemaCheckMessageKind, CftSchemaCheckStmt,
+    CftSchemaQuantifierBindings, CftSchemaQuantifierKind,
 };
 use coflow_data_model::CfdErrorCode;
 use coflow_structure::StructureKind;
 use std::collections::BTreeMap;
 
-pub(super) fn eval_check_block(
+pub(super) fn eval_root_statement(
     evaluator: &mut CheckEvaluator<'_>,
-    check: &CftSchemaCheckBlock,
+    statement: &CftSchemaCheckStmt,
 ) -> EvalFlow {
-    eval_stmts(evaluator, &check.stmts)
-}
-
-pub(super) fn eval_scheduled_check_block(
-    evaluator: &mut CheckEvaluator<'_>,
-    scheduled: ScheduledCheckBlock<'_>,
-) -> EvalFlow {
-    let Some(indices) = scheduled.statement_indices() else {
-        return eval_check_block(evaluator, scheduled.block());
-    };
-    let mut skipped = false;
-    for index in indices {
-        let Some(stmt) = scheduled.block().stmts.get(*index) else {
-            continue;
-        };
-        match eval_stmt(evaluator, stmt) {
-            EvalFlow::Continue => {}
-            EvalFlow::Skipped => skipped = true,
-            EvalFlow::HardStop => return EvalFlow::HardStop,
-        }
-    }
-    if skipped {
-        EvalFlow::Skipped
-    } else {
-        EvalFlow::Continue
-    }
+    eval_stmt(evaluator, statement)
 }
 
 fn eval_stmts(evaluator: &mut CheckEvaluator<'_>, stmts: &[CftSchemaCheckStmt]) -> EvalFlow {

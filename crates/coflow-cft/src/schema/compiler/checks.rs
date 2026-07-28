@@ -10,6 +10,9 @@ use super::state::{SymbolKind, TypeInfo};
 use super::SchemaCompiler;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::schema::CftValueType;
+use crate::schema::{
+    CheckDependency, CheckDependencyLocality, CheckField, CheckStatementDependencies,
+};
 use crate::syntax::ast::{
     CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt, NameRef,
     TypePredicate,
@@ -23,6 +26,7 @@ pub(super) struct CheckTypeAnalyzer<'a, 'b> {
     scope: CheckScope,
     locals: Vec<HashMap<String, InferredType>>,
     dimensions: BTreeSet<crate::DimensionName>,
+    dependencies: CheckStatementDependencies,
 }
 
 enum CheckScope {
@@ -32,8 +36,9 @@ enum CheckScope {
 
 fn is_formattable(ty: &InferredType) -> bool {
     match ty {
-        InferredType::Null | InferredType::Unknown => true,
-        InferredType::Value(
+        InferredType::Null
+        | InferredType::Unknown
+        | InferredType::Value(
             CftValueType::Int
             | CftValueType::Float
             | CftValueType::Bool
@@ -64,29 +69,33 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             scope: CheckScope::Record(type_info.def.name.clone()),
             locals: Vec::new(),
             dimensions: BTreeSet::new(),
+            dependencies: CheckStatementDependencies::default(),
         }
     }
 
-    pub(super) fn top_level(
-        compiler: &'a mut SchemaCompiler<'b>,
-        module: crate::ModuleId,
-    ) -> Self {
+    pub(super) fn top_level(compiler: &'a mut SchemaCompiler<'b>, module: crate::ModuleId) -> Self {
         Self {
             compiler,
             module,
             scope: CheckScope::TopLevel,
             locals: Vec::new(),
             dimensions: BTreeSet::new(),
+            dependencies: CheckStatementDependencies::default(),
         }
     }
 
     pub(super) fn check_root_stmts(
         &mut self,
         stmts: &[CheckStmt],
-    ) -> BTreeMap<crate::DimensionName, Vec<usize>> {
+    ) -> (
+        BTreeMap<crate::DimensionName, Vec<usize>>,
+        Vec<CheckStatementDependencies>,
+    ) {
         let mut by_dimension = BTreeMap::<crate::DimensionName, Vec<usize>>::new();
+        let mut dependencies = Vec::with_capacity(stmts.len());
         for (index, stmt) in stmts.iter().enumerate() {
             self.dimensions.clear();
+            self.dependencies = CheckStatementDependencies::default();
             self.check_stmt(stmt);
             for dimension in &self.dimensions {
                 by_dimension
@@ -94,8 +103,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                     .or_default()
                     .push(index);
             }
+            dependencies.push(self.dependencies.clone());
         }
-        by_dimension
+        (by_dimension, dependencies)
     }
 
     pub(super) fn check_stmts(&mut self, stmts: &[CheckStmt]) {
@@ -104,6 +114,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn check_stmt(&mut self, stmt: &CheckStmt) {
         match stmt {
             CheckStmt::Expr {
@@ -247,10 +258,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                         }
                     }
                 };
-                self.compiler.quantifier_bindings.insert(
-                    (self.module.clone(), span.start, span.end),
-                    layout,
-                );
+                self.compiler
+                    .quantifier_bindings
+                    .insert((self.module.clone(), span.start, span.end), layout);
                 self.locals.push(scope);
                 self.check_stmts(body);
                 self.locals.pop();
@@ -377,12 +387,23 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 .and_then(|fields| fields.get(name))
                 .cloned();
             if let Some(field) = field {
+                self.dependencies.insert(
+                    CheckDependency::Field(CheckField {
+                        owner: field.declaring_type.clone(),
+                        field: crate::FieldName::from_validated(name.to_string()),
+                    }),
+                    CheckDependencyLocality::Local,
+                );
                 if let Some(dimension) = field.dimension {
                     self.dimensions.insert(dimension);
                 }
                 return field.inferred_type;
             }
             if name == "id" {
+                self.dependencies.insert(
+                    CheckDependency::RecordSet(crate::TypeName::from_validated(type_name.clone())),
+                    CheckDependencyLocality::Local,
+                );
                 return InferredType::string();
             }
         }
@@ -417,6 +438,10 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             );
             return InferredType::Unknown;
         }
+        self.dependencies.insert(
+            CheckDependency::RecordSet(crate::TypeName::from_validated(type_name.name.clone())),
+            CheckDependencyLocality::Local,
+        );
         InferredType::array(InferredType::record_ref(InferredType::object(
             crate::TypeName::from_validated(type_name.name.clone()),
         )))
@@ -450,7 +475,35 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
 
         let inner_ty = self.check_expr_value(inner);
+        self.note_referenced_field(&inner_ty, name);
         self.check_field_type(&unwrap_nullable(&inner_ty), name, span)
+    }
+
+    fn note_referenced_field(&mut self, receiver: &InferredType, name: &NameRef) {
+        let receiver = unwrap_nullable(receiver);
+        let InferredType::Value(CftValueType::RecordRef(target)) = receiver else {
+            return;
+        };
+        let type_name = target;
+        if name.name == "id" {
+            self.dependencies.insert(
+                CheckDependency::RecordSet(type_name),
+                CheckDependencyLocality::CrossRecord,
+            );
+            return;
+        }
+        let owner = self
+            .compiler
+            .full_fields
+            .get(type_name.as_str())
+            .and_then(|fields| fields.get(&name.name))
+            .map_or_else(|| type_name.clone(), |field| field.declaring_type.clone());
+        let dependency = CheckDependency::Field(CheckField {
+            owner,
+            field: crate::FieldName::from_validated(name.name.clone()),
+        });
+        self.dependencies
+            .insert(dependency, CheckDependencyLocality::CrossRecord);
     }
 
     fn check_field_type(
@@ -522,6 +575,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             }
             return InferredType::Unknown;
         }
+        self.note_referenced_field(&inner_ty, name);
         let projected = self.check_field_type(&unwrap_nullable(&inner_ty), name, span);
         InferredType::nullable(projected)
     }

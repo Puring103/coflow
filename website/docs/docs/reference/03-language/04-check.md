@@ -218,7 +218,9 @@ check ItemIntegrity {
 
 `Type` 必须是静态 object type。`records(Base)` 包含实际类型为 `Base` 及其派生类型的所有顶层记录，不包含内联 object；结果按 `(actual_type, record_key)` 稳定排序。该 special form 只能用于命名顶层 check，不能传入字符串或动态类型表达式。
 
-每个顶层 check 在 baseline round 执行一次。读取 dimension 字段的 statement 只在对应 dimension variant round 执行，不相关的顶层规则不会在所有 variant 中重复运行。增量检查同时跟踪实际读取的 record path 和 record-set membership；字段修改只重跑读取路径重叠的根，新增、删除、rename 或派生类型成员变化会使相关 `records(Type)` 规则失效。
+每个根 statement 是独立执行单元；`when` 和量词内部语句不会被拆开调度。读取 dimension 字段的 statement 会分别检查基础值和对应 dimension variants，不相关的规则不会在所有 variants 中重复运行。
+
+CFT 编译器静态记录 statement 在所有可能分支中使用的顶层字段和 `records(Type)` 集合。增量写入按该索引选择 statement：同一宿主记录的字段修改只重查该记录，跨类型引用字段变化会保守重查依赖规则的全部宿主记录；新增、删除、rename 或类型迁移会使相关 `records(Type)` 规则失效。数组 index、dict key 和内联 object path 会归一化到其顶层存储字段，不根据某次执行实际读取的路径缩小依赖。
 
 ## 类型判断
 

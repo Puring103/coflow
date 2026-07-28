@@ -243,9 +243,7 @@ pub(crate) fn string_predicate_value<'model>(
     ))
 }
 
-pub(crate) fn is_blank_value<'model>(
-    receiver: LocatedEvalValue<'model>,
-) -> OpsResult<LocatedEvalValue<'model>> {
+pub(crate) fn is_blank_value(receiver: LocatedEvalValue<'_>) -> OpsResult<LocatedEvalValue<'_>> {
     let location = receiver.location.clone();
     let Some(ScalarValue::String(value)) = receiver.value.scalar() else {
         return Err(OpsError::eval_type(
@@ -259,9 +257,7 @@ pub(crate) fn is_blank_value<'model>(
     ))
 }
 
-pub(crate) fn abs_value<'model>(
-    receiver: LocatedEvalValue<'model>,
-) -> OpsResult<LocatedEvalValue<'model>> {
+pub(crate) fn abs_value(receiver: LocatedEvalValue<'_>) -> OpsResult<LocatedEvalValue<'_>> {
     let location = receiver.location.clone();
     let value = match receiver.value.scalar() {
         Some(ScalarValue::Int(value)) => EvalValue::int(
@@ -280,9 +276,7 @@ pub(crate) fn abs_value<'model>(
     Ok(LocatedEvalValue::new(value, receiver.location))
 }
 
-pub(crate) fn is_finite_value<'model>(
-    receiver: LocatedEvalValue<'model>,
-) -> OpsResult<LocatedEvalValue<'model>> {
+pub(crate) fn is_finite_value(receiver: LocatedEvalValue<'_>) -> OpsResult<LocatedEvalValue<'_>> {
     let location = receiver.location.clone();
     let Some(ScalarValue::Float(value)) = receiver.value.scalar() else {
         return Err(OpsError::eval_type(
@@ -433,22 +427,14 @@ pub(crate) fn set_relation_value(
     };
     match builtin {
         Builtin::IsSubsetOf => set_contains_all(
-            left_items,
-            left_type.as_ref(),
-            left.location.as_ref(),
-            right_items,
-            right_type.as_ref(),
-            right.location.as_ref(),
+            ArrayValues::new(left_items, left_type.as_ref(), left.location.as_ref()),
+            ArrayValues::new(right_items, right_type.as_ref(), right.location.as_ref()),
             model,
             budget,
         ),
         Builtin::IsSupersetOf => set_contains_all(
-            right_items,
-            right_type.as_ref(),
-            right.location.as_ref(),
-            left_items,
-            left_type.as_ref(),
-            left.location.as_ref(),
+            ArrayValues::new(right_items, right_type.as_ref(), right.location.as_ref()),
+            ArrayValues::new(left_items, left_type.as_ref(), left.location.as_ref()),
             model,
             budget,
         ),
@@ -508,25 +494,49 @@ pub(crate) fn set_relation_value(
     }
 }
 
+#[derive(Clone, Copy)]
+struct ArrayValues<'a> {
+    items: &'a EvalItems,
+    element_type: Option<&'a coflow_cft::CftValueType>,
+    location: Option<&'a ValueLocation>,
+}
+
+impl<'a> ArrayValues<'a> {
+    const fn new(
+        items: &'a EvalItems,
+        element_type: Option<&'a coflow_cft::CftValueType>,
+        location: Option<&'a ValueLocation>,
+    ) -> Self {
+        Self {
+            items,
+            element_type,
+            location,
+        }
+    }
+}
+
 fn set_contains_all(
-    needles: &EvalItems,
-    needle_type: Option<&coflow_cft::CftValueType>,
-    needle_location: Option<&ValueLocation>,
-    haystack: &EvalItems,
-    haystack_type: Option<&coflow_cft::CftValueType>,
-    haystack_location: Option<&ValueLocation>,
+    needles: ArrayValues<'_>,
+    haystack: ArrayValues<'_>,
     model: &CfdDataModel,
     budget: &mut StructuralBudget,
 ) -> OpsResult<bool> {
-    for needle_index in 0..needles.len() {
+    for needle_index in 0..needles.items.len() {
         let Some(needle) = needles
-            .located_at(needle_index, needle_type, needle_location, model, budget)
+            .items
+            .located_at(
+                needle_index,
+                needles.element_type,
+                needles.location,
+                model,
+                budget,
+            )
             .map_err(budget_error)?
         else {
             continue;
         };
         let mut found = false;
-        for candidate_index in 0..haystack.len() {
+        for candidate_index in 0..haystack.items.len() {
             budget
                 .charge_work(coflow_structure::StructureKind::CheckEvaluation, 1)
                 .map_err(|error| {
@@ -537,10 +547,11 @@ fn set_contains_all(
                     )
                 })?;
             let Some(candidate) = haystack
+                .items
                 .located_at(
                     candidate_index,
-                    haystack_type,
-                    haystack_location,
+                    haystack.element_type,
+                    haystack.location,
                     model,
                     budget,
                 )

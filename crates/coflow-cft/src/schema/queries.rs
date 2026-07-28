@@ -1,6 +1,7 @@
-use crate::{
-    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftTopLevelCheck, CftType, EnumName, EnumVariantName,
-    TypeName, TypedCheckSchedule, ValueDependencyPlan,
+use crate::schema::{
+    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftTopLevelCheck, CftType,
+    CheckDependency, CheckOwner, CheckStatementId, CheckStatementInfo, CheckStatementRef, EnumName,
+    EnumVariantName, FieldName, TypeName, ValueDependencyPlan,
 };
 
 impl CftSchema {
@@ -107,17 +108,69 @@ impl CftSchema {
     }
 
     #[must_use]
-    pub fn check_schedule<'schema, 'dimension>(
-        &'schema self,
+    pub fn check_statement(&self, id: CheckStatementId) -> Option<CheckStatementRef<'_>> {
+        let info = self.check_index.statement(id)?;
+        let block = match &info.owner {
+            CheckOwner::Type(name) => self.types.get(name)?.check.as_ref()?,
+            CheckOwner::Project(name) => &self.top_level_checks.get(name)?.block,
+        };
+        Some(CheckStatementRef {
+            info,
+            statement: block.stmts.get(info.root_index)?,
+        })
+    }
+
+    pub fn all_check_statements(&self) -> impl Iterator<Item = &CheckStatementInfo> {
+        self.check_index.statements()
+    }
+
+    pub fn check_statements_for_dependency(
+        &self,
+        dependency: &CheckDependency,
+    ) -> impl Iterator<Item = CheckStatementId> + '_ {
+        self.check_index.for_dependency(dependency)
+    }
+
+    #[must_use]
+    pub fn check_dependency_is_cross_record(
+        &self,
+        statement: CheckStatementId,
+        dependency: &CheckDependency,
+    ) -> bool {
+        self.check_index
+            .dependency_is_cross_record(statement, dependency)
+    }
+
+    pub fn check_statements_for_actual_type(
+        &self,
         actual_type: &str,
-        dimension: Option<&'dimension str>,
-    ) -> TypedCheckSchedule<'schema, 'dimension> {
-        TypedCheckSchedule::new(self, actual_type, dimension)
+    ) -> impl Iterator<Item = CheckStatementId> + '_ {
+        self.check_index.for_actual_type(actual_type)
+    }
+
+    pub fn check_hosts_for_nested_type(
+        &self,
+        nested_type: &str,
+    ) -> impl Iterator<Item = &TypeName> {
+        self.check_index.hosts_for_nested_type(nested_type)
+    }
+
+    #[must_use]
+    pub fn check_owner_applies_to_actual(&self, owner: &str, actual: &str) -> bool {
+        self.check_index.owner_applies_to_actual(owner, actual)
+    }
+
+    pub fn check_statements_for_nested_field(
+        &self,
+        actual_type: &TypeName,
+        field_name: &FieldName,
+    ) -> impl Iterator<Item = CheckStatementId> + '_ {
+        self.check_index.for_nested_field(actual_type, field_name)
     }
 
     #[must_use]
     pub fn field_has_nested_checks(&self, actual_type: &str, field_name: &str) -> bool {
-        self.typed_checks
+        self.check_index
             .field_has_nested_checks(actual_type, field_name)
     }
 

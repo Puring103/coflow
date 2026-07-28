@@ -46,7 +46,7 @@ dimensions:
 
 维度字段通过 CFT 注解声明。`@localized` 是 `language` 维度的便捷写法：
 
-```text
+```cft
 type Item {
   @localized
   name: string;
@@ -66,7 +66,7 @@ type Item {
 
 其他维度使用 `@dimension("name")`：
 
-```text
+```cft
 type Item {
   @dimension("platform")
   price: int;
@@ -157,7 +157,7 @@ Item_nameVariants.json
 
 本地化就是 `language` 维度的一种使用方式。`@localized` 声明字段随语言变化：
 
-```text
+```cft
 type Item {
   @localized
   name: string;
@@ -166,7 +166,7 @@ type Item {
 
 也可以指定 bucket：
 
-```text
+```cft
 type Item {
   @localized("ui")
   icon_text: string;
@@ -191,7 +191,7 @@ type Item {
 
 - 变体值存在：使用该值，其他非维度字段仍读取源 record。
 - 变体值缺失：保持 missing，不回退到默认值。
-- 变体值解析为 `null`：本轮跳过依赖该字段的语句和方法调用，不回退到默认值。
+- 变体值解析为 `null`：该变体投影跳过依赖该字段的语句和方法调用，不回退到默认值。
 - 整个对象、数组或字典字段被 `@localized` 标记时，变体值的完整子树会在逻辑字段路径上执行嵌套 type check。
 - 只有嵌套对象内部的字段被 `@localized` 标记、而外层对象字段本身不是维度字段时，不会因此重复检查整个外层 record。
 

@@ -35,12 +35,18 @@ shield: Item { name: "Shield" }"#,
             snapshot.session_id,
             &[
                 BatchWriteFieldInput {
-                    coordinate: RecordCoordinate::new(TypeName::new("Item").expect("type"), RecordKey::new("sword").expect("key")),
+                    coordinate: RecordCoordinate::new(
+                        TypeName::new("Item").expect("type"),
+                        RecordKey::new("sword").expect("key"),
+                    ),
                     field_path: path.clone(),
                     new_value: CfdValue::String("Shared".to_string()),
                 },
                 BatchWriteFieldInput {
-                    coordinate: RecordCoordinate::new(TypeName::new("Item").expect("type"), RecordKey::new("shield").expect("key")),
+                    coordinate: RecordCoordinate::new(
+                        TypeName::new("Item").expect("type"),
+                        RecordKey::new("shield").expect("key"),
+                    ),
                     field_path: path,
                     new_value: CfdValue::String("Shared".to_string()),
                 },
@@ -838,11 +844,23 @@ fn object_annotations_preserve_schema_field_order() {
         .get_file_records(snapshot.session_id, "data/items.cfd")
         .expect("load file records");
     let row = &records.records[0];
-    let stats = row.fields.iter().find(|field| field.name == "stats").expect("stats field");
-    let history = row.fields.iter().find(|field| field.name == "history").expect("history field");
+    let stats = row
+        .fields
+        .iter()
+        .find(|field| field.name == "stats")
+        .expect("stats field");
+    let history = row
+        .fields
+        .iter()
+        .find(|field| field.name == "history")
+        .expect("history field");
 
     assert_eq!(
-        stats.annotation.as_ref().expect("stats annotation").field_order,
+        stats
+            .annotation
+            .as_ref()
+            .expect("stats annotation")
+            .field_order,
         ["zulu", "alpha", "middle"]
     );
     assert_eq!(

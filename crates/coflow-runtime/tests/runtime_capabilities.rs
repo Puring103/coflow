@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
-use coflow_runtime::{IncrementalFallbackReason, ProjectQueries, ProjectRuntime, Runtime};
+use coflow_runtime::{ProjectQueries, ProjectRuntime, Runtime};
 
 struct TempProject {
     root: std::path::PathBuf,
@@ -86,9 +86,7 @@ fn read_and_build_sessions_expose_generation_queries() {
     assert_eq!(read_stats.records_reused, 0);
     assert_eq!(read_stats.ref_edges_rebuilt, 0);
     assert_eq!(read_stats.spread_edges_rebuilt, 0);
-    assert_eq!(read_stats.check_roots_executed, 1);
-    assert!(!read_stats.full_fallback);
-    assert_eq!(read_stats.fallback_reason, None);
+    assert_eq!(read_stats.check_roots_executed, 0);
 
     let build_session = runtime()
         .build_project_session(fixture.open())
@@ -148,9 +146,7 @@ fn write_session_owns_registry_and_publishes_successful_generation() {
     assert_eq!(stats.records_validated, 1);
     assert_eq!(stats.records_materialized, 1);
     assert_eq!(stats.records_reused, 0);
-    assert_eq!(stats.check_roots_executed, 1);
-    assert!(!stats.full_fallback);
-    assert_eq!(stats.fallback_reason, None);
+    assert_eq!(stats.check_roots_executed, 0);
 }
 
 #[test]
@@ -174,53 +170,10 @@ copy: Item { ...&base, name: "Copy", target: &base }
 }
 
 #[test]
-fn structural_mutations_report_specific_full_fallback_reasons() {
-    let fixture = TempProject::new("structural-fallback");
-    let mut session = runtime()
-        .open_write_session(fixture.open())
-        .expect("open write session");
-
-    session
-        .rename_record_key("Item", "sword", "blade")
-        .expect("rename record");
-
-    let stats = session.queries().execution_stats();
-    assert_eq!(stats.sources_reloaded, 1);
-    assert!(stats.full_fallback);
-    assert_eq!(
-        stats.fallback_reason,
-        Some(IncrementalFallbackReason::RecordRenamed)
-    );
-    assert!(session.queries().record_view("Item", "blade").is_some());
-
-    session
-        .insert_record(
-            "data/items.cfd",
-            None,
-            "shield",
-            "Item",
-            &BTreeMap::from([("name".to_string(), CfdValue::String("Shield".into()))]),
-        )
-        .expect("insert record");
-    assert_eq!(
-        session.queries().execution_stats().fallback_reason,
-        Some(IncrementalFallbackReason::RecordInserted)
-    );
-
-    session
-        .delete_record("Item", "shield")
-        .expect("delete record");
-    assert_eq!(
-        session.queries().execution_stats().fallback_reason,
-        Some(IncrementalFallbackReason::RecordDeleted)
-    );
-}
-
-#[test]
 fn structural_mutations_increment_only_affected_check_roots() {
     let fixture = TempProject::with_data(
         "structural-check-invalidation",
-        r#"
+        r"
             abstract type Item {
                 name: string;
                 check { !name.isBlank(); }
@@ -233,7 +186,7 @@ fn structural_mutations_increment_only_affected_check_roots() {
             check NoteNames {
                 all note in records(Note) { !note.name.isBlank(); }
             }
-        "#,
+        ",
         r#"
             sword: Weapon { name: "Sword" }
             note: Note { name: "Note" }

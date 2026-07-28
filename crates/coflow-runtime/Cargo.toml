@@ -1,6 +1,6 @@
 [package]
 name = "coflow-runtime"
-version = "0.7.4"
+version = "0.8.0"
 edition = "2021"
 description = "Shared Coflow project runtime."
 license = "Apache-2.0"
@@ -11,6 +11,7 @@ workspace = true
 
 [features]
 default = []
+internal-check-bench = []
 ts-export = [
     "dep:ts-rs",
     "coflow-api/ts-export",
@@ -31,3 +32,18 @@ walkdir = "2"
 [dev-dependencies]
 coflow-builtins = { path = "../coflow-builtins" }
 coflow-loader-csv = { path = "../coflow-loader-csv" }
+
+[[bench]]
+name = "check_planning"
+harness = false
+required-features = ["internal-check-bench"]
+
+[[bench]]
+name = "check_execution"
+harness = false
+required-features = ["internal-check-bench"]
+
+[[bench]]
+name = "check_limits"
+harness = false
+required-features = ["internal-check-bench"]
