@@ -363,13 +363,6 @@ impl LoaderGenerator for CsharpProtobufLoaderGenerator {
         options: &DecodedOutputOptions,
     ) -> Result<ArtifactSet, DiagnosticSet> {
         options.require::<()>(self.descriptor().id)?;
-        if ctx.schema.all_dimensions().next().is_some() {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "CSHARP-PROTOBUF-LOCALIZATION",
-                "CODEGEN",
-                "C# Protobuf loader does not yet support localized dimension tables",
-            )));
-        }
         generate_loader_artifacts(ctx, render::CsharpLoaderKind::Protobuf)
     }
 

@@ -41,8 +41,9 @@ The supported output matrix after this work is:
 - Protobuf data, contract, and generated code must be built and deployed together.
 - No Protobuf lockfile, schema fingerprint, manifest, descriptor set, contract output slot, or new
   project configuration layer is introduced.
-- Protobuf currently reports a diagnostic for localized dimension tables; JSON and MessagePack
-  remain the supported outputs for localized schemas until the dimension contract is added.
+- Protobuf exports localized dimension tables. C# Protobuf loaders read those tables; C++ and Rust
+  continue to reject localized Protobuf schemas until their generated runtimes expose a variant
+  table lookup API.
 
 ## 3. Architecture
 

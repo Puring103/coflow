@@ -235,7 +235,7 @@ var englishName = item.Name.For("en");
 每个维度字段还会生成一个 `{声明类型}{字段名}Variants` C# 类型，并在
 `CoflowTables` 中公开对应的 `Table<string, ...>`。例如 `Item.name` 生成
 `ItemNameVariants.cs` 和 `TbItemNameVariants`，loader 读取数据输出中的
-`Item_nameVariants.json` 或 `Item_nameVariants.msgpack`。
+`Item_nameVariants.json`、`Item_nameVariants.msgpack` 或 `Item_nameVariants.pb`。
 
 详见 [本地化与维度](../10-localization.md)。
 

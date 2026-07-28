@@ -114,6 +114,44 @@ fn codegen_protobuf_emits_dependency_free_wire_loader() -> Result<(), String> {
 }
 
 #[test]
+fn codegen_protobuf_emits_dimension_variant_tables() -> Result<(), String> {
+    let schema = compile_schema_with_dimensions(
+        r#"
+            type Item {
+                @localized
+                name: string;
+            }
+            @singleton
+            type Settings {
+                @localized
+                title: string;
+            }
+        "#,
+        CftDimensionInputs::try_new([("language", vec!["en".to_string(), "zh".to_string()])])
+            .expect("valid dimension fixture"),
+    )?;
+    let files = generate_protobuf(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|error| error.to_string())?;
+
+    let variants = generated_file(&files, "ItemNameVariants.cs")?;
+    require_contains(variants, "public string? Default { get; }")?;
+    require_contains(variants, "public string? En { get; }")?;
+    require_contains(variants, "message.Optional(16)")?;
+    require_contains(variants, "message.Optional(17)")?;
+
+    let database = generated_file(&files, "CoflowTables.cs")?;
+    require_contains(
+        database,
+        "ItemNameVariants.LoadRawTable(Path.Combine(dataDir, \"Item_nameVariants.pb\"))",
+    )?;
+    require_contains(
+        database,
+        "SettingsTitleVariants.LoadRawTable(Path.Combine(dataDir, \"Settings_titleVariants.pb\"))",
+    )?;
+    Ok(())
+}
+
+#[test]
 fn codegen_json_maps_source_enum_symbols_to_generated_member_names() -> Result<(), String> {
     let schema = compile_schema(
         r#"

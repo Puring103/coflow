@@ -13,9 +13,25 @@ pub(crate) struct Record {
     pub(crate) source_name: String,
     pub(crate) message_name: String,
     pub(crate) table_name: String,
+    pub(crate) source: RecordSource,
     pub(crate) has_id: bool,
     pub(crate) has_table: bool,
     pub(crate) fields: Vec<Field>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum RecordSource {
+    SchemaType,
+    DimensionTable(DimensionTable),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct DimensionTable {
+    pub(crate) source_type: String,
+    pub(crate) field_name: String,
+    pub(crate) dimension_name: String,
+    pub(crate) variants: Vec<String>,
+    pub(crate) is_singleton: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -56,11 +72,6 @@ struct Builder<'a> {
 
 impl Contract {
     pub(crate) fn build(schema: &CftSchema) -> Result<Self, ProtobufExportError> {
-        if schema.all_dimensions().next().is_some() {
-            return Err(ProtobufExportError::new(
-                "Protobuf export does not yet support localized dimension tables",
-            ));
-        }
         let mut message_names = BTreeSet::new();
         for ty in schema.all_types().filter(|ty| !ty.is_abstract) {
             let message_name = pascal(ty.name.as_str());
@@ -80,6 +91,21 @@ impl Contract {
                     &table_name,
                 )?;
             }
+        }
+        let dimensions = dimension_tables(schema)?;
+        for dimension in &dimensions {
+            insert_projected_name(
+                &mut message_names,
+                "message",
+                &dimension.source_name,
+                &dimension.message_name,
+            )?;
+            insert_projected_name(
+                &mut message_names,
+                "message",
+                &format!("{} table", dimension.source_name),
+                &dimension.table_name,
+            )?;
         }
         let mut builder = Builder {
             schema,
@@ -128,8 +154,21 @@ impl Contract {
                 source_name: ty.name.to_string(),
                 table_name: format!("{message_name}Table"),
                 message_name,
+                source: RecordSource::SchemaType,
                 has_id: !ty.is_struct,
                 has_table: !ty.is_struct,
+                fields,
+            });
+        }
+        for dimension in dimensions {
+            let fields = build_dimension_fields(&mut builder, &dimension.source)?;
+            records.push(Record {
+                source_name: dimension.source_name,
+                table_name: dimension.table_name,
+                message_name: dimension.message_name,
+                source: RecordSource::DimensionTable(dimension.source),
+                has_id: true,
+                has_table: true,
                 fields,
             });
         }
@@ -142,8 +181,110 @@ impl Contract {
     pub(crate) fn record(&self, source_name: &str) -> Option<&Record> {
         self.records
             .iter()
-            .find(|record| record.source_name == source_name)
+            .find(|record| {
+                record.source_name == source_name && matches!(record.source, RecordSource::SchemaType)
+            })
     }
+}
+
+#[derive(Debug)]
+struct DimensionRecord {
+    source_name: String,
+    message_name: String,
+    table_name: String,
+    source: DimensionTable,
+}
+
+fn dimension_tables(schema: &CftSchema) -> Result<Vec<DimensionRecord>, ProtobufExportError> {
+    let mut records = Vec::new();
+    for dimension in schema.all_dimensions() {
+        for field in &dimension.fields {
+            let source_type = schema.resolve_type(&field.declaring_type).ok_or_else(|| {
+                ProtobufExportError::new(format!(
+                    "dimension field `{}.{}` has an unknown declaring type",
+                    field.declaring_type, field.name
+                ))
+            })?;
+            let source_name = format!("{}_{}Variants", field.declaring_type, field.name);
+            let message_name = pascal(&source_name);
+            let table_name = format!("{message_name}Table");
+            validate_identifier("message", &source_name, &message_name)?;
+            validate_identifier("message", &format!("{source_name} table"), &table_name)?;
+            records.push(DimensionRecord {
+                source_name,
+                message_name,
+                table_name,
+                source: DimensionTable {
+                    source_type: field.declaring_type.to_string(),
+                    field_name: field.name.to_string(),
+                    dimension_name: dimension.name.to_string(),
+                    variants: dimension.variants.iter().map(ToString::to_string).collect(),
+                    is_singleton: source_type.is_singleton,
+                },
+            });
+        }
+    }
+    Ok(records)
+}
+
+fn build_dimension_fields(
+    builder: &mut Builder<'_>,
+    dimension: &DimensionTable,
+) -> Result<Vec<Field>, ProtobufExportError> {
+    let value_type = CftValueType::Nullable(Box::new(
+        builder
+            .schema
+            .resolve_type(&dimension.source_type)
+            .and_then(|ty| ty.all_fields().find(|field| field.name.as_str() == dimension.field_name))
+            .ok_or_else(|| {
+                ProtobufExportError::new(format!(
+                    "dimension field `{}.{}` is missing from its declaring type",
+                    dimension.source_type, dimension.field_name
+                ))
+            })?
+            .value_type
+            .non_nullable()
+            .clone(),
+    ));
+    let mut names = vec!["default".to_string()];
+    names.extend(dimension.variants.iter().cloned());
+    names.sort();
+    let mut projected_names = BTreeSet::new();
+    names
+        .into_iter()
+        .enumerate()
+        .map(|(index, source_name)| {
+            let number = u32::try_from(index)
+                .ok()
+                .and_then(|index| index.checked_add(16))
+                .ok_or_else(|| {
+                    ProtobufExportError::new(format!(
+                        "dimension table `{}.{}` has too many fields for Protobuf",
+                        dimension.source_type, dimension.field_name
+                    ))
+                })?;
+            let projected_name = snake(&source_name);
+            validate_identifier("dimension field", &source_name, &projected_name)?;
+            insert_projected_name(
+                &mut projected_names,
+                "dimension field",
+                &source_name,
+                &projected_name,
+            )?;
+            let context = format!(
+                "{}{}Variants{}",
+                pascal(&dimension.source_type),
+                pascal(&dimension.field_name),
+                pascal(&source_name)
+            );
+            let proto = builder.field(&value_type, &context, &source_name, number)?;
+            Ok(Field {
+                source_name,
+                proto,
+                value_type: value_type.clone(),
+            })
+        })
+        .collect()
 }
 
 impl Builder<'_> {

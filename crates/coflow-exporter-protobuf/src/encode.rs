@@ -1,4 +1,4 @@
-use crate::contract::{Contract, Record};
+use crate::contract::{Contract, DimensionTable, Record, RecordSource};
 use crate::ProtobufExportError;
 use coflow_api::ArtifactFile;
 use coflow_cft::{CftSchema, CftValueType};
@@ -11,27 +11,110 @@ pub(crate) fn encode_tables(
 ) -> Result<Vec<ArtifactFile>, ProtobufExportError> {
     let mut files = Vec::new();
     for record_contract in contract.records.iter().filter(|record| record.has_table) {
-        let mut table = Vec::new();
-        for (_, record) in model.records_of_type(&record_contract.source_name) {
-            let mut payload = Vec::new();
-            if record_contract.has_id {
-                write_string(1, record.key(), &mut payload);
+        let table = match &record_contract.source {
+            RecordSource::SchemaType => encode_schema_table(contract, schema, model, record_contract)?,
+            RecordSource::DimensionTable(dimension) => {
+                encode_dimension_table(contract, schema, model, record_contract, dimension)?
             }
-            encode_fields(
-                contract,
-                schema,
-                record_contract,
-                &record.object,
-                &mut payload,
-            )?;
-            write_bytes(1, &payload, &mut table);
-        }
-        files.push(ArtifactFile::bytes(
-            format!("{}.pb", record_contract.source_name),
-            table,
-        ));
+        };
+        files.push(ArtifactFile::bytes(format!("{}.pb", record_contract.source_name), table));
     }
     Ok(files)
+}
+
+fn encode_schema_table(
+    contract: &Contract,
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    record_contract: &Record,
+) -> Result<Vec<u8>, ProtobufExportError> {
+    let mut table = Vec::new();
+    for (_, record) in model.records_of_type(&record_contract.source_name) {
+        let mut payload = Vec::new();
+        if record_contract.has_id {
+            write_string(1, record.key(), &mut payload);
+        }
+        encode_fields(
+            contract,
+            schema,
+            record_contract,
+            &record.object,
+            &mut payload,
+        )?;
+        write_bytes(1, &payload, &mut table);
+    }
+    Ok(table)
+}
+
+fn encode_dimension_table(
+    contract: &Contract,
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    record_contract: &Record,
+    dimension: &DimensionTable,
+) -> Result<Vec<u8>, ProtobufExportError> {
+    let mut table = Vec::new();
+    for (_, record) in model.records_assignable_to(schema, &dimension.source_type) {
+        let mut payload = Vec::new();
+        let id = if dimension.is_singleton {
+            dimension.field_name.as_str()
+        } else {
+            record.key()
+        };
+        write_string(1, id, &mut payload);
+
+        let default = record.object.field(&dimension.field_name).ok_or_else(|| {
+            ProtobufExportError::new(format!(
+                "record `{}` is missing dimension source field `{}`",
+                record.actual_type(), dimension.field_name
+            ))
+        })?;
+        let default_field = record_contract
+            .fields
+            .iter()
+            .find(|field| field.source_name == "default")
+            .ok_or_else(|| ProtobufExportError::new("dimension table is missing `default`"))?;
+        encode_field_value(
+            contract,
+            schema,
+            &default_field.value_type,
+            default,
+            default_field.proto.number,
+            &mut payload,
+        )?;
+
+        let overlay = record.dimension_field(&dimension.field_name);
+        if overlay.is_some_and(|values| values.dimension.as_str() != dimension.dimension_name) {
+            return Err(ProtobufExportError::new(format!(
+                "dimension source field `{}.{}` contains values for a different dimension",
+                dimension.source_type, dimension.field_name
+            )));
+        }
+        for variant in &dimension.variants {
+            let Some(value) = overlay.and_then(|values| values.variants.get(variant.as_str())) else {
+                continue;
+            };
+            let field = record_contract
+                .fields
+                .iter()
+                .find(|field| field.source_name == *variant)
+                .ok_or_else(|| {
+                    ProtobufExportError::new(format!(
+                        "dimension table is missing variant `{variant}`"
+                    ))
+                })?;
+            encode_field_value(
+                contract,
+                schema,
+                &field.value_type,
+                &value.value,
+                field.proto.number,
+                &mut payload,
+            )?;
+        }
+        write_bytes(1, &payload, &mut table);
+    }
+    Ok(table)
 }
 
 fn encode_fields(
