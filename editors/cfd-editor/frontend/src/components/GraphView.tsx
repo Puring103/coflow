@@ -611,7 +611,7 @@ export function GraphView({ graphData, activeType, enabledFieldsOverride, visibl
             {layoutBusy
               ? '布局图谱中…'
               : layoutError
-                ? '图谱布局失败'
+                ? `图谱布局失败：${layoutError}`
                 : availableFields.length > 0 && enabledFields.size === 0
                   ? '未选择引用字段'
                   : '无可显示的引用关系'}
