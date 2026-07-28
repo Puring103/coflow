@@ -99,12 +99,41 @@ export function summaryOf(value: FieldValue): string {
 
 export function recordMatchesSearch(record: RecordRow, query: string): boolean {
   const normalized = query.trim().toLowerCase()
+  return !normalized || record.coordinate.key.toLowerCase().includes(normalized)
+}
+
+/** Matches a query against a record's complete, recursively traversed value tree. */
+export function recordMatchesFullTextSearch(record: RecordRow, query: string): boolean {
+  const normalized = query.trim().toLowerCase()
   if (!normalized) return true
   if (record.coordinate.key.toLowerCase().includes(normalized)) return true
   return record.fields.some(field => (
     field.name.toLowerCase().includes(normalized)
-    || summaryOf(field.value).toLowerCase().includes(normalized)
+    || fullTextOf(field.value).toLowerCase().includes(normalized)
   ))
+}
+
+function fullTextOf(value: FieldValue): string {
+  const scalar = scalarText(value)
+  if (scalar !== null) return scalar
+  switch (value.kind) {
+    case 'null': return 'null'
+    case 'object': return [
+      value.value.actual_type,
+      ...Object.entries(value.value.fields).flatMap(([name, child]) => child ? [name, fullTextOf(child)] : [name]),
+    ].join(' ')
+    case 'array': return value.value.map(fullTextOf).join(' ')
+    case 'dict': return value.value.map(([key, child]) => `${dictKeyText(key)} ${fullTextOf(child)}`).join(' ')
+    default: return ''
+  }
+}
+
+function dictKeyText(key: DictKey): string {
+  switch (key.kind) {
+    case 'string': return key.value
+    case 'int': return String(key.value)
+    case 'enum': return `${key.value.enum_name} ${key.value.variant ?? String(key.value.value)}`
+  }
 }
 
 function stripNullableType(declaredType: string): string {

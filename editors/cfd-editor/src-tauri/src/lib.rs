@@ -690,7 +690,7 @@ async fn get_enum_variants(
     session_id: u32,
     enum_name: String,
     host: State<'_, EditorHost>,
-) -> Result<Vec<String>, EditorError> {
+) -> Result<Vec<editor::types::EnumVariantOption>, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.sessions().get_enum_variants(session_id, &enum_name)).await
 }

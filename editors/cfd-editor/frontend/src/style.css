@@ -1350,6 +1350,24 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   border-radius: 3px;
 }
 .global-search-bar .rv-clear-search:hover { background: var(--bg-3); color: var(--text); }
+.table-full-text-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+.table-full-text-toggle input { margin: 0; accent-color: var(--accent); }
+.search-highlight {
+  padding: 0 1px;
+  color: inherit;
+  background: color-mix(in srgb, var(--yellow) 58%, transparent);
+  border-radius: 2px;
+  box-decoration-break: clone;
+}
 .global-search-count {
   flex-shrink: 0;
   font-size: var(--fs-sm);

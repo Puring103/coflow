@@ -1,10 +1,11 @@
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { RefTarget } from '../bindings/RefTarget'
 import type { FieldValue } from '../wire'
+import type { EnumVariantOption } from '../bindings/EnumVariantOption'
 import type { EditorGenerationIdentity } from './editorState'
 
 export interface EditorLookupBackend {
-  getEnumVariants: (sessionId: number, enumName: string) => Promise<string[]>
+  getEnumVariants: (sessionId: number, enumName: string) => Promise<EnumVariantOption[]>
   getRefTargets: (sessionId: number, targetType: string) => Promise<RefTarget[]>
   makeDefaultObject: (sessionId: number, typeName: string) => Promise<FieldValue>
   createRecordDraft: (sessionId: number, actualType: string) => Promise<CreateRecordDraft>
@@ -33,7 +34,7 @@ export class EditorLookupController {
     this.requests.clear()
   }
 
-  loadEnumVariants(enumName: string): Promise<LookupResult<string[]>> {
+  loadEnumVariants(enumName: string): Promise<LookupResult<EnumVariantOption[]>> {
     return this.lookup('enum', enumName, (sessionId) => (
       this.backend.getEnumVariants(sessionId, enumName)
     ))

@@ -14,6 +14,7 @@ import { createPortal } from 'react-dom'
 export interface SearchableOption {
   value: string
   label?: string
+  description?: string
 }
 
 interface Props {
@@ -241,7 +242,7 @@ export function SearchableSelect({
             className={`searchable-select-option${active ? ' active' : ''}${selected ? ' selected' : ''}`}
             role="option"
             aria-selected={selected}
-            title={option.label ?? option.value}
+            title={option.description ?? option.label ?? option.value}
             onMouseDown={event => event.preventDefault()}
             onMouseEnter={() => setActiveIndex(index)}
             onClick={() => chooseOption(option)}

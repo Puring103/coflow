@@ -150,6 +150,8 @@ impl DimensionValueOrigin {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldShapeInfo {
     pub display_label: String,
+    pub label: Option<String>,
+    pub description: Option<String>,
     pub ref_target_type: Option<String>,
     pub enum_type: Option<String>,
     pub nullable: bool,

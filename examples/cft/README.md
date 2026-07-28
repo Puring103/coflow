@@ -3,7 +3,7 @@
 These files demonstrate core CFT syntax and are designed to compile together as one global CFT namespace.
 
 - `01_constants.cft`: constants and literal defaults.
-- `02_enums_and_flags.cft`: plain enums and `@flag` enums.
+- `02_enums_and_flags.cft`: plain enums, `@flag` enums, and `@label` / `@description` display metadata.
 - `03_types_fields_defaults.cft`: type declarations, fields, annotations, virtual `id`, and defaults.
 - `04_arrays_and_dicts.cft`: arrays, dictionaries, and dict entry checks.
 - `05_inheritance.cft`: abstract types, inheritance, and sealed types.
