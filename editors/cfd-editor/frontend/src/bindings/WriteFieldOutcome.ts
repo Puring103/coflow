@@ -4,18 +4,18 @@ import type { FlatDiagnostic } from "./FlatDiagnostic";
 import type { RecordCoordinate } from "./RecordCoordinate";
 import type { RecordRow } from "./RecordRow";
 
-export type WriteFieldOutcome = { revision: number, row: RecordRow, diagnostics: Array<FlatDiagnostic>, 
+export type WriteFieldOutcome = { revision: number, row: RecordRow, diagnostics: Array<FlatDiagnostic>,
 /**
  * Value at the target path before the write. Captured by the backend
  * from engine state so undo does not depend on a stale front-end cache.
  */
-old_value: CfdValue | null, 
+old_value: CfdValue | null,
 /**
  * Value at the target path after the write. Collection edits are built
  * in the backend, so the frontend uses this authoritative value for
  * undo/redo instead of reconstructing the collection mutation.
  */
-new_value: CfdValue | null, affected_files: Array<string>, 
+new_value: CfdValue | null, affected_files: Array<string>,
 /**
  * `Some(new_coordinate)` when the write changed the host record's `id`
  * field. The front-end refreshes any caches keyed by the old coordinate.

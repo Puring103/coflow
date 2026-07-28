@@ -50,6 +50,37 @@ fn export_bindings() {
     t::GraphNode::export_all().expect("export GraphNode");
     t::GraphEdge::export_all().expect("export GraphEdge");
     t::RefTarget::export_all().expect("export RefTarget");
+    normalize_generated_bindings();
+}
+
+#[cfg(feature = "ts-export")]
+fn normalize_generated_bindings() {
+    let bindings_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../frontend/src/bindings");
+    let entries = std::fs::read_dir(&bindings_dir).expect("read generated bindings directory");
+
+    for entry in entries {
+        let path = entry.expect("read generated binding entry").path();
+        if path.extension().is_none_or(|extension| extension != "ts") {
+            continue;
+        }
+
+        let contents = std::fs::read_to_string(&path).expect("read generated binding");
+        let normalized = contents
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let normalized = if contents.ends_with('\n') {
+            format!("{normalized}\n")
+        } else {
+            normalized
+        };
+
+        if normalized != contents {
+            std::fs::write(path, normalized).expect("normalize generated binding");
+        }
+    }
 }
 
 #[cfg(not(feature = "ts-export"))]
