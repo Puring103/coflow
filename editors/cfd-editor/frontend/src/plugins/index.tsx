@@ -54,11 +54,15 @@ function notify() {
   listeners.forEach(listener => listener())
 }
 
-function matchesTarget(renderer: FieldRenderer, context: ReadRenderContext): boolean {
+export function matchesTarget(renderer: FieldRenderer, context: ReadRenderContext): boolean {
   const target = renderer.target
   return target.kind === 'field-value'
-    && target.type === context.type
+    && (target.type === context.type || target.type === stripOuterNullable(context.type))
     && target.surfaces.includes(context.surface)
+}
+
+function stripOuterNullable(type: string): string {
+  return type.endsWith('?') ? type.slice(0, -1) : type
 }
 
 function pluginHost(renderers: FieldRenderer[]): ExtensionHost {

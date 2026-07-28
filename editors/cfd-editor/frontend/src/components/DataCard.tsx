@@ -194,9 +194,10 @@ export function DataCardCompact({ value, label, declaredType, surface = 'table-c
   const fallback = isComplexValue(value)
     ? <MarkdownValueTree value={value} label={value.kind === 'array' ? undefined : label} depth={0} />
     : <ValueChip value={value} />
-  const renderer = useFieldRenderer({ value, type: declaredType ?? '', surface })
+  const nullable = declaredType?.endsWith('?') ?? false
+  const renderer = useFieldRenderer({ value, type: declaredType ?? '', nullable, surface })
   return (
-    <PluginRendererMount renderer={renderer} context={{ value, type: declaredType ?? '', surface }} fallback={fallback} />
+    <PluginRendererMount renderer={renderer} context={{ value, type: declaredType ?? '', nullable, surface }} fallback={fallback} />
   )
 }
 
@@ -648,6 +649,7 @@ function FieldRow({
   const pluginRenderer = useFieldRenderer({
     value,
     type: declaredType ?? '',
+    nullable: !!nullable,
     surface: 'record-foldout-header',
   })
   const isComplex = value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
@@ -699,7 +701,7 @@ function FieldRow({
         trailing={mergedTrailing}
         dragProps={dragProps}
         pluginRenderer={pluginRenderer}
-        pluginContext={pluginRenderer ? { value, type: declaredType ?? '', surface: 'record-foldout-header' } : undefined}
+        pluginContext={pluginRenderer ? { value, type: declaredType ?? '', nullable: !!nullable, surface: 'record-foldout-header' } : undefined}
       />
     )
   }

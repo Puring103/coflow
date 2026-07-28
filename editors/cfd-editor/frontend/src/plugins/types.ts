@@ -15,6 +15,8 @@ export interface FieldValueTarget {
 export interface ReadRenderContext {
   value: FieldValue
   type: string
+  /** Whether the declared type has an outer nullable wrapper. */
+  nullable: boolean
   surface: FieldRenderSurface
 }
 
