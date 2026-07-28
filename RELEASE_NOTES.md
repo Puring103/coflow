@@ -1,3 +1,14 @@
+# Coflow 0.8.1
+
+## Highlights
+
+### CFD Editor Reliability
+
+- Fixed graph layout execution to use one ELK worker, avoiding failures from a nested worker.
+- Let field renderer plugins registered for a type also render its nullable form, while a renderer registered explicitly for `Type?` remains nullable-only.
+
+---
+
 # Coflow 0.8.0
 
 ## Highlights
