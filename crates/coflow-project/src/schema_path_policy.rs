@@ -88,13 +88,17 @@ impl<'a> SchemaPathPolicy<'a> {
 
     pub(super) fn canonicalize(path: &Path) -> Result<PathBuf, DiagnosticSet> {
         fs::canonicalize(path).map_err(|err| {
-            file_error(
-                path,
-                "PROJECT-SCHEMA-PATH",
-                "PROJECT",
-                format!("failed to resolve schema path `{}`: {err}", path.display()),
-            )
+            Self::resolve_error(path, err)
         })
+    }
+
+    pub(super) fn resolve_error(path: &Path, err: impl std::fmt::Display) -> DiagnosticSet {
+        file_error(
+            path,
+            "PROJECT-SCHEMA-PATH",
+            "PROJECT",
+            format!("failed to resolve schema path `{}`: {err}", path.display()),
+        )
     }
 
     pub(super) fn outside_declared_root_error(
