@@ -21,6 +21,7 @@ use coflow_api::{
 };
 use coflow_cft::CftValueType;
 use coflow_codegen_core::{CodegenEnum, CodegenModel, CodegenType};
+use std::collections::BTreeSet;
 use std::fmt::Write;
 
 pub const CPP_CODEGEN_DESCRIPTOR: CodegenDescriptor = CodegenDescriptor {
@@ -207,7 +208,7 @@ fn render_types(model: &CodegenModel) -> String {
          template <typename T> struct Localized { T default_value; };\n\
          template <typename T> struct CoflowTable { std::vector<std::unique_ptr<T> > records; std::map<typename CoflowKey<T>::type, T*> by_id; };\n\n",
     );
-    for ty in &model.types {
+    for ty in ordered_cpp_types(model) {
         render_type(&mut out, ty, model);
     }
     out.push_str("struct CoflowTables {\n");
@@ -224,6 +225,79 @@ fn render_types(model: &CodegenModel) -> String {
     }
     out.push_str("};\n\n} // namespace coflow_generated\n");
     out
+}
+
+fn ordered_cpp_types(model: &CodegenModel) -> Vec<&CodegenType> {
+    let mut emitted = BTreeSet::new();
+    let mut ordered = Vec::with_capacity(model.types.len());
+    while ordered.len() < model.types.len() {
+        let mut progressed = false;
+        for ty in &model.types {
+            if emitted.contains(&ty.name) {
+                continue;
+            }
+            let dependencies = cpp_complete_type_dependencies(ty, model);
+            if dependencies
+                .iter()
+                .all(|dependency| dependency == &ty.name || emitted.contains(dependency))
+            {
+                emitted.insert(ty.name.clone());
+                ordered.push(ty);
+                progressed = true;
+            }
+        }
+        if !progressed {
+            ordered.extend(
+                model
+                    .types
+                    .iter()
+                    .filter(|ty| !emitted.contains(&ty.name)),
+            );
+            break;
+        }
+    }
+    ordered
+}
+
+fn cpp_complete_type_dependencies(ty: &CodegenType, model: &CodegenModel) -> BTreeSet<String> {
+    let mut dependencies = BTreeSet::new();
+    if let Some(parent) = &ty.parent {
+        dependencies.insert(parent.clone());
+    }
+    for field in &ty.own_fields {
+        collect_cpp_complete_type_dependencies(&field.value_type, model, &mut dependencies);
+    }
+    dependencies
+}
+
+fn collect_cpp_complete_type_dependencies(
+    value: &CftValueType,
+    model: &CodegenModel,
+    dependencies: &mut BTreeSet<String>,
+) {
+    match value {
+        CftValueType::Object(name) => {
+            if model
+                .type_by_name(name)
+                .is_some_and(|ty| !ty.is_polymorphic())
+            {
+                dependencies.insert(name.to_string());
+            }
+        }
+        CftValueType::Array(inner) | CftValueType::Nullable(inner) => {
+            collect_cpp_complete_type_dependencies(inner, model, dependencies);
+        }
+        CftValueType::Dict(key, value) => {
+            collect_cpp_complete_type_dependencies(key, model, dependencies);
+            collect_cpp_complete_type_dependencies(value, model, dependencies);
+        }
+        CftValueType::Int
+        | CftValueType::Float
+        | CftValueType::Bool
+        | CftValueType::String
+        | CftValueType::Enum(_)
+        | CftValueType::RecordRef(_) => {}
+    }
 }
 
 fn render_enum(out: &mut String, item: &CodegenEnum) {
@@ -759,5 +833,23 @@ mod tests {
         assert!(json.contains("failed to resolve record reference in Holder"));
         assert!(protobuf.contains("std::shared_ptr<Item>& value"));
         assert!(protobuf.contains("inline bool ReadId(const WireValue& wire, ItemId& value)"));
+    }
+
+    #[test]
+    fn generated_cpp_defines_bases_and_inline_values_before_consumers() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "abstract type ZBase {} type AChild : ZBase {} @struct sealed type ZValue { amount: int; } type AHolder { value: ZValue; }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+        let model = CodegenModel::build(&schema, None, &serde_json::Value::Null).expect("model");
+        let types = render_types(&model);
+
+        let base = types.find("struct ZBase {").expect("base definition");
+        let child = types.find("struct AChild : public ZBase {").expect("child definition");
+        let value = types.find("struct ZValue {").expect("value definition");
+        let holder = types.find("struct AHolder {").expect("holder definition");
+        assert!(base < child, "base must be defined before child");
+        assert!(value < holder, "inline value must be defined before owner");
     }
 }

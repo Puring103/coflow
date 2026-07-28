@@ -23,6 +23,8 @@ use coflow_cft::CftValueType;
 use coflow_codegen_core::{CodegenEnum, CodegenModel, CodegenType};
 use std::fmt::Write;
 
+const GENERATED_MODULE_PREFIX: &str = "#![allow(dead_code)]\n";
+
 pub const RUST_CODEGEN_DESCRIPTOR: CodegenDescriptor = CodegenDescriptor {
     id: "rust",
     display_name: "Rust",
@@ -91,7 +93,9 @@ impl LoaderGenerator for RustProtobufLoaderGenerator {
         artifact_set(vec![
             ArtifactFile::text(
                 "mod.rs",
-                "mod protobuf;\nmod types;\npub use protobuf::load;\npub use types::*;\n",
+                format!(
+                    "{GENERATED_MODULE_PREFIX}mod protobuf;\nmod types;\npub use protobuf::load;\npub use types::*;\n"
+                ),
             ),
             ArtifactFile::text("protobuf.rs", render_protobuf_loader(&model)),
         ])
@@ -155,7 +159,9 @@ impl LoaderGenerator for RustJsonLoaderGenerator {
         artifact_set(vec![
             ArtifactFile::text(
                 "mod.rs",
-                "mod json;\nmod types;\npub use json::load;\npub use types::*;\n",
+                format!(
+                    "{GENERATED_MODULE_PREFIX}mod json;\nmod types;\npub use json::load;\npub use types::*;\n"
+                ),
             ),
             ArtifactFile::text("json.rs", render_json_loader(&model)),
         ])
@@ -514,10 +520,10 @@ fn render_json_type_parser(out: &mut String, ty: &CodegenType, model: &CodegenMo
     } else {
         format!("parse_{}_inline", snake(&ty.name))
     };
-    let _ = writeln!(out, "fn {function}(value: &Value) -> Result<{name}, String> {{\n    let object = object(value)?;\n    Ok({name} {{");
+    let _ = writeln!(out, "fn {function}(value: &Value) -> Result<{name}, String> {{\n    let fields = object(value)?;\n    Ok({name} {{");
     if !ty.is_abstract && !ty.is_struct {
         let id = if table {
-            rust_json_id_expression(&ty.name, "field(object, \"id\")?", model)
+            rust_json_id_expression(&ty.name, "field(fields, \"id\")?", model)
         } else {
             rust_inline_id_expression(&ty.name, model)
         };
@@ -525,7 +531,7 @@ fn render_json_type_parser(out: &mut String, ty: &CodegenType, model: &CodegenMo
     }
     for field_meta in &ty.all_fields {
         let field_name = rust_ident(&snake(&field_meta.name));
-        let value = format!("field(object, {:?})?", field_meta.name);
+        let value = format!("field(fields, {:?})?", field_meta.name);
         let mut expression = parse_expression(&field_meta.value_type, &value, model);
         if field_meta.is_localized {
             expression = format!("Localized::new({expression})");
@@ -538,7 +544,7 @@ fn render_json_type_parser(out: &mut String, ty: &CodegenType, model: &CodegenMo
 fn render_polymorphic_parser(out: &mut String, ty: &CodegenType) {
     let name = pascal(&ty.name);
     let function = format!("parse_{}_value", snake(&ty.name));
-    let _ = writeln!(out, "fn {function}(value: &Value) -> Result<{name}Value, String> {{\n    let object = object(value)?;\n    let actual = string(field(object, \"$type\")?)?;\n    match actual.as_str() {{");
+    let _ = writeln!(out, "fn {function}(value: &Value) -> Result<{name}Value, String> {{\n    let fields = object(value)?;\n    let actual = string(field(fields, \"$type\")?)?;\n    match actual.as_str() {{");
     for actual in &ty.concrete_types {
         let actual_name = pascal(actual);
         let _ = writeln!(
@@ -761,7 +767,7 @@ fn protobuf_field_expression(
     match value_type {
         CftValueType::Nullable(inner) => {
             let value = protobuf_singular_expression(inner, "value", model);
-            format!("optional(&message, {tag}).map(|value| {value}).transpose()?")
+            format!("optional(&message, {tag}).map(|value| -> Result<_, String> {{ Ok({value}) }}).transpose()?")
         }
         CftValueType::Array(inner) => protobuf_array_expression(inner, "&message", tag, model),
         CftValueType::Dict(key, value) => {
@@ -798,7 +804,7 @@ fn protobuf_singular_expression(
         ),
         CftValueType::Nullable(inner) => {
             let nested = protobuf_singular_expression(inner, "nested", model);
-            format!("{{ let wrapper = decode(bytes({value})?)?; optional(&wrapper, 1).map(|nested| {nested}).transpose()? }}")
+            format!("{{ let wrapper = decode(bytes({value})?)?; optional(&wrapper, 1).map(|nested| -> Result<_, String> {{ Ok({nested}) }}).transpose()? }}")
         }
         CftValueType::Array(inner) => {
             let items = protobuf_array_expression(inner, "&wrapper", 1, model);
@@ -923,11 +929,16 @@ fn rust_ident(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{render_protobuf_loader, render_types, CodegenModel};
+    use super::{
+        render_json_loader, render_protobuf_loader, render_types, CodegenModel,
+        GENERATED_MODULE_PREFIX,
+    };
     use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+    use std::process::Command;
 
     #[test]
     fn generated_rust_and_protobuf_loader_are_valid_syntax() {
+        assert_eq!(GENERATED_MODULE_PREFIX, "#![allow(dead_code)]\n");
         let modules = parse_modules([CftFile::from_source(
             ModuleId::from("main"),
             "enum Rarity { Common = 0, Rare = 2, } type Item { rarity: Rarity; tags: [string]; attrs: {string: int}; }",
@@ -937,6 +948,50 @@ mod tests {
 
         syn::parse_file(&render_types(&model)).expect("generated types syntax");
         syn::parse_file(&render_protobuf_loader(&model)).expect("generated loader syntax");
+    }
+
+    #[test]
+    fn generated_loaders_handle_dicts_and_nested_nullable_values() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "type Item { note: string?; tags: [string]?; nullable_tags: [string?]; attrs: {string: int}; nested: {string: [int]?}; related: &Item?; }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+        let model = CodegenModel::build(&schema, None, &serde_json::Value::Null).expect("model");
+
+        let types = render_types(&model);
+        let json = render_json_loader(&model);
+        let protobuf = render_protobuf_loader(&model);
+        assert!(json.contains("let fields = object(value)?;"));
+        assert!(!json.contains("let object = object(value)?;"));
+        assert!(protobuf.contains("map(|value| -> Result<_, String>"));
+        syn::parse_file(&json).expect("generated JSON loader syntax");
+        syn::parse_file(&protobuf).expect("generated Protobuf loader syntax");
+
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "coflow-generated-rust-protobuf-{}-{suffix}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("create generated crate");
+        std::fs::write(root.join("types.rs"), types).expect("write types");
+        std::fs::write(root.join("protobuf.rs"), protobuf).expect("write protobuf loader");
+        std::fs::write(root.join("lib.rs"), "mod types; mod protobuf;\n").expect("write crate root");
+
+        let output = Command::new("rustc")
+            .current_dir(&root)
+            .args(["--edition=2021", "--crate-type=lib", "lib.rs", "-o", "generated.rlib"])
+            .output()
+            .expect("run rustc");
+        assert!(
+            output.status.success(),
+            "generated Protobuf loader failed to compile:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        std::fs::remove_dir_all(root).expect("remove generated crate");
     }
 
     #[test]

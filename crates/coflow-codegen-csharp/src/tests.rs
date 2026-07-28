@@ -263,7 +263,7 @@ fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Resul
     require_contains(database, "public GameConfig GameConfig { get; }")?;
     require_contains(
         database,
-        "GameConfig.LoadTable(Path.Combine(dataDir, \"GameConfig.json\"), LoadContext.Empty)",
+        "GameConfig.LoadTable(Path.Combine(dataDir, \"GameConfig.json\"), context)",
     )?;
     require_contains(database, "must have exactly 1 record")?;
     require_not_contains(database, "TbGameConfig")?;
@@ -283,6 +283,30 @@ fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Resul
     // `LoadInline`, which silently skips the wire-side `"id"` key that
     // the JSON exporter writes for each row.
     require_contains(singleton, "result.Add(LoadInline(row, context));")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_loads_singletons_with_the_full_table_context() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+            @singleton type Settings { starter: &Item; }
+        "#,
+    )?;
+    let options = CsharpCodegenOptions::new("Game.Config");
+    for files in [
+        generate_json(&schema, &options),
+        generate_messagepack(&schema, &options),
+        generate_protobuf(&schema, &options),
+    ] {
+        let files = files.map_err(|error| error.to_string())?;
+        let database = generated_file(&files, "CoflowTables.cs")?;
+        require_contains(database, "var context = new LoadContext(itemIndex);")?;
+        require_contains(database, "Settings.LoadTable(Path.Combine(dataDir,")?;
+        require_contains(database, "), context);")?;
+        require_not_contains(database, "), LoadContext.Empty);")?;
+    }
     Ok(())
 }
 
@@ -984,6 +1008,7 @@ fn codegen_messagepack_emits_coflow_tables_and_messagepack_loaders() -> Result<(
         r#"
             type Item {
                 reward: &Reward;
+                tags: [string];
             }
 
             type Reward {
@@ -1013,6 +1038,7 @@ fn codegen_messagepack_emits_coflow_tables_and_messagepack_loaders() -> Result<(
         item,
         "context.GetReward(CoflowMessagePack.ReadString(ref reader))",
     )?;
+    require_not_contains(item, "var hasTags = false;")?;
     require_not_contains(item, "CoflowMessagePack.NextIsString")?;
     Ok(())
 }

@@ -181,6 +181,12 @@ fn render_types(model: &CodegenModel) -> String {
     }
     out.push('\n');
     for ty in &model.types {
+        let name = pascal(&ty.name);
+        let _ = writeln!(out, "local {name} = {{}}");
+        let _ = writeln!(out, "M[{name:?}] = {name}");
+    }
+    out.push('\n');
+    for ty in &model.types {
         let _ = writeln!(out, "---@class {}", pascal(&ty.name));
         if !ty.is_abstract && !ty.is_struct {
             if ty.id_as_enum.is_some() {
@@ -197,7 +203,6 @@ fn render_types(model: &CodegenModel) -> String {
                 lua_annotation(&field.value_type, model)
             );
         }
-        let _ = writeln!(out, "local {} = {{}}", pascal(&ty.name));
         let _ = writeln!(out, "{}.__index = {}", pascal(&ty.name), pascal(&ty.name));
         if let Some(parent) = &ty.parent {
             let _ = writeln!(
@@ -207,7 +212,6 @@ fn render_types(model: &CodegenModel) -> String {
                 pascal(parent)
             );
         }
-        let _ = writeln!(out, "M[{:?}] = {}", pascal(&ty.name), pascal(&ty.name));
         let id_enum = ty
             .id_as_enum
             .as_ref()
@@ -539,6 +543,11 @@ mod tests {
 
         let types = render_types(&model);
         let loader = render_json_loader(&model);
+        let item_declaration = types.find("local Item = {}").expect("item declaration");
+        let inheritance = types
+            .find("setmetatable(Weapon, { __index = Item })")
+            .expect("inheritance");
+        assert!(item_declaration < inheritance, "{types}");
         assert!(types.contains("id_enum = \"ItemId\""));
         assert!(types.contains("setmetatable(Weapon, { __index = Item })"));
         assert!(types.contains("id_enum = \"ItemId\", targets = { \"Weapon\" }"));
