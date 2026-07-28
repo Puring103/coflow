@@ -5,7 +5,6 @@
 //! compensation plus the single post-write rebuild to `mutation::apply`.
 
 mod plan;
-mod rebuild;
 mod refs;
 mod stage;
 mod target;
@@ -21,7 +20,6 @@ use super::{ProjectSession, RecordCoordinate};
 use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
 use crate::indexes::RecordRef;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
-use rebuild::{rebuild_session_after_write, MutationRebuild};
 pub(crate) use stage::{
     preflight_mutation_op, stage_field_mutation_batch, stage_mutation_op, MutationBatchFailure,
 };
@@ -221,8 +219,8 @@ pub(crate) fn rebuild_after_mutation(
     session: &ProjectSession,
     registry: &ProviderRegistry,
     impact: &MutationImpact,
-) -> Result<MutationRebuild, DiagnosticSet> {
-    rebuild_session_after_write(session, registry, impact)
+) -> Result<crate::session_build::SessionBuildOutput, DiagnosticSet> {
+    crate::session_build::rebuild_project_session_from_generation(session, registry, impact)
 }
 
 #[cfg(test)]
