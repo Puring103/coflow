@@ -179,13 +179,13 @@ fn overlapping_output_diagnostics(outputs: &[(&ArtifactOutputPlan, PathBuf)]) ->
 }
 
 fn configured_schema_paths(project: &Project) -> Vec<PathBuf> {
-    match &project.config.schema {
-        coflow_project::SchemaConfig::One(path) => vec![project.resolve_path(path)],
-        coflow_project::SchemaConfig::Many(paths) => paths
-            .iter()
-            .map(|path| project.resolve_path(path))
-            .collect(),
-    }
+    project
+        .config
+        .schema
+        .paths()
+        .iter()
+        .map(|path| project.resolve_path(path))
+        .collect()
 }
 
 fn configured_source_paths(project: &Project) -> Vec<PathBuf> {

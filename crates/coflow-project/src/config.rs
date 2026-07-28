@@ -67,11 +67,10 @@ pub struct DimensionConfig {
     pub display_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum SchemaConfig {
-    One(PathBuf),
-    Many(Vec<PathBuf>),
+#[derive(Debug, Clone)]
+pub struct SchemaConfig {
+    paths: Vec<PathBuf>,
+    list_shape: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -84,7 +83,14 @@ pub struct SourceConfig {
 #[derive(Debug, Clone, Default)]
 pub struct OutputsConfig {
     targets: Vec<OutputTargetConfig>,
-    object_shape: bool,
+    shape: OutputsShape,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum OutputsShape {
+    Object,
+    #[default]
+    List,
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +125,33 @@ impl SourceConfig {
     }
 }
 
+impl SchemaConfig {
+    #[must_use]
+    pub fn one(path: PathBuf) -> Self {
+        Self {
+            paths: vec![path],
+            list_shape: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn many(paths: Vec<PathBuf>) -> Self {
+        Self {
+            paths,
+            list_shape: true,
+        }
+    }
+
+    #[must_use]
+    pub fn paths(&self) -> &[PathBuf] {
+        &self.paths
+    }
+
+    pub(crate) const fn is_list_shape(&self) -> bool {
+        self.list_shape
+    }
+}
+
 impl OutputConfig {
     #[must_use]
     pub const fn options(&self) -> &Value {
@@ -131,7 +164,7 @@ impl OutputsConfig {
     pub const fn new(targets: Vec<OutputTargetConfig>) -> Self {
         Self {
             targets,
-            object_shape: false,
+            shape: OutputsShape::List,
         }
     }
 
@@ -146,7 +179,7 @@ impl OutputsConfig {
 
     #[must_use]
     pub const fn is_object_shape(&self) -> bool {
-        self.object_shape
+        matches!(self.shape, OutputsShape::Object)
     }
 }
 
@@ -165,6 +198,24 @@ impl LoaderConfig {
     #[must_use]
     pub const fn options(&self) -> &Value {
         &self.options
+    }
+}
+
+impl<'de> Deserialize<'de> for SchemaConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match Value::deserialize(deserializer)? {
+            Value::String(path) => Ok(Self::one(PathBuf::from(path))),
+            Value::Array(values) => values
+                .into_iter()
+                .map(path_value)
+                .collect::<Result<Vec<_>, _>>()
+                .map(Self::many)
+                .map_err(de::Error::custom),
+            _ => Err(de::Error::custom("schema must be a path or a list of paths")),
+        }
     }
 }
 
@@ -255,7 +306,7 @@ impl<'de> Deserialize<'de> for OutputsConfig {
                 };
                 Ok(Self {
                     targets,
-                    object_shape: true,
+                    shape: OutputsShape::Object,
                 })
             }
             Value::Array(values) => values

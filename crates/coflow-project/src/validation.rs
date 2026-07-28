@@ -210,24 +210,20 @@ fn validate_schema_config_collecting(
 ) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
     let policy = SchemaPathPolicy::new(root_dir);
-    match schema {
-        SchemaConfig::One(path) => {
-            if let Err(err) = policy.validate_config_path(path, "schema") {
-                diagnostics.push(ProjectDiagnostic::new(err, ["schema"]));
-            }
-        }
-        SchemaConfig::Many(paths) => {
-            if paths.is_empty() {
-                diagnostics.push(ProjectDiagnostic::new("schema list is empty", ["schema"]));
-            }
-            for (index, path) in paths.iter().enumerate() {
-                if let Err(err) = policy.validate_config_path(path, &format!("schema[{index}]")) {
-                    diagnostics.push(ProjectDiagnostic::new(
-                        err,
-                        ["schema".to_string(), index.to_string()],
-                    ));
-                }
-            }
+    if schema.paths().is_empty() {
+        diagnostics.push(ProjectDiagnostic::new("schema list is empty", ["schema"]));
+    }
+    for (index, path) in schema.paths().iter().enumerate() {
+        let (label, key_path) = if schema.is_list_shape() {
+            (
+                format!("schema[{index}]"),
+                vec!["schema".to_string(), index.to_string()],
+            )
+        } else {
+            ("schema".to_string(), vec!["schema".to_string()])
+        };
+        if let Err(err) = policy.validate_config_path(path, &label) {
+            diagnostics.push(ProjectDiagnostic::new(err, key_path));
         }
     }
     diagnostics
