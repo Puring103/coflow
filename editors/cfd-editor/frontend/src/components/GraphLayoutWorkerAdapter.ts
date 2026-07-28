@@ -1,61 +1,57 @@
+import ELK from 'elkjs/lib/elk-api.js'
 import type { ElkNode } from 'elkjs/lib/elk-api'
-import type { LayoutWorkerRequest, LayoutWorkerResponse } from './GraphView.layout.worker'
+import elkWorkerUrl from 'elkjs/lib/elk-worker.min.js?url'
 
 const LAYOUT_WORKER_TIMEOUT_MS = 20_000
 
-let layoutWorker: Worker | null = null
+type ElkLayoutEngine = InstanceType<typeof ELK>
+
 let nextLayoutRequestId = 1
 const layoutRequests = new Map<number, {
-  resolve: (positions: Map<string, { x: number; y: number }>) => void
   reject: (error: Error) => void
   timeout: number
 }>()
+let elk: ElkLayoutEngine | null = null
 
 export async function runGraphLayoutInWorker(
   graph: ElkNode,
 ): Promise<Map<string, { x: number; y: number }>> {
   const id = nextLayoutRequestId++
-  const worker = getLayoutWorker()
+  const engine = getLayoutEngine()
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
-      resetLayoutWorker(new Error('Graph layout worker timed out'))
+      resetLayoutEngine(new Error('Graph layout worker timed out'))
     }, LAYOUT_WORKER_TIMEOUT_MS)
-    layoutRequests.set(id, { resolve, reject, timeout })
-    try {
-      worker.postMessage({ id, graph } satisfies LayoutWorkerRequest)
-    } catch (error) {
+    layoutRequests.set(id, { reject, timeout })
+    engine.layout(graph).then((laidOut: ElkNode) => {
+      const pending = layoutRequests.get(id)
+      if (!pending) return
+      clearTimeout(pending.timeout)
+      layoutRequests.delete(id)
+      const children = laidOut.children ?? []
+      const minX = children.length > 0 ? Math.min(...children.map(node => node.x ?? 0)) : 0
+      resolve(new Map(children.map(node => [
+        node.id,
+        { x: (node.x ?? 0) - minX, y: node.y ?? 0 },
+      ])))
+    }).catch((error: unknown) => {
+      const pending = layoutRequests.get(id)
+      if (!pending) return
       clearTimeout(timeout)
       layoutRequests.delete(id)
       reject(error instanceof Error ? error : new Error(String(error)))
-    }
+    })
   })
 }
 
-function getLayoutWorker(): Worker {
-  if (!layoutWorker) {
-    layoutWorker = new Worker(new URL('./GraphView.layout.worker.ts', import.meta.url), { type: 'module' })
-    layoutWorker.onmessage = (event: MessageEvent<LayoutWorkerResponse>) => {
-      const response = event.data
-      const pending = layoutRequests.get(response.id)
-      if (!pending) return
-      clearTimeout(pending.timeout)
-      layoutRequests.delete(response.id)
-      if (response.ok) pending.resolve(new Map(response.positions))
-      else pending.reject(new Error(response.error))
-    }
-    layoutWorker.onerror = event => {
-      resetLayoutWorker(new Error(event.message || 'Graph layout worker failed'))
-    }
-    layoutWorker.onmessageerror = () => {
-      resetLayoutWorker(new Error('Graph layout worker returned an unreadable response'))
-    }
-  }
-  return layoutWorker
+function getLayoutEngine(): ElkLayoutEngine {
+  if (!elk) elk = new ELK({ workerUrl: elkWorkerUrl })
+  return elk
 }
 
-function resetLayoutWorker(error: Error): void {
-  layoutWorker?.terminate()
-  layoutWorker = null
+function resetLayoutEngine(error: Error): void {
+  elk?.terminateWorker()
+  elk = null
   for (const [id, pending] of layoutRequests) {
     clearTimeout(pending.timeout)
     pending.reject(error)
