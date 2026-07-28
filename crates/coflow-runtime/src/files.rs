@@ -27,26 +27,25 @@ pub struct FileTreeNode {
     pub children: Vec<Self>,
 }
 
-/// Options for [`crate::ProjectQueries::file_tree_with`].
+/// Internal options for building the default project file tree.
 ///
-/// Defaults mirror what the editor needs: walk every loader-registered
-/// extension and pull dimension output directories into a sibling virtual
-/// folder at the top of the tree.
+/// The defaults walk every loader-registered extension and pull dimension
+/// output directories into a sibling virtual folder at the top of the tree.
 #[derive(Debug, Clone, Default)]
-pub struct FileTreeOptions {
-    pub extra_extensions: Vec<String>,
-    pub dimension_groups: Vec<DimensionGroup>,
+pub(crate) struct FileTreeOptions {
+    pub(crate) extra_extensions: Vec<String>,
+    pub(crate) dimension_groups: Vec<DimensionGroup>,
     /// In-source paths reported by loaders (project-relative, `/`-normalised).
-    pub in_sources: BTreeSet<String>,
+    pub(crate) in_sources: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
-pub struct DimensionGroup {
+pub(crate) struct DimensionGroup {
     /// Display label shown at the top of the dimension's virtual subtree
     /// (e.g. `"本地化"`).
-    pub display_name: String,
+    pub(crate) display_name: String,
     /// Absolute path of the dimension's output directory.
-    pub dir: PathBuf,
+    pub(crate) dir: PathBuf,
 }
 
 pub fn build_file_tree(

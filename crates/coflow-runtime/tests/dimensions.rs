@@ -635,7 +635,9 @@ dimensions:
 
     let dimension = session
         .queries()
-        .dimension("language")
+        .dimensions()
+        .into_iter()
+        .find(|dimension| dimension.name == "language")
         .expect("language dimension");
     assert_eq!(dimension.variants, ["zh", "en"]);
     assert_eq!(dimension.fields.len(), 1);
@@ -798,7 +800,9 @@ dimensions:
 
     let dimension = session
         .queries()
-        .dimension("platform")
+        .dimensions()
+        .into_iter()
+        .find(|dimension| dimension.name == "platform")
         .expect("platform dimension");
     assert_eq!(dimension.variants, ["pc", "mobile"]);
     assert_eq!(dimension.fields.len(), 1);
@@ -865,7 +869,9 @@ dimensions:
     );
     let dimension = session
         .queries()
-        .dimension("language")
+        .dimensions()
+        .into_iter()
+        .find(|dimension| dimension.name == "language")
         .expect("language dimension");
     assert_eq!(dimension.variants, ["zh"]);
     assert_eq!(dimension.fields.len(), 1);

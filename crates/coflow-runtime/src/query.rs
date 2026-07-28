@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use coflow_api::{ProviderRegistry, WriterCapabilities};
 use coflow_cft::{CftSchema, CftValueType};
 use coflow_data_model::{
@@ -9,7 +7,7 @@ use coflow_data_model::{
 use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
 use crate::{
     DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState, DimensionValueView,
-    EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, FileTreeOptions, IdAsEnumInfo,
+    EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, IdAsEnumInfo,
     ProjectExecutionStats, ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView,
     RefTargetInfo,
 };
@@ -172,31 +170,9 @@ impl<'a> ProjectQueries<'a> {
         self.session.file_for_record(actual_type, key)
     }
 
-    pub fn coordinates_in_file(
-        self,
-        file: &str,
-    ) -> impl Iterator<Item = &'a RecordCoordinate> + 'a {
-        self.session.coordinates_in_file(file)
-    }
-
-    #[must_use]
-    pub fn enum_int_value(self, enum_name: &str, variant: &str) -> Option<i64> {
-        self.session.enum_int_value(enum_name, variant)
-    }
-
-    #[must_use]
-    pub fn enum_variants(self, enum_name: &str) -> Vec<String> {
-        self.session.enum_variants(enum_name)
-    }
-
     #[must_use]
     pub fn dimensions(self) -> Vec<DimensionInfo> {
         self.session.dimensions()
-    }
-
-    #[must_use]
-    pub fn dimension(self, name: &str) -> Option<DimensionInfo> {
-        self.session.dimension(name)
     }
 
     #[must_use]
@@ -424,16 +400,6 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub fn file_tree(self) -> Vec<FileTreeNode> {
         self.session.file_tree()
-    }
-
-    #[must_use]
-    pub fn file_tree_with(self, options: FileTreeOptions) -> Vec<FileTreeNode> {
-        self.session.file_tree_with(options)
-    }
-
-    #[must_use]
-    pub const fn loader_extensions(self) -> &'a BTreeSet<String> {
-        self.session.loader_extensions()
     }
 
     pub(crate) fn writer_capabilities_for_file(

@@ -41,10 +41,10 @@ pub struct DataFileReport {
 }
 
 #[derive(Debug, Clone)]
-pub struct TableHeaderLayout {
-    pub actual_type: String,
-    pub sheet: String,
-    pub headers: Vec<String>,
+struct TableHeaderLayout {
+    actual_type: String,
+    sheet: String,
+    headers: Vec<String>,
 }
 
 /// Creates a local data file for a configured project.
@@ -350,7 +350,7 @@ fn resolve_explicit_provider_id(
 ///
 /// Returns diagnostics when provider addressing is ambiguous, the type is
 /// unknown or abstract, or the configured field mapping is invalid.
-pub fn table_header_layout(
+fn table_header_layout(
     session: &ProjectSchemaSession,
     manager: &dyn TableManager,
     source: &ResolvedSource,

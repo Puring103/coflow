@@ -18,11 +18,6 @@ pub struct SchemaSource {
     pub source: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct SchemaSourceSet {
-    pub modules: Vec<SchemaSource>,
-}
-
 #[derive(Debug, Default)]
 struct SchemaDiscovery {
     files: Vec<SchemaFile>,
@@ -53,7 +48,7 @@ pub(super) fn schema_files(
 pub(super) fn schema_sources(
     schema: &SchemaConfig,
     root_dir: &Path,
-) -> Result<SchemaSourceSet, DiagnosticSet> {
+) -> Result<Vec<SchemaSource>, DiagnosticSet> {
     let files = schema_files(schema, root_dir)?;
     let mut modules = Vec::with_capacity(files.len());
     for file in files {
@@ -66,7 +61,7 @@ pub(super) fn schema_sources(
             source,
         });
     }
-    Ok(SchemaSourceSet { modules })
+    Ok(modules)
 }
 
 fn push_schema_path(

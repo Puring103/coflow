@@ -34,7 +34,10 @@ pub struct DimensionFieldInfo {
 
 /// Resolve all configured dimensions into `DimensionInfo`.
 #[must_use]
-pub fn dimensions_for_project(project: &Project, fields: &[DimensionField]) -> Vec<DimensionInfo> {
+pub(crate) fn dimensions_for_project(
+    project: &Project,
+    fields: &[DimensionField],
+) -> Vec<DimensionInfo> {
     let mut by_name: std::collections::BTreeMap<&str, Vec<&DimensionField>> =
         std::collections::BTreeMap::new();
     for field in fields {
@@ -81,7 +84,7 @@ pub fn dimensions_for_project(project: &Project, fields: &[DimensionField]) -> V
 /// 2. a small built-in table for shipped dimensions,
 /// 3. the raw `name`.
 #[must_use]
-pub fn resolved_display_name(name: &str, config: &DimensionConfig) -> String {
+pub(crate) fn resolved_display_name(name: &str, config: &DimensionConfig) -> String {
     if let Some(custom) = &config.display_name {
         return custom.clone();
     }
@@ -89,7 +92,7 @@ pub fn resolved_display_name(name: &str, config: &DimensionConfig) -> String {
 }
 
 #[must_use]
-pub const fn builtin_display_name(name: &str) -> Option<&'static str> {
+pub(crate) const fn builtin_display_name(name: &str) -> Option<&'static str> {
     match name.as_bytes() {
         b"language" => Some("本地化"),
         _ => None,

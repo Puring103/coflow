@@ -169,7 +169,7 @@ fn schema_input_fingerprint(
     overrides: &[SchemaTextOverride],
 ) -> Result<u64, DiagnosticSet> {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    for module in project.schema_sources()?.modules {
+    for module in project.schema_sources()? {
         module.module_id.hash(&mut hasher);
         module.canonical_path.hash(&mut hasher);
         let source = overrides

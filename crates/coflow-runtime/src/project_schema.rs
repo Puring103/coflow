@@ -30,11 +30,11 @@ fn collect_project_schema(
     project: &Project,
     overrides: &[SchemaTextOverride],
 ) -> Result<ProjectSchemaAttempt, DiagnosticSet> {
-    let source_set = project.schema_sources()?;
+    let sources = project.schema_sources()?;
     let mut matched_overrides = vec![false; overrides.len()];
     let mut files = Vec::new();
 
-    for module in source_set.modules {
+    for module in sources {
         let source = if let Some((index, source_override)) = overrides
             .iter()
             .enumerate()
