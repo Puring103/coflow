@@ -2,8 +2,8 @@ use crate::syntax::lexer::TokenKind;
 
 pub(super) fn token_name(kind: &TokenKind) -> &'static str {
     match kind {
-        TokenKind::LBrace => "{",
-        TokenKind::RBrace => "}",
+        TokenKind::LBrace | TokenKind::FormattedStringExprStart => "{",
+        TokenKind::RBrace | TokenKind::FormattedStringExprEnd => "}",
         TokenKind::LBracket => "[",
         TokenKind::RBracket => "]",
         TokenKind::LParen => "(",
@@ -16,8 +16,6 @@ pub(super) fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Question => "?",
         TokenKind::QuestionQuestion => "??",
         TokenKind::FormattedStringStart => "formatted string",
-        TokenKind::FormattedStringExprStart => "{",
-        TokenKind::FormattedStringExprEnd => "}",
         TokenKind::FormattedStringEnd => "\"",
         TokenKind::In => "in",
         _ => "token",

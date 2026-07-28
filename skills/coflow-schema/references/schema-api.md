@@ -31,6 +31,7 @@ let schema = build_schema(&modules, &dimensions)?;
 | `CftEnum` | module、name、按声明顺序排列的 variants、flag 语义、span |
 | `CftConst` | module、name、编译期值、span |
 | `CftDimension` | name、按配置顺序排列的 variants、绑定字段 |
+| `CftTopLevelCheck` | module、稳定 name、check block、静态 record-set dependencies、span |
 
 名称身份使用 `TypeName`、`FieldName`、`EnumName`、`EnumVariantName`、`ConstName`、`DimensionName`、`VariantName`、`BucketName` 和 `RecordKey`。这些类型在构造和反序列化时都会验证名称。
 
@@ -44,7 +45,8 @@ let schema = build_schema(&modules, &dimensions)?;
 | `resolve_enum(name)` | 查找 `CftEnum` |
 | `resolve_const(name)` | 查找 `CftConst` |
 | `resolve_dimension(name)` | 查找 `CftDimension` |
-| `all_types()` / `all_enums()` / `all_consts()` / `all_dimensions()` | 按稳定名称顺序遍历声明 |
+| `resolve_check(name)` | 查找命名顶层 `CftTopLevelCheck` |
+| `all_types()` / `all_enums()` / `all_consts()` / `all_dimensions()` / `all_checks()` | 按稳定名称顺序遍历声明 |
 | `is_assignable(actual, expected)` | 沿 parent chain 判断可赋值关系 |
 | `children(parent)` | 读取编译时建立的直接子类反向索引 |
 | `type_for_id_as_enum(enum)` | 从 idAsEnum enum 反查 owner type |
@@ -91,6 +93,23 @@ Provider 不应扫描 annotation 字符串，也不应重复执行 annotation �
 项目配置被规范化为 `CftDimensionInputs` 后参与 schema 编译。`CftField.dimension` 是字段到维度的正向绑定；`CftDimension.fields` 是编译时建立、共享同一字段对象的反向只读视图。
 
 Dimension schema 不包含 `out_dir`、display name 或 Provider 选项；这些信息从项目配置读取。
+
+## Check 语义
+
+type-local 与命名顶层 check 共用 `CftSchemaCheckBlock`、statement/expression AST 和根 statement 的 dimension 元数据。`CftSchemaCheckStmt::Expr` 分别保存 condition 与可选 message；formatted string 保留 text/expression segments，nullable 与双 binding 量词使用独立 typed variant，不需要 consumer 反向解析源码。
+
+每个 type-local 或命名顶层 check 的根 statement 都有 schema 生命周期内稳定的 `CheckStatementId`。`CheckStatementInfo` 暴露 owner、根索引、静态 `CheckDependency` 集合和相关 dimensions。常用查询包括：
+
+- `check_statement(id)`：取得根 statement 及其 canonical 元数据；
+- `check_statements_for_dependency(dependency)`：从字段或 record-set token 查询受影响 statement；
+- `check_dependency_is_cross_record(statement, dependency)`：区分同一字段 token 的本地访问与经 record reference 的访问；
+- `check_statements_for_actual_type(actual_type)`：取得某顶层实际类型需要执行的继承与内联 object statements；
+- `check_statements_for_nested_field(actual_type, field)`：取得某个顶层宿主字段内可达的内联 object statements；
+- `check_hosts_for_nested_type(type_name)`：取得可包含该内联 object 类型的顶层宿主类型。
+
+`records(Type)` 编译为 `CheckDependency::RecordSet(Type)`；通过其 binding 访问字段时还会产生对应 `CheckDependency::Field`。调用方不需要重新遍历 check AST 或推导表达式类型。
+
+`CftSchema::source(module)` 返回编译时保留的 canonical path/source catalog，用于把 check 的 `ModuleId + Span` 映射为诊断文件位置。host 不应根据 check 名称猜测文件路径。
 
 ## 使用边界
 

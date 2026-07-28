@@ -12,7 +12,7 @@ pub(crate) struct Cli {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)]
+    #![allow(clippy::expect_used, clippy::panic)]
 
     use super::{Cli, Command, SchemaCommand};
     use clap::{error::ErrorKind, Parser};

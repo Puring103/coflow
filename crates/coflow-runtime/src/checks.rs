@@ -7,9 +7,7 @@ use std::collections::BTreeMap;
 
 use coflow_api::DiagnosticSet;
 use coflow_cft::CftSchema;
-use coflow_checker::{
-    execute_checks, CheckExecutionStats, CheckLimits, CheckOutput, CheckTask,
-};
+use coflow_checker::{execute_checks, CheckExecutionStats, CheckLimits, CheckOutput, CheckTask};
 use coflow_data_model::{CfdDataModel, RecordOrigin};
 
 use crate::indexes::DiagnosticLogicalLocation;
@@ -103,6 +101,8 @@ fn execute_plan(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
     use crate::checks::impact::{
         ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact,
@@ -213,13 +213,13 @@ mod tests {
     #[test]
     fn same_type_record_reference_change_fans_out_to_every_owner_record() {
         let schema = schema(
-            r#"
+            r"
                 type Item {
                     value: int;
                     target: &Item? = null;
                     check { target == null || target.value > 0; }
                 }
-            "#,
+            ",
         );
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record(
@@ -262,10 +262,10 @@ mod tests {
     #[test]
     fn nested_field_change_plans_the_nested_statement_on_only_its_host() {
         let schema = schema(
-            r#"
+            r"
                 type Part { value: int; check { value > 0; } }
                 type Item { part: Part; }
-            "#,
+            ",
         );
         let build = |a_value: i64| {
             let mut builder = CfdDataModel::builder(&schema);
@@ -338,14 +338,14 @@ mod tests {
     #[test]
     fn dimension_variant_and_base_changes_plan_the_required_projections() {
         let schema = schema(
-            r#"
+            r"
                 type Item {
                     @localized
                     name: string;
                     price: int;
                     check { name.len() <= price; }
                 }
-            "#,
+            ",
         );
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("a", "Item", [("name", "a".into()), ("price", 2_i64.into())]);
@@ -570,9 +570,8 @@ mod tests {
 
     #[test]
     fn inherited_statement_incremental_replacement_matches_full() {
-        let schema = schema(
-            "abstract type Base { value: int; check { value > 0; } } type Item : Base {}",
-        );
+        let schema =
+            schema("abstract type Base { value: int; check { value > 0; } } type Item : Base {}");
         let build = |value: i64| {
             let mut builder = CfdDataModel::builder(&schema);
             builder.add_record("a", "Item", [("value", value.into())]);

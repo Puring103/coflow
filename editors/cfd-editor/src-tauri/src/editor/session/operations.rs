@@ -1,6 +1,16 @@
 //! Record queries and mutation commands for loaded editor sessions.
 
-use super::*;
+use super::{
+    api_diagnostics_to_editor_error, apply_collection_edit, create_record_draft_to_wire,
+    file_records_for_session, finalize_mutation, graph, record_container_index, record_type_index,
+    record_view_to_row, reorder_file_path, snapshot_record_before_delete, write_field_in_session,
+    BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CfdValue,
+    CollectionEdit, CreateRecordDraft, DefaultMaterialization, DeleteRecordOutcome, EditorError,
+    FileRecords, GraphData, GraphQuery, InsertRecordOutcome, MutationFields, MutationOp,
+    MutationRequest, MutationValue, PluginSchemaField, PluginSchemaType, RecordCoordinate,
+    RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, SessionStore, WireContext,
+    WriteFieldOutcome,
+};
 
 impl SessionStore {
     pub fn get_file_records(&self, id: u32, file_path: &str) -> Result<FileRecords, EditorError> {
@@ -13,6 +23,7 @@ impl SessionStore {
     }
 
     /// Returns the schema projection available to read-only editor extensions.
+    #[allow(clippy::significant_drop_tightening)]
     pub fn get_plugin_schema(&self, id: u32) -> Result<Vec<PluginSchemaType>, EditorError> {
         let entry = self.session(id)?;
         let session = entry
@@ -37,6 +48,7 @@ impl SessionStore {
     }
 
     /// Returns records whose actual type exactly matches `type_name`, across all source files.
+    #[allow(clippy::significant_drop_tightening)]
     pub fn get_plugin_records_by_type(
         &self,
         id: u32,
@@ -49,7 +61,9 @@ impl SessionStore {
             .map_err(|_| EditorError::session("session poisoned"))?;
         let queries = session.queries();
         if !queries.schema_has_type(type_name) {
-            return Err(EditorError::not_found(format!("schema type `{type_name}` not found")));
+            return Err(EditorError::not_found(format!(
+                "schema type `{type_name}` not found"
+            )));
         }
         let ctx = WireContext::new(queries, &session.diagnostics);
         Ok(queries
@@ -255,7 +269,11 @@ impl SessionStore {
                     .unwrap_or_else(|| write.coordinate.clone());
                 let new_value = session
                     .queries()
-                    .field_value(&final_coordinate.actual_type, &final_coordinate.key, &write.field_path)
+                    .field_value(
+                        &final_coordinate.actual_type,
+                        &final_coordinate.key,
+                        &write.field_path,
+                    )
                     .cloned();
                 BatchWriteFieldEditOutcome {
                     coordinate: write.coordinate,

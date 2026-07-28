@@ -241,6 +241,7 @@ fn add_lex_semantic_token(
     push_semantic_span_plain(source, span, token_type, tokens);
 }
 
+#[allow(clippy::too_many_lines)]
 fn add_ast_semantic_tokens(
     build: &LspBuild,
     document: &LspDocument,
@@ -574,7 +575,13 @@ fn classify_check_expr(
         CheckExprKind::String(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
         }
-        CheckExprKind::FormattedString(_) => {}
+        CheckExprKind::FormattedString(_)
+        | CheckExprKind::Index { .. }
+        | CheckExprKind::SafeIndex { .. }
+        | CheckExprKind::BinOp { .. }
+        | CheckExprKind::Coalesce { .. }
+        | CheckExprKind::Unary { .. }
+        | CheckExprKind::CmpChain { .. } => {}
         CheckExprKind::Name(_) => {
             push_semantic_span(
                 &document.source,
@@ -630,23 +637,20 @@ fn classify_check_expr(
                 tokens,
             );
         }
-        CheckExprKind::Index { .. } | CheckExprKind::SafeIndex { .. } => {}
-        CheckExprKind::Is { predicate, .. } => {
-            match predicate {
-                coflow_cft::syntax::ast::TypePredicate::Type(name) => {
-                    push_semantic_span(
-                        &document.source,
-                        name.span,
-                        SEM_TYPE,
-                        MOD_REFERENCE | MOD_SCHEMA,
-                        tokens,
-                    );
-                }
-                coflow_cft::syntax::ast::TypePredicate::Null(span) => {
-                    push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
-                }
+        CheckExprKind::Is { predicate, .. } => match predicate {
+            coflow_cft::syntax::ast::TypePredicate::Type(name) => {
+                push_semantic_span(
+                    &document.source,
+                    name.span,
+                    SEM_TYPE,
+                    MOD_REFERENCE | MOD_SCHEMA,
+                    tokens,
+                );
             }
-        }
+            coflow_cft::syntax::ast::TypePredicate::Null(span) => {
+                push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
+            }
+        },
         CheckExprKind::Call { name, .. } => {
             let token_type = if enum_name_exists(build, &name.name) {
                 SEM_ENUM
@@ -669,10 +673,6 @@ fn classify_check_expr(
                 tokens,
             );
         }
-        CheckExprKind::BinOp { .. }
-        | CheckExprKind::Coalesce { .. }
-        | CheckExprKind::Unary { .. }
-        | CheckExprKind::CmpChain { .. } => {}
     }
     false
 }

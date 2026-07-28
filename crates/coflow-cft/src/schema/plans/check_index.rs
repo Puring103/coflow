@@ -5,6 +5,9 @@ use crate::{CftSchemaCheckStmt, CftTopLevelCheck, CftType, CftValueType, FieldNa
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+type NestedHosts = BTreeMap<TypeName, BTreeSet<TypeName>>;
+type NestedTypesByField = BTreeMap<(TypeName, FieldName), BTreeSet<TypeName>>;
+
 #[derive(Debug, Clone)]
 pub struct CheckStatementRef<'schema> {
     pub info: &'schema CheckStatementInfo,
@@ -24,6 +27,7 @@ pub(crate) struct CheckIndex {
 }
 
 impl CheckIndex {
+    #[allow(clippy::too_many_lines)]
     pub(in crate::schema) fn compile(
         types: &BTreeMap<TypeName, CftType>,
         project_checks: &BTreeMap<crate::CheckName, CftTopLevelCheck>,
@@ -278,13 +282,7 @@ fn compile_nested_hosts(
     types: &BTreeMap<TypeName, CftType>,
     owners: &BTreeMap<TypeName, Vec<TypeName>>,
     budget: &mut StructuralBudget,
-) -> Result<
-    (
-        BTreeMap<TypeName, BTreeSet<TypeName>>,
-        BTreeMap<(TypeName, FieldName), BTreeSet<TypeName>>,
-    ),
-    LocatedBudgetError,
-> {
+) -> Result<(NestedHosts, NestedTypesByField), LocatedBudgetError> {
     let mut direct = BTreeMap::<TypeName, Vec<(FieldName, TypeName)>>::new();
     for (host, meta) in types {
         for field in &meta.all_fields {
@@ -394,6 +392,8 @@ fn charge(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
     use crate::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
     use coflow_structure::StructuralLimits;

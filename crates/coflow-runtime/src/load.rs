@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::sync::Arc;
 
+use crate::checks::impact::CheckImpact;
 use crate::checks::{
     run_full_project_checks, run_incremental_project_checks, CheckDiagnosticStore,
     ProjectCheckOutput,
@@ -23,7 +24,6 @@ use crate::indexes::{
     ResolvedSourceEntry, SessionIndexBuilder, SourceId, SourceIndex,
 };
 use crate::source_resolution::{ResolvedLoaderSource, SourceResolver};
-use crate::checks::impact::CheckImpact;
 use crate::{ProjectExecutionStats, RecordCoordinate};
 
 #[derive(Debug, Clone)]

@@ -128,7 +128,7 @@ impl OutputConfig {
 
 impl OutputsConfig {
     #[must_use]
-    pub fn new(targets: Vec<OutputTargetConfig>) -> Self {
+    pub const fn new(targets: Vec<OutputTargetConfig>) -> Self {
         Self {
             targets,
             object_shape: false,

@@ -49,7 +49,7 @@ impl MutationTransaction {
     ) -> Result<(), DiagnosticSet> {
         match declared {
             SourceTransaction::RuntimeSnapshot => {
-                let path = (&source.location).path();
+                let path = source.location.path();
                 self.local.snapshot_file(path)?;
             }
             SourceTransaction::Compensation(compensation) => {
@@ -133,7 +133,7 @@ impl std::fmt::Debug for ProviderTransaction {
 }
 
 fn source_key(source: &ResolvedSource) -> String {
-    let path = (&source.location).path();
+    let path = source.location.path();
     format!("{}:path:{}", source.provider_id, path.display())
 }
 

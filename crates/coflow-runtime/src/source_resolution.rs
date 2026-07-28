@@ -135,7 +135,7 @@ impl<'a> SourceResolver<'a> {
         configured: &ConfiguredSource,
         forced_provider: Option<&str>,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        let directory = (&configured.location).path();
+        let directory = configured.location.path();
         let selected_provider = forced_provider
             .map(|provider_id| self.select(configured, Some(provider_id)))
             .transpose()?;
@@ -472,7 +472,7 @@ fn loader_selection_diagnostic(
     spec: &ConfiguredSource,
     error: SourceProviderSelectionError,
 ) -> Diagnostic {
-    let path = (&spec.location).path();
+    let path = spec.location.path();
     let source = path.display().to_string();
     match error {
         SourceProviderSelectionError::UnknownSourceProvider { id } => project_diagnostic(

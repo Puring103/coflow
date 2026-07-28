@@ -42,7 +42,7 @@ fn csv_origin(path: &Path, row: usize) -> RecordOrigin {
         sheet: "Items".to_string(),
         row,
         id_column: 1,
-        field_columns: Default::default(),
+        field_columns: std::collections::BTreeMap::default(),
     }
 }
 

@@ -108,6 +108,7 @@ pub fn check_project(
 ///
 /// Returns an error for unrecoverable project/schema I/O errors. User-fixable
 /// diagnostics are returned as `CommandOutcome::Diagnostics`.
+#[allow(clippy::too_many_lines)]
 pub fn build_project(
     project: &Project,
     registry: &ProviderRegistry,
@@ -330,6 +331,7 @@ pub fn export_project_data(
 /// Returns an error for invalid codegen configuration, unsupported target/data
 /// format combinations, or code artifact write failures. Schema diagnostics are
 /// returned as `CommandOutcome::Diagnostics`.
+#[allow(clippy::needless_collect, clippy::too_many_lines)]
 pub fn generate_project_code(
     project: &Project,
     registry: &ProviderRegistry,

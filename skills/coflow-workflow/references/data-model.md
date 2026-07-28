@@ -11,7 +11,7 @@ Coflow 会把 Excel、CSV、CFD 和维度文件中的数据合并成统一的数
 - record key，例如 `sword_fire`；
 - 实际类型，例如 `Item` 或 `CurrencyReward`。
 
-```text
+```cfd
 sword_fire: Item {
   name: "Fire Sword",
 }
@@ -44,13 +44,13 @@ record key 相当于记录的业务 ID，不需要也不能再声明为普通 `i
 
 内联对象是所在记录的一部分，没有独立 record key，也不能被其他记录引用：
 
-```text
+```cfd
 stats: { hp: 100, attack: 20 }
 ```
 
 记录引用指向另一条顶层记录：
 
-```text
+```cfd
 featured_item: &sword_fire
 ```
 
@@ -69,7 +69,7 @@ CFT 字段类型决定必须使用哪一种形态：
 
 子类型的记录或对象可以赋给父类型位置。例如 `ItemReward` 是 `Reward` 的子类型时：
 
-```text
+```cft
 type Drop {
   reward: Reward;
   saved_reward: &Reward;
@@ -91,7 +91,7 @@ type Drop {
 
 nullable 只表示该字段可以**显式填写** `null`。如果希望字段既可为 null 又可省略，应声明默认值：
 
-```text
+```cft
 type Node {
   next: &Node? = null;
 }
@@ -114,7 +114,7 @@ type Node {
 
 CFD 的 `...source` 会先复制来源对象或字典的值，再应用本地覆盖：
 
-```text
+```cfd
 elite_monster: Monster {
   ...&basic_monster,
   name: "Elite Training Dummy",
@@ -129,7 +129,7 @@ elite_monster: Monster {
 
 `@singleton` 类型在整个数据集中必须恰好有一条记录：
 
-```text
+```cft
 @singleton
 type GameConfig {
   max_level: int;

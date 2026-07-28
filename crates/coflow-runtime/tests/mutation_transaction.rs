@@ -114,7 +114,7 @@ impl SourceProvider for TestProvider {
             .expect("lock test provider state")
             .counts
             .loads += 1;
-        let path = (&source.location).path();
+        let path = source.location.path();
         let key = source_record_key(source);
         let (value, origin) = if key == "local" {
             let value = std::fs::read_to_string(path)
@@ -261,7 +261,7 @@ impl SourceWriter for TestWriter {
             let mut state = self.state.lock().expect("lock test writer state");
             state.counts.writes += 1;
             let call = state.counts.writes;
-            let path = (&request.source.location).path();
+            let path = request.source.location.path();
             if source_record_key(request.source) == "local" {
                 std::fs::write(path, value.to_string())
                     .map_err(|error| test_error("TEST-WRITE", error.to_string()))?;
@@ -894,7 +894,7 @@ fn has_diagnostic(report: &coflow_runtime::MutationReport, code: &str) -> bool {
 }
 
 fn source_record_key(source: &ResolvedSource) -> String {
-    let path = (&source.location).path();
+    let path = source.location.path();
     path.file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or_default()
@@ -902,7 +902,7 @@ fn source_record_key(source: &ResolvedSource) -> String {
 }
 
 fn source_name(source: &ResolvedSource) -> String {
-    let path = (&source.location).path();
+    let path = source.location.path();
     let key = source_record_key(source);
     if key == "local" {
         path.display().to_string()

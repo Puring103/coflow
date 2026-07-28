@@ -68,7 +68,7 @@ impl SourceWriter for ExcelWriter {
     }
 
     fn preflight(&self, _ctx: WriteContext<'_>, request: &WriteCellRequest<'_>) -> DiagnosticSet {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         ensure_writable_excel_path(path, "edit fields")
             .err()
             .unwrap_or_default()
@@ -79,7 +79,7 @@ impl SourceWriter for ExcelWriter {
         ctx: WriteContext<'_>,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         ensure_writable_excel_path(path, "edit fields")?;
         let plan = plan_field_write(&TableFieldWrite {
             origin: request.origin,
@@ -101,7 +101,7 @@ impl SourceWriter for ExcelWriter {
     ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
         let mut plans = Vec::with_capacity(requests.len());
         for (index, request) in requests.iter().enumerate() {
-            let path = (&request.source.location).path();
+            let path = request.source.location.path();
             ensure_writable_excel_path(path, "edit fields")
                 .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
             let plan = plan_field_write(&TableFieldWrite {
@@ -126,7 +126,7 @@ impl SourceWriter for ExcelWriter {
         _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         ensure_writable_excel_path(path, "insert records")?;
         let sheet = match request.sheet {
             Some(sheet) => sheet.to_string(),
@@ -187,7 +187,7 @@ impl SourceWriter for ExcelWriter {
         _ctx: WriteContext<'_>,
         request: &DeleteRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         ensure_writable_excel_path(path, "delete records")?;
         ensure_table_origin_path(request.origin, path)?;
         let plan = plan_delete_record(request.origin, request.record_key)
@@ -209,7 +209,7 @@ impl SourceWriter for ExcelWriter {
         _ctx: WriteContext<'_>,
         request: &ReorderRecordsRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         ensure_writable_excel_path(path, "reorder records")?;
         let operation = match request.operation {
             ReorderRecordsOperation::Swap { first, second } => {
@@ -315,6 +315,7 @@ fn local_plan_path(plan: &TableWritePlan) -> &Path {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn apply_plan_to_workbook(
     book: &mut umya_spreadsheet::Spreadsheet,
     path: &Path,

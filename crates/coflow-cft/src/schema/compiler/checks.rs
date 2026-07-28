@@ -36,8 +36,9 @@ enum CheckScope {
 
 fn is_formattable(ty: &InferredType) -> bool {
     match ty {
-        InferredType::Null | InferredType::Unknown => true,
-        InferredType::Value(
+        InferredType::Null
+        | InferredType::Unknown
+        | InferredType::Value(
             CftValueType::Int
             | CftValueType::Float
             | CftValueType::Bool
@@ -113,6 +114,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn check_stmt(&mut self, stmt: &CheckStmt) {
         match stmt {
             CheckStmt::Expr {
@@ -485,7 +487,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         let type_name = target;
         if name.name == "id" {
             self.dependencies.insert(
-                CheckDependency::RecordSet(type_name.clone()),
+                CheckDependency::RecordSet(type_name),
                 CheckDependencyLocality::CrossRecord,
             );
             return;

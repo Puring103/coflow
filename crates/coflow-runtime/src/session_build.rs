@@ -288,6 +288,7 @@ fn build_data_pipeline(
     })
 }
 
+#[allow(clippy::too_many_lines)]
 fn rebuild_data_pipeline(
     ctx: &SessionBuildContext<'_>,
     previous: &ProjectSession,

@@ -41,12 +41,12 @@ fn write_dimension_read_project(root: &std::path::Path) -> std::path::PathBuf {
         .expect("create dimension data dir");
     std::fs::write(
         root.join("schema.cft"),
-        r#"
+        r"
             type Item {
                 @localized name: string;
                 @localized description: string;
             }
-        "#,
+        ",
     )
     .expect("write schema");
     std::fs::write(
@@ -62,7 +62,7 @@ fn write_dimension_read_project(root: &std::path::Path) -> std::path::PathBuf {
     .expect("write existing dimension source");
     std::fs::write(
         root.join("coflow.yaml"),
-        r#"schema: schema.cft
+        r"schema: schema.cft
 sources:
   - path: data/items.csv
     type: csv
@@ -73,7 +73,7 @@ dimensions:
   language:
     variants: [zh]
     out_dir: data/dimensions/language
-"#,
+",
     )
     .expect("write config");
     existing_dimension
@@ -133,12 +133,12 @@ fn data_write_file_check_does_not_modify_managed_dimension_sources() {
         .expect("create dimension data dir");
     std::fs::write(
         root.join("schema.cft"),
-        r#"
+        r"
             type Item {
                 @localized name: string;
                 @localized description: string;
             }
-        "#,
+        ",
     )
     .expect("write schema");
     let source = "potion: Item { name: \"Potion\", description: \"Restores health\" }\n";
@@ -151,14 +151,14 @@ fn data_write_file_check_does_not_modify_managed_dimension_sources() {
     .expect("write existing dimension source");
     std::fs::write(
         root.join("coflow.yaml"),
-        r#"schema: schema.cft
+        r"schema: schema.cft
 sources:
   - path: data/items.cfd
 dimensions:
   language:
     variants: [zh]
     out_dir: data/dimensions/language
-"#,
+",
     )
     .expect("write config");
     let before = std::fs::read(&existing_dimension).expect("read dimension source before");

@@ -53,7 +53,7 @@ fn root_statements_have_independent_field_and_message_dependencies() {
 #[test]
 fn conditions_quantifiers_and_short_circuit_branches_form_one_static_union() {
     let schema = compile_one(
-        r#"
+        r"
             type Item {
                 enabled: bool;
                 nums: [int];
@@ -64,7 +64,7 @@ fn conditions_quantifiers_and_short_circuit_branches_form_one_static_union() {
                     }
                 }
             }
-        "#,
+        ",
     )
     .expect("schema");
     assert_eq!(
@@ -80,7 +80,7 @@ fn conditions_quantifiers_and_short_circuit_branches_form_one_static_union() {
 #[test]
 fn nullable_safe_access_coalesce_and_pure_schema_values_collect_the_static_union() {
     let schema = compile_one(
-        r#"
+        r"
             const LIMIT = 0;
             enum Mode { Enabled }
             type Target { left: int; right: int; }
@@ -93,7 +93,7 @@ fn nullable_safe_access_coalesce_and_pure_schema_values_collect_the_static_union
                     Mode.Enabled == Mode.Enabled;
                 }
             }
-        "#,
+        ",
     )
     .expect("schema");
     assert_eq!(
@@ -112,11 +112,11 @@ fn nullable_safe_access_coalesce_and_pure_schema_values_collect_the_static_union
 #[test]
 fn record_reference_chains_collect_each_cross_record_field() {
     let schema = compile_one(
-        r#"
+        r"
             type Guild { rank: int; }
             type Character { guild: &Guild; }
             type Item { owner: &Character; check { owner.guild.rank > 0; } }
-        "#,
+        ",
     )
     .expect("schema");
     assert_eq!(
@@ -132,7 +132,7 @@ fn record_reference_chains_collect_each_cross_record_field() {
 #[test]
 fn same_type_record_reference_dependencies_retain_cross_record_locality() {
     let schema = compile_one(
-        r#"
+        r"
             type Item {
                 value: int;
                 target: &Item? = null;
@@ -141,7 +141,7 @@ fn same_type_record_reference_dependencies_retain_cross_record_locality() {
                     target == null || target.value > 0;
                 }
             }
-        "#,
+        ",
     )
     .expect("schema");
     let direct = type_statement(&schema, "Item", 0);
@@ -218,11 +218,11 @@ fn nested_fields_normalize_to_the_top_level_storage_field_and_dimensions_are_ret
 #[test]
 fn inheritance_and_nested_hosts_expand_actual_type_statement_queries() {
     let schema = compile_one(
-        r#"
+        r"
             type Part { value: int; check { value > 0; } }
             abstract type Base { enabled: bool; check { enabled; } }
             type Item : Base { part: Part; }
-        "#,
+        ",
     )
     .expect("schema");
     let actual = schema

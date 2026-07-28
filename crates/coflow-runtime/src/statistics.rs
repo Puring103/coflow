@@ -20,7 +20,7 @@ pub struct ProjectExecutionStats {
 }
 
 impl ProjectExecutionStats {
-    pub(crate) fn merge(&mut self, other: Self) {
+    pub(crate) const fn merge(&mut self, other: Self) {
         self.sources_resolved = self.sources_resolved.saturating_add(other.sources_resolved);
         self.sources_reloaded = self.sources_reloaded.saturating_add(other.sources_reloaded);
         self.draft_records_collected = self

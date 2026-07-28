@@ -327,7 +327,7 @@ pub(super) fn prepare_set_on_pending_insert(
         record: validated_record_coordinate(actual_type, key)?,
         write_file: insert_file.to_string(),
         path: CfdPath {
-            segments: path.to_vec(),
+            segments: path.clone(),
         },
     })
 }

@@ -48,10 +48,8 @@ pub(super) struct SchemaCompiler<'a> {
         BTreeMap<(ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
     check_dimensions:
         BTreeMap<(ModuleId, usize, usize), BTreeMap<crate::DimensionName, Vec<usize>>>,
-    check_statement_dependencies: BTreeMap<
-        (ModuleId, usize, usize),
-        Vec<crate::schema::CheckStatementDependencies>,
-    >,
+    check_statement_dependencies:
+        BTreeMap<(ModuleId, usize, usize), Vec<crate::schema::CheckStatementDependencies>>,
     budget: StructuralBudget,
 }
 

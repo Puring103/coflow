@@ -80,13 +80,13 @@ impl CheckTypeAnalyzer<'_, '_> {
                 self.check_string_predicate_method(receiver, args, span, &receiver_ty)
             }
             Some(CftCheckBuiltin::IsBlank) => {
-                self.check_receiver_method(receiver, args, span, &receiver_ty, 0, "string", |ty| {
+                self.check_receiver_method(receiver, args, span, &receiver_ty, "string", |ty| {
                     matches!(ty.value_type(), Some(CftValueType::String))
                 })
             }
             Some(CftCheckBuiltin::Abs) => self.check_abs_method(receiver, args, span, &receiver_ty),
             Some(CftCheckBuiltin::IsFinite) => {
-                self.check_receiver_method(receiver, args, span, &receiver_ty, 0, "float", |ty| {
+                self.check_receiver_method(receiver, args, span, &receiver_ty, "float", |ty| {
                     matches!(ty.value_type(), Some(CftValueType::Float))
                 })
             }
@@ -449,11 +449,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         args: &[CheckExpr],
         span: Span,
         receiver_ty: &InferredType,
-        arity: usize,
         expected: &str,
         supports: impl FnOnce(&InferredType) -> bool,
     ) -> InferredType {
-        if self.expect_arity(args, arity, span).is_err() {
+        if self.expect_arity(args, 0, span).is_err() {
             return InferredType::bool();
         }
         let receiver_ty = unwrap_nullable(receiver_ty);

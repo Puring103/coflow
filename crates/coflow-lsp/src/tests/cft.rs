@@ -222,10 +222,7 @@ check GlobalRules { all item in records(Item) { item.value > 0; } }\n";
     assert!(records_hover["contents"]["value"]
         .as_str()
         .is_some_and(|text| text.contains("all top-level records")));
-    let item_position = position_from_byte(
-        source,
-        records_offset + "records(".len() + 1,
-    );
+    let item_position = position_from_byte(source, records_offset + "records(".len() + 1);
     assert!(!definitions_at(&build, document, &item_position).is_empty());
 }
 

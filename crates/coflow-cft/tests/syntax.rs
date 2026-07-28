@@ -8,11 +8,11 @@
 )]
 
 mod common;
-use common::*;
 use coflow_cft::{
     CftSchemaCheckExprKind, CftSchemaCheckFormatSegment, CftSchemaCheckMessageKind,
     CftSchemaCheckStmt,
 };
+use common::*;
 
 #[test]
 fn lexer_reports_invalid_character() {

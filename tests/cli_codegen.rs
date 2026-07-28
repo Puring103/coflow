@@ -167,8 +167,11 @@ fn codegen_csharp_rejects_malformed_lock_before_publication() {
     let root = temp_project_dir("codegen-malformed-lock");
     let _cleanup = TempDirCleanup(root.clone());
     write_acyclic_csharp_project(&root, "json");
-    std::fs::write(root.join("coflow.enum.lock.json"), r#""malformed lock state""#)
-        .expect("write malformed versioned enum lock");
+    std::fs::write(
+        root.join("coflow.enum.lock.json"),
+        r#""malformed lock state""#,
+    )
+    .expect("write malformed versioned enum lock");
 
     let output = coflow()
         .args(["codegen", root.to_str().expect("utf8 path")])

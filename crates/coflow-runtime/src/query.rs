@@ -216,15 +216,10 @@ impl<'a> ProjectQueries<'a> {
             if !normalized_path.starts_with(&format!("{}/", out_dir.trim_end_matches('/'))) {
                 continue;
             }
-            let field = self
-                .session
-                .dimension_plan
-                .fields()
-                .iter()
-                .find(|field| {
-                    field.dimension.as_str() == info.name
-                        && format!("{}_{}", field.bucket, field.source_field) == stem
-                })?;
+            let field = self.session.dimension_plan.fields().iter().find(|field| {
+                field.dimension.as_str() == info.name
+                    && format!("{}_{}", field.bucket, field.source_field) == stem
+            })?;
             return Some((
                 info,
                 field.source_type.to_string(),
@@ -314,7 +309,11 @@ impl<'a> ProjectQueries<'a> {
         self.session
             .schema()
             .resolve_type(actual_type)
-            .map(|meta| meta.all_fields().map(|field| field.name.to_string()).collect())
+            .map(|meta| {
+                meta.all_fields()
+                    .map(|field| field.name.to_string())
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -516,7 +515,11 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
     let field_order = match non_nullable {
         CftValueType::Object(name) => schema
             .resolve_type(name)
-            .map(|meta| meta.all_fields().map(|field| field.name.to_string()).collect())
+            .map(|meta| {
+                meta.all_fields()
+                    .map(|field| field.name.to_string())
+                    .collect()
+            })
             .unwrap_or_default(),
         _ => Vec::new(),
     };

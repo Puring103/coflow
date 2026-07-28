@@ -173,7 +173,7 @@ copy: Item { ...&base, name: "Copy", target: &base }
 fn structural_mutations_increment_only_affected_check_roots() {
     let fixture = TempProject::with_data(
         "structural-check-invalidation",
-        r#"
+        r"
             abstract type Item {
                 name: string;
                 check { !name.isBlank(); }
@@ -186,7 +186,7 @@ fn structural_mutations_increment_only_affected_check_roots() {
             check NoteNames {
                 all note in records(Note) { !note.name.isBlank(); }
             }
-        "#,
+        ",
         r#"
             sword: Weapon { name: "Sword" }
             note: Note { name: "Note" }
