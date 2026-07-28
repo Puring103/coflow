@@ -55,8 +55,8 @@ fn export_bindings() {
 
 #[cfg(feature = "ts-export")]
 fn normalize_generated_bindings() {
-    let bindings_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../frontend/src/bindings");
+    let bindings_dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../frontend/src/bindings");
     let entries = std::fs::read_dir(&bindings_dir).expect("read generated bindings directory");
 
     for entry in entries {
