@@ -22,11 +22,11 @@ import type { SpreadInfo } from "./SpreadInfo";
  * - `children`: nested annotations for object fields, array items, or dict
  *   values. Keys are field names, zero-based array indexes, or dict-key text.
  */
-export type FieldAnnotation = { spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, nullable: boolean, 
+export type FieldAnnotation = { spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, nullable: boolean,
 /**
  * True when this cell is exposed for inspection but cannot be edited.
  */
-read_only: boolean, 
+read_only: boolean,
 /**
  * Template annotation for elements of an array/dict field. Carries the
  * declared element type (and derived ref/enum/nullable metadata) so the
@@ -34,7 +34,7 @@ read_only: boolean,
  * new element or when the collection is empty. `None` for non-collection
  * fields.
  */
-item_annotation: FieldAnnotation | null, 
+item_annotation: FieldAnnotation | null,
 /**
  * Concrete types that could occupy this field when the declared type is
  * an abstract object. Empty for non-polymorphic fields. The editor uses

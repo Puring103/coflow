@@ -121,7 +121,10 @@ pub struct CfdDimensionValue {
 pub struct CfdObject {
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub actual_type: TypeName,
-    #[cfg_attr(feature = "ts-export", ts(type = "Record<string, CfdValue>"))]
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "Record<string, import(\"./CfdValue\").CfdValue>")
+    )]
     pub fields: BTreeMap<FieldName, CfdValue>,
 }
 

@@ -61,7 +61,7 @@ export function recordFields(object: CfdObject): FieldCell[] {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, value]) => ({
       name,
-      value: value ?? nullValue(),
+      value,
       annotation: null,
     }))
 }
@@ -156,8 +156,10 @@ export function fieldPathDictKey(value: string): FieldPathSegment {
 }
 
 export function makeObjectValue(actualType: string, fields: FieldCell[] = []): FieldValue {
-  const fieldMap: { [key: string]: FieldValue | undefined } = {}
-  for (const field of fields) fieldMap[field.name] = field.value
+  const fieldMap: Record<string, FieldValue> = {}
+  for (const field of fields) {
+    if (field.value !== undefined) fieldMap[field.name] = field.value
+  }
   return {
     kind: 'object',
     value: {
@@ -463,10 +465,10 @@ export function cloneValue(value: FieldValue): FieldValue {
   }
 }
 
-function cloneFieldMap(fields: { [key: string]: FieldValue | undefined }): { [key: string]: FieldValue | undefined } {
-  const out: { [key: string]: FieldValue | undefined } = {}
+function cloneFieldMap(fields: Record<string, FieldValue>): Record<string, FieldValue> {
+  const out: Record<string, FieldValue> = {}
   for (const [key, value] of Object.entries(fields)) {
-    out[key] = value ? cloneValue(value) : value
+    out[key] = cloneValue(value)
   }
   return out
 }
