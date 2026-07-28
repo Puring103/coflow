@@ -13,7 +13,8 @@ use crate::dimensions::{DimensionGenerationTransaction, DimensionRuntimePlan};
 use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
 use crate::load::{
     empty_load_output, empty_model, load_project_data, reload_project_data_from_cache,
-    LoadDiagnostics, LoadProjectDataOptions, ProjectLoadOutput, SourceDataCache,
+    LoadDiagnostics, LoadProjectDataOptions, ProjectLoadOutput, ReloadProjectDataOptions,
+    SourceDataCache,
 };
 use crate::project_schema::open_project_schema_attempt;
 use crate::session::{ProjectSchemaSession, ProjectSession};
@@ -54,41 +55,19 @@ pub(crate) struct SessionBuildOutput {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SessionOpenOptions {
-    intent: SessionIntent,
-}
-
-impl SessionOpenOptions {
-    pub(crate) const fn build() -> Self {
-        Self {
-            intent: SessionIntent::Build,
-        }
-    }
-
-    pub(crate) const fn read_only() -> Self {
-        Self {
-            intent: SessionIntent::ReadOnly,
-        }
-    }
-
-    const fn dimension_mode(self) -> DimensionBuildMode {
-        match self.intent {
-            SessionIntent::Build => DimensionBuildMode::Generate,
-            SessionIntent::ReadOnly => DimensionBuildMode::ReadOnly,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SessionIntent {
+pub(crate) enum SessionOpenOptions {
     Build,
     ReadOnly,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DimensionBuildMode {
-    Generate,
-    ReadOnly,
+impl SessionOpenOptions {
+    pub(crate) const fn build() -> Self {
+        Self::Build
+    }
+
+    pub(crate) const fn read_only() -> Self {
+        Self::ReadOnly
+    }
 }
 
 pub(crate) fn build_project_session_with_effects(
@@ -109,7 +88,7 @@ pub(crate) fn rebuild_project_session_from_generation(
         modules: Arc::clone(&session.modules),
         schema: session.schema.clone(),
         registry,
-        dimension_mode: DimensionBuildMode::Generate,
+        mode: SessionOpenOptions::Build,
         dimension_plan: Arc::clone(&session.dimension_plan),
     };
     let mut diagnostics = DiagnosticsStore::empty();
@@ -157,7 +136,7 @@ fn finish_project_session(
         modules,
         schema,
         registry,
-        dimension_mode: options.dimension_mode(),
+        mode: options,
         dimension_plan,
     };
 
@@ -199,7 +178,7 @@ struct SessionBuildContext<'a> {
     modules: Arc<CftModuleSet>,
     schema: Arc<CftSchema>,
     registry: &'a ProviderRegistry,
-    dimension_mode: DimensionBuildMode,
+    mode: SessionOpenOptions,
     dimension_plan: Arc<DimensionRuntimePlan>,
 }
 
@@ -209,7 +188,7 @@ impl SessionBuildContext<'_> {
     }
 
     fn should_generate_dimensions(&self) -> bool {
-        self.dimension_mode == DimensionBuildMode::Generate
+        self.mode == SessionOpenOptions::Build
             && !self.project.config.dimensions.is_empty()
     }
 }
@@ -240,7 +219,7 @@ fn build_data_pipeline(
     ctx: &SessionBuildContext<'_>,
     diagnostics: &mut DiagnosticsStore,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
-    if ctx.dimension_mode == DimensionBuildMode::ReadOnly {
+    if ctx.mode == SessionOpenOptions::ReadOnly {
         return build_read_only_data(ctx, diagnostics);
     }
     let (mut output, mut indexes) = match load_base_data(ctx) {
@@ -300,12 +279,14 @@ fn rebuild_data_pipeline(
     let (mut output, mut indexes) = match load_cached_data(
         ctx,
         &previous.source_data,
-        &impact.affected_files,
-        false,
-        !ctx.has_dimension_fields(),
-        false,
-        Some(&previous.check_state),
-        &check_impact,
+        CachedLoadOptions {
+            reload_paths: &impact.affected_files,
+            include_implicit_dimension_sources: false,
+            run_checks: !ctx.has_dimension_fields(),
+            refresh_implicit_dimension_sources: false,
+            previous_checks: Some(&previous.check_state),
+            check_impact: &check_impact,
+        },
     ) {
         Ok(loaded) => loaded,
         Err(load_failure) => {
@@ -362,12 +343,14 @@ fn rebuild_data_pipeline(
         match load_cached_data(
             ctx,
             &cache,
-            &dimension_reload_paths,
-            refresh_dimension_topology,
-            true,
-            true,
-            Some(&previous.check_state),
-            &check_impact,
+            CachedLoadOptions {
+                reload_paths: &dimension_reload_paths,
+                include_implicit_dimension_sources: refresh_dimension_topology,
+                run_checks: true,
+                refresh_implicit_dimension_sources: true,
+                previous_checks: Some(&previous.check_state),
+                check_impact: &check_impact,
+            },
         ) {
             Ok((reloaded, reloaded_indexes)) => {
                 execution_stats.merge(reloaded.statistics);
@@ -461,16 +444,19 @@ fn load_data(
     Ok((output, indexes))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn load_cached_data(
-    ctx: &SessionBuildContext<'_>,
-    previous: &SourceDataCache,
-    reload_paths: &BTreeSet<String>,
+struct CachedLoadOptions<'a> {
+    reload_paths: &'a BTreeSet<String>,
     include_implicit_dimension_sources: bool,
     run_checks: bool,
     refresh_implicit_dimension_sources: bool,
-    previous_checks: Option<&CheckDiagnosticStore>,
-    check_impact: &crate::checks::impact::CheckImpact,
+    previous_checks: Option<&'a CheckDiagnosticStore>,
+    check_impact: &'a crate::checks::impact::CheckImpact,
+}
+
+fn load_cached_data(
+    ctx: &SessionBuildContext<'_>,
+    previous: &SourceDataCache,
+    options: CachedLoadOptions<'_>,
 ) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
     let mut indexes = SessionIndexBuilder::default();
     let output = match reload_project_data_from_cache(
@@ -480,14 +466,16 @@ fn load_cached_data(
         ctx.registry,
         &mut indexes,
         previous,
-        reload_paths,
-        LoadProjectDataOptions {
-            include_implicit_dimension_sources,
-            run_checks,
+        options.reload_paths,
+        ReloadProjectDataOptions {
+            load: LoadProjectDataOptions {
+                include_implicit_dimension_sources: options.include_implicit_dimension_sources,
+                run_checks: options.run_checks,
+            },
+            refresh_implicit_dimension_sources: options.refresh_implicit_dimension_sources,
+            previous_checks: options.previous_checks,
+            check_impact: options.check_impact,
         },
-        refresh_implicit_dimension_sources,
-        previous_checks,
-        check_impact,
     ) {
         Ok(output) => output,
         Err(diagnostics) => {
