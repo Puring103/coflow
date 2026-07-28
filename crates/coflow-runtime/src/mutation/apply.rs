@@ -5,10 +5,9 @@ use crate::writes::{
     preflight_mutation_op, prepare_mutation_execution, rebuild_after_mutation, stage_mutation_op,
     MutationBatchFailure, MutationExecutionPlan, MutationImpact, MutationTransaction,
 };
-use crate::{ProjectSession, RecordCoordinate};
+use crate::ProjectSession;
 
 use super::plan::{plan_mutations, PlannedMutationOp};
-use super::types::PreparedMutationOp;
 use super::{MutationAppliedOp, MutationFailedOp, MutationReport, MutationRequest};
 
 struct ExecutableMutation {
@@ -265,98 +264,7 @@ fn blocking_rebuild_diagnostics(session: &ProjectSession) -> DiagnosticSet {
 }
 
 fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> MutationAppliedOp {
-    let (op, record, file) = match &planned.op {
-        PreparedMutationOp::InsertRecord {
-            file,
-            actual_type,
-            key,
-            ..
-        } => (
-            "insert_record",
-            Some(RecordCoordinate::new(actual_type.clone(), key.clone())),
-            Some(file.clone()),
-        ),
-        PreparedMutationOp::CancelledInsert { record, write_file } => (
-            "insert_record",
-            Some(record.clone()),
-            Some(write_file.clone()),
-        ),
-        PreparedMutationOp::SetField {
-            record, write_file, ..
-        }
-        | PreparedMutationOp::FoldedSetField {
-            record, write_file, ..
-        } => ("set_field", Some(record.clone()), Some(write_file.clone())),
-        PreparedMutationOp::WriteDimensionValue {
-            record,
-            new_value,
-            write_file,
-            ..
-        } => (
-            if new_value.is_some() {
-                "set_dimension_value"
-            } else {
-                "clear_dimension_value"
-            },
-            Some(record.clone()),
-            Some(write_file.clone()),
-        ),
-        PreparedMutationOp::RenameRecord {
-            record,
-            new_key,
-            report_file,
-        } => (
-            "rename_record",
-            Some(RecordCoordinate::new(
-                record.actual_type.clone(),
-                new_key.clone(),
-            )),
-            report_file.clone(),
-        ),
-        PreparedMutationOp::FoldedRenameRecord {
-            new_record,
-            write_file,
-            ..
-        } => (
-            "rename_record",
-            Some(new_record.clone()),
-            Some(write_file.clone()),
-        ),
-        PreparedMutationOp::DeleteRecord {
-            record,
-            report_file,
-        } => ("delete_record", Some(record.clone()), report_file.clone()),
-        PreparedMutationOp::SwapRecords {
-            first, report_file, ..
-        } => (
-            "swap_records",
-            Some(first.clone()),
-            Some(report_file.clone()),
-        ),
-        PreparedMutationOp::MoveRecord {
-            record,
-            report_file,
-            ..
-        } => (
-            "move_record",
-            Some(record.clone()),
-            Some(report_file.clone()),
-        ),
-        PreparedMutationOp::TransferRecord {
-            record,
-            destination_file,
-            ..
-        } => (
-            "transfer_record",
-            Some(record.clone()),
-            Some(destination_file.clone()),
-        ),
-        PreparedMutationOp::FoldedDeleteRecord { record, write_file } => (
-            "delete_record",
-            Some(record.clone()),
-            Some(write_file.clone()),
-        ),
-    };
+    let (op, record, file) = planned.op.report_metadata();
     MutationAppliedOp {
         index: planned.index,
         op: op.to_string(),
@@ -367,7 +275,7 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
 }
 
 fn failed_op(planned: &PlannedMutationOp, diagnostics: DiagnosticSet) -> MutationFailedOp {
-    MutationFailedOp::from_diagnostics(planned.index, prepared_op_name(&planned.op), diagnostics)
+    MutationFailedOp::from_diagnostics(planned.index, planned.op.report_metadata().0, diagnostics)
 }
 
 fn report_without_publish(
@@ -384,32 +292,5 @@ fn report_without_publish(
         failed,
         affected_files: Vec::new(),
         diagnostics: session.diagnostics.flat_diagnostics(),
-    }
-}
-
-const fn prepared_op_name(op: &PreparedMutationOp) -> &'static str {
-    match op {
-        PreparedMutationOp::InsertRecord { .. } | PreparedMutationOp::CancelledInsert { .. } => {
-            "insert_record"
-        }
-        PreparedMutationOp::SetField { .. } | PreparedMutationOp::FoldedSetField { .. } => {
-            "set_field"
-        }
-        PreparedMutationOp::WriteDimensionValue { new_value, .. } => {
-            if new_value.is_some() {
-                "set_dimension_value"
-            } else {
-                "clear_dimension_value"
-            }
-        }
-        PreparedMutationOp::RenameRecord { .. } | PreparedMutationOp::FoldedRenameRecord { .. } => {
-            "rename_record"
-        }
-        PreparedMutationOp::DeleteRecord { .. } | PreparedMutationOp::FoldedDeleteRecord { .. } => {
-            "delete_record"
-        }
-        PreparedMutationOp::SwapRecords { .. } => "swap_records",
-        PreparedMutationOp::MoveRecord { .. } => "move_record",
-        PreparedMutationOp::TransferRecord { .. } => "transfer_record",
     }
 }
