@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import type { FrontendPluginBundle } from '../api'
+import type { PluginSchemaType } from '../bindings/PluginSchemaType'
+import type { RecordRow } from '../bindings/RecordRow'
 import type {
   ExtensionActivate,
   ExtensionHost,
@@ -14,6 +16,29 @@ const scriptUrls = new Map<string, string>()
 const listeners = new Set<() => void>()
 let enabledIds = storedPluginIds()
 let revision = 0
+let currentSessionId: number | null = null
+let dataApi: {
+  getSchema(sessionId: number): Promise<PluginSchemaType[]>
+  getRecordsByType(sessionId: number, typeName: string): Promise<RecordRow[]>
+} | null = null
+
+export function setReadPluginSession(sessionId: number | null) {
+  currentSessionId = sessionId
+}
+
+export function setReadPluginDataApi(api: NonNullable<typeof dataApi>) {
+  dataApi = api
+}
+
+function requireSessionId(): number {
+  if (currentSessionId === null) throw new Error('no Coflow project is open')
+  return currentSessionId
+}
+
+function requireDataApi(): NonNullable<typeof dataApi> {
+  if (dataApi === null) throw new Error('plugin data API is unavailable')
+  return dataApi
+}
 
 function storedPluginIds(): Set<string> {
   try {
@@ -39,6 +64,12 @@ function matchesTarget(renderer: FieldRenderer, context: ReadRenderContext): boo
 function pluginHost(renderers: FieldRenderer[]): ExtensionHost {
   return {
     apiVersion: 1,
+    schema: {
+      getTypes: () => requireDataApi().getSchema(requireSessionId()),
+    },
+    records: {
+      getByType: typeName => requireDataApi().getRecordsByType(requireSessionId(), typeName),
+    },
     renderers: {
       register(renderer) {
         if (!renderer.id || !renderer.target || typeof renderer.mount !== 'function') {

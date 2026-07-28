@@ -25,6 +25,8 @@ fn export_bindings() {
     // Editor composition views
     t::EditorError::export_all().expect("export EditorError");
     t::ProjectSnapshot::export_all().expect("export ProjectSnapshot");
+    t::PluginSchemaType::export_all().expect("export PluginSchemaType");
+    t::PluginSchemaField::export_all().expect("export PluginSchemaField");
     t::EditorProjectSettings::export_all().expect("export EditorProjectSettings");
     t::EditorRecordGroup::export_all().expect("export EditorRecordGroup");
     t::ViewConfig::export_all().expect("export ViewConfig");
