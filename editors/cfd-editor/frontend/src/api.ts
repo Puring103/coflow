@@ -176,6 +176,8 @@ export interface FrontendPluginBundle {
   description: string
   version: string
   source: string
+  scope: 'global' | 'project'
+  enabled: boolean
 }
 
 export async function pickFrontendPluginManifest(): Promise<string | null> {
@@ -197,6 +199,22 @@ export async function listFrontendPlugins(): Promise<FrontendPluginBundle[]> {
 
 export async function uninstallFrontendPlugin(id: string): Promise<void> {
   return invokeCommand<void>('uninstall_frontend_plugin', { id })
+}
+
+export async function installProjectFrontendPlugin(sessionId: number, manifestPath: string): Promise<FrontendPluginBundle> {
+  return invokeCommand<FrontendPluginBundle>('install_project_frontend_plugin', { sessionId, manifestPath })
+}
+
+export async function listProjectFrontendPlugins(sessionId: number): Promise<FrontendPluginBundle[]> {
+  return invokeCommand<FrontendPluginBundle[]>('list_project_frontend_plugins', { sessionId })
+}
+
+export async function uninstallProjectFrontendPlugin(sessionId: number, id: string): Promise<void> {
+  return invokeCommand<void>('uninstall_project_frontend_plugin', { sessionId, id })
+}
+
+export async function setProjectFrontendPluginEnabled(sessionId: number, id: string, enabled: boolean): Promise<void> {
+  return invokeCommand<void>('set_project_frontend_plugin_enabled', { sessionId, id, enabled })
 }
 
 export async function setRecordGroups(

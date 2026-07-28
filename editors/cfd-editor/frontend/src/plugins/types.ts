@@ -57,6 +57,7 @@ export interface ReadPlugin {
   version: string
   renderers: FieldRenderer[]
   dispose?: () => void
-  origin: 'local'
+  origin: 'global' | 'project'
   manifestPath: string
+  enabled: boolean
 }

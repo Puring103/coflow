@@ -13,12 +13,10 @@ import { DimensionTableView } from './components/DimensionTableView'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import {
-  loadLocalReadPlugin,
-  restoreLocalReadPlugins,
+  replaceLocalReadPlugins,
   setReadPluginDataApi,
   setReadPluginSession,
   setReadPluginEnabled,
-  unloadLocalReadPlugin,
   useReadPluginSettings,
 } from './plugins'
 import {
@@ -221,6 +219,8 @@ function projectGraphRows(
 export default function App() {
   const pluginSettings = useReadPluginSettings()
   const restoredPlugins = useRef(false)
+  const globalPluginBundles = useRef<api.FrontendPluginBundle[]>([])
+  const [globalPluginsReady, setGlobalPluginsReady] = useState(false)
   const [pluginLoadBusy, setPluginLoadBusy] = useState(false)
   const [pluginLoadError, setPluginLoadError] = useState<string | null>(null)
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
@@ -296,32 +296,74 @@ export default function App() {
   useEffect(() => {
     if (!api.isTauri || restoredPlugins.current) return
     restoredPlugins.current = true
-    api.listFrontendPlugins().then(restoreLocalReadPlugins).then(errors => {
-      if (errors.length > 0) setPluginLoadError(`部分插件未加载：${errors.join('; ')}`)
-    })
+    api.listFrontendPlugins().then(bundles => {
+      globalPluginBundles.current = bundles
+      setGlobalPluginsReady(true)
+    }).catch(error => setPluginLoadError(`加载插件失败：${errorMessage(error)}`))
   }, [])
+  useEffect(() => {
+    if (!api.isTauri || !globalPluginsReady) return
+    const sessionId = project?.session_id
+    const projectPlugins = sessionId === undefined
+      ? Promise.resolve([])
+      : api.listProjectFrontendPlugins(sessionId)
+    projectPlugins.then(async bundles => {
+      const errors = await replaceLocalReadPlugins([...globalPluginBundles.current, ...bundles])
+      if (errors.length > 0) setPluginLoadError(`部分插件未加载：${errors.join('; ')}`)
+    }).catch(error => setPluginLoadError(`加载项目插件失败：${errorMessage(error)}`))
+  }, [globalPluginsReady, project?.session_id])
   const loadPluginFromSettings = useCallback(async () => {
+    if (!project) {
+      setPluginLoadError('请先打开项目')
+      return
+    }
     const manifestPath = await api.pickFrontendPluginManifest()
     if (!manifestPath) return
     setPluginLoadBusy(true)
     setPluginLoadError(null)
     try {
-      await loadLocalReadPlugin(await api.installFrontendPlugin(manifestPath))
+      const bundle = await api.installProjectFrontendPlugin(project.session_id, manifestPath)
+      await replaceLocalReadPlugins([
+        ...globalPluginBundles.current,
+        ...await api.listProjectFrontendPlugins(project.session_id),
+      ])
+      setReadPluginEnabled(bundle.id, true)
     } catch (error) {
       setPluginLoadError(`加载插件失败：${errorMessage(error)}`)
     } finally {
       setPluginLoadBusy(false)
     }
-  }, [])
-  const uninstallPluginFromSettings = useCallback(async (id: string) => {
+  }, [project])
+  const uninstallPluginFromSettings = useCallback(async (plugin: typeof pluginSettings[number]) => {
     setPluginLoadError(null)
     try {
-      await api.uninstallFrontendPlugin(id)
-      unloadLocalReadPlugin(id)
+      if (plugin.origin === 'project') {
+        if (!project) return
+        await api.uninstallProjectFrontendPlugin(project.session_id, plugin.id)
+        await replaceLocalReadPlugins([
+          ...globalPluginBundles.current,
+          ...await api.listProjectFrontendPlugins(project.session_id),
+        ])
+      } else {
+        await api.uninstallFrontendPlugin(plugin.id)
+        globalPluginBundles.current = globalPluginBundles.current.filter(item => item.id !== plugin.id)
+        await replaceLocalReadPlugins(globalPluginBundles.current)
+      }
     } catch (error) {
       setPluginLoadError(`卸载插件失败：${errorMessage(error)}`)
     }
-  }, [])
+  }, [project, pluginSettings])
+  const togglePluginFromSettings = useCallback(async (plugin: typeof pluginSettings[number], enabled: boolean) => {
+    try {
+      if (plugin.origin === 'project') {
+        if (!project) return
+        await api.setProjectFrontendPluginEnabled(project.session_id, plugin.id, enabled)
+      }
+      setReadPluginEnabled(plugin.id, enabled)
+    } catch (error) {
+      setPluginLoadError(`更新插件状态失败：${errorMessage(error)}`)
+    }
+  }, [project])
   const [tabOverflowOpen, setTabOverflowOpen] = useState(false)
   const [tabsOverflow, setTabsOverflow] = useState(false)
   const tabScrollRef = useRef<HTMLDivElement>(null)
@@ -2250,7 +2292,7 @@ export default function App() {
               <div className="sidebar-header extensions-header">
                 <span>扩展</span>
                 {api.isTauri && (
-                  <button className="btn btn-icon" onClick={() => void loadPluginFromSettings()} disabled={pluginLoadBusy} title="从文件安装插件" aria-label="从文件安装插件">
+                  <button className="btn btn-icon" onClick={() => void loadPluginFromSettings()} disabled={pluginLoadBusy || !project} title="添加项目插件" aria-label="添加项目插件">
                     <Icon name="plus" size={15} />
                   </button>
                 )}
@@ -2263,16 +2305,16 @@ export default function App() {
                       <div>
                         <strong>{plugin.name}</strong>
                         <small>{plugin.description || plugin.id}</small>
-                        <em>{plugin.origin === 'local' ? '本地已安装' : '内置'}</em>
+                        <em>{plugin.origin === 'project' ? '项目插件' : '全局已安装'}</em>
                       </div>
                     </div>
                     <div className="extension-item-actions">
                       <label className="extension-toggle">
-                        <input type="checkbox" checked={plugin.enabled} onChange={event => setReadPluginEnabled(plugin.id, event.target.checked)} />
+                        <input type="checkbox" checked={plugin.enabled} onChange={event => void togglePluginFromSettings(plugin, event.target.checked)} />
                         <span>{plugin.enabled ? '已启用' : '已禁用'}</span>
                       </label>
-                      {plugin.origin === 'local' && (
-                        <button className="btn btn-icon" title="卸载插件" aria-label={`卸载 ${plugin.name}`} onClick={() => void uninstallPluginFromSettings(plugin.id)}>
+                      {(plugin.origin === 'project' || plugin.origin === 'global') && (
+                        <button className="btn btn-icon" title={plugin.origin === 'project' ? '从项目移除插件' : '卸载全局插件'} aria-label={`卸载 ${plugin.name}`} onClick={() => void uninstallPluginFromSettings(plugin)}>
                           <Icon name="close" size={13} />
                         </button>
                       )}

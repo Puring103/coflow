@@ -185,7 +185,7 @@ impl SessionStore {
         Ok(session.queries().dimensions())
     }
 
-    fn project_root_for(&self, id: u32) -> Result<StdPathBuf, EditorError> {
+    pub(crate) fn project_root_for(&self, id: u32) -> Result<StdPathBuf, EditorError> {
         let entry = self.session(id)?;
         let root = entry
             .state
