@@ -294,15 +294,6 @@ impl RecordIndex {
         self.files.get(file).map_or(&[], Vec::as_slice)
     }
 
-    pub(crate) fn coordinates_in_file<'a>(
-        &'a self,
-        file: &str,
-    ) -> impl Iterator<Item = &'a RecordCoordinate> + 'a {
-        self.ids_in_file(file)
-            .iter()
-            .filter_map(move |id| self.by_id.get(id).map(|r| &r.coordinate))
-    }
-
     #[must_use]
     pub(crate) fn file_for_coordinate(&self, actual_type: &str, key: &str) -> Option<&str> {
         self.get_by_coordinate(actual_type, key)

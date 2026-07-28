@@ -58,10 +58,6 @@ fn assert_same_generation_corpus(left: ProjectQueries<'_>, right: ProjectQueries
     assert!(std::ptr::eq(left.diagnostics(), right.diagnostics()));
     assert_eq!(left.record_count(), right.record_count());
     assert_eq!(left.file_tree(), right.file_tree());
-    assert!(std::ptr::eq(
-        left.loader_extensions(),
-        right.loader_extensions()
-    ));
 }
 
 #[test]

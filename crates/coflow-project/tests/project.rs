@@ -788,9 +788,7 @@ dimensions:
 fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult {
     let root = temp_project_dir("coflow-project-codegen-validation");
     let missing_code = project_with_outputs(&root, OutputsConfig::default());
-    let err = missing_code
-        .validate_for_codegen()
-        .expect_err("missing code output should fail");
+    let err = missing_code.codegen_diagnostic_set();
     assert!(err.contains("missing outputs.code"));
 
     let wrong_code = project_with_outputs(
@@ -801,9 +799,10 @@ fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult 
             loader: None,
         }]),
     );
-    wrong_code
-        .validate_for_codegen()
-        .map_err(|err| format!("provider-neutral code output should validate: {err}"))?;
+    assert!(
+        wrong_code.codegen_diagnostic_set().is_empty(),
+        "provider-neutral code output should validate"
+    );
 
     let wrong_data = project_with_outputs(
         &root,
@@ -813,9 +812,10 @@ fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult 
             loader: None,
         }]),
     );
-    wrong_data
-        .validate_for_codegen()
-        .map_err(|err| format!("provider-neutral data output should validate: {err}"))?;
+    assert!(
+        wrong_data.codegen_diagnostic_set().is_empty(),
+        "provider-neutral data output should validate"
+    );
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }

@@ -117,45 +117,10 @@ impl ProjectSession {
         self.records.file_for_coordinate(actual_type, key)
     }
 
-    /// Iterate the coordinates of every top-level record in `file`. Used by
-    /// hosts that render per-file record lists without exposing internal ids.
-    pub(crate) fn coordinates_in_file<'a>(
-        &'a self,
-        file: &str,
-    ) -> impl Iterator<Item = &'a RecordCoordinate> + 'a {
-        self.records.coordinates_in_file(file)
-    }
-
-    /// Integer value of an enum variant declared in the project schema.
-    /// Returns `None` for unknown enum names or variants.
-    #[must_use]
-    pub(crate) fn enum_int_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
-        self.schema().enum_variant_value(enum_name, variant)
-    }
-
-    #[must_use]
-    pub(crate) fn enum_variants(&self, enum_name: &str) -> Vec<String> {
-        self.schema()
-            .resolve_enum(enum_name)
-            .map(|meta| {
-                meta.variants
-                    .iter()
-                    .map(|variant| variant.name.to_string())
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub(crate) fn dimensions(&self) -> Vec<DimensionInfo> {
         dimensions_for_project(&self.project, self.dimension_plan.fields())
-    }
-
-    /// Lookup a single dimension by name.
-    #[must_use]
-    pub(crate) fn dimension(&self, name: &str) -> Option<DimensionInfo> {
-        self.dimensions().into_iter().find(|d| d.name == name)
     }
 
     /// Compose a read-only [`RecordView`] for a coordinate. Returns `None`
@@ -332,11 +297,6 @@ impl ProjectSession {
             }
         }
         tree
-    }
-
-    #[must_use]
-    pub(crate) const fn loader_extensions(&self) -> &BTreeSet<String> {
-        &self.loader_extensions
     }
 }
 

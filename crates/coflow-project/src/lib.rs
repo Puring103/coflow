@@ -32,7 +32,7 @@ pub use paths::{
     normalize_path, normalized_path_identity, path_is_same_or_descendant, resolve_config_path,
 };
 pub use schema_path_policy::SchemaFile;
-pub use schema_sources::{SchemaSource, SchemaSourceSet};
+pub use schema_sources::SchemaSource;
 
 use validation::{
     validate_for_codegen_collecting, validate_project_config_schema_only_collecting,
@@ -63,7 +63,10 @@ impl Project {
         if !schema_diagnostics.is_empty() {
             return Err(schema_diagnostics);
         }
-        project.validate_for_data()?;
+        let data_diagnostics = project.data_diagnostic_set();
+        if !data_diagnostics.is_empty() {
+            return Err(data_diagnostics);
+        }
         Ok(project)
     }
 
@@ -118,36 +121,6 @@ impl Project {
         })
     }
 
-    /// Validates source settings required by data loading commands.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when a data source file or directory is missing or a
-    /// data-stage source/sheet setting is invalid.
-    pub fn validate_for_data(&self) -> Result<(), DiagnosticSet> {
-        let diagnostics = self.data_diagnostic_set();
-        if diagnostics.is_empty() {
-            Ok(())
-        } else {
-            Err(diagnostics)
-        }
-    }
-
-    /// Validates output settings required by C# code generation.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when code or data output settings are missing or have
-    /// invalid shape.
-    pub fn validate_for_codegen(&self) -> Result<(), DiagnosticSet> {
-        let diagnostics = self.codegen_diagnostic_set();
-        if diagnostics.is_empty() {
-            Ok(())
-        } else {
-            Err(diagnostics)
-        }
-    }
-
     #[must_use]
     pub fn schema_diagnostic_set(&self) -> DiagnosticSet {
         diagnostics::project_diagnostics_to_set(
@@ -196,7 +169,7 @@ impl Project {
     /// # Errors
     ///
     /// Returns diagnostics when schema discovery or source reads fail.
-    pub fn schema_sources(&self) -> Result<SchemaSourceSet, DiagnosticSet> {
+    pub fn schema_sources(&self) -> Result<Vec<SchemaSource>, DiagnosticSet> {
         schema_sources::schema_sources(&self.config.schema, &self.root_dir)
     }
 }
