@@ -12,7 +12,15 @@ use serde_json::Value;
 
 mod dimensions;
 
-pub(crate) type ResolvedLoaderSource = (Arc<dyn SourceProvider>, ResolvedSource);
+pub(crate) struct ResolvedLoaderSource {
+    pub(crate) provider: Arc<dyn SourceProvider>,
+    pub(crate) source: ResolvedSource,
+}
+
+pub(crate) struct ResolvedDimensionSource {
+    pub(crate) source: ResolvedSource,
+    pub(crate) fields: Vec<crate::dimensions::DimensionField>,
+}
 
 #[derive(Clone)]
 pub(crate) struct ConfiguredSource {
@@ -69,7 +77,7 @@ impl<'a> SourceResolver<'a> {
     pub(crate) fn resolve_dimension_sources(
         &self,
         plan: &crate::dimensions::DimensionRuntimePlan,
-    ) -> Result<Vec<(ResolvedLoaderSource, crate::dimensions::DimensionField)>, DiagnosticSet> {
+    ) -> Result<Vec<ResolvedDimensionSource>, DiagnosticSet> {
         dimensions::resolve_dimension_sources(self, plan)
     }
 
@@ -281,7 +289,10 @@ impl<'a> SourceResolver<'a> {
             .into_iter()
             .map(|source| {
                 validate_resolved_source(provider.as_ref(), &source)?;
-                Ok((Arc::clone(provider), source))
+                Ok(ResolvedLoaderSource {
+                    provider: Arc::clone(provider),
+                    source,
+                })
             })
             .collect()
     }
