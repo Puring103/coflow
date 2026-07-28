@@ -20,7 +20,6 @@
 pub mod check_benchmark_support;
 mod checks;
 mod data_files;
-mod data_patch;
 mod data_read;
 mod dimensions;
 mod files;
@@ -44,10 +43,6 @@ pub use data_files::{
     create_data_file, sync_data_header, table_header_layout, DataCreateFileOptions, DataFileReport,
     DataSyncHeaderOptions, TableHeaderLayout,
 };
-pub use data_patch::{
-    DataPatchAppliedOp, DataPatchFailedOp, DataPatchOp, DataPatchReport, DataPatchRequest,
-    PatchDimensionValueSelector, PatchPathSegment, PatchRecordSelector,
-};
 pub use data_read::{
     data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery, DataListReport,
     DataRecordInfo, DataRecordSummary, DataSourceInfo, DataSourcesReport,
@@ -60,8 +55,8 @@ pub use files::{DimensionGroup, FileTreeNode, FileTreeOptions};
 pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef};
 // Re-export helpers that hosts (tauri editor, CLI) call when translating
 // engine data to a wire format so they don't diverge in path formatting.
-pub use coflow_cft::{DimensionName, FieldName, VariantName};
-pub use coflow_data_model::RecordCoordinate;
+pub use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+pub use coflow_data_model::{CfdPathSegment, RecordCoordinate};
 pub use load::format_cfd_path as format_field_path;
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,

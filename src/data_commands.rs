@@ -1,11 +1,11 @@
 use crate::diagnostics::{cli_error, cli_file_error};
 use crate::write_file::write_report_human;
+use coflow::data_patch::{DataPatchRequest, DataPatchSessionExt};
 use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
 use coflow_project::Project;
 use coflow_runtime::{
     data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery,
-    DataPatchRequest, ProjectSchemaSession, ReadOnlyProjectSession, RecordCoordinate, Runtime,
-    WriteProjectSession,
+    ProjectSchemaSession, ReadOnlyProjectSession, RecordCoordinate, Runtime, WriteProjectSession,
 };
 use output::{
     file_error_report, write_file_report_human, write_get_human, write_json, write_list_human,

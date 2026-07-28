@@ -1,15 +1,14 @@
 use std::collections::BTreeMap;
 
 use coflow_api::FlatDiagnostic;
-use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
-use coflow_data_model::CfdPathSegment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{
-    DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
-    MutationReport, MutationRequest, MutationValue, RecordCoordinate, WriteOutcome,
-    WriteProjectSession,
+use coflow_runtime::{
+    CfdPathSegment, DefaultMaterialization, DimensionName, DimensionValueCoordinate,
+    DimensionValueExpectation, FieldName, MutationAppliedOp, MutationFailedOp, MutationFields,
+    MutationOp, MutationReport, MutationRequest, MutationValue, RecordCoordinate, RecordKey,
+    TypeName, VariantName, WriteOutcome, WriteProjectSession,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,13 +44,13 @@ pub enum DataPatchOp {
     SetDimensionValue {
         coordinate: PatchDimensionValueSelector,
         #[serde(default)]
-        expected: crate::DimensionValueExpectation,
+        expected: DimensionValueExpectation,
         value: Value,
     },
     ClearDimensionValue {
         coordinate: PatchDimensionValueSelector,
         #[serde(default)]
-        expected: crate::DimensionValueExpectation,
+        expected: DimensionValueExpectation,
     },
     RenameRecord {
         record: PatchRecordSelector,
@@ -84,10 +83,10 @@ pub struct PatchDimensionValueSelector {
 }
 
 impl PatchDimensionValueSelector {
-    fn into_coordinate(self) -> Result<crate::DimensionValueCoordinate, coflow_cft::CftNameError> {
-        Ok(crate::DimensionValueCoordinate {
-            actual_type: TypeName::new(self.record.actual_type)?,
-            record_key: RecordKey::new(self.record.key)?,
+    fn into_coordinate(self) -> Result<DimensionValueCoordinate, String> {
+        Ok(DimensionValueCoordinate {
+            actual_type: TypeName::new(self.record.actual_type).map_err(|error| error.to_string())?,
+            record_key: RecordKey::new(self.record.key).map_err(|error| error.to_string())?,
             field: self.field,
             dimension: self.dimension,
             variant: self.variant,
@@ -130,13 +129,17 @@ const fn default_true() -> bool {
     true
 }
 
-impl WriteProjectSession {
+pub trait DataPatchSessionExt {
     /// Apply a JSON data patch through the engine mutation API.
     ///
     /// This keeps the CLI-facing data patch DTOs as a thin adapter while all
     /// mutation semantics live in the shared engine path.
     ///
-    pub fn apply_data_patch(&mut self, request: DataPatchRequest) -> DataPatchReport {
+    fn apply_data_patch(&mut self, request: DataPatchRequest) -> DataPatchReport;
+}
+
+impl DataPatchSessionExt for WriteProjectSession {
+    fn apply_data_patch(&mut self, request: DataPatchRequest) -> DataPatchReport {
         let original_ops = request.ops.clone();
         let mutation_request = match request.into_mutation_request() {
             Ok(request) => request,
@@ -159,7 +162,7 @@ impl WriteProjectSession {
         let mutation_report = self.apply_mutation(mutation_request);
         let remaining_ops =
             DataPatchRequest::remaining_after_failure(&original_ops, &mutation_report);
-        mutation_report.into_data_patch_report(remaining_ops)
+        into_data_patch_report(mutation_report, remaining_ops)
     }
 }
 
@@ -213,7 +216,7 @@ impl DataPatchOp {
         }
     }
 
-    fn into_mutation_op(self) -> Result<MutationOp, coflow_cft::CftNameError> {
+    fn into_mutation_op(self) -> Result<MutationOp, String> {
         Ok(match self {
             Self::InsertRecord {
                 file,
@@ -275,51 +278,48 @@ impl DataPatchOp {
 }
 
 impl PatchRecordSelector {
-    fn into_coordinate(self) -> Result<RecordCoordinate, coflow_cft::CftNameError> {
-        RecordCoordinate::try_new(self.actual_type, self.key)
+    fn into_coordinate(self) -> Result<RecordCoordinate, String> {
+        RecordCoordinate::try_new(self.actual_type, self.key).map_err(|error| error.to_string())
     }
 }
 
-impl MutationReport {
-    fn into_data_patch_report(self, remaining_ops: Vec<DataPatchOp>) -> DataPatchReport {
-        DataPatchReport {
-            write_ok: self.write_ok,
-            check_ok: self.check_ok,
-            applied: self
-                .applied
-                .into_iter()
-                .map(MutationAppliedOp::into_data_patch_applied)
-                .collect(),
-            failed: self
-                .failed
-                .into_iter()
-                .map(MutationFailedOp::into_data_patch_failed)
-                .collect(),
-            affected_files: self.affected_files,
-            remaining_ops,
-            diagnostics: self.diagnostics,
-        }
+fn into_data_patch_report(
+    report: MutationReport,
+    remaining_ops: Vec<DataPatchOp>,
+) -> DataPatchReport {
+    DataPatchReport {
+        write_ok: report.write_ok,
+        check_ok: report.check_ok,
+        applied: report
+            .applied
+            .into_iter()
+            .map(into_data_patch_applied)
+            .collect(),
+        failed: report
+            .failed
+            .into_iter()
+            .map(into_data_patch_failed)
+            .collect(),
+        affected_files: report.affected_files,
+        remaining_ops,
+        diagnostics: report.diagnostics,
     }
 }
 
-impl MutationAppliedOp {
-    fn into_data_patch_applied(self) -> DataPatchAppliedOp {
-        DataPatchAppliedOp {
-            index: self.index,
-            op: self.op,
-            record: self.record,
-            file: self.file,
-            outcome: self.outcome,
-        }
+fn into_data_patch_applied(applied: MutationAppliedOp) -> DataPatchAppliedOp {
+    DataPatchAppliedOp {
+        index: applied.index,
+        op: applied.op,
+        record: applied.record,
+        file: applied.file,
+        outcome: applied.outcome,
     }
 }
 
-impl MutationFailedOp {
-    fn into_data_patch_failed(self) -> DataPatchFailedOp {
-        DataPatchFailedOp {
-            index: self.index,
-            op: self.op,
-            diagnostics: self.diagnostics,
-        }
+fn into_data_patch_failed(failed: MutationFailedOp) -> DataPatchFailedOp {
+    DataPatchFailedOp {
+        index: failed.index,
+        op: failed.op,
+        diagnostics: failed.diagnostics,
     }
 }
