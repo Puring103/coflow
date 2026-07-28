@@ -2050,6 +2050,18 @@ dimensions:
         record.record.dimension_field("farewell").unwrap().variants["zh"].value,
         CfdValue::String("再见旧值".to_string())
     );
+    let (dimension, fields) = session
+        .queries()
+        .dimension_fields_for_file("data/dimensions/language/UiText.cfd")
+        .expect("singleton dimension file binding");
+    assert_eq!(dimension.name, "language");
+    assert_eq!(
+        fields
+            .iter()
+            .map(|field| field.source_field.as_str())
+            .collect::<Vec<_>>(),
+        ["welcome", "farewell"]
+    );
     drop(session);
 
     let project = Project::open_schema_only(Some(&root)).expect("reopen project");

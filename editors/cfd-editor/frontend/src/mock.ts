@@ -211,11 +211,11 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
     file_path: 'data/dimensions/language/Item_name.csv',
     dimension: 'language',
     display_name: '本地化',
-    field: 'name',
     variants: ['zh-CN', 'en-US'],
     rows: [
       {
         coordinate: { actual_type: 'Item', key: 'Item_001' },
+        field: 'name',
         owner_file_path: 'data/item.cfd',
         default_value: stringValue('初级药水'),
         values: {
@@ -225,6 +225,7 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
       },
       {
         coordinate: { actual_type: 'Item', key: 'Item_002' },
+        field: 'name',
         owner_file_path: 'data/item.cfd',
         default_value: stringValue('中级药水'),
         values: {
@@ -239,7 +240,6 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
     file_path: 'data/dimensions/platform/Item_icon.csv',
     dimension: 'platform',
     display_name: '平台',
-    field: 'icon',
     variants: ['mobile', 'desktop'],
     rows: [],
   },

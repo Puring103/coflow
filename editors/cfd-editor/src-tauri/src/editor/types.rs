@@ -178,7 +178,6 @@ pub struct DimensionFileRecords {
     pub file_path: String,
     pub dimension: String,
     pub display_name: String,
-    pub field: String,
     pub variants: Vec<String>,
     pub rows: Vec<DimensionFileRow>,
 }
@@ -186,6 +185,7 @@ pub struct DimensionFileRecords {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DimensionFileRow {
     pub coordinate: RecordCoordinate,
+    pub field: String,
     pub owner_file_path: String,
     pub default_value: CfdValue,
     pub values: BTreeMap<String, DimensionValueState>,

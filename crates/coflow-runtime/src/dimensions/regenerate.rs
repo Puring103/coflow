@@ -624,11 +624,7 @@ impl FileSnapshot {
 }
 
 fn dimension_source_path(out_dir: &Path, field: &DimensionField) -> PathBuf {
-    if field.is_singleton {
-        out_dir.join(format!("{}.cfd", field.source_type))
-    } else {
-        out_dir.join(format!("{}_{}.csv", field.bucket, field.source_field))
-    }
+    out_dir.join(field.source_file_name())
 }
 
 fn dimension_resolved_source(

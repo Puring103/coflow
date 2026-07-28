@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { moveDimensionCell, organizeDimensionRows } from './DimensionTableView'
+import { dimensionRowId, moveDimensionCell, organizeDimensionRows } from './DimensionTableView'
 import type { DimensionFileRow } from '../api'
 import type { EditorProjectSettings } from '../bindings/EditorProjectSettings'
 
@@ -22,9 +22,17 @@ describe('moveDimensionCell', () => {
 describe('organizeDimensionRows', () => {
   const row = (key: string, owner = 'data/items.cfd'): DimensionFileRow => ({
     coordinate: { actual_type: 'Item', key },
+    field: 'name',
     owner_file_path: owner,
     default_value: { kind: 'string', value: key },
     values: {},
+  })
+
+  it('distinguishes fields that share a singleton record coordinate', () => {
+    expect(dimensionRowId(row('UiText'))).not.toBe(dimensionRowId({
+      ...row('UiText'),
+      field: 'farewell',
+    }))
   })
 
   it('projects owner record groups into managed dimension rows', () => {

@@ -33,6 +33,10 @@ interface Props {
 
 export interface DimensionCellSelection { row: number; column: number }
 
+export function dimensionRowId(row: DimensionFileRow): string {
+  return `${coordinateId(row.coordinate)}\u001f${row.field}`
+}
+
 export interface DimensionRecordGroupView {
   key: string
   ownerFilePath: string
@@ -111,15 +115,15 @@ export function DimensionTableView({
   focusRequest = 0,
   onFocusRequestConsumed,
 }: Props) {
-  const [selectedKey, setSelectedKey] = useState(data.rows[0] ? coordinateId(data.rows[0].coordinate) : '')
+  const [selectedKey, setSelectedKey] = useState(data.rows[0] ? dimensionRowId(data.rows[0]) : '')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
   const [recordField, setRecordField] = useState(0)
   const tableRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLElement>(null)
   const recordRef = useRef<HTMLElement>(null)
   useEffect(() => {
-    if (!data.rows.some(row => coordinateId(row.coordinate) === selectedKey)) {
-      setSelectedKey(data.rows[0] ? coordinateId(data.rows[0].coordinate) : '')
+    if (!data.rows.some(row => dimensionRowId(row) === selectedKey)) {
+      setSelectedKey(data.rows[0] ? dimensionRowId(data.rows[0]) : '')
     }
   }, [data, selectedKey])
   const items = useMemo(
@@ -130,7 +134,9 @@ export function DimensionTableView({
     () => items.flatMap(item => item.kind === 'row' ? [item.row] : []),
     [items],
   )
-  const selected = data.rows.find(row => coordinateId(row.coordinate) === selectedKey) ?? data.rows[0]
+  const selected = data.rows.find(row => dimensionRowId(row) === selectedKey) ?? data.rows[0]
+  const fields = [...new Set(data.rows.map(row => row.field))]
+  const showRowField = fields.length > 1
   const toggleGroup = (key: string) => setCollapsedGroups(current => {
     const next = new Set(current)
     if (next.has(key)) next.delete(key); else next.add(key)
@@ -147,7 +153,7 @@ export function DimensionTableView({
   return (
     <div className="dimension-table-view">
       <div className="dimension-table-meta">
-        <strong>{data.field}</strong>
+        <strong>{fields.join(', ')}</strong>
         <span>{data.rows.length} 条</span>
       </div>
       {mode === 'table' ? (
@@ -173,7 +179,7 @@ export function DimensionTableView({
             ref={listRef}
             onKeyDown={event => {
               if (!isDirection(event.key)) return
-              const index = Math.max(0, visibleRows.findIndex(row => coordinateId(row.coordinate) === selectedKey))
+              const index = Math.max(0, visibleRows.findIndex(row => dimensionRowId(row) === selectedKey))
               if (event.key === 'ArrowLeft') {
                 event.preventDefault()
                 onExitLeft?.()
@@ -194,7 +200,7 @@ export function DimensionTableView({
               const next = Math.max(0, Math.min(visibleRows.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))
               const row = visibleRows[next]
               if (!row) return
-              setSelectedKey(coordinateId(row.coordinate))
+              setSelectedKey(dimensionRowId(row))
               requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>(
                 `[data-record-index="${next}"]`,
               )?.focus({ preventScroll: true }))
@@ -217,14 +223,14 @@ export function DimensionTableView({
               <RecordUngroupedHeader key="ungrouped" count={item.rows.length} className="dimension-record-group-header" />
             ) : (
               <button
-                key={coordinateId(item.row.coordinate)}
+                key={dimensionRowId(item.row)}
                 type="button"
-                className={`${coordinateId(item.row.coordinate) === selectedKey ? 'selected' : ''}${item.group?.color ? ' has-group-color' : ''}`}
+                className={`${dimensionRowId(item.row) === selectedKey ? 'selected' : ''}${item.group?.color ? ' has-group-color' : ''}`}
                 style={recordGroupColorStyle(item.group?.color)}
                 data-record-index={visibleRows.indexOf(item.row)}
-                onClick={() => { setSelectedKey(coordinateId(item.row.coordinate)); setRecordField(0) }}
+                onClick={() => { setSelectedKey(dimensionRowId(item.row)); setRecordField(0) }}
               >
-                {item.row.coordinate.key}
+                {item.row.coordinate.key}{showRowField ? ` · ${item.row.field}` : ''}
               </button>
             ))}
           </aside>
@@ -296,6 +302,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
 
   const columnCount = data.variants.length + 2
   const visibleRows = items.flatMap(item => item.kind === 'row' ? [item.row] : [])
+  const showRowField = new Set(data.rows.map(row => row.field)).size > 1
 
   const selection = anchor
   const range: DimensionRange = rangeEnd ? {
@@ -331,8 +338,8 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
     })
   }
 
-  const fieldPathForVariant = (variant: string): FieldPathSegment[] =>
-    [fieldPathField(data.field), fieldPathField(variant)]
+  const fieldPathForVariant = (row: DimensionFileRow, variant: string): FieldPathSegment[] =>
+    [fieldPathField(row.field), fieldPathField(variant)]
 
   return (
     <div
@@ -376,7 +383,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                 let text = ''
                 if (state?.kind === 'value') {
                   if (onRenderCellText) {
-                    try { text = await onRenderCellText(row.coordinate, fieldPathForVariant(variant)) } catch { text = valueSummary(state.value) }
+                    try { text = await onRenderCellText(row.coordinate, fieldPathForVariant(row, variant)) } catch { text = valueSummary(state.value) }
                   } else {
                     text = valueSummary(state.value)
                   }
@@ -419,7 +426,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                 const capturedRow = row; const capturedVariant = variant; const capturedState = state
                 writes.push(async () => {
                   try {
-                    const value = await onParseCellText(capturedRow.coordinate, fieldPathForVariant(capturedVariant), sourceText)
+                    const value = await onParseCellText(capturedRow.coordinate, fieldPathForVariant(capturedRow, capturedVariant), sourceText)
                     await onWrite(capturedRow, capturedVariant, capturedState, { kind: 'value', value })
                   } catch {
                     // skip unparseable cells
@@ -457,7 +464,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
               let initialText = ''
               if (state?.kind === 'value') {
                 if (onRenderCellText) {
-                  try { initialText = await onRenderCellText(row.coordinate, fieldPathForVariant(variant)) } catch { initialText = valueSummary(state.value) }
+                  try { initialText = await onRenderCellText(row.coordinate, fieldPathForVariant(row, variant)) } catch { initialText = valueSummary(state.value) }
                 } else {
                   initialText = valueSummary(state.value)
                 }
@@ -530,11 +537,13 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
             const rowIndex = visibleRows.indexOf(item.row)
             return (
               <tr
-                key={coordinateId(item.row.coordinate)}
+                key={dimensionRowId(item.row)}
                 className={item.group?.color ? 'has-group-color' : undefined}
                 style={recordGroupColorStyle(item.group?.color)}
               >
-                <th scope="row" {...cellProps(rowIndex, 0, anchor, isRangeSelection, range, select)}>{item.row.coordinate.key}</th>
+                <th scope="row" {...cellProps(rowIndex, 0, anchor, isRangeSelection, range, select)}>
+                  {item.row.coordinate.key}{showRowField ? ` · ${item.row.field}` : ''}
+                </th>
                 <td {...cellProps(rowIndex, 1, anchor, isRangeSelection, range, select)}><DataCardCompact value={item.row.default_value} label="default" /></td>
                 {data.variants.map((variant, variantIndex) => {
                   const colIndex = variantIndex + 2
@@ -548,7 +557,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                           initialText={inlineEdit.initialText}
                           onWrite={onWrite}
                           onParseCellText={onParseCellText}
-                          fieldPath={fieldPathForVariant(variant)}
+                          fieldPath={fieldPathForVariant(item.row, variant)}
                           onDone={() => {
                             setInlineEdit(null)
                             requestAnimationFrame(() => rootRef.current?.focus({ preventScroll: true }))

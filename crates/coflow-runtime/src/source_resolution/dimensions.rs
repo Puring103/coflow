@@ -114,10 +114,7 @@ fn configured_dimension_source(
     if !matches!(extension.as_str(), "csv" | "cfd") {
         return Ok(None);
     }
-    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-        return Ok(None);
-    };
-    let matched_fields = fields_for_file_stem(fields, stem, &extension);
+    let matched_fields = fields_for_source_path(fields, &path);
     if matched_fields.is_empty() {
         return Ok(None);
     }
@@ -155,21 +152,14 @@ fn configured_dimension_source(
     )))
 }
 
-fn fields_for_file_stem<'a>(
+fn fields_for_source_path<'a>(
     fields: &'a [&DimensionField],
-    stem: &str,
-    extension: &str,
+    path: &Path,
 ) -> Vec<&'a DimensionField> {
     fields
         .iter()
         .copied()
-        .filter(|field| {
-            if extension == "cfd" && field.is_singleton {
-                stem == field.source_type.as_str()
-            } else {
-                stem == format!("{}_{}", field.bucket, field.source_field)
-            }
-        })
+        .filter(|field| field.matches_source_path(path))
         .collect()
 }
 

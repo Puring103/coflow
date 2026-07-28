@@ -14,6 +14,31 @@ pub struct DimensionField {
     pub is_singleton: bool,
 }
 
+impl DimensionField {
+    pub(crate) fn source_file_name(&self) -> String {
+        if self.is_singleton {
+            format!("{}.cfd", self.source_type)
+        } else {
+            format!("{}_{}.csv", self.bucket, self.source_field)
+        }
+    }
+
+    pub(crate) fn matches_source_path(&self, path: &Path) -> bool {
+        let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
+            return false;
+        };
+        let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            return false;
+        };
+        if self.is_singleton {
+            extension == "cfd" && stem == self.source_type.as_str()
+        } else {
+            matches!(extension, "csv" | "cfd")
+                && stem == format!("{}_{}", self.bucket, self.source_field)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DimensionRuntimePlan {
     fields: Vec<DimensionField>,
@@ -117,6 +142,27 @@ mod tests {
     use coflow_data_model::RecordCoordinate;
 
     use super::{DimensionField, DimensionRuntimePlan};
+
+    #[test]
+    fn dimension_source_matching_preserves_supported_formats() {
+        let dimension = DimensionName::new("language").expect("dimension");
+        let regular = DimensionField {
+            dimension: dimension.clone(),
+            source_type: TypeName::new("Item").expect("type"),
+            source_field: FieldName::new("name").expect("field"),
+            bucket: BucketName::new("Item").expect("bucket"),
+            is_singleton: false,
+        };
+        assert!(regular.matches_source_path(std::path::Path::new("Item_name.csv")));
+        assert!(regular.matches_source_path(std::path::Path::new("Item_name.cfd")));
+
+        let singleton = DimensionField {
+            is_singleton: true,
+            ..regular
+        };
+        assert!(singleton.matches_source_path(std::path::Path::new("Item.cfd")));
+        assert!(!singleton.matches_source_path(std::path::Path::new("Item_name.cfd")));
+    }
 
     #[test]
     fn changed_record_types_select_only_assignable_dimension_fields() {

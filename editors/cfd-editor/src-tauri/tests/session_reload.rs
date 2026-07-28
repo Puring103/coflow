@@ -484,9 +484,9 @@ dimensions:
             "data/dimensions/language/Item_name.csv",
         )
         .expect("get dimension file records");
-    assert_eq!(dimension_records.field, "name");
     assert_eq!(dimension_records.variants, ["zh", "en"]);
     assert_eq!(dimension_records.rows.len(), 1);
+    assert_eq!(dimension_records.rows[0].field, "name");
     assert_eq!(dimension_records.rows[0].coordinate.key.as_str(), "potion");
     assert_eq!(
         dimension_records.rows[0].default_value,
