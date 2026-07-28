@@ -15,6 +15,8 @@ import { useTheme } from './hooks/useTheme'
 import {
   loadLocalReadPlugin,
   restoreLocalReadPlugins,
+  setReadPluginDataApi,
+  setReadPluginSession,
   setReadPluginEnabled,
   unloadLocalReadPlugin,
   useReadPluginSettings,
@@ -222,6 +224,15 @@ export default function App() {
   const [pluginLoadBusy, setPluginLoadBusy] = useState(false)
   const [pluginLoadError, setPluginLoadError] = useState<string | null>(null)
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
+  useEffect(() => {
+    setReadPluginDataApi({
+      getSchema: api.getPluginSchema,
+      getRecordsByType: api.getPluginRecordsByType,
+    })
+  }, [])
+  useEffect(() => {
+    setReadPluginSession(project?.session_id ?? null)
+  }, [project?.session_id])
   useEffect(() => {
     const suppressBrowserMenu = (event: MouseEvent) => event.preventDefault()
     window.addEventListener('contextmenu', suppressBrowserMenu)

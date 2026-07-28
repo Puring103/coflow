@@ -15,9 +15,9 @@ use coflow_runtime::{
 use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
-    EditorRecordGroup, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, ProjectSnapshot,
-    RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig, WriteDimensionValueOutcome,
-    WriteFieldOutcome,
+    EditorRecordGroup, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, PluginSchemaType,
+    ProjectSnapshot, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
+    WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use host::EditorHost;
 use serde::Serialize;
@@ -376,6 +376,30 @@ async fn get_file_records(
     run_blocking(move || host.sessions().get_file_records(session_id, &file_path)).await
 }
 
+#[tauri::command]
+async fn get_plugin_schema(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<Vec<PluginSchemaType>, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().get_plugin_schema(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn get_plugin_records_by_type(
+    session_id: u32,
+    type_name: String,
+    host: State<'_, EditorHost>,
+) -> Result<Vec<RecordRow>, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .get_plugin_records_by_type(session_id, &type_name)
+    })
+    .await
+}
+
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_graph(
@@ -691,6 +715,8 @@ pub fn run() -> tauri::Result<()> {
             build_project,
             open_source_file,
             get_file_records,
+            get_plugin_schema,
+            get_plugin_records_by_type,
             get_graph,
             get_enum_variants,
             get_ref_targets,

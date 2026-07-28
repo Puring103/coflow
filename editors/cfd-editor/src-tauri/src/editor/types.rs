@@ -146,6 +146,32 @@ pub struct FileTypeOption {
     pub is_singleton: bool,
 }
 
+/// Read-only schema information exposed to editor extensions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct PluginSchemaType {
+    pub name: String,
+    pub fields: Vec<PluginSchemaField>,
+    pub is_singleton: bool,
+    pub record_count: usize,
+}
+
+/// One schema field in the extension-facing schema view.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct PluginSchemaField {
+    pub name: String,
+    pub type_label: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DimensionFileRecords {
     pub revision: u32,

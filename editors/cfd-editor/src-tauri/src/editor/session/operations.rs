@@ -12,6 +12,54 @@ impl SessionStore {
         Ok(file_records_for_session(&session, file_path))
     }
 
+    /// Returns the schema projection available to read-only editor extensions.
+    pub fn get_plugin_schema(&self, id: u32) -> Result<Vec<PluginSchemaType>, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let queries = session.queries();
+        Ok(queries
+            .schema_type_names()
+            .into_iter()
+            .map(|name| PluginSchemaType {
+                fields: queries
+                    .schema_type_fields(&name)
+                    .into_iter()
+                    .map(|(name, type_label)| PluginSchemaField { name, type_label })
+                    .collect(),
+                is_singleton: queries.type_is_singleton(&name),
+                record_count: queries.record_count_for_type(&name),
+                name,
+            })
+            .collect())
+    }
+
+    /// Returns records whose actual type exactly matches `type_name`, across all source files.
+    pub fn get_plugin_records_by_type(
+        &self,
+        id: u32,
+        type_name: &str,
+    ) -> Result<Vec<RecordRow>, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let queries = session.queries();
+        if !queries.schema_has_type(type_name) {
+            return Err(EditorError::not_found(format!("schema type `{type_name}` not found")));
+        }
+        let ctx = WireContext::new(queries, &session.diagnostics);
+        Ok(queries
+            .source_files()
+            .flat_map(|file| queries.record_views_in_file(file))
+            .filter(|view| view.coordinate.actual_type.as_str() == type_name)
+            .map(|view| record_view_to_row(&view, &ctx))
+            .collect())
+    }
+
     pub fn make_default_object(&self, id: u32, type_name: &str) -> Result<CfdValue, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;

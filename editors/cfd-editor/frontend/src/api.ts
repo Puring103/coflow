@@ -24,6 +24,8 @@ import type { ReorderRecordsOutcome } from './bindings/ReorderRecordsOutcome'
 import type { WriteFieldOutcome } from './bindings/WriteFieldOutcome'
 import type { WriteDimensionValueOutcome } from './bindings/WriteDimensionValueOutcome'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
+import type { RecordRow } from './bindings/RecordRow'
+import type { PluginSchemaType } from './bindings/PluginSchemaType'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
 
 export const isTauri = '__TAURI_INTERNALS__' in window
@@ -73,6 +75,14 @@ export async function initProject(dir: string): Promise<ProjectSnapshot> {
 
 export async function getFileRecords(sessionId: number, filePath: string): Promise<FileRecords> {
   return invokeCommand<FileRecords>('get_file_records', { sessionId, filePath })
+}
+
+export async function getPluginSchema(sessionId: number): Promise<PluginSchemaType[]> {
+  return invokeCommand<PluginSchemaType[]>('get_plugin_schema', { sessionId })
+}
+
+export async function getPluginRecordsByType(sessionId: number, typeName: string): Promise<RecordRow[]> {
+  return invokeCommand<RecordRow[]>('get_plugin_records_by_type', { sessionId, typeName })
 }
 
 export interface GraphQueryOptions {
