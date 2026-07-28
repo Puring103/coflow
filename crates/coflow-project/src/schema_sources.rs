@@ -1,4 +1,9 @@
 use crate::schema_path_policy::{SchemaFile, SchemaPathPolicy};
+use crate::{
+    file_discovery::{
+        discover_directory_files_with, DirectoryDiscoveryError, DirectoryDiscoveryErrorKind,
+    },
+};
 use crate::SchemaConfig;
 use coflow_api::DiagnosticSet;
 use std::collections::BTreeSet;
@@ -21,7 +26,6 @@ pub struct SchemaSourceSet {
 #[derive(Debug, Default)]
 struct SchemaDiscovery {
     files: Vec<SchemaFile>,
-    visited_directories: BTreeSet<PathBuf>,
     visited_files: BTreeSet<PathBuf>,
 }
 
@@ -81,64 +85,61 @@ fn push_schema_path(
 ) -> Result<(), DiagnosticSet> {
     let path = policy.resolve(path);
     if path.is_dir() {
-        let canonical_root = SchemaPathPolicy::canonicalize(&path)?;
-        collect_cft_files(policy, &path, &canonical_root, discovery)
+        let files = discover_directory_files_with(&path, &SchemaPathPolicy::is_cft_path)
+            .map_err(|error| schema_discovery_error(policy, &error))?;
+        for file in files {
+            if discovery.visited_files.insert(file.canonical_path.clone()) {
+                discovery.files.push(policy.schema_file_with_identity(
+                    file.path,
+                    file.canonical_path,
+                ));
+            }
+        }
+        Ok(())
     } else if path.is_file() {
         if !SchemaPathPolicy::is_cft_path(&path) {
             return Err(policy.unsupported_file_error(&path));
         }
-        push_schema_file(policy, path, None, discovery)
+        push_schema_file(policy, path, discovery)
     } else {
         Err(SchemaPathPolicy::missing_path_error(&path))
     }
 }
 
-fn collect_cft_files(
-    policy: SchemaPathPolicy<'_>,
-    dir: &Path,
-    canonical_root: &Path,
-    discovery: &mut SchemaDiscovery,
-) -> Result<(), DiagnosticSet> {
-    let canonical_dir = SchemaPathPolicy::canonicalize(dir)?;
-    if !canonical_dir.starts_with(canonical_root) {
-        return Err(policy.outside_declared_root_error(dir, canonical_root, &canonical_dir));
-    }
-    if !discovery.visited_directories.insert(canonical_dir) {
-        return Ok(());
-    }
-
-    let mut entries = fs::read_dir(dir)
-        .map_err(|err| SchemaPathPolicy::read_dir_error(dir, err))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| SchemaPathPolicy::read_dir_error(dir, err))?;
-    entries.sort_by_key(fs::DirEntry::path);
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_cft_files(policy, &path, canonical_root, discovery)?;
-        } else if SchemaPathPolicy::is_cft_path(&path) {
-            push_schema_file(policy, path, Some(canonical_root), discovery)?;
-        }
-    }
-    Ok(())
-}
-
 fn push_schema_file(
     policy: SchemaPathPolicy<'_>,
     path: PathBuf,
-    canonical_root: Option<&Path>,
     discovery: &mut SchemaDiscovery,
 ) -> Result<(), DiagnosticSet> {
     let canonical_path = SchemaPathPolicy::canonicalize(&path)?;
-    if let Some(canonical_root) = canonical_root {
-        if !canonical_path.starts_with(canonical_root) {
-            return Err(policy.outside_declared_root_error(&path, canonical_root, &canonical_path));
-        }
-    }
     if discovery.visited_files.insert(canonical_path.clone()) {
         discovery
             .files
             .push(policy.schema_file_with_identity(path, canonical_path));
     }
     Ok(())
+}
+
+fn schema_discovery_error(
+    policy: SchemaPathPolicy<'_>,
+    error: &DirectoryDiscoveryError,
+) -> DiagnosticSet {
+    match error.kind() {
+        DirectoryDiscoveryErrorKind::NotDirectory { path } => {
+            SchemaPathPolicy::missing_path_error(path)
+        }
+        DirectoryDiscoveryErrorKind::Resolve { path, message } => {
+            SchemaPathPolicy::resolve_error(path, message)
+        }
+        DirectoryDiscoveryErrorKind::Read {
+            path,
+            operation,
+            message,
+        } => SchemaPathPolicy::read_dir_error(path, format!("{operation}: {message}")),
+        DirectoryDiscoveryErrorKind::OutsideRoot {
+            path,
+            canonical_root,
+            canonical_path,
+        } => policy.outside_declared_root_error(path, canonical_root, canonical_path),
+    }
 }
