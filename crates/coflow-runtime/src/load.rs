@@ -109,6 +109,13 @@ pub(crate) struct LoadProjectDataOptions {
     pub(crate) run_checks: bool,
 }
 
+pub(crate) struct ReloadProjectDataOptions<'a> {
+    pub(crate) load: LoadProjectDataOptions,
+    pub(crate) refresh_implicit_dimension_sources: bool,
+    pub(crate) previous_checks: Option<&'a CheckDiagnosticStore>,
+    pub(crate) check_impact: &'a CheckImpact,
+}
+
 pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput, DiagnosticSet> {
     Ok(ProjectLoadOutput {
         model: empty_model(schema)?,
@@ -233,7 +240,6 @@ pub(crate) fn load_project_data(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn reload_project_data_from_cache(
     project: &Project,
     schema: &CftSchema,
@@ -242,10 +248,7 @@ pub(crate) fn reload_project_data_from_cache(
     indexes: &mut SessionIndexBuilder,
     previous: &SourceDataCache,
     reload_paths: &BTreeSet<String>,
-    options: LoadProjectDataOptions,
-    refresh_implicit_dimension_sources: bool,
-    previous_checks: Option<&CheckDiagnosticStore>,
-    check_impact: &CheckImpact,
+    options: ReloadProjectDataOptions<'_>,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut statistics = ProjectExecutionStats::default();
     let mut source_data = SourceDataCache {
@@ -253,12 +256,14 @@ pub(crate) fn reload_project_data_from_cache(
             .batches
             .iter()
             .filter(|batch| {
-                options.include_implicit_dimension_sources || batch.dimension_field.is_none()
+                options.load.include_implicit_dimension_sources || batch.dimension_field.is_none()
             })
             .cloned()
             .collect(),
     };
-    if options.include_implicit_dimension_sources && refresh_implicit_dimension_sources {
+    if options.load.include_implicit_dimension_sources
+        && options.refresh_implicit_dimension_sources
+    {
         statistics.sources_resolved = refresh_dimension_source_plans(
             project,
             dimension_plan,
@@ -339,9 +344,9 @@ pub(crate) fn reload_project_data_from_cache(
         schema,
         indexes,
         source_data,
-        options.run_checks,
-        previous_checks,
-        check_impact,
+        options.load.run_checks,
+        options.previous_checks,
+        options.check_impact,
         statistics,
     )
 }
