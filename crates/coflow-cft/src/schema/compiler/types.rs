@@ -93,6 +93,7 @@ impl SchemaCompiler<'_> {
                     map.insert(
                         field.name.clone(),
                         FieldInfo {
+                            declaring_type: crate::TypeName::from_validated(info.def.name.clone()),
                             inferred_type: declared_ty,
                             dimension: super::annotations::field_dimension_name(field),
                         },

@@ -99,9 +99,18 @@ Dimension schema 不包含 `out_dir`、display name 或 Provider 选项；这些
 
 ## Check 语义
 
-type-local 与命名顶层 check 共用 `CftSchemaCheckBlock`、statement/expression AST 和编译后的 statement dimension schedule。`CftSchemaCheckStmt::Expr` 分别保存 condition 与可选 message；formatted string 保留 text/expression segments，nullable 与双 binding 量词使用独立 typed variant，不需要 consumer 反向解析源码。
+type-local 与命名顶层 check 共用 `CftSchemaCheckBlock`、statement/expression AST 和根 statement 的 dimension 元数据。`CftSchemaCheckStmt::Expr` 分别保存 condition 与可选 message；formatted string 保留 text/expression segments，nullable 与双 binding 量词使用独立 typed variant，不需要 consumer 反向解析源码。
 
-`CftTopLevelCheck.record_sets` 保存 `records(Type)` 已解析后的 `TypeName`，不是用户输入字符串。`statement_indices(dimension)` 返回该 check 在指定 dimension round 应执行的根 statement；type-local check 通过 `CftSchema::check_schedule(actual_type, dimension)` 获得相同语义的继承调度。
+每个 type-local 或命名顶层 check 的根 statement 都有 schema 生命周期内稳定的 `CheckStatementId`。`CheckStatementInfo` 暴露 owner、根索引、静态 `CheckDependency` 集合和相关 dimensions。常用查询包括：
+
+- `check_statement(id)`：取得根 statement 及其 canonical 元数据；
+- `check_statements_for_dependency(dependency)`：从字段或 record-set token 查询受影响 statement；
+- `check_dependency_is_cross_record(statement, dependency)`：区分同一字段 token 的本地访问与经 record reference 的访问；
+- `check_statements_for_actual_type(actual_type)`：取得某顶层实际类型需要执行的继承与内联 object statements；
+- `check_statements_for_nested_field(actual_type, field)`：取得某个顶层宿主字段内可达的内联 object statements；
+- `check_hosts_for_nested_type(type_name)`：取得可包含该内联 object 类型的顶层宿主类型。
+
+`records(Type)` 编译为 `CheckDependency::RecordSet(Type)`；通过其 binding 访问字段时还会产生对应 `CheckDependency::Field`。调用方不需要重新遍历 check AST 或推导表达式类型。
 
 `CftSchema::source(module)` 返回编译时保留的 canonical path/source catalog，用于把 check 的 `ModuleId + Span` 映射为诊断文件位置。host 不应根据 check 名称猜测文件路径。
 

@@ -701,7 +701,10 @@ fn lsp_diagnostic_renders_structured_context_without_mutating_message() {
         }],
     };
 
-    assert_eq!(lsp_diagnostic(&diagnostic)["message"], "custom\n上下文: 在 when enabled 内");
+    assert_eq!(
+        lsp_diagnostic(&diagnostic)["message"],
+        "custom\n上下文: 在 when enabled 内"
+    );
     assert_eq!(diagnostic.message, "custom");
 }
 

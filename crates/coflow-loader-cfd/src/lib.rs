@@ -155,7 +155,7 @@ impl SourceProvider for CfdLoader {
         _ctx: SourceResolveContext<'_>,
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-        let path = (&source.location).path();
+        let path = source.location.path();
         if is_cfd_path(path) {
             return Ok(vec![source.clone()]);
         }
@@ -174,7 +174,7 @@ impl SourceProvider for CfdLoader {
         ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let file = (&source.location).path();
+        let file = source.location.path();
         let contents = fs::read_to_string(file).map_err(|err| {
             DiagnosticSet::one(Diagnostic::error(
                 "CFD-READ",

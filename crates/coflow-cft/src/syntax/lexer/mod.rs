@@ -421,6 +421,7 @@ impl<'a> Lexer<'a> {
         ))
     }
 
+    #[allow(clippy::too_many_lines)]
     fn lex_formatted_string(&mut self, tokens: &mut Vec<Token>) -> Result<(), CftDiagnostics> {
         let start = self.pos;
         self.pos += 2;
@@ -436,7 +437,7 @@ impl<'a> Lexer<'a> {
             };
             match ch {
                 '"' => {
-                    self.push_formatted_text(tokens, &mut text, text_start, self.pos);
+                    Self::push_formatted_text(tokens, &mut text, text_start, self.pos);
                     let quote = self.pos;
                     self.pos += 1;
                     tokens.push(Token {
@@ -454,7 +455,7 @@ impl<'a> Lexer<'a> {
                     self.pos += 2;
                 }
                 '{' => {
-                    self.push_formatted_text(tokens, &mut text, text_start, self.pos);
+                    Self::push_formatted_text(tokens, &mut text, text_start, self.pos);
                     let opener = self.pos;
                     self.pos += 1;
                     tokens.push(Token {
@@ -530,13 +531,7 @@ impl<'a> Lexer<'a> {
         ))
     }
 
-    fn push_formatted_text(
-        &self,
-        tokens: &mut Vec<Token>,
-        text: &mut String,
-        start: usize,
-        end: usize,
-    ) {
+    fn push_formatted_text(tokens: &mut Vec<Token>, text: &mut String, start: usize, end: usize) {
         if text.is_empty() {
             return;
         }

@@ -7,89 +7,29 @@ use coflow_structure::{StructuralBudget, TraversalCursor};
 
 use crate::diagnostics::dimension_lookup_error_message;
 use crate::eval::{EvalRecordRef, EvalValue, LocatedEvalValue, ValueLocation};
-use crate::DimensionCheckContext;
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct DimensionCheckRound {
-    pub(crate) dimension: DimensionName,
-    pub(crate) variant: VariantName,
-}
-
-impl DimensionCheckRound {
-    /// Creates a round only when the dimension and variant belong to `schema`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`DimensionCheckRoundError`] for an unknown dimension or a
-    /// variant that is not declared by that dimension.
-    pub fn try_new(
-        schema: &CftSchema,
-        dimension: DimensionName,
-        variant: VariantName,
-    ) -> Result<Self, DimensionCheckRoundError> {
-        let Some(schema_dimension) = schema.resolve_dimension(&dimension) else {
-            return Err(DimensionCheckRoundError::UnknownDimension(dimension));
-        };
-        if schema_dimension.variant(&variant).is_none() {
-            return Err(DimensionCheckRoundError::UnknownVariant { dimension, variant });
-        }
-        Ok(Self { dimension, variant })
-    }
-
-    #[must_use]
-    pub const fn dimension(&self) -> &DimensionName {
-        &self.dimension
-    }
-
-    #[must_use]
-    pub const fn variant(&self) -> &VariantName {
-        &self.variant
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DimensionCheckRoundError {
-    UnknownDimension(DimensionName),
-    UnknownVariant {
-        dimension: DimensionName,
-        variant: VariantName,
-    },
-}
-
-impl std::fmt::Display for DimensionCheckRoundError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UnknownDimension(dimension) => {
-                write!(formatter, "unknown check dimension `{dimension}`")
-            }
-            Self::UnknownVariant { dimension, variant } => write!(
-                formatter,
-                "unknown check variant `{variant}` for dimension `{dimension}`"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for DimensionCheckRoundError {}
+use crate::CheckProjection;
 
 pub(crate) fn attach_dimension_origins(
     model: &CfdDataModel,
-    round: &DimensionCheckRound,
+    projection: &CheckProjection,
     diagnostic: &mut CfdDiagnostic,
 ) {
     if let Some(primary) = &mut diagnostic.primary {
-        attach_dimension_origin(model, round, primary);
+        attach_dimension_origin(model, projection, primary);
     }
     for related in &mut diagnostic.related {
-        attach_dimension_origin(model, round, related);
+        attach_dimension_origin(model, projection, related);
     }
 }
 
 fn attach_dimension_origin(
     model: &CfdDataModel,
-    round: &DimensionCheckRound,
+    projection: &CheckProjection,
     label: &mut coflow_data_model::CfdLabel,
 ) {
+    let Some((dimension, variant)) = projection.dimension() else {
+        return;
+    };
     let Some(record) = label.record.and_then(|record| model.record(record)) else {
         return;
     };
@@ -107,21 +47,20 @@ fn attach_dimension_origin(
     };
     let Some(values) = record
         .dimension_field(field)
-        .filter(|values| values.dimension == round.dimension)
+        .filter(|values| &values.dimension == dimension)
     else {
         return;
     };
     label.origin = values
         .variants
-        .get(&round.variant)
+        .get(variant)
         .map(|value| value.origin.clone());
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct DimensionRoundView {
+pub(crate) struct CheckProjectionView {
     dimension: DimensionName,
     variant: VariantName,
-    projected_records: Rc<RefCell<BTreeSet<CfdRecordId>>>,
 }
 
 enum ProjectedDimensionField {
@@ -139,13 +78,13 @@ pub(crate) struct MaterializedDimensionValue<'a> {
     pub(crate) location: ValueLocation,
 }
 
-impl DimensionRoundView {
-    pub(crate) fn new(context: &DimensionCheckContext) -> Self {
-        Self {
-            dimension: context.dimension.clone(),
-            variant: context.variant.clone(),
-            projected_records: Rc::new(RefCell::new(BTreeSet::new())),
-        }
+impl CheckProjectionView {
+    pub(crate) fn new(projection: &CheckProjection) -> Option<Self> {
+        let (dimension, variant) = projection.dimension()?;
+        Some(Self {
+            dimension: dimension.clone(),
+            variant: variant.clone(),
+        })
     }
 
     fn project_field(
@@ -155,7 +94,6 @@ impl DimensionRoundView {
         record_id: CfdRecordId,
         field_name: &str,
     ) -> Option<ProjectedDimensionField> {
-        self.projected_records.borrow_mut().insert(record_id);
         let record = model.record(record_id)?;
         let field = schema.field(record.actual_type(), field_name)?;
         if field
@@ -200,44 +138,6 @@ impl DimensionRoundView {
                 },
             },
         )
-    }
-
-    pub(crate) fn nested_fields(
-        &self,
-        schema: &CftSchema,
-        model: &CfdDataModel,
-        record_id: CfdRecordId,
-    ) -> Vec<(String, Option<String>)> {
-        self.projected_records.borrow_mut().insert(record_id);
-        let Some(record) = model.record(record_id) else {
-            return Vec::new();
-        };
-        let Some(type_meta) = schema.resolve_type(record.actual_type()) else {
-            return Vec::new();
-        };
-        type_meta
-            .all_fields()
-            .filter(|field| schema.field_has_nested_checks(record.actual_type(), &field.name))
-            .filter_map(|field| {
-                let projection = self.project_field(schema, model, record_id, &field.name)?;
-                match projection {
-                    ProjectedDimensionField::Value(_) => Some((field.name.to_string(), None)),
-                    ProjectedDimensionField::Error {
-                        message,
-                        traverse_nested: true,
-                    } => Some((field.name.to_string(), Some(message))),
-                    ProjectedDimensionField::ExplicitNull
-                    | ProjectedDimensionField::Error {
-                        traverse_nested: false,
-                        ..
-                    } => None,
-                }
-            })
-            .collect()
-    }
-
-    pub(crate) fn projected_record_count(&self) -> usize {
-        self.projected_records.borrow().len()
     }
 
     pub(crate) fn materialize<'model>(
@@ -310,13 +210,13 @@ pub(crate) enum DimensionVariantAbort {
 pub(crate) fn apply_dimension_variant<'model>(
     schema: &CftSchema,
     model: &'model CfdDataModel,
-    round: Option<&DimensionRoundView>,
+    projection: Option<&CheckProjectionView>,
     record: &EvalRecordRef,
     field_name: &str,
     located: &mut LocatedEvalValue<'model>,
     budget: &mut StructuralBudget,
 ) -> Result<Option<CfdRecordId>, DimensionVariantAbort> {
-    let Some(round) = round else {
+    let Some(view) = projection else {
         return Ok(None);
     };
     let Some(source_record_id) = record.top_record_id() else {
@@ -325,7 +225,7 @@ pub(crate) fn apply_dimension_variant<'model>(
     let Some(logical_location) = located.location.as_ref() else {
         return Ok(None);
     };
-    let Some(materialized) = round.materialize(
+    let Some(materialized) = view.materialize(
         schema,
         model,
         source_record_id,
@@ -351,6 +251,3 @@ pub(crate) fn apply_dimension_variant<'model>(
     located.location = Some(materialized.location);
     Ok(None)
 }
-use std::cell::RefCell;
-use std::collections::BTreeSet;
-use std::rc::Rc;

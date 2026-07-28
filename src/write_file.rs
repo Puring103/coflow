@@ -100,6 +100,7 @@ pub(crate) fn write_report_human(report: &WriteFileReport) -> Result<(), Diagnos
     Ok(())
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn output_error(error: io::Error) -> DiagnosticSet {
     cli_error("CLI-OUTPUT", format!("failed to write output: {error}"))
 }

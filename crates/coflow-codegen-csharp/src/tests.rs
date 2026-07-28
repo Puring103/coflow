@@ -12,7 +12,6 @@
 use super::*;
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 fn compile_schema(source: &str) -> Result<CftSchema, String> {
     compile_schema_with_dimensions(source, CftDimensionInputs::default())
@@ -130,7 +129,7 @@ fn generate_json_with_id_as_enum_variants(
             .replace(".Loader.cs", ".cs");
         if let Some(common) = files
             .iter_mut()
-            .find(|file| file.relative_path == PathBuf::from(&common_name))
+            .find(|file| file.relative_path == *common_name)
         {
             common.contents.push('\n');
             common.contents.push_str(&loader.contents);

@@ -1,6 +1,5 @@
 use super::access;
 use super::builtins::{self, Builtin, CallSignature, CallSignatureError, CallTarget};
-use super::deps::DependencyCollector;
 use super::diagnostics::{format_value_for_message, CheckDiagnostic, CheckDiagnosticContext};
 use super::dimensions::{self, DimensionVariantAbort};
 use super::evaluation_trace::EvaluationTrace;
@@ -8,11 +7,10 @@ use super::ops::{self, OpsResult};
 use super::quantifiers;
 use super::value::{EvalValue, LocatedEvalValue, ScalarValue, ValueLocation};
 use coflow_cft::{CftSchema, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp};
-use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId};
+use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
 use super::value::EvalRecordRef;
 
@@ -24,10 +22,9 @@ pub(super) struct CheckEvaluator<'model> {
     pub(super) scopes: Vec<BTreeMap<String, LocatedEvalValue<'model>>>,
     pub(super) contexts: Vec<CheckDiagnosticContext>,
     pub(super) diagnostics: Vec<CheckDiagnostic>,
-    deps: DependencyCollector,
-    pub(super) dimension_round: Option<dimensions::DimensionRoundView>,
+    pub(super) projection_view: Option<dimensions::CheckProjectionView>,
     trace: Option<EvaluationTrace>,
-    regex_cache: Rc<RefCell<builtins::RegexCache>>,
+    regex_cache: &'model RefCell<builtins::RegexCache>,
     budget: StructuralBudget,
     eval_stack: Vec<TraversalCursor>,
     pub(super) schema_location: Option<crate::CheckSchemaLocation>,
@@ -54,17 +51,9 @@ impl<'model> CheckEvaluator<'model> {
         model: &'model CfdDataModel,
         check_origin: Option<ValueLocation>,
         current: EvalValue<'model>,
-        mut deps: DependencyCollector,
-        regex_cache: Rc<RefCell<builtins::RegexCache>>,
+        regex_cache: &'model RefCell<builtins::RegexCache>,
         structural_limits: StructuralLimits,
     ) -> Self {
-        let initial_top = match &current {
-            EvalValue::Record(record) => record.top_record_id(),
-            _ => None,
-        };
-        if let Some(record_id) = initial_top {
-            deps.note_read_from(record_id, coflow_data_model::CfdPath::root());
-        }
         Self {
             schema,
             model,
@@ -73,8 +62,7 @@ impl<'model> CheckEvaluator<'model> {
             scopes: Vec::new(),
             contexts: Vec::new(),
             diagnostics: Vec::new(),
-            deps,
-            dimension_round: None,
+            projection_view: None,
             trace: None,
             regex_cache,
             budget: StructuralBudget::new(structural_limits),
@@ -83,21 +71,8 @@ impl<'model> CheckEvaluator<'model> {
         }
     }
 
-    pub(super) fn into_outputs(self) -> (Vec<CheckDiagnostic>, DependencyCollector) {
-        (self.diagnostics, self.deps)
-    }
-
-    pub(super) fn note_read_from(&mut self, target: CfdRecordId, path: coflow_data_model::CfdPath) {
-        self.deps.note_read_from(target, path);
-    }
-
-    fn note_value_read(&mut self, value: &LocatedEvalValue<'model>) {
-        if matches!(&value.value, EvalValue::Record(record) if record.is_record_set_handle()) {
-            return;
-        }
-        if let Some(location) = &value.location {
-            self.note_read_from(location.storage.record, location.storage.path.clone());
-        }
+    pub(super) fn into_execution(self) -> (Vec<CheckDiagnostic>, u64) {
+        (self.diagnostics, self.budget.work_used())
     }
 
     pub(super) fn eval_ops<T>(&mut self, result: OpsResult<T>) -> EvalResult<T> {
@@ -117,22 +92,13 @@ impl<'model> CheckEvaluator<'model> {
         match dimensions::apply_dimension_variant(
             self.schema,
             self.model,
-            self.dimension_round.as_ref(),
+            self.projection_view.as_ref(),
             record,
             field_name,
             located,
             &mut self.budget,
         ) {
-            Ok(Some(record_id)) => {
-                self.note_read_from(
-                    record_id,
-                    located.location.as_ref().map_or_else(
-                        coflow_data_model::CfdPath::root,
-                        |location| location.storage.path.clone(),
-                    ),
-                );
-                Ok(())
-            }
+            Ok(Some(_)) => Ok(()),
             Ok(None) => Ok(()),
             Err(DimensionVariantAbort::Skipped) => Err(EvalAbort::Skipped),
             Err(DimensionVariantAbort::Error {
@@ -249,7 +215,6 @@ impl<'model> CheckEvaluator<'model> {
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.get(name) {
                 let value = value.clone();
-                self.note_value_read(&value);
                 return Ok(value);
             }
         }
@@ -264,7 +229,6 @@ impl<'model> CheckEvaluator<'model> {
             if let EvalValue::Record(record) = self.current.clone() {
                 self.apply_dimension_variant(&record, name, &mut value)?;
             }
-            self.note_value_read(&value);
             return Ok(value);
         }
         if let Some(value) = self.schema.resolve_const(name) {
@@ -296,7 +260,6 @@ impl<'model> CheckEvaluator<'model> {
         if let Some(record) = target_record {
             self.apply_dimension_variant(&record, name, &mut result)?;
         }
-        self.note_value_read(&result);
         Ok(result)
     }
 
@@ -732,8 +695,8 @@ impl<'model> CheckEvaluator<'model> {
         let location = location.or_else(|| self.check_origin.clone());
         let mut diagnostic = CfdDiagnostic::error(code, message.into());
         if let Some(location) = location {
-            diagnostic = diagnostic
-                .with_primary(Some(location.blame.record), location.blame.path.clone());
+            diagnostic =
+                diagnostic.with_primary(Some(location.blame.record), location.blame.path.clone());
             for reference in &location.references {
                 diagnostic = diagnostic.with_related(
                     Some(reference.record),

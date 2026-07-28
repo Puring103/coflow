@@ -169,6 +169,7 @@ impl MutationExecutionPlan {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn prepare_mutation_execution(
     session: &ProjectSession,
     registry: &ProviderRegistry,
@@ -410,8 +411,7 @@ fn resolve_transfer_sheet(
 fn record_matches_sheet(record: &RecordRef, sheet: Option<&str>) -> bool {
     match (&record.origin, sheet) {
         (RecordOrigin::Table { sheet: actual, .. }, Some(expected)) => actual == expected,
-        (RecordOrigin::Table { .. }, None) => true,
-        (RecordOrigin::File { .. }, None) => true,
+        (RecordOrigin::Table { .. } | RecordOrigin::File { .. }, None) => true,
         (RecordOrigin::File { .. } | RecordOrigin::None, Some(_)) | (RecordOrigin::None, None) => {
             false
         }

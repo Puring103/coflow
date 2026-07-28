@@ -64,10 +64,8 @@ fn schema_retains_display_metadata_on_supported_declarations() {
 
 #[test]
 fn schema_retains_records_as_a_static_special_form() {
-    let schema = compile_one(
-        "type Item {} check Integrity { records(Item).len() >= 0; }",
-    )
-    .expect("schema compiles");
+    let schema = compile_one("type Item {} check Integrity { records(Item).len() >= 0; }")
+        .expect("schema compiles");
     let check = schema.resolve_check("Integrity").expect("check");
     let CftSchemaCheckStmt::Expr { condition, .. } = &check.block.stmts[0] else {
         panic!("expression statement");
@@ -386,7 +384,7 @@ fn value_dependency_plan_memoizes_shared_subgraphs_in_topological_order() {
 }
 
 #[test]
-fn typed_check_schedule_borrows_inherited_blocks_in_parent_first_order() {
+fn check_index_includes_inherited_statements() {
     let schema = compile_one(
         r#"
             abstract type Base {
@@ -400,27 +398,24 @@ fn typed_check_schedule_borrows_inherited_blocks_in_parent_first_order() {
         "#,
     )
     .expect("schema compiles");
-    let checks = schema.check_schedule("Child", None).collect::<Vec<_>>();
+    let checks = schema
+        .check_statements_for_actual_type("Child")
+        .filter_map(|id| schema.check_statement(id))
+        .collect::<Vec<_>>();
 
     assert_eq!(checks.len(), 2);
-    assert!(std::ptr::eq(
-        checks[0].block(),
-        schema
-            .resolve_type("Base")
-            .and_then(|meta| meta.check.as_ref())
-            .expect("base check")
+    assert!(matches!(
+        &checks[0].info.owner,
+        coflow_cft::CheckOwner::Type(owner) if owner.as_str() == "Base"
     ));
-    assert!(std::ptr::eq(
-        checks[1].block(),
-        schema
-            .resolve_type("Child")
-            .and_then(|meta| meta.check.as_ref())
-            .expect("child check")
+    assert!(matches!(
+        &checks[1].info.owner,
+        coflow_cft::CheckOwner::Type(owner) if owner.as_str() == "Child"
     ));
 }
 
 #[test]
-fn dimension_check_schedule_includes_inherited_dimension_checks() {
+fn check_index_includes_inherited_dimension_statements() {
     let schema = compile_one_with_dimensions(
         r#"
             abstract type Base {
@@ -439,21 +434,22 @@ fn dimension_check_schedule_includes_inherited_dimension_checks() {
     .expect("schema compiles");
 
     let scheduled = schema
-        .check_schedule("Child", Some("language"))
+        .check_statements_for_actual_type("Child")
+        .filter_map(|id| schema.check_statement(id))
+        .filter(|statement| statement.info.dimensions.contains("language"))
         .collect::<Vec<_>>();
     assert_eq!(scheduled.len(), 2);
-    for (scheduled, owner) in scheduled.iter().zip(["Base", "Child"]) {
-        let canonical = schema
-            .resolve_type(owner)
-            .and_then(|ty| ty.check.as_ref())
-            .expect("canonical check block");
-        assert!(std::ptr::eq(scheduled.block(), canonical));
-        assert_eq!(scheduled.statement_indices(), Some([0].as_slice()));
+    for (statement, owner) in scheduled.iter().zip(["Base", "Child"]) {
+        assert!(matches!(
+            &statement.info.owner,
+            coflow_cft::CheckOwner::Type(actual) if actual.as_str() == owner
+        ));
+        assert_eq!(statement.info.root_index, 0);
     }
 }
 
 #[test]
-fn top_level_check_exposes_schema_guided_dimension_statements() {
+fn top_level_check_index_exposes_schema_guided_dimensions() {
     let schema = compile_one_with_dimensions(
         r#"
             type Item {
@@ -468,10 +464,18 @@ fn top_level_check_exposes_schema_guided_dimension_statements() {
         valid_dimensions([("language", vec!["zh".to_string()])]),
     )
     .expect("schema compiles");
-    let check = schema.resolve_check("ItemRules").expect("top-level check");
-
-    assert_eq!(check.statement_indices("language"), Some(&[1][..]));
-    assert_eq!(check.statement_indices("platform"), None);
+    let statements = schema
+        .all_check_statements()
+        .filter(|statement| {
+            matches!(
+                &statement.owner,
+                coflow_cft::CheckOwner::Project(name) if name.as_str() == "ItemRules"
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(statements.len(), 2);
+    assert!(statements[0].dimensions.is_empty());
+    assert!(statements[1].dimensions.contains("language"));
 }
 
 #[test]
@@ -518,7 +522,10 @@ fn dimension_check_analysis_respects_quantifier_binding_shadowing() {
     )
     .expect("schema compiles");
 
-    assert_eq!(schema.check_schedule("Item", Some("language")).count(), 0);
+    assert!(schema
+        .check_statements_for_actual_type("Item")
+        .filter_map(|id| schema.check_statement(id))
+        .all(|statement| !statement.info.dimensions.contains("language")));
 }
 
 #[test]
@@ -698,7 +705,7 @@ fn spec_comprehensive_example_compiles() {
 }
 
 #[test]
-fn typed_check_plan_marks_only_fields_that_can_reach_nested_checks() {
+fn check_index_marks_only_fields_that_can_reach_nested_checks() {
     let container = compile_one(
         r#"
             abstract type Reward {}

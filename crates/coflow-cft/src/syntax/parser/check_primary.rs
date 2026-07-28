@@ -6,6 +6,7 @@ use crate::syntax::Span;
 use coflow_structure::StructureKind;
 
 impl Parser<'_> {
+    #[allow(clippy::too_many_lines)]
     pub(super) fn parse_postfix_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let mut expr = self.parse_primary_expr()?;
         loop {

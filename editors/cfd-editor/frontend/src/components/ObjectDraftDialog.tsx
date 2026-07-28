@@ -258,7 +258,7 @@ export function buildObjectPayload(
   values: Record<string, FieldValue | null>,
   dirty: Set<string>,
 ): FieldValue {
-  const fields: { [key: string]: FieldValue | undefined } = {}
+  const fields: Record<string, FieldValue> = {}
   for (const field of draft.fields) {
     const value = values[field.name]
     if (!value) continue

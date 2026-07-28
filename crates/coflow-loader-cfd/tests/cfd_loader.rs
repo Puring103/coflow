@@ -67,12 +67,10 @@ fn string_fields_require_quotes() {
     let CfdTextLoadError::Text(diagnostics) = error else {
         panic!("expected text diagnostics");
     };
-    assert!(
-        diagnostics
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.message == "expected string")
-    );
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message == "expected string"));
 }
 
 #[test]

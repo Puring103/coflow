@@ -51,6 +51,7 @@ pub(crate) fn preflight_mutation_op(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn stage_mutation_op(
     session: &ProjectSession,
     op: &PreparedMutationOp,

@@ -33,7 +33,7 @@ impl DimensionSourceManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &DimensionSourceLoadRequest<'_>,
     ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         let rows = read_dimension_rows(path)?;
         let Some(header) = rows.first() else {
             return Ok(DimensionSourceLoadResult::default());
@@ -140,7 +140,7 @@ impl DimensionSourceManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &WriteDimensionValueRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         let text = fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION-WRITE",
@@ -217,7 +217,7 @@ impl DimensionSourceManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &RewriteDimensionRecordRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         let text = fs::read_to_string(path).map_err(|err| {
             DiagnosticSet::one(diag(
                 "CSV-DIMENSION-WRITE",
@@ -283,7 +283,7 @@ impl DimensionSourceManager for CsvWriter {
         _ctx: TableContext<'_>,
         request: &DimensionSourceRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         let expected_keys = request
             .entries
             .iter()

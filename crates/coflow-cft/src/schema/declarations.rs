@@ -6,8 +6,84 @@ use crate::{
 };
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::sync::Arc;
 use std::path::PathBuf;
+use std::sync::Arc;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CheckStatementId(u32);
+
+impl CheckStatementId {
+    #[must_use]
+    pub(in crate::schema) const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub(in crate::schema) const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CheckOwner {
+    Type(TypeName),
+    Project(CheckName),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CheckField {
+    pub owner: TypeName,
+    pub field: FieldName,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CheckDependency {
+    Field(CheckField),
+    RecordSet(TypeName),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum CheckDependencyLocality {
+    Local,
+    CrossRecord,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct CheckStatementDependencies {
+    uses: BTreeMap<CheckDependency, CheckDependencyLocality>,
+}
+
+impl CheckStatementDependencies {
+    pub(crate) fn insert(
+        &mut self,
+        dependency: CheckDependency,
+        locality: CheckDependencyLocality,
+    ) {
+        self.uses
+            .entry(dependency)
+            .and_modify(|existing| *existing = (*existing).max(locality))
+            .or_insert(locality);
+    }
+
+    pub(crate) fn dependencies(&self) -> impl Iterator<Item = &CheckDependency> {
+        self.uses.keys()
+    }
+
+    pub(crate) fn cross_record_dependencies(&self) -> impl Iterator<Item = &CheckDependency> {
+        self.uses.iter().filter_map(|(dependency, locality)| {
+            (*locality == CheckDependencyLocality::CrossRecord).then_some(dependency)
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckStatementInfo {
+    pub id: CheckStatementId,
+    pub owner: CheckOwner,
+    pub root_index: usize,
+    pub dependencies: BTreeSet<CheckDependency>,
+    pub dimensions: BTreeSet<DimensionName>,
+}
 
 #[derive(Debug, Clone)]
 pub struct CftSchemaSource {
@@ -29,14 +105,6 @@ pub struct CftTopLevelCheck {
     pub name: CheckName,
     pub block: CftSchemaCheckBlock,
     pub span: Span,
-    pub record_sets: BTreeSet<TypeName>,
-}
-
-impl CftTopLevelCheck {
-    #[must_use]
-    pub fn statement_indices(&self, dimension: &str) -> Option<&[usize]> {
-        self.block.statement_indices(dimension)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -105,13 +173,7 @@ pub struct CftSchemaCheckBlock {
     pub stmts: Vec<CftSchemaCheckStmt>,
     pub span: Span,
     pub(crate) dimension_statements: BTreeMap<DimensionName, Vec<usize>>,
-}
-
-impl CftSchemaCheckBlock {
-    #[must_use]
-    pub fn statement_indices(&self, dimension: &str) -> Option<&[usize]> {
-        self.dimension_statements.get(dimension).map(Vec::as_slice)
-    }
+    pub(crate) statement_dependencies: Vec<CheckStatementDependencies>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -322,5 +384,10 @@ impl CftDimension {
         self.variant_by_name
             .get(name)
             .and_then(|index| self.variants.get(*index))
+    }
+
+    #[must_use]
+    pub fn variant_index(&self, name: &str) -> Option<usize> {
+        self.variant_by_name.get(name).copied()
     }
 }

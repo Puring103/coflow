@@ -18,6 +18,7 @@ pub struct LoaderDescriptor {
     pub data: &'static str,
 }
 
+#[allow(clippy::missing_errors_doc)]
 pub trait LoaderGenerator: Send + Sync {
     fn descriptor(&self) -> &'static LoaderDescriptor;
 

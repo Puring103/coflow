@@ -1,18 +1,3 @@
-/// Reason an incremental generation path had to execute full-scope work.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IncrementalFallbackReason {
-    SchemaChanged,
-    RecordInserted,
-    RecordDeleted,
-    RecordRenamed,
-    RecordReordered,
-    SourceTopologyChanged,
-    DimensionConfigurationChanged,
-    ProviderConfigurationChanged,
-    UnstableCoordinateMapping,
-    IncompleteDependencyState,
-}
-
 /// Deterministic work counters for the latest immutable project generation.
 ///
 /// These counters describe actual runtime work. They are deliberately kept
@@ -32,12 +17,10 @@ pub struct ProjectExecutionStats {
     pub dimension_records_projected: usize,
     pub dimension_sources_planned: usize,
     pub dimension_sources_written: usize,
-    pub full_fallback: bool,
-    pub fallback_reason: Option<IncrementalFallbackReason>,
 }
 
 impl ProjectExecutionStats {
-    pub(crate) fn merge(&mut self, other: Self) {
+    pub(crate) const fn merge(&mut self, other: Self) {
         self.sources_resolved = self.sources_resolved.saturating_add(other.sources_resolved);
         self.sources_reloaded = self.sources_reloaded.saturating_add(other.sources_reloaded);
         self.draft_records_collected = self
@@ -68,13 +51,5 @@ impl ProjectExecutionStats {
         self.dimension_sources_written = self
             .dimension_sources_written
             .saturating_add(other.dimension_sources_written);
-        if let Some(reason) = other.fallback_reason {
-            self.mark_full_fallback(reason);
-        }
-    }
-
-    pub(crate) fn mark_full_fallback(&mut self, reason: IncrementalFallbackReason) {
-        self.full_fallback = true;
-        self.fallback_reason.get_or_insert(reason);
     }
 }

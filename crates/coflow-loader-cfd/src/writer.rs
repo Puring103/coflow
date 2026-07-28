@@ -139,7 +139,7 @@ impl SourceWriter for CfdWriter {
         _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         validate_record_key(request.record_key)?;
         validate_values(request.fields.values())?;
 
@@ -246,7 +246,7 @@ impl SourceWriter for CfdWriter {
         _ctx: WriteContext<'_>,
         request: &RewriteRecordReferencesRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         let (source, ast) = Self::read_or_parse(path)?;
         let mut spans = Vec::new();
         for target in request.targets {
@@ -299,7 +299,7 @@ impl SourceWriter for CfdWriter {
         _ctx: WriteContext<'_>,
         request: &ReorderRecordsRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         let (source, ast) = Self::read_or_parse(path)?;
         let mut order = (0..ast.records.len()).collect::<Vec<_>>();
         match request.operation {
@@ -326,9 +326,13 @@ impl SourceWriter for CfdWriter {
                     })
                     .transpose()?;
                 let moved = order.remove(record);
-                let destination = before
-                    .map(|before| if record < before { before - 1 } else { before })
-                    .unwrap_or(order.len());
+                let destination = before.map_or(order.len(), |before| {
+                    if record < before {
+                        before - 1
+                    } else {
+                        before
+                    }
+                });
                 if destination > order.len() {
                     return Err(DiagnosticSet::one(diag(
                         "CFD-WRITE",
@@ -398,7 +402,7 @@ impl TableManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &CreateTableRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         if path.exists() {
             return Err(DiagnosticSet::one(diag(
                 "CFD-TABLE",
@@ -427,7 +431,7 @@ impl TableManager for CfdWriter {
         _ctx: TableContext<'_>,
         request: &SyncHeaderRequest<'_>,
     ) -> Result<TableOperationResult, DiagnosticSet> {
-        let path = (&request.source.location).path();
+        let path = request.source.location.path();
         let (source, ast) = Self::read_or_parse(path)?;
         let old_fields = cfd_top_level_fields(&ast.records, request.actual_type);
         let added = added_columns(request.headers, &old_fields);

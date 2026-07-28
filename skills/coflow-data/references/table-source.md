@@ -142,7 +142,7 @@ sources:
 
 CFT 字段标记 `@expand` 后，表格中可以把嵌套对象展开到相邻列。父字段列承载第一个子字段，后续相邻列必须连续且表头为空。
 
-```text
+```cft
 sealed type Price {
   amount: int;
   currency: string;

@@ -33,8 +33,7 @@ pub use data_output::{DataExporter, ExportContext, ExporterDescriptor};
 pub use diagnostics::{
     byte_position, byte_range, map_diagnostics_with_origins, origins_of, path_to_slash,
     source_location_display_path, spreadsheet_cell_name, Diagnostic, DiagnosticContext,
-    DiagnosticSet, FlatDiagnostic,
-    Label, Severity, SourceLocation, TextPosition, TextRange,
+    DiagnosticSet, FlatDiagnostic, Label, Severity, SourceLocation, TextPosition, TextRange,
 };
 pub use loader_generation::{LoaderDescriptor, LoaderGenerationContext, LoaderGenerator};
 pub use operations::{

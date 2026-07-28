@@ -1,6 +1,16 @@
 //! Record queries and mutation commands for loaded editor sessions.
 
-use super::*;
+use super::{
+    api_diagnostics_to_editor_error, apply_collection_edit, create_record_draft_to_wire,
+    file_records_for_session, finalize_mutation, graph, record_container_index, record_type_index,
+    record_view_to_row, reorder_file_path, snapshot_record_before_delete, write_field_in_session,
+    BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CfdValue,
+    CollectionEdit, CreateRecordDraft, DefaultMaterialization, DeleteRecordOutcome, EditorError,
+    FileRecords, GraphData, GraphQuery, InsertRecordOutcome, MutationFields, MutationOp,
+    MutationRequest, MutationValue, PluginSchemaField, PluginSchemaType, RecordCoordinate,
+    RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, SessionStore, WireContext,
+    WriteFieldOutcome,
+};
 
 impl SessionStore {
     pub fn get_file_records(&self, id: u32, file_path: &str) -> Result<FileRecords, EditorError> {
@@ -10,6 +20,58 @@ impl SessionStore {
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
         Ok(file_records_for_session(&session, file_path))
+    }
+
+    /// Returns the schema projection available to read-only editor extensions.
+    #[allow(clippy::significant_drop_tightening)]
+    pub fn get_plugin_schema(&self, id: u32) -> Result<Vec<PluginSchemaType>, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let queries = session.queries();
+        Ok(queries
+            .schema_type_names()
+            .into_iter()
+            .map(|name| PluginSchemaType {
+                fields: queries
+                    .schema_type_fields(&name)
+                    .into_iter()
+                    .map(|(name, type_label)| PluginSchemaField { name, type_label })
+                    .collect(),
+                is_singleton: queries.type_is_singleton(&name),
+                record_count: queries.record_count_for_type(&name),
+                name,
+            })
+            .collect())
+    }
+
+    /// Returns records whose actual type exactly matches `type_name`, across all source files.
+    #[allow(clippy::significant_drop_tightening)]
+    pub fn get_plugin_records_by_type(
+        &self,
+        id: u32,
+        type_name: &str,
+    ) -> Result<Vec<RecordRow>, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let queries = session.queries();
+        if !queries.schema_has_type(type_name) {
+            return Err(EditorError::not_found(format!(
+                "schema type `{type_name}` not found"
+            )));
+        }
+        let ctx = WireContext::new(queries, &session.diagnostics);
+        Ok(queries
+            .source_files()
+            .flat_map(|file| queries.record_views_in_file(file))
+            .filter(|view| view.coordinate.actual_type.as_str() == type_name)
+            .map(|view| record_view_to_row(&view, &ctx))
+            .collect())
     }
 
     pub fn make_default_object(&self, id: u32, type_name: &str) -> Result<CfdValue, EditorError> {
@@ -145,6 +207,89 @@ impl SessionStore {
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
         write_field_in_session(&mut session, coordinate, field_path, new_value)
+    }
+
+    pub fn write_fields(
+        &self,
+        id: u32,
+        writes: &[BatchWriteFieldInput],
+    ) -> Result<BatchWriteFieldOutcome, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut seen = Vec::<(RecordCoordinate, Vec<coflow_data_model::CfdPathSegment>)>::new();
+        let targets = writes
+            .iter()
+            .filter(|write| {
+                if seen.iter().any(|(coordinate, path)| {
+                    coordinate == &write.coordinate && path == &write.field_path
+                }) {
+                    false
+                } else {
+                    seen.push((write.coordinate.clone(), write.field_path.clone()));
+                    true
+                }
+            })
+            .filter_map(|write| {
+                let old_value = session
+                    .queries()
+                    .effective_field_write(&write.coordinate, &write.field_path)
+                    .and_then(|preview| preview.old_value);
+                (old_value.as_ref() != Some(&write.new_value)).then(|| (write.clone(), old_value))
+            })
+            .collect::<Vec<_>>();
+        if targets.is_empty() {
+            return Err(EditorError::write("batch field write contains no changes"));
+        }
+        let report = session.engine.apply_mutation(MutationRequest {
+            stop_on_write_error: true,
+            ops: targets
+                .iter()
+                .map(|(write, _)| MutationOp::SetField {
+                    record: write.coordinate.clone(),
+                    file: None,
+                    path: write.field_path.clone(),
+                    value: MutationValue::Cfd(write.new_value.clone()),
+                })
+                .collect(),
+        });
+        let report = finalize_mutation(&mut session, report, "batch field write failed")?;
+        let edits = targets
+            .into_iter()
+            .enumerate()
+            .map(|(index, (write, old_value))| {
+                let final_coordinate = report
+                    .applied
+                    .iter()
+                    .find(|applied| applied.index == index)
+                    .and_then(|applied| applied.outcome.renamed.as_ref())
+                    .and_then(|(old, new)| (old == &write.coordinate).then(|| new.clone()))
+                    .unwrap_or_else(|| write.coordinate.clone());
+                let new_value = session
+                    .queries()
+                    .field_value(
+                        &final_coordinate.actual_type,
+                        &final_coordinate.key,
+                        &write.field_path,
+                    )
+                    .cloned();
+                BatchWriteFieldEditOutcome {
+                    coordinate: write.coordinate,
+                    final_coordinate,
+                    field_path: write.field_path,
+                    old_value,
+                    new_value,
+                }
+            })
+            .collect();
+        Ok(BatchWriteFieldOutcome {
+            revision: session.revisions.current(),
+            edits,
+            diagnostics: report.diagnostics,
+            affected_files: report.affected_files,
+        })
     }
 
     pub fn edit_collection(

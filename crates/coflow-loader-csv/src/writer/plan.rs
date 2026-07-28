@@ -9,6 +9,7 @@ use std::path::Path;
 use super::diag;
 use crate::{parse, write};
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
     match plan {
         TableWritePlan::SetCells {

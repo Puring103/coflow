@@ -276,10 +276,10 @@ fn set_comparisons_charge_each_candidate_and_preserve_reversed_operand_locations
 #[test]
 fn record_set_enumeration_charges_work_and_temporary_nodes_per_member() {
     let schema = compile_schema(
-        r#"
+        r"
             type Item { value: int; }
             check ItemCount { records(Item).len() == 4; }
-        "#,
+        ",
     );
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..4 {

@@ -16,7 +16,9 @@ pub use entry::build_schema;
 use self::checks::CheckTypeAnalyzer;
 use self::state::{CheckInfo, ConstInfo, EnumInfo, FieldInfo, Symbol, TypeInfo};
 use crate::module::{CftModuleSet, ModuleId};
-use crate::schema::{CheckName, CftConst, CftEnum, CftTopLevelCheck, CftType, ConstName, EnumName, TypeName};
+use crate::schema::{
+    CftConst, CftEnum, CftTopLevelCheck, CftType, CheckName, ConstName, EnumName, TypeName,
+};
 use crate::syntax::ast::{ConstLiteral, TypeRefKind};
 use crate::syntax::Span;
 use crate::{CftDiagnostic, CftDiagnostics, CftErrorCode};
@@ -46,6 +48,8 @@ pub(super) struct SchemaCompiler<'a> {
         BTreeMap<(ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
     check_dimensions:
         BTreeMap<(ModuleId, usize, usize), BTreeMap<crate::DimensionName, Vec<usize>>>,
+    check_statement_dependencies:
+        BTreeMap<(ModuleId, usize, usize), Vec<crate::schema::CheckStatementDependencies>>,
     budget: StructuralBudget,
 }
 
@@ -63,6 +67,7 @@ impl<'a> SchemaCompiler<'a> {
             inheritance_chains: BTreeMap::new(),
             quantifier_bindings: BTreeMap::new(),
             check_dimensions: BTreeMap::new(),
+            check_statement_dependencies: BTreeMap::new(),
             budget: StructuralBudget::new(StructuralLimits::default()),
         }
     }
@@ -134,10 +139,14 @@ impl<'a> SchemaCompiler<'a> {
         self.each_type(|this, info| {
             if let Some(check) = &info.def.check {
                 let mut checker = CheckTypeAnalyzer::new(this, info);
-                let dimensions = checker.check_root_stmts(&check.stmts);
+                let (dimensions, dependencies) = checker.check_root_stmts(&check.stmts);
                 this.check_dimensions.insert(
                     (info.module.clone(), check.span.start, check.span.end),
                     dimensions,
+                );
+                this.check_statement_dependencies.insert(
+                    (info.module.clone(), check.span.start, check.span.end),
+                    dependencies,
                 );
             }
         });
@@ -148,7 +157,7 @@ impl<'a> SchemaCompiler<'a> {
             .collect();
         for (_name, info) in checks {
             let mut checker = CheckTypeAnalyzer::top_level(self, info.module.clone());
-            let dimensions = checker.check_root_stmts(&info.def.block.stmts);
+            let (dimensions, dependencies) = checker.check_root_stmts(&info.def.block.stmts);
             self.check_dimensions.insert(
                 (
                     info.module.clone(),
@@ -156,6 +165,14 @@ impl<'a> SchemaCompiler<'a> {
                     info.def.block.span.end,
                 ),
                 dimensions,
+            );
+            self.check_statement_dependencies.insert(
+                (
+                    info.module.clone(),
+                    info.def.block.span.start,
+                    info.def.block.span.end,
+                ),
+                dependencies,
             );
         }
     }

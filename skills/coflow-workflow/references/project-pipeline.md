@@ -55,6 +55,7 @@ provider 选项会在读取数据前校验。未知字段、错误类型和歧�
 - record key、字典 key 和 `@singleton` 约束。
 - `&Type` 记录引用解析。
 - CFT `check {}` 业务校验。
+- 命名顶层 check 通过 `records(Type)` 执行跨记录集合约束。
 
 Excel、CSV 和 CFD 中的错误会尽可能保留文件、sheet、记录、字段或单元格位置。数据查询返回
 请求的数据，同时在 `diagnostics` 中包含本次项目校验发现的问题。
@@ -70,6 +71,7 @@ Excel、CSV 和 CFD 中的错误会尽可能保留文件、sheet、记录、字�
 - 写入失败时，本批已经产生的文件修改会被撤销，`applied` 为空。
 - 只有 CFT `check {}` 业务诊断时，修改可以保留；调用方通过 `check_ok` 和 `diagnostics` 继续修正。
 - `affected_files` 是本次实际写入并去重后的 source 文件集合。
+- mutation impact 按记录保存顶层字段与可选 dimension variant 投影；runtime 通过 CFT 编译期静态索引生成 check tasks。插入、删除、rename、类型迁移和无法精确描述的外部重写产生整条记录及对应 record-set 变化。
 
 只读和检查流程不会生成或重写维度托管文件。完整产物构建可以生成缺失的维度文件，并在
 生成后对最终数据再次执行校验。
@@ -82,7 +84,7 @@ Excel、CSV 和 CFD 中的错误会尽可能保留文件、sheet、记录、字�
 2. Coflow 在 `dimensions.<name>.out_dir` 中维护维度文件。
 3. 源数据中的字段值作为 `default`，配置的 variants 保存各自覆盖值。
 4. 查询、检查和导出时，维度值仍属于原 owner record，不会表现为额外的业务记录类型。
-5. 相关 `check {}` 会分别针对默认值和各变体执行。
+5. 读取对应 dimension 字段的 type-local 或顶层 check statement 会分别针对默认值和各变体执行；不相关规则不会在所有变体中重复运行。
 
 托管目录中的文件不应显式加入 `sources`。重命名或删除 owner record 时，对应维度数据会与
 记录修改保持一致。
