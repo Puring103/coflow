@@ -310,7 +310,7 @@ pub struct ProjectSchemaSession {
 
 impl ProjectSchemaSession {
     #[must_use]
-    pub const fn project(&self) -> &Project {
+    pub(crate) const fn project(&self) -> &Project {
         &self.project
     }
 

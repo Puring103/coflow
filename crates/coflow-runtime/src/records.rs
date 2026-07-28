@@ -47,7 +47,7 @@ pub struct WriteOutcome {
 
 impl WriteOutcome {
     #[must_use]
-    pub fn touch(coordinate: RecordCoordinate) -> Self {
+    pub(crate) fn touch(coordinate: RecordCoordinate) -> Self {
         Self {
             touched: vec![coordinate],
             ..Default::default()

@@ -705,7 +705,7 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     assert!(report.write_ok);
     assert!(!report.check_ok);
     assert_eq!(report.applied.len(), 2);
-    assert_eq!(session.revision(), 1, "the batch publishes one generation");
+    assert_eq!(session.queries().revision(), 1, "the batch publishes one generation");
     assert!(report.failed.is_empty());
     assert!(report
         .diagnostics
@@ -1010,7 +1010,7 @@ fn failed_dimension_write_keeps_the_published_generation() {
     let _ = std::fs::remove_dir_all(&root);
     write_dimension_project(&root);
     let mut session = session(&root);
-    let revision = session.revision();
+    let revision = session.queries().revision();
     let before = session
         .queries()
         .record_view("Item", "potion")
@@ -1053,7 +1053,7 @@ fn failed_dimension_write_keeps_the_published_generation() {
         .iter()
         .flat_map(|failure| &failure.diagnostics)
         .any(|diagnostic| diagnostic.code == "CSV-DIMENSION-WRITE"));
-    assert_eq!(session.revision(), revision);
+    assert_eq!(session.queries().revision(), revision);
     assert_eq!(
         session
             .queries()
@@ -1079,7 +1079,7 @@ fn failed_singleton_dimension_write_reports_cfd_diagnostic_and_keeps_generation(
     let _ = std::fs::remove_dir_all(&root);
     write_singleton_dimension_project(&root);
     let mut session = session(&root);
-    let revision = session.revision();
+    let revision = session.queries().revision();
     std::fs::write(root.join("data/dimensions/language/UiText.cfd"), "")
         .expect("remove managed row after opening the session");
 
@@ -1109,7 +1109,7 @@ fn failed_singleton_dimension_write_reports_cfd_diagnostic_and_keeps_generation(
         .iter()
         .flat_map(|failure| &failure.diagnostics)
         .any(|diagnostic| diagnostic.code == "CFD-DIMENSION-WRITE"));
-    assert_eq!(session.revision(), revision);
+    assert_eq!(session.queries().revision(), revision);
     assert_eq!(
         session
             .queries()
@@ -1182,7 +1182,7 @@ fn checked_dimension_mutations_match_full_diagnostics() {
         fresh_check_diagnostics(&root)
     );
 
-    let revision_before_missing = session.revision();
+    let revision_before_missing = session.queries().revision();
     let missing = session.apply_data_patch(DataPatchRequest {
         stop_on_write_error: true,
         ops: vec![DataPatchOp::ClearDimensionValue {
@@ -1196,7 +1196,7 @@ fn checked_dimension_mutations_match_full_diagnostics() {
         missing.write_ok && !missing.check_ok,
         "missing report: {missing:?}"
     );
-    assert_eq!(session.revision(), revision_before_missing + 1);
+    assert_eq!(session.queries().revision(), revision_before_missing + 1);
     assert!(std::fs::read_to_string(&dimension_file)
         .expect("read missing source")
         .contains("potion,Potion,\n"));
@@ -1214,7 +1214,7 @@ fn checked_dimension_mutations_match_full_diagnostics() {
         }],
     });
     assert!(restore.write_ok && restore.check_ok);
-    let revision_before_bad = session.revision();
+    let revision_before_bad = session.queries().revision();
     let bad = session.apply_data_patch(DataPatchRequest {
         stop_on_write_error: true,
         ops: vec![DataPatchOp::SetDimensionValue {
@@ -1226,7 +1226,7 @@ fn checked_dimension_mutations_match_full_diagnostics() {
         }],
     });
     assert!(bad.write_ok && !bad.check_ok, "bad report: {bad:?}");
-    assert_eq!(session.revision(), revision_before_bad + 1);
+    assert_eq!(session.queries().revision(), revision_before_bad + 1);
     assert!(std::fs::read_to_string(&dimension_file)
         .expect("read bad source")
         .contains("potion,Potion,BAD\n"));
@@ -1258,7 +1258,7 @@ fn dimension_reload_failure_compensates_written_file_and_keeps_old_generation() 
         .expect("open write session");
     let dimension_file = root.join("data/dimensions/language/Item_name.csv");
     let before_file = std::fs::read(&dimension_file).expect("read source before mutation");
-    let before_revision = session.revision();
+    let before_revision = session.queries().revision();
 
     let report = session.apply_data_patch(DataPatchRequest {
         stop_on_write_error: true,
@@ -1286,7 +1286,7 @@ fn dimension_reload_failure_compensates_written_file_and_keeps_old_generation() 
         .iter()
         .flat_map(|failure| &failure.diagnostics)
         .any(|diagnostic| diagnostic.code == "TEST-DIMENSION-RELOAD"));
-    assert_eq!(session.revision(), before_revision);
+    assert_eq!(session.queries().revision(), before_revision);
     assert_eq!(
         std::fs::read(&dimension_file).expect("read compensated dimension source"),
         before_file,
@@ -2593,7 +2593,7 @@ fn batch_insert_can_reference_an_earlier_pending_insert() {
 
     assert!(report.write_ok, "failures: {:?}", report.failed);
     assert_eq!(report.applied.len(), 2);
-    assert_eq!(session.revision(), 1);
+    assert_eq!(session.queries().revision(), 1);
     let child = session
         .queries()
         .record_view("Node", "child")
@@ -2659,7 +2659,7 @@ fn batch_rename_of_pending_insert_rewrites_self_references() {
 
     assert!(report.write_ok, "failures: {:?}", report.failed);
     assert_eq!(report.applied.len(), 3);
-    assert_eq!(session.revision(), 1);
+    assert_eq!(session.queries().revision(), 1);
     let tree = session
         .queries()
         .record_view("Node", "tree")
