@@ -63,6 +63,17 @@ pub trait ExportEventSink {
     ///
     /// Returns the sink-specific error when the key cannot be written.
     fn map_key(&mut self, key: &str) -> Result<(), Self::Error>;
+    /// Writes an enum-valued map key. Binary sinks default to its numeric
+    /// representation; human-readable sinks may preserve the symbolic name.
+    fn map_enum_key(
+        &mut self,
+        enum_name: &str,
+        variant: Option<&str>,
+        value: i64,
+    ) -> Result<(), Self::Error> {
+        let _ = (enum_name, variant);
+        self.map_key(&value.to_string())
+    }
     /// Finishes the current map.
     ///
     /// # Errors
@@ -87,6 +98,17 @@ pub trait ExportEventSink {
     ///
     /// Returns the sink-specific error when the scalar cannot be written.
     fn int(&mut self, value: i64) -> Result<(), Self::Error>;
+    /// Writes an enum scalar. Binary sinks default to its numeric wire value;
+    /// human-readable sinks may preserve the symbolic name.
+    fn enum_value(
+        &mut self,
+        enum_name: &str,
+        variant: Option<&str>,
+        value: i64,
+    ) -> Result<(), Self::Error> {
+        let _ = (enum_name, variant);
+        self.int(value)
+    }
     /// Writes a floating-point scalar.
     ///
     /// # Errors
@@ -455,7 +477,14 @@ where
             }
         }
         CfdValue::String(value) => sink_event(location, sink.string(value)),
-        CfdValue::Enum(value) => sink_event(location, sink.int(value.value)),
+        CfdValue::Enum(value) => sink_event(
+            location,
+            sink.enum_value(
+                value.enum_name.as_str(),
+                value.variant.as_deref(),
+                value.value,
+            ),
+        ),
         CfdValue::Object(object) => {
             let type_name = match declared_type {
                 CftValueType::Object(type_name) => type_name,
@@ -508,11 +537,22 @@ where
                 }
             };
             sink_event(location, sink.begin_map(entries.len()))?;
-            for (key, value) in entries {
-                let key = dict_key_string(key);
+            for (dict_key, value) in entries {
+                let key = dict_key_string(dict_key);
                 let checkpoint = location.enter_dict_key(&key);
                 let result = (|| {
-                    sink_event(location, sink.map_key(&key))?;
+                    if let CfdDictKey::Enum(value) = dict_key {
+                        sink_event(
+                            location,
+                            sink.map_enum_key(
+                                value.enum_name.as_str(),
+                                value.variant.as_deref(),
+                                value.value,
+                            ),
+                        )?;
+                    } else {
+                        sink_event(location, sink.map_key(&key))?;
+                    }
                     encode_value(schema, sink, value_ty, value, location)
                 })();
                 location.exit(checkpoint);

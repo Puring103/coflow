@@ -1,4 +1,4 @@
-use crate::{CsvSheet, CSV_LOADER_DESCRIPTOR};
+use crate::{CsvSheet, CSV_LOADER_DESCRIPTOR, TSV_LOADER_DESCRIPTOR};
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, Label, ResolvedSource, SourceLocation,
 };
@@ -21,10 +21,38 @@ pub(crate) fn decode_csv_source_options(
     ))
 }
 
+pub(crate) fn decode_tsv_source_options(
+    raw: &Value,
+) -> Result<DecodedSourceOptions, DiagnosticSet> {
+    validate_option_keys(raw, &["sheets"])?;
+    let table = TableSourceOptions::decode(raw, "tsv source").map_err(csv_options_diagnostics)?;
+    Ok(DecodedSourceOptions::new(
+        TSV_LOADER_DESCRIPTOR.id,
+        CsvSourceOptions { table },
+    ))
+}
+
 pub(crate) fn csv_source_options(
     source: &ResolvedSource,
 ) -> Result<&CsvSourceOptions, DiagnosticSet> {
     source.options(CSV_LOADER_DESCRIPTOR.id)
+}
+
+pub(crate) fn tsv_source_options(
+    source: &ResolvedSource,
+) -> Result<&CsvSourceOptions, DiagnosticSet> {
+    source.options(TSV_LOADER_DESCRIPTOR.id)
+}
+
+pub(crate) fn delimited_source_options<'a>(
+    source: &'a ResolvedSource,
+    provider_id: &str,
+) -> Result<&'a CsvSourceOptions, DiagnosticSet> {
+    if provider_id == TSV_LOADER_DESCRIPTOR.id {
+        tsv_source_options(source)
+    } else {
+        csv_source_options(source)
+    }
 }
 
 pub(super) fn csv_sheets(options: &CsvSourceOptions) -> Vec<CsvSheet> {

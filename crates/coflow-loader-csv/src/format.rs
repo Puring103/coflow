@@ -8,6 +8,16 @@
 /// Returns an error when a quoted field is unterminated or contains invalid
 /// characters after the closing quote.
 pub fn parse(source: &str) -> Result<Vec<Vec<String>>, String> {
+    parse_delimited(source, ',')
+}
+
+/// Parse a delimiter-separated document using RFC 4180-style quoting.
+///
+/// # Errors
+///
+/// Returns an error when a quoted field is unterminated or contains invalid
+/// characters after the closing quote.
+pub fn parse_delimited(source: &str, delimiter: char) -> Result<Vec<Vec<String>>, String> {
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut row: Vec<String> = Vec::new();
     let mut field = String::new();
@@ -29,7 +39,7 @@ pub fn parse(source: &str) -> Result<Vec<Vec<String>>, String> {
                 _ => field.push(ch),
             }
         } else {
-            if after_closing_quote && !matches!(ch, ',' | '\n' | '\r') {
+            if after_closing_quote && ch != delimiter && !matches!(ch, '\n' | '\r') {
                 return Err(format!(
                     "unexpected character `{ch}` after closing quoted field"
                 ));
@@ -41,7 +51,7 @@ pub fn parse(source: &str) -> Result<Vec<Vec<String>>, String> {
                     }
                     in_quotes = true;
                 }
-                ',' => {
+                value if value == delimiter => {
                     row.push(std::mem::take(&mut field));
                     after_closing_quote = false;
                 }
@@ -76,23 +86,29 @@ pub fn parse(source: &str) -> Result<Vec<Vec<String>>, String> {
 /// with a single trailing `\n`.
 #[must_use]
 pub fn write(rows: &[Vec<String>]) -> String {
+    write_delimited(rows, ',')
+}
+
+/// Serialize rows with the selected delimiter and RFC 4180-style quoting.
+#[must_use]
+pub fn write_delimited(rows: &[Vec<String>], delimiter: char) -> String {
     let mut out = String::new();
     for row in rows {
         for (i, cell) in row.iter().enumerate() {
             if i > 0 {
-                out.push(',');
+                out.push(delimiter);
             }
-            write_cell(&mut out, cell);
+            write_cell(&mut out, cell, delimiter);
         }
         out.push('\n');
     }
     out
 }
 
-fn write_cell(out: &mut String, value: &str) {
+fn write_cell(out: &mut String, value: &str, delimiter: char) {
     let needs_quote = value
         .chars()
-        .any(|ch| matches!(ch, ',' | '"' | '\n' | '\r'));
+        .any(|ch| ch == delimiter || matches!(ch, '"' | '\n' | '\r'));
     if !needs_quote {
         out.push_str(value);
         return;

@@ -5,8 +5,8 @@ use crate::emit::identifiers::{
     csharp_public_member_name, field_local_name, loader_reserved_local_names,
 };
 use crate::emit::readers::{
-    read_field_expr, read_messagepack_expr, read_messagepack_field_expr, read_required_expr,
-    read_token_expr,
+    read_field_expr, read_messagepack_expr, read_messagepack_field_expr, read_protobuf_expr,
+    read_protobuf_field_expr, read_required_expr, read_token_expr,
 };
 use crate::emit::types::{
     collection_default_expr, csharp_property_type, csharp_type, default_value_expr,
@@ -18,6 +18,7 @@ use crate::names::escape_csharp_string;
 use crate::CsharpCodegenError;
 use coflow_cft::CftField;
 use coflow_cft::CftValueType;
+use std::collections::BTreeMap;
 
 pub(super) fn loader_method(
     type_name: &str,
@@ -36,6 +37,7 @@ pub(super) fn loader_method(
     // `LoadTable` for singletons and the shared `Load(dataDir)` body would
     // fail to compile.
     let is_disk_loadable = is_table || ty.is_singleton;
+    let protobuf_tags = canonical_protobuf_tags(schema_fields.iter().copied());
     let fields = schema_fields
         .iter()
         .copied()
@@ -44,6 +46,7 @@ pub(super) fn loader_method(
                 field,
                 type_name,
                 ty.is_singleton,
+                protobuf_tags[field.name.as_str()],
                 &mut used_local_names,
                 view,
             )
@@ -67,6 +70,12 @@ pub(super) fn loader_method(
             &read_token_expr(&key_ty, "token", "context", view)?,
         ),
         key_messagepack_read_expr: read_messagepack_expr(&key_ty, "reader", "context", view)?,
+        key_protobuf_read_expr: read_protobuf_expr(
+            &key_ty,
+            "message.Required(1)",
+            "context",
+            view,
+        )?,
         is_table,
         is_disk_loadable,
         is_struct: ty.is_struct,
@@ -84,6 +93,7 @@ pub(super) fn dimension_loader_method(
 ) -> Result<CsharpLoader, CsharpCodegenError> {
     let mut used_local_names = loader_reserved_local_names(table.fields.iter());
     let key_ty = CftValueType::String;
+    let protobuf_tags = canonical_protobuf_tags(table.fields.iter());
     let fields = table
         .fields
         .iter()
@@ -92,6 +102,7 @@ pub(super) fn dimension_loader_method(
                 field,
                 &table.source_name,
                 false,
+                protobuf_tags[field.name.as_str()],
                 &mut used_local_names,
                 view,
             )
@@ -110,6 +121,12 @@ pub(super) fn dimension_loader_method(
             &read_token_expr(&key_ty, "token", "context", view)?,
         ),
         key_messagepack_read_expr: read_messagepack_expr(&key_ty, "reader", "context", view)?,
+        key_protobuf_read_expr: read_protobuf_expr(
+            &key_ty,
+            "message.Required(1)",
+            "context",
+            view,
+        )?,
         is_table: true,
         is_disk_loadable: true,
         is_struct: false,
@@ -135,6 +152,7 @@ pub(super) fn polymorphic_loader(
         key_property: "Id".to_string(),
         key_read_expr: String::new(),
         key_messagepack_read_expr: String::new(),
+        key_protobuf_read_expr: String::new(),
         is_table,
         is_disk_loadable: is_table || is_singleton,
         is_struct: view.resolve_type(type_name)?.is_struct,
@@ -153,9 +171,11 @@ fn polymorphic_cases(
     Ok(view
         .concrete_assignable_types(type_name)?
         .iter()
-        .map(|case| CsharpPolymorphicCase {
+        .enumerate()
+        .map(|(index, case)| CsharpPolymorphicCase {
             type_name: view.csharp_type_name(case),
             source_name: case.clone(),
+            protobuf_tag: index + 1,
         })
         .collect())
 }
@@ -164,6 +184,7 @@ fn load_field(
     field: &CftField,
     owner_type_name: &str,
     owner_is_singleton: bool,
+    protobuf_tag: usize,
     used_local_names: &mut HashSet<String>,
     view: &CsharpLoweringPlan<'_>,
 ) -> Result<CsharpLoadField, CsharpCodegenError> {
@@ -187,32 +208,41 @@ fn load_field(
     };
     let raw_read_expr = read_field_expr(field, "obj", "context", view, missing_expr.as_deref())?;
     let raw_msgpack_expr = read_messagepack_field_expr(field, "reader", "context", view)?;
-    let (read_expr, messagepack_read_expr, inline_read_expr, inline_messagepack_read_expr) =
-        if field.dimension.is_some() {
-            let type_lit = escape_csharp_string(owner_type_name);
-            let field_lit = escape_csharp_string(&field.name);
-            let row_key_expr = if owner_is_singleton {
-                format!("\"{type_lit}/{field_lit}\"")
-            } else {
-                format!("string.Concat(\"{type_lit}/{field_lit}/\", id.ToString())")
-            };
-            let inline_key_expr = format!("\"{type_lit}/{field_lit}\"");
-            (
-                format!("new Localized<{inner_property_type}>({row_key_expr}, {raw_read_expr})"),
-                format!("new Localized<{inner_property_type}>({row_key_expr}, {raw_msgpack_expr})"),
-                format!("new Localized<{inner_property_type}>({inline_key_expr}, {raw_read_expr})"),
-                format!(
-                    "new Localized<{inner_property_type}>({inline_key_expr}, {raw_msgpack_expr})"
-                ),
-            )
+    let raw_protobuf_expr = read_protobuf_field_expr(field, protobuf_tag, "context", view)?;
+    let (
+        read_expr,
+        messagepack_read_expr,
+        inline_read_expr,
+        inline_messagepack_read_expr,
+        protobuf_read_expr,
+        inline_protobuf_read_expr,
+    ) = if field.dimension.is_some() {
+        let type_lit = escape_csharp_string(owner_type_name);
+        let field_lit = escape_csharp_string(&field.name);
+        let row_key_expr = if owner_is_singleton {
+            format!("\"{type_lit}/{field_lit}\"")
         } else {
-            (
-                raw_read_expr.clone(),
-                raw_msgpack_expr.clone(),
-                raw_read_expr,
-                raw_msgpack_expr,
-            )
+            format!("string.Concat(\"{type_lit}/{field_lit}/\", id.ToString())")
         };
+        let inline_key_expr = format!("\"{type_lit}/{field_lit}\"");
+        (
+            format!("new Localized<{inner_property_type}>({row_key_expr}, {raw_read_expr})"),
+            format!("new Localized<{inner_property_type}>({row_key_expr}, {raw_msgpack_expr})"),
+            format!("new Localized<{inner_property_type}>({inline_key_expr}, {raw_read_expr})"),
+            format!("new Localized<{inner_property_type}>({inline_key_expr}, {raw_msgpack_expr})"),
+            format!("new Localized<{inner_property_type}>({row_key_expr}, {raw_protobuf_expr})"),
+            format!("new Localized<{inner_property_type}>({inline_key_expr}, {raw_protobuf_expr})"),
+        )
+    } else {
+        (
+            raw_read_expr.clone(),
+            raw_msgpack_expr.clone(),
+            raw_read_expr,
+            raw_msgpack_expr,
+            raw_protobuf_expr.clone(),
+            raw_protobuf_expr,
+        )
+    };
     Ok(CsharpLoadField {
         property: csharp_public_member_name(&field.name),
         source_name: field.name.to_string(),
@@ -228,12 +258,29 @@ fn load_field(
         inline_read_expr,
         messagepack_read_expr,
         inline_messagepack_read_expr,
+        protobuf_read_expr,
+        inline_protobuf_read_expr,
         is_required: missing_expr.is_none(),
         default_expr,
         missing_expr,
         requires_context: field_type_requires_context(&field.value_type, view)?,
         has_name: format!("has{}", csharp_public_member_name(&field.name)),
     })
+}
+
+fn canonical_protobuf_tags<'a>(
+    fields: impl IntoIterator<Item = &'a CftField>,
+) -> BTreeMap<&'a str, usize> {
+    let mut names = fields
+        .into_iter()
+        .map(|field| field.name.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    names
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| (name, index + 16))
+        .collect()
 }
 
 pub(super) fn field_type_requires_context(

@@ -24,6 +24,7 @@ use types::{csharp_field_property_type, csharp_type};
 pub fn build_csharp_enum(schema_enum: &CftEnum) -> CsharpEnum {
     CsharpEnum {
         name: csharp_public_type_name(&schema_enum.name),
+        source_name: schema_enum.name.to_string(),
         is_flags: schema_enum.is_flag,
         summary: None,
         obsolete: false,
@@ -32,6 +33,7 @@ pub fn build_csharp_enum(schema_enum: &CftEnum) -> CsharpEnum {
             .iter()
             .map(|variant| CsharpEnumVariant {
                 name: csharp_public_member_name(&variant.name),
+                source_name: variant.name.to_string(),
                 value: variant.value,
                 summary: None,
                 obsolete: false,

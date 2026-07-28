@@ -25,12 +25,17 @@ const TYPE_MESSAGEPACK_LOADER_FILE_TEMPLATE: &str =
 const DATABASE_JSON_TEMPLATE: &str = include_str!("../templates/json/database_json.cs.tera");
 const DATABASE_MESSAGEPACK_TEMPLATE: &str =
     include_str!("../templates/messagepack/database_messagepack.cs.tera");
+const TYPE_PROTOBUF_LOADER_FILE_TEMPLATE: &str =
+    include_str!("../templates/type_protobuf_loader_file.cs.tera");
+const DATABASE_PROTOBUF_TEMPLATE: &str =
+    include_str!("../templates/protobuf/database_protobuf.cs.tera");
 const LOCALIZED_TEMPLATE: &str = include_str!("../templates/localized.cs.tera");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CsharpLoaderKind {
     Json,
     MessagePack,
+    Protobuf,
 }
 
 impl CsharpLoaderKind {
@@ -38,6 +43,7 @@ impl CsharpLoaderKind {
         match self {
             Self::Json => "json",
             Self::MessagePack => "msgpack",
+            Self::Protobuf => "pb",
         }
     }
 
@@ -45,6 +51,7 @@ impl CsharpLoaderKind {
         match self {
             Self::Json => "type_json_loader_file.cs.tera",
             Self::MessagePack => "type_messagepack_loader_file.cs.tera",
+            Self::Protobuf => "type_protobuf_loader_file.cs.tera",
         }
     }
 
@@ -52,6 +59,7 @@ impl CsharpLoaderKind {
         match self {
             Self::Json => "database_json.cs.tera",
             Self::MessagePack => "database_messagepack.cs.tera",
+            Self::Protobuf => "database_protobuf.cs.tera",
         }
     }
 }
@@ -176,6 +184,11 @@ fn templates() -> Result<Tera, CsharpCodegenError> {
             "database_messagepack.cs.tera",
             DATABASE_MESSAGEPACK_TEMPLATE,
         ),
+        (
+            "type_protobuf_loader_file.cs.tera",
+            TYPE_PROTOBUF_LOADER_FILE_TEMPLATE,
+        ),
+        ("database_protobuf.cs.tera", DATABASE_PROTOBUF_TEMPLATE),
         ("localized.cs.tera", LOCALIZED_TEMPLATE),
     ] {
         tera.add_raw_template(name, contents).map_err(|err| {

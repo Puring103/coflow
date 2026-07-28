@@ -227,6 +227,13 @@ impl JsonEventSink {
         serde_json::to_writer(&mut self.bytes, value)
             .map_err(|err| JsonExportError::new(err.to_string()))
     }
+
+    fn enum_text(enum_name: &str, variant: Option<&str>, value: i64) -> String {
+        variant.map_or_else(
+            || format!("{enum_name}({value})"),
+            |variant| format!("{enum_name}.{variant}"),
+        )
+    }
 }
 
 impl ExportEventSink for JsonEventSink {
@@ -313,6 +320,15 @@ impl ExportEventSink for JsonEventSink {
         Ok(())
     }
 
+    fn map_enum_key(
+        &mut self,
+        enum_name: &str,
+        variant: Option<&str>,
+        value: i64,
+    ) -> Result<(), Self::Error> {
+        self.map_key(&Self::enum_text(enum_name, variant, value))
+    }
+
     fn end_map(&mut self) -> Result<(), Self::Error> {
         self.end_map_value()
     }
@@ -333,6 +349,15 @@ impl ExportEventSink for JsonEventSink {
     fn int(&mut self, value: i64) -> Result<(), Self::Error> {
         self.before_value()?;
         write!(&mut self.bytes, "{value}").map_err(|err| JsonExportError::new(err.to_string()))
+    }
+
+    fn enum_value(
+        &mut self,
+        enum_name: &str,
+        variant: Option<&str>,
+        value: i64,
+    ) -> Result<(), Self::Error> {
+        self.string(&Self::enum_text(enum_name, variant, value))
     }
 
     fn float(&mut self, value: f64) -> Result<(), Self::Error> {

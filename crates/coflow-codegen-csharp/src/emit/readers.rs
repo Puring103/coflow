@@ -45,7 +45,7 @@ pub(super) fn read_token_expr(
             view.csharp_enum_name(name)
         )),
         CftValueType::Enum(name) => Ok(format!(
-            "CoflowJson.ReadEnum<{}>({token})",
+            "CoflowJson.Read{}({token})",
             view.csharp_enum_name(name)
         )),
         CftValueType::RecordRef(name) => {
@@ -87,12 +87,103 @@ fn read_dict_key_expr(
         CftValueType::String => Ok(key.to_string()),
         CftValueType::Int => Ok(format!("CoflowJson.ReadIntKey({key})")),
         CftValueType::Enum(name) => Ok(format!(
-            "CoflowJson.ReadEnumKey<{}>({key})",
+            "CoflowJson.Read{}Key({key})",
             view.csharp_enum_name(name)
         )),
         _ => Err(CsharpCodegenError::new(
             "dictionary key type must be string, int, or enum",
         )),
+    }
+}
+
+pub(super) fn read_protobuf_field_expr(
+    field: &CftField,
+    tag: usize,
+    context: &str,
+    view: &CsharpLoweringPlan<'_>,
+) -> Result<String, CsharpCodegenError> {
+    if let CftValueType::Nullable(inner) = &field.value_type {
+        let reader = read_protobuf_expr(inner, "wire", context, view)?;
+        return Ok(format!(
+            "CoflowProtobuf.ReadNullable(message.Optional({tag}), (wire) => {reader})"
+        ));
+    }
+    if matches!(
+        field.value_type,
+        CftValueType::Array(_) | CftValueType::Dict(_, _)
+    ) {
+        return read_protobuf_expr(
+            &field.value_type,
+            &format!("message.Repeated({tag})"),
+            context,
+            view,
+        );
+    }
+    read_protobuf_expr(
+        &field.value_type,
+        &format!("message.Required({tag})"),
+        context,
+        view,
+    )
+}
+
+pub(super) fn read_protobuf_expr(
+    ty: &CftValueType,
+    wire: &str,
+    context: &str,
+    view: &CsharpLoweringPlan<'_>,
+) -> Result<String, CsharpCodegenError> {
+    match ty {
+        CftValueType::Int => Ok(format!("CoflowProtobuf.ReadInt({wire})")),
+        CftValueType::Float => Ok(format!("CoflowProtobuf.ReadFloat({wire})")),
+        CftValueType::Bool => Ok(format!("CoflowProtobuf.ReadBool({wire})")),
+        CftValueType::String => Ok(format!("CoflowProtobuf.ReadString({wire})")),
+        CftValueType::Enum(name) if view.is_id_as_enum(name) => Ok(format!(
+            "CoflowProtobuf.ReadStringEnum<{}>({wire})",
+            view.csharp_enum_name(name)
+        )),
+        CftValueType::Enum(name) => Ok(format!(
+            "CoflowProtobuf.ReadEnum<{}>({wire})",
+            view.csharp_enum_name(name)
+        )),
+        CftValueType::RecordRef(name) => {
+            let key_reader = read_protobuf_expr(&view.key_field_type(name), wire, context, view)?;
+            Ok(format!(
+                "{context}.Get{}({key_reader})",
+                view.csharp_type_name(name)
+            ))
+        }
+        CftValueType::Object(name) => {
+            let type_name = view.csharp_type_name(name);
+            if view.range_is_polymorphic(name) {
+                Ok(format!(
+                    "{type_name}.LoadProtobufPolymorphic({wire}, {context})"
+                ))
+            } else {
+                Ok(format!(
+                    "{type_name}.LoadProtobufInline({wire}.Message(), {context})"
+                ))
+            }
+        }
+        CftValueType::Array(inner) => {
+            let item = read_protobuf_expr(inner, "item", context, view)?;
+            Ok(format!(
+                "CoflowProtobuf.ReadArray({wire}, (item) => {item})"
+            ))
+        }
+        CftValueType::Dict(key, value) => {
+            let key = read_protobuf_expr(key.non_nullable(), "entry.Required(1)", context, view)?;
+            let value = read_protobuf_expr(value, "entry.Required(2)", context, view)?;
+            Ok(format!(
+                "CoflowProtobuf.ReadDict({wire}, (entry) => {key}, (entry) => {value})"
+            ))
+        }
+        CftValueType::Nullable(inner) => {
+            let value = read_protobuf_expr(inner, "inner", context, view)?;
+            Ok(format!(
+                "CoflowProtobuf.ReadWrappedNullable({wire}, (inner) => {value})"
+            ))
+        }
     }
 }
 

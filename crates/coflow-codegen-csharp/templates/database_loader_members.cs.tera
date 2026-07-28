@@ -1,7 +1,7 @@
     public static {{ project.database_class }} Load(string dataDir)
     {
 {% for step in load_steps %}        {{ step }}
-{% endfor %}{% for s in project.singletons %}        var {{ s.records_var }}List = {{ s.type_name }}.LoadTable(Path.Combine(dataDir, "{{ s.source_name }}.{{ data_extension }}"), LoadContext.Empty);
+{% endfor %}{% for s in project.singletons %}        var {{ s.records_var }}List = {{ s.type_name }}.LoadTable(Path.Combine(dataDir, "{{ s.source_name }}.{{ data_extension }}"), context);
         if ({{ s.records_var }}List.Count != 1)
         {
             throw new InvalidOperationException("singleton `{{ s.source_name }}` must have exactly 1 record, got " + {{ s.records_var }}List.Count);

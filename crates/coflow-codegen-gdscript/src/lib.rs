@@ -1,0 +1,533 @@
+//! Godot 4 GDScript code generator and JSON loader generator.
+
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+
+use coflow_api::{
+    ArtifactFile, ArtifactSet, CodeGenerator, CodegenContext, CodegenDescriptor,
+    DecodedOutputOptions, Diagnostic, DiagnosticSet, LoaderDescriptor, LoaderGenerationContext,
+    LoaderGenerator, ProviderBundle, ProviderRegistrationError,
+};
+use coflow_cft::CftValueType;
+use coflow_codegen_core::{CodegenModel, CodegenType};
+use std::collections::BTreeSet;
+use std::fmt::Write;
+
+const SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+
+pub const GDSCRIPT_CODEGEN_DESCRIPTOR: CodegenDescriptor = CodegenDescriptor {
+    id: "gdscript",
+    display_name: "GDScript (Godot 4)",
+    language: "gdscript",
+    file_extensions: &["gd"],
+    needs_model_for_build: true,
+};
+
+pub const GDSCRIPT_JSON_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+    id: "gdscript-json",
+    code: "gdscript",
+    data: "json",
+};
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct GdscriptCodeGenerator;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct GdscriptJsonLoaderGenerator;
+
+#[derive(Debug)]
+struct EmptyOptions;
+
+/// Declares GDScript codegen and JSON loader roles.
+///
+/// # Errors
+///
+/// Returns an error when a role id conflicts within the bundle.
+pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
+    let mut bundle = ProviderBundle::default();
+    bundle.add_codegen(GdscriptCodeGenerator)?;
+    bundle.add_loader(GdscriptJsonLoaderGenerator)?;
+    Ok(bundle)
+}
+
+impl CodeGenerator for GdscriptCodeGenerator {
+    fn descriptor(&self) -> &'static CodegenDescriptor {
+        &GDSCRIPT_CODEGEN_DESCRIPTOR
+    }
+
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedOutputOptions, DiagnosticSet> {
+        decode_empty_options("gdscript", options)
+    }
+
+    fn generate(
+        &self,
+        ctx: CodegenContext<'_>,
+        options: &DecodedOutputOptions,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        options.require::<EmptyOptions>("gdscript")?;
+        let model = CodegenModel::build(ctx.schema, ctx.model, ctx.id_as_enum_variants)?;
+        validate_safe_enums(&model)?;
+        artifacts(vec![ArtifactFile::text(
+            "coflow_types.gd",
+            render_types(&model),
+        )])
+    }
+}
+
+impl LoaderGenerator for GdscriptJsonLoaderGenerator {
+    fn descriptor(&self) -> &'static LoaderDescriptor {
+        &GDSCRIPT_JSON_LOADER_DESCRIPTOR
+    }
+
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedOutputOptions, DiagnosticSet> {
+        decode_empty_options("gdscript-json", options)
+    }
+
+    fn generate(
+        &self,
+        ctx: LoaderGenerationContext<'_>,
+        options: &DecodedOutputOptions,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        options.require::<EmptyOptions>("gdscript-json")?;
+        let model = CodegenModel::build(ctx.schema, ctx.model, ctx.id_as_enum_variants)?;
+        validate_safe_enums(&model)?;
+        artifacts(vec![ArtifactFile::text(
+            "coflow_json_loader.gd",
+            render_json_loader(&model),
+        )])
+    }
+}
+
+fn decode_empty_options(
+    id: &'static str,
+    options: &serde_json::Value,
+) -> Result<DecodedOutputOptions, DiagnosticSet> {
+    if options.as_object().is_some_and(serde_json::Map::is_empty) {
+        Ok(DecodedOutputOptions::new(id, EmptyOptions))
+    } else {
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "GDSCRIPT-OPTIONS",
+            "CODEGEN",
+            format!("{id} does not accept options"),
+        )))
+    }
+}
+
+fn validate_safe_enums(model: &CodegenModel) -> Result<(), DiagnosticSet> {
+    let mut diagnostics = DiagnosticSet::empty();
+    for item in &model.enums {
+        for variant in &item.variants {
+            if variant.value.unsigned_abs() > SAFE_INTEGER as u64 {
+                diagnostics.push(Diagnostic::error(
+                    "GDSCRIPT-INTEGER-RANGE",
+                    "CODEGEN",
+                    format!(
+                        "enum variant `{}.{}` value {} is outside the exact Godot JSON range",
+                        item.name, variant.name, variant.value
+                    ),
+                ));
+            }
+        }
+    }
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(diagnostics)
+    }
+}
+
+fn artifacts(files: Vec<ArtifactFile>) -> Result<ArtifactSet, DiagnosticSet> {
+    ArtifactSet::new(files).map_err(|error| {
+        DiagnosticSet::one(Diagnostic::error(
+            "GDSCRIPT-ARTIFACT",
+            "ARTIFACT",
+            error.to_string(),
+        ))
+    })
+}
+
+fn render_types(model: &CodegenModel) -> String {
+    let mut out = String::from(
+        "# Generated by Coflow for Godot 4. Do not edit.\nclass_name CoflowTypes\nextends RefCounted\n\n",
+    );
+    for item in &model.enums {
+        let _ = writeln!(out, "enum {} {{", pascal(&item.name));
+        for variant in &item.variants {
+            let _ = writeln!(out, "\t{} = {},", upper_snake(&variant.name), variant.value);
+        }
+        out.push_str("}\n\n");
+    }
+    for ty in ordered_types_by_inheritance(model) {
+        let parent = ty
+            .parent
+            .as_ref()
+            .map_or_else(|| "RefCounted".to_string(), |parent| pascal(parent));
+        let _ = writeln!(out, "class {} extends {}:", pascal(&ty.name), parent);
+        if ty.parent.is_none() {
+            out.push_str("\tvar _coflow_type: String = \"\"\n");
+        }
+        if ty.parent.is_none() && !ty.is_struct {
+            if let Some(id_enum) = &ty.id_as_enum {
+                let _ = writeln!(out, "\tvar id: {}", pascal(id_enum));
+            } else {
+                out.push_str("\tvar id: String = \"\"\n");
+            }
+        }
+        for field in &ty.own_fields {
+            let _ = writeln!(
+                out,
+                "\tvar {}: {}",
+                snake(&field.name),
+                gd_type(&field.value_type, model, field.is_localized)
+            );
+        }
+        out.push('\n');
+    }
+    out.push_str("class CoflowTables extends RefCounted:\n");
+    for table in &model.table_names {
+        let _ = writeln!(out, "\tvar {}: Dictionary = {{}}", snake(table));
+    }
+    for singleton in &model.singleton_names {
+        let _ = writeln!(out, "\tvar {}: {}", snake(singleton), pascal(singleton));
+    }
+    out.push_str("\nstatic var ENUMS: Dictionary = {\n");
+    for item in &model.enums {
+        let _ = writeln!(out, "\t{:?}: {{", item.name);
+        for variant in &item.variants {
+            let _ = writeln!(out, "\t\t{:?}: {},", variant.name, variant.value);
+            let _ = writeln!(
+                out,
+                "\t\t{:?}: {},",
+                format!("{}.{}", item.name, variant.name),
+                variant.value
+            );
+        }
+        out.push_str("\t},\n");
+    }
+    out.push_str("}\n\nstatic var ID_ENUMS: Dictionary = {\n");
+    for ty in &model.types {
+        if let Some(id_enum) = &ty.id_as_enum {
+            let _ = writeln!(out, "\t{:?}: {:?},", ty.name, id_enum);
+        }
+    }
+    out.push_str("}\n\nstatic var FIELDS: Dictionary = {\n");
+    for ty in &model.types {
+        let _ = writeln!(out, "\t{:?}: [", ty.name);
+        for field in &ty.all_fields {
+            let _ = writeln!(
+                out,
+                "\t\t{{ \"name\": {:?}, \"descriptor\": {} }},",
+                field.name,
+                descriptor(&field.value_type, model, field.is_localized)
+            );
+        }
+        out.push_str("\t],\n");
+    }
+    out.push_str("}\n");
+    out
+}
+
+fn ordered_types_by_inheritance(model: &CodegenModel) -> Vec<&CodegenType> {
+    let mut emitted = BTreeSet::new();
+    let mut ordered = Vec::with_capacity(model.types.len());
+    while ordered.len() < model.types.len() {
+        let mut progressed = false;
+        for ty in &model.types {
+            if emitted.contains(&ty.name) {
+                continue;
+            }
+            if ty
+                .parent
+                .as_ref()
+                .is_none_or(|parent| emitted.contains(parent))
+            {
+                emitted.insert(ty.name.clone());
+                ordered.push(ty);
+                progressed = true;
+            }
+        }
+        if !progressed {
+            ordered.extend(
+                model
+                    .types
+                    .iter()
+                    .filter(|ty| !emitted.contains(&ty.name)),
+            );
+            break;
+        }
+    }
+    ordered
+}
+
+fn render_json_loader(model: &CodegenModel) -> String {
+    let mut out = String::from(
+        "# Generated by Coflow for Godot 4. Do not edit.\nclass_name CoflowJsonLoader\nextends RefCounted\n\nconst Types = preload(\"coflow_types.gd\")\nconst SAFE_INTEGER = 9007199254740991\n\nstatic func _new_record(type_name: String):\n\tmatch type_name:\n",
+    );
+    for ty in &model.types {
+        let _ = writeln!(
+            out,
+            "\t\t{:?}: return Types.{}.new()",
+            ty.name,
+            pascal(&ty.name)
+        );
+    }
+    out.push_str("\treturn null\n\n");
+    out.push_str(
+        r#"static func _parse_enum(name: String, value):
+	if typeof(value) in [TYPE_INT, TYPE_FLOAT] and abs(value) <= SAFE_INTEGER: return int(value)
+	if typeof(value) != TYPE_STRING: return null
+	var values: Dictionary = Types.ENUMS.get(name, {})
+	if values.has(value): return values[value]
+	var prefix := name + "("
+	if value.begins_with(prefix) and value.ends_with(")"):
+		var numeric_text: String = value.substr(prefix.length(), value.length() - prefix.length() - 1)
+		if numeric_text.is_valid_int():
+			var numeric: int = numeric_text.to_int()
+			if abs(numeric) <= SAFE_INTEGER: return numeric
+	return null
+
+static func _hydrate_key(value: String, descriptor: Dictionary):
+	if descriptor.kind == "string": return value
+	if descriptor.kind == "int" and value.is_valid_int(): return value.to_int()
+	if descriptor.kind == "enum": return _parse_enum(descriptor.name, value)
+	return null
+
+static func _hydrate(value, descriptor: Dictionary, database: Dictionary):
+	if descriptor.has("localized"):
+		return { "default": _hydrate(value, descriptor.value, database) }
+	var kind: String = descriptor.kind
+	if kind == "int":
+		if typeof(value) not in [TYPE_INT, TYPE_FLOAT] or abs(value) > SAFE_INTEGER: return null
+		return int(value)
+	if kind in ["float", "bool", "string"]: return value
+	if kind == "enum": return _parse_enum(descriptor.name, value)
+	if kind == "ref":
+		var id = _parse_enum(descriptor.id_enum, value) if descriptor.id_enum != null else value
+		for target in descriptor.targets:
+			var record = database.get(target, {}).get(id)
+			if record != null: return record
+		return null
+	if kind == "nullable":
+		return null if value == null else _hydrate(value, descriptor.value, database)
+	if kind == "array":
+		var result: Array = []
+		for item in value: result.append(_hydrate(item, descriptor.value, database))
+		return result
+	if kind == "dict":
+		var result := {}
+		for key in value:
+			var converted_key = _hydrate_key(key, descriptor.key)
+			result[converted_key] = _hydrate(value[key], descriptor.value, database)
+		return result
+	if kind == "object": return _hydrate_record(value, value.get("$type", descriptor.name), database)
+	return null
+
+static func _allocate_record(raw: Dictionary, type_name: String):
+	var record = _new_record(type_name)
+	if record == null: return null
+	record._coflow_type = type_name
+	if "id" in raw:
+		var id_enum = Types.ID_ENUMS.get(type_name)
+		record.id = _parse_enum(id_enum, raw.id) if id_enum != null else raw.id
+	return record
+
+static func _hydrate_record(raw: Dictionary, type_name: String, database: Dictionary, record = null):
+	if record == null: record = _allocate_record(raw, type_name)
+	if record == null: return null
+	for field in Types.FIELDS.get(type_name, []):
+		record.set(field.name, _hydrate(raw.get(field.name), field.descriptor, database))
+	return record
+
+static func _read_table(directory: String, type_name: String):
+	var path := directory.path_join(type_name + ".json")
+	if not FileAccess.file_exists(path): return []
+	var file := FileAccess.open(path, FileAccess.READ)
+	var parser := JSON.new()
+	if parser.parse(file.get_as_text()) != OK: return null
+	return parser.data
+
+static func load(directory: String):
+	var database := {}
+	var raw_tables := {}
+"#,
+    );
+    for table in &model.table_names {
+        let _ = writeln!(
+            out,
+            "\traw_tables[{:?}] = _read_table(directory, {:?})",
+            table, table
+        );
+        let _ = writeln!(out, "\tdatabase[{:?}] = {{}}", table);
+    }
+    out.push_str("\tvar pending: Array = []\n\tfor type_name in raw_tables:\n\t\tfor raw in raw_tables[type_name]:\n\t\t\tvar record_type = raw.get(\"$type\", type_name)\n\t\t\tvar record = _allocate_record(raw, record_type)\n\t\t\tdatabase[type_name][record.id] = record\n\t\t\tpending.append([record, raw, record_type])\n\tfor entry in pending:\n\t\t_hydrate_record(entry[1], entry[2], database, entry[0])\n\tvar result := Types.CoflowTables.new()\n");
+    for table in &model.table_names {
+        let _ = writeln!(out, "\tresult.{} = database[{:?}]", snake(table), table);
+    }
+    for singleton in &model.singleton_names {
+        let _ = writeln!(
+            out,
+            "\tvar raw_{} = _read_table(directory, {:?})",
+            snake(singleton),
+            singleton
+        );
+        let _ = writeln!(out, "\tif raw_{} and not raw_{}.is_empty():\n\t\tresult.{} = _hydrate_record(raw_{}[0], {:?}, database)", snake(singleton), snake(singleton), snake(singleton), snake(singleton), singleton);
+    }
+    out.push_str("\treturn result\n");
+    out
+}
+
+fn gd_type(value: &CftValueType, _model: &CodegenModel, localized: bool) -> String {
+    if localized {
+        return "Dictionary".to_string();
+    }
+    match value {
+        CftValueType::Int | CftValueType::Enum(_) => "int = 0".to_string(),
+        CftValueType::Float => "float = 0.0".to_string(),
+        CftValueType::Bool => "bool = false".to_string(),
+        CftValueType::String => "String = \"\"".to_string(),
+        CftValueType::RecordRef(name) | CftValueType::Object(name) => {
+            format!("{}", pascal(name))
+        }
+        CftValueType::Array(_) => "Array = []".to_string(),
+        CftValueType::Dict(_, _) => "Dictionary = {}".to_string(),
+        CftValueType::Nullable(_) => "Variant = null".to_string(),
+    }
+}
+
+fn descriptor(value: &CftValueType, model: &CodegenModel, localized: bool) -> String {
+    let inner = match value {
+        CftValueType::Int => "{ \"kind\": \"int\" }".to_string(),
+        CftValueType::Float => "{ \"kind\": \"float\" }".to_string(),
+        CftValueType::Bool => "{ \"kind\": \"bool\" }".to_string(),
+        CftValueType::String => "{ \"kind\": \"string\" }".to_string(),
+        CftValueType::Enum(name) => {
+            format!("{{ \"kind\": \"enum\", \"name\": {:?} }}", name.as_str())
+        }
+        CftValueType::RecordRef(name) => {
+            let targets = model.type_by_name(name).map_or_else(String::new, |ty| {
+                ty.concrete_types
+                    .iter()
+                    .map(|target| format!("{target:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            });
+            let id_enum = model
+                .type_by_name(name)
+                .and_then(|ty| ty.id_as_enum.as_ref())
+                .map_or_else(|| "null".to_string(), |name| format!("{name:?}"));
+            format!("{{ \"kind\": \"ref\", \"name\": {:?}, \"id_enum\": {id_enum}, \"targets\": [ {targets} ] }}", name.as_str())
+        }
+        CftValueType::Object(name) => {
+            format!("{{ \"kind\": \"object\", \"name\": {:?} }}", name.as_str())
+        }
+        CftValueType::Array(inner) => format!(
+            "{{ \"kind\": \"array\", \"value\": {} }}",
+            descriptor(inner, model, false)
+        ),
+        CftValueType::Dict(key, inner) => format!(
+            "{{ \"kind\": \"dict\", \"key\": {}, \"value\": {} }}",
+            descriptor(key, model, false),
+            descriptor(inner, model, false)
+        ),
+        CftValueType::Nullable(inner) => format!(
+            "{{ \"kind\": \"nullable\", \"value\": {} }}",
+            descriptor(inner, model, false)
+        ),
+    };
+    if localized {
+        format!("{{ \"localized\": true, \"value\": {inner} }}")
+    } else {
+        inner
+    }
+}
+
+fn pascal(value: &str) -> String {
+    let mut out = String::new();
+    let mut upper = true;
+    for character in value.chars() {
+        if matches!(character, '_' | '-' | ' ') {
+            upper = true;
+        } else if upper {
+            out.extend(character.to_uppercase());
+            upper = false;
+        } else {
+            out.push(character);
+        }
+    }
+    out
+}
+
+fn snake(value: &str) -> String {
+    let mut out = String::new();
+    for (index, character) in value.chars().enumerate() {
+        if character.is_uppercase() && index > 0 {
+            out.push('_');
+        }
+        if matches!(character, '-' | ' ') {
+            out.push('_');
+        } else {
+            out.extend(character.to_lowercase());
+        }
+    }
+    out
+}
+
+fn upper_snake(value: &str) -> String {
+    snake(value).to_uppercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{render_json_loader, render_types};
+    use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+    use coflow_codegen_core::CodegenModel;
+
+    #[test]
+    fn generated_gdscript_preserves_inheritance_and_runtime_key_types() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "@idAsEnum(ItemId) abstract type Item {} type Weapon : Item {} enum ItemId {} enum Slot { Main = 0, } @struct sealed type Details { note: string; } @singleton type Settings { item: &Item; } type Holder { item: &Item; attrs: {Slot: int}; details: Details; }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+        let variants = serde_json::json!({"ItemId": [{"name": "sword", "value": 0}]});
+        let model = CodegenModel::build(&schema, None, &variants).expect("model");
+
+        let types = render_types(&model);
+        let loader = render_json_loader(&model);
+        let item = types.find("class Item extends RefCounted:").expect("base");
+        let weapon = types.find("class Weapon extends Item:").expect("child");
+        assert!(item < weapon, "{types}");
+        let weapon_body = &types[weapon..];
+        assert!(!weapon_body
+            .lines()
+            .take_while(|line| !line.is_empty())
+            .any(|line| line.contains("var _coflow_type")));
+        assert!(types.contains("class Weapon extends Item:"));
+        assert!(types.contains("var id: ItemId"));
+        assert!(types.contains("\"sword\": 0"));
+        assert!(types.contains("\"key\": {"));
+        assert!(types.contains("\"name\": \"Slot\""), "{types}");
+        assert!(!types.contains("var details: Dictionary = {}"));
+        assert!(loader.contains("var converted_key = _hydrate_key(key, descriptor.key)"));
+        assert!(loader.contains("for target in descriptor.targets:"));
+        assert!(loader.contains("var record = _allocate_record(raw, record_type)"));
+        assert!(loader.contains("_hydrate_record(entry[1], entry[2], database, entry[0])"));
+    }
+}

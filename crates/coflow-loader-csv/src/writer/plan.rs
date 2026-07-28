@@ -7,9 +7,9 @@ use std::fs;
 use std::path::Path;
 
 use super::diag;
-use crate::{parse, write};
+use crate::{parse_delimited, write_delimited};
 
-pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
+pub(super) fn apply_plan(plan: &TableWritePlan, delimiter: char) -> Result<(), DiagnosticSet> {
     match plan {
         TableWritePlan::SetCells {
             document,
@@ -19,7 +19,7 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
             cells,
         } => {
             let path = local_path(document);
-            mutate_csv(path, |rows| {
+            mutate_csv(path, delimiter, |rows| {
                 let Some(first) = cells.first() else {
                     return Ok(());
                 };
@@ -39,7 +39,7 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
             expected_before_key,
         }) => {
             let path = local_path(document);
-            mutate_csv(path, |rows| {
+            mutate_csv(path, delimiter, |rows| {
                 if let (Some(before_row), Some(before_id_column), Some(expected_before_key)) =
                     (before_row, before_id_column, expected_before_key)
                 {
@@ -79,7 +79,7 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
             expected_key,
         }) => {
             let path = local_path(document);
-            mutate_csv(path, |rows| {
+            mutate_csv(path, delimiter, |rows| {
                 ensure_expected_key(rows, path, *row, *id_column, expected_key)?;
                 let idx = row.checked_sub(1).ok_or_else(|| {
                     DiagnosticSet::one(diag(
@@ -104,7 +104,7 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
             expected_second_key,
         }) => {
             let path = local_path(document);
-            mutate_csv(path, |rows| {
+            mutate_csv(path, delimiter, |rows| {
                 ensure_expected_key(rows, path, *first_row, *first_id_column, expected_first_key)?;
                 ensure_expected_key(
                     rows,
@@ -133,7 +133,7 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
             expected_before_key,
         }) => {
             let path = local_path(document);
-            mutate_csv(path, |rows| {
+            mutate_csv(path, delimiter, |rows| {
                 ensure_expected_key(rows, path, *row, *id_column, expected_key)?;
                 if let (Some(before_row), Some(before_id_column), Some(expected_before_key)) =
                     (before_row, before_id_column, expected_before_key)
@@ -194,6 +194,7 @@ fn local_path(document: &SourceDocument) -> &Path {
 /// resolution may locate the id column past the existing width.
 fn mutate_csv(
     path: &Path,
+    delimiter: char,
     mutate: impl FnOnce(&mut Vec<Vec<String>>) -> Result<(), DiagnosticSet>,
 ) -> Result<(), DiagnosticSet> {
     if !path.exists() {
@@ -208,14 +209,14 @@ fn mutate_csv(
             format!("failed to read `{}`: {err}", path.display()),
         ))
     })?;
-    let mut rows = parse(&text).map_err(|err| {
+    let mut rows = parse_delimited(&text, delimiter).map_err(|err| {
         DiagnosticSet::one(diag(
             "CSV-WRITE",
             format!("failed to parse `{}`: {err}", path.display()),
         ))
     })?;
     mutate(&mut rows)?;
-    let body = write(&rows);
+    let body = write_delimited(&rows, delimiter);
     fs::write(path, body).map_err(|err| {
         DiagnosticSet::one(diag(
             "CSV-WRITE",

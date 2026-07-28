@@ -106,7 +106,7 @@ fn exports_tables_with_schema_order_defaults_and_record_key_id() -> TestResult {
             {
                 "id": "iron_sword",
                 "name": "unknown",
-                "rarity": 10,
+                "rarity": "Rarity.Rare",
                 "tags": ["weapon", "melee"],
                 "attrs": {
                     "attack": 12,
@@ -401,8 +401,8 @@ fn exports_dict_keys_as_json_object_keys() -> TestResult {
             {
                 "id": "resist_1",
                 "by_enum": {
-                    "1": 0.5,
-                    "2": 0.2
+                    "DamageType.Fire": 0.5,
+                    "DamageType.Ice": 0.2
                 },
                 "by_int": {
                     "1": "one",

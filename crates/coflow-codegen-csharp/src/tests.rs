@@ -84,6 +84,91 @@ fn generate_messagepack(
     generate_csharp_messagepack(schema, options)
 }
 
+fn generate_protobuf(
+    schema: &CftSchema,
+    options: &CsharpCodegenOptions,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    generate_csharp_protobuf(schema, options)
+}
+
+#[test]
+fn codegen_protobuf_emits_dependency_free_wire_loader() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            enum Rarity { Common = 0, Rare = 2, }
+            type Item {
+                rarity: Rarity;
+                tags: [string];
+                attrs: {string: int};
+            }
+        "#,
+    )?;
+    let files = generate_protobuf(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|error| error.to_string())?;
+    let output = generated_output(&files);
+
+    require_contains(&output, "internal static class CoflowProtobuf")?;
+    require_contains(&output, "message.Repeated(16)")?;
+    require_contains(&output, "CoflowProtobuf.ReadEnum<Rarity>")?;
+    require_not_contains(&output, "Google.Protobuf")
+}
+
+#[test]
+fn codegen_protobuf_emits_dimension_variant_tables() -> Result<(), String> {
+    let schema = compile_schema_with_dimensions(
+        r#"
+            type Item {
+                @localized
+                name: string;
+            }
+            @singleton
+            type Settings {
+                @localized
+                title: string;
+            }
+        "#,
+        CftDimensionInputs::try_new([("language", vec!["en".to_string(), "zh".to_string()])])
+            .expect("valid dimension fixture"),
+    )?;
+    let files = generate_protobuf(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|error| error.to_string())?;
+
+    let variants = generated_file(&files, "ItemNameVariants.cs")?;
+    require_contains(variants, "public string? Default { get; }")?;
+    require_contains(variants, "public string? En { get; }")?;
+    require_contains(variants, "message.Optional(16)")?;
+    require_contains(variants, "message.Optional(17)")?;
+
+    let database = generated_file(&files, "CoflowTables.cs")?;
+    require_contains(
+        database,
+        "ItemNameVariants.LoadRawTable(Path.Combine(dataDir, \"Item_nameVariants.pb\"))",
+    )?;
+    require_contains(
+        database,
+        "SettingsTitleVariants.LoadRawTable(Path.Combine(dataDir, \"Settings_titleVariants.pb\"))",
+    )?;
+    Ok(())
+}
+
+#[test]
+fn codegen_json_maps_source_enum_symbols_to_generated_member_names() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            enum item_rarity { some_value = 0, }
+            type Item { rarity: item_rarity; attrs: {item_rarity: int}; }
+        "#,
+    )?;
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|error| error.to_string())?;
+    let output = generated_output(&files);
+
+    require_contains(&output, "case \"item_rarity.some_value\":")?;
+    require_contains(&output, "return ItemRarity.SomeValue;")?;
+    require_contains(&output, "CoflowJson.ReadItemRarity(token)")?;
+    require_contains(&output, "CoflowJson.ReadItemRarityKey(key)")
+}
+
 fn generate_json_with_id_as_enum_variants(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,
@@ -216,7 +301,7 @@ fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Resul
     require_contains(database, "public GameConfig GameConfig { get; }")?;
     require_contains(
         database,
-        "GameConfig.LoadTable(Path.Combine(dataDir, \"GameConfig.json\"), LoadContext.Empty)",
+        "GameConfig.LoadTable(Path.Combine(dataDir, \"GameConfig.json\"), context)",
     )?;
     require_contains(database, "must have exactly 1 record")?;
     require_not_contains(database, "TbGameConfig")?;
@@ -236,6 +321,30 @@ fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Resul
     // `LoadInline`, which silently skips the wire-side `"id"` key that
     // the JSON exporter writes for each row.
     require_contains(singleton, "result.Add(LoadInline(row, context));")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_loads_singletons_with_the_full_table_context() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+            @singleton type Settings { starter: &Item; }
+        "#,
+    )?;
+    let options = CsharpCodegenOptions::new("Game.Config");
+    for files in [
+        generate_json(&schema, &options),
+        generate_messagepack(&schema, &options),
+        generate_protobuf(&schema, &options),
+    ] {
+        let files = files.map_err(|error| error.to_string())?;
+        let database = generated_file(&files, "CoflowTables.cs")?;
+        require_contains(database, "var context = new LoadContext(itemIndex);")?;
+        require_contains(database, "Settings.LoadTable(Path.Combine(dataDir,")?;
+        require_contains(database, "), context);")?;
+        require_not_contains(database, "), LoadContext.Empty);")?;
+    }
     Ok(())
 }
 
@@ -937,6 +1046,7 @@ fn codegen_messagepack_emits_coflow_tables_and_messagepack_loaders() -> Result<(
         r#"
             type Item {
                 reward: &Reward;
+                tags: [string];
             }
 
             type Reward {
@@ -966,6 +1076,7 @@ fn codegen_messagepack_emits_coflow_tables_and_messagepack_loaders() -> Result<(
         item,
         "context.GetReward(CoflowMessagePack.ReadString(ref reader))",
     )?;
+    require_not_contains(item, "var hasTags = false;")?;
     require_not_contains(item, "CoflowMessagePack.NextIsString")?;
     Ok(())
 }

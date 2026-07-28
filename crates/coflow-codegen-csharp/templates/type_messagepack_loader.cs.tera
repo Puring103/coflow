@@ -140,9 +140,9 @@
     private static {{ type.loader.type_name }} LoadBodyFields(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context, int count, bool requireId)
     {
 {% if type.loader.is_table %}        {{ type.loader.key_type_name }} {{ type.loader.key_local_name }} = default!;
-        var isTable = false;
 {% endif %}{% for field in type.loader.fields %}        {{ field.type_name }} {{ field.local_name }} = {% if field.missing_expr %}{{ field.missing_expr }}{% else %}default!{% endif %};
-        var {{ field.has_name }} = false;
+{% if field.is_required %}        var {{ field.has_name }} = false;
+{% endif %}
 {% endfor %}
         for (var i = 0; i < count; i++)
         {
@@ -151,11 +151,11 @@
             switch (key)
             {
 {% if type.loader.is_table %}                case "id":
-                    isTable = true;
                     {{ type.loader.key_local_name }} = {{ type.loader.key_messagepack_read_expr }};
                     break;
 {% endif %}{% for field in type.loader.fields %}                case "{{ field.source_name }}":
-                    {{ field.has_name }} = true;
+{% if field.is_required %}                    {{ field.has_name }} = true;
+{% endif %}
 {% if type.loader.is_table %}                    {{ field.local_name }} = requireId ? {{ field.messagepack_read_expr }} : {{ field.inline_messagepack_read_expr }};
 {% else %}                    {{ field.local_name }} = {{ field.inline_messagepack_read_expr }};
 {% endif %}                    break;
