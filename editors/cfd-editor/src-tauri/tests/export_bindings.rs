@@ -13,22 +13,24 @@ fn export_bindings() {
     coflow_data_model::CfdValue::export_all().expect("export CfdValue tree");
     coflow_data_model::CfdRecord::export_all().expect("export CfdRecord tree");
     coflow_data_model::CfdDictKey::export_all().expect("export CfdDictKey tree");
-    coflow_data_model::CfdPath::export_all().expect("export CfdPath tree");
     coflow_data_model::CfdPathSegment::export_all().expect("export CfdPathSegment tree");
     coflow_api::FlatDiagnostic::export_all().expect("export FlatDiagnostic");
     coflow_api::WriterCapabilities::export_all().expect("export WriterCapabilities");
     coflow_runtime::FileTreeNode::export_all().expect("export FileTreeNode");
-    coflow_runtime::DimensionInfo::export_all().expect("export DimensionInfo");
     coflow_runtime::DimensionValueCoordinate::export_all()
         .expect("export DimensionValueCoordinate");
     coflow_runtime::DimensionValueView::export_all().expect("export DimensionValueView");
-    coflow_runtime::WriteOutcome::export_all().expect("export WriteOutcome");
-    coflow_project::DimensionConfig::export_all().expect("export DimensionConfig");
+    coflow_runtime::CreateFieldSource::export_all().expect("export CreateFieldSource");
+    coflow_runtime::CreateRequiredInput::export_all().expect("export CreateRequiredInput");
     // Editor composition views
     t::EditorError::export_all().expect("export EditorError");
     t::ProjectSnapshot::export_all().expect("export ProjectSnapshot");
+    t::PluginSchemaType::export_all().expect("export PluginSchemaType");
+    t::PluginSchemaField::export_all().expect("export PluginSchemaField");
     t::EditorProjectSettings::export_all().expect("export EditorProjectSettings");
     t::EditorRecordGroup::export_all().expect("export EditorRecordGroup");
+    t::ViewConfig::export_all().expect("export ViewConfig");
+    t::ViewKind::export_all().expect("export ViewKind");
     t::FileRecords::export_all().expect("export FileRecords");
     t::RecordRow::export_all().expect("export RecordRow");
     t::FieldCell::export_all().expect("export FieldCell");
@@ -41,15 +43,44 @@ fn export_bindings() {
     t::InsertRecordOutcome::export_all().expect("export InsertRecordOutcome");
     t::CreateRecordDraft::export_all().expect("export CreateRecordDraft");
     t::CreateRecordFieldDraft::export_all().expect("export CreateRecordFieldDraft");
-    t::CreateFieldSource::export_all().expect("export CreateFieldSource");
-    t::CreateRequiredInput::export_all().expect("export CreateRequiredInput");
     t::DeleteRecordOutcome::export_all().expect("export DeleteRecordOutcome");
+    t::ReorderRecordsOutcome::export_all().expect("export ReorderRecordsOutcome");
     t::DeletedRecordSnapshot::export_all().expect("export DeletedRecordSnapshot");
     t::GraphData::export_all().expect("export GraphData");
-    t::GraphQuery::export_all().expect("export GraphQuery");
     t::GraphNode::export_all().expect("export GraphNode");
     t::GraphEdge::export_all().expect("export GraphEdge");
     t::RefTarget::export_all().expect("export RefTarget");
+    normalize_generated_bindings();
+}
+
+#[cfg(feature = "ts-export")]
+fn normalize_generated_bindings() {
+    let bindings_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../frontend/src/bindings");
+    let entries = std::fs::read_dir(&bindings_dir).expect("read generated bindings directory");
+
+    for entry in entries {
+        let path = entry.expect("read generated binding entry").path();
+        if path.extension().is_none_or(|extension| extension != "ts") {
+            continue;
+        }
+
+        let contents = std::fs::read_to_string(&path).expect("read generated binding");
+        let normalized = contents
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let normalized = if contents.ends_with('\n') {
+            format!("{normalized}\n")
+        } else {
+            normalized
+        };
+
+        if normalized != contents {
+            std::fs::write(path, normalized).expect("normalize generated binding");
+        }
+    }
 }
 
 #[cfg(not(feature = "ts-export"))]

@@ -2,7 +2,7 @@
 
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
-    CfdDataModel, CfdInputValue, CfdValue, RecordOrigin, SourceLocation, TextSpan,
+    CfdDataModel, CfdValue, LoadedValueDraft, RecordOrigin, SourceLocation, TextSpan,
 };
 use coflow_loader_table_core::{
     collect_table_input_records, map_table_diagnostics, TableSheet, TableSheetConfig, TableSource,
@@ -82,7 +82,7 @@ fn loads_table_source_with_excel_style_sheet_config() -> TestResult {
     .map_err(|err| format!("{err:?}"))?;
     let mut builder = CfdDataModel::builder(&schema);
     for record in loaded.records {
-        builder.add_input_record(record);
+        builder.add_loaded_record(record);
     }
     let model = builder
         .build()
@@ -155,7 +155,7 @@ fn maps_local_table_data_model_diagnostics_to_cells() -> TestResult {
         .collect::<Vec<_>>();
     let mut builder = CfdDataModel::builder(&schema);
     for record in loaded.records {
-        builder.add_input_record(record);
+        builder.add_loaded_record(record);
     }
     let Err(err) = builder.build() else {
         return Err("duplicate table keys should fail".to_string());
@@ -186,7 +186,7 @@ fn maps_file_record_diagnostics_to_record_text_span_through_data_model_location(
     builder.add_record(
         "item_1",
         "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
     let Err(err) = builder.build() else {
         return Err("missing value should fail".to_string());

@@ -27,6 +27,7 @@ pub struct WriterCapabilities {
     pub can_edit_key: bool,
     pub can_insert_record: bool,
     pub can_delete_record: bool,
+    pub can_reorder_records: bool,
     pub requires_full_refresh_after_write: bool,
 }
 
@@ -39,6 +40,7 @@ impl WriterCapabilities {
             can_edit_key: false,
             can_insert_record: false,
             can_delete_record: false,
+            can_reorder_records: false,
             requires_full_refresh_after_write: false,
         }
     }
@@ -51,6 +53,7 @@ impl WriterCapabilities {
             can_edit_key: true,
             can_insert_record: true,
             can_delete_record: true,
+            can_reorder_records: true,
             requires_full_refresh_after_write: true,
         }
     }

@@ -72,7 +72,7 @@ impl Diagnostics {
                 diagnostic
                     .actual_type
                     .as_deref()
-                    .is_none_or(|actual_type| actual_type == coordinate.actual_type)
+                    .is_none_or(|actual_type| actual_type == coordinate.actual_type.as_str())
             })
     }
 }
@@ -129,6 +129,7 @@ fn normalize(path: &Path) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -142,7 +143,8 @@ mod tests {
             diagnostic("items.cfd", "sword", Some("Item"), "typed"),
         ]);
 
-        let coordinate = RecordCoordinate::new("Item", "sword");
+        let coordinate =
+            RecordCoordinate::try_new("Item", "sword").expect("valid record coordinate");
         let messages = diagnostics
             .for_record("items.cfd", &coordinate)
             .map(|diagnostic| diagnostic.message.as_str())
@@ -166,6 +168,7 @@ mod tests {
             actual_type: actual_type.map(str::to_string),
             record_key: Some(record_key.to_string()),
             field_path: Some("name".to_string()),
+            contexts: Vec::new(),
         }
     }
 }

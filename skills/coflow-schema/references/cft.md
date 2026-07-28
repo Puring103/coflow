@@ -6,7 +6,7 @@ CFT（Coflow Type File，`.cft`）是专为 coflow 设计的 schema 语言，用
 
 下面是一个包含 `enum`、`type` 和 `check` 的简单示例：
 
-```text
+```cft
 enum Rarity {
   Common,
   Rare,
@@ -24,7 +24,7 @@ type Item {
 }
 ```
 
-这个示例展示了 CFT 如何约束 `Item` records 的字段、默认值和业务规则。更小的 schema 可以只包含一个 `type`。
+这个示例展示了 CFT 如何约束 `Item` records 的字段、默认值和业务规则。
 
 ## 文件与命名空间
 
@@ -36,12 +36,10 @@ type Item {
 
 - `const`、`enum`、`type` 名称在整个项目中唯一。
 - 支持前向引用，不要求先声明后使用。
-- 当前没有 `module`、`import` 或 `use` 语句。
-- 诊断中看到的 module id 通常是项目相对路径，例如 `schema/item.cft`。
 
 注释使用 `#`：
 
-```text
+```cft
 # 整行注释
 type Item { name: string; }  # 行尾注释
 ```
@@ -65,7 +63,7 @@ type Item { name: string; }  # 行尾注释
 
 `type` 用来声明一类配置 record 的字段结构。数据源中的 sheet、CSV、CFD record 通常会映射到某个 CFT `type`。
 
-```text
+```cft
 type Weapon {
   name: string;
   damage: int;
@@ -93,7 +91,7 @@ type Weapon {
 
 示例：
 
-```text
+```cft
 type Item {
   name: string;
   rarity: Rarity = Rarity.Common;
@@ -109,7 +107,7 @@ type Item {
 
 字段默认值必须是编译期常量：
 
-```text
+```cft
 type Item {
   price: int = 10;
   rarity: Rarity = Rarity.Common;
@@ -127,7 +125,7 @@ type Item {
 
 `abstract` 禁止直接实例化，只能通过子类使用。`sealed` 禁止被继承。
 
-```text
+```cft
 abstract type Reward {
   source: string = "drop";
 
@@ -158,7 +156,7 @@ sealed type CurrencyReward : Reward {
 
 顶层记录 key 由数据源提供，不在 CFT 字段中声明。`id` 是只读虚拟字段，可在 `check` 中读取当前顶层记录 key。
 
-```text
+```cft
 type Item {
   name: string;
 
@@ -170,7 +168,7 @@ type Item {
 
 对象字段的形态由字段类型直接决定：
 
-```text
+```cft
 type Drop {
   item: &Item;
   backup: &Item? = null;
@@ -186,41 +184,42 @@ type Drop {
 
 常见引用场景：
 
-- 掉落奖励引用物品 record，例如 `Item.sword`。
-- 怪物引用掉落表 record，例如 `DropTable.goblin_drop`。
+- 掉落奖励通过 `&sword` 引用 key 为 `sword` 的物品 record。
+- 怪物通过 `&goblin_drop` 引用 key 为 `goblin_drop` 的掉落表 record。
 
 ## nullable
 
-nullable 用于表达字段可以没有值，但仍然要显式处理 `null`。
+nullable 用于表达字段值可以是 `null`；`null` 是一个明确的值，不等同于未定义。
 
 `T?` 表示字段可以为 `null`。
 
-```text
+```cft
 type Drop {
   item: &Item?;
   backup: &Item? = null;
 }
 ```
 
-安全访问惯用写法：
+可以使用短路保护、安全访问或 null 合并：
 
-```text
+```cft
 check {
   item != null && item.id != "";
+  (backup?.id ?? "") != "";
 }
 ```
 
-对 `null` 做字段访问、索引访问、大小比较或算术，会在 check 执行时报错。
+`?.` 和 `?[...]` 只传播 receiver 的 null，`??` 延迟计算 fallback；它们不会吞掉越界、key 缺失或引用错误。对 `null` 做普通字段访问、索引访问、大小比较或算术，会在 check 执行时报错。
 
 ## check 块
 
 `check` 用来把业务规则写进 schema，并在 `coflow check` / `coflow build` 阶段提前拦截错误配置。它是 CFT 的核心能力之一。
 
-`check` 是 `type` 内部的校验块，必须位于所有字段声明之后。
+每个 `type` 最多有一个 `check` 块，并且必须位于所有字段声明之后。规则会在字段值、默认值和记录引用准备完成后执行；父类型的规则也会按继承顺序应用到子类型实例。`check` 不会成为导出数据或生成代码中的运行时逻辑。
 
-`check` 只在 Coflow 检查/构建阶段执行，用来阻止错误配置进入导出产物。它不会被导出成游戏运行时代码。
+项目级跨记录规则使用 `check Name { ... }`，通过 `records(Type)` 访问某个 object type 及其派生类型的全部顶层记录。条件可以使用 `: "message"` 或 `: f"...{expr}..."` 提供诊断消息；裸 bool 表达式仍然就是断言，不引入 `let`、`assert` 或 `require` 语句。
 
-```text
+```cft
 const MAX_LEVEL: int = 100;
 
 type Monster {
@@ -238,121 +237,7 @@ type Monster {
 }
 ```
 
-`check` 在对象构建完成、记录引用解析完成后执行。它可以访问：
-
-- 当前对象字段。
-- 继承字段。
-- 虚拟 `id`。
-- `const` 常量。
-- enum 值。
-- 已解析引用对象的字段。
-
-父类 `check` 会对子类实例执行，并且执行顺序是从根类到当前类。
-
-### 条件语句
-
-条件语句用于声明一条必须成立的布尔规则。
-
-一个表达式加分号就是一条条件语句，表达式结果必须是 `bool`。
-
-```text
-check {
-  damage > 0;
-  cooldown >= 0.1;
-  0 < damage <= 999;
-}
-```
-
-多条语句相互独立。某条条件为假时，Coflow 会继续执行后续语句并收集诊断。
-
-### when 块
-
-`when` 用于有条件地启用一组校验，适合“某个开关打开后，另一些字段必须满足要求”的规则。
-
-```text
-type Skill {
-  is_passive: bool;
-  cooldown: float? = null;
-  range: float? = null;
-
-  check {
-    when !is_passive {
-      cooldown != null;
-      cooldown > 0.0;
-    }
-    when is_passive {
-      range != null;
-      range > 0.0;
-    }
-  }
-}
-```
-
-### 量词块
-
-量词用于遍历数组或字典，适合校验集合中的每个元素、至少一个元素或没有元素满足某个条件。
-
-```text
-check {
-  all weight in weights {
-    weight > 0;
-  }
-
-  any reward in rewards {
-    reward is CurrencyReward;
-  }
-
-  none tag in tags {
-    tag == "";
-  }
-}
-```
-
-| 量词 | 语义 | 空集合行为 |
-| --- | --- | --- |
-| `all x in col { ... }` | 全部元素通过 | 通过 |
-| `any x in col { ... }` | 至少一个元素通过 | 失败 |
-| `none x in col { ... }` | 没有元素通过 | 通过 |
-
-遍历字典时，变量是 entry 对象，可访问 `.key` 和 `.value`：
-
-```text
-all entry in resistances {
-  0.0 <= entry.value <= 1.0;
-}
-```
-
-### 类型判断
-
-`is` 用于在 check 中判断多态对象的实际类型，也可以判断 nullable 值是否为 `null`。
-
-```text
-check {
-  reward is Reward;
-  reward is CurrencyReward;
-  item is null;
-}
-```
-
-`is null` 用于 nullable 类型。
-
-### 内建函数
-
-内建函数提供常见集合和字符串校验能力，避免在数据源外再写脚本检查。
-
-| 函数 | 适用类型 | 返回值 | 说明 |
-| --- | --- | --- | --- |
-| `col.len()` | array / dict | int | 元素数量 |
-| `col.contains(value)` | array / dict | bool | array 检查元素，dict 检查 key |
-| `array.isUnique()` | array | bool | 元素是否唯一，支持 int、bool、string、enum 及其 nullable 形式 |
-| `array.min()` | int / float / enum array | 同元素类型 | 最小值 |
-| `array.max()` | int / float / enum array | 同元素类型 | 最大值 |
-| `array.sum()` | int / float array | 同元素类型 | 求和 |
-| `dict.keys()` | dict | array | key 数组 |
-| `dict.values()` | dict | array | value 数组 |
-| `str.matches("pattern")` | string | bool | 正则匹配 |
-
-`matches` 使用 Rust `regex` 语义，默认是子串匹配；需要全量匹配时写 `^...$`。
+完整的自定义消息、格式化字符串、nullable 操作、双 binding 量词、命名顶层 check、`records(Type)`、运算符和内建方法见 [Check 校验](./check.md)。
 
 ## 枚举
 
@@ -360,7 +245,7 @@ check {
 
 当字段只能从一组固定选项中选择时，用 `enum`，不要用裸 `string` 表达业务分类。
 
-```text
+```cft
 enum Rarity {
   Common,
   Rare,
@@ -370,7 +255,7 @@ enum Rarity {
 
 变体默认从 `0` 开始递增，也可以显式指定整数值：
 
-```text
+```cft
 enum Status {
   None = 0,
   Active = 10,
@@ -381,7 +266,7 @@ enum Status {
 
 使用枚举值时写 `EnumName.Variant`：
 
-```text
+```cft
 type Item {
   rarity: Rarity = Rarity.Common;
 }
@@ -393,11 +278,37 @@ type Item {
 - 枚举与 `int` 不隐式互转。
 - 枚举只能与同类型枚举比较。
 
-### 位标志枚举
+## 注解
 
-`@flag` 用于定义位标志枚举。
+注解用于补充 schema 语义，影响加载器、导出和代码生成。注解写在 `type`、`enum` 或字段之前。
 
-```text
+| 注解 | 适用目标 | 影响阶段 | 说明 |
+| --- | --- | --- | --- |
+| `@flag` | enum | schema / codegen | 位标志枚举 |
+| `@struct` | type | codegen | 生成值类型；目标必须是 `sealed type` |
+| `@expand` | field | table loader | 表格相邻列展开成嵌套对象 |
+| `@idAsEnum(EnumName)` | type | build / codegen | 按 record key 填充空 enum，用于强类型 key |
+| `@localized` / `@localized("bucket")` | field | dimensions / check / codegen | 字段值按语言维度变化 |
+| `@dimension("name")` | field | dimensions / check / codegen | 字段值按指定维度变化 |
+| `@singleton` | type | data model / codegen | 数据集中该 type 只有一条 record |
+
+示例：
+
+```cft
+@idAsEnum(ItemId)
+type Item {
+  @localized
+  name: string;
+}
+
+enum ItemId {}
+```
+
+### `@flag`
+
+`@flag` 把 enum 声明为可组合的位标志：
+
+```cft
 @flag
 enum Permission {
   Read = 1,
@@ -410,44 +321,19 @@ enum Permission {
 
 - 除 `0` 外，所有变体值必须是 2 的幂。
 - 支持 `&`、`|`、`^`、`~` 位运算。
-- 运算结果仍是同一枚举类型。
+- 运算结果仍是同一 enum 类型。
 
-```text
+```cft
 check {
   (flags & Permission.Read) != Permission(0);
 }
-```
-
-## 注解
-
-注解用于补充 schema 语义，影响加载器、导出和代码生成。注解写在 `type`、`enum` 或字段之前。
-
-| 注解 | 适用目标 | 影响阶段 | 说明 |
-| --- | --- | --- | --- |
-| `@flag` | enum | schema / codegen | 位标志枚举 |
-| `@struct` | type | codegen | C# codegen 生成 value-like struct；目标必须是 `sealed type` |
-| `@expand` | field | table loader | 表格相邻列展开成嵌套对象 |
-| `@idAsEnum(EnumName)` | type | build / codegen | 按 record key 填充空 enum，用于强类型 key |
-| `@localized` / `@localized("bucket")` | field | dimensions / check / codegen | 字段值按语言维度变化 |
-| `@singleton` | type | data model / codegen | 数据集中该 type 只有一条 record |
-
-示例：
-
-```text
-@idAsEnum(ItemId)
-type Item {
-  @localized
-  name: string;
-}
-
-enum ItemId {}
 ```
 
 ### `@idAsEnum`
 
 `@idAsEnum(EnumName)` 用于把数据源中的 record key 填充进一个空 enum。
 
-```text
+```cft
 @idAsEnum(ItemId)
 type Item {
   name: string;
@@ -456,13 +342,13 @@ type Item {
 enum ItemId {}
 ```
 
-构建时，Coflow 会在 `.coflow/artifacts/active.json` 中维护 lock state 来稳定生成 enum 的整数值。它与 data/code generation 在同一个 manifest snapshot 中激活；应提交版本库的 `coflow.enum.lock.json` 是在最终 manifest 激活前写好的非权威镜像。
+构建后应将 `coflow.enum.lock.json` 提交到版本库，以保证自动生成的 enum 整数值在不同机器和后续构建中保持稳定。
 
 ### `@singleton`
 
 `@singleton` 声明该类型在数据集中只有一条 record。
 
-```text
+```cft
 @singleton
 type GameConfig {
   max_level: int;
@@ -480,7 +366,7 @@ type GameConfig {
 
 `@localized` 声明字段值随语言维度变化。
 
-```text
+```cft
 type Item {
   @localized
   name: string;
@@ -490,9 +376,22 @@ type Item {
 }
 ```
 
-项目中使用 `@localized` 时，需要在 `coflow.yaml` 配置 `dimensions.language`。详见 [本地化与维度](../10-localization.md)。
+项目中使用 `@localized` 时，需要在 `coflow.yaml` 配置 `dimensions.language`。详见 [本地化与维度](./localization.md)。
 
-`@localized` 只能用于顶层 type 字段，不能用于 `sealed type` 的内部对象字段。`@localized("bucket")` 的 bucket 必须是合法 CFT 标识符。
+`@localized` 只能用于非 `sealed type` 的字段。`@localized("bucket")` 的 bucket 必须是合法 CFT 标识符。
+
+### `@dimension`
+
+`@dimension("name")` 把字段绑定到 `coflow.yaml` 中声明的指定维度：
+
+```cft
+type Item {
+  @dimension("platform")
+  price: int;
+}
+```
+
+维度名必须是合法 CFT 标识符，并且项目配置中必须存在同名维度。一个字段只能使用一个维度注解，不能同时声明 `@localized` 和 `@dimension`。维度字段只能用于非 `sealed type` 的字段。详见 [本地化与维度](./localization.md)。
 
 ## 常量
 
@@ -500,7 +399,7 @@ type Item {
 
 当多个字段默认值或业务规则共享同一个阈值时，用 `const` 避免 magic number 分散在 schema 中。
 
-```text
+```cft
 const MAX_LEVEL = 100;
 const MIN_SPEED = 0.1;
 const EMPTY_NAME = "unknown";
@@ -508,7 +407,7 @@ const EMPTY_NAME = "unknown";
 
 可以显式标注基础类型：
 
-```text
+```cft
 const MAX_LEVEL: int = 100;
 const MIN_SPEED: float = 0.1;
 const ENABLED: bool = true;
@@ -531,23 +430,23 @@ CFT 只定义 schema，不保存 record 数据。数据来自 Excel、CSV、CFD 
 - 表格 sheet 通常映射到 CFT type。
 - 表头映射到 CFT 字段。
 - `id` / `Id` / `ID` 列作为 record key，不是 CFT 字段。
-- 空值、`_`、`null`、数组、字典、内联对象、记录引用等值语法见 [单元格值语法](./03-cell-value.md)。
-- CFD 文本配置语法见 [CFD 语法参考](./02-cfd.md)。
+- 空值、`_`、`null`、数组、字典、内联对象、记录引用等值语法见 [单元格值语法](https://puring103.github.io/coflow/docs/reference/03-language/03-cell-value)。
+- CFD 文本配置语法见 [CFD 语法参考](https://puring103.github.io/coflow/docs/reference/03-language/02-cfd)。
 
-## 和导出/codegen 的关系
+## 和导出/代码生成的关系
 
 CFT schema 会影响导出和代码生成：
 
 - JSON 和 MessagePack 根据 schema/model 导出字段和值。
-- C# codegen 根据 type、enum、字段和注解生成运行时 API。
-- `@flag` 生成 C# `[Flags]` enum。
-- `@struct` 生成 C# struct。
+- 代码生成器根据 type、enum、字段和注解生成对应语言的运行时 API。
+- `@flag` 生成目标语言中的位标志 enum。
+- `@struct` 生成目标语言中的值类型。
 - `@idAsEnum` 生成强类型 record key。
 - `@localized` 生成本地化运行时访问结构。
 
 ## 完整示例
 
-```text
+```cft
 const MAX_LEVEL: int = 100;
 const MAX_ATTACK: int = 999;
 
@@ -626,18 +525,6 @@ type Monster {
   }
 }
 ```
-
-## 结构预算
-
-CFT parser 会在构造 AST 时限制结构深度、节点数和解析工作量。默认上限为：
-
-- 最大深度 `256`；
-- 最大节点数 `1,000,000`；
-- 最大工作量 `10,000,000`。
-
-parser 预算覆盖 type ref、default、check 表达式、`when`/量词语句和 module 顶层节点。超过上限时当前 module 解析失败并返回 `CFT-SYN-011`，不会向项目发布部分 AST。公开 API 使用默认结构限制，通过 `parse_modules` 一次收集项目 module。
-
-schema compiler 使用独立的 project 预算重新验证所有 module AST，并限制继承链与 schema dependency 工作量。超过上限时返回 `CFT-SCHEMA-038`。继承 cycle 在能够确认 back edge 时优先返回 `CFT-SCHEMA-009`；无环继承链超过深度上限时返回结构预算诊断。`build_schema(&modules, &dimensions)` 只有在所有 pass 成功后才返回完整的 `CftSchema`。
 
 ## 常见错误
 

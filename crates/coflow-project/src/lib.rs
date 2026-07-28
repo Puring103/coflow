@@ -23,7 +23,8 @@ mod validation;
 
 pub use coflow_api::path_to_slash;
 pub use config::{
-    DimensionConfig, OutputConfig, OutputsConfig, ProjectConfig, SchemaConfig, SourceConfig,
+    DimensionConfig, LoaderConfig, OutputConfig, OutputTargetConfig, OutputsConfig, ProjectConfig,
+    SchemaConfig, SourceConfig,
 };
 pub use file_discovery::{discover_directory_files, DirectoryDiscoveryError};
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};

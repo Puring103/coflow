@@ -1,10 +1,10 @@
 mod annotations;
 mod budget;
-mod checked_type;
 mod checks;
 mod defaults;
 mod entry;
 mod enums;
+mod inferred_type;
 mod inheritance;
 mod lower;
 mod state;
@@ -14,9 +14,11 @@ mod types;
 pub use entry::build_schema;
 
 use self::checks::CheckTypeAnalyzer;
-use self::state::{ConstInfo, EnumInfo, FieldInfo, Symbol, TypeInfo};
+use self::state::{CheckInfo, ConstInfo, EnumInfo, FieldInfo, Symbol, TypeInfo};
 use crate::module::{CftModuleSet, ModuleId};
-use crate::schema::{CftConst, CftEnum, CftType, ConstName, EnumName, TypeName};
+use crate::schema::{
+    CftConst, CftEnum, CftTopLevelCheck, CftType, CheckName, ConstName, EnumName, TypeName,
+};
 use crate::syntax::ast::{ConstLiteral, TypeRefKind};
 use crate::syntax::Span;
 use crate::{CftDiagnostic, CftDiagnostics, CftErrorCode};
@@ -28,6 +30,8 @@ pub(in crate::schema) struct SchemaDeclarations {
     pub(super) consts: BTreeMap<ConstName, CftConst>,
     pub(super) types: BTreeMap<TypeName, CftType>,
     pub(super) enums: BTreeMap<EnumName, CftEnum>,
+    pub(super) checks: BTreeMap<CheckName, CftTopLevelCheck>,
+    pub(super) sources: BTreeMap<ModuleId, crate::schema::CftSchemaSource>,
 }
 
 pub(super) struct SchemaCompiler<'a> {
@@ -37,8 +41,15 @@ pub(super) struct SchemaCompiler<'a> {
     consts: BTreeMap<String, ConstInfo<'a>>,
     types: BTreeMap<String, TypeInfo<'a>>,
     enums: BTreeMap<String, EnumInfo<'a>>,
+    checks: BTreeMap<String, CheckInfo<'a>>,
     full_fields: BTreeMap<String, BTreeMap<String, FieldInfo>>,
     inheritance_chains: BTreeMap<String, Vec<String>>,
+    quantifier_bindings:
+        BTreeMap<(ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
+    check_dimensions:
+        BTreeMap<(ModuleId, usize, usize), BTreeMap<crate::DimensionName, Vec<usize>>>,
+    check_statement_dependencies:
+        BTreeMap<(ModuleId, usize, usize), Vec<crate::schema::CheckStatementDependencies>>,
     budget: StructuralBudget,
 }
 
@@ -51,8 +62,12 @@ impl<'a> SchemaCompiler<'a> {
             consts: BTreeMap::new(),
             types: BTreeMap::new(),
             enums: BTreeMap::new(),
+            checks: BTreeMap::new(),
             full_fields: BTreeMap::new(),
             inheritance_chains: BTreeMap::new(),
+            quantifier_bindings: BTreeMap::new(),
+            check_dimensions: BTreeMap::new(),
+            check_statement_dependencies: BTreeMap::new(),
             budget: StructuralBudget::new(StructuralLimits::default()),
         }
     }
@@ -124,9 +139,42 @@ impl<'a> SchemaCompiler<'a> {
         self.each_type(|this, info| {
             if let Some(check) = &info.def.check {
                 let mut checker = CheckTypeAnalyzer::new(this, info);
-                checker.check_stmts(&check.stmts);
+                let (dimensions, dependencies) = checker.check_root_stmts(&check.stmts);
+                this.check_dimensions.insert(
+                    (info.module.clone(), check.span.start, check.span.end),
+                    dimensions,
+                );
+                this.check_statement_dependencies.insert(
+                    (info.module.clone(), check.span.start, check.span.end),
+                    dependencies,
+                );
             }
         });
+        let checks: Vec<_> = self
+            .checks
+            .iter()
+            .map(|(name, info)| (name.clone(), info.clone()))
+            .collect();
+        for (_name, info) in checks {
+            let mut checker = CheckTypeAnalyzer::top_level(self, info.module.clone());
+            let (dimensions, dependencies) = checker.check_root_stmts(&info.def.block.stmts);
+            self.check_dimensions.insert(
+                (
+                    info.module.clone(),
+                    info.def.block.span.start,
+                    info.def.block.span.end,
+                ),
+                dimensions,
+            );
+            self.check_statement_dependencies.insert(
+                (
+                    info.module.clone(),
+                    info.def.block.span.start,
+                    info.def.block.span.end,
+                ),
+                dependencies,
+            );
+        }
     }
 
     pub(super) fn push_diag(

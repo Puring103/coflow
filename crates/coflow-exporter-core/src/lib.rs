@@ -14,7 +14,7 @@
     )
 )]
 
-use coflow_cft::{CftField, CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftField, CftSchema, CftValueType};
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdObject, CfdRecord, CfdTable, CfdValue};
 use std::borrow::Cow;
 use std::fmt;
@@ -173,10 +173,12 @@ where
                         message: "dimension field has unknown declaring type".to_string(),
                     })?;
             let table_name = format!("{}_{}Variants", field.declaring_type, field.name);
-            let record_count = model.records_assignable_to(&field.declaring_type).count();
+            let record_count = model
+                .records_assignable_to(schema, &field.declaring_type)
+                .count();
             let mut location = ExportLocation::new(&table_name);
             sink_event(&location, sink.begin_table(&table_name, record_count))?;
-            for (_, record) in model.records_assignable_to(&field.declaring_type) {
+            for (_, record) in model.records_assignable_to(schema, &field.declaring_type) {
                 location.record = Some(if source_type.is_singleton {
                     field.name.to_string()
                 } else {
@@ -242,7 +244,7 @@ where
             )
         })?;
         sink_event(location, sink.map_key("default"))?;
-        encode_value(schema, sink, &field.ty_ref, value, location)
+        encode_value(schema, sink, &field.value_type, value, location)
     })();
     location.exit(checkpoint);
     result?;
@@ -262,7 +264,7 @@ where
         let result = (|| {
             sink_event(location, sink.map_key(variant))?;
             if let Some(value) = overlay.and_then(|values| values.variants.get(variant)) {
-                encode_value(schema, sink, &field.ty_ref, &value.value, location)
+                encode_value(schema, sink, &field.value_type, &value.value, location)
             } else {
                 sink_event(location, sink.null())
             }
@@ -416,7 +418,7 @@ where
                 )
             })?;
             sink_event(location, sink.map_key(&field.name))?;
-            encode_value(schema, sink, &field.ty_ref, value, location)
+            encode_value(schema, sink, &field.value_type, value, location)
         })();
         location.exit(checkpoint);
         result?;
@@ -427,14 +429,14 @@ where
 fn encode_value<S>(
     schema: &CftSchema,
     sink: &mut S,
-    declared_type: &CftSchemaTypeRef,
+    declared_type: &CftValueType,
     value: &CfdValue,
     location: &mut ExportLocation<'_>,
 ) -> Result<(), ExportError>
 where
     S: ExportEventSink,
 {
-    if let CftSchemaTypeRef::Nullable(inner) = declared_type {
+    if let CftValueType::Nullable(inner) = declared_type {
         return match value {
             CfdValue::Null => sink_event(location, sink.null()),
             other => encode_value(schema, sink, inner, other, location),
@@ -456,13 +458,13 @@ where
         CfdValue::Enum(value) => sink_event(location, sink.int(value.value)),
         CfdValue::Object(object) => {
             let type_name = match declared_type {
-                CftSchemaTypeRef::Object(type_name) => type_name,
+                CftValueType::Object(type_name) => type_name,
                 other => {
                     return Err(ExportError::at(
                         location,
                         format!(
                             "object value has non-object declared type `{}`",
-                            display_type_ref(other)
+                            display_value_type(other)
                         ),
                     ))
                 }
@@ -472,13 +474,13 @@ where
         CfdValue::Ref(target_key) => sink_event(location, sink.string(target_key)),
         CfdValue::Array(items) => {
             let inner = match declared_type {
-                CftSchemaTypeRef::Array(inner) => inner,
+                CftValueType::Array(inner) => inner,
                 other => {
                     return Err(ExportError::at(
                         location,
                         format!(
                             "array value has non-array declared type `{}`",
-                            display_type_ref(other)
+                            display_value_type(other)
                         ),
                     ))
                 }
@@ -494,13 +496,13 @@ where
         }
         CfdValue::Dict(entries) => {
             let value_ty = match declared_type {
-                CftSchemaTypeRef::Dict(_, value_ty) => value_ty,
+                CftValueType::Dict(_, value_ty) => value_ty,
                 other => {
                     return Err(ExportError::at(
                         location,
                         format!(
                             "dict value has non-dict declared type `{}`",
-                            display_type_ref(other)
+                            display_value_type(other)
                         ),
                     ))
                 }
@@ -592,6 +594,6 @@ fn dict_key_string(key: &CfdDictKey) -> Cow<'_, str> {
     }
 }
 
-fn display_type_ref(ty: &CftSchemaTypeRef) -> String {
+fn display_value_type(ty: &CftValueType) -> String {
     ty.display_label()
 }

@@ -15,16 +15,10 @@ fn codegen_csharp_writes_newtonsoft_json_source_provider() {
     let root = temp_project_dir("csharp-codegen");
     let _cleanup = TempDirCleanup(root.clone());
     write_acyclic_csharp_project(&root, "json");
-    let out_dir = root.join("csharp");
+    let out_dir = root.join("generated/csharp");
 
     let output = coflow()
-        .args([
-            "codegen",
-            "csharp",
-            root.to_str().expect("utf8 temp path"),
-            "--out",
-            out_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["codegen", root.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow");
 
@@ -57,25 +51,67 @@ fn codegen_csharp_writes_newtonsoft_json_source_provider() {
 }
 
 #[test]
+fn codegen_generates_all_configured_code_targets() {
+    let root = temp_project_dir("csharp-codegen-all-targets");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(root.join("schema/main.cft"), "type Item { value: int; }\n")
+        .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/
+outputs:
+  - data:
+      type: json
+      dir: generated/unused-data
+    code:
+      type: csharp
+      dir: generated/first
+      namespace: First.Namespace
+  - data:
+      type: json
+      dir: generated/data
+    code:
+      type: csharp
+      dir: generated/csharp
+      namespace: Second.Namespace
+"#,
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["codegen", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run codegen");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let first = std::fs::read_to_string(root.join("generated/first/Item.cs"))
+        .expect("read first generated C# type");
+    let second = std::fs::read_to_string(root.join("generated/csharp/Item.cs"))
+        .expect("read second generated C# type");
+    assert!(first.contains("namespace First.Namespace"));
+    assert!(second.contains("namespace Second.Namespace"));
+}
+
+#[test]
 fn codegen_csharp_uses_messagepack_loader_when_data_output_is_messagepack() {
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-csharp-messagepack-test-{suffix}"));
     let project_dir = root_dir.join("project");
-    let out_dir = root_dir.join("csharp");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
     }
     std::fs::create_dir_all(&project_dir).expect("create project dir");
     write_acyclic_csharp_project(&project_dir, "messagepack");
+    let out_dir = project_dir.join("generated/csharp");
 
     let output = coflow()
-        .args([
-            "codegen",
-            "csharp",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--out",
-            out_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["codegen", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow");
 
@@ -102,7 +138,7 @@ fn codegen_csharp_validation_outputs_multiple_diagnostics_without_writing_files(
     write_active_enum_lock(&root, &serde_json::json!({}));
 
     let output = coflow()
-        .args(["codegen", "csharp", root.to_str().expect("utf8 path")])
+        .args(["codegen", root.to_str().expect("utf8 path")])
         .output()
         .expect("run codegen");
 
@@ -131,10 +167,14 @@ fn codegen_csharp_rejects_malformed_lock_before_publication() {
     let root = temp_project_dir("codegen-malformed-lock");
     let _cleanup = TempDirCleanup(root.clone());
     write_acyclic_csharp_project(&root, "json");
-    write_active_enum_lock(&root, &Value::String("malformed lock state".to_string()));
+    std::fs::write(
+        root.join("coflow.enum.lock.json"),
+        r#""malformed lock state""#,
+    )
+    .expect("write malformed versioned enum lock");
 
     let output = coflow()
-        .args(["codegen", "csharp", root.to_str().expect("utf8 path")])
+        .args(["codegen", root.to_str().expect("utf8 path")])
         .output()
         .expect("run codegen");
 
@@ -152,8 +192,9 @@ fn codegen_csharp_rejects_malformed_lock_before_publication() {
     assert!(stderr.contains("failed to parse @idAsEnum lock state"));
     assert!(!stderr.contains("[CODEGEN-CSHARP-001] [CODEGEN]"));
     assert_eq!(
-        active_enum_lock(&root),
-        Value::String("malformed lock state".to_string())
+        std::fs::read_to_string(root.join("coflow.enum.lock.json"))
+            .expect("read malformed versioned enum lock"),
+        r#""malformed lock state""#
     );
     assert!(!root
         .join("generated")
@@ -199,7 +240,6 @@ fn codegen_csharp_requires_data_output_config() {
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-csharp-missing-data-test-{suffix}"));
     let project_dir = root_dir.join("project");
-    let out_dir = root_dir.join("csharp");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
     }
@@ -216,13 +256,7 @@ fn codegen_csharp_requires_data_output_config() {
     .expect("write config");
 
     let output = coflow()
-        .args([
-            "codegen",
-            "csharp",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--out",
-            out_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["codegen", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow");
 
@@ -242,7 +276,6 @@ fn codegen_csharp_rejects_unsupported_data_output_type() {
     let root_dir =
         std::env::temp_dir().join(format!("coflow-csharp-unsupported-data-test-{suffix}"));
     let project_dir = root_dir.join("project");
-    let out_dir = root_dir.join("csharp");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
     }
@@ -259,20 +292,14 @@ fn codegen_csharp_rejects_unsupported_data_output_type() {
     .expect("write config");
 
     let output = coflow()
-        .args([
-            "codegen",
-            "csharp",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--out",
-            out_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["codegen", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow");
 
     assert!(!output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr)
-            .contains("code generator `csharp` does not support data format `yaml`"),
+            .contains("no loader registered for code `csharp` and data `yaml`"),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -296,8 +323,6 @@ fn generated_csharp_compiles_and_loads_exported_json() {
             .as_nanos()
     );
     let root_dir = std::env::temp_dir().join(format!("coflow-csharp-e2e-test-{suffix}"));
-    let export_dir = root_dir.join("export");
-    let csharp_dir = root_dir.join("csharp");
     let dotnet_dir = root_dir.join("dotnet");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old output dir");
@@ -308,13 +333,7 @@ fn generated_csharp_compiles_and_loads_exported_json() {
     write_acyclic_csharp_project(&project_dir, "json");
 
     let export_output = coflow()
-        .args([
-            "export",
-            "json",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--out",
-            export_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["export", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow export");
     assert!(
@@ -325,15 +344,7 @@ fn generated_csharp_compiles_and_loads_exported_json() {
     );
 
     let codegen_output = coflow()
-        .args([
-            "codegen",
-            "csharp",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--namespace",
-            "Game.Config",
-            "--out",
-            csharp_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["codegen", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow codegen");
     assert!(
@@ -484,7 +495,7 @@ outputs:
     .expect("write versioned lockfile");
 
     let output = coflow()
-        .args(["codegen", "csharp", root.to_str().expect("utf8 path")])
+        .args(["codegen", root.to_str().expect("utf8 path")])
         .output()
         .expect("run codegen");
 
@@ -518,15 +529,13 @@ fn generated_csharp_loads_cyclic_json_references() {
     let root = temp_project_dir("csharp-cyclic-e2e");
     let _cleanup = TempDirCleanup(root.clone());
     let project_dir = root.join("project");
-    let export_dir = root.join("export");
-    let csharp_dir = root.join("csharp");
     let dotnet_dir = root.join("dotnet");
     std::fs::create_dir_all(project_dir.join("data")).expect("create data dir");
     std::fs::write(
         project_dir.join("schema.cft"),
         r"
             type Node {
-                next: Node;
+                next: &Node;
             }
         ",
     )
@@ -562,13 +571,7 @@ outputs:
     .expect("write config");
 
     let export_output = coflow()
-        .args([
-            "export",
-            "json",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--out",
-            export_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["export", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow export");
     assert!(
@@ -579,15 +582,7 @@ outputs:
     );
 
     let codegen_output = coflow()
-        .args([
-            "codegen",
-            "csharp",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--namespace",
-            "Game.Config",
-            "--out",
-            csharp_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["codegen", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow codegen");
     assert!(
@@ -701,8 +696,6 @@ fn generated_csharp_compiles_and_loads_exported_messagepack() {
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-csharp-messagepack-e2e-{suffix}"));
     let project_dir = root_dir.join("project");
-    let export_dir = root_dir.join("export");
-    let csharp_dir = root_dir.join("csharp");
     let dotnet_dir = root_dir.join("dotnet");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
@@ -714,13 +707,7 @@ fn generated_csharp_compiles_and_loads_exported_messagepack() {
     write_acyclic_csharp_project(&project_dir, "messagepack");
 
     let export_output = coflow()
-        .args([
-            "export",
-            "messagepack",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--out",
-            export_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["export", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow export");
     assert!(
@@ -731,15 +718,7 @@ fn generated_csharp_compiles_and_loads_exported_messagepack() {
     );
 
     let codegen_output = coflow()
-        .args([
-            "codegen",
-            "csharp",
-            project_dir.to_str().expect("utf8 temp path"),
-            "--namespace",
-            "Game.Config",
-            "--out",
-            csharp_dir.to_str().expect("utf8 temp path"),
-        ])
+        .args(["codegen", project_dir.to_str().expect("utf8 temp path")])
         .output()
         .expect("run coflow codegen");
     assert!(

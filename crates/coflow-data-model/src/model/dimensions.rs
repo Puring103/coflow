@@ -1,5 +1,5 @@
 use super::{CfdDataModel, CfdRecordId, CfdValue};
-use crate::origin::RecordOrigin;
+use crate::diagnostics::RecordOrigin;
 use coflow_cft::CftSchema;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

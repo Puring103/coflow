@@ -4,9 +4,9 @@ mod transaction;
 
 pub use capabilities::{WriterCapabilities, WriterDescriptor};
 pub use requests::{
-    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest,
-    SpreadRewriteTarget, WriteBatchFailure, WriteCellRequest, WriteContext, WriteFieldPathSegment,
-    WriteOutcome,
+    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
+    ReorderRecordsRequest, RewriteRecordReferencesRequest, SpreadRewriteTarget, WriteBatchFailure,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriteRecordRef,
 };
 pub use transaction::{SourceTransaction, SourceTransactionCompensation};
 
@@ -14,7 +14,7 @@ use crate::{Diagnostic, DiagnosticSet, ResolvedSource};
 
 /// Trait for source-specific writers that persist field edits.
 ///
-/// Implementations dispatch on [`RecordOrigin`] to locate the cell/span and
+/// Implementations dispatch on [`coflow_data_model::RecordOrigin`] to locate the cell/span and
 /// write the new value to the source file. The runtime owns
 /// transaction-level mutation reporting and generation rebuilds.
 pub trait SourceWriter: Send + Sync {
@@ -155,6 +155,24 @@ pub trait SourceWriter: Send + Sync {
             "WRITE-UNSUPPORTED",
             "WRITE",
             "writer does not support deleting records",
+        )))
+    }
+
+    /// Atomically reorder top-level records inside one physical source container.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the records do not share a container or the
+    /// source no longer matches their recorded origins.
+    fn reorder_records(
+        &self,
+        _ctx: WriteContext<'_>,
+        _request: &ReorderRecordsRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-UNSUPPORTED",
+            "WRITE",
+            "writer does not support reordering records",
         )))
     }
 }

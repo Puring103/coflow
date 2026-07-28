@@ -1,5 +1,5 @@
-use crate::cell_value::CellValueDiagnostics;
 use crate::table::{TableDiagnostic, TableDiagnosticKind, TableLocation};
+use coflow_data_model::cell_value::CellValueDiagnostics;
 use std::path::PathBuf;
 
 #[derive(Debug)]

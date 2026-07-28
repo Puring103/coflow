@@ -2,12 +2,6 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-{% if project.uses_json and type.loader %}using System.IO;
-using Newtonsoft.Json.Linq;
-{% endif %}{% if project.uses_messagepack and type.loader %}using System.Buffers;
-using System.IO;
-using MessagePack;
-{% endif %}
 
 namespace {{ project.namespace }}
 {
@@ -30,10 +24,7 @@ namespace {{ project.namespace }}
     {
 {% for assignment in type.assignments %}        {{ assignment.target }} = {{ assignment.parameter }};
 {% endfor %}    }
-{% if type.loader %}
-{% if project.uses_json %}{% if type.loader.is_polymorphic %}{% include "type_json_polymorphic_loader.cs.tera" %}{% else %}{% include "type_json_loader.cs.tera" %}{% endif %}{% endif %}
-{% if project.uses_messagepack %}{% if type.loader.is_polymorphic %}{% include "type_messagepack_polymorphic_loader.cs.tera" %}{% else %}{% include "type_messagepack_loader.cs.tera" %}{% endif %}{% endif %}
-{% endif %}{% if type.equality %}
+{% if type.equality %}
 
 {% if type.equality.by_fields %}    public override string ToString() => "{{ type.name }}";
 

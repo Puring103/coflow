@@ -7,11 +7,12 @@
 
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::{
-    CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue, RecordOrigin, SourceDocument,
+    CfdDataModel, CfdValue, LoadedRecordDraft, LoadedValueDraft, RecordOrigin, SourceDocument,
 };
 use coflow_loader_table_core::writer::{
-    plan_field_write, plan_insert_record, HeaderReconciliationPlan, TableFieldWrite,
-    TableInsertRecord, TableSetCell, TableWritePlan, WriteFieldPathSegment,
+    plan_field_write, plan_insert_record, plan_reorder_records, HeaderReconciliationPlan,
+    TableFieldWrite, TableInsertRecord, TableMoveRowBefore, TableRecordRef, TableReorderOperation,
+    TableSetCell, TableWritePlan, WriteFieldPathSegment,
 };
 use coflow_loader_table_core::{resolve_table_write_layout, TableSheetConfig};
 use std::collections::BTreeMap;
@@ -24,12 +25,53 @@ fn compile_schema(source: &str) -> CftSchema {
 
 fn table_origin(field_columns: BTreeMap<Vec<String>, usize>) -> RecordOrigin {
     RecordOrigin::Table {
-        document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+        document: SourceDocument::new(PathBuf::from("data.xlsx")),
         sheet: "Items".to_string(),
         row: 2,
         id_column: 1,
         field_columns,
     }
+}
+
+fn table_origin_at(row: usize) -> RecordOrigin {
+    RecordOrigin::Table {
+        document: SourceDocument::new(PathBuf::from("data.xlsx")),
+        sheet: "Items".to_string(),
+        row,
+        id_column: 1,
+        field_columns: BTreeMap::new(),
+    }
+}
+
+#[test]
+fn move_record_plan_preserves_source_and_anchor_guards() {
+    let source = table_origin_at(2);
+    let before = table_origin_at(4);
+    let plan = plan_reorder_records(TableReorderOperation::MoveBefore {
+        record: TableRecordRef {
+            origin: &source,
+            record_key: "sword",
+        },
+        before: Some(TableRecordRef {
+            origin: &before,
+            record_key: "potion",
+        }),
+    })
+    .expect("move plan");
+
+    assert_eq!(
+        plan,
+        TableWritePlan::MoveRowBefore(TableMoveRowBefore {
+            document: SourceDocument::new(PathBuf::from("data.xlsx")),
+            sheet: "Items".to_string(),
+            row: 2,
+            id_column: 1,
+            expected_key: "sword".to_string(),
+            before_row: Some(4),
+            before_id_column: Some(1),
+            expected_before_key: Some("potion".to_string()),
+        })
+    );
 }
 
 fn field_path(name: &str) -> Vec<WriteFieldPathSegment> {
@@ -54,7 +96,7 @@ fn header_reconciliation_preserves_values_across_add_remove_and_reorder() {
             vec![
                 "sword".to_string(),
                 "Sword".to_string(),
-                "legacy".to_string()
+                "existing".to_string()
             ],
         ]),
         vec![
@@ -124,14 +166,14 @@ fn nested_collection_edit_rewrites_owning_cell_value() {
         }
         ",
     );
-    let input = CfdInputRecord::new(
+    let input = LoadedRecordDraft::new(
         "sword",
         "Item",
         [(
             "tags",
-            CfdInputValue::Array(vec![
-                CfdInputValue::String("old".to_string()),
-                CfdInputValue::String("keep".to_string()),
+            LoadedValueDraft::Array(vec![
+                LoadedValueDraft::String("old".to_string()),
+                LoadedValueDraft::String("keep".to_string()),
             ]),
         )],
     )
@@ -140,7 +182,7 @@ fn nested_collection_edit_rewrites_owning_cell_value() {
         2,
     )])));
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(input);
+    builder.add_loaded_record(input);
     let model = builder.build().expect("model");
     let origin = table_origin(BTreeMap::from([(vec!["tags".to_string()], 2)]));
     let new_value = CfdValue::String("new".to_string());
@@ -162,7 +204,7 @@ fn nested_collection_edit_rewrites_owning_cell_value() {
     assert_eq!(
         plan,
         TableWritePlan::SetCells {
-            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            document: SourceDocument::new(PathBuf::from("data.xlsx")),
             sheet: "Items".to_string(),
             id_column: 1,
             expected_key: "sword".to_string(),
@@ -184,19 +226,19 @@ fn nested_dict_entry_edit_rewrites_owning_cell_value() {
         }
         ",
     );
-    let input = CfdInputRecord::new(
+    let input = LoadedRecordDraft::new(
         "sword",
         "Item",
         [(
             "weights",
-            CfdInputValue::dict([
+            LoadedValueDraft::dict([
                 (
-                    coflow_data_model::CfdInputDictKey::from("rare"),
-                    CfdInputValue::Int(1),
+                    coflow_data_model::LoadedDictKeyDraft::from("rare"),
+                    LoadedValueDraft::Int(1),
                 ),
                 (
-                    coflow_data_model::CfdInputDictKey::from("common"),
-                    CfdInputValue::Int(2),
+                    coflow_data_model::LoadedDictKeyDraft::from("common"),
+                    LoadedValueDraft::Int(2),
                 ),
             ]),
         )],
@@ -206,7 +248,7 @@ fn nested_dict_entry_edit_rewrites_owning_cell_value() {
         2,
     )])));
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(input);
+    builder.add_loaded_record(input);
     let model = builder.build().expect("model");
     let origin = table_origin(BTreeMap::from([(vec!["weights".to_string()], 2)]));
     let new_value = CfdValue::Int(9);
@@ -228,7 +270,7 @@ fn nested_dict_entry_edit_rewrites_owning_cell_value() {
     assert_eq!(
         plan,
         TableWritePlan::SetCells {
-            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            document: SourceDocument::new(PathBuf::from("data.xlsx")),
             sheet: "Items".to_string(),
             id_column: 1,
             expected_key: "sword".to_string(),
@@ -255,32 +297,32 @@ fn replacing_ref_inside_array_rewrites_owning_cell() {
         }
         ",
     );
-    let input = CfdInputRecord::new(
+    let input = LoadedRecordDraft::new(
         "drop_1",
         "Drop",
         [(
             "rewards",
-            CfdInputValue::Array(vec![CfdInputValue::record_ref("coin")]),
+            LoadedValueDraft::Array(vec![LoadedValueDraft::record_ref("coin")]),
         )],
     )
     .with_origin(table_origin(BTreeMap::from([(
         vec!["rewards".to_string()],
         2,
     )])));
-    let source = CfdInputRecord::new(
+    let source = LoadedRecordDraft::new(
         "coin",
         "Reward",
         [
-            ("name", CfdInputValue::String("Coin".to_string())),
-            ("amount", CfdInputValue::Int(10)),
+            ("name", LoadedValueDraft::String("Coin".to_string())),
+            ("amount", LoadedValueDraft::Int(10)),
         ],
     );
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(source);
-    builder.add_input_record(input);
+    builder.add_loaded_record(source);
+    builder.add_loaded_record(input);
     let model = builder.build().expect("model");
     let origin = table_origin(BTreeMap::from([(vec!["rewards".to_string()], 2)]));
-    let new_value = CfdValue::Ref("gem".to_string());
+    let new_value = CfdValue::record_ref("gem").unwrap();
     let path = vec![
         WriteFieldPathSegment::Field("rewards".to_string()),
         WriteFieldPathSegment::Index(0),
@@ -299,7 +341,7 @@ fn replacing_ref_inside_array_rewrites_owning_cell() {
     assert_eq!(
         plan,
         TableWritePlan::SetCells {
-            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            document: SourceDocument::new(PathBuf::from("data.xlsx")),
             sheet: "Items".to_string(),
             id_column: 1,
             expected_key: "drop_1".to_string(),
@@ -332,13 +374,16 @@ fn expanded_object_edit_writes_each_child_column() {
         (vec!["stats".to_string(), "attack".to_string()], 3),
     ]);
     let origin = table_origin(field_columns);
-    let stats = CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
-        "Stats",
-        BTreeMap::from([
-            ("hp".to_string(), CfdValue::Int(100)),
-            ("attack".to_string(), CfdValue::Int(9)),
-        ]),
-    )));
+    let stats = CfdValue::Object(Box::new(
+        coflow_data_model::CfdObject::try_new(
+            "Stats",
+            BTreeMap::from([
+                ("hp".to_string(), CfdValue::Int(100)),
+                ("attack".to_string(), CfdValue::Int(9)),
+            ]),
+        )
+        .unwrap(),
+    ));
     let path = field_path("stats");
     let request = TableFieldWrite {
         origin: &origin,
@@ -404,26 +449,30 @@ fn insert_record_plan_renders_id_and_known_fields() {
     ]);
 
     let plan = plan_insert_record(&TableInsertRecord {
-        document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+        document: SourceDocument::new(PathBuf::from("data.xlsx")),
         sheet: "Items",
         record_key: "sword",
         actual_type: "Item",
         fields: &fields,
         field_columns: &field_columns,
         id_column: 1,
+        before: None,
     })
     .expect("insert plan");
 
     assert_eq!(
         plan,
         TableWritePlan::AppendRow(coflow_loader_table_core::writer::TableAppendRow {
-            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            document: SourceDocument::new(PathBuf::from("data.xlsx")),
             sheet: "Items".to_string(),
             values: vec![
                 (1, "sword".to_string()),
                 (2, "Sword".to_string()),
                 (3, "7".to_string()),
             ],
+            before_row: None,
+            before_id_column: None,
+            expected_before_key: None,
         })
     );
 }

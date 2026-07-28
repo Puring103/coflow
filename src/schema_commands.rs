@@ -1,56 +1,21 @@
 use crate::diagnostics::{cli_error, cli_file_error};
+use crate::write_file::{
+    read_source, read_stdin_source, write_json, write_report_human, write_source,
+};
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
     inspect_schema, schema_files, ProjectRuntime, Runtime, SchemaFilesReport, SchemaInspectReport,
     SchemaTextOverride, SchemaTypeRefInfo,
 };
-use serde::Serialize;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug)]
-pub struct SchemaWriteFileOptions {
-    pub file: String,
-    pub input: SchemaWriteInput,
-    pub mode: SchemaWriteMode,
-    pub check: SchemaWriteCheck,
-    pub output: SchemaWriteOutput,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SchemaWriteFileReport {
-    pub file: String,
-    pub written: bool,
-    pub dry_run: bool,
-    pub changed: bool,
-    pub check_ok: Option<bool>,
-    pub diagnostics: Vec<FlatDiagnostic>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum SchemaWriteInput {
-    Stdin,
-    Missing,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum SchemaWriteMode {
-    Write,
-    DryRun,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum SchemaWriteCheck {
-    Run,
-    Skip,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum SchemaWriteOutput {
-    Json,
-    Human,
-}
+use crate::write_file::WriteFileReport as SchemaWriteFileReport;
+pub(crate) use crate::write_file::{
+    WriteCheck as SchemaWriteCheck, WriteFileOptions as SchemaWriteFileOptions,
+    WriteMode as SchemaWriteMode, WriteOutput as SchemaWriteOutput,
+};
 
 /// Inspects the compiled project schema.
 ///
@@ -107,19 +72,8 @@ pub fn write_file(
 ) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     let target = resolve_schema_write_target(&project, &options.file)?;
-    let current = std::fs::read_to_string(&target.absolute_path).map_err(|err| {
-        cli_file_error(
-            &target.absolute_path,
-            "CLI-FILE-READ",
-            format!("failed to read `{}`: {err}", target.absolute_path.display()),
-        )
-    })?;
-    let source = match options.input {
-        SchemaWriteInput::Stdin => read_stdin_source()?,
-        SchemaWriteInput::Missing => {
-            return Err(cli_error("CLI-ARG", "schema write-file requires --stdin"));
-        }
-    };
+    let current = read_source(&target.absolute_path)?;
+    let source = read_stdin_source()?;
     let changed = current != source;
 
     let diagnostics = if matches!(options.check, SchemaWriteCheck::Run) {
@@ -129,16 +83,7 @@ pub fn write_file(
     };
     let dry_run = matches!(options.mode, SchemaWriteMode::DryRun);
     if !dry_run {
-        std::fs::write(&target.absolute_path, &source).map_err(|err| {
-            cli_file_error(
-                &target.absolute_path,
-                "CLI-FILE-WRITE",
-                format!(
-                    "failed to write `{}`: {err}",
-                    target.absolute_path.display()
-                ),
-            )
-        })?;
+        write_source(&target.absolute_path, &source)?;
     }
     let check_ok = matches!(options.check, SchemaWriteCheck::Run).then_some(diagnostics.is_empty());
     let report = SchemaWriteFileReport {
@@ -152,24 +97,9 @@ pub fn write_file(
     let ok = report.check_ok.unwrap_or(true);
     match options.output {
         SchemaWriteOutput::Json => write_json(&report)?,
-        SchemaWriteOutput::Human => write_schema_write_file_human(&report)?,
+        SchemaWriteOutput::Human => write_report_human(&report)?,
     }
     Ok(ok)
-}
-
-fn write_json(value: &impl Serialize) -> Result<(), DiagnosticSet> {
-    serde_json::to_writer(io::stdout().lock(), value)
-        .map_err(|err| cli_error("CLI-OUTPUT", format!("failed to write JSON: {err}")))?;
-    println!();
-    Ok(())
-}
-
-fn read_stdin_source() -> Result<String, DiagnosticSet> {
-    let mut source = String::new();
-    io::stdin()
-        .read_to_string(&mut source)
-        .map_err(|err| cli_error("CLI-STDIN", format!("failed to read stdin: {err}")))?;
-    Ok(source)
 }
 
 #[derive(Debug)]
@@ -256,8 +186,13 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
     for ty in &report.types {
         writeln!(stdout, "type {}", ty.name).map_err(|err| output_error(&err))?;
         for field in &ty.fields {
-            writeln!(stdout, "  {}: {}", field.name, display_type_ref(&field.ty))
-                .map_err(|err| output_error(&err))?;
+            writeln!(
+                stdout,
+                "  {}: {}",
+                field.name,
+                display_value_type(&field.ty)
+            )
+            .map_err(|err| output_error(&err))?;
         }
     }
     for schema_enum in &report.enums {
@@ -273,7 +208,7 @@ fn write_schema_inspect_human(report: &SchemaInspectReport) -> Result<(), Diagno
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 
-fn display_type_ref(ty: &SchemaTypeRefInfo) -> String {
+fn display_value_type(ty: &SchemaTypeRefInfo) -> String {
     match ty {
         SchemaTypeRefInfo::Int => "int".to_string(),
         SchemaTypeRefInfo::Float => "float".to_string(),
@@ -281,15 +216,15 @@ fn display_type_ref(ty: &SchemaTypeRefInfo) -> String {
         SchemaTypeRefInfo::String => "string".to_string(),
         SchemaTypeRefInfo::Named { name, .. } => name.clone(),
         SchemaTypeRefInfo::Ref { target } => format!("&{target}"),
-        SchemaTypeRefInfo::Array { item } => format!("{}[]", display_type_ref(item)),
+        SchemaTypeRefInfo::Array { item } => format!("{}[]", display_value_type(item)),
         SchemaTypeRefInfo::Dict { key, value } => {
             format!(
                 "dict<{}, {}>",
-                display_type_ref(key),
-                display_type_ref(value)
+                display_value_type(key),
+                display_value_type(value)
             )
         }
-        SchemaTypeRefInfo::Nullable { inner } => format!("{}?", display_type_ref(inner)),
+        SchemaTypeRefInfo::Nullable { inner } => format!("{}?", display_value_type(inner)),
     }
 }
 
@@ -299,23 +234,6 @@ fn write_schema_files_human(report: &SchemaFilesReport) -> Result<(), Diagnostic
         writeln!(stdout, "{}", file.module).map_err(|err| output_error(&err))?;
         writeln!(stdout, "{}", file.source).map_err(|err| output_error(&err))?;
     }
-    write_flat_diagnostics(&mut stdout, &report.diagnostics)
-}
-
-fn write_schema_write_file_human(report: &SchemaWriteFileReport) -> Result<(), DiagnosticSet> {
-    let mut stdout = io::stdout().lock();
-    writeln!(
-        stdout,
-        "{}\twritten={}\tdry_run={}\tchanged={}\tcheck_ok={}",
-        report.file,
-        report.written,
-        report.dry_run,
-        report.changed,
-        report
-            .check_ok
-            .map_or_else(|| "skipped".to_string(), |ok| ok.to_string())
-    )
-    .map_err(|err| output_error(&err))?;
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 

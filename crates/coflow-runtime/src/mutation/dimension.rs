@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use coflow_api::DiagnosticSet;
-use coflow_cft::{CftField, CftFieldDimension, CftSchemaTypeRef, VariantName};
+use coflow_cft::{CftField, CftFieldDimension, CftValueType, VariantName};
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
 
 use crate::write_rules;
@@ -13,7 +13,9 @@ use super::types::{
     DimensionSourceCoordinate, DimensionValueCoordinate, DimensionValueExpectation,
     PreparedMutationOp,
 };
-use super::{one_mutation_error, one_path_error, schema_field, MutationValue};
+use super::{
+    one_mutation_error, one_path_error, schema_field, validated_record_coordinate, MutationValue,
+};
 
 struct DimensionMutationTarget<'schema> {
     record: RecordCoordinate,
@@ -110,7 +112,7 @@ fn resolve_dimension_target<'schema>(
     dimension: &str,
     variant: &str,
 ) -> Result<DimensionMutationTarget<'schema>, DiagnosticSet> {
-    let record = RecordCoordinate::new(actual_type, record_key);
+    let record = validated_record_coordinate(actual_type, record_key)?;
     let record_id = session
         .records
         .id_for_coordinate(&record.actual_type, &record.key)
@@ -168,7 +170,7 @@ fn dimension_path_type(
     actual_type: &str,
     field: &str,
     path: &[CfdPathSegment],
-) -> Result<CftSchemaTypeRef, DiagnosticSet> {
+) -> Result<CftValueType, DiagnosticSet> {
     let mut full_path = vec![CfdPathSegment::Field(field.to_string())];
     full_path.extend(path.iter().cloned());
     let mut expected_type = write_rules::expected_type_for_cfd_path(
@@ -178,8 +180,8 @@ fn dimension_path_type(
         "MUTATION-DIMENSION-PATH",
         "MUTATION",
     )?;
-    if path.is_empty() && !matches!(expected_type, CftSchemaTypeRef::Nullable(_)) {
-        expected_type = CftSchemaTypeRef::Nullable(Box::new(expected_type));
+    if path.is_empty() && !matches!(expected_type, CftValueType::Nullable(_)) {
+        expected_type = CftValueType::Nullable(Box::new(expected_type));
     }
     Ok(expected_type)
 }
@@ -211,7 +213,7 @@ fn current_dimension_root(
 
 fn validate_dimension_expectation(
     session: &ProjectSession,
-    expected_type: &CftSchemaTypeRef,
+    expected_type: &CftValueType,
     expectation: DimensionValueExpectation,
     current_value: Option<&CfdValue>,
     pending_records: &BTreeMap<RecordCoordinate, usize>,
@@ -241,7 +243,7 @@ fn validate_dimension_expectation(
 
 fn build_dimension_value(
     session: &ProjectSession,
-    expected_type: &CftSchemaTypeRef,
+    expected_type: &CftValueType,
     value: Option<MutationValue>,
     current_root: Option<CfdValue>,
     path: &[CfdPathSegment],
@@ -274,7 +276,9 @@ fn value_at_nested_path<'a>(
 ) -> Option<&'a CfdValue> {
     for segment in path {
         current = match (current, segment) {
-            (CfdValue::Object(object), CfdPathSegment::Field(field)) => object.fields.get(field)?,
+            (CfdValue::Object(object), CfdPathSegment::Field(field)) => {
+                object.fields.get(field.as_str())?
+            }
             (CfdValue::Array(items), CfdPathSegment::Index(index)) => items.get(*index)?,
             (CfdValue::Dict(entries), CfdPathSegment::DictKey(key)) => entries
                 .iter()

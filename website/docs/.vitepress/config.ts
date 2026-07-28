@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
+import cfdGrammar from '../../../editors/vscode-coflow/syntaxes/cfd.tmLanguage.json'
+import cftGrammar from '../../../editors/vscode-coflow/syntaxes/cft.tmLanguage.json'
 
 const pagesBase = process.env.VITEPRESS_BASE ?? (process.env.GITHUB_ACTIONS ? '/coflow/' : '/')
 const projectUrl = 'https://github.com/Puring103/coflow'
@@ -9,6 +11,12 @@ export default withMermaid(defineConfig({
   description: 'A typed, validated, AI-friendly game configuration workflow.',
   base: pagesBase,
   cleanUrls: true,
+  markdown: {
+    languages: [
+      { ...cftGrammar, name: 'cft', aliases: ['CFT'] },
+      { ...cfdGrammar, name: 'cfd', aliases: ['CFD'] }
+    ]
+  },
   mermaid: {
     theme: 'default',
     flowchart: {
@@ -65,6 +73,7 @@ export default withMermaid(defineConfig({
               collapsed: false,
               items: [
                 { text: 'CFT Schema', link: '/docs/reference/03-language/01-cft' },
+                { text: 'Check 校验', link: '/docs/reference/03-language/04-check' },
                 { text: 'CFD 文本数据', link: '/docs/reference/03-language/02-cfd' },
                 { text: '表格单元格值', link: '/docs/reference/03-language/03-cell-value' }
               ]
@@ -77,7 +86,6 @@ export default withMermaid(defineConfig({
                 { text: '表格 Source', link: '/docs/reference/04-sources/02-table' },
                 { text: 'Excel', link: '/docs/reference/04-sources/03-excel' },
                 { text: 'CSV', link: '/docs/reference/04-sources/04-csv' },
-                { text: '飞书/Lark', link: '/docs/reference/04-sources/05-lark' },
                 { text: 'Provider API', link: '/docs/reference/04-sources/06-provider-api' }
               ]
             },

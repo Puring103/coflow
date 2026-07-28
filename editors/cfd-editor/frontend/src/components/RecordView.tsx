@@ -51,10 +51,13 @@ interface Props {
   diagnostics?: DiagnosticItem[]
   /** Filters the sidebar record list (shared global search). */
   recordSearch?: string
+  /** Hide the left record list entirely (singleton types have one record). */
+  hideRecordList?: boolean
   recordGroups?: readonly EditorRecordGroup[]
   collapsedGroupKeys?: ReadonlySet<string>
   onToggleGroup?: (groupKey: string) => void
   onDropRecordOntoRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
+  onDropRecordAfterRecord?: (sources: readonly RecordCoordinate[], target: RecordCoordinate) => void
   onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
   onDropRecordIntoUngrouped?: (sources: readonly RecordCoordinate[]) => void
   onRenameGroup?: (groupId: string, name: string) => void
@@ -87,7 +90,7 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -177,6 +180,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       : [],
     onSelectDragSource: source => onSelectRecord?.(source, 'replace', visibleCoordinates),
     onDropRecordOntoRecord,
+    onDropRecordAfterRecord: !readOnly && data.capabilities.can_reorder_records ? onDropRecordAfterRecord : undefined,
     onDropRecordIntoGroup,
     onDropRecordIntoUngrouped,
   })
@@ -368,7 +372,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
 
   return (
     <div className="record-view">
-      <div className="rv-sidebar-wrap">
+      {!hideRecordList && <div className="rv-sidebar-wrap">
         <div
           className="rv-sidebar"
           role="listbox"
@@ -414,7 +418,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
             </button>
           </div>
         )}
-      </div>
+      </div>}
 
       <div
         className="rv-main"

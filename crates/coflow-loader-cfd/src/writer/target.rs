@@ -1,7 +1,7 @@
 use coflow_api::{DiagnosticSet, WriteFieldPathSegment};
 use coflow_cfd::ast::{CfdBlock, CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
 use coflow_cft::Span;
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType};
 
 use super::diag;
 use super::schema_nav::{
@@ -12,16 +12,16 @@ use super::schema_nav::{
 pub(super) enum WriteTarget {
     Replace {
         span: Span,
-        ty: CftSchemaTypeRef,
+        ty: CftValueType,
     },
     InsertTopLevel {
-        ty: CftSchemaTypeRef,
+        ty: CftValueType,
     },
     InsertNested {
         block_span: Span,
         depth: usize,
         field_name: String,
-        ty: CftSchemaTypeRef,
+        ty: CftValueType,
     },
 }
 
@@ -77,17 +77,12 @@ fn full_value_span(value: &AstValue) -> Span {
 }
 
 fn find_field_in_record<'a>(record: &'a AstRecord, name: &str) -> Option<&'a coflow_cfd::CfdField> {
-    record.fields.iter().find(|f| f.name == name).or_else(|| {
-        record.entries.iter().find_map(|e| match e {
-            CfdBlockEntry::Field(f) if f.name == name => Some(f),
-            _ => None,
-        })
-    })
+    record.fields().find(|field| field.name == name)
 }
 
 fn locate_target_in_value(
     schema: &CftSchema,
-    current_type: &CftSchemaTypeRef,
+    current_type: &CftValueType,
     value: &AstValue,
     path: &[WriteFieldPathSegment],
     depth: usize,
@@ -123,7 +118,7 @@ fn locate_target_in_value(
 #[allow(clippy::option_if_let_else)]
 fn locate_field_target(
     schema: &CftSchema,
-    current_type: &CftSchemaTypeRef,
+    current_type: &CftValueType,
     block: &CfdBlock,
     name: &str,
     path: &[WriteFieldPathSegment],
@@ -165,7 +160,7 @@ fn locate_field_target(
 
 fn locate_array_target(
     schema: &CftSchema,
-    current_type: &CftSchemaTypeRef,
+    current_type: &CftValueType,
     items: &[AstValue],
     index: usize,
     path: &[WriteFieldPathSegment],
@@ -192,7 +187,7 @@ fn locate_array_target(
 
 fn locate_dict_target(
     schema: &CftSchema,
-    current_type: &CftSchemaTypeRef,
+    current_type: &CftValueType,
     block: &CfdBlock,
     key: &str,
     path: &[WriteFieldPathSegment],
@@ -240,7 +235,7 @@ pub(super) fn spread_entries_at_path<'a>(
             format!("unknown CFT type `{actual_type}`"),
         )));
     };
-    let root_type = CftSchemaTypeRef::Object(schema_type.name.clone());
+    let root_type = CftValueType::Object(schema_type.name.clone());
     let Some((value, value_type)) =
         value_at_spread_path_segment(schema, record.entries.as_slice(), &root_type, &path[0])?
     else {
@@ -252,10 +247,19 @@ pub(super) fn spread_entries_at_path<'a>(
     block_entries_at_path(schema, value, &value_type, &path[1..])
 }
 
+pub(super) fn spread_entries_in_value_at_path<'a>(
+    schema: &CftSchema,
+    value: &'a AstValue,
+    value_type: &CftValueType,
+    path: &[WriteFieldPathSegment],
+) -> Result<&'a [CfdBlockEntry], DiagnosticSet> {
+    block_entries_at_path(schema, value, value_type, path)
+}
+
 fn block_entries_at_path<'a>(
     schema: &CftSchema,
     value: &'a AstValue,
-    ty: &CftSchemaTypeRef,
+    ty: &CftValueType,
     path: &[WriteFieldPathSegment],
 ) -> Result<&'a [CfdBlockEntry], DiagnosticSet> {
     if path.is_empty() {
@@ -319,9 +323,9 @@ fn block_entries_at_path<'a>(
 fn value_at_spread_path_segment<'a>(
     schema: &CftSchema,
     entries: &'a [CfdBlockEntry],
-    current_type: &CftSchemaTypeRef,
+    current_type: &CftValueType,
     segment: &WriteFieldPathSegment,
-) -> Result<Option<(&'a AstValue, CftSchemaTypeRef)>, DiagnosticSet> {
+) -> Result<Option<(&'a AstValue, CftValueType)>, DiagnosticSet> {
     match segment {
         WriteFieldPathSegment::Field(field_name) => {
             let Some(next_type) =

@@ -17,8 +17,8 @@
 
 use coflow_api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext,
-    SourceLocationSpec, SourceProvider, SourceProviderDescriptor, SourceResolveContext,
+    ProviderBundle, ProviderRegistrationError, ResolvedSource, SourceLoadContext, SourceProvider,
+    SourceProviderDescriptor, SourceResolveContext,
 };
 
 mod diagnostics;
@@ -27,12 +27,12 @@ mod options;
 pub mod writer;
 use coflow_cfd::parse_cfd;
 use coflow_cft::CftSchema;
-use coflow_data_model::{CfdDataModel, CfdInputRecord, RecordOrigin};
+use coflow_data_model::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
 use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
 };
-use lower::{lower_records, syntax_diagnostics, ParsedCfdInputRecord};
+use lower::{lower_records, syntax_diagnostics, ParsedLoadedRecordDraft};
 use options::decode_cfd_source_options;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -57,7 +57,7 @@ pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
 /// Parses `.cfd` text into source-neutral input records.
 ///
 /// The returned records use the top-level CFD record name as
-/// [`CfdInputRecord::key`]. No `id` field is emitted.
+/// [`LoadedRecordDraft::key`]. No `id` field is emitted.
 ///
 /// # Errors
 ///
@@ -65,7 +65,7 @@ pub fn provider_bundle() -> Result<ProviderBundle, ProviderRegistrationError> {
 pub fn parse_cfd_input_records(
     schema: &CftSchema,
     source: &str,
-) -> Result<Vec<CfdInputRecord>, CfdTextLoadError> {
+) -> Result<Vec<LoadedRecordDraft>, CfdTextLoadError> {
     parse_cfd_input_records_with_spans(schema, source).map(|records| {
         records
             .into_iter()
@@ -77,7 +77,7 @@ pub fn parse_cfd_input_records(
 fn parse_cfd_input_records_with_spans(
     schema: &CftSchema,
     source: &str,
-) -> Result<Vec<ParsedCfdInputRecord>, CfdTextLoadError> {
+) -> Result<Vec<ParsedLoadedRecordDraft>, CfdTextLoadError> {
     let (ast, diagnostics) = parse_cfd(source);
     if !diagnostics.is_empty() {
         return Err(CfdTextLoadError::Text(syntax_diagnostics(diagnostics)));
@@ -101,7 +101,7 @@ pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, 
             span: Some(text_span(source, record.span)),
         };
         origins.push(origin.clone());
-        builder.add_input_record(record.record.with_origin(origin));
+        builder.add_loaded_record(record.record.with_origin(origin));
     }
     builder
         .build()
@@ -130,11 +130,13 @@ impl SourceProvider for CfdLoader {
         if source.source_type == Some(CFD_LOADER_DESCRIPTOR.id) {
             return ProbeResult::certain();
         }
-        if matches!(
-            source.location,
-            SourceLocationSpec::Path(path)
-                if path.extension().and_then(|ext| ext.to_str()) == Some("cfd")
-        ) {
+        if source
+            .location
+            .path()
+            .extension()
+            .and_then(|ext| ext.to_str())
+            == Some("cfd")
+        {
             ProbeResult::likely()
         } else {
             ProbeResult::none()
@@ -153,10 +155,7 @@ impl SourceProvider for CfdLoader {
         _ctx: SourceResolveContext<'_>,
         source: &ResolvedSource,
     ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &source.location;
-        if path.is_dir() {
-            return collect_cfd_sources(path, source);
-        }
+        let path = source.location.path();
         if is_cfd_path(path) {
             return Ok(vec![source.clone()]);
         }
@@ -175,7 +174,7 @@ impl SourceProvider for CfdLoader {
         ctx: SourceLoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
-        let SourceLocationSpec::Path(file) = &source.location;
+        let file = source.location.path();
         let contents = fs::read_to_string(file).map_err(|err| {
             DiagnosticSet::one(Diagnostic::error(
                 "CFD-READ",
@@ -199,45 +198,6 @@ impl SourceProvider for CfdLoader {
             })
             .map_err(|err| cfd_error_to_diagnostics(file, &contents, err))
     }
-}
-
-fn collect_cfd_sources(
-    dir: &Path,
-    source: &ResolvedSource,
-) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
-    let mut entries = fs::read_dir(dir)
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "CFD-SOURCE",
-                "CFD",
-                format!("failed to read data source dir `{}`: {err}", dir.display()),
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "CFD-SOURCE",
-                "CFD",
-                format!("failed to read data source dir `{}`: {err}", dir.display()),
-            ))
-        })?;
-    entries.sort_by_key(fs::DirEntry::path);
-
-    let mut sources = Vec::new();
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            sources.extend(collect_cfd_sources(&path, source)?);
-        } else if is_cfd_path(&path) {
-            sources.push(ResolvedSource {
-                provider_id: CFD_LOADER_DESCRIPTOR.id.to_string(),
-                display_name: path.display().to_string(),
-                location: SourceLocationSpec::Path(path),
-                options: source.options.clone(),
-            });
-        }
-    }
-    Ok(sources)
 }
 
 fn is_cfd_path(path: &Path) -> bool {

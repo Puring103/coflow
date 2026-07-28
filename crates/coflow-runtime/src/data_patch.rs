@@ -236,7 +236,7 @@ impl DataPatchOp {
                 path,
                 value,
             } => MutationOp::SetField {
-                record: record.into_coordinate(),
+                record: record.into_coordinate()?,
                 file,
                 path,
                 value: MutationValue::Json(value),
@@ -262,12 +262,12 @@ impl DataPatchOp {
                 file,
                 new_key,
             } => MutationOp::RenameRecord {
-                record: record.into_coordinate(),
+                record: record.into_coordinate()?,
                 file,
                 new_key,
             },
             Self::DeleteRecord { record, file } => MutationOp::DeleteRecord {
-                record: record.into_coordinate(),
+                record: record.into_coordinate()?,
                 file,
             },
         })
@@ -275,8 +275,8 @@ impl DataPatchOp {
 }
 
 impl PatchRecordSelector {
-    fn into_coordinate(self) -> RecordCoordinate {
-        RecordCoordinate::new(self.actual_type, self.key)
+    fn into_coordinate(self) -> Result<RecordCoordinate, coflow_cft::CftNameError> {
+        RecordCoordinate::try_new(self.actual_type, self.key)
     }
 }
 

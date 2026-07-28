@@ -1,16 +1,16 @@
 use crate::diagnostics::{cli_error, cli_file_error};
+use crate::write_file::write_report_human;
 use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
 use coflow_project::Project;
 use coflow_runtime::{
-    data_get, data_list, data_sources, BuildProjectSession, DataGetQuery, DataGetReport,
-    DataListQuery, DataPatchRequest, ProjectSchemaSession, RecordCoordinate, Runtime,
+    data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery,
+    DataPatchRequest, ProjectSchemaSession, ReadOnlyProjectSession, RecordCoordinate, Runtime,
     WriteProjectSession,
 };
 use output::{
-    file_error_report, write_data_write_file_human, write_file_report_human, write_get_human,
-    write_json, write_list_human, write_patch_human, write_sources_human,
+    file_error_report, write_file_report_human, write_get_human, write_json, write_list_human,
+    write_patch_human, write_sources_human,
 };
-use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -31,48 +31,11 @@ pub struct DataGetOptions {
     pub human: bool,
 }
 
-#[derive(Debug)]
-pub struct DataWriteFileOptions {
-    pub file: String,
-    pub input: DataWriteInput,
-    pub mode: DataWriteMode,
-    pub check: DataWriteCheck,
-    pub output: DataWriteOutput,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DataWriteInput {
-    Stdin,
-    Missing,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DataWriteMode {
-    Write,
-    DryRun,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DataWriteCheck {
-    Run,
-    Skip,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DataWriteOutput {
-    Json,
-    Human,
-}
-
-#[derive(Debug, Serialize)]
-pub struct DataWriteFileReport {
-    pub file: String,
-    pub written: bool,
-    pub dry_run: bool,
-    pub changed: bool,
-    pub check_ok: Option<bool>,
-    pub diagnostics: Vec<FlatDiagnostic>,
-}
+pub(crate) use crate::write_file::{
+    WriteCheck as DataWriteCheck, WriteFileOptions as DataWriteFileOptions,
+    WriteFileReport as DataWriteFileReport, WriteMode as DataWriteMode,
+    WriteOutput as DataWriteOutput,
+};
 
 #[derive(Debug)]
 pub struct DataPatchInput {
@@ -89,7 +52,7 @@ pub struct DataPatchInput {
 /// registry cannot be built, the project session cannot be built, or output
 /// cannot be written.
 pub fn sources(config_or_dir: Option<&Path>, human: bool) -> Result<bool, DiagnosticSet> {
-    let (session, registry) = open_session(config_or_dir)?;
+    let (session, registry) = open_read_session(config_or_dir)?;
     let report = data_sources(session.queries(), &registry);
     if human {
         write_sources_human(&report)?;
@@ -114,7 +77,7 @@ pub fn list(
     offset: usize,
     human: bool,
 ) -> Result<bool, DiagnosticSet> {
-    let (session, _registry) = open_session(config_or_dir)?;
+    let (session, _registry) = open_read_session(config_or_dir)?;
     let report = data_list(
         session.queries(),
         &DataListQuery {
@@ -141,7 +104,7 @@ pub fn list(
 /// cannot be written. User-fixable lookup diagnostics are written as command
 /// output and return `Ok(false)`.
 pub fn get(options: DataGetOptions) -> Result<bool, DiagnosticSet> {
-    let (session, _registry) = open_session(options.config_or_dir.as_deref())?;
+    let (session, _registry) = open_read_session(options.config_or_dir.as_deref())?;
     let query = DataGetQuery {
         selector: options.selector,
         actual_type: options.actual_type,
@@ -372,7 +335,7 @@ pub fn write_file(
     let ok = report.check_ok.unwrap_or(true);
     match options.output {
         DataWriteOutput::Json => write_json(&report)?,
-        DataWriteOutput::Human => write_data_write_file_human(&report)?,
+        DataWriteOutput::Human => write_report_human(&report)?,
     }
     Ok(ok)
 }
@@ -383,13 +346,13 @@ fn has_error_diagnostics(diagnostics: &[FlatDiagnostic]) -> bool {
         .any(|diagnostic| diagnostic.severity == "error")
 }
 
-fn open_session(
+fn open_read_session(
     config_or_dir: Option<&Path>,
-) -> Result<(BuildProjectSession, ProviderRegistry), DiagnosticSet> {
+) -> Result<(ReadOnlyProjectSession, ProviderRegistry), DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
     let registry = default_provider_registry()?;
     let runtime = Runtime::new(registry.clone());
-    let session = runtime.build_project_session(project)?;
+    let session = runtime.open_read_only_session(project)?;
     Ok((session, registry))
 }
 

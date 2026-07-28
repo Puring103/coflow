@@ -1,4 +1,4 @@
-use coflow_data_model::{CfdDiagnostic, CfdInputRecord, SourceDocument, SourceLocation};
+use coflow_data_model::{CfdDiagnostic, LoadedRecordDraft, SourceDocument, SourceLocation};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -81,7 +81,7 @@ impl TableSource {
     ) -> Self {
         let name = name.into();
         Self {
-            document: SourceDocument::Local(name.clone()),
+            document: SourceDocument::new(name.clone()),
             name,
             sheets,
             configs,
@@ -123,10 +123,11 @@ pub struct TableDiagnostics {
 
 #[derive(Debug, Clone)]
 pub struct TableInputRecords {
-    /// Each record carries its own [`RecordOrigin`] (a [`RecordOrigin::Table`]
+    /// Each record carries its own [`coflow_data_model::RecordOrigin`] (a
+    /// [`coflow_data_model::RecordOrigin::Table`]
     /// variant). Diagnostics produced before data-model diagnostics are mapped
     /// can use the records' origins to resolve labels back to source cells.
-    pub records: Vec<CfdInputRecord>,
+    pub records: Vec<LoadedRecordDraft>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

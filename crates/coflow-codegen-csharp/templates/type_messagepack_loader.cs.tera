@@ -22,6 +22,7 @@
     private static {{ type.loader.type_name }} LoadRawRow(ref MessagePackReader reader)
     {
         var count = reader.ReadMapHeader();
+        var context = {{ project.database_class }}.LoadContext.Empty;
         {{ type.loader.key_type_name }} {{ type.loader.key_local_name }} = default!;
         var isTable = false;
 {% for field in type.loader.fields %}{% if not field.requires_context %}        {{ field.type_name }} {{ field.local_name }} = {% if field.missing_expr %}{{ field.missing_expr }}{% else %}default!{% endif %};

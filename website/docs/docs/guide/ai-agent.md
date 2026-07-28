@@ -40,7 +40,7 @@ coflow data sources <project>
 修改 schema 后运行：
 
 ```powershell
-coflow schema write-file <project> --file schema/main.cft --stdin --check
+coflow schema write-file <project> --file schema/main.cft --check
 coflow check <project>
 ```
 
@@ -49,12 +49,12 @@ coflow check <project>
 ```powershell
 coflow data patch <project> --patch '<json>'
 coflow data sync-header <project> --file data/items.csv --type Item
-coflow data write-file <project> --file data/items.cfd --stdin --check
+coflow data write-file <project> --file data/items.cfd --check
 coflow check <project>
 ```
 
-`data patch` 会先规划和预检整批操作，再在一个 mutation transaction 中写入。任一
-writer、重建或提交步骤失败都会补偿已写来源，`applied` 为空且旧 generation 保持可用。
+`data patch` 会把整批操作作为一个整体写入。任一操作失败时不会保留部分修改，且
+`applied` 为空。
 处理结果时应查看 `write_ok`、`check_ok`、`applied`、`failed`、`affected_files`
 和 `diagnostics`，再决定是否继续修复。
 

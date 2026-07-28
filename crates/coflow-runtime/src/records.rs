@@ -2,7 +2,7 @@
 
 use coflow_api::DiagnosticSet;
 use coflow_data_model::{
-    format_cfd_dict_key, CfdDictKey, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdValue,
+    format_cfd_dict_key, CfdDictKey, CfdPath, CfdPathSegment, CfdRecord, CfdValue,
 };
 use coflow_data_model::{RecordOrigin, SourceLocation};
 use serde::{Deserialize, Serialize};
@@ -30,22 +30,18 @@ pub struct RecordView<'a> {
 /// update routes, undo stacks, and any other long-lived references that
 /// previously pointed at `old`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct WriteOutcome {
     pub touched: Vec<RecordCoordinate>,
     pub inserted: Option<RecordCoordinate>,
     pub deleted: Option<RecordCoordinate>,
     pub renamed: Option<(RecordCoordinate, RecordCoordinate)>,
+    #[serde(default)]
+    pub reordered: bool,
     /// Project-facing source paths actually changed by this operation.
     pub affected_files: Vec<String>,
     // Skip from TS: `DiagnosticSet` references concrete `Diagnostic` types
     // whose location data isn't part of the editor's surface. Hosts that
     // care convert to `FlatDiagnostic` before wire-shipping.
-    #[cfg_attr(feature = "ts-export", ts(skip))]
     pub diagnostics: DiagnosticSet,
 }
 
@@ -57,16 +53,6 @@ impl WriteOutcome {
             ..Default::default()
         }
     }
-}
-
-/// Target descriptor for future host write APIs.
-///
-/// The editor still resolves writes through its own path. Other hosts can use
-/// this descriptor to carry a coordinate and record id together.
-#[derive(Debug, Clone)]
-pub struct RecordTarget {
-    pub id: CfdRecordId,
-    pub coordinate: RecordCoordinate,
 }
 
 #[derive(Debug, Clone)]
@@ -169,6 +155,8 @@ pub struct FieldShapeInfo {
     pub nullable: bool,
     pub polymorphic_types: Vec<String>,
     pub collection_item: Option<Box<Self>>,
+    pub object_type: Option<String>,
+    pub field_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,9 +185,9 @@ pub fn value_summary(value: &CfdValue) -> String {
         CfdValue::String(value) => string_summary(value),
         CfdValue::Enum(value) => value
             .variant
-            .clone()
-            .unwrap_or_else(|| value.value.to_string()),
-        CfdValue::Ref(target_key) => target_key.clone(),
+            .as_ref()
+            .map_or_else(|| value.value.to_string(), ToString::to_string),
+        CfdValue::Ref(target_key) => target_key.to_string(),
         CfdValue::Object(value) => value.actual_type().to_string(),
         CfdValue::Array(items) => {
             if items.is_empty() {

@@ -3,7 +3,7 @@ use coflow_cft::CftConstValue;
 use serde_json::{json, Map, Value};
 
 use crate::documentation::{
-    AnnotationCompletion, ANNOTATIONS, BUILTIN_FUNCTIONS, KEYWORDS, LITERALS, PRIMITIVE_TYPES,
+    builtin_functions, AnnotationCompletion, ANNOTATIONS, KEYWORDS, LITERALS, PRIMITIVE_TYPES,
 };
 use crate::position::{byte_offset_from_position, LspPosition};
 use crate::{
@@ -85,7 +85,7 @@ pub(crate) fn completion_items(
             if is_field_default_context(line_prefix) {
                 return field_default_completion_items(build, current_field_at(document, offset));
             }
-            if is_type_reference_context(line_prefix) {
+            if is_value_typeerence_context(line_prefix) {
                 return type_completion_items(build);
             }
             type_member_completion_items()
@@ -99,7 +99,7 @@ pub(crate) fn top_level_completion_items(line_prefix: &str) -> Vec<Value> {
     let labels: &[&str] = if top_level_needs_type_keyword(line_prefix) {
         &["type"]
     } else {
-        &["const", "enum", "type", "abstract", "sealed"]
+        &["const", "enum", "type", "abstract", "sealed", "check"]
     };
     keyword_completion_items(labels)
 }
@@ -113,6 +113,9 @@ pub(crate) fn check_expression_completion_items(
     document: &LspDocument,
     offset: usize,
 ) -> Vec<Value> {
+    if is_records_type_context(&document.source, offset) {
+        return named_type_completion_items(build);
+    }
     if is_method_completion_context(&document.source, offset) {
         return function_completion_items();
     }
@@ -137,6 +140,13 @@ pub(crate) fn check_expression_completion_items(
                 None,
             ));
         }
+    } else {
+        items.push(completion_item(
+            "records",
+            COMPLETION_KIND_FUNCTION,
+            "Top-level record set query",
+            Some("Return all top-level records assignable to a static object type."),
+        ));
     }
 
     for binding in quantifier_bindings_at(document, offset) {
@@ -149,6 +159,19 @@ pub(crate) fn check_expression_completion_items(
     }
 
     items
+}
+
+fn is_records_type_context(source: &str, offset: usize) -> bool {
+    let Some(prefix) = source.get(..offset.min(source.len())) else {
+        return false;
+    };
+    let prefix = prefix.trim_end_matches(char::is_whitespace);
+    let prefix = prefix.trim_end_matches(is_ident_continue);
+    let prefix = prefix.trim_end_matches(char::is_whitespace);
+    let Some(prefix) = prefix.strip_suffix('(') else {
+        return false;
+    };
+    last_ident(prefix).is_some_and(|ident| ident == "records")
 }
 
 fn keyword_completion_items(labels: &[&str]) -> Vec<Value> {
@@ -186,8 +209,7 @@ fn literal_completion_items(include_null: bool) -> Vec<Value> {
 }
 
 fn function_completion_items() -> Vec<Value> {
-    BUILTIN_FUNCTIONS
-        .iter()
+    builtin_functions()
         .map(|(label, documentation)| {
             let mut item = completion_item(
                 label,
@@ -376,7 +398,7 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
                             "CFT enum",
                             None,
                         )),
-                        Item::Const(_) => {}
+                        Item::Const(_) | Item::Check(_) => {}
                     }
                 }
             }
@@ -511,7 +533,10 @@ pub(crate) fn completion_scope(document: &LspDocument, offset: usize) -> Complet
                 }
                 return CompletionScope::TypeBody;
             }
-            Item::Const(_) | Item::Enum(_) | Item::Type(_) => {}
+            Item::Check(check) if check.span.start <= offset && offset <= check.span.end => {
+                return CompletionScope::CheckBlock;
+            }
+            Item::Const(_) | Item::Enum(_) | Item::Type(_) | Item::Check(_) => {}
         }
     }
 
@@ -553,7 +578,7 @@ pub(crate) fn is_type_header_parent_context(line_prefix: &str) -> bool {
     before_colon.contains("type")
 }
 
-pub(crate) fn is_type_reference_context(line_prefix: &str) -> bool {
+pub(crate) fn is_value_typeerence_context(line_prefix: &str) -> bool {
     let trimmed = line_prefix.trim_end();
     let Some(colon) = trimmed.rfind(':') else {
         return false;

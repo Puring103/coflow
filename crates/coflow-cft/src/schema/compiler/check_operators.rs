@@ -1,23 +1,35 @@
 use super::CheckTypeAnalyzer;
 use crate::diagnostics::CftErrorCode;
-use crate::schema::compiler::checked_type::{
-    ordered_comparable, types_comparable, unwrap_nullable, CheckedType,
+use crate::schema::compiler::inferred_type::{
+    ordered_comparable, types_comparable, unwrap_nullable, InferredType,
 };
+use crate::schema::CftValueType;
 use crate::syntax::ast::{BinOp, CmpOp, UnaryOp};
 use crate::syntax::Span;
 
 impl CheckTypeAnalyzer<'_, '_> {
-    pub(super) fn check_unary(&mut self, op: UnaryOp, ty: &CheckedType, span: Span) -> CheckedType {
-        if *ty == CheckedType::Unknown {
-            return CheckedType::Unknown;
+    pub(super) fn check_unary(
+        &mut self,
+        op: UnaryOp,
+        ty: &InferredType,
+        span: Span,
+    ) -> InferredType {
+        if ty.is_unknown() {
+            return InferredType::Unknown;
         }
         let unwrapped = unwrap_nullable(ty);
         match op {
-            UnaryOp::Not if matches!(unwrapped, CheckedType::Bool) => CheckedType::Bool,
-            UnaryOp::Neg | UnaryOp::BitNot if matches!(unwrapped, CheckedType::Int) => {
-                CheckedType::Int
+            UnaryOp::Not if matches!(unwrapped.value_type(), Some(CftValueType::Bool)) => {
+                InferredType::bool()
             }
-            UnaryOp::Neg if matches!(unwrapped, CheckedType::Float) => CheckedType::Float,
+            UnaryOp::Neg | UnaryOp::BitNot
+                if matches!(unwrapped.value_type(), Some(CftValueType::Int)) =>
+            {
+                InferredType::int()
+            }
+            UnaryOp::Neg if matches!(unwrapped.value_type(), Some(CftValueType::Float)) => {
+                InferredType::float()
+            }
             UnaryOp::BitNot if self.is_flag_enum(ty) => ty.clone(),
             UnaryOp::BitNot => {
                 self.diag(
@@ -25,7 +37,7 @@ impl CheckTypeAnalyzer<'_, '_> {
                     span,
                     "bitwise not requires int or flag enum",
                 );
-                CheckedType::Unknown
+                InferredType::Unknown
             }
             _ => {
                 self.diag(
@@ -33,7 +45,7 @@ impl CheckTypeAnalyzer<'_, '_> {
                     span,
                     "unary operator does not support this operand type",
                 );
-                CheckedType::Unknown
+                InferredType::Unknown
             }
         }
     }
@@ -41,16 +53,16 @@ impl CheckTypeAnalyzer<'_, '_> {
     pub(super) fn check_binop(
         &mut self,
         op: BinOp,
-        lhs: &CheckedType,
-        rhs: &CheckedType,
+        lhs: &InferredType,
+        rhs: &InferredType,
         span: Span,
-    ) -> CheckedType {
+    ) -> InferredType {
         match op {
             BinOp::Or | BinOp::And => {
-                if (!types_comparable(lhs, &CheckedType::Bool)
-                    || !types_comparable(rhs, &CheckedType::Bool))
-                    && *lhs != CheckedType::Unknown
-                    && *rhs != CheckedType::Unknown
+                if (!types_comparable(lhs, &InferredType::bool())
+                    || !types_comparable(rhs, &InferredType::bool()))
+                    && !lhs.is_unknown()
+                    && !rhs.is_unknown()
                 {
                     self.diag(
                         CftErrorCode::OperatorTypeMismatch,
@@ -58,51 +70,51 @@ impl CheckTypeAnalyzer<'_, '_> {
                         "logical operators require bool operands",
                     );
                 }
-                CheckedType::Bool
+                InferredType::bool()
             }
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Pow => {
-                if types_comparable(lhs, &CheckedType::Int)
-                    && types_comparable(rhs, &CheckedType::Int)
+                if types_comparable(lhs, &InferredType::int())
+                    && types_comparable(rhs, &InferredType::int())
                 {
-                    CheckedType::Int
-                } else if types_comparable(lhs, &CheckedType::Float)
-                    && types_comparable(rhs, &CheckedType::Float)
+                    InferredType::int()
+                } else if types_comparable(lhs, &InferredType::float())
+                    && types_comparable(rhs, &InferredType::float())
                 {
-                    CheckedType::Float
+                    InferredType::float()
                 } else {
                     self.operator_mismatch(lhs, rhs, span);
-                    CheckedType::Unknown
+                    InferredType::Unknown
                 }
             }
             BinOp::IntDiv | BinOp::Mod => {
-                if types_comparable(lhs, &CheckedType::Int)
-                    && types_comparable(rhs, &CheckedType::Int)
+                if types_comparable(lhs, &InferredType::int())
+                    && types_comparable(rhs, &InferredType::int())
                 {
-                    CheckedType::Int
+                    InferredType::int()
                 } else {
                     self.operator_mismatch(lhs, rhs, span);
-                    CheckedType::Unknown
+                    InferredType::Unknown
                 }
             }
             BinOp::Shl | BinOp::Shr => {
-                if types_comparable(lhs, &CheckedType::Int)
-                    && types_comparable(rhs, &CheckedType::Int)
+                if types_comparable(lhs, &InferredType::int())
+                    && types_comparable(rhs, &InferredType::int())
                 {
-                    CheckedType::Int
+                    InferredType::int()
                 } else {
                     self.diag(
                         CftErrorCode::ShiftRequiresInt,
                         span,
                         "shift operators require int operands",
                     );
-                    CheckedType::Unknown
+                    InferredType::Unknown
                 }
             }
             BinOp::BitOr | BinOp::BitXor | BinOp::BitAnd => {
-                if types_comparable(lhs, &CheckedType::Int)
-                    && types_comparable(rhs, &CheckedType::Int)
+                if types_comparable(lhs, &InferredType::int())
+                    && types_comparable(rhs, &InferredType::int())
                 {
-                    CheckedType::Int
+                    InferredType::int()
                 } else if types_comparable(lhs, rhs) && self.is_flag_enum(lhs) {
                     lhs.clone()
                 } else {
@@ -111,7 +123,7 @@ impl CheckTypeAnalyzer<'_, '_> {
                         span,
                         "bitwise operators require int or the same flag enum",
                     );
-                    CheckedType::Unknown
+                    InferredType::Unknown
                 }
             }
         }
@@ -120,26 +132,26 @@ impl CheckTypeAnalyzer<'_, '_> {
     pub(super) fn check_comparison(
         &mut self,
         op: CmpOp,
-        lhs: &CheckedType,
-        rhs: &CheckedType,
+        lhs: &InferredType,
+        rhs: &InferredType,
         span: Span,
-    ) -> CheckedType {
+    ) -> InferredType {
         let ok = match op {
             CmpOp::Eq | CmpOp::Ne => types_comparable(lhs, rhs),
             CmpOp::Lt | CmpOp::Le | CmpOp::Gt | CmpOp::Ge => ordered_comparable(lhs, rhs),
         };
-        if !ok && *lhs != CheckedType::Unknown && *rhs != CheckedType::Unknown {
+        if !ok && !lhs.is_unknown() && !rhs.is_unknown() {
             self.diag(
                 CftErrorCode::ComparisonTypeMismatch,
                 span,
                 "comparison operands are not compatible",
             );
         }
-        CheckedType::Bool
+        InferredType::bool()
     }
 
-    fn operator_mismatch(&mut self, lhs: &CheckedType, rhs: &CheckedType, span: Span) {
-        if *lhs != CheckedType::Unknown && *rhs != CheckedType::Unknown {
+    fn operator_mismatch(&mut self, lhs: &InferredType, rhs: &InferredType, span: Span) {
+        if !lhs.is_unknown() && !rhs.is_unknown() {
             self.diag(
                 CftErrorCode::OperatorTypeMismatch,
                 span,
@@ -148,13 +160,13 @@ impl CheckTypeAnalyzer<'_, '_> {
         }
     }
 
-    fn is_flag_enum(&self, ty: &CheckedType) -> bool {
-        let CheckedType::Enum(name) = unwrap_nullable(ty) else {
+    fn is_flag_enum(&self, ty: &InferredType) -> bool {
+        let Some(name) = unwrap_nullable(ty).enum_name().cloned() else {
             return false;
         };
         self.compiler
             .enums
-            .get(name)
+            .get(name.as_str())
             .is_some_and(|info| info.is_flag)
     }
 }

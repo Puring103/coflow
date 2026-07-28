@@ -1,4 +1,4 @@
-use super::checked_type::{types_assignable, CheckedType};
+use super::inferred_type::{types_assignable, InferredType};
 use super::state::SymbolKind;
 use super::SchemaCompiler;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
@@ -39,13 +39,13 @@ impl SchemaCompiler<'_> {
         module: &ModuleId,
         expr: &DefaultExpr,
         field_names: &BTreeSet<String>,
-    ) -> CheckedType {
+    ) -> InferredType {
         match &expr.kind {
-            DefaultExprKind::Int(_) => CheckedType::Int,
-            DefaultExprKind::Float(_) => CheckedType::Float,
-            DefaultExprKind::Bool(_) => CheckedType::Bool,
-            DefaultExprKind::Null => CheckedType::Null,
-            DefaultExprKind::String(_) => CheckedType::String,
+            DefaultExprKind::Int(_) => InferredType::int(),
+            DefaultExprKind::Float(_) => InferredType::float(),
+            DefaultExprKind::Bool(_) => InferredType::bool(),
+            DefaultExprKind::Null => InferredType::Null,
+            DefaultExprKind::String(_) => InferredType::string(),
             DefaultExprKind::Name(name) => {
                 if field_names.contains(&name.name) {
                     self.push_diag(
@@ -54,10 +54,10 @@ impl SchemaCompiler<'_> {
                         name.span,
                         "default value cannot reference a field",
                     );
-                    return CheckedType::Unknown;
+                    return InferredType::Unknown;
                 }
                 if let Some(info) = self.consts.get(&name.name) {
-                    return CheckedType::from_const(&info.value);
+                    return InferredType::from_const(&info.value);
                 }
                 self.push_diag(
                     CftErrorCode::UnknownConst,
@@ -65,14 +65,14 @@ impl SchemaCompiler<'_> {
                     name.span,
                     format!("unknown const `{}`", name.name),
                 );
-                CheckedType::Unknown
+                InferredType::Unknown
             }
             DefaultExprKind::EnumVariant { enum_name, variant } => {
                 self.default_enum_variant_type(module, enum_name, variant)
             }
             DefaultExprKind::Array(items) => {
                 if items.is_empty() {
-                    CheckedType::EmptyArray
+                    InferredType::EmptyArray
                 } else {
                     self.push_diag(
                         CftErrorCode::InvalidDefaultExpression,
@@ -80,12 +80,12 @@ impl SchemaCompiler<'_> {
                         expr.span,
                         "only empty array defaults are allowed",
                     );
-                    CheckedType::Unknown
+                    InferredType::Unknown
                 }
             }
             DefaultExprKind::Object(fields) => {
                 if fields.is_empty() {
-                    CheckedType::EmptyObject
+                    InferredType::EmptyObject
                 } else {
                     self.push_diag(
                         CftErrorCode::InvalidDefaultExpression,
@@ -93,7 +93,7 @@ impl SchemaCompiler<'_> {
                         expr.span,
                         "only empty object defaults are allowed",
                     );
-                    CheckedType::Unknown
+                    InferredType::Unknown
                 }
             }
         }
@@ -104,12 +104,14 @@ impl SchemaCompiler<'_> {
         module: &ModuleId,
         enum_name: &crate::syntax::ast::NameRef,
         variant: &crate::syntax::ast::NameRef,
-    ) -> CheckedType {
+    ) -> InferredType {
         match self.symbols.get(&enum_name.name) {
             Some(symbol) if symbol.kind == SymbolKind::Enum => {
                 match self.enums.get(&enum_name.name) {
                     Some(enum_info) if enum_info.variants.contains(&variant.name) => {
-                        CheckedType::Enum(enum_name.name.clone())
+                        InferredType::enum_value(crate::EnumName::from_validated(
+                            enum_name.name.clone(),
+                        ))
                     }
                     Some(_) => {
                         self.push_diag(
@@ -118,9 +120,9 @@ impl SchemaCompiler<'_> {
                             variant.span,
                             format!("unknown enum variant `{}`", variant.name),
                         );
-                        CheckedType::Unknown
+                        InferredType::Unknown
                     }
-                    None => CheckedType::Unknown,
+                    None => InferredType::Unknown,
                 }
             }
             Some(symbol) => {
@@ -137,7 +139,7 @@ impl SchemaCompiler<'_> {
                         "name is defined here",
                     ),
                 );
-                CheckedType::Unknown
+                InferredType::Unknown
             }
             None => {
                 self.push_diag(
@@ -146,7 +148,7 @@ impl SchemaCompiler<'_> {
                     enum_name.span,
                     "enum variant default is used on an unknown enum",
                 );
-                CheckedType::Unknown
+                InferredType::Unknown
             }
         }
     }

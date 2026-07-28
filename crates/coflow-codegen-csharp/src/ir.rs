@@ -21,14 +21,6 @@ pub struct CsharpCodegenOptions {
     pub float_32: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CsharpDataFormat {
-    Json,
-    #[serde(rename = "messagepack")]
-    MessagePack,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CsharpIdAsEnumVariant {
     pub name: String,
@@ -73,7 +65,6 @@ impl CsharpCodegenOptions {
 pub fn build_project(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,
-    data_format: CsharpDataFormat,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
@@ -110,18 +101,12 @@ pub fn build_project(
     );
     types.sort_by(|left, right| left.name.cmp(&right.name));
 
-    let database = build_csharp_database(&view, &tables, &options.database_class, data_format)?;
+    let database = build_csharp_database(&view, &tables, &options.database_class)?;
     let singletons = build_csharp_singletons(&view);
 
     Ok(CsharpProject {
         namespace: options.namespace.clone(),
         database_class: options.database_class.clone(),
-        data_format: match data_format {
-            CsharpDataFormat::Json => "json".to_string(),
-            CsharpDataFormat::MessagePack => "messagepack".to_string(),
-        },
-        uses_json: data_format == CsharpDataFormat::Json,
-        uses_messagepack: data_format == CsharpDataFormat::MessagePack,
         uses_localization: view.uses_localization(),
         int_type: if options.int_32 { "int" } else { "long" },
         float_type: if options.float_32 { "float" } else { "double" },

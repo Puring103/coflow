@@ -10,6 +10,7 @@
 
 use coflow_api::{FlatDiagnostic, WriterCapabilities};
 use coflow_data_model::{CfdDictKey, CfdRecord, CfdValue};
+pub use coflow_runtime::{CreateFieldSource, CreateRequiredInput};
 use coflow_runtime::{DimensionValueState, FileTreeNode, RecordCoordinate};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -142,6 +143,33 @@ pub struct FileTypeOption {
     pub name: String,
     pub display_name: String,
     pub record_count: usize,
+    pub is_singleton: bool,
+}
+
+/// Read-only schema information exposed to editor extensions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct PluginSchemaType {
+    pub name: String,
+    pub fields: Vec<PluginSchemaField>,
+    pub is_singleton: bool,
+    pub record_count: usize,
+}
+
+/// One schema field in the extension-facing schema view.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct PluginSchemaField {
+    pub name: String,
+    pub type_label: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,12 +198,58 @@ pub struct DimensionFileRow {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct EditorProjectSettings {
+    /// Custom views keyed by (filePath, actualType). Default record/table
+    /// views are implicit and never stored here.
     #[serde(default)]
-    pub table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
+    pub views: BTreeMap<String, BTreeMap<String, Vec<ViewConfig>>>,
+    /// Column widths for the implicit default table view, keyed by
+    /// (filePath, actualType, columnName). Custom table views carry their
+    /// own widths inside their [`ViewConfig`].
+    #[serde(default)]
+    pub default_table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
     #[serde(default)]
     pub record_groups: BTreeMap<String, BTreeMap<String, Vec<EditorRecordGroup>>>,
+}
+
+/// Kind of a custom view. Record view is implicit and cannot be created,
+/// so it is not part of this enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewKind {
+    Table,
+    Graph,
+}
+
+/// A user-created custom view over a (filePath, actualType).
+///
+/// Table views use `columns` (ordered) + `column_widths`; graph views use
+/// `relations` + `fields`. `group_filter` is common to both (see design
+/// doc §4). Unused fields for a given `kind` are cleared during sanitize.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct ViewConfig {
+    pub id: String,
+    pub name: String,
+    pub kind: ViewKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_filter: Option<String>,
     #[serde(default)]
-    pub graph_enabled_fields: BTreeMap<String, BTreeMap<String, Vec<String>>>,
+    pub columns: Vec<String>,
+    #[serde(default)]
+    pub column_widths: BTreeMap<String, f64>,
+    #[serde(default)]
+    pub relations: Vec<String>,
+    #[serde(default)]
+    pub fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,6 +307,9 @@ pub struct RecordColumn {
 pub struct RecordRow {
     pub coordinate: RecordCoordinate,
     pub display_path: String,
+    /// Zero-based position inside the record's physical file or table sheet.
+    pub container_index: usize,
+    pub container_size: usize,
     pub fields: Vec<FieldCell>,
     pub field_index: BTreeMap<String, usize>,
     pub field_summaries: BTreeMap<String, String>,
@@ -331,6 +408,12 @@ pub struct FieldAnnotation {
     /// a concrete type when materializing a null polymorphic field.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub polymorphic_types: Vec<String>,
+    /// Concrete object type when schema context determines one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_type: Option<String>,
+    /// Direct object fields in inherited schema declaration order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_order: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub children: BTreeMap<String, Self>,
 }
@@ -348,6 +431,8 @@ impl FieldAnnotation {
             && !self.read_only
             && self.item_annotation.is_none()
             && self.polymorphic_types.is_empty()
+            && self.object_type.is_none()
+            && self.field_order.is_empty()
             && self.children.is_empty()
     }
 }
@@ -537,42 +622,6 @@ pub struct CreateRecordFieldDraft {
     pub annotation: Option<FieldAnnotation>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-#[serde(rename_all = "snake_case")]
-pub enum CreateFieldSource {
-    SchemaDefault,
-    TypeSeed,
-    RequiredInput,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CreateRequiredInput {
-    Ref {
-        target_type: String,
-    },
-    AbstractObject {
-        expected_type: String,
-        concrete_types: Vec<String>,
-    },
-    RecursiveObject {
-        type_name: String,
-    },
-    Unsupported {
-        message: String,
-    },
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(
@@ -589,6 +638,23 @@ pub struct DeleteRecordOutcome {
     /// deletion (defensive — should not happen in normal flows).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deleted_snapshot: Option<DeletedRecordSnapshot>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct ReorderRecordsOutcome {
+    pub revision: u32,
+    pub file_records: FileRecords,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    pub affected_files: Vec<String>,
+    #[serde(default)]
+    pub old_index: Option<usize>,
+    #[serde(default)]
+    pub new_index: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -616,11 +682,6 @@ pub struct GraphData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct GraphQuery {
     pub file_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

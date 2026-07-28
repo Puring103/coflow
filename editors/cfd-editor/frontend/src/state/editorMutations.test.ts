@@ -45,6 +45,9 @@ function backend(
     renameRecordKey: vi.fn(),
     insertRecord: vi.fn(),
     deleteRecord: vi.fn(),
+    swapRecords: vi.fn(),
+    moveRecord: vi.fn(),
+    transferRecord: vi.fn(),
   }
 }
 
@@ -129,6 +132,52 @@ describe('EditorMutationController', () => {
       { coordinate, field_path: fieldPath, new_value: { kind: 'string', value: 'Shared' } },
       { coordinate: second, field_path: fieldPath, new_value: { kind: 'string', value: 'Shared' } },
     ])
+  })
+
+  it('submits heterogeneous field writes in one batch history entry', async () => {
+    const hpPath = [{ kind: 'field' as const, value: 'hp' }]
+    const writeFields = vi.fn().mockResolvedValue({
+      revision: 2,
+      edits: [
+        {
+          coordinate,
+          final_coordinate: coordinate,
+          field_path: fieldPath,
+          old_value: { kind: 'string', value: 'Sword' },
+          new_value: { kind: 'string', value: 'Blade' },
+        },
+        {
+          coordinate,
+          final_coordinate: coordinate,
+          field_path: hpPath,
+          old_value: { kind: 'int', value: 1n },
+          new_value: { kind: 'int', value: 2n },
+        },
+      ],
+      diagnostics: [],
+      affected_files: ['data/items.cfd'],
+    } satisfies BatchWriteFieldOutcome)
+    const fakeBackend = backend(vi.fn())
+    fakeBackend.writeFields = writeFields
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(fakeBackend, {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }, history)
+    const writes = [
+      { coordinate, field_path: fieldPath, new_value: { kind: 'string' as const, value: 'Blade' } },
+      { coordinate, field_path: hpPath, new_value: { kind: 'int' as const, value: 2n } },
+    ]
+
+    await mutations.writeFieldBatch('data/items.cfd', writes)
+
+    expect(writeFields).toHaveBeenCalledTimes(1)
+    expect(writeFields).toHaveBeenCalledWith(1, writes)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    expect(history.getSnapshot().undo[0].kind).toBe('batch-field')
   })
 
   it('coalesces dimension writes and uses authoritative states for undo and redo', async () => {

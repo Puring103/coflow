@@ -1,7 +1,7 @@
-use super::checked_type::CheckedType;
+use super::inferred_type::InferredType;
 use crate::module::ModuleId;
 use crate::schema::CftConstValue;
-use crate::syntax::ast::{ConstDef, EnumDef, TypeDef};
+use crate::syntax::ast::{ConstDef, EnumDef, TopLevelCheckDef, TypeDef};
 use crate::syntax::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,6 +19,12 @@ pub(super) struct TypeInfo<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub(super) struct CheckInfo<'a> {
+    pub(super) module: ModuleId,
+    pub(super) def: &'a TopLevelCheckDef,
+}
+
+#[derive(Debug, Clone)]
 pub(super) struct EnumInfo<'a> {
     pub(super) module: ModuleId,
     pub(super) def: &'a EnumDef,
@@ -30,7 +36,9 @@ pub(super) struct EnumInfo<'a> {
 
 #[derive(Debug, Clone)]
 pub(super) struct FieldInfo {
-    pub(super) checked_type: CheckedType,
+    pub(super) declaring_type: crate::TypeName,
+    pub(super) inferred_type: InferredType,
+    pub(super) dimension: Option<crate::DimensionName>,
 }
 
 #[derive(Debug, Clone)]

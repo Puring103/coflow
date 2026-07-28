@@ -1,30 +1,35 @@
 use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdValue};
-use coflow_cft::{record_key_ident_error, CftSchema, CftSchemaTypeRef, Span};
-use coflow_data_model::{CfdInputDictKey, CfdInputRecord, CfdInputValue};
+use coflow_cft::{record_key_ident_error, CftSchema, CftValueType, Span};
+use coflow_data_model::{LoadedDictKeyDraft, LoadedRecordDraft, LoadedValueDraft};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};
 
 #[derive(Debug, Clone)]
-pub(super) struct ParsedCfdInputRecord {
-    pub(super) record: CfdInputRecord,
+pub(super) struct ParsedLoadedRecordDraft {
+    pub(super) record: LoadedRecordDraft,
     pub(super) span: CfdTextSpan,
 }
 
 pub(super) fn lower_records(
     schema: &CftSchema,
     ast: &CfdAst,
-) -> Result<Vec<ParsedCfdInputRecord>, CfdTextDiagnostics> {
-    ast.records
-        .iter()
-        .map(|record| lower_record(schema, record))
-        .collect()
+) -> Result<Vec<ParsedLoadedRecordDraft>, CfdTextDiagnostics> {
+    let mut records = Vec::with_capacity(ast.records.len());
+    let mut diagnostics = Vec::new();
+    for record in &ast.records {
+        match lower_record(schema, record) {
+            Ok(record) => records.push(record),
+            Err(error) => diagnostics.extend(error.diagnostics),
+        }
+    }
+    finish(records, diagnostics)
 }
 
 fn lower_record(
     schema: &CftSchema,
     record: &CfdRecord,
-) -> Result<ParsedCfdInputRecord, CfdTextDiagnostics> {
+) -> Result<ParsedLoadedRecordDraft, CfdTextDiagnostics> {
     validate_record_key(&record.key, record.key_span)?;
     if let Some((group_type, span)) = &record.group_type {
         validate_group_type(schema, group_type, *span)?;
@@ -33,8 +38,8 @@ fn lower_record(
         validate_record_type(schema, &record.type_name, record.type_span)?;
     }
     let fields = lower_object_entries(schema, &record.type_name, &record.entries)?;
-    Ok(ParsedCfdInputRecord {
-        record: CfdInputRecord::with_spreads(
+    Ok(ParsedLoadedRecordDraft {
+        record: LoadedRecordDraft::with_spreads(
             record.key.clone(),
             record.type_name.clone(),
             fields.spreads,
@@ -45,8 +50,8 @@ fn lower_record(
 }
 
 struct ObjectFields {
-    spreads: Vec<CfdInputValue>,
-    fields: BTreeMap<String, CfdInputValue>,
+    spreads: Vec<LoadedValueDraft>,
+    fields: BTreeMap<String, LoadedValueDraft>,
 }
 
 fn lower_object_entries(
@@ -68,56 +73,77 @@ fn lower_object_entries(
     let mut spreads = Vec::new();
     let mut values = BTreeMap::new();
     let mut seen = BTreeSet::new();
+    let mut diagnostics = Vec::new();
     for entry in entries {
         match entry {
-            CfdBlockEntry::Spread(value, _) => spreads.push(lower_spread(
+            CfdBlockEntry::Spread(value, _) => match lower_spread(
                 schema,
                 value,
-                &CftSchemaTypeRef::Object(schema_type.name.clone()),
-            )?),
+                &CftValueType::Object(schema_type.name.clone()),
+            ) {
+                Ok(value) => spreads.push(value),
+                Err(error) => diagnostics.extend(error.diagnostics),
+            },
             CfdBlockEntry::Field(field) => {
                 if field.name == "id" {
-                    return Err(error(
-                        CfdTextErrorCode::ReservedIdField,
-                        "`id` is reserved for the record key",
-                        field.name_span,
-                    ));
+                    diagnostics.extend(
+                        error(
+                            CfdTextErrorCode::ReservedIdField,
+                            "`id` is reserved for the record key",
+                            field.name_span,
+                        )
+                        .diagnostics,
+                    );
+                    continue;
                 }
                 if !seen.insert(field.name.clone()) {
-                    return Err(error(
-                        CfdTextErrorCode::DuplicateField,
-                        format!("duplicate field `{}`", field.name),
-                        field.name_span,
-                    ));
+                    diagnostics.extend(
+                        error(
+                            CfdTextErrorCode::DuplicateField,
+                            format!("duplicate field `{}`", field.name),
+                            field.name_span,
+                        )
+                        .diagnostics,
+                    );
+                    continue;
                 }
                 let Some(meta) = fields_by_name.get(field.name.as_str()) else {
-                    return Err(error(
-                        CfdTextErrorCode::UnknownField,
-                        format!("unknown field `{}` on type `{type_name}`", field.name),
-                        field.name_span,
-                    ));
+                    diagnostics.extend(
+                        error(
+                            CfdTextErrorCode::UnknownField,
+                            format!("unknown field `{}` on type `{type_name}`", field.name),
+                            field.name_span,
+                        )
+                        .diagnostics,
+                    );
+                    continue;
                 };
-                values.insert(
-                    field.name.clone(),
-                    lower_value(schema, &field.value, &meta.ty_ref)?,
-                );
+                match lower_value(schema, &field.value, &meta.value_type) {
+                    Ok(value) => {
+                        values.insert(field.name.clone(), value);
+                    }
+                    Err(error) => diagnostics.extend(error.diagnostics),
+                }
             }
         }
     }
-    Ok(ObjectFields {
-        spreads,
-        fields: values,
-    })
+    finish(
+        ObjectFields {
+            spreads,
+            fields: values,
+        },
+        diagnostics,
+    )
 }
 
 pub(crate) fn lower_value(
     schema: &CftSchema,
     value: &CfdValue,
-    ty: &CftSchemaTypeRef,
-) -> Result<CfdInputValue, CfdTextDiagnostics> {
-    if let CftSchemaTypeRef::Nullable(inner) = ty {
+    ty: &CftValueType,
+) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
+    if let CftValueType::Nullable(inner) = ty {
         if matches!(value, CfdValue::Null(_)) {
-            return Ok(CfdInputValue::Null);
+            return Ok(LoadedValueDraft::Null);
         }
         return lower_value(schema, value, inner);
     }
@@ -129,16 +155,16 @@ pub(crate) fn lower_value(
         ));
     }
     match ty {
-        CftSchemaTypeRef::Int => lower_int(value),
-        CftSchemaTypeRef::Float => lower_float(value),
-        CftSchemaTypeRef::Bool => lower_bool(value),
-        CftSchemaTypeRef::String => lower_string(value),
-        CftSchemaTypeRef::Enum(name) => lower_enum(schema, value, name),
-        CftSchemaTypeRef::Object(name) => lower_object(schema, value, name),
-        CftSchemaTypeRef::RecordRef(name) => lower_ref(value, name),
-        CftSchemaTypeRef::Array(inner) => lower_array(schema, value, inner),
-        CftSchemaTypeRef::Dict(key, item) => lower_dict(schema, value, key, item),
-        CftSchemaTypeRef::Nullable(inner) => lower_value(schema, value, inner),
+        CftValueType::Int => lower_int(value),
+        CftValueType::Float => lower_float(value),
+        CftValueType::Bool => lower_bool(value),
+        CftValueType::String => lower_string(value),
+        CftValueType::Enum(name) => lower_enum(schema, value, name),
+        CftValueType::Object(name) => lower_object(schema, value, name),
+        CftValueType::RecordRef(name) => lower_ref(value, name),
+        CftValueType::Array(inner) => lower_array(schema, value, inner),
+        CftValueType::Dict(key, item) => lower_dict(schema, value, key, item),
+        CftValueType::Nullable(inner) => lower_value(schema, value, inner),
     }
 }
 
@@ -153,14 +179,14 @@ fn scalar<'a>(value: &'a CfdValue, expected: &str) -> Result<(&'a str, Span), Cf
     Ok((text, *span))
 }
 
-fn lower_int(value: &CfdValue) -> Result<CfdInputValue, CfdTextDiagnostics> {
+fn lower_int(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let (text, span) = scalar(value, "int")?;
     text.parse::<i64>()
-        .map(CfdInputValue::Int)
+        .map(LoadedValueDraft::Int)
         .map_err(|_| error(CfdTextErrorCode::TypeMismatch, "expected int", span))
 }
 
-fn lower_float(value: &CfdValue) -> Result<CfdInputValue, CfdTextDiagnostics> {
+fn lower_float(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let (text, span) = scalar(value, "float")?;
     let number = text
         .parse::<f64>()
@@ -172,23 +198,21 @@ fn lower_float(value: &CfdValue) -> Result<CfdInputValue, CfdTextDiagnostics> {
             span,
         ));
     }
-    Ok(CfdInputValue::Float(number))
+    Ok(LoadedValueDraft::Float(number))
 }
 
-fn lower_bool(value: &CfdValue) -> Result<CfdInputValue, CfdTextDiagnostics> {
+fn lower_bool(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let (text, span) = scalar(value, "bool")?;
     match text.to_ascii_lowercase().as_str() {
-        "true" | "1" | "yes" | "y" => Ok(CfdInputValue::Bool(true)),
-        "false" | "0" | "no" | "n" => Ok(CfdInputValue::Bool(false)),
+        "true" | "1" | "yes" | "y" => Ok(LoadedValueDraft::Bool(true)),
+        "false" | "0" | "no" | "n" => Ok(LoadedValueDraft::Bool(false)),
         _ => Err(error(CfdTextErrorCode::TypeMismatch, "expected bool", span)),
     }
 }
 
-fn lower_string(value: &CfdValue) -> Result<CfdInputValue, CfdTextDiagnostics> {
+fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     match value {
-        CfdValue::QuotedString(text, _) | CfdValue::Scalar(text, _) => {
-            Ok(CfdInputValue::String(text.clone()))
-        }
+        CfdValue::QuotedString(text, _) => Ok(LoadedValueDraft::String(text.clone())),
         _ => Err(error(
             CfdTextErrorCode::TypeMismatch,
             "expected string",
@@ -201,7 +225,7 @@ fn lower_enum(
     schema: &CftSchema,
     value: &CfdValue,
     enum_name: &str,
-) -> Result<CfdInputValue, CfdTextDiagnostics> {
+) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let (raw, span) = scalar(value, "enum value")?;
     let variant = raw
         .strip_prefix(enum_name)
@@ -220,14 +244,14 @@ fn lower_enum(
             span,
         ));
     }
-    Ok(CfdInputValue::enum_variant(enum_name, variant))
+    Ok(LoadedValueDraft::enum_variant(enum_name, variant))
 }
 
 fn lower_object(
     schema: &CftSchema,
     value: &CfdValue,
     expected_type: &str,
-) -> Result<CfdInputValue, CfdTextDiagnostics> {
+) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     match value {
         CfdValue::Block(block) => {
             let (actual_type, declared) = if let Some((actual_type, span)) = &block.type_marker {
@@ -238,10 +262,10 @@ fn lower_object(
             };
             let fields = lower_object_entries(schema, actual_type, &block.entries)?;
             Ok(match (declared, fields.spreads.is_empty()) {
-                (true, true) => CfdInputValue::object_with_declared_type(fields.fields),
-                (true, false) => CfdInputValue::object_spread(fields.spreads, fields.fields),
-                (false, true) => CfdInputValue::object(actual_type, fields.fields),
-                (false, false) => CfdInputValue::object_spread_with_actual_type(
+                (true, true) => LoadedValueDraft::object_with_declared_type(fields.fields),
+                (true, false) => LoadedValueDraft::object_spread(fields.spreads, fields.fields),
+                (false, true) => LoadedValueDraft::object(actual_type, fields.fields),
+                (false, false) => LoadedValueDraft::object_spread_with_actual_type(
                     actual_type,
                     fields.spreads,
                     fields.fields,
@@ -266,23 +290,26 @@ fn lower_object(
     }
 }
 
-fn lower_ref(value: &CfdValue, _expected_type: &str) -> Result<CfdInputValue, CfdTextDiagnostics> {
+fn lower_ref(
+    value: &CfdValue,
+    _expected_type: &str,
+) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let CfdValue::Ref(reference) = value else {
         return Err(error(
             CfdTextErrorCode::Syntax,
-            "typed and path references are no longer supported; use `&key`",
+            "invalid record reference",
             value.span(),
         ));
     };
     validate_record_key(&reference.key.0, reference.key.1)?;
-    Ok(CfdInputValue::record_ref(reference.key.0.clone()))
+    Ok(LoadedValueDraft::record_ref(reference.key.0.clone()))
 }
 
 fn lower_array(
     schema: &CftSchema,
     value: &CfdValue,
-    inner: &CftSchemaTypeRef,
-) -> Result<CfdInputValue, CfdTextDiagnostics> {
+    inner: &CftValueType,
+) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let CfdValue::Array(items, _) = value else {
         return Err(error(
             CfdTextErrorCode::TypeMismatch,
@@ -290,29 +317,32 @@ fn lower_array(
             value.span(),
         ));
     };
-    let items = items
-        .iter()
-        .map(|item| {
-            if matches!(item, CfdValue::Spread(_, _)) {
-                Err(error(
-                    CfdTextErrorCode::Syntax,
-                    "array spreads are not supported",
-                    item.span(),
-                ))
-            } else {
-                lower_value(schema, item, inner)
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(CfdInputValue::Array(items))
+    let mut lowered = Vec::with_capacity(items.len());
+    let mut diagnostics = Vec::new();
+    for item in items {
+        let result = if matches!(item, CfdValue::Spread(_, _)) {
+            Err(error(
+                CfdTextErrorCode::Syntax,
+                "array spreads are not supported",
+                item.span(),
+            ))
+        } else {
+            lower_value(schema, item, inner)
+        };
+        match result {
+            Ok(value) => lowered.push(value),
+            Err(error) => diagnostics.extend(error.diagnostics),
+        }
+    }
+    finish(LoadedValueDraft::Array(lowered), diagnostics)
 }
 
 fn lower_dict(
     schema: &CftSchema,
     value: &CfdValue,
-    key_type: &CftSchemaTypeRef,
-    value_type: &CftSchemaTypeRef,
-) -> Result<CfdInputValue, CfdTextDiagnostics> {
+    key_type: &CftValueType,
+    value_type: &CftValueType,
+) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let CfdValue::Block(block) = value else {
         return Err(error(
             CfdTextErrorCode::TypeMismatch,
@@ -327,44 +357,60 @@ fn lower_dict(
             block.span,
         ));
     }
-    let dict_type =
-        CftSchemaTypeRef::Dict(Box::new(key_type.clone()), Box::new(value_type.clone()));
+    let dict_type = CftValueType::Dict(Box::new(key_type.clone()), Box::new(value_type.clone()));
     let mut spreads = Vec::new();
     let mut entries = Vec::new();
+    let mut diagnostics = Vec::new();
     for entry in &block.entries {
         match entry {
-            CfdBlockEntry::Spread(value, _) => {
-                spreads.push(lower_spread(schema, value, &dict_type)?);
+            CfdBlockEntry::Spread(value, _) => match lower_spread(schema, value, &dict_type) {
+                Ok(value) => spreads.push(value),
+                Err(error) => diagnostics.extend(error.diagnostics),
+            },
+            CfdBlockEntry::Field(field) => {
+                let key = lower_dict_key(schema, &field.name, field.name_span, key_type);
+                let value = lower_value(schema, &field.value, value_type);
+                match (key, value) {
+                    (Ok(key), Ok(value)) => entries.push((key, value)),
+                    (key, value) => {
+                        if let Err(error) = key {
+                            diagnostics.extend(error.diagnostics);
+                        }
+                        if let Err(error) = value {
+                            diagnostics.extend(error.diagnostics);
+                        }
+                    }
+                }
             }
-            CfdBlockEntry::Field(field) => entries.push((
-                lower_dict_key(schema, &field.name, field.name_span, key_type)?,
-                lower_value(schema, &field.value, value_type)?,
-            )),
         }
     }
-    Ok(if spreads.is_empty() {
-        CfdInputValue::dict(entries)
+    let value = if spreads.is_empty() {
+        LoadedValueDraft::dict(entries)
     } else {
-        CfdInputValue::dict_spread(spreads, entries)
-    })
+        LoadedValueDraft::dict_spread(spreads, entries)
+    };
+    finish(value, diagnostics)
 }
 
 fn lower_dict_key(
     schema: &CftSchema,
     raw: &str,
     span: Span,
-    ty: &CftSchemaTypeRef,
-) -> Result<CfdInputDictKey, CfdTextDiagnostics> {
+    ty: &CftValueType,
+) -> Result<LoadedDictKeyDraft, CfdTextDiagnostics> {
     match ty.non_nullable() {
-        CftSchemaTypeRef::String => Ok(CfdInputDictKey::String(raw.to_string())),
-        CftSchemaTypeRef::Int => raw.parse::<i64>().map(CfdInputDictKey::Int).map_err(|_| {
-            error(
-                CfdTextErrorCode::TypeMismatch,
-                "expected int dict key",
-                span,
-            )
-        }),
-        CftSchemaTypeRef::Enum(enum_name) => {
+        CftValueType::String => Ok(LoadedDictKeyDraft::String(raw.to_string())),
+        CftValueType::Int => raw
+            .parse::<i64>()
+            .map(LoadedDictKeyDraft::Int)
+            .map_err(|_| {
+                error(
+                    CfdTextErrorCode::TypeMismatch,
+                    "expected int dict key",
+                    span,
+                )
+            }),
+        CftValueType::Enum(enum_name) => {
             let variant = raw
                 .strip_prefix(enum_name.as_str())
                 .and_then(|rest| rest.strip_prefix('.'))
@@ -376,7 +422,10 @@ fn lower_dict_key(
                     .any(|candidate| candidate.name.as_str() == variant)
             });
             if valid {
-                Ok(CfdInputDictKey::enum_variant(enum_name.as_str(), variant))
+                Ok(LoadedDictKeyDraft::enum_variant(
+                    enum_name.as_str(),
+                    variant,
+                ))
             } else {
                 Err(error(
                     CfdTextErrorCode::InvalidEnumVariant,
@@ -396,8 +445,8 @@ fn lower_dict_key(
 fn lower_spread(
     schema: &CftSchema,
     value: &CfdValue,
-    ty: &CftSchemaTypeRef,
-) -> Result<CfdInputValue, CfdTextDiagnostics> {
+    ty: &CftValueType,
+) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     if matches!(value, CfdValue::Ref(_)) {
         return lower_ref(value, "");
     }
@@ -489,6 +538,14 @@ pub(super) fn syntax_diagnostics(
 
 fn error(code: CfdTextErrorCode, message: impl Into<String>, span: Span) -> CfdTextDiagnostics {
     CfdTextDiagnostics::one(CfdTextDiagnostic::error(code, message, text_span(span)))
+}
+
+fn finish<T>(value: T, diagnostics: Vec<CfdTextDiagnostic>) -> Result<T, CfdTextDiagnostics> {
+    if diagnostics.is_empty() {
+        Ok(value)
+    } else {
+        Err(CfdTextDiagnostics { diagnostics })
+    }
 }
 
 const fn text_span(span: Span) -> CfdTextSpan {

@@ -1,15 +1,109 @@
-use super::CftSchemaTypeRef;
+use super::CftValueType;
 use crate::module::ModuleId;
 use crate::syntax::Span;
-use crate::{BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
+use crate::{
+    BucketName, CheckName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName,
+};
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use std::path::PathBuf;
 use std::sync::Arc;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CheckStatementId(u32);
+
+impl CheckStatementId {
+    #[must_use]
+    pub(in crate::schema) const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub(in crate::schema) const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CheckOwner {
+    Type(TypeName),
+    Project(CheckName),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CheckField {
+    pub owner: TypeName,
+    pub field: FieldName,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CheckDependency {
+    Field(CheckField),
+    RecordSet(TypeName),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum CheckDependencyLocality {
+    Local,
+    CrossRecord,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct CheckStatementDependencies {
+    uses: BTreeMap<CheckDependency, CheckDependencyLocality>,
+}
+
+impl CheckStatementDependencies {
+    pub(crate) fn insert(
+        &mut self,
+        dependency: CheckDependency,
+        locality: CheckDependencyLocality,
+    ) {
+        self.uses
+            .entry(dependency)
+            .and_modify(|existing| *existing = (*existing).max(locality))
+            .or_insert(locality);
+    }
+
+    pub(crate) fn dependencies(&self) -> impl Iterator<Item = &CheckDependency> {
+        self.uses.keys()
+    }
+
+    pub(crate) fn cross_record_dependencies(&self) -> impl Iterator<Item = &CheckDependency> {
+        self.uses.iter().filter_map(|(dependency, locality)| {
+            (*locality == CheckDependencyLocality::CrossRecord).then_some(dependency)
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckStatementInfo {
+    pub id: CheckStatementId,
+    pub owner: CheckOwner,
+    pub root_index: usize,
+    pub dependencies: BTreeSet<CheckDependency>,
+    pub dimensions: BTreeSet<DimensionName>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CftSchemaSource {
+    pub path: PathBuf,
+    pub source: Arc<str>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftConst {
     pub module: ModuleId,
     pub name: ConstName,
     pub value: CftConstValue,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CftTopLevelCheck {
+    pub module: ModuleId,
+    pub name: CheckName,
+    pub block: CftSchemaCheckBlock,
     pub span: Span,
 }
 
@@ -49,7 +143,7 @@ pub struct CftFieldDimension {
 pub struct CftField {
     pub declaring_type: TypeName,
     pub name: FieldName,
-    pub ty_ref: CftSchemaTypeRef,
+    pub value_type: CftValueType,
     pub default: Option<CftSchemaDefaultValue>,
     pub is_expand: bool,
     pub dimension: Option<CftFieldDimension>,
@@ -76,14 +170,38 @@ pub enum CftSchemaDefaultValue {
 pub struct CftSchemaCheckBlock {
     pub stmts: Vec<CftSchemaCheckStmt>,
     pub span: Span,
+    pub(crate) dimension_statements: BTreeMap<DimensionName, Vec<usize>>,
+    pub(crate) statement_dependencies: Vec<CheckStatementDependencies>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CftSchemaCheckMessage {
+    pub kind: CftSchemaCheckMessageKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CftSchemaCheckMessageKind {
+    String(String),
+    Formatted(Vec<CftSchemaCheckFormatSegment>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CftSchemaCheckFormatSegment {
+    Text(String, Span),
+    Expr(CftSchemaCheckExpr),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CftSchemaCheckStmt {
-    Expr(CftSchemaCheckExpr),
+    Expr {
+        condition: CftSchemaCheckExpr,
+        message: Option<CftSchemaCheckMessage>,
+        span: Span,
+    },
     Quantifier {
         kind: CftSchemaQuantifierKind,
-        binding: String,
+        bindings: CftSchemaQuantifierBindings,
         collection: CftSchemaCheckExpr,
         body: Vec<CftSchemaCheckStmt>,
         span: Span,
@@ -93,6 +211,13 @@ pub enum CftSchemaCheckStmt {
         body: Vec<CftSchemaCheckStmt>,
         span: Span,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CftSchemaQuantifierBindings {
+    Single { binding: String },
+    Array { item: String, index: String },
+    Dict { key: String, value: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -108,14 +233,30 @@ pub enum CftSchemaCheckExprKind {
     Bool(bool),
     Null,
     String(String),
+    FormattedString(Vec<CftSchemaCheckFormatSegment>),
     Name(String),
+    Records {
+        type_name: TypeName,
+    },
     Field {
+        expr: Box<CftSchemaCheckExpr>,
+        name: FieldName,
+    },
+    SafeField {
         expr: Box<CftSchemaCheckExpr>,
         name: FieldName,
     },
     Index {
         expr: Box<CftSchemaCheckExpr>,
         index: Box<CftSchemaCheckExpr>,
+    },
+    SafeIndex {
+        expr: Box<CftSchemaCheckExpr>,
+        index: Box<CftSchemaCheckExpr>,
+    },
+    Coalesce {
+        lhs: Box<CftSchemaCheckExpr>,
+        rhs: Box<CftSchemaCheckExpr>,
     },
     Is {
         expr: Box<CftSchemaCheckExpr>,
@@ -225,5 +366,10 @@ impl CftDimension {
         self.variant_by_name
             .get(name)
             .and_then(|index| self.variants.get(*index))
+    }
+
+    #[must_use]
+    pub fn variant_index(&self, name: &str) -> Option<usize> {
+        self.variant_by_name.get(name).copied()
     }
 }

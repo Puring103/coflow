@@ -60,6 +60,27 @@ pub enum MutationOp {
         #[serde(default)]
         file: Option<String>,
     },
+    SwapRecords {
+        first: RecordCoordinate,
+        second: RecordCoordinate,
+        #[serde(default)]
+        file: Option<String>,
+    },
+    MoveRecord {
+        record: RecordCoordinate,
+        target_index: usize,
+        #[serde(default)]
+        file: Option<String>,
+    },
+    TransferRecord {
+        record: RecordCoordinate,
+        destination_file: String,
+        #[serde(default)]
+        destination_sheet: Option<String>,
+        target_index: usize,
+        #[serde(default)]
+        source_file: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +164,11 @@ pub struct CreateRecordFieldDraft {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CreateFieldSource {
     SchemaDefault,
@@ -151,6 +177,11 @@ pub enum CreateFieldSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CreateRequiredInput {
     Ref {
@@ -173,8 +204,8 @@ pub(crate) enum PreparedMutationOp {
     InsertRecord {
         file: String,
         sheet: Option<String>,
-        actual_type: String,
-        key: String,
+        actual_type: TypeName,
+        key: RecordKey,
         fields: BTreeMap<String, CfdValue>,
     },
     SetField {
@@ -192,16 +223,33 @@ pub(crate) enum PreparedMutationOp {
     },
     RenameRecord {
         record: RecordCoordinate,
-        new_key: String,
+        new_key: RecordKey,
         report_file: Option<String>,
     },
     DeleteRecord {
         record: RecordCoordinate,
         report_file: Option<String>,
     },
+    SwapRecords {
+        first: RecordCoordinate,
+        second: RecordCoordinate,
+        report_file: String,
+    },
+    MoveRecord {
+        record: RecordCoordinate,
+        target_index: usize,
+        report_file: String,
+    },
+    TransferRecord {
+        record: RecordCoordinate,
+        destination_file: String,
+        destination_sheet: Option<String>,
+        target_index: usize,
+    },
     FoldedSetField {
         record: RecordCoordinate,
         write_file: String,
+        path: CfdPath,
     },
     FoldedRenameRecord {
         old_record: RecordCoordinate,
@@ -310,6 +358,7 @@ mod tests {
                 message: "structured diagnostic".to_string(),
                 primary: Some(primary.clone()),
                 related: vec![related.clone()],
+                contexts: Vec::new(),
             }),
         );
 

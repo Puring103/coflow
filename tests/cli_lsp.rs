@@ -903,7 +903,7 @@ fn lsp_serves_editor_language_features() {
     assert_missing_completion(&top_level_completion, "Monster");
     assert_missing_completion(&top_level_completion, "len");
 
-    let type_ref_completion = request_completion_at(
+    let value_type_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
         3,
@@ -911,9 +911,9 @@ fn lsp_serves_editor_language_features() {
         &source,
         position_after(&source, "stats: "),
     );
-    assert_has_completion(&type_ref_completion, "Monster");
-    assert_has_completion(&type_ref_completion, "int");
-    assert_missing_completion(&type_ref_completion, "len");
+    assert_has_completion(&value_type_completion, "Monster");
+    assert_has_completion(&value_type_completion, "int");
+    assert_missing_completion(&value_type_completion, "len");
 
     let field_default_completion = request_completion_at(
         &mut stdin,

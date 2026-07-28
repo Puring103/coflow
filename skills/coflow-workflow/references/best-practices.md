@@ -11,8 +11,8 @@
 ## AI agent 工作流
 
 1. 先读取项目结构，而不是直接猜字段：`coflow schema inspect`、`coflow schema files`、`coflow data sources`。
-2. 修改 schema 时优先用 `coflow schema write-file --stdin --check`。
-3. 修改数据时优先用 `coflow data patch`，复杂 CFD 整理才用 `coflow data write-file --stdin --check`。
+2. 修改 schema 时优先用 `coflow schema write-file --check`。
+3. 修改数据时优先用 `coflow data patch`，复杂 CFD 整理才用 `coflow data write-file --check`。
 4. 字段新增、删除、重命名后，对本地 CSV/XLSX/CFD 文件运行 `coflow data sync-header`。
 5. 每轮写入后查看结构化报告中的 `write_ok`、`check_ok`、`applied`、`failed`、`affected_files` 和 `diagnostics`。
 6. `data patch` 整批规划、预检并原子写入；writer、重建或提交失败会补偿已写来源，`applied` 为空且旧 generation 保持可用。

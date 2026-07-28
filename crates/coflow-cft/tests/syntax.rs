@@ -8,6 +8,10 @@
 )]
 
 mod common;
+use coflow_cft::{
+    CftSchemaCheckExprKind, CftSchemaCheckFormatSegment, CftSchemaCheckMessageKind,
+    CftSchemaCheckStmt,
+};
 use common::*;
 
 #[test]
@@ -76,6 +80,112 @@ fn parser_accepts_core_syntax() {
     let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
     assert!(schema.resolve_type("Item").is_some());
     assert!(schema.resolve_enum("Permission").is_some());
+}
+
+#[test]
+fn check_expression_messages_are_preserved_in_schema() {
+    let modules = add_source(
+        r#"
+        type Item {
+            price: int;
+            check {
+                price > 0: "price must be positive";
+                price < 100;
+            }
+        }
+        "#,
+    )
+    .unwrap();
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
+    let check = schema
+        .resolve_type("Item")
+        .and_then(|ty| ty.check.as_ref())
+        .expect("check block");
+    let CftSchemaCheckStmt::Expr {
+        message: Some(message),
+        span,
+        ..
+    } = &check.stmts[0]
+    else {
+        panic!("expected check expression message");
+    };
+    assert_eq!(
+        message.kind,
+        CftSchemaCheckMessageKind::String("price must be positive".to_string())
+    );
+    assert!(span.start < message.span.start);
+    assert!(message.span.end <= span.end);
+
+    let CftSchemaCheckStmt::Expr { message: None, .. } = &check.stmts[1] else {
+        panic!("expected message-less check expression");
+    };
+}
+
+#[test]
+fn check_expression_message_must_be_a_string_literal() {
+    let err = add_source("type Item { price: int; check { price > 0: price; } }").unwrap_err();
+    assert_has_code(&err, CftErrorCode::InvalidCheckStatement);
+    assert!(err.diagnostics[0]
+        .message
+        .contains("check message must be a string or formatted string literal"));
+}
+
+#[test]
+fn formatted_strings_are_structured_check_expressions_and_messages() {
+    let modules = add_source(
+        r#"
+        type Item {
+            category: string;
+            level: int;
+            check {
+                id == f"{category}_{level}";
+                level > 0: f"item {{id}} {id} has level {level}";
+            }
+        }
+        "#,
+    )
+    .unwrap();
+    let schema = build_schema(&modules, &CftDimensionInputs::default()).unwrap();
+    let check = schema
+        .resolve_type("Item")
+        .and_then(|ty| ty.check.as_ref())
+        .expect("check block");
+    let CftSchemaCheckStmt::Expr { condition, .. } = &check.stmts[0] else {
+        panic!("expected expression statement");
+    };
+    let CftSchemaCheckExprKind::CmpChain { rest, .. } = &condition.kind else {
+        panic!("expected comparison");
+    };
+    assert!(matches!(
+        rest[0].1.kind,
+        CftSchemaCheckExprKind::FormattedString(_)
+    ));
+    let CftSchemaCheckStmt::Expr {
+        message: Some(message),
+        ..
+    } = &check.stmts[1]
+    else {
+        panic!("expected formatted message");
+    };
+    let CftSchemaCheckMessageKind::Formatted(segments) = &message.kind else {
+        panic!("expected formatted message segments");
+    };
+    assert!(matches!(
+        &segments[0],
+        CftSchemaCheckFormatSegment::Text(value, _) if value == "item {id} "
+    ));
+}
+
+#[test]
+fn formatted_strings_reject_invalid_boundaries_and_nesting() {
+    let empty = add_source("type Item { check { id == f\"{}\"; } }").unwrap_err();
+    assert_has_code(&empty, CftErrorCode::InvalidCheckStatement);
+
+    let unmatched = add_source("type Item { check { id == f\"bad }\"; } }").unwrap_err();
+    assert_has_code(&unmatched, CftErrorCode::UnexpectedCharacter);
+
+    let nested = add_source("type Item { check { id == f\"{f\\\"{id}\\\"}\"; } }").unwrap_err();
+    assert_has_code(&nested, CftErrorCode::UnexpectedCharacter);
 }
 
 #[test]
@@ -183,6 +293,27 @@ fn parser_recovers_at_the_next_top_level_declaration() {
         offsets[1] > source.find("type Valid").expect("valid middle declaration"),
         "the parser must pass a valid declaration before reporting the later error"
     );
+}
+
+#[test]
+fn damaged_records_query_recovers_at_following_declarations() {
+    let source = r#"
+        type Item { value: int; }
+        check Broken {
+            all item in records( { item.value > 0; }
+        }
+        type Valid { name: string; }
+        const = 1;
+    "#;
+    let diagnostics = add_source(source).expect_err("records argument and const are invalid");
+    let valid_offset = source.find("type Valid").expect("following valid type");
+
+    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .primary
+            .as_ref()
+            .is_some_and(|label| label.span.start > valid_offset)
+    }));
 }
 
 #[test]

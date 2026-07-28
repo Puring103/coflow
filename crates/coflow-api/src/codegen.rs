@@ -6,7 +6,6 @@ use coflow_data_model::CfdDataModel;
 pub struct CodegenContext<'a> {
     pub schema: &'a CftSchema,
     pub model: Option<&'a CfdDataModel>,
-    pub data_format: &'a str,
     pub id_as_enum_variants: &'a serde_json::Value,
 }
 
@@ -16,7 +15,6 @@ pub struct CodegenDescriptor {
     pub display_name: &'static str,
     pub language: &'static str,
     pub file_extensions: &'static [&'static str],
-    pub supported_data_formats: &'static [&'static str],
     pub needs_model_for_build: bool,
 }
 

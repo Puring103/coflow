@@ -2,7 +2,7 @@ use super::common::*;
 use super::*;
 use crate::completion::receiver_chain_before_dot;
 use coflow_cft::syntax::ast::Item;
-use coflow_cft::CftSchemaTypeRef;
+use coflow_cft::CftValueType;
 
 #[test]
 fn hover_and_definition_ignore_comment_and_string_words() {
@@ -169,6 +169,64 @@ type Item {\n\
 }
 
 #[test]
+fn named_top_level_check_uses_check_completion_scope() {
+    let source = "check Integrity { true; }";
+    let (_cleanup, build) = test_lsp_build("lsp-top-level-check-scope", source);
+    let document = first_document(&build);
+    let offset = source.find("true").expect("condition");
+
+    assert_eq!(
+        completion_scope(document, offset),
+        CompletionScope::CheckBlock
+    );
+    let labels = completion_labels(top_level_completion_items(""));
+    assert!(labels.iter().any(|label| label == "check"));
+}
+
+#[test]
+fn records_query_completes_types_and_resolves_hover_and_definition() {
+    let source = "type Item { value: int; check { value > 0; } }\n\
+type Reward { amount: int; }\n\
+check GlobalRules { all item in records(Item) { item.value > 0; } }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-records-query", source);
+    let document = first_document(&build);
+    let records_offset = source.find("records(Item)").expect("records query");
+    let type_offset = records_offset + "records(I".len();
+    let labels = completion_labels(completion_items(
+        &build,
+        document,
+        &position_from_byte(source, type_offset),
+    ));
+    assert_eq!(labels, vec!["Item".to_string(), "Reward".to_string()]);
+
+    let top_level_labels = completion_labels(check_expression_completion_items(
+        &build,
+        document,
+        records_offset,
+    ));
+    assert!(top_level_labels.contains(&"records".to_string()));
+    let type_local_offset = source.find("value > 0").expect("type-local check");
+    let type_local_labels = completion_labels(check_expression_completion_items(
+        &build,
+        document,
+        type_local_offset,
+    ));
+    assert!(!type_local_labels.contains(&"records".to_string()));
+
+    let records_hover = hover_at(
+        &build,
+        document,
+        &position_from_byte(source, records_offset + 1),
+    )
+    .expect("records hover");
+    assert!(records_hover["contents"]["value"]
+        .as_str()
+        .is_some_and(|text| text.contains("all top-level records")));
+    let item_position = position_from_byte(source, records_offset + "records(".len() + 1);
+    assert!(!definitions_at(&build, document, &item_position).is_empty());
+}
+
+#[test]
 fn completion_items_suppress_trivia_and_restrict_predicate_context() {
     let source = "type Target { key: string; }\n\
 type Item {\n\
@@ -213,7 +271,7 @@ type Item {\n\
   attrs: {string: int} = {};\n\
   target: Target;\n\
   other: Target;\n\
-  check { all value in xs { value > LIMIT; } }\n\
+  check { all value, index in xs { value > LIMIT && index >= 0; } }\n\
 }\n";
     let (_cleanup, build) = test_lsp_build("lsp-completion-boundaries", source);
     let document = first_document(&build);
@@ -244,14 +302,15 @@ type Item {\n\
         vec!["type".to_string()]
     );
 
-    let type_ref_position = position_from_byte(
+    let value_type_position = position_from_byte(
         source,
         source.find("target: Target").expect("target") + "target: ".len(),
     );
-    let type_ref_labels = completion_labels(completion_items(&build, document, &type_ref_position));
-    assert!(type_ref_labels.contains(&"Target".to_string()));
-    assert!(type_ref_labels.contains(&"Kind".to_string()));
-    assert!(type_ref_labels.contains(&"string".to_string()));
+    let value_type_labels =
+        completion_labels(completion_items(&build, document, &value_type_position));
+    assert!(value_type_labels.contains(&"Target".to_string()));
+    assert!(value_type_labels.contains(&"Kind".to_string()));
+    assert!(value_type_labels.contains(&"string".to_string()));
 
     let const_position = position_from_byte(
         source,
@@ -314,6 +373,7 @@ type Item {\n\
     ));
     assert!(check_labels.contains(&"id".to_string()));
     assert!(check_labels.contains(&"value".to_string()));
+    assert!(check_labels.contains(&"index".to_string()));
     assert!(check_labels.contains(&"target".to_string()));
     assert!(check_labels.contains(&"LIMIT".to_string()));
     assert!(!check_labels.contains(&"len".to_string()));
@@ -330,6 +390,11 @@ type Item {\n\
     ));
     assert!(method_labels.contains(&"len".to_string()));
     assert!(method_labels.contains(&"contains".to_string()));
+    assert!(method_labels.contains(&"startsWith".to_string()));
+    assert!(method_labels.contains(&"approxEqual".to_string()));
+    assert!(method_labels.contains(&"containsKey".to_string()));
+    assert!(method_labels.contains(&"isSorted".to_string()));
+    assert!(method_labels.contains(&"isSubsetOf".to_string()));
 
     assert_eq!(
         completion_labels(dot_completion_items(
@@ -372,7 +437,7 @@ type Holder {\n\
     );
     assert!(matches!(
         type_of_chain(&build, document, offset, &[s("target"), s("value")]),
-        Some(CftSchemaTypeRef::Int)
+        Some(CftValueType::Int)
     ));
     assert!(type_of_chain(&build, document, offset, &[]).is_none());
     assert!(type_of_chain(&build, document, offset, &[s("missing")]).is_none());
@@ -429,5 +494,11 @@ values: [string] = [\n\
     assert_eq!(
         format_cft("type Item {\n\nkey: string;\n}"),
         "type Item {\n\n  key: string;\n}"
+    );
+    assert_eq!(
+        format_cft(
+            "check ItemRules {\nall item in records(Item) {\nitem.value > 0:\n f\"bad {item.id}\";\n}\n}"
+        ),
+        "check ItemRules {\n  all item in records(Item) {\n    item.value > 0:\n      f\"bad {item.id}\";\n  }\n}"
     );
 }

@@ -1,16 +1,18 @@
-use super::annotations::{find_annotation, has_annotation};
+use super::annotations::{field_dimension_name, find_annotation, has_annotation};
 use super::SchemaCompiler;
 use crate::schema::{
     CftConst, CftConstValue, CftEnum, CftEnumVariant, CftField, CftFieldDimension, CftSchemaBinOp,
-    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
-    CftSchemaCmpOp, CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate,
-    CftSchemaTypeRef, CftSchemaUnaryOp, CftType,
+    CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
+    CftSchemaCheckMessage, CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp,
+    CftSchemaDefaultValue, CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp,
+    CftTopLevelCheck, CftType, CftValueType,
 };
 use crate::syntax::ast::{
-    AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, ConstLiteral, DefaultExpr,
-    DefaultExprKind, FieldDef, TypePredicate, TypeRef, TypeRefKind, UnaryOp,
+    AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
+    CheckStmt, CmpOp, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, TypePredicate, TypeRef,
+    TypeRefKind, UnaryOp,
 };
-use crate::{BucketName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
+use crate::{BucketName, CheckName, ConstName, EnumName, EnumVariantName, FieldName, TypeName};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -20,7 +22,38 @@ impl SchemaCompiler<'_> {
             consts: self.build_consts(),
             enums: self.build_enums(),
             types: self.build_types(),
+            checks: self.build_checks(),
+            sources: self
+                .modules
+                .modules()
+                .map(|(id, module)| {
+                    (
+                        id.clone(),
+                        crate::schema::CftSchemaSource {
+                            path: module.path().to_path_buf(),
+                            source: module.shared_source(),
+                        },
+                    )
+                })
+                .collect(),
         }
+    }
+
+    fn build_checks(&self) -> BTreeMap<CheckName, CftTopLevelCheck> {
+        self.checks
+            .iter()
+            .map(|(name, info)| {
+                let name = CheckName::from_validated(name.clone());
+                let block = self.convert_check_block(&info.module, &info.def.block);
+                let check = CftTopLevelCheck {
+                    module: info.module.clone(),
+                    name: name.clone(),
+                    block,
+                    span: info.def.span,
+                };
+                (name, check)
+            })
+            .collect()
     }
 
     fn build_consts(&self) -> BTreeMap<ConstName, CftConst> {
@@ -131,7 +164,11 @@ impl SchemaCompiler<'_> {
                 own_fields: fields,
                 all_fields,
                 field_by_name,
-                check: info.def.check.as_ref().map(convert_check_block),
+                check: info
+                    .def
+                    .check
+                    .as_ref()
+                    .map(|check| self.convert_check_block(&info.module, check)),
                 span: info.def.span,
             };
             types.insert(type_name, schema);
@@ -140,27 +177,16 @@ impl SchemaCompiler<'_> {
     }
 
     fn build_schema_field(&self, field: &FieldDef, owner_type: &TypeName) -> CftField {
-        let localized = find_annotation(&field.annotations, "localized");
-        let dimension_annotation = find_annotation(&field.annotations, "dimension");
-        let dimension = localized
-            .map(|_| CftFieldDimension {
-                dimension: DimensionName::from_validated("language"),
-                bucket: localized_bucket(field),
-            })
-            .or_else(|| {
-                let annotation = dimension_annotation?;
-                let Some(AnnotationArg::String(name, _)) = annotation.args.first() else {
-                    return None;
-                };
-                Some(CftFieldDimension {
-                    dimension: DimensionName::from_validated(name.clone()),
-                    bucket: None,
-                })
-            });
+        let dimension = field_dimension_name(field).map(|dimension| CftFieldDimension {
+            bucket: (dimension.as_str() == "language")
+                .then(|| localized_bucket(field))
+                .flatten(),
+            dimension,
+        });
         CftField {
             declaring_type: owner_type.clone(),
             name: FieldName::from_validated(field.name.clone()),
-            ty_ref: build_schema_type_ref(&field.ty, &|name| self.enums.contains_key(name)),
+            value_type: build_schema_value_type(&field.ty, &|name| self.enums.contains_key(name)),
             default: field
                 .default
                 .as_ref()
@@ -238,42 +264,88 @@ pub(super) fn const_value(value: &ConstLiteral) -> CftConstValue {
         ConstLiteral::String(value, _) => CftConstValue::String(value.clone()),
     }
 }
-pub(super) fn convert_check_block(check: &crate::syntax::ast::CheckBlock) -> CftSchemaCheckBlock {
-    CftSchemaCheckBlock {
-        stmts: check.stmts.iter().map(convert_check_stmt).collect(),
-        span: check.span,
+impl SchemaCompiler<'_> {
+    fn convert_check_block(
+        &self,
+        module: &crate::ModuleId,
+        check: &crate::syntax::ast::CheckBlock,
+    ) -> CftSchemaCheckBlock {
+        CftSchemaCheckBlock {
+            stmts: check
+                .stmts
+                .iter()
+                .map(|stmt| self.convert_check_stmt(module, stmt))
+                .collect(),
+            span: check.span,
+            dimension_statements: self
+                .check_dimensions
+                .get(&(module.clone(), check.span.start, check.span.end))
+                .cloned()
+                .unwrap_or_default(),
+            statement_dependencies: self
+                .check_statement_dependencies
+                .get(&(module.clone(), check.span.start, check.span.end))
+                .cloned()
+                .unwrap_or_else(|| {
+                    vec![crate::schema::CheckStatementDependencies::default(); check.stmts.len()]
+                }),
+        }
     }
-}
 
-fn convert_check_stmt(stmt: &CheckStmt) -> CftSchemaCheckStmt {
-    match stmt {
-        CheckStmt::Expr(expr) => CftSchemaCheckStmt::Expr(convert_check_expr(expr)),
-        CheckStmt::Quantifier {
-            kind,
-            binding,
-            collection,
-            body,
-            span,
-        } => CftSchemaCheckStmt::Quantifier {
-            kind: match kind {
-                crate::syntax::ast::QuantifierKind::All => CftSchemaQuantifierKind::All,
-                crate::syntax::ast::QuantifierKind::Any => CftSchemaQuantifierKind::Any,
-                crate::syntax::ast::QuantifierKind::None => CftSchemaQuantifierKind::None,
+    fn convert_check_stmt(&self, module: &crate::ModuleId, stmt: &CheckStmt) -> CftSchemaCheckStmt {
+        match stmt {
+            CheckStmt::Expr {
+                condition,
+                message,
+                span,
+            } => CftSchemaCheckStmt::Expr {
+                condition: convert_check_expr(condition),
+                message: message.as_ref().map(|message| CftSchemaCheckMessage {
+                    kind: match &message.kind {
+                        CheckMessageKind::String(value) => {
+                            CftSchemaCheckMessageKind::String(value.clone())
+                        }
+                        CheckMessageKind::Formatted(segments) => {
+                            CftSchemaCheckMessageKind::Formatted(convert_format_segments(segments))
+                        }
+                    },
+                    span: message.span,
+                }),
+                span: *span,
             },
-            binding: binding.name.clone(),
-            collection: convert_check_expr(collection),
-            body: body.iter().map(convert_check_stmt).collect(),
-            span: *span,
-        },
-        CheckStmt::When {
-            condition,
-            body,
-            span,
-        } => CftSchemaCheckStmt::When {
-            condition: convert_check_expr(condition),
-            body: body.iter().map(convert_check_stmt).collect(),
-            span: *span,
-        },
+            CheckStmt::Quantifier {
+                kind,
+                bindings: _,
+                collection,
+                body,
+                span,
+            } => CftSchemaCheckStmt::Quantifier {
+                kind: match kind {
+                    crate::syntax::ast::QuantifierKind::All => CftSchemaQuantifierKind::All,
+                    crate::syntax::ast::QuantifierKind::Any => CftSchemaQuantifierKind::Any,
+                    crate::syntax::ast::QuantifierKind::None => CftSchemaQuantifierKind::None,
+                },
+                bindings: self.quantifier_bindings[&(module.clone(), span.start, span.end)].clone(),
+                collection: convert_check_expr(collection),
+                body: body
+                    .iter()
+                    .map(|stmt| self.convert_check_stmt(module, stmt))
+                    .collect(),
+                span: *span,
+            },
+            CheckStmt::When {
+                condition,
+                body,
+                span,
+            } => CftSchemaCheckStmt::When {
+                condition: convert_check_expr(condition),
+                body: body
+                    .iter()
+                    .map(|stmt| self.convert_check_stmt(module, stmt))
+                    .collect(),
+                span: *span,
+            },
+        }
     }
 }
 
@@ -285,14 +357,32 @@ fn convert_check_expr(expr: &CheckExpr) -> CftSchemaCheckExpr {
             CheckExprKind::Bool(value) => CftSchemaCheckExprKind::Bool(*value),
             CheckExprKind::Null => CftSchemaCheckExprKind::Null,
             CheckExprKind::String(value) => CftSchemaCheckExprKind::String(value.clone()),
+            CheckExprKind::FormattedString(segments) => {
+                CftSchemaCheckExprKind::FormattedString(convert_format_segments(segments))
+            }
             CheckExprKind::Name(name) => CftSchemaCheckExprKind::Name(name.clone()),
+            CheckExprKind::Records { type_name } => CftSchemaCheckExprKind::Records {
+                type_name: TypeName::from_validated(type_name.name.clone()),
+            },
             CheckExprKind::Field { expr: inner, name } => CftSchemaCheckExprKind::Field {
+                expr: Box::new(convert_check_expr(inner)),
+                name: FieldName::from_validated(name.name.clone()),
+            },
+            CheckExprKind::SafeField { expr: inner, name } => CftSchemaCheckExprKind::SafeField {
                 expr: Box::new(convert_check_expr(inner)),
                 name: FieldName::from_validated(name.name.clone()),
             },
             CheckExprKind::Index { expr: inner, index } => CftSchemaCheckExprKind::Index {
                 expr: Box::new(convert_check_expr(inner)),
                 index: Box::new(convert_check_expr(index)),
+            },
+            CheckExprKind::SafeIndex { expr: inner, index } => CftSchemaCheckExprKind::SafeIndex {
+                expr: Box::new(convert_check_expr(inner)),
+                index: Box::new(convert_check_expr(index)),
+            },
+            CheckExprKind::Coalesce { lhs, rhs } => CftSchemaCheckExprKind::Coalesce {
+                lhs: Box::new(convert_check_expr(lhs)),
+                rhs: Box::new(convert_check_expr(rhs)),
             },
             CheckExprKind::Is {
                 expr: inner,
@@ -344,6 +434,20 @@ fn convert_check_expr(expr: &CheckExpr) -> CftSchemaCheckExpr {
     }
 }
 
+fn convert_format_segments(segments: &[CheckFormatSegment]) -> Vec<CftSchemaCheckFormatSegment> {
+    segments
+        .iter()
+        .map(|segment| match segment {
+            CheckFormatSegment::Text(value, span) => {
+                CftSchemaCheckFormatSegment::Text(value.clone(), *span)
+            }
+            CheckFormatSegment::Expr(expr) => {
+                CftSchemaCheckFormatSegment::Expr(convert_check_expr(expr))
+            }
+        })
+        .collect()
+}
+
 fn convert_bin_op(op: BinOp) -> CftSchemaBinOp {
     match op {
         BinOp::Or => CftSchemaBinOp::Or,
@@ -374,36 +478,34 @@ fn convert_cmp_op(op: CmpOp) -> CftSchemaCmpOp {
     }
 }
 
-pub(super) fn build_schema_type_ref(
+pub(super) fn build_schema_value_type(
     ty: &TypeRef,
     is_enum: &impl Fn(&str) -> bool,
-) -> CftSchemaTypeRef {
+) -> CftValueType {
     match &ty.kind {
-        TypeRefKind::Int => CftSchemaTypeRef::Int,
-        TypeRefKind::Float => CftSchemaTypeRef::Float,
-        TypeRefKind::Bool => CftSchemaTypeRef::Bool,
-        TypeRefKind::String => CftSchemaTypeRef::String,
+        TypeRefKind::Int => CftValueType::Int,
+        TypeRefKind::Float => CftValueType::Float,
+        TypeRefKind::Bool => CftValueType::Bool,
+        TypeRefKind::String => CftValueType::String,
         TypeRefKind::Named(name) if is_enum(name) => {
-            CftSchemaTypeRef::Enum(EnumName::from_validated(name.clone()))
+            CftValueType::Enum(EnumName::from_validated(name.clone()))
         }
-        TypeRefKind::Named(name) => {
-            CftSchemaTypeRef::Object(TypeName::from_validated(name.clone()))
-        }
+        TypeRefKind::Named(name) => CftValueType::Object(TypeName::from_validated(name.clone())),
         TypeRefKind::Ref(inner) => match &inner.kind {
             TypeRefKind::Named(name) => {
-                CftSchemaTypeRef::RecordRef(TypeName::from_validated(name.clone()))
+                CftValueType::RecordRef(TypeName::from_validated(name.clone()))
             }
-            _ => build_schema_type_ref(inner, is_enum),
+            _ => build_schema_value_type(inner, is_enum),
         },
         TypeRefKind::Array(inner) => {
-            CftSchemaTypeRef::Array(Box::new(build_schema_type_ref(inner, is_enum)))
+            CftValueType::Array(Box::new(build_schema_value_type(inner, is_enum)))
         }
-        TypeRefKind::Dict(key, value) => CftSchemaTypeRef::Dict(
-            Box::new(build_schema_type_ref(key, is_enum)),
-            Box::new(build_schema_type_ref(value, is_enum)),
+        TypeRefKind::Dict(key, value) => CftValueType::Dict(
+            Box::new(build_schema_value_type(key, is_enum)),
+            Box::new(build_schema_value_type(value, is_enum)),
         ),
         TypeRefKind::Nullable(inner) => {
-            CftSchemaTypeRef::Nullable(Box::new(build_schema_type_ref(inner, is_enum)))
+            CftValueType::Nullable(Box::new(build_schema_value_type(inner, is_enum)))
         }
     }
 }

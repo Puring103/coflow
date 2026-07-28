@@ -118,15 +118,53 @@ fn dependency_graph_enforces_internal_crate_boundaries() {
     ];
     graph.assert_does_not_depend_on("coflow-api", &concrete_providers);
     graph.assert_does_not_depend_on("coflow-runtime", &concrete_providers);
+    graph.assert_does_not_depend_on("coflow", &["coflow-cft", "coflow-data-model"]);
     graph.assert_does_not_depend_on(
         "coflow-checker",
         &["coflow-project", "coflow-runtime", "coflow-api"],
     );
-    graph.assert_does_not_depend_on("cfd-editor", &["coflow-checker"]);
+    graph.assert_does_not_depend_on("cfd-editor", &["coflow-checker", "coflow-cft", "walkdir"]);
 
     graph.assert_depends_on("coflow", "coflow-runtime");
     graph.assert_depends_on("cfd-editor", "coflow-runtime");
     graph.assert_depends_on("coflow-builtins", "coflow-api");
+}
+
+#[test]
+fn editor_does_not_enable_cli_only_root_features() {
+    let graph = WorkspaceGraph::load();
+    let root = graph.member("coflow");
+    let root_dependencies = root.manifest["dependencies"]
+        .as_table()
+        .expect("root dependencies");
+    for dependency in [
+        "clap",
+        "coflow-builtins",
+        "coflow-lsp",
+        "dirs",
+        "include_dir",
+    ] {
+        assert_eq!(
+            root_dependencies[dependency]
+                .as_table()
+                .and_then(|spec| spec.get("optional"))
+                .and_then(Value::as_bool),
+            Some(true),
+            "root dependency `{dependency}` must remain CLI-only"
+        );
+    }
+
+    let editor_dependencies = graph.member("cfd-editor").manifest["dependencies"]
+        .as_table()
+        .expect("editor dependencies");
+    assert_eq!(
+        editor_dependencies["coflow"]
+            .as_table()
+            .and_then(|spec| spec.get("default-features"))
+            .and_then(Value::as_bool),
+        Some(false),
+        "editor must not enable the root crate's CLI feature"
+    );
 }
 
 #[test]

@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 use coflow_api::{
-    ArtifactSet, CodeGenerator, CodegenContext, DataExporter, DecodedOutputOptions, DiagnosticSet,
-    ExportContext, ProviderRegistry, Severity, WriterCapabilities,
+    ArtifactSet, CodeGenerator, CodegenContext, DataExporter, DecodedOutputOptions, Diagnostic,
+    DiagnosticSet, ExportContext, LoaderGenerationContext, LoaderGenerator, ProviderRegistry,
+    Severity, WriterCapabilities,
 };
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_project::Project;
@@ -360,7 +361,6 @@ impl BuildProjectSession {
         &self,
         codegen: &dyn CodeGenerator,
         options: &DecodedOutputOptions,
-        data_format: &str,
         id_as_enum_variants: &serde_json::Value,
         include_model: bool,
     ) -> Result<ArtifactSet, DiagnosticSet> {
@@ -368,10 +368,34 @@ impl BuildProjectSession {
             CodegenContext {
                 schema: self.session.schema(),
                 model: include_model.then_some(self.session.model()),
-                data_format,
                 id_as_enum_variants,
             },
             options,
+        )
+    }
+
+    /// Generates loader artifacts from this session's immutable schema generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns provider diagnostics when the loader rejects its options or input.
+    pub fn loader_artifacts(
+        &self,
+        loader: &dyn LoaderGenerator,
+        code_options: &DecodedOutputOptions,
+        data_options: &DecodedOutputOptions,
+        loader_options: &DecodedOutputOptions,
+        id_as_enum_variants: &serde_json::Value,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        loader.generate(
+            LoaderGenerationContext {
+                schema: self.session.schema(),
+                model: Some(self.session.model()),
+                code_options,
+                data_options,
+                id_as_enum_variants,
+            },
+            loader_options,
         )
     }
 }
@@ -417,13 +441,14 @@ impl WriteProjectSession {
             .queries()
             .field_value(&coordinate.actual_type, &coordinate.key, path)
             .ok_or_else(|| {
-                DiagnosticSet::one(coflow_api::Diagnostic {
+                DiagnosticSet::one(Diagnostic {
                     code: "MUTATION-PATH".to_string(),
                     stage: "MUTATION".to_string(),
                     severity: Severity::Error,
                     message: "selected field was not found".to_string(),
                     primary: None,
                     related: Vec::new(),
+                    contexts: Vec::new(),
                 })
             })?;
         crate::mutation::render_cell_text_value(value)
@@ -512,7 +537,7 @@ impl WriteProjectSession {
         new_value: &CfdValue,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::SetField {
-            record: RecordCoordinate::new(actual_type, key),
+            record: validated_coordinate(actual_type, key)?,
             file: None,
             path: path.to_vec(),
             value: MutationValue::Cfd(new_value.clone()),
@@ -566,7 +591,7 @@ impl WriteProjectSession {
         new_key: &str,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::RenameRecord {
-            record: RecordCoordinate::new(actual_type, old_key),
+            record: validated_coordinate(actual_type, old_key)?,
             file: None,
             new_key: new_key.to_string(),
         })
@@ -608,8 +633,67 @@ impl WriteProjectSession {
         key: &str,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::DeleteRecord {
-            record: RecordCoordinate::new(actual_type, key),
+            record: validated_coordinate(actual_type, key)?,
             file: None,
+        })
+    }
+
+    /// Atomically exchange two records inside the same physical source container.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when either record is missing, the records belong
+    /// to different containers, or the provider cannot persist record order.
+    pub fn swap_records(
+        &mut self,
+        first: &RecordCoordinate,
+        second: &RecordCoordinate,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::SwapRecords {
+            first: first.clone(),
+            second: second.clone(),
+            file: None,
+        })
+    }
+
+    /// Move one record to a zero-based final index in its physical container.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the record is missing, the index is outside
+    /// the container, or the provider cannot persist record order.
+    pub fn move_record(
+        &mut self,
+        record: &RecordCoordinate,
+        target_index: usize,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::MoveRecord {
+            record: record.clone(),
+            target_index,
+            file: None,
+        })
+    }
+
+    /// Move a record to a zero-based insertion index in another source file.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the destination cannot host the record type,
+    /// the insertion index is invalid, or either source cannot participate in
+    /// the atomic transfer transaction.
+    pub fn transfer_record(
+        &mut self,
+        record: &RecordCoordinate,
+        destination_file: &str,
+        destination_sheet: Option<&str>,
+        target_index: usize,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::TransferRecord {
+            record: record.clone(),
+            destination_file: destination_file.to_string(),
+            destination_sheet: destination_sheet.map(ToOwned::to_owned),
+            target_index,
+            source_file: None,
         })
     }
 
@@ -626,7 +710,7 @@ impl WriteProjectSession {
             diagnostics.extend(failed.into_source_diagnostics());
         }
         if diagnostics.is_empty() {
-            diagnostics.push(coflow_api::Diagnostic::error(
+            diagnostics.push(Diagnostic::error(
                 "WRITE-TXN-NO-OUTCOME",
                 "WRITE",
                 "mutation transaction produced neither an applied operation nor a failure",
@@ -634,4 +718,14 @@ impl WriteProjectSession {
         }
         Err(diagnostics)
     }
+}
+
+fn validated_coordinate(actual_type: &str, key: &str) -> Result<RecordCoordinate, DiagnosticSet> {
+    RecordCoordinate::try_new(actual_type, key).map_err(|error| {
+        DiagnosticSet::one(Diagnostic::error(
+            "MUTATION-COORDINATE",
+            "MUTATION",
+            error.to_string(),
+        ))
+    })
 }

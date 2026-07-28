@@ -12,8 +12,11 @@ pub(crate) struct Cli {
 
 #[cfg(test)]
 mod tests {
-    use super::Cli;
+    #![allow(clippy::expect_used, clippy::panic)]
+
+    use super::{Cli, Command, SchemaCommand};
     use clap::{error::ErrorKind, Parser};
+    use std::path::PathBuf;
 
     #[test]
     #[allow(clippy::expect_used)]
@@ -26,6 +29,59 @@ mod tests {
                 format!("coflow {}\n", env!("CARGO_PKG_VERSION"))
             );
         }
+    }
+
+    #[test]
+    fn artifact_commands_only_accept_the_project_argument() {
+        let cli =
+            Cli::try_parse_from(["coflow", "export", "project"]).expect("parse export project");
+        let Command::Export(args) = cli.command else {
+            panic!("expected export command");
+        };
+        assert_eq!(args.config_or_dir, Some(PathBuf::from("project")));
+
+        let cli =
+            Cli::try_parse_from(["coflow", "codegen", "project"]).expect("parse codegen project");
+        let Command::Codegen(args) = cli.command else {
+            panic!("expected codegen command");
+        };
+        assert_eq!(args.config_or_dir, Some(PathBuf::from("project")));
+
+        for args in [
+            ["coflow", "build", "--namespace"],
+            ["coflow", "export", "--out"],
+            ["coflow", "codegen", "--out"],
+        ] {
+            let error = Cli::try_parse_from(args).expect_err("override option was removed");
+            assert_eq!(error.kind(), ErrorKind::UnknownArgument);
+        }
+    }
+
+    #[test]
+    fn schema_and_data_commands_default_to_human_output() {
+        let cli = Cli::try_parse_from(["coflow", "schema", "inspect"])
+            .expect("parse default schema output");
+        let Command::Schema(schema) = cli.command else {
+            panic!("expected schema command");
+        };
+        let SchemaCommand::Inspect(args) = schema.command else {
+            panic!("expected schema inspect command");
+        };
+        assert!(!args.json);
+
+        let cli = Cli::try_parse_from(["coflow", "schema", "inspect", "--json"])
+            .expect("parse JSON schema output");
+        let Command::Schema(schema) = cli.command else {
+            panic!("expected schema command");
+        };
+        let SchemaCommand::Inspect(args) = schema.command else {
+            panic!("expected schema inspect command");
+        };
+        assert!(args.json);
+
+        let error = Cli::try_parse_from(["coflow", "schema", "inspect", "--human"])
+            .expect_err("--human was removed");
+        assert_eq!(error.kind(), ErrorKind::UnknownArgument);
     }
 }
 
@@ -132,15 +188,6 @@ pub(crate) struct ProjectCheckArgs {
 pub(crate) struct BuildArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override outputs.data.dir for this invocation.
-    #[arg(long = "data-out", value_name = "DIR")]
-    pub(crate) data_out_dir: Option<PathBuf>,
-    /// Override outputs.code.dir for this invocation.
-    #[arg(long = "code-out", value_name = "DIR")]
-    pub(crate) code_out_dir: Option<PathBuf>,
-    /// Override outputs.code.namespace for this invocation.
-    #[arg(long, value_name = "NAME")]
-    pub(crate) namespace: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -151,58 +198,14 @@ pub(crate) struct CleanArgs {
 
 #[derive(Debug, Args)]
 pub(crate) struct ExportArgs {
-    #[command(subcommand)]
-    pub(crate) command: ExportCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum ExportCommand {
-    /// Export data as JSON. The project config must declare outputs.data.type: json.
-    Json(ExportJsonArgs),
-    /// Export data as `MessagePack`. The project config must declare outputs.data.type: messagepack.
-    Messagepack(ExportMessagePackArgs),
-}
-
-#[derive(Debug, Args)]
-pub(crate) struct ExportJsonArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override outputs.data.dir for this invocation.
-    #[arg(long = "out", value_name = "DIR")]
-    pub(crate) out_dir: Option<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-pub(crate) struct ExportMessagePackArgs {
-    #[arg(value_name = "CONFIG_OR_DIR")]
-    pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override outputs.data.dir for this invocation.
-    #[arg(long = "out", value_name = "DIR")]
-    pub(crate) out_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 pub(crate) struct CodegenArgs {
-    #[command(subcommand)]
-    pub(crate) command: CodegenCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum CodegenCommand {
-    /// Generate C# runtime code. The project config must declare outputs.code.type: csharp.
-    Csharp(CodegenCsharpArgs),
-}
-
-#[derive(Debug, Args)]
-pub(crate) struct CodegenCsharpArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Override outputs.code.dir for this invocation.
-    #[arg(long = "out", value_name = "DIR")]
-    pub(crate) out_dir: Option<PathBuf>,
-    /// Override outputs.code.namespace for this invocation.
-    #[arg(long, value_name = "NAME")]
-    pub(crate) namespace: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -231,18 +234,18 @@ pub(crate) struct SchemaInspectArgs {
     /// Include derived types when --type is supplied.
     #[arg(long)]
     pub(crate) include_derived: bool,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
 pub(crate) struct SchemaFilesArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -253,18 +256,15 @@ pub(crate) struct SchemaWriteFileArgs {
     /// Project-relative configured .cft schema file to write.
     #[arg(long, value_name = "FILE")]
     pub(crate) file: String,
-    /// Read the replacement CFT source from stdin.
-    #[arg(long)]
-    pub(crate) stdin: bool,
     /// Validate and report without writing the file.
     #[arg(long)]
     pub(crate) dry_run: bool,
     /// Compile the schema after writing, or against the in-memory source in --dry-run mode.
     #[arg(long)]
     pub(crate) check: bool,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -297,9 +297,9 @@ pub(crate) enum DataCommand {
 pub(crate) struct DataSourcesArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -318,9 +318,9 @@ pub(crate) struct DataListArgs {
     /// Number of matching records to skip.
     #[arg(long, default_value_t = 0)]
     pub(crate) offset: usize,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -348,9 +348,9 @@ pub(crate) struct DataGetArgs {
     /// Fetch all matching records without the default safety limit.
     #[arg(long)]
     pub(crate) all: bool,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -366,9 +366,9 @@ pub(crate) struct DataPatchArgs {
     /// Read the JSON patch request from stdin.
     #[arg(long, conflicts_with_all = ["patch", "patch_file"])]
     pub(crate) stdin: bool,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -387,9 +387,9 @@ pub(crate) struct DataCreateFileArgs {
     /// Sheet name for Excel/table sources.
     #[arg(long, value_name = "SHEET")]
     pub(crate) sheet: Option<String>,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -408,9 +408,9 @@ pub(crate) struct DataCreateTableArgs {
     /// Sheet name to create.
     #[arg(long, value_name = "SHEET")]
     pub(crate) sheet: Option<String>,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -429,9 +429,9 @@ pub(crate) struct DataSyncHeaderArgs {
     /// Sheet name for Excel/table sources.
     #[arg(long, value_name = "SHEET")]
     pub(crate) sheet: Option<String>,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -442,16 +442,13 @@ pub(crate) struct DataWriteFileArgs {
     /// Project-relative configured .cfd data file to write.
     #[arg(long, value_name = "FILE")]
     pub(crate) file: String,
-    /// Read the replacement CFD source from stdin.
-    #[arg(long)]
-    pub(crate) stdin: bool,
     /// Validate and report without writing the file.
     #[arg(long)]
     pub(crate) dry_run: bool,
     /// Run full project validation after writing. In --dry-run mode this is skipped.
     #[arg(long)]
     pub(crate) check: bool,
-    /// Emit human-readable text instead of JSON.
+    /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
-    pub(crate) human: bool,
+    pub(crate) json: bool,
 }

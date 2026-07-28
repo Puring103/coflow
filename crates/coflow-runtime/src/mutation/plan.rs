@@ -26,6 +26,32 @@ pub(super) fn plan_mutations(
         stop_on_write_error,
         ops,
     } = request;
+    if ops.len() > 1 {
+        if let Some((index, op)) = ops.iter().enumerate().find(|(_, op)| {
+            matches!(
+                op,
+                MutationOp::SwapRecords { .. }
+                    | MutationOp::MoveRecord { .. }
+                    | MutationOp::TransferRecord { .. }
+            )
+        }) {
+            let diagnostics = DiagnosticSet::one(Diagnostic::error(
+                "MUTATION-REORDER-BATCH",
+                "MUTATION",
+                "record reorder or transfer must be the only operation in a mutation request",
+            ));
+            return (
+                Vec::new(),
+                vec![MutationFailedOp::from_diagnostics(
+                    index,
+                    mutation_op_name(op),
+                    diagnostics,
+                )],
+                false,
+                true,
+            );
+        }
+    }
     let mut planned = Vec::<PlannedMutationOp>::new();
     let mut pending_inserts = BTreeMap::<RecordCoordinate, usize>::new();
     let mut failed = Vec::new();
@@ -143,6 +169,9 @@ fn prepare_planned_op(
                 file.as_deref(),
             )
         }
+        op @ (MutationOp::SwapRecords { .. }
+        | MutationOp::MoveRecord { .. }
+        | MutationOp::TransferRecord { .. }) => prepare_one(session, op, pending_inserts),
     }
 }
 
@@ -221,7 +250,13 @@ fn prepare_insert(
             "insert preparation received a non-insert operation",
         ));
     };
-    let coordinate = RecordCoordinate::new(actual_type, key);
+    let coordinate = RecordCoordinate::try_new(actual_type, key).map_err(|error| {
+        DiagnosticSet::one(Diagnostic::error(
+            "MUTATION-COORDINATE",
+            "MUTATION",
+            error.to_string(),
+        ))
+    })?;
     if pending_inserts.contains_key(&coordinate) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "MUTATION-INSERT-CONFLICT",
@@ -261,7 +296,15 @@ fn fold_pending_insert_rename(
     let insert_file = file.clone();
     let folded =
         prepare_rename_on_pending_insert(session, &insert_file, record, file_guard, new_key)?;
-    let new_record = RecordCoordinate::new(&record.actual_type, new_key);
+    let new_record =
+        RecordCoordinate::try_new(record.actual_type.to_string(), new_key).map_err(|error| {
+            DiagnosticSet::one(Diagnostic::error(
+                "MUTATION-COORDINATE",
+                "MUTATION",
+                error.to_string(),
+            ))
+        })?;
+    let typed_new_key = new_record.key.clone();
     if new_record != *record && pending_inserts.contains_key(&new_record) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "MUTATION-RENAME-CONFLICT",
@@ -284,7 +327,7 @@ fn fold_pending_insert_rename(
                 actual_type,
                 fields,
                 &record.key,
-                new_key,
+                &typed_new_key,
             )?,
             PreparedMutationOp::SetField {
                 write_record,
@@ -298,7 +341,7 @@ fn fold_pending_insert_rename(
                 path,
                 value,
                 &record.key,
-                new_key,
+                &typed_new_key,
             )?,
             _ => {}
         }
@@ -313,7 +356,7 @@ fn fold_pending_insert_rename(
             "pending rename target changed during planning",
         ));
     };
-    *key = new_key.to_string();
+    *key = typed_new_key;
     pending_inserts.remove(record);
     pending_inserts.insert(new_record, insert_index);
     Ok(folded)
@@ -367,6 +410,9 @@ pub(super) const fn mutation_op_name(op: &MutationOp) -> &'static str {
         MutationOp::ClearDimensionValue { .. } => "clear_dimension_value",
         MutationOp::RenameRecord { .. } => "rename_record",
         MutationOp::DeleteRecord { .. } => "delete_record",
+        MutationOp::SwapRecords { .. } => "swap_records",
+        MutationOp::MoveRecord { .. } => "move_record",
+        MutationOp::TransferRecord { .. } => "transfer_record",
     }
 }
 

@@ -10,22 +10,6 @@
 {% endfor %}{% for s in project.singletons %}        {{ s.accessor_property }} = {{ s.records_var }};
 {% endfor %}    }
 
-    public static {{ project.database_class }} Load(string dataDir)
-    {
-{% for step in project.database.load_steps %}        {{ step }}
-{% endfor %}{% for s in project.singletons %}        var {{ s.records_var }}List = {{ s.type_name }}.LoadTable(Path.Combine(dataDir, "{{ s.source_name }}.{% if project.uses_json %}json{% else %}msgpack{% endif %}"), LoadContext.Empty);
-        if ({{ s.records_var }}List.Count != 1)
-        {
-            throw new InvalidOperationException("singleton `{{ s.source_name }}` must have exactly 1 record, got " + {{ s.records_var }}List.Count);
-        }
-        var {{ s.records_var }} = {{ s.records_var }}List[0];
-{% endfor %}
-        return new {{ project.database_class }}(
-{% for arg in project.database.constructor_args %}            {{ arg }}{% if not loop.last or project.singletons | length > 0 %},{% endif %}
-{% endfor %}{% for s in project.singletons %}            {{ s.records_var }}{% if not loop.last %},{% endif %}
-{% endfor %}        );
-    }
-
     internal readonly struct LoadContext
     {
         public static readonly LoadContext Empty = new LoadContext();

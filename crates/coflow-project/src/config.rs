@@ -21,12 +21,6 @@ impl<'de> Deserialize<'de> for ProjectConfig {
         D: Deserializer<'de>,
     {
         let mut fields = no_duplicate_object(deserializer)?;
-        if fields.contains_key("localization") {
-            return Err(de::Error::custom(
-                "PROJECT-CONFIG-LOCALIZATION-REMOVED: `localization` has been removed; use `dimensions.language` instead.",
-            ));
-        }
-
         let schema = fields
             .remove("schema")
             .ok_or_else(|| de::Error::missing_field("schema"))
@@ -62,11 +56,6 @@ impl<'de> Deserialize<'de> for ProjectConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DimensionConfig {
     #[serde(default)]
     pub variants: Vec<String>,
@@ -92,11 +81,23 @@ pub struct SourceConfig {
     pub options: Value,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Default)]
 pub struct OutputsConfig {
-    pub data: Option<OutputConfig>,
+    targets: Vec<OutputTargetConfig>,
+    object_shape: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct OutputTargetConfig {
+    pub data: OutputConfig,
     pub code: Option<OutputConfig>,
+    pub loader: Option<LoaderConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoaderConfig {
+    pub loader_type: String,
+    options: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -125,6 +126,48 @@ impl OutputConfig {
     }
 }
 
+impl OutputsConfig {
+    #[must_use]
+    pub const fn new(targets: Vec<OutputTargetConfig>) -> Self {
+        Self {
+            targets,
+            object_shape: false,
+        }
+    }
+
+    #[must_use]
+    pub fn targets(&self) -> &[OutputTargetConfig] {
+        &self.targets
+    }
+
+    pub fn targets_mut(&mut self) -> &mut [OutputTargetConfig] {
+        &mut self.targets
+    }
+
+    #[must_use]
+    pub const fn is_object_shape(&self) -> bool {
+        self.object_shape
+    }
+}
+
+impl OutputTargetConfig {
+    #[must_use]
+    pub fn loader_options(&self) -> &Value {
+        static EMPTY_OPTIONS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+        self.loader.as_ref().map_or_else(
+            || EMPTY_OPTIONS.get_or_init(|| Value::Object(Map::new())),
+            LoaderConfig::options,
+        )
+    }
+}
+
+impl LoaderConfig {
+    #[must_use]
+    pub const fn options(&self) -> &Value {
+        &self.options
+    }
+}
+
 impl<'de> Deserialize<'de> for SourceConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -142,7 +185,7 @@ impl<'de> Deserialize<'de> for SourceConfig {
             .map_err(de::Error::custom)?;
         let path = fields.remove("path");
         let path = path.ok_or_else(|| de::Error::custom("source must set `path`"))?;
-        let location = SourceLocationSpec::Path(path_value(path).map_err(de::Error::custom)?);
+        let location = SourceLocationSpec::new(path_value(path).map_err(de::Error::custom)?);
         let options = Value::Object(fields);
         Ok(Self {
             source_type,
@@ -175,6 +218,99 @@ impl<'de> Deserialize<'de> for OutputConfig {
             output_type,
             dir,
             options,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for OutputsConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match Value::deserialize(deserializer)? {
+            Value::Object(mut fields) => {
+                let data = fields
+                    .remove("data")
+                    .map(|value| config_value(value).map_err(de::Error::custom))
+                    .transpose()?;
+                let code = fields
+                    .remove("code")
+                    .map(|value| config_value(value).map_err(de::Error::custom))
+                    .transpose()?;
+                let loader = fields
+                    .remove("loader")
+                    .map(|value| config_value(value).map_err(de::Error::custom))
+                    .transpose()?;
+                if let Some(key) = fields.keys().next() {
+                    return Err(de::Error::custom(format!("unknown field `{key}`")));
+                }
+                let targets = match data {
+                    Some(data) => vec![OutputTargetConfig { data, code, loader }],
+                    None if code.is_some() || loader.is_some() => {
+                        return Err(de::Error::custom(
+                            "coflow.yaml missing outputs.data; object-form outputs.code and outputs.loader require outputs.data",
+                        ));
+                    }
+                    None => Vec::new(),
+                };
+                Ok(Self {
+                    targets,
+                    object_shape: true,
+                })
+            }
+            Value::Array(values) => values
+                .into_iter()
+                .map(config_value)
+                .collect::<Result<Vec<_>, _>>()
+                .map(Self::new)
+                .map_err(de::Error::custom),
+            _ => Err(de::Error::custom(
+                "outputs must be an object or a list of output targets",
+            )),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for OutputTargetConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut fields = no_duplicate_object(deserializer)?;
+        let data = fields
+            .remove("data")
+            .ok_or_else(|| de::Error::missing_field("data"))
+            .and_then(|value| config_value(value).map_err(de::Error::custom))?;
+        let code = fields
+            .remove("code")
+            .map(|value| config_value(value).map_err(de::Error::custom))
+            .transpose()?;
+        let loader = fields
+            .remove("loader")
+            .map(|value| config_value(value).map_err(de::Error::custom))
+            .transpose()?;
+        if let Some(key) = fields.keys().next() {
+            return Err(de::Error::custom(format!("unknown field `{key}`")));
+        }
+        Ok(Self { data, code, loader })
+    }
+}
+
+impl<'de> Deserialize<'de> for LoaderConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut fields = no_duplicate_object(deserializer)?;
+        let loader_type = fields
+            .remove("type")
+            .map(string_field("loader `type`"))
+            .transpose()
+            .map_err(de::Error::custom)?
+            .ok_or_else(|| de::Error::missing_field("type"))?;
+        Ok(Self {
+            loader_type,
+            options: Value::Object(fields),
         })
     }
 }

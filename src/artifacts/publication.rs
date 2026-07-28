@@ -57,8 +57,8 @@ impl PublishedArtifactSnapshot {
 
 pub fn publish_artifacts(
     project: &Project,
-    staged_outputs: Vec<(&str, StagedArtifactDir)>,
-    removed_outputs: &[&str],
+    staged_outputs: Vec<(String, StagedArtifactDir)>,
+    removed_outputs: &[String],
     enum_lock_update: EnumLockUpdate,
 ) -> Result<PublishedArtifactSnapshot, DiagnosticSet> {
     validate_publication_slots(project, &staged_outputs, removed_outputs)?;
@@ -71,11 +71,11 @@ pub fn publish_artifacts(
     for (slot, staged) in staged_outputs {
         let (generation, requested_output) = staged.seal()?;
         pending_generations.track(&generation);
-        manifest.outputs.insert(slot.to_string(), generation);
+        manifest.outputs.insert(slot, generation);
         requested_outputs.push(requested_output);
     }
     for slot in removed_outputs {
-        manifest.outputs.remove(*slot);
+        manifest.outputs.remove(slot);
     }
     let persist_enum_lock = matches!(&enum_lock_update, EnumLockUpdate::Replace(_));
     if let EnumLockUpdate::Replace(value) = enum_lock_update {
@@ -135,12 +135,12 @@ impl Drop for PendingGenerations {
 
 fn validate_publication_slots(
     project: &Project,
-    staged_outputs: &[(&str, StagedArtifactDir)],
-    removed_outputs: &[&str],
+    staged_outputs: &[(String, StagedArtifactDir)],
+    removed_outputs: &[String],
 ) -> Result<(), DiagnosticSet> {
     let mut staged_slots = BTreeSet::new();
     for (slot, _) in staged_outputs {
-        if slot.is_empty() || !staged_slots.insert(*slot) {
+        if slot.is_empty() || !staged_slots.insert(slot.as_str()) {
             return Err(diagnostic_set(
                 manifest_path(project),
                 format!("artifact publication contains invalid or duplicate `{slot}` output"),
@@ -149,7 +149,10 @@ fn validate_publication_slots(
     }
     let mut removed_slots = BTreeSet::new();
     for slot in removed_outputs {
-        if slot.is_empty() || !removed_slots.insert(*slot) || staged_slots.contains(*slot) {
+        if slot.is_empty()
+            || !removed_slots.insert(slot.as_str())
+            || staged_slots.contains(slot.as_str())
+        {
             return Err(diagnostic_set(
                 manifest_path(project),
                 format!("artifact publication contains conflicting `{slot}` removal"),
@@ -160,10 +163,13 @@ fn validate_publication_slots(
 }
 
 pub fn read_active_enum_lock(project: &Project) -> Result<Option<Value>, DiagnosticSet> {
-    if let Some(value) = load_active_manifest(project)?.and_then(|manifest| manifest.enum_lock) {
-        return Ok(Some(value));
-    }
     read_versioned_enum_lock(project)
+}
+
+pub(crate) fn active_output_slots(project: &Project) -> Result<Vec<String>, DiagnosticSet> {
+    Ok(load_active_manifest(project)?
+        .map(|manifest| manifest.outputs.into_keys().collect())
+        .unwrap_or_default())
 }
 
 fn read_versioned_enum_lock(project: &Project) -> Result<Option<Value>, DiagnosticSet> {
@@ -449,6 +455,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn versioned_enum_lock_takes_precedence_over_local_artifact_state() {
+        let root = test_project_root(fault::Point::WriteActiveManifest);
+        let project = open_test_project(&root);
+        let versioned_lock = json!({"ItemId": {"versioned": 7}});
+        let local_lock = json!({"ItemId": {"local": 3}});
+
+        std::fs::write(
+            root.join(ENUM_LOCKFILE_NAME),
+            serde_json::to_vec_pretty(&versioned_lock).expect("serialize versioned enum lock"),
+        )
+        .expect("write versioned enum lock");
+        let mut manifest = super::empty_manifest();
+        manifest.enum_lock = Some(local_lock);
+        super::write_active_manifest(&project, &manifest).expect("write local artifact manifest");
+
+        assert_eq!(
+            read_active_enum_lock(&project).expect("read enum lock"),
+            Some(versioned_lock)
+        );
+        std::fs::remove_dir_all(root).expect("remove test project");
+    }
+
     fn assert_failure_preserves_active_snapshot(point: fault::Point) {
         let root = test_project_root(point);
         let project = open_test_project(&root);
@@ -465,9 +494,9 @@ mod tests {
         .expect("stage baseline artifacts");
         let baseline = publish_artifacts(
             &project,
-            vec![(DATA_OUTPUT_SLOT, baseline)],
+            vec![(DATA_OUTPUT_SLOT.to_string(), baseline)],
             &[],
-            EnumLockUpdate::Replace(old_lock.clone()),
+            EnumLockUpdate::Replace(old_lock),
         )
         .expect("publish baseline artifacts");
         assert_eq!(
@@ -499,7 +528,7 @@ mod tests {
             .and_then(|staged| {
                 publish_artifacts(
                     &project,
-                    vec![(DATA_OUTPUT_SLOT, staged)],
+                    vec![(DATA_OUTPUT_SLOT.to_string(), staged)],
                     &[],
                     EnumLockUpdate::Replace(new_lock.clone()),
                 )
@@ -525,10 +554,14 @@ mod tests {
             old_requested,
             "{point:?} changed the requested output"
         );
+        let expected_lock: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join(ENUM_LOCKFILE_NAME)).expect("read versioned enum lock"),
+        )
+        .expect("parse versioned enum lock");
         assert_eq!(
-            read_active_enum_lock(&project).expect("read active enum lock"),
-            Some(old_lock),
-            "{point:?} exposed the non-authoritative enum lock mirror"
+            read_active_enum_lock(&project).expect("read versioned enum lock"),
+            Some(expected_lock),
+            "{point:?} did not expose the versioned enum lock"
         );
         if point == fault::Point::WriteActiveManifest {
             let mirror: serde_json::Value = serde_json::from_slice(

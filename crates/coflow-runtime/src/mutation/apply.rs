@@ -127,7 +127,12 @@ fn execute_generation_mutation(
         cursor = end;
     }
 
-    let impact = MutationImpact::from_outcomes(staged.iter().map(|applied| &applied.outcome));
+    let impact = MutationImpact::from_operations(
+        executable
+            .iter()
+            .zip(&staged)
+            .map(|(item, applied)| (&item.planned.op, &applied.outcome)),
+    );
     let rebuilt = match rebuild_after_mutation(session, registry, &impact) {
         Ok(rebuilt) => rebuilt,
         Err(mut diagnostics) => {
@@ -258,7 +263,7 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
             ..
         } => (
             "insert_record",
-            Some(RecordCoordinate::new(actual_type, key)),
+            Some(RecordCoordinate::new(actual_type.clone(), key.clone())),
             Some(file.clone()),
         ),
         PreparedMutationOp::CancelledInsert { record, write_file } => (
@@ -269,9 +274,9 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
         PreparedMutationOp::SetField {
             record, write_file, ..
         }
-        | PreparedMutationOp::FoldedSetField { record, write_file } => {
-            ("set_field", Some(record.clone()), Some(write_file.clone()))
-        }
+        | PreparedMutationOp::FoldedSetField {
+            record, write_file, ..
+        } => ("set_field", Some(record.clone()), Some(write_file.clone())),
         PreparedMutationOp::WriteDimensionValue {
             record,
             new_value,
@@ -292,7 +297,10 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
             report_file,
         } => (
             "rename_record",
-            Some(RecordCoordinate::new(&record.actual_type, new_key)),
+            Some(RecordCoordinate::new(
+                record.actual_type.clone(),
+                new_key.clone(),
+            )),
             report_file.clone(),
         ),
         PreparedMutationOp::FoldedRenameRecord {
@@ -308,6 +316,31 @@ fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> Muta
             record,
             report_file,
         } => ("delete_record", Some(record.clone()), report_file.clone()),
+        PreparedMutationOp::SwapRecords {
+            first, report_file, ..
+        } => (
+            "swap_records",
+            Some(first.clone()),
+            Some(report_file.clone()),
+        ),
+        PreparedMutationOp::MoveRecord {
+            record,
+            report_file,
+            ..
+        } => (
+            "move_record",
+            Some(record.clone()),
+            Some(report_file.clone()),
+        ),
+        PreparedMutationOp::TransferRecord {
+            record,
+            destination_file,
+            ..
+        } => (
+            "transfer_record",
+            Some(record.clone()),
+            Some(destination_file.clone()),
+        ),
         PreparedMutationOp::FoldedDeleteRecord { record, write_file } => (
             "delete_record",
             Some(record.clone()),
@@ -365,5 +398,8 @@ const fn prepared_op_name(op: &PreparedMutationOp) -> &'static str {
         PreparedMutationOp::DeleteRecord { .. } | PreparedMutationOp::FoldedDeleteRecord { .. } => {
             "delete_record"
         }
+        PreparedMutationOp::SwapRecords { .. } => "swap_records",
+        PreparedMutationOp::MoveRecord { .. } => "move_record",
+        PreparedMutationOp::TransferRecord { .. } => "transfer_record",
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use coflow_api::{ProviderRegistry, WriterCapabilities};
-use coflow_cft::{CftSchema, CftSchemaTypeRef};
+use coflow_cft::{CftSchema, CftValueType};
 use coflow_data_model::{
     CfdPath, CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup, RefSite,
 };
@@ -10,7 +10,8 @@ use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
 use crate::{
     DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState, DimensionValueView,
     EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, FileTreeOptions, IdAsEnumInfo,
-    ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
+    ProjectExecutionStats, ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView,
+    RefTargetInfo,
 };
 
 /// Read-only capability over one immutable project generation.
@@ -39,6 +40,11 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
+    pub const fn execution_stats(self) -> &'a ProjectExecutionStats {
+        self.session.execution_stats()
+    }
+
+    #[must_use]
     pub(crate) const fn sources(self) -> &'a SourceIndex {
         self.session.sources()
     }
@@ -56,6 +62,14 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub fn source_file_count(self) -> usize {
         self.session.files().source_files().len()
+    }
+
+    pub fn source_files(self) -> impl Iterator<Item = &'a str> + 'a {
+        self.session
+            .files()
+            .source_files()
+            .iter()
+            .map(String::as_str)
     }
 
     #[must_use]
@@ -77,6 +91,14 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
+    pub fn type_is_singleton(self, type_name: &str) -> bool {
+        self.session
+            .schema()
+            .resolve_type(type_name)
+            .is_some_and(|meta| meta.is_singleton)
+    }
+
+    #[must_use]
     pub fn schema_type_names(self) -> Vec<String> {
         self.session
             .schema()
@@ -92,7 +114,7 @@ impl<'a> ProjectQueries<'a> {
             .resolve_type(type_name)
             .map(|meta| {
                 meta.all_fields()
-                    .map(|field| (field.name.to_string(), field.ty_ref.display_label()))
+                    .map(|field| (field.name.to_string(), field.value_type.display_label()))
                     .collect()
             })
             .unwrap_or_default()
@@ -194,12 +216,10 @@ impl<'a> ProjectQueries<'a> {
             if !normalized_path.starts_with(&format!("{}/", out_dir.trim_end_matches('/'))) {
                 continue;
             }
-            let field = crate::dimensions::dimension_fields(self.session.schema())
-                .into_iter()
-                .find(|field| {
-                    field.dimension.as_str() == info.name
-                        && format!("{}_{}", field.bucket, field.source_field) == stem
-                })?;
+            let field = self.session.dimension_plan.fields().iter().find(|field| {
+                field.dimension.as_str() == info.name
+                    && format!("{}_{}", field.bucket, field.source_field) == stem
+            })?;
             return Some((
                 info,
                 field.source_type.to_string(),
@@ -281,7 +301,20 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub fn field_shape(self, actual_type: &str, field_name: &str) -> Option<FieldShapeInfo> {
         let field = self.session.schema().field(actual_type, field_name)?;
-        Some(field_shape(self.session.schema(), &field.ty_ref))
+        Some(field_shape(self.session.schema(), &field.value_type))
+    }
+
+    #[must_use]
+    pub fn type_field_names(self, actual_type: &str) -> Vec<String> {
+        self.session
+            .schema()
+            .resolve_type(actual_type)
+            .map(|meta| {
+                meta.all_fields()
+                    .map(|field| field.name.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     #[must_use]
@@ -305,7 +338,7 @@ impl<'a> ProjectQueries<'a> {
         let target = self
             .session
             .model()
-            .resolve_effective_ref(&RefSite::new(host, path.clone()))?;
+            .resolve_ref(&RefSite::new(host, path.clone()))?;
         self.coordinate_of(target)
     }
 
@@ -338,15 +371,14 @@ impl<'a> ProjectQueries<'a> {
                 let is_flags = schema
                     .resolve_enum(&enum_name)
                     .is_some_and(|schema_enum| schema_enum.is_flag);
-                let ids = model.polymorphic_index(&schema_type.name).map_or_else(
-                    || {
-                        model
-                            .records_of_type(&schema_type.name)
-                            .map(|(_, record)| record.key().to_string())
-                            .collect()
-                    },
-                    |index| index.records.keys().cloned().collect(),
-                );
+                let mut ids = model
+                    .records_assignable_to(schema, &schema_type.name)
+                    .map(|(_, record)| record.key().to_string())
+                    .collect::<Vec<_>>();
+                if schema.range_is_polymorphic(&schema_type.name) {
+                    ids.sort();
+                    ids.dedup();
+                }
                 Some(IdAsEnumInfo {
                     enum_name,
                     ids,
@@ -403,7 +435,7 @@ impl<'a> ProjectQueries<'a> {
     /// # Errors
     ///
     /// Returns provider diagnostics when the table source options cannot be
-    /// resolved or the type-to-sheet mapping is invalid.
+    /// decoded or resolved.
     pub fn table_sheet_for_type(
         self,
         registry: &ProviderRegistry,
@@ -431,7 +463,7 @@ fn dimension_value_at_path<'a>(
     for segment in path {
         value = match (segment, value) {
             (CfdPathSegment::Field(field), CfdValue::Object(object)) => {
-                object.fields().get(field)?
+                object.fields().get(field.as_str())?
             }
             (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
             (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => {
@@ -445,18 +477,18 @@ fn dimension_value_at_path<'a>(
     Some(value)
 }
 
-fn field_shape(schema: &CftSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
-    let non_nullable = non_nullable(ty);
+fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
+    let non_nullable = ty.non_nullable();
     let ref_target_type = match non_nullable {
-        CftSchemaTypeRef::RecordRef(name) => Some(name.to_string()),
+        CftValueType::RecordRef(name) => Some(name.to_string()),
         _ => None,
     };
     let enum_type = match non_nullable {
-        CftSchemaTypeRef::Enum(name) => Some(name.to_string()),
+        CftValueType::Enum(name) => Some(name.to_string()),
         _ => None,
     };
     let polymorphic_types = match non_nullable {
-        CftSchemaTypeRef::Object(name) => Some(name.as_str()),
+        CftValueType::Object(name) => Some(name.as_str()),
         _ => None,
     }
     .and_then(|name| schema.resolve_type(name).map(|meta| (name, meta)))
@@ -468,24 +500,37 @@ fn field_shape(schema: &CftSchema, ty: &CftSchemaTypeRef) -> FieldShapeInfo {
     .map(|name| name.to_string())
     .collect();
     let collection_item = match non_nullable {
-        CftSchemaTypeRef::Array(item) | CftSchemaTypeRef::Dict(_, item) => {
+        CftValueType::Array(item) | CftValueType::Dict(_, item) => {
             Some(Box::new(field_shape(schema, item)))
         }
         _ => None,
+    };
+    let object_type = match non_nullable {
+        CftValueType::Object(name) => schema
+            .resolve_type(name)
+            .filter(|meta| !meta.is_abstract)
+            .map(|meta| meta.name.to_string()),
+        _ => None,
+    };
+    let field_order = match non_nullable {
+        CftValueType::Object(name) => schema
+            .resolve_type(name)
+            .map(|meta| {
+                meta.all_fields()
+                    .map(|field| field.name.to_string())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
     };
     FieldShapeInfo {
         display_label: ty.display_label(),
         ref_target_type,
         enum_type,
-        nullable: matches!(ty, CftSchemaTypeRef::Nullable(_)),
+        nullable: matches!(ty, CftValueType::Nullable(_)),
         polymorphic_types,
         collection_item,
-    }
-}
-
-fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
-    match ty {
-        CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
-        _ => ty,
+        object_type,
+        field_order,
     }
 }

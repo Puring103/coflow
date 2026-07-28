@@ -1,8 +1,7 @@
-use std::collections::BTreeSet;
-
-use crate::{
-    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftSchemaTypeRef, CftType, EnumName,
-    EnumVariantName, TypeName, TypedCheckSchedule, ValueDependencyPlan,
+use crate::schema::{
+    CftConst, CftDimension, CftEnum, CftField, CftSchema, CftTopLevelCheck, CftType,
+    CheckDependency, CheckOwner, CheckStatementId, CheckStatementInfo, CheckStatementRef, EnumName,
+    EnumVariantName, FieldName, TypeName, ValueDependencyPlan,
 };
 
 impl CftSchema {
@@ -19,68 +18,6 @@ impl CftSchema {
         None
     }
 
-    #[must_use]
-    pub fn is_id_as_enum(&self, enum_name: &str) -> bool {
-        self.type_by_id_as_enum.contains_key(enum_name)
-    }
-
-    #[must_use]
-    pub fn id_as_enum_names(&self) -> BTreeSet<EnumName> {
-        self.type_by_id_as_enum.keys().cloned().collect()
-    }
-
-    #[must_use]
-    pub fn ref_target_names(&self) -> Vec<TypeName> {
-        let mut out = BTreeSet::new();
-        for ty in self.types.values() {
-            let mut visited = BTreeSet::new();
-            self.collect_ref_targets_for_type(ty, &mut out, &mut visited);
-        }
-        out.into_iter().collect()
-    }
-
-    fn collect_ref_targets_for_type(
-        &self,
-        ty: &CftType,
-        out: &mut BTreeSet<TypeName>,
-        visited: &mut BTreeSet<TypeName>,
-    ) {
-        if !visited.insert(ty.name.clone()) {
-            return;
-        }
-        for field in &ty.all_fields {
-            self.collect_ref_targets_in_type(&field.ty_ref, out, visited);
-        }
-    }
-
-    fn collect_ref_targets_in_type(
-        &self,
-        ty: &CftSchemaTypeRef,
-        out: &mut BTreeSet<TypeName>,
-        visited: &mut BTreeSet<TypeName>,
-    ) {
-        match ty {
-            CftSchemaTypeRef::Object(name) => {
-                if let Some(meta) = self.types.get(name) {
-                    self.collect_ref_targets_for_type(meta, out, visited);
-                }
-            }
-            CftSchemaTypeRef::RecordRef(name) => {
-                out.insert(name.clone());
-            }
-            CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
-                self.collect_ref_targets_in_type(inner, out, visited);
-            }
-            CftSchemaTypeRef::Dict(_, value) => {
-                self.collect_ref_targets_in_type(value, out, visited);
-            }
-            CftSchemaTypeRef::Enum(_)
-            | CftSchemaTypeRef::Int
-            | CftSchemaTypeRef::Float
-            | CftSchemaTypeRef::Bool
-            | CftSchemaTypeRef::String => {}
-        }
-    }
     #[must_use]
     pub const fn value_dependencies(&self) -> &ValueDependencyPlan {
         &self.value_dependencies
@@ -117,15 +54,38 @@ impl CftSchema {
     }
 
     #[must_use]
+    pub fn resolve_check(&self, name: &str) -> Option<&CftTopLevelCheck> {
+        self.top_level_checks.get(name)
+    }
+
+    pub fn all_checks(&self) -> impl Iterator<Item = &CftTopLevelCheck> {
+        self.top_level_checks.values()
+    }
+
+    #[must_use]
+    pub fn source(&self, module: &crate::ModuleId) -> Option<&crate::CftSchemaSource> {
+        self.sources.get(module)
+    }
+
+    #[must_use]
     pub fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
-        let mut current = Some(actual_type);
-        while let Some(name) = current {
-            if name == expected_type {
-                return true;
-            }
-            current = self.types.get(name).and_then(|meta| meta.parent.as_deref());
-        }
-        false
+        (actual_type == expected_type && self.types.contains_key(actual_type))
+            || self
+                .ancestor_membership_by_type
+                .get(actual_type)
+                .is_some_and(|ancestors| ancestors.contains(expected_type))
+    }
+
+    /// Returns the root of the inheritance tree containing `type_name`.
+    #[must_use]
+    pub fn inheritance_root(&self, type_name: &str) -> Option<&TypeName> {
+        self.inheritance_root_by_type.get(type_name)
+    }
+
+    /// Returns ancestors from the nearest parent to the inheritance root.
+    #[must_use]
+    pub fn ancestor_type_names(&self, type_name: &str) -> Option<&[TypeName]> {
+        self.ancestors_by_type.get(type_name).map(Vec::as_slice)
     }
 
     #[must_use]
@@ -148,17 +108,69 @@ impl CftSchema {
     }
 
     #[must_use]
-    pub fn check_schedule<'schema, 'dimension>(
-        &'schema self,
+    pub fn check_statement(&self, id: CheckStatementId) -> Option<CheckStatementRef<'_>> {
+        let info = self.check_index.statement(id)?;
+        let block = match &info.owner {
+            CheckOwner::Type(name) => self.types.get(name)?.check.as_ref()?,
+            CheckOwner::Project(name) => &self.top_level_checks.get(name)?.block,
+        };
+        Some(CheckStatementRef {
+            info,
+            statement: block.stmts.get(info.root_index)?,
+        })
+    }
+
+    pub fn all_check_statements(&self) -> impl Iterator<Item = &CheckStatementInfo> {
+        self.check_index.statements()
+    }
+
+    pub fn check_statements_for_dependency(
+        &self,
+        dependency: &CheckDependency,
+    ) -> impl Iterator<Item = CheckStatementId> + '_ {
+        self.check_index.for_dependency(dependency)
+    }
+
+    #[must_use]
+    pub fn check_dependency_is_cross_record(
+        &self,
+        statement: CheckStatementId,
+        dependency: &CheckDependency,
+    ) -> bool {
+        self.check_index
+            .dependency_is_cross_record(statement, dependency)
+    }
+
+    pub fn check_statements_for_actual_type(
+        &self,
         actual_type: &str,
-        dimension: Option<&'dimension str>,
-    ) -> TypedCheckSchedule<'schema, 'dimension> {
-        TypedCheckSchedule::new(self, actual_type, dimension)
+    ) -> impl Iterator<Item = CheckStatementId> + '_ {
+        self.check_index.for_actual_type(actual_type)
+    }
+
+    pub fn check_hosts_for_nested_type(
+        &self,
+        nested_type: &str,
+    ) -> impl Iterator<Item = &TypeName> {
+        self.check_index.hosts_for_nested_type(nested_type)
+    }
+
+    #[must_use]
+    pub fn check_owner_applies_to_actual(&self, owner: &str, actual: &str) -> bool {
+        self.check_index.owner_applies_to_actual(owner, actual)
+    }
+
+    pub fn check_statements_for_nested_field(
+        &self,
+        actual_type: &TypeName,
+        field_name: &FieldName,
+    ) -> impl Iterator<Item = CheckStatementId> + '_ {
+        self.check_index.for_nested_field(actual_type, field_name)
     }
 
     #[must_use]
     pub fn field_has_nested_checks(&self, actual_type: &str, field_name: &str) -> bool {
-        self.typed_checks
+        self.check_index
             .field_has_nested_checks(actual_type, field_name)
     }
 
@@ -192,20 +204,6 @@ impl CftSchema {
         self.types
             .get(type_name)
             .is_some_and(|meta| meta.is_abstract || !self.children(&meta.name).is_empty())
-    }
-
-    #[must_use]
-    pub fn assignable_target_names(&self, actual_type: &str) -> Vec<TypeName> {
-        let mut out = Vec::new();
-        let mut current = Some(actual_type);
-        while let Some(name) = current {
-            let Some(meta) = self.types.get(name) else {
-                break;
-            };
-            out.push(meta.name.clone());
-            current = meta.parent.as_deref();
-        }
-        out
     }
 
     pub fn singleton_types(&self) -> impl Iterator<Item = &CftType> {

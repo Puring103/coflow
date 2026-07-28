@@ -8,15 +8,15 @@ mod columns;
 mod diagnostics;
 mod types;
 
-use coflow_cft::{record_key_ident_error, CftSchema, CftSchemaTypeRef};
+use coflow_cft::{record_key_ident_error, CftSchema, CftValueType};
 use coflow_data_model::{
-    CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath, CfdPathSegment, RecordOrigin,
-    SourceDocument,
+    CfdDiagnostics, CfdLabel, CfdPath, CfdPathSegment, LoadedRecordDraft, LoadedValueDraft,
+    RecordOrigin, SourceDocument,
 };
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::cell_value::{parse_schema_cell, ParsedCell};
+use coflow_data_model::cell_value::{parse_schema_cell, ParsedCell};
 use columns::{
     field_columns_from_resolved, resolve_columns, ExpandedSubColumn, IdColumn, ResolvedColumn,
 };
@@ -39,7 +39,7 @@ pub fn collect_table_input_records(
     schema: &CftSchema,
     sources: &[TableSource],
 ) -> Result<TableInputRecords, TableDiagnostics> {
-    let mut records: Vec<CfdInputRecord> = Vec::new();
+    let mut records: Vec<LoadedRecordDraft> = Vec::new();
     let mut diagnostics = Vec::new();
     for source in sources {
         let sheet_names = source
@@ -197,7 +197,7 @@ pub fn collect_table_input_records(
                     id_column.excel_column,
                 );
                 records.push(
-                    CfdInputRecord::new(record_key, type_name, input_fields)
+                    LoadedRecordDraft::new(record_key, type_name, input_fields)
                         .with_origin(record_origin),
                 );
             }
@@ -271,9 +271,8 @@ fn build_record_origin(
     }
 }
 
-/// Map [`CfdDiagnostics`] to per-row [`TableDiagnostic`] using a slice of
-/// record origins (typically extracted from the input records via
-/// [`crate::origins_of`]).
+/// Map [`CfdDiagnostics`] to per-row [`TableDiagnostic`] using the record
+/// origins carried by the provider's input records.
 #[must_use]
 pub fn map_table_diagnostics(
     diagnostics: CfdDiagnostics,
@@ -311,6 +310,11 @@ pub fn map_table_diagnostics(
 pub fn map_label_to_table(label: &CfdLabel, origins: &[RecordOrigin]) -> Option<TableLabel> {
     let record = label.record?;
     let origin = origins.get(record.index())?;
+    map_label_to_table_origin(label, origin)
+}
+
+#[must_use]
+pub fn map_label_to_table_origin(label: &CfdLabel, origin: &RecordOrigin) -> Option<TableLabel> {
     let RecordOrigin::Table {
         document,
         sheet,
@@ -345,7 +349,7 @@ fn build_expanded_object(
     row: &[String],
     excel_row: usize,
     diagnostics: &mut Vec<TableDiagnostic>,
-) -> Option<CfdInputValue> {
+) -> Option<LoadedValueDraft> {
     let mut fields = BTreeMap::new();
     let diagnostic_start = diagnostics.len();
     for child in children {
@@ -370,7 +374,7 @@ fn build_expanded_object(
         }
     }
     if diagnostics.len() == diagnostic_start {
-        Some(CfdInputValue::Object {
+        Some(LoadedValueDraft::Object {
             actual_type: None,
             fields,
         })
@@ -379,14 +383,11 @@ fn build_expanded_object(
     }
 }
 
-fn full_field_types(
-    schema: &CftSchema,
-    type_name: &str,
-) -> Option<BTreeMap<String, CftSchemaTypeRef>> {
+fn full_field_types(schema: &CftSchema, type_name: &str) -> Option<BTreeMap<String, CftValueType>> {
     let fields = schema
         .resolve_type(type_name)?
         .all_fields()
-        .map(|field| (field.name.to_string(), field.ty_ref.clone()))
+        .map(|field| (field.name.to_string(), field.value_type.clone()))
         .collect();
     Some(fields)
 }

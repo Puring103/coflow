@@ -17,28 +17,30 @@ use clap::Parser;
 use cli_output::{display_path, project_path, write_json_diagnostics, write_project_diagnostics};
 use coflow::commands::{
     build_project, check_project, clean_project, export_project_data, generate_project_code,
-    BuildOptions, CodegenOptions, CommandOutcome, ExportOptions, CSHARP_CODEGEN_ID,
-    JSON_EXPORTER_ID, MESSAGEPACK_EXPORTER_ID,
+    CommandOutcome,
 };
-use coflow::diagnostics::cli_error;
-use coflow::{data_commands, schema_commands};
 use coflow_api::DiagnosticSet;
 use coflow_project::{normalize_path, path_to_slash, Project};
 use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
 use data_get_target::parse_data_get_target;
-use serde_json::Value;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 mod cli;
 mod cli_output;
+mod data_commands;
 mod data_get_target;
+mod diagnostics;
+mod schema_commands;
+mod skill_commands;
+mod write_file;
+
+use diagnostics::cli_error;
 
 use cli::{
-    BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, CodegenCommand,
-    CodegenCsharpArgs, Command, DataArgs, DataCommand, ExportArgs, ExportCommand, ExportJsonArgs,
-    ExportMessagePackArgs, InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand,
+    BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, Command, DataArgs,
+    DataCommand, ExportArgs, InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand,
     SkillArgs, SkillCommand, SkillScopeArgs,
 };
 
@@ -61,8 +63,8 @@ fn run() -> Result<bool, DiagnosticSet> {
         Command::Check(args) => project_check(&args),
         Command::Build(args) => project_build(&args),
         Command::Clean(args) => project_clean(&args),
-        Command::Export(command) => run_export(&command),
-        Command::Codegen(command) => run_codegen(&command),
+        Command::Export(args) => export_data(&args),
+        Command::Codegen(args) => generate_code(&args),
         Command::Schema(command) => run_schema(&command),
         Command::Data(command) => run_data(&command),
         Command::Skill(command) => run_skill(&command),
@@ -73,25 +75,25 @@ fn run_skill(command: &SkillArgs) -> Result<bool, DiagnosticSet> {
     match &command.command {
         SkillCommand::Install(args) => write_skill_report(
             if args.global {
-                coflow::skill_commands::install_global()?
+                skill_commands::install_global()?
             } else {
-                coflow::skill_commands::install_project(args.config_or_dir.as_deref())?
+                skill_commands::install_project(args.config_or_dir.as_deref())?
             },
             args,
         ),
         SkillCommand::Uninstall(args) => write_skill_report(
             if args.global {
-                coflow::skill_commands::uninstall_global()?
+                skill_commands::uninstall_global()?
             } else {
-                coflow::skill_commands::uninstall_project(args.config_or_dir.as_deref())?
+                skill_commands::uninstall_project(args.config_or_dir.as_deref())?
             },
             args,
         ),
         SkillCommand::Status(args) => write_skill_report(
             if args.global {
-                coflow::skill_commands::status_global()?
+                skill_commands::status_global()?
             } else {
-                coflow::skill_commands::status_project(args.config_or_dir.as_deref())?
+                skill_commands::status_project(args.config_or_dir.as_deref())?
             },
             args,
         ),
@@ -99,7 +101,7 @@ fn run_skill(command: &SkillArgs) -> Result<bool, DiagnosticSet> {
 }
 
 fn write_skill_report(
-    report: coflow::skill_commands::SkillReport,
+    report: skill_commands::SkillReport,
     args: &SkillScopeArgs,
 ) -> Result<bool, DiagnosticSet> {
     if args.json {
@@ -134,39 +136,21 @@ fn run_cft(command: &CftArgs) -> Result<bool, DiagnosticSet> {
     }
 }
 
-fn run_export(command: &ExportArgs) -> Result<bool, DiagnosticSet> {
-    match &command.command {
-        ExportCommand::Json(args) => export_json(args),
-        ExportCommand::Messagepack(args) => export_messagepack(args),
-    }
-}
-
-fn run_codegen(command: &CodegenArgs) -> Result<bool, DiagnosticSet> {
-    match &command.command {
-        CodegenCommand::Csharp(args) => codegen_csharp(args),
-    }
-}
-
 fn run_schema(command: &SchemaArgs) -> Result<bool, DiagnosticSet> {
     match &command.command {
         SchemaCommand::Inspect(args) => schema_commands::inspect(
             args.config_or_dir.as_deref(),
             args.type_filter.as_deref(),
             args.include_derived,
-            args.human,
+            !args.json,
         ),
         SchemaCommand::Files(args) => {
-            schema_commands::files(args.config_or_dir.as_deref(), args.human)
+            schema_commands::files(args.config_or_dir.as_deref(), !args.json)
         }
         SchemaCommand::WriteFile(args) => schema_commands::write_file(
             args.config_or_dir.as_deref(),
             &schema_commands::SchemaWriteFileOptions {
                 file: args.file.clone(),
-                input: if args.stdin {
-                    schema_commands::SchemaWriteInput::Stdin
-                } else {
-                    schema_commands::SchemaWriteInput::Missing
-                },
                 mode: if args.dry_run {
                     schema_commands::SchemaWriteMode::DryRun
                 } else {
@@ -177,10 +161,10 @@ fn run_schema(command: &SchemaArgs) -> Result<bool, DiagnosticSet> {
                 } else {
                     schema_commands::SchemaWriteCheck::Skip
                 },
-                output: if args.human {
-                    schema_commands::SchemaWriteOutput::Human
-                } else {
+                output: if args.json {
                     schema_commands::SchemaWriteOutput::Json
+                } else {
+                    schema_commands::SchemaWriteOutput::Human
                 },
             },
         ),
@@ -190,7 +174,7 @@ fn run_schema(command: &SchemaArgs) -> Result<bool, DiagnosticSet> {
 fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
     match &command.command {
         DataCommand::Sources(args) => {
-            data_commands::sources(args.config_or_dir.as_deref(), args.human)
+            data_commands::sources(args.config_or_dir.as_deref(), !args.json)
         }
         DataCommand::List(args) => data_commands::list(
             args.config_or_dir.as_deref(),
@@ -198,7 +182,7 @@ fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
             args.file.clone(),
             args.limit,
             args.offset,
-            args.human,
+            !args.json,
         ),
         DataCommand::Get(args) => {
             let target = parse_data_get_target(&args.target).map_err(cli_arg_error)?;
@@ -211,7 +195,7 @@ fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
                 limit: args.limit,
                 offset: args.offset,
                 all: args.all,
-                human: args.human,
+                human: !args.json,
             })
         }
         DataCommand::Patch(args) => data_commands::patch(
@@ -221,7 +205,7 @@ fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
                 file: args.patch_file.clone(),
                 stdin: args.stdin,
             },
-            args.human,
+            !args.json,
         ),
         DataCommand::CreateFile(args) => data_commands::create_file(
             args.config_or_dir.as_deref(),
@@ -229,7 +213,7 @@ fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
             args.actual_type.clone(),
             args.provider.clone(),
             args.sheet.clone(),
-            args.human,
+            !args.json,
         ),
         DataCommand::CreateTable(args) => data_commands::create_table(
             args.config_or_dir.as_deref(),
@@ -237,7 +221,7 @@ fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
             args.actual_type.clone(),
             args.provider.as_deref(),
             args.sheet.clone(),
-            args.human,
+            !args.json,
         ),
         DataCommand::SyncHeader(args) => data_commands::sync_header(
             args.config_or_dir.as_deref(),
@@ -245,17 +229,12 @@ fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
             args.actual_type.clone(),
             args.provider.clone(),
             args.sheet.clone(),
-            args.human,
+            !args.json,
         ),
         DataCommand::WriteFile(args) => data_commands::write_file(
             args.config_or_dir.as_deref(),
             &data_commands::DataWriteFileOptions {
                 file: args.file.clone(),
-                input: if args.stdin {
-                    data_commands::DataWriteInput::Stdin
-                } else {
-                    data_commands::DataWriteInput::Missing
-                },
                 mode: if args.dry_run {
                     data_commands::DataWriteMode::DryRun
                 } else {
@@ -266,10 +245,10 @@ fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
                 } else {
                     data_commands::DataWriteCheck::Skip
                 },
-                output: if args.human {
-                    data_commands::DataWriteOutput::Human
-                } else {
+                output: if args.json {
                     data_commands::DataWriteOutput::Json
+                } else {
+                    data_commands::DataWriteOutput::Human
                 },
             },
         ),
@@ -368,31 +347,25 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, DiagnosticSet> {
 }
 
 fn project_build(args: &BuildArgs) -> Result<bool, DiagnosticSet> {
-    let mut project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    override_code_namespace(&mut project, args.namespace.as_deref());
+    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir.clone();
     let config_path = project.config_path.clone();
     let registry = default_provider_registry()?;
-    match build_project(
-        &project,
-        &registry,
-        BuildOptions {
-            data_out_dir: args.data_out_dir.as_deref(),
-            code_out_dir: args.code_out_dir.as_deref(),
-        },
-    )? {
+    match build_project(&project, &registry)? {
         CommandOutcome::Success(report) => {
-            println!(
-                "{} data exported to {}",
-                report.data.display_name,
-                display_path(&report.data.dir.display().to_string(), Some(&root_dir))
-            );
-            if let Some(code) = report.code {
+            for target in report.targets {
                 println!(
-                    "{} code generated to {}",
-                    code.display_name,
-                    display_path(&code.dir.display().to_string(), Some(&root_dir))
+                    "{} data exported to {}",
+                    target.data.display_name,
+                    display_path(&target.data.dir.display().to_string(), Some(&root_dir))
                 );
+                if let Some(code) = target.code {
+                    println!(
+                        "{} code generated to {}",
+                        code.display_name,
+                        display_path(&code.dir.display().to_string(), Some(&root_dir))
+                    );
+                }
             }
             println!(
                 "Build completed: {}",
@@ -419,23 +392,19 @@ fn project_clean(args: &CleanArgs) -> Result<bool, DiagnosticSet> {
     Ok(true)
 }
 
-fn export_json(args: &ExportJsonArgs) -> Result<bool, DiagnosticSet> {
+fn export_data(args: &ExportArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir.clone();
     let registry = default_provider_registry()?;
-    match export_project_data(
-        &project,
-        &registry,
-        JSON_EXPORTER_ID,
-        ExportOptions {
-            out_dir: args.out_dir.as_deref(),
-        },
-    )? {
+    match export_project_data(&project, &registry)? {
         CommandOutcome::Success(report) => {
-            println!(
-                "JSON data exported to {}",
-                display_path(&report.dir.display().to_string(), Some(&root_dir))
-            );
+            for target in report.targets {
+                println!(
+                    "{} data exported to {}",
+                    target.display_name,
+                    display_path(&target.dir.display().to_string(), Some(&root_dir))
+                );
+            }
             Ok(true)
         }
         CommandOutcome::Diagnostics(diagnostics) => {
@@ -445,70 +414,25 @@ fn export_json(args: &ExportJsonArgs) -> Result<bool, DiagnosticSet> {
     }
 }
 
-fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, DiagnosticSet> {
+fn generate_code(args: &CodegenArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir.clone();
     let registry = default_provider_registry()?;
-    match export_project_data(
-        &project,
-        &registry,
-        MESSAGEPACK_EXPORTER_ID,
-        ExportOptions {
-            out_dir: args.out_dir.as_deref(),
-        },
-    )? {
+    match generate_project_code(&project, &registry)? {
         CommandOutcome::Success(report) => {
-            println!(
-                "MessagePack data exported to {}",
-                display_path(&report.dir.display().to_string(), Some(&root_dir))
-            );
+            for target in report.targets {
+                println!(
+                    "{} code generated to {}",
+                    target.display_name,
+                    display_path(&target.dir.display().to_string(), Some(&root_dir))
+                );
+            }
             Ok(true)
         }
         CommandOutcome::Diagnostics(diagnostics) => {
             write_project_diagnostics(diagnostics, false, &root_dir).map_err(output_error)?;
             Ok(false)
         }
-    }
-}
-
-fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, DiagnosticSet> {
-    let mut project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    override_code_namespace(&mut project, args.namespace.as_deref());
-    let root_dir = project.root_dir.clone();
-    let registry = default_provider_registry()?;
-    match generate_project_code(
-        &project,
-        &registry,
-        CSHARP_CODEGEN_ID,
-        CodegenOptions {
-            out_dir: args.out_dir.as_deref(),
-        },
-    )? {
-        CommandOutcome::Success(report) => {
-            println!(
-                "C# code generated to {}",
-                display_path(&report.dir.display().to_string(), Some(&root_dir))
-            );
-            Ok(true)
-        }
-        CommandOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &root_dir).map_err(output_error)?;
-            Ok(false)
-        }
-    }
-}
-
-fn override_code_namespace(project: &mut Project, namespace: Option<&str>) {
-    let Some(namespace) = namespace else {
-        return;
-    };
-    if let Some(output) = project.config.outputs.code.as_mut() {
-        let mut options = output.options().as_object().cloned().unwrap_or_default();
-        options.insert(
-            "namespace".to_string(),
-            Value::String(namespace.to_string()),
-        );
-        output.options = Value::Object(options);
     }
 }
 

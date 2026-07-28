@@ -11,10 +11,10 @@ use crate::model::{
 };
 use crate::names::camel_case;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnum, CftField, CftSchemaTypeRef, CftType};
+use coflow_cft::{CftEnum, CftField, CftType, CftValueType};
 use std::collections::{BTreeSet, HashSet};
 
-pub use database::build_csharp_database;
+pub use database::{build_csharp_database, build_load_steps};
 use identifiers::{csharp_public_member_name, csharp_public_type_name, field_local_name};
 use loaders::{
     dimension_loader_method, field_type_requires_context, loader_method, polymorphic_loader,
@@ -232,7 +232,7 @@ fn add_field_constructor_member(
     assignments: &mut Vec<CsharpConstructorAssignment>,
 ) {
     let property_name = csharp_public_member_name(&field.name);
-    let backing_field = backing_field_name(&property_name, &field.ty_ref, view);
+    let backing_field = backing_field_name(&property_name, &field.value_type, view);
     properties.push(CsharpProperty {
         visibility: "public".to_string(),
         name: property_name.clone(),
@@ -271,7 +271,7 @@ fn has_concrete_parent(type_name: &str, view: &CsharpLoweringPlan<'_>) -> bool {
 
 pub(super) fn backing_field_name(
     property_name: &str,
-    ty: &CftSchemaTypeRef,
+    ty: &CftValueType,
     view: &CsharpLoweringPlan<'_>,
 ) -> Option<String> {
     field_type_requires_context(ty, view)

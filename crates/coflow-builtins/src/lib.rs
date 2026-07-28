@@ -54,3 +54,32 @@ pub fn default_provider_bundle() -> Result<ProviderBundle, ProviderRegistrationE
     bundle.merge(coflow_codegen_csharp::provider_bundle()?)?;
     Ok(bundle)
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used)]
+
+    use super::default_provider_registry;
+
+    #[test]
+    fn default_registry_selects_csharp_loaders_by_data_format() {
+        let registry = default_provider_registry().expect("default providers");
+        assert_eq!(
+            registry
+                .select_loader("csharp", "json", None)
+                .expect("JSON loader")
+                .descriptor()
+                .id,
+            "csharp-json"
+        );
+        assert_eq!(
+            registry
+                .select_loader("csharp", "messagepack", None)
+                .expect("MessagePack loader")
+                .descriptor()
+                .id,
+            "csharp-messagepack"
+        );
+        assert!(registry.select_loader("csharp", "yaml", None).is_none());
+    }
+}

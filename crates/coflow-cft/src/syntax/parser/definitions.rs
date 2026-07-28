@@ -17,7 +17,7 @@ impl Parser<'_> {
             .start;
         let name = self.expect_ident()?;
         let ty = if self.eat(&TokenKind::Colon).is_some() {
-            Some(self.parse_type_ref()?.value)
+            Some(self.parse_value_type()?.value)
         } else {
             None
         };
@@ -178,7 +178,7 @@ impl Parser<'_> {
         let start = self.peek().span.start;
         let name = self.expect_ident()?;
         self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
-        let ty = self.parse_type_ref()?.value;
+        let ty = self.parse_value_type()?.value;
         let default = if self.eat(&TokenKind::Equal).is_some() {
             Some(self.parse_default_expr()?.value)
         } else {
@@ -199,8 +199,8 @@ impl Parser<'_> {
         Ok(field)
     }
 
-    pub(super) fn parse_type_ref(&mut self) -> Result<Parsed<TypeRef>, CftDiagnostics> {
-        let mut ty = self.parse_type_ref_primary()?;
+    pub(super) fn parse_value_type(&mut self) -> Result<Parsed<TypeRef>, CftDiagnostics> {
+        let mut ty = self.parse_value_type_primary()?;
         if let Some(question) = self.eat(&TokenKind::Question) {
             let span = ty.value.span.join(question);
             let depth = ty.depth;
@@ -212,10 +212,10 @@ impl Parser<'_> {
         Ok(ty)
     }
 
-    fn parse_type_ref_primary(&mut self) -> Result<Parsed<TypeRef>, CftDiagnostics> {
+    fn parse_value_type_primary(&mut self) -> Result<Parsed<TypeRef>, CftDiagnostics> {
         if let Some(start) = self.eat(&TokenKind::Amp) {
             let inner = self.nested(StructureKind::TypeRef, start, |parser| {
-                parser.parse_type_ref_primary()
+                parser.parse_value_type_primary()
             })?;
             let span = Span::new(start.start, inner.value.span.end);
             let depth = inner.depth;
@@ -226,7 +226,7 @@ impl Parser<'_> {
         }
         if let Some(start) = self.eat(&TokenKind::LBracket) {
             let inner = self.nested(StructureKind::TypeRef, start, |parser| {
-                parser.parse_type_ref()
+                parser.parse_value_type()
             })?;
             let end = self
                 .expect_simple(&TokenKind::RBracket, CftErrorCode::ExpectedToken)?
@@ -238,12 +238,12 @@ impl Parser<'_> {
             })
         } else if let Some(start) = self.eat(&TokenKind::LBrace) {
             let key = self.nested(StructureKind::TypeRef, start, |parser| {
-                parser.parse_type_ref()
+                parser.parse_value_type()
             })?;
             self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
             let value_span = self.peek().span;
             let value = self.nested(StructureKind::TypeRef, value_span, |parser| {
-                parser.parse_type_ref()
+                parser.parse_value_type()
             })?;
             let end = self
                 .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?

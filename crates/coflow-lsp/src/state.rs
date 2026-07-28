@@ -1,5 +1,6 @@
-use coflow_cft::syntax::ast::{CheckStmt, Item};
-use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftSchemaTypeRef, CftType, ModuleId};
+use coflow_cft::syntax::ast::{CheckExpr, CheckStmt, Item, NameRef};
+use coflow_cft::syntax::CheckVisitor;
+use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftType, CftValueType, ModuleId};
 use coflow_project::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
 use std::collections::BTreeMap;
@@ -126,15 +127,15 @@ pub(crate) fn type_of_chain(
     document: &LspDocument,
     offset: usize,
     chain: &[String],
-) -> Option<CftSchemaTypeRef> {
+) -> Option<CftValueType> {
     let (first, rest) = chain.split_first()?;
-    let mut ty_ref = type_of_name(build, document, offset, first)?;
+    let mut value_type = type_of_name(build, document, offset, first)?;
     for part in rest {
-        let type_name = type_name_of_schema_ref(&ty_ref)?;
+        let type_name = type_name_of_schema_ref(&value_type)?;
         let (_, field) = field_by_type(build, type_name, part)?;
-        ty_ref = field_receiver_type(field);
+        value_type = field_receiver_type(field);
     }
-    Some(ty_ref)
+    Some(value_type)
 }
 
 fn type_of_name(
@@ -142,7 +143,7 @@ fn type_of_name(
     document: &LspDocument,
     offset: usize,
     name: &str,
-) -> Option<CftSchemaTypeRef> {
+) -> Option<CftValueType> {
     let current_type = current_type_at(build, document, offset)?;
     let field = current_type
         .all_fields()
@@ -172,14 +173,14 @@ pub(crate) fn field_by_type<'a>(
     None
 }
 
-fn field_receiver_type(field: &CftField) -> CftSchemaTypeRef {
-    field.ty_ref.clone()
+fn field_receiver_type(field: &CftField) -> CftValueType {
+    field.value_type.clone()
 }
 
-pub(crate) fn type_name_of_schema_ref(ty: &CftSchemaTypeRef) -> Option<&str> {
+pub(crate) fn type_name_of_schema_ref(ty: &CftValueType) -> Option<&str> {
     match ty {
-        CftSchemaTypeRef::Object(name) => Some(name),
-        CftSchemaTypeRef::Nullable(inner) => type_name_of_schema_ref(inner),
+        CftValueType::Object(name) => Some(name),
+        CftValueType::Nullable(inner) => type_name_of_schema_ref(inner),
         _ => None,
     }
 }
@@ -235,40 +236,54 @@ fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
 }
 
 pub(crate) fn quantifier_bindings_at(document: &LspDocument, offset: usize) -> Vec<String> {
-    let mut bindings = Vec::new();
+    struct BindingVisitor {
+        offset: usize,
+        bindings: Vec<String>,
+    }
+
+    impl CheckVisitor for BindingVisitor {
+        type Error = std::convert::Infallible;
+
+        fn visit_stmt(&mut self, stmt: &CheckStmt) -> Result<(), Self::Error> {
+            let span = stmt.span();
+            if span.start <= self.offset && self.offset <= span.end {
+                self.walk_stmt(stmt)?;
+            }
+            Ok(())
+        }
+
+        fn visit_expr(&mut self, _expr: &CheckExpr) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn enter_quantifier_body(&mut self, bindings: &[NameRef]) -> Result<(), Self::Error> {
+            self.bindings
+                .extend(bindings.iter().map(|binding| binding.name.clone()));
+            Ok(())
+        }
+    }
+
+    let mut visitor = BindingVisitor {
+        offset,
+        bindings: Vec::new(),
+    };
     let Some(ast) = document.ast() else {
-        return bindings;
+        return visitor.bindings;
     };
     for item in &ast.items {
-        if let Item::Type(ty) = item {
-            if let Some(check) = &ty.check {
-                collect_quantifier_bindings(&check.stmts, offset, &mut bindings);
-            }
-        }
-    }
-    bindings
-}
-
-fn collect_quantifier_bindings(stmts: &[CheckStmt], offset: usize, bindings: &mut Vec<String>) {
-    for stmt in stmts {
-        match stmt {
-            CheckStmt::Quantifier {
-                binding,
-                body,
-                span,
-                ..
-            } => {
-                if span.start <= offset && offset <= span.end {
-                    bindings.push(binding.name.clone());
-                    collect_quantifier_bindings(body, offset, bindings);
+        match item {
+            Item::Type(ty) => {
+                if let Some(check) = &ty.check {
+                    let result = visitor.visit_block(check);
+                    debug_assert!(result.is_ok());
                 }
             }
-            CheckStmt::When { body, span, .. } => {
-                if span.start <= offset && offset <= span.end {
-                    collect_quantifier_bindings(body, offset, bindings);
-                }
+            Item::Check(check) => {
+                let result = visitor.visit_block(&check.block);
+                debug_assert!(result.is_ok());
             }
-            CheckStmt::Expr(_) => {}
+            Item::Const(_) | Item::Enum(_) => {}
         }
     }
+    visitor.bindings
 }

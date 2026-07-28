@@ -4,7 +4,7 @@ Coflow 诊断用于报告项目配置、CFT schema、数据源、DataModel、引
 
 诊断不同于不可恢复的 CLI 错误。诊断表示 Coflow 已经进入可定位的项目检查阶段，可以给出 code、stage、message 和 source location；CLI 错误通常表示配置文件无法读取、命令参数无法解析等更早期失败。
 
-完整错误码表见 [错误码索引](./02-codes.md)。
+完整错误码表见 [错误码索引](https://puring103.github.io/coflow/docs/reference/09-diagnostics/02-codes)。
 
 ## 输出形式
 
@@ -75,7 +75,7 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 | Stage | 说明 |
 | --- | --- |
 | `CLI` | 命令级错误 |
-| `PROJECT` | 项目配置和命令 preflight |
+| `PROJECT` | 项目配置和命令执行前检查 |
 | `LEX` | CFT 词法 |
 | `SYN` | CFT 语法 |
 | `SCHEMA` | CFT schema 编译 |
@@ -87,13 +87,15 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 | `DATA` | DataModel 构建 |
 | `REF` | `&Type` 记录引用解析 |
 | `CHECK` | CFT `check {}` 运行期校验 |
-| `CODEGEN` | 代码生成 preflight |
-| `ARTIFACT` | artifact path、generation 写入/验证、active manifest、lock state |
+| `CODEGEN` | 代码生成配置与内容检查 |
+| `ARTIFACT` | 产物路径、写入和验证 |
 | `WRITE` | 通用 writer 能力错误 |
 
 ## 非阻塞收集规则
 
 “非阻塞”表示 Coflow 会在不依赖无效中间数据的前提下继续收集诊断；不表示会在输入无效时生成产物。
+
+增量数据检查的诊断集合由 runtime 管理。checker 按 task 返回本次诊断，runtime 以 statement、target 和 base/dimension projection 为替换范围；未执行 task 的历史诊断保持不变，已恢复 task 的旧诊断会被空结果移除。规划或请求整体失败时不会用部分 task 结果覆盖历史诊断，而是保留既有 task 诊断并附加 request diagnostic。DataModel 重建时，runtime 使用稳定记录坐标重映射保留诊断中的记录位置。
 
 | 阶段 | 收集行为 |
 | --- | --- |
@@ -107,7 +109,7 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 | DataModel | 子阶段内聚合；无效 model 阻塞引用和 check |
 | 引用解析 | 子阶段内聚合；未解析引用阻塞 check |
 | Check | 跨 block 和 record 聚合；硬运行期错误只停止当前 block |
-| Codegen / artifact preflight | 尽量聚合 |
+| Codegen / 产物检查 | 尽量聚合 |
 
 ## 修复顺序
 

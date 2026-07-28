@@ -2,8 +2,8 @@ use super::{negate_u64_to_i64, Parsed, Parser};
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::module::ModuleId;
 use crate::syntax::ast::{
-    BinOp, CheckBlock, CheckExpr, CheckExprKind, CheckStmt, CmpOp, QuantifierKind, TypePredicate,
-    UnaryOp,
+    BinOp, CheckBlock, CheckExpr, CheckExprKind, CheckMessage, CheckMessageKind, CheckStmt, CmpOp,
+    QuantifierKind, TypePredicate, UnaryOp,
 };
 use crate::syntax::lexer::TokenKind;
 use crate::syntax::Span;
@@ -14,6 +14,31 @@ impl Parser<'_> {
         let start = self
             .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?
             .start;
+        self.parse_check_block_after_keyword(start)
+    }
+
+    pub(super) fn parse_top_level_check(
+        &mut self,
+        annotations: Vec<crate::syntax::ast::Annotation>,
+    ) -> Result<crate::syntax::ast::TopLevelCheckDef, CftDiagnostics> {
+        let start = self
+            .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?
+            .start;
+        let name = self.expect_ident()?;
+        let block = self.parse_check_block_after_keyword(start)?;
+        Ok(crate::syntax::ast::TopLevelCheckDef {
+            name: name.name,
+            name_span: name.span,
+            span: block.span,
+            block,
+            annotations,
+        })
+    }
+
+    fn parse_check_block_after_keyword(
+        &mut self,
+        start: usize,
+    ) -> Result<CheckBlock, CftDiagnostics> {
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let stmts = self.parse_check_stmts()?;
         let end = self
@@ -56,15 +81,69 @@ impl Parser<'_> {
             return self.parse_when_stmt();
         }
         let expr = self.parse_or_expr()?;
+        let message = if self.eat(&TokenKind::Colon).is_some() {
+            let token = self.peek().clone();
+            match token.kind {
+                TokenKind::String(value) => {
+                    self.bump();
+                    Some(Parsed {
+                        value: CheckMessage {
+                            kind: CheckMessageKind::String(value),
+                            span: token.span,
+                        },
+                        depth: 0,
+                    })
+                }
+                TokenKind::FormattedStringStart => {
+                    let formatted = self.parse_formatted_string()?;
+                    let CheckExpr {
+                        kind: CheckExprKind::FormattedString(segments),
+                        span,
+                    } = formatted.value
+                    else {
+                        return self.err(
+                            CftErrorCode::InvalidCheckStatement,
+                            "expected formatted check message",
+                        );
+                    };
+                    Some(Parsed {
+                        value: CheckMessage {
+                            kind: CheckMessageKind::Formatted(segments),
+                            span,
+                        },
+                        depth: formatted.depth,
+                    })
+                }
+                _ => {
+                    return self.err_at(
+                        CftErrorCode::InvalidCheckStatement,
+                        token.span,
+                        "check message must be a string or formatted string literal",
+                    );
+                }
+            }
+        } else {
+            None
+        };
         if self.eat(&TokenKind::Semicolon).is_none() {
             return self.err(
                 CftErrorCode::InvalidCheckStatement,
                 "check expression statements must end with `;`",
             );
         }
-        let span = expr.value.span;
-        self.node(StructureKind::CheckAst, span, [expr.depth], || {
-            CheckStmt::Expr(expr.value)
+        let span = expr.value.span.join(
+            message
+                .as_ref()
+                .map_or(expr.value.span, |message| message.value.span),
+        );
+        let depths = message.as_ref().map_or_else(
+            || vec![expr.depth],
+            |message| vec![expr.depth, message.depth],
+        );
+        self.node(StructureKind::CheckAst, span, depths, || CheckStmt::Expr {
+            condition: expr.value,
+            message: message.map(|message| message.value),
+            span,
         })
     }
 
@@ -74,7 +153,16 @@ impl Parser<'_> {
     ) -> Result<Parsed<CheckStmt>, CftDiagnostics> {
         let keyword = self.bump().span;
         let start = keyword.start;
-        let binding = self.expect_ident()?;
+        let mut bindings = vec![self.expect_ident()?];
+        if self.eat(&TokenKind::Comma).is_some() {
+            bindings.push(self.expect_ident()?);
+            if self.at(&TokenKind::Comma) {
+                return self.err(
+                    CftErrorCode::InvalidCheckStatement,
+                    "quantifiers accept one or two bindings",
+                );
+            }
+        }
         self.expect_simple(&TokenKind::In, CftErrorCode::ExpectedToken)?;
         let collection = self.parse_or_expr()?;
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
@@ -91,7 +179,7 @@ impl Parser<'_> {
             [collection.depth, body.depth],
             || CheckStmt::Quantifier {
                 kind,
-                binding,
+                bindings,
                 collection: collection.value,
                 body: body.value,
                 span,
@@ -124,6 +212,26 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_or_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
+        let lhs = self.parse_logical_or_expr()?;
+        if let Some(operator) = self.eat(&TokenKind::QuestionQuestion) {
+            let rhs = self.nested(StructureKind::CheckAst, operator, |parser| {
+                parser.parse_or_expr()
+            })?;
+            let span = Span::new(lhs.value.span.start, rhs.value.span.end);
+            let depths = [lhs.depth, rhs.depth];
+            self.node(StructureKind::CheckAst, operator, depths, || CheckExpr {
+                span,
+                kind: CheckExprKind::Coalesce {
+                    lhs: Box::new(lhs.value),
+                    rhs: Box::new(rhs.value),
+                },
+            })
+        } else {
+            Ok(lhs)
+        }
+    }
+
+    fn parse_logical_or_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
         let mut expr = self.parse_and_expr()?;
         while let Some(operator) = self.eat(&TokenKind::PipePipe) {
             let rhs = self.parse_and_expr()?;

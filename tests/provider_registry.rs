@@ -81,7 +81,7 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
     )?;
     let csv_source = coflow_api::ResolvedSource {
         provider_id: "csv".to_string(),
-        location: coflow_api::SourceLocationSpec::Path("Item_name.csv".into()),
+        location: coflow_api::SourceLocationSpec::new("Item_name.csv"),
         options: csv_options,
         display_name: "Item_name.csv".to_string(),
     };

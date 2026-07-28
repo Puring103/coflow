@@ -13,7 +13,7 @@ use coflow_api::{
 };
 use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
 use coflow_data_model::CfdDataModel;
-use coflow_data_model::{CfdInputValue, CfdValue};
+use coflow_data_model::{CfdValue, LoadedValueDraft};
 use coflow_loader_cfd::{
     load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextErrorCode, CfdTextLoadError,
 };
@@ -51,10 +51,26 @@ fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
     assert_eq!(records[0].actual_type, "Item");
     assert_eq!(
         records[0].fields.get("name"),
-        Some(&CfdInputValue::from("Iron Sword"))
+        Some(&LoadedValueDraft::from("Iron Sword"))
     );
     assert!(!records[0].fields.contains_key("id"));
     Ok(())
+}
+
+#[test]
+fn string_fields_require_quotes() {
+    let schema = compile_schema("type Item { name: string; }");
+    let error = parse_cfd_input_records(&schema, "item: Item { name: sword, }")
+        .expect_err("bare strings must be rejected");
+
+    assert_has_text_code(&error, CfdTextErrorCode::TypeMismatch);
+    let CfdTextLoadError::Text(diagnostics) = error else {
+        panic!("expected text diagnostics");
+    };
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message == "expected string"));
 }
 
 #[test]
@@ -81,7 +97,7 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
 
     assert_eq!(
         records[1].fields.get("item"),
-        Some(&CfdInputValue::record_ref("sword"))
+        Some(&LoadedValueDraft::record_ref("sword"))
     );
 
     let model = load_cfd_model(
@@ -95,21 +111,21 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
     )?;
 
     let _item_id = model
-        .lookup_assignable("Item", "sword")
+        .lookup_assignable(&schema, "Item", "sword")
         .expect("item record");
     let holder_id = model
-        .lookup_assignable("Holder", "holder")
+        .lookup_assignable(&schema, "Holder", "holder")
         .expect("holder record");
     let holder = model.record(holder_id).expect("holder");
     assert_eq!(
         holder.field("item"),
-        Some(&CfdValue::Ref("sword".to_string()))
+        Some(&CfdValue::record_ref("sword").unwrap())
     );
     Ok(())
 }
 
 #[test]
-fn cfd_rejects_legacy_and_bare_object_references() {
+fn cfd_rejects_invalid_reference_syntax_and_bare_object_keys() {
     let schema = compile_schema(
         r#"
             type Item { name: string; }
@@ -117,15 +133,15 @@ fn cfd_rejects_legacy_and_bare_object_references() {
         "#,
     );
 
-    let legacy_at = parse_cfd_input_records(
+    let invalid_at = parse_cfd_input_records(
         &schema,
         r#"
             sword: Item { name: "Iron Sword" }
             holder: Holder { item: @sword }
         "#,
     )
-    .expect_err("@key is no longer valid");
-    assert_has_text_code(&legacy_at, CfdTextErrorCode::Syntax);
+    .expect_err("@key is invalid");
+    assert_has_text_code(&invalid_at, CfdTextErrorCode::Syntax);
 
     let direct_path = parse_cfd_input_records(
         &schema,
@@ -297,13 +313,19 @@ fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
     )?;
 
     let coin_id = model
-        .lookup_assignable("CurrencyReward", "coin")
+        .lookup_assignable(&schema, "CurrencyReward", "coin")
         .expect("currency reward");
     let item_id = model
-        .lookup_assignable("ItemReward", "item")
+        .lookup_assignable(&schema, "ItemReward", "item")
         .expect("item reward");
-    assert_eq!(model.lookup_assignable("Reward", "coin"), Some(coin_id));
-    assert_eq!(model.lookup_assignable("Reward", "item"), Some(item_id));
+    assert_eq!(
+        model.lookup_assignable(&schema, "Reward", "coin"),
+        Some(coin_id)
+    );
+    assert_eq!(
+        model.lookup_assignable(&schema, "Reward", "item"),
+        Some(item_id)
+    );
     Ok(())
 }
 
@@ -373,14 +395,20 @@ fn cfd_object_and_dict_spreads_merge_before_local_overrides() -> TestResult {
             elite: Monster {
                 ...&base,
                 name: "Elite",
-                stats: { hp: 180, attack: 20 },
-                weights: { Fire: 20, Ice: 5 },
+                stats: {
+                    ...{ hp: 100, attack: 15 },
+                    hp: 180,
+                },
+                weights: {
+                    ...{ Fire: 10, Ice: 5 },
+                    Fire: 20,
+                },
             }
         "#,
     )?;
 
     let elite_id = model
-        .lookup_assignable("Monster", "elite")
+        .lookup_assignable(&schema, "Monster", "elite")
         .expect("elite record");
     let elite = model.record(elite_id).expect("elite");
     assert_eq!(
@@ -391,7 +419,7 @@ fn cfd_object_and_dict_spreads_merge_before_local_overrides() -> TestResult {
         panic!("expected stats object");
     };
     assert_eq!(stats.field("hp"), Some(&CfdValue::Int(180)));
-    assert_eq!(stats.field("attack"), Some(&CfdValue::Int(20)));
+    assert_eq!(stats.field("attack"), Some(&CfdValue::Int(15)));
     let Some(CfdValue::Dict(weights)) = elite.field("weights") else {
         panic!("expected weights dict");
     };
@@ -444,21 +472,25 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
         "#,
     )?;
 
-    let a_id = model.lookup_assignable("Node", "a").expect("a record");
-    let b_id = model.lookup_assignable("Node", "b").expect("b record");
+    let a_id = model
+        .lookup_assignable(&schema, "Node", "a")
+        .expect("a record");
+    let b_id = model
+        .lookup_assignable(&schema, "Node", "b")
+        .expect("b record");
     assert_eq!(
         model.record(a_id).and_then(|record| record.field("next")),
-        Some(&CfdValue::Ref("b".to_string()))
+        Some(&CfdValue::record_ref("b").unwrap())
     );
     assert_eq!(
         model.record(b_id).and_then(|record| record.field("next")),
-        Some(&CfdValue::Ref("a".to_string()))
+        Some(&CfdValue::record_ref("a").unwrap())
     );
     Ok(())
 }
 
 #[test]
-fn cfd_rejects_typed_and_path_refs() {
+fn cfd_rejects_invalid_record_reference_forms() {
     let schema = compile_schema(
         r#"
             enum Element { Fire, Ice, }
@@ -487,12 +519,12 @@ fn cfd_rejects_typed_and_path_refs() {
             }
         "#,
     )
-    .expect_err("typed/path refs should be rejected");
+    .expect_err("invalid record reference should be rejected");
     assert_has_text_code(&err, CfdTextErrorCode::Syntax);
 }
 
 #[test]
-fn cfd_path_refs_can_no_longer_target_scalar_fields() {
+fn cfd_rejects_invalid_record_reference_in_scalar_field() {
     let schema = compile_schema(
         r#"
             enum Element { Fire, Ice, }
@@ -518,7 +550,8 @@ fn cfd_path_refs_can_no_longer_target_scalar_fields() {
         }
     "#;
 
-    let err = parse_cfd_input_records(&schema, source).expect_err("path refs should be rejected");
+    let err = parse_cfd_input_records(&schema, source)
+        .expect_err("invalid record reference should be rejected");
     assert_has_text_code(&err, CfdTextErrorCode::Syntax);
 }
 
@@ -570,7 +603,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
             },
             &ResolvedSource {
                 provider_id: "cfd".to_string(),
-                location: SourceLocationSpec::Path(source_path.clone()),
+                location: SourceLocationSpec::new(source_path.clone()),
                 options: CfdLoader
                     .decode_options(&serde_json::Value::Null)
                     .expect("decode cfd options"),
@@ -581,7 +614,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let origins = coflow_api::origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(&schema);
     for record in loaded.records {
-        builder.add_input_record(record);
+        builder.add_loaded_record(record);
     }
     let err = builder.build().expect_err("second record is missing value");
     let mapped = coflow_api::map_diagnostics_with_origins(err, &origins);
@@ -714,6 +747,34 @@ fn cfd_text_error_codes_have_negative_and_adjacent_valid_cases() {
 }
 
 #[test]
+fn lowering_collects_independent_errors_across_fields_and_records() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                count: int;
+                enabled: bool;
+            }
+        "#,
+    );
+    let error = parse_cfd_input_records(
+        &schema,
+        r#"
+            first: Item { count: nope, enabled: maybe }
+            second: Item { count: still_nope, enabled: perhaps }
+        "#,
+    )
+    .expect_err("all four values are invalid");
+    let CfdTextLoadError::Text(diagnostics) = error else {
+        panic!("expected text diagnostics");
+    };
+    assert_eq!(diagnostics.diagnostics.len(), 4, "{diagnostics:?}");
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.code == CfdTextErrorCode::TypeMismatch));
+}
+
+#[test]
 fn examples_cfd_files_load_together() -> TestResult {
     let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd");
     let schema = compile_schema(&fs::read_to_string(examples_dir.join("schema.cft"))?);
@@ -730,7 +791,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     let model = load_cfd_model(&schema, &source)?;
 
     let elite_id = model
-        .lookup_assignable("Monster", "elite_monster")
+        .lookup_assignable(&schema, "Monster", "elite_monster")
         .expect("elite monster");
     let elite = model.record(elite_id).expect("elite monster record");
     assert_eq!(
@@ -745,7 +806,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     assert_eq!(stats.field("attack"), Some(&CfdValue::Int(5)));
 
     let encounter_id = model
-        .lookup_assignable("Encounter", "elite_encounter")
+        .lookup_assignable(&schema, "Encounter", "elite_encounter")
         .expect("elite encounter");
     let encounter = model.record(encounter_id).expect("encounter record");
     assert_eq!(
@@ -754,7 +815,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     );
     assert!(matches!(
         encounter.field("featured_item"),
-        Some(CfdValue::Ref(target_key)) if target_key == "sword_fire"
+        Some(CfdValue::Ref(target_key)) if target_key.as_str() == "sword_fire"
     ));
     Ok(())
 }
