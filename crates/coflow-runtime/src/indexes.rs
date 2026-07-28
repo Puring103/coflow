@@ -75,8 +75,9 @@ impl DiagnosticsStore {
     }
 
     pub fn extend(&mut self, diagnostics: DiagnosticSet) {
+        let start = self.diagnostics.diagnostics.len();
         self.diagnostics.extend(diagnostics);
-        self.rebuild_indexes();
+        self.index_diagnostics_from(start);
     }
 
     pub fn extend_with_logical_locations(
@@ -89,7 +90,7 @@ impl DiagnosticsStore {
         for (index, location) in logical_locations {
             self.logical_locations.insert(offset + index, location);
         }
-        self.rebuild_indexes();
+        self.index_diagnostics_from(offset);
     }
 
     #[must_use]
@@ -150,7 +151,12 @@ impl DiagnosticsStore {
         self.by_stage.clear();
         self.by_file.clear();
         self.by_record.clear();
-        for (index, diagnostic) in self.diagnostics.diagnostics.iter().enumerate() {
+        self.index_diagnostics_from(0);
+    }
+
+    fn index_diagnostics_from(&mut self, start: usize) {
+        for index in start..self.diagnostics.diagnostics.len() {
+            let diagnostic = &self.diagnostics.diagnostics[index];
             self.by_stage
                 .entry(diagnostic.stage.clone())
                 .or_default()
@@ -486,7 +492,40 @@ impl FileIndex {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileIndex, SourceId};
+    use std::collections::BTreeMap;
+
+    use coflow_api::{Diagnostic, DiagnosticSet};
+
+    use super::{DiagnosticLogicalLocation, DiagnosticsStore, FileIndex, SourceId};
+
+    #[test]
+    fn diagnostic_extensions_index_only_new_entries_with_shifted_locations() {
+        let mut store = DiagnosticsStore::from_set(DiagnosticSet::one(Diagnostic::error(
+            "LOAD-1", "LOAD", "first",
+        )));
+        store.extend(DiagnosticSet::one(Diagnostic::error(
+            "LOAD-2", "LOAD", "second",
+        )));
+        store.extend_with_logical_locations(
+            DiagnosticSet::one(Diagnostic::error("CHECK-1", "CHECK", "third")),
+            BTreeMap::from([(
+                0,
+                DiagnosticLogicalLocation {
+                    actual_type: Some("Item".to_string()),
+                    record_key: Some("sword".to_string()),
+                    field_path: Some("price".to_string()),
+                },
+            )]),
+        );
+
+        assert_eq!(store.by_stage("LOAD"), &[0, 1]);
+        assert_eq!(store.by_stage("CHECK"), &[2]);
+        assert_eq!(store.by_record("Item", "sword"), &[2]);
+        assert_eq!(
+            store.logical_location(2).and_then(|location| location.field_path.as_deref()),
+            Some("price")
+        );
+    }
 
     #[test]
     fn duplicate_display_paths_remain_ambiguous() {
