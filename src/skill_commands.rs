@@ -60,9 +60,7 @@ struct InstallManifest {
 /// # Errors
 /// Returns diagnostics when the project cannot be resolved or files cannot be written.
 pub fn install_project(config_or_dir: Option<&Path>) -> Result<SkillReport, DiagnosticSet> {
-    let project = Project::open_schema_only(config_or_dir)?;
-    let target = project_target(&project.root_dir);
-    install_targets("project", vec![target])
+    install_targets("project", project_targets(config_or_dir)?)
 }
 
 /// Install bundled skills for the current user and detected agents.
@@ -78,8 +76,7 @@ pub fn install_global() -> Result<SkillReport, DiagnosticSet> {
 /// # Errors
 /// Returns diagnostics when the project cannot be resolved or files cannot be removed.
 pub fn uninstall_project(config_or_dir: Option<&Path>) -> Result<SkillReport, DiagnosticSet> {
-    let project = Project::open_schema_only(config_or_dir)?;
-    uninstall_targets("project", vec![project_target(&project.root_dir)])
+    uninstall_targets("project", project_targets(config_or_dir)?)
 }
 
 /// Remove global bundled skills previously installed for the current user.
@@ -95,12 +92,7 @@ pub fn uninstall_global() -> Result<SkillReport, DiagnosticSet> {
 /// # Errors
 /// Returns diagnostics when the project cannot be resolved.
 pub fn status_project(config_or_dir: Option<&Path>) -> Result<SkillReport, DiagnosticSet> {
-    let project = Project::open_schema_only(config_or_dir)?;
-    Ok(report(
-        "status",
-        "project",
-        vec![project_target(&project.root_dir)],
-    ))
+    Ok(report("status", "project", project_targets(config_or_dir)?))
 }
 
 /// Inspect global bundled skill installation status for the current user.
@@ -153,6 +145,11 @@ fn project_target(root: &Path) -> InstallTarget {
     }
 }
 
+fn project_targets(config_or_dir: Option<&Path>) -> Result<Vec<InstallTarget>, DiagnosticSet> {
+    let project = Project::open_schema_only(config_or_dir)?;
+    Ok(vec![project_target(&project.root_dir)])
+}
+
 fn install_global_in(context: &GlobalContext) -> Result<SkillReport, DiagnosticSet> {
     let targets = detected_global_targets(context);
     let result = install_targets("global", targets.clone())?;
@@ -161,24 +158,20 @@ fn install_global_in(context: &GlobalContext) -> Result<SkillReport, DiagnosticS
 }
 
 fn uninstall_global_in(context: &GlobalContext) -> Result<SkillReport, DiagnosticSet> {
-    let mut targets = detected_global_targets(context);
-    if let Some(manifest) = read_manifest(context)? {
-        let allowed = all_global_targets(context)
-            .into_iter()
-            .map(|target| target.path)
-            .collect::<BTreeSet<_>>();
-        for path in manifest.targets {
-            if allowed.contains(&path) {
-                merge_target(&mut targets, path, "previous installation");
-            }
-        }
-    }
-    let result = uninstall_targets("global", targets)?;
+    let result = uninstall_targets("global", installed_global_targets(context)?)?;
     remove_manifest(context)?;
     Ok(result)
 }
 
 fn status_global_in(context: &GlobalContext) -> Result<SkillReport, DiagnosticSet> {
+    Ok(report(
+        "status",
+        "global",
+        installed_global_targets(context)?,
+    ))
+}
+
+fn installed_global_targets(context: &GlobalContext) -> Result<Vec<InstallTarget>, DiagnosticSet> {
     let mut targets = detected_global_targets(context);
     if let Some(manifest) = read_manifest(context)? {
         let allowed = all_global_targets(context)
@@ -191,7 +184,7 @@ fn status_global_in(context: &GlobalContext) -> Result<SkillReport, DiagnosticSe
             }
         }
     }
-    Ok(report("status", "global", targets))
+    Ok(targets)
 }
 
 fn detected_global_targets(context: &GlobalContext) -> Vec<InstallTarget> {
