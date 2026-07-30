@@ -330,7 +330,7 @@ export function InspectorPanel({
           title={collapsed ? '展开面板' : '折叠面板'}
           aria-label={collapsed ? '展开面板' : '折叠面板'}
         >
-          <Icon name="chevron-right" size={13} className={collapsed ? '' : 'icon-flip-h'} />
+          <Icon name="chevron-right" size={13} className={collapsed ? 'icon-flip-h' : ''} />
         </button>
         {!collapsed && <span className="inspector-title">{inspectingValue ? '单元格详情' : '记录详情'}</span>}
         {!collapsed && visibleFields && !inspectingValue && !selectedTopField && hiddenFieldCount > 0 && (
