@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import { diagnosticDisplayMessage, diagnosticKey, type DiagnosticItem } from '../wire'
 import { Icon } from './Icon'
 
@@ -16,13 +16,33 @@ interface Props {
   onJumpToField?: (file: string, key: string, actualType: string | null, fieldPath: string) => void
 }
 
-type SevFilter = 'all' | 'error' | 'warning' | 'info'
+const DEFAULT_HEIGHT = 200
+const MIN_HEIGHT = 112
+const MIN_EDITOR_HEIGHT = 120
+const HEIGHT_STORAGE_KEY = 'cfd-editor-diagnostics-h'
+
+export function clampDiagnosticsHeight(height: number, editorHeight: number): number {
+  const maximum = Math.max(MIN_HEIGHT, editorHeight - MIN_EDITOR_HEIGHT)
+  return Math.min(maximum, Math.max(MIN_HEIGHT, height))
+}
+
+function initialHeight(): number {
+  if (typeof localStorage === 'undefined') return DEFAULT_HEIGHT
+  return diagnosticsHeightFromStorage(localStorage.getItem(HEIGHT_STORAGE_KEY))
+}
+
+export function diagnosticsHeightFromStorage(value: string | null): number {
+  if (value === null) return DEFAULT_HEIGHT
+  const stored = Number(value)
+  return Number.isFinite(stored) ? Math.max(MIN_HEIGHT, stored) : DEFAULT_HEIGHT
+}
 
 export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpable, onJumpToRecord, onJumpToField }: Props) {
   const [collapsed, setCollapsed] = useState(false)
-  const [sevFilter, setSevFilter] = useState<SevFilter>('all')
-  const [fileFilter, setFileFilter] = useState<string>('all')
-  const [groupByFile, setGroupByFile] = useState(true)
+  const [height, setHeight] = useState(initialHeight)
+  const [resizing, setResizing] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const resizeRef = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [flashKey, setFlashKey] = useState<string | null>(null)
 
@@ -32,35 +52,48 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpab
   // No diagnostics → keep header only, no body region.
   const isEmpty = diagnostics.length === 0
 
-  const files = useMemo(() => {
-    const set = new Set<string>()
-    for (const d of diagnostics) if (d.file_path) set.add(d.file_path)
-    return Array.from(set).sort()
-  }, [diagnostics])
+  useEffect(() => {
+    try { localStorage.setItem(HEIGHT_STORAGE_KEY, String(height)) } catch { /* quota */ }
+  }, [height])
 
-  const filtered = useMemo(() => {
-    return diagnostics.filter(d => {
-      if (sevFilter !== 'all' && d.severity !== sevFilter) return false
-      if (fileFilter !== 'all' && d.file_path !== fileFilter) return false
-      return true
-    })
-  }, [diagnostics, sevFilter, fileFilter])
+  const editorHeight = () => panelRef.current?.parentElement?.clientHeight ?? window.innerHeight
+  const resizeTo = (next: number) => setHeight(clampDiagnosticsHeight(next, editorHeight()))
 
-  // Ensure a focused diagnostic passes the current filters. Otherwise the
-  // node exists in `diagnostics` but not in the rendered `filtered` list, so
-  // querySelector would return null. We only override filters when the
-  // focused item is currently hidden.
+  const onResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    resizeRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: panelRef.current?.getBoundingClientRect().height ?? height,
+    }
+    setResizing(true)
+  }
+
+  const onResizePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const resize = resizeRef.current
+    if (!resize || resize.pointerId !== event.pointerId) return
+    resizeTo(resize.startHeight - (event.clientY - resize.startY))
+  }
+
+  const finishResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (resizeRef.current?.pointerId !== event.pointerId) return
+    resizeRef.current = null
+    setResizing(false)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
   useEffect(() => {
     if (!focus) return
     const target = diagnostics.find(d => diagnosticKey(d) === focus.key)
     if (!target) return
-    if (sevFilter !== 'all' && target.severity !== sevFilter) setSevFilter('all')
-    if (fileFilter !== 'all' && target.file_path !== fileFilter) setFileFilter('all')
     setCollapsed(false)
   }, [focus, diagnostics])
 
   // Scroll to and pulse the focused item after the reveal effect above has
-  // (potentially) mutated filters/collapsed state and React re-rendered.
+  // expanded the panel and React has re-rendered.
   useEffect(() => {
     if (!focus) return
     const el = listRef.current?.querySelector<HTMLElement>(
@@ -76,22 +109,44 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpab
       return () => window.clearTimeout(t)
     }
     onFocusConsumed?.()
-  }, [focus, filtered, onFocusConsumed])
-
-  // Group by file_path (null files bucketed under '(项目级)').
-  const groups = useMemo(() => {
-    const m = new Map<string, DiagnosticItem[]>()
-    for (const d of filtered) {
-      const key = d.file_path ?? '(项目级)'
-      const list = m.get(key) ?? []
-      list.push(d)
-      m.set(key, list)
-    }
-    return Array.from(m.entries())
-  }, [filtered])
+  }, [focus, diagnostics, onFocusConsumed])
 
   return (
-    <div className={`diag-panel${collapsed || isEmpty ? ' collapsed' : ''}`}>
+    <div
+      ref={panelRef}
+      className={`diag-panel${collapsed || isEmpty ? ' collapsed' : ''}${resizing ? ' resizing' : ''}`}
+      style={collapsed || isEmpty ? undefined : { height }}
+    >
+      {!collapsed && !isEmpty && (
+        <div
+          className="diag-resizer"
+          role="separator"
+          aria-label="调整诊断面板高度"
+          aria-orientation="horizontal"
+          aria-valuemin={MIN_HEIGHT}
+          aria-valuenow={height}
+          tabIndex={0}
+          onPointerDown={onResizePointerDown}
+          onPointerMove={onResizePointerMove}
+          onPointerUp={finishResize}
+          onPointerCancel={finishResize}
+          onKeyDown={event => {
+            if (event.key === 'ArrowUp') {
+              event.preventDefault()
+              resizeTo(height + 24)
+            } else if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              resizeTo(height - 24)
+            } else if (event.key === 'Home') {
+              event.preventDefault()
+              resizeTo(MIN_HEIGHT)
+            } else if (event.key === 'End') {
+              event.preventDefault()
+              resizeTo(editorHeight())
+            }
+          }}
+        />
+      )}
       <button
         type="button"
         className="diag-header"
@@ -125,75 +180,29 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpab
       </button>
       {!collapsed && !isEmpty && (
         <div className="diag-body" id="diag-list-region">
-          <div className="diag-toolbar">
-            <div className="diag-sev-filters" role="group" aria-label="按严重程度过滤">
-              {(['all', 'error', 'warning', 'info'] as SevFilter[]).map(s => (
-                <button
-                  key={s}
-                  className={`diag-filter-chip${sevFilter === s ? ' active' : ''}`}
-                  onClick={() => setSevFilter(s)}
-                  aria-pressed={sevFilter === s}
-                >
-                  {s === 'all' ? '全部' : s === 'error' ? '错误' : s === 'warning' ? '警告' : '信息'}
-                </button>
-              ))}
-            </div>
-            {files.length > 1 && (
-              <div className="diag-file-pills" role="group" aria-label="按文件过滤">
-                <button
-                  className={`diag-file-pill${fileFilter === 'all' ? ' active' : ''}`}
-                  onClick={() => setFileFilter('all')}
-                  aria-pressed={fileFilter === 'all'}
-                >
-                  全部
-                </button>
-                {files.map(f => (
-                  <button
-                    key={f}
-                    className={`diag-file-pill${fileFilter === f ? ' active' : ''}`}
-                    onClick={() => setFileFilter(f)}
-                    aria-pressed={fileFilter === f}
-                  >
-                    {f.split('/').pop()}
-                  </button>
-                ))}
-              </div>
-            )}
-            <label className="diag-group-toggle">
-              <input
-                type="checkbox"
-                checked={groupByFile}
-                onChange={e => setGroupByFile(e.target.checked)}
-              />
-              按文件分组
-            </label>
-          </div>
           <div className="diag-list" role="list" ref={listRef}>
-            {(groupByFile ? groups : ([['', filtered]] as [string, DiagnosticItem[]][])).map(([gname, items]) => (
-              <div key={gname} className="diag-group">
-                {groupByFile && items.length > 0 && (
-                  <div className="diag-group-head">{gname} <span className="diag-group-count">{items.length}</span></div>
-                )}
-                {items.map((d, i) => {
-                  const key = diagnosticKey(d)
-                  const canJump = !!d.file_path && !!d.record_key && (!isJumpable || isJumpable(d.file_path))
-                  const showFieldJump = canJump && !!d.field_path && !!onJumpToField
-                  const showRecordJump = canJump && !showFieldJump && !!onJumpToRecord
-                  return (
-                    <div
-                      key={i}
-                      className={`diag-item ${d.severity}${flashKey === key ? ' focused' : ''}`}
-                      role="listitem"
-                      data-diag-key={key}
-                    >
-                      <span className="diag-icon">
-                        <Icon
-                          name={d.severity === 'error' ? 'error' : d.severity === 'warning' ? 'warning' : 'info'}
-                          size={14}
-                          aria-hidden
-                        />
-                      </span>
-                      <span className="diag-msg">{diagnosticDisplayMessage(d)}</span>
+            {diagnostics.map((d, i) => {
+              const key = diagnosticKey(d)
+              const canJump = !!d.file_path && !!d.record_key && (!isJumpable || isJumpable(d.file_path))
+              const showFieldJump = canJump && !!d.field_path && !!onJumpToField
+              const showRecordJump = canJump && !showFieldJump && !!onJumpToRecord
+              return (
+                <div
+                  key={`${key}:${i}`}
+                  className={`diag-item ${d.severity}${flashKey === key ? ' focused' : ''}`}
+                  role="listitem"
+                  data-diag-key={key}
+                >
+                  <span className="diag-icon">
+                    <Icon
+                      name={d.severity === 'error' ? 'error' : d.severity === 'warning' ? 'warning' : 'info'}
+                      size={14}
+                      aria-hidden
+                    />
+                  </span>
+                  <span className="diag-msg">{diagnosticDisplayMessage(d)}</span>
+                  {(d.code || showFieldJump || showRecordJump) && (
+                    <span className="diag-actions">
                       {d.code && <span className="diag-code">{d.code}</span>}
                       {showFieldJump ? (
                         <button
@@ -202,7 +211,7 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpab
                           title={`跳转到字段 ${d.field_path}`}
                         >
                           <Icon name="jump" size={11} aria-hidden />
-                          {d.field_path}
+                          跳转
                         </button>
                       ) : showRecordJump ? (
                         <button
@@ -214,14 +223,11 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpab
                           跳转
                         </button>
                       ) : null}
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
-            {filtered.length === 0 && (
-              <div className="diag-empty">当前过滤条件下无诊断</div>
-            )}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
