@@ -6,11 +6,16 @@ use std::path::{Path, PathBuf};
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use serde::{Deserialize, Serialize};
 
-use super::{EditorError, EditorProjectSettings, EditorRecordGroup, ViewConfig, ViewKind};
+use super::{
+    EditorError, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState,
+    EditorWorkspaceTab, ViewConfig, ViewKind,
+};
 
 const SETTINGS_DIR: &str = "editor-setting";
 const VIEWS_FILE: &str = "views.json";
 const RECORD_GROUPS_FILE: &str = "record-groups.json";
+const PROJECT_STATE_DIR: &str = ".coflow";
+const WORKSPACE_FILE: &str = "editor-workspace.json";
 const MIN_COLUMN_WIDTH: f64 = 48.0;
 const MAX_VIEW_NAME_LEN: usize = 80;
 const MAX_FIELD_LEN: usize = 160;
@@ -42,6 +47,10 @@ fn views_path(project_root: &Path) -> PathBuf {
 
 fn record_groups_path(project_root: &Path) -> PathBuf {
     project_root.join(SETTINGS_DIR).join(RECORD_GROUPS_FILE)
+}
+
+fn workspace_path(project_root: &Path) -> PathBuf {
+    project_root.join(PROJECT_STATE_DIR).join(WORKSPACE_FILE)
 }
 
 fn read_json<T: Default + for<'de> Deserialize<'de>>(path: &Path) -> Result<T, EditorError> {
@@ -76,10 +85,12 @@ pub(super) fn read_project_settings(
 ) -> Result<EditorProjectSettings, EditorError> {
     let views: ViewsFile = read_json(&views_path(project_root))?;
     let groups: RecordGroupsFile = read_json(&record_groups_path(project_root))?;
+    let workspace: EditorWorkspaceState = read_json(&workspace_path(project_root))?;
     Ok(EditorProjectSettings {
         views: views.views,
         default_table_column_widths: views.default_table_column_widths,
         record_groups: groups.record_groups,
+        workspace,
     })
 }
 
@@ -96,7 +107,46 @@ pub(super) fn write_project_settings(
     let groups = RecordGroupsFile {
         record_groups: settings.record_groups.clone(),
     };
-    write_json(&record_groups_path(project_root), &groups)
+    write_json(&record_groups_path(project_root), &groups)?;
+    write_json(&workspace_path(project_root), &settings.workspace)
+}
+
+pub(super) fn sanitized_workspace(workspace: EditorWorkspaceState) -> EditorWorkspaceState {
+    const MAX_TABS: usize = 100;
+    const MAX_ID_LEN: usize = 512;
+    let mut ids = BTreeSet::new();
+    let tabs = workspace
+        .tabs
+        .into_iter()
+        .filter_map(|tab| {
+            let file_path = tab.file_path.trim().chars().take(MAX_ID_LEN).collect::<String>();
+            let type_name = tab.type_name.trim().chars().take(MAX_FIELD_LEN).collect::<String>();
+            let view_id = tab.view_id.trim().chars().take(MAX_ID_LEN).collect::<String>();
+            if file_path.is_empty() || view_id.is_empty() {
+                return None;
+            }
+            let id = format!("{file_path}\u{1f}{type_name}");
+            if !ids.insert(id) {
+                return None;
+            }
+            Some(EditorWorkspaceTab {
+                file_path,
+                type_name,
+                view_id,
+                view_kind: tab.view_kind,
+                coordinate: tab.coordinate,
+            })
+        })
+        .take(MAX_TABS)
+        .collect::<Vec<_>>();
+    let retained_ids = tabs
+        .iter()
+        .map(|tab| format!("{}\u{1f}{}", tab.file_path, tab.type_name))
+        .collect::<BTreeSet<_>>();
+    let active_tab_id = workspace
+        .active_tab_id
+        .filter(|active| retained_ids.contains(active));
+    EditorWorkspaceState { tabs, active_tab_id }
 }
 
 pub(super) fn sanitized_column_widths(widths: BTreeMap<String, f64>) -> BTreeMap<String, f64> {
@@ -288,6 +338,17 @@ mod tests {
                     fields: Vec::new(),
                 }],
             );
+        let tab_id = "data/items.cfd\u{1f}Item".to_string();
+        settings.workspace = EditorWorkspaceState {
+            tabs: vec![EditorWorkspaceTab {
+                file_path: "data/items.cfd".to_string(),
+                type_name: "Item".to_string(),
+                view_id: "view-1".to_string(),
+                view_kind: crate::editor::WorkspaceViewKind::Table,
+                coordinate: Some(coordinate("a")),
+            }],
+            active_tab_id: Some(tab_id),
+        };
 
         write_project_settings(&root, &settings).expect("write settings");
         let loaded = read_project_settings(&root).expect("read settings");
@@ -298,8 +359,10 @@ mod tests {
             settings.default_table_column_widths
         );
         assert_eq!(loaded.record_groups, settings.record_groups);
+        assert_eq!(loaded.workspace, settings.workspace);
         assert!(root.join(SETTINGS_DIR).join(VIEWS_FILE).is_file());
         assert!(root.join(SETTINGS_DIR).join(RECORD_GROUPS_FILE).is_file());
+        assert!(root.join(PROJECT_STATE_DIR).join(WORKSPACE_FILE).is_file());
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

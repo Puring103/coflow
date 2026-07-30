@@ -13,6 +13,7 @@ import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { DimensionValueView } from './bindings/DimensionValueView'
 import type { FileRecords } from './bindings/FileRecords'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
+import type { EditorWorkspaceState } from './bindings/EditorWorkspaceState'
 import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
 import type { ViewConfig } from './bindings/ViewConfig'
 import type { GraphData } from './bindings/GraphData'
@@ -244,6 +245,13 @@ export async function setViews(
     actualType,
     views,
   })
+}
+
+export async function setWorkspace(
+  sessionId: number,
+  workspace: EditorWorkspaceState,
+): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('set_workspace', { sessionId, workspace })
 }
 
 export async function checkProject(sessionId: number): Promise<string> {

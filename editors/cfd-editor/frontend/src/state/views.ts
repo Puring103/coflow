@@ -82,7 +82,11 @@ export function resolveView(
   file: string,
   type: string,
   viewId: string,
+  isSingleton = false,
 ): ResolvedView {
+  if (isSingleton) {
+    return { id: DEFAULT_RECORD_VIEW_ID, kind: 'record', isDefault: true }
+  }
   if (viewId === DEFAULT_RECORD_VIEW_ID) {
     return { id: viewId, kind: 'record', isDefault: true }
   }
