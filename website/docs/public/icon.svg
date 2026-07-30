@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Coflow app icon</title>
+  <desc id="desc">The Coflow mark on a dark rounded application tile.</desc>
+  <rect width="512" height="512" rx="104" fill="#141A21"/>
+  <g transform="translate(18 88) scale(2.8)">
+    <g fill="none" stroke-linecap="round" stroke-width="20">
+      <path d="M18 27h20c26 0 20 27 46 30" stroke="#E9A23B"/>
+      <path d="M18 60h30" stroke="#2DB9AC"/>
+      <path d="M18 93h20c26 0 20-27 46-30" stroke="#E8665B"/>
+      <path d="M112 60h26" stroke="#F1F5F4" stroke-width="30"/>
+    </g>
+    <circle cx="80" cy="60" r="27" fill="#2E8A82"/>
+    <path d="M88 50 A13.5 13.5 0 1 0 88 70" fill="none" stroke="#F1F9F5" stroke-width="7" stroke-linecap="round"/>
+  </g>
+</svg>
