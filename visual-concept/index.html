@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Coflow 视觉语言提案：让游戏配置自然汇聚，可靠抵达。" />
+    <title>Coflow - 让配置自然流向运行时</title>
+    <link rel="icon" href="assets/coflow-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <header class="site-header" data-header>
+      <a class="brand" href="#top" aria-label="Coflow 首页">
+        <img src="assets/coflow-logo.svg" alt="Coflow" />
+      </a>
+      <nav class="nav" aria-label="主导航">
+        <a href="#flow">工作流</a>
+        <a href="#proof">能力</a>
+        <a href="#start">开始使用</a>
+      </nav>
+      <a class="header-cta" href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener" aria-label="阅读 Coflow 文档">
+        <span>阅读文档</span>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6" /></svg>
+      </a>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <canvas class="flow-field" data-flow-field aria-hidden="true"></canvas>
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> Game configuration infrastructure</p>
+          <h1 id="hero-title">Coflow</h1>
+          <p class="hero-statement">让配置自然汇聚，<br />可靠抵达运行时。</p>
+          <p class="hero-lead">从类型建模、多源采集、业务校验到数据交付，一条低阻力、可验证、AI 可维护的配置工作流。</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#start">
+              <span>快速开始</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
+            </a>
+            <a class="button button-quiet" href="#flow">查看工作流</a>
+          </div>
+        </div>
+        <div class="hero-status" aria-label="共同参与配置工作的岗位">
+          <div class="role-planner"><span class="pulse"></span><b>策划 / Author</b><small>熟悉的数据源</small></div>
+          <div class="role-engineer"><b>程序 / Engineer</b><small>可信的运行时</small></div>
+          <div class="role-agent"><b>AI / Agent</b><small>结构化维护</small></div>
+        </div>
+        <a class="scroll-cue" href="#flow" aria-label="向下浏览">
+          <span></span>
+        </a>
+      </section>
+
+      <section class="confluence" id="flow" aria-labelledby="flow-title">
+        <div class="section-intro">
+          <p class="kicker">Different roles. One current.</p>
+          <h2 id="flow-title">不同岗位，<br />同一种配置语义。</h2>
+          <p>策划、程序和 AI 使用各自最顺手的入口。Coflow 不要求谁迁就谁，而是让每一次改动汇入同一个 runtime model。</p>
+        </div>
+
+        <div class="pipeline" data-pipeline>
+          <div class="pipeline-sources" aria-label="参与配置工作的岗位">
+            <div class="source-node role-planner"><span class="file-icon">P</span><div><b>策划</b><small>Excel · CFD</small></div></div>
+            <div class="source-node role-engineer"><span class="file-icon">E</span><div><b>程序</b><small>CFT · CLI</small></div></div>
+            <div class="source-node role-agent"><span class="file-icon">AI</span><div><b>AI Agent</b><small>inspect · patch</small></div></div>
+          </div>
+          <div class="pipeline-path" aria-hidden="true">
+            <svg viewBox="0 0 520 330" preserveAspectRatio="none">
+              <path class="pipe pipe-1" d="M0 45 C180 45 150 165 320 165 H520" />
+              <path class="pipe pipe-2" d="M0 165 H520" />
+              <path class="pipe pipe-3" d="M0 285 C180 285 150 165 320 165 H520" />
+              <path class="pipe-live" d="M0 45 C180 45 150 165 320 165 H520" />
+              <path class="pipe-live pipe-live-center" d="M0 165 H520" />
+              <path class="pipe-live pipe-live-delay" d="M0 285 C180 285 150 165 320 165 H520" />
+            </svg>
+          </div>
+          <div class="runtime-node">
+            <span>Unified runtime model</span>
+            <strong>01</strong>
+            <p>引用、默认值、check 与变体在这里共享同一套语义。</p>
+            <div class="runtime-health"><i></i> All checks passed</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="principles" id="proof" aria-labelledby="principles-title">
+        <header class="principles-head">
+          <p class="kicker">Designed for momentum</p>
+          <h2 id="principles-title">秩序，顺着流动发生。</h2>
+        </header>
+        <div class="principle-grid">
+          <article class="principle">
+            <div class="principle-glyph glyph-model" aria-hidden="true"><i></i><i></i><i></i></div>
+            <span class="principle-number">01</span>
+            <h3>在源头定义边界</h3>
+            <p>CFT 把类型、默认值、引用与业务规则写进一份权威 schema。改一处，整条链路生效。</p>
+          </article>
+          <article class="principle">
+            <div class="principle-glyph glyph-diagnose" aria-hidden="true"><i></i><i></i><i></i></div>
+            <span class="principle-number">02</span>
+            <h3>让问题自行浮出</h3>
+            <p>诊断精确到文件、表格、单元格与字段路径。人在看，AI 也能直接消费并继续修复。</p>
+          </article>
+          <article class="principle">
+            <div class="principle-glyph glyph-deliver" aria-hidden="true"><i></i><i></i><i></i></div>
+            <span class="principle-number">03</span>
+            <h3>一次构建，平稳交付</h3>
+            <p>校验通过后再原子发布 JSON、MessagePack 与 C# 加载代码，失败不扰动现有产物。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="proof" aria-labelledby="proof-title">
+        <div class="proof-copy">
+          <p class="kicker">Signals, not noise</p>
+          <h2 id="proof-title">每一次变化，<br />都清楚地留下去向。</h2>
+          <p>稳定的 CLI、结构化 patch 与可定位诊断，让策划、程序和 AI agent 在同一条工作流上协作。</p>
+          <ul class="proof-list">
+            <li><span>01</span>先读 schema，理解约束</li>
+            <li><span>02</span>提交最小结构化改动</li>
+            <li><span>03</span>根据诊断持续迭代</li>
+          </ul>
+        </div>
+
+        <div class="terminal" data-terminal aria-label="Coflow 命令行演示">
+          <header class="terminal-head">
+            <div class="terminal-dots"><i></i><i></i><i></i></div>
+            <span>coflow / examples/rpg</span>
+            <span class="terminal-state"><i></i> ready</span>
+          </header>
+          <div class="terminal-body">
+            <div class="command"><span class="prompt">›</span><code>coflow check .</code></div>
+            <div class="terminal-progress"><i></i></div>
+            <div class="result result-muted"><span>schema</span><b>18 types compiled</b><em>42ms</em></div>
+            <div class="result result-muted"><span>sources</span><b>486 records loaded</b><em>76ms</em></div>
+            <div class="result result-ok"><span>check</span><b>0 diagnostics</b><em>PASS</em></div>
+            <div class="terminal-rule"></div>
+            <div class="command command-next"><span class="prompt">›</span><code data-typed-command>coflow build .</code><span class="cursor"></span></div>
+          </div>
+          <footer class="terminal-foot">
+            <span>CFT</span><span>Excel</span><span>CFD</span><span>CSV</span>
+            <b>Flow 100%</b>
+          </footer>
+        </div>
+      </section>
+
+      <section class="start-section" id="start" aria-labelledby="start-title">
+        <div class="start-copy">
+          <p class="kicker">Start with one command</p>
+          <h2 id="start-title">把阻力留在系统之外。</h2>
+          <p>安装 CLI，跑通仓库中的 RPG 示例。</p>
+        </div>
+        <div class="install-command">
+          <span>powershell</span>
+          <code>cargo install --git https://github.com/Puring103/coflow.git coflow</code>
+          <button type="button" data-copy="cargo install --git https://github.com/Puring103/coflow.git coflow" aria-label="复制安装命令">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1"/><path d="M4 13V4h9"/></svg>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand footer-brand" href="#top" aria-label="返回顶部"><img src="assets/coflow-logo.svg" alt="Coflow" /></a>
+      <p>Configuration in motion.</p>
+      <div><a href="https://github.com/Puring103/coflow" target="_blank" rel="noopener">GitHub</a><a href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener">Docs</a><span>Apache-2.0</span></div>
+    </footer>
+
+    <div class="toast" data-toast role="status" aria-live="polite">已复制安装命令</div>
+    <script src="app.js"></script>
+  </body>
+</html>

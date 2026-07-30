@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 120" role="img" aria-labelledby="title desc">
+  <title id="title">Coflow</title>
+  <desc id="desc">Planner, engineer, and AI paths converging into one shared flow beside the Coflow wordmark.</desc>
+  <g fill="none" stroke-linecap="round" stroke-width="12">
+    <path d="M18 28h28c22 0 24 32 49 32h21" stroke="#f06b5d"/>
+    <path d="M18 60h98" stroke="#2aafbf"/>
+    <path d="M18 92h28c22 0 24-32 49-32h21" stroke="#b9e63a"/>
+    <path d="M116 60h42" stroke="#147c75"/>
+  </g>
+  <text x="186" y="82" fill="#172a29" font-family="Inter, Aptos, 'Segoe UI', Arial, sans-serif" font-size="68" font-weight="650" letter-spacing="0">coflow</text>
+</svg>
