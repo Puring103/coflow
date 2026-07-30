@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 120" role="img" aria-labelledby="title desc">
+  <title id="title">Coflow monochrome mark</title>
+  <desc id="desc">Three smooth paths converging into one continuous flow.</desc>
+  <g fill="none" stroke="#172a29" stroke-linecap="round" stroke-width="12">
+    <path d="M18 28h28c22 0 24 32 49 32h63"/>
+    <path d="M18 60h140"/>
+    <path d="M18 92h28c22 0 24-32 49-32h63"/>
+  </g>
+</svg>
