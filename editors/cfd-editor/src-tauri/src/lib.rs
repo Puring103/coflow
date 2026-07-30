@@ -14,9 +14,9 @@ use coflow_runtime::{
 use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
-    EditorRecordGroup, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, PluginSchemaType,
-    ProjectSnapshot, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
-    WriteDimensionValueOutcome, WriteFieldOutcome,
+    EditorRecordGroup, EditorWorkspaceState, FileRecords, GraphData, GraphQuery, InsertRecordOutcome,
+    PluginSchemaType, ProjectSnapshot, RecordRow, RefTarget, RenameRecordOutcome,
+    ReorderRecordsOutcome, ViewConfig, WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use extension_api::ExtensionManifest;
 use host::EditorHost;
@@ -593,6 +593,17 @@ async fn set_record_groups(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn set_workspace(
+    session_id: u32,
+    workspace: EditorWorkspaceState,
+    host: State<'_, EditorHost>,
+) -> Result<EditorProjectSettings, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().set_workspace(session_id, workspace)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn check_project(
     session_id: u32,
     host: State<'_, EditorHost>,
@@ -972,6 +983,7 @@ pub fn run() -> tauri::Result<()> {
             set_views,
             set_view_column_widths,
             set_record_groups,
+            set_workspace,
             check_project,
             build_project,
             open_source_file,
