@@ -3,170 +3,506 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Coflow 视觉语言提案：让游戏配置自然汇聚，可靠抵达。" />
-    <title>Coflow - 让配置自然流向运行时</title>
+    <meta name="description" content="Coflow — 高效无摩擦的数据配置工作流。程序、策划与 AI 汇入同一个 Coflow，再交付到运行时。" />
+    <title>Coflow — 高效无摩擦的数据配置工作流</title>
     <link rel="icon" href="assets/coflow-mark.svg" type="image/svg+xml" />
+    <script>
+      (() => {
+        const forced = new URLSearchParams(location.search).get('theme');
+        const saved = localStorage.getItem('coflow-theme');
+        const preferred = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = forced || saved || preferred;
+      })();
+    </script>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#main">跳到主要内容</a>
+
     <header class="site-header" data-header>
       <a class="brand" href="#top" aria-label="Coflow 首页">
-        <img src="assets/coflow-logo.svg" alt="Coflow" />
+        <img class="logo-light" src="assets/coflow-logo.svg" alt="Coflow" />
+        <img class="logo-dark" src="assets/coflow-logo-dark.svg" alt="Coflow" />
       </a>
+
       <nav class="nav" aria-label="主导航">
         <a href="#flow">工作流</a>
-        <a href="#proof">能力</a>
-        <a href="#start">开始使用</a>
+        <a href="#stages">产品特性</a>
+        <a href="#roles">角色分工</a>
+        <a href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener">文档</a>
       </nav>
-      <a class="header-cta" href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener" aria-label="阅读 Coflow 文档">
-        <span>阅读文档</span>
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6" /></svg>
-      </a>
+
+      <div class="header-actions">
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="切换到深色模式" title="切换明暗模式">
+          <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 13.3A8.5 8.5 0 1 1 10.7 3.3 6.5 6.5 0 0 0 20.7 13.3Z"/></svg>
+        </button>
+        <a class="btn btn-ghost header-docs" href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener">
+          <span>阅读文档</span>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
+        </a>
+      </div>
     </header>
 
     <main id="main">
-      <section class="hero" id="top" aria-labelledby="hero-title">
-        <canvas class="flow-field" data-flow-field aria-hidden="true"></canvas>
-        <div class="hero-copy">
-          <p class="eyebrow"><span></span> Game configuration infrastructure</p>
-          <h1 id="hero-title">Coflow</h1>
-          <p class="hero-statement">让配置自然汇聚，<br />可靠抵达运行时。</p>
-          <p class="hero-lead">从类型建模、多源采集、业务校验到数据交付，一条低阻力、可验证、AI 可维护的配置工作流。</p>
+      <!-- ─────────────────────────  HERO  ───────────────────────── -->
+      <section class="hero" id="top">
+        <div class="hero-bg" aria-hidden="true"></div>
+        <div class="wrap hero-inner">
+          <div class="hero-top">
+            <div class="hero-head">
+              <p class="eyebrow" data-reveal><span class="eyebrow-mark"></span>Game configuration workflow</p>
+              <h1 class="hero-title" data-reveal>高效无摩擦的<br /><span>数据配置工作流</span></h1>
+            </div>
+            <div class="hero-aside" data-reveal>
+              <p class="hero-lead">从定义类型、采集数据、校验规则到交付运行时，Coflow 把游戏配置整理成一条顺畅可靠的流水线。</p>
+              <div class="hero-actions">
+                <a class="btn btn-primary" href="https://puring103.github.io/coflow/docs/guide/install.html" target="_blank" rel="noopener">
+                  <span>快速开始</span>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
+                </a>
+                <a class="btn btn-secondary" href="https://github.com/Puring103/coflow/releases/latest" target="_blank" rel="noopener">
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>
+                  <span>下载 Release</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 汇流图：三条色线汇成一股青绿（呼应 Logo），再交付 Runtime -->
+        <div class="wrap" id="flow">
+          <figure class="flow" data-reveal aria-label="程序、策划、AI 汇入 Coflow，再交付到 Runtime">
+            <figcaption class="flow-caption">
+              <span class="flow-caption-dot"></span>三种来源，汇成同一股 Coflow，再交付到运行时
+            </figcaption>
+            <div class="flow-stage">
+              <div class="flow-canvas">
+                <svg class="flow-lines" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
+                  <!-- 线延伸到 Coflow 中心(500)底下、输出从中心伸出到 Runtime 左缘(818)，两端都被盒子盖住，永远相接 -->
+                  <path class="lane lane-e" d="M198 70 C400 70 400 150 500 150" />
+                  <path class="lane lane-p" d="M198 150 H500" />
+                  <path class="lane lane-a" d="M198 230 C400 230 400 150 500 150" />
+                  <path class="lane lane-o" d="M500 150 H818" />
+                </svg>
+
+                <div class="flow-node role-engineer"><i></i><div><b>程序</b><small>CFT · check</small></div></div>
+                <div class="flow-node role-planner"><i></i><div><b>策划</b><small>Excel · CSV · CFD</small></div></div>
+                <div class="flow-node role-agent"><i></i><div><b>AI</b><small>CLI · Skills</small></div></div>
+
+                <div class="flow-core">
+                  <svg class="flow-core-mark" viewBox="0 0 180 120" aria-hidden="true">
+                    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="22">
+                      <path d="M22 27h22c30 0 24 33 62 33h6" />
+                      <path d="M22 60h74" />
+                      <path d="M22 93h22c30 0 24-33 62-33h6" />
+                      <path d="M112 60h46" stroke-width="26" />
+                    </g>
+                  </svg>
+                  <b>Coflow</b>
+                </div>
+
+                <div class="flow-output">
+                  <div><b>Runtime</b><small>JSON · MsgPack · C#</small></div>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────  STAGES  ───────────────────────── -->
+      <section class="stages" id="stages">
+        <div class="wrap">
+          <header class="section-head" data-reveal>
+            <p class="section-kicker">从定义到交付</p>
+            <h2>一条工作流，贯穿配置全程</h2>
+            <p class="section-sub">数据只定义一次，规则只写一次，问题只定位一次。七个阶段顺流而下。</p>
+          </header>
+
+          <ol class="stage-list">
+            <!-- 01 —— CFT 定义能力：多卡叠放 -->
+            <li class="stage stage-wide" data-accent="engineer" data-reveal>
+              <div class="stage-marker"><span>01</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">DEFINE</p>
+                <h3>用 CFT 定义类型</h3>
+                <p>先说清每种数据长什么样：字段、类型、默认值、引用。CFT 能表达的不止字段——枚举、继承、集合都写得清楚。点标签或后面的卡片切换。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="card-stack code-stack" data-cardstack aria-label="CFT 定义能力">
+                  <div class="stack-tabs" role="tablist">
+                    <button type="button" data-view="type" data-label="类型与字段" class="is-active">类型与字段</button>
+                    <button type="button" data-view="enum" data-label="枚举与注解">枚举与注解</button>
+                    <button type="button" data-view="inherit" data-label="继承">继承</button>
+                    <button type="button" data-view="collection" data-label="数组与字典">数组与字典</button>
+                  </div>
+                  <div class="stack-deck">
+                    <article class="stack-card code-card" data-card="type" data-depth="0">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/skills.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-anno">@label</span>(<span class="tok-string">"技能"</span>)
+<span class="tok-keyword">type</span> <span class="tok-type">Skill</span> {
+  name: <span class="tok-type">string</span>;
+  element: <span class="tok-type">Element</span>;
+  power: <span class="tok-type">int</span>;
+  cooldown: <span class="tok-type">float</span> = <span class="tok-number">0.0</span>;
+  is_passive: <span class="tok-type">bool</span> = <span class="tok-keyword">false</span>;
+  follow_up: <span class="tok-op">&amp;</span><span class="tok-type">Skill</span>? = <span class="tok-keyword">null</span>;
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="enum" data-depth="1">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/enums.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-anno">@flag</span>
+<span class="tok-anno">@label</span>(<span class="tok-string">"权限"</span>)
+<span class="tok-keyword">enum</span> <span class="tok-type">Permission</span> {
+  <span class="tok-anno">@label</span>(<span class="tok-string">"读取"</span>)  <span class="tok-type">Read</span> = <span class="tok-number">1</span>,
+  <span class="tok-anno">@label</span>(<span class="tok-string">"写入"</span>)  <span class="tok-type">Write</span> = <span class="tok-number">2</span>,
+  <span class="tok-anno">@label</span>(<span class="tok-string">"执行"</span>)  <span class="tok-type">Execute</span> = <span class="tok-number">4</span>,
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="inherit" data-depth="2">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/rewards.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-keyword">abstract type</span> <span class="tok-type">Reward</span> {
+  <span class="tok-keyword">check</span> { id != <span class="tok-string">""</span>; }
+}
+<span class="tok-keyword">type</span> <span class="tok-type">ItemReward</span> : <span class="tok-type">Reward</span> {
+  item: <span class="tok-type">Item</span>;
+  count: <span class="tok-type">int</span> = <span class="tok-number">1</span>;
+}
+<span class="tok-keyword">sealed type</span> <span class="tok-type">CurrencyReward</span> : <span class="tok-type">Reward</span> {
+  amount: <span class="tok-type">int</span>;
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="collection" data-depth="3">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/loot.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-keyword">type</span> <span class="tok-type">LootTable</span> {
+  item_ids: [<span class="tok-type">string</span>] = [];
+  weights: [<span class="tok-type">int</span>] = [];
+  resistances: {<span class="tok-type">DamageType</span>: <span class="tok-type">float</span>} = {};
+  bonus: <span class="tok-op">&amp;</span><span class="tok-type">Item</span>? = <span class="tok-keyword">null</span>;
+}</code></pre>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 02 —— check 约束能力：多卡叠放 -->
+            <li class="stage stage-wide" data-accent="brand" data-reveal>
+              <div class="stage-marker"><span>02</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">CONSTRAIN</p>
+                <h3>用 <code>check</code> 写下规则</h3>
+                <p>把业务规则直接写在数据旁边，还能附上校验失败时的提示。基础比较、条件分支、集合量化——编辑和构建都遵守同一套规则。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="card-stack code-stack" data-cardstack aria-label="check 约束能力">
+                  <div class="stack-tabs" role="tablist">
+                    <button type="button" data-view="basic" data-label="基础约束" class="is-active">基础约束</button>
+                    <button type="button" data-view="when" data-label="条件分支">条件分支</button>
+                    <button type="button" data-view="quant" data-label="集合量化">集合量化</button>
+                  </div>
+                  <div class="stack-deck">
+                    <article class="stack-card code-card" data-card="basic" data-depth="0">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/skills.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-keyword">check</span> {
+  power &gt;= <span class="tok-number">0</span>: <span class="tok-string">"技能威力不能为负"</span>;
+  cooldown &gt;= <span class="tok-number">0.0</span>;
+  tags.isUnique(): <span class="tok-string">"标签不能重复"</span>;
+  name != <span class="tok-string">""</span>: <span class="tok-string">"技能名不能为空"</span>;
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="when" data-depth="1">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/skills.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-keyword">check</span> {
+  <span class="tok-keyword">when</span> !is_passive {
+    power &gt; <span class="tok-number">0</span>: <span class="tok-string">"主动技能威力需大于 0"</span>;
+    cooldown &gt; <span class="tok-number">0.0</span>: <span class="tok-string">"主动技能需要冷却时间"</span>;
+  }
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="quant" data-depth="2">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/loot.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-keyword">check</span> {
+  <span class="tok-keyword">all</span> w <span class="tok-keyword">in</span> weights { w &gt;= <span class="tok-number">0</span>; }
+  <span class="tok-keyword">any</span> w <span class="tok-keyword">in</span> weights { w &gt; <span class="tok-number">0</span>; }
+  <span class="tok-keyword">none</span> id <span class="tok-keyword">in</span> item_ids { id == <span class="tok-string">""</span>; }
+}</code></pre>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 03 -->
+            <li class="stage" data-accent="diagnostic" data-reveal>
+              <div class="stage-marker"><span>03</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">DIAGNOSE</p>
+                <h3>报错直接指到出错的格子</h3>
+                <p>运行 <code>coflow check</code>，每条错误都写明在哪个文件、哪张表、哪个单元格，以及为什么。人和 AI 照着同一条线索去改。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="code-window">
+                  <div class="win-bar"><span class="win-file">terminal</span><span class="win-lang">coflow check</span></div>
+                  <pre class="code-sample"><code><span class="tok-prompt">$</span> coflow check ./items
+<span class="tok-dim">----------------------------------------</span>
+[<span class="tok-err">CFD-DATA-007</span>] [<span class="tok-type">DATA</span>]
+<span class="tok-key">file</span>    data/items.xlsx
+<span class="tok-key">sheet</span>   Skill
+<span class="tok-key">cell</span>    C7
+<span class="tok-key">message</span>
+  expected int
+<span class="tok-dim">----------------------------------------</span>
+[<span class="tok-err">CFD-CHECK-007</span>] [<span class="tok-type">CHECK</span>]
+<span class="tok-key">file</span>    data/items.xlsx
+<span class="tok-key">sheet</span>   Skill
+<span class="tok-key">cell</span>    E9
+<span class="tok-key">message</span>
+  技能威力不能为负
+<span class="tok-err">error</span>: check failed with 2 diagnostics</code></pre>
+                </div>
+              </div>
+            </li>
+
+            <!-- 04 —— 卡片叠放：三种视图 -->
+            <li class="stage stage-wide" data-accent="planner" data-reveal>
+              <div class="stage-marker"><span>04</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">EDIT</p>
+                <h3>一份配置，多种视图</h3>
+                <p>表格适合批量改，记录适合看清一条数据，关系图用来追引用。同一份配置换个视角就好——点标签或点后面的卡片，把它翻到最前。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="card-stack cfd-stack" data-cardstack aria-label="CFD Editor 三种视图">
+                  <div class="stack-tabs" role="tablist">
+                    <button type="button" data-view="table" data-label="表格视图" class="is-active">表格</button>
+                    <button type="button" data-view="record" data-label="记录视图">记录</button>
+                    <button type="button" data-view="graph" data-label="关系图视图">关系图</button>
+                  </div>
+                  <div class="stack-deck">
+                    <!-- 表格视图（还原 .table-view / .data-table） -->
+                    <article class="stack-card cfd-card" data-card="table" data-depth="0">
+                      <div class="cfd-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M14 14l4 4"/></svg><span>按 Key 搜索…</span><em>128 条</em></div>
+                      <div class="cfd-table">
+                        <div class="cfd-thead">
+                          <div class="cfd-th th-key"><span class="th-name">Key</span><span class="th-type th-type-key">key</span></div>
+                          <div class="cfd-th"><span class="th-name">name</span><span class="th-type">string</span></div>
+                          <div class="cfd-th"><span class="th-name">element</span><span class="th-type c-enum">Element</span></div>
+                          <div class="cfd-th"><span class="th-name">power</span><span class="th-type">int</span></div>
+                          <div class="cfd-th"><span class="th-name">cooldown</span><span class="th-type">float</span></div>
+                        </div>
+                        <div class="cfd-tr selected">
+                          <div class="td-key">fireball</div>
+                          <div class="td"><span class="vc-str">火球术</span></div>
+                          <div class="td"><span class="vc-enum">Fire</span></div>
+                          <div class="td sel-cell"><span class="vc-num">35</span></div>
+                          <div class="td"><span class="vc-num">3.0</span></div>
+                        </div>
+                        <div class="cfd-tr">
+                          <div class="td-key">frost_nova</div>
+                          <div class="td"><span class="vc-str">冰霜新星</span></div>
+                          <div class="td"><span class="vc-enum">Ice</span></div>
+                          <div class="td"><span class="vc-num">28</span></div>
+                          <div class="td"><span class="vc-num">5.0</span></div>
+                        </div>
+                        <div class="cfd-tr">
+                          <div class="td-key">heal</div>
+                          <div class="td"><span class="vc-str">治疗术</span></div>
+                          <div class="td"><span class="vc-enum">Holy</span></div>
+                          <div class="td"><span class="vc-num">20</span></div>
+                          <div class="td"><span class="vc-num">2.5</span></div>
+                        </div>
+                        <div class="cfd-tr">
+                          <div class="td-key">thunder</div>
+                          <div class="td"><span class="vc-str">落雷</span></div>
+                          <div class="td"><span class="vc-enum">Thunder</span></div>
+                          <div class="td"><span class="vc-num">42</span></div>
+                          <div class="td"><span class="vc-num">6.0</span></div>
+                        </div>
+                      </div>
+                    </article>
+                    <!-- 记录视图（还原 .record-view：左 sidebar + 右 gn-header + dc-inspector） -->
+                    <article class="stack-card cfd-card" data-card="record" data-depth="1">
+                      <div class="cfd-record">
+                        <div class="rv-sidebar">
+                          <div class="rv-item selected"><span class="rv-key">fireball</span><span class="rv-sub">火球术</span></div>
+                          <div class="rv-item"><span class="rv-key">frost_nova</span><span class="rv-sub">冰霜新星</span></div>
+                          <div class="rv-item"><span class="rv-key">heal</span><span class="rv-sub">治疗术</span></div>
+                          <div class="rv-item"><span class="rv-key">thunder</span><span class="rv-sub">落雷</span></div>
+                        </div>
+                        <div class="rv-main">
+                          <div class="gn-header"><span class="gn-bar"></span><span class="gn-key">fireball</span><span class="gn-type">SKILL</span></div>
+                          <div class="dc-inspector">
+                            <div class="dc-row"><div class="dc-label">name<span class="dc-type">string</span></div><div class="dc-value"><span class="vc-str">火球术</span></div></div>
+                            <div class="dc-row"><div class="dc-label">element<span class="dc-type c-enum">Element</span></div><div class="dc-value"><span class="vc-enum">Fire</span></div></div>
+                            <div class="dc-row"><div class="dc-label">power<span class="dc-type">int</span></div><div class="dc-value"><span class="vc-num">35</span></div></div>
+                            <div class="dc-row"><div class="dc-label">cooldown<span class="dc-type">float</span></div><div class="dc-value"><span class="vc-num">3.0</span></div></div>
+                            <div class="dc-row"><div class="dc-label">is_passive<span class="dc-type">bool</span></div><div class="dc-value"><span class="vc-bool">FALSE</span></div></div>
+                            <div class="dc-row"><div class="dc-label">follow_up<span class="dc-type c-ref">&amp;Skill</span></div><div class="dc-value"><span class="vc-ref">frost_nova</span></div></div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                    <!-- 关系图视图（还原 GraphView：点状网格 + graph-node + 贝塞尔连线） -->
+                    <article class="stack-card cfd-card" data-card="graph" data-depth="2">
+                      <div class="cfd-graph">
+                        <svg class="rf-edges" viewBox="0 0 600 320" preserveAspectRatio="none" aria-hidden="true">
+                          <path class="rf-edge" d="M232 128 C300 128 300 170 372 170" />
+                          <text x="302" y="142" class="rf-edge-label">follow_up</text>
+                        </svg>
+                        <div class="graph-node gn-focused" style="left:24px;top:70px">
+                          <div class="gn-header"><span class="gn-bar"></span><span class="gn-key">fireball</span><span class="gn-type">SKILL</span></div>
+                          <div class="gn-body">
+                            <div class="dc-row"><div class="dc-label">power</div><div class="dc-value"><span class="vc-num">35</span></div></div>
+                            <div class="dc-row"><div class="dc-label">element</div><div class="dc-value"><span class="vc-enum">Fire</span></div></div>
+                            <div class="dc-more">follow_up · +2</div>
+                          </div>
+                        </div>
+                        <div class="graph-node gn-compact" style="left:372px;top:118px">
+                          <div class="gn-compact-key">frost_nova</div>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 05 -->
+            <li class="stage" data-accent="agent" data-reveal>
+              <div class="stage-marker"><span>05</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">ITERATE</p>
+                <h3>边改边看到问题</h3>
+                <p>改动实时校验，出错的格子当场标红，底部汇总所有问题。改对了，红点就消失。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="editor-chrome live-editor-demo">
+                  <div class="live-grid"><b>Key</b><b>power</b><b>tags</b><strong>fireball</strong><span class="live-error">-5 <i>1</i></span><span>[burn]</span><strong>frost_nova</strong><span>28</span><span class="live-warning">[ice, ice] <i>1</i></span></div>
+                  <div class="live-diag-head"><span>诊断</span><em>1</em><i>1</i></div>
+                  <div class="live-diag-row"><i>×</i><span>技能威力不能为负</span><code>CFD-CHECK-007</code><b>power</b></div>
+                  <div class="live-status"><span>items.xlsx</span><span>实时检查</span><b>● 已同步</b></div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 06 -->
+            <li class="stage" data-accent="brand" data-reveal>
+              <div class="stage-marker"><span>06</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">DELIVER</p>
+                <h3>一次构建，多种产物</h3>
+                <p>同一份数据可以导出 JSON、MessagePack 和 C# 代码。全部构建成功后再一起发布，半成品不会进入运行时。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="editor-chrome artifact-view">
+                  <div><b>JSON</b><span>data.json</span></div>
+                  <div><b>MSGPACK</b><span>data.bytes</span></div>
+                  <div><b>C#</b><span>Config.cs</span></div>
+                  <footer><i></i> Build complete · Published atomically</footer>
+                </div>
+              </div>
+            </li>
+
+            <!-- 07 -->
+            <li class="stage" data-accent="engineer" data-reveal>
+              <div class="stage-marker"><span>07</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">EXTEND</p>
+                <h3>用插件自定义显示</h3>
+                <p>给特定类型写个小插件，就能自定义它在表格里的显示方式。从文件安装，随时启用、禁用或移除。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="editor-chrome extensions-demo">
+                  <header><span>扩展</span><button type="button" aria-label="从文件安装插件">从文件安装</button></header>
+                  <article><i>⌘</i><div><b>化学方程式</b><span>为 ChemicalExpression 类型注册单元格渲染器</span><em>example-chemical-equation · v0.1.0</em></div><label><input type="checkbox" checked disabled /><span>已启用</span></label><button type="button" aria-label="移除化学方程式插件">×</button></article>
+                </div>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────  ROLES  ───────────────────────── -->
+      <section class="roles" id="roles">
+        <div class="wrap">
+          <header class="section-head" data-reveal>
+            <p class="section-kicker">一份配置，三种视角</p>
+            <h2>各司其职，自然流动</h2>
+          </header>
+          <div class="role-cards" data-reveal>
+            <article class="role-card role-engineer">
+              <span class="role-bar"></span>
+              <h3>程序</h3>
+              <p class="role-entry">CFT · check</p>
+              <p>用 CFT 准确定义数据，用 <code>check</code> 描述业务约束，让配置准确可信。</p>
+            </article>
+            <article class="role-card role-planner">
+              <span class="role-bar"></span>
+              <h3>策划</h3>
+              <p class="role-entry">Excel · CSV · CFD</p>
+              <p>沿用熟悉的文件格式，或用专门设计的编辑器编写配置；改动实时校验，错误精确定位到单元格。</p>
+            </article>
+            <article class="role-card role-agent">
+              <span class="role-bar"></span>
+              <h3>AI</h3>
+              <p class="role-entry">CLI · Skills</p>
+              <p>为 AI 提供准确的数据定义和精确的诊断信息，让 AI 自我迭代。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────  CTA  ───────────────────────── -->
+      <section class="cta">
+        <div class="wrap cta-inner" data-reveal>
+          <h2>让配置流动起来</h2>
+          <p>安装 Coflow，把类型、校验与交付整理成一条可信的流水线。</p>
           <div class="hero-actions">
-            <a class="button button-primary" href="#start">
+            <a class="btn btn-primary" href="https://puring103.github.io/coflow/docs/guide/install.html" target="_blank" rel="noopener">
               <span>快速开始</span>
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
             </a>
-            <a class="button button-quiet" href="#flow">查看工作流</a>
+            <a class="btn btn-secondary" href="https://github.com/Puring103/coflow" target="_blank" rel="noopener">
+              <span>查看 GitHub</span>
+            </a>
           </div>
-        </div>
-        <div class="hero-status" aria-label="共同参与配置工作的岗位">
-          <div class="role-planner"><span class="pulse"></span><b>策划 / Author</b><small>熟悉的数据源</small></div>
-          <div class="role-engineer"><b>程序 / Engineer</b><small>可信的运行时</small></div>
-          <div class="role-agent"><b>AI / Agent</b><small>结构化维护</small></div>
-        </div>
-        <a class="scroll-cue" href="#flow" aria-label="向下浏览">
-          <span></span>
-        </a>
-      </section>
-
-      <section class="confluence" id="flow" aria-labelledby="flow-title">
-        <div class="section-intro">
-          <p class="kicker">Different roles. One current.</p>
-          <h2 id="flow-title">不同岗位，<br />同一种配置语义。</h2>
-          <p>策划、程序和 AI 使用各自最顺手的入口。Coflow 不要求谁迁就谁，而是让每一次改动汇入同一个 runtime model。</p>
-        </div>
-
-        <div class="pipeline" data-pipeline>
-          <div class="pipeline-sources" aria-label="参与配置工作的岗位">
-            <div class="source-node role-planner"><span class="file-icon">P</span><div><b>策划</b><small>Excel · CFD</small></div></div>
-            <div class="source-node role-engineer"><span class="file-icon">E</span><div><b>程序</b><small>CFT · CLI</small></div></div>
-            <div class="source-node role-agent"><span class="file-icon">AI</span><div><b>AI Agent</b><small>inspect · patch</small></div></div>
-          </div>
-          <div class="pipeline-path" aria-hidden="true">
-            <svg viewBox="0 0 520 330" preserveAspectRatio="none">
-              <path class="pipe pipe-1" d="M0 45 C180 45 150 165 320 165 H520" />
-              <path class="pipe pipe-2" d="M0 165 H520" />
-              <path class="pipe pipe-3" d="M0 285 C180 285 150 165 320 165 H520" />
-              <path class="pipe-live" d="M0 45 C180 45 150 165 320 165 H520" />
-              <path class="pipe-live pipe-live-center" d="M0 165 H520" />
-              <path class="pipe-live pipe-live-delay" d="M0 285 C180 285 150 165 320 165 H520" />
-            </svg>
-          </div>
-          <div class="runtime-node">
-            <span>Unified runtime model</span>
-            <strong>01</strong>
-            <p>引用、默认值、check 与变体在这里共享同一套语义。</p>
-            <div class="runtime-health"><i></i> All checks passed</div>
-          </div>
-        </div>
-      </section>
-
-      <section class="principles" id="proof" aria-labelledby="principles-title">
-        <header class="principles-head">
-          <p class="kicker">Designed for momentum</p>
-          <h2 id="principles-title">秩序，顺着流动发生。</h2>
-        </header>
-        <div class="principle-grid">
-          <article class="principle">
-            <div class="principle-glyph glyph-model" aria-hidden="true"><i></i><i></i><i></i></div>
-            <span class="principle-number">01</span>
-            <h3>在源头定义边界</h3>
-            <p>CFT 把类型、默认值、引用与业务规则写进一份权威 schema。改一处，整条链路生效。</p>
-          </article>
-          <article class="principle">
-            <div class="principle-glyph glyph-diagnose" aria-hidden="true"><i></i><i></i><i></i></div>
-            <span class="principle-number">02</span>
-            <h3>让问题自行浮出</h3>
-            <p>诊断精确到文件、表格、单元格与字段路径。人在看，AI 也能直接消费并继续修复。</p>
-          </article>
-          <article class="principle">
-            <div class="principle-glyph glyph-deliver" aria-hidden="true"><i></i><i></i><i></i></div>
-            <span class="principle-number">03</span>
-            <h3>一次构建，平稳交付</h3>
-            <p>校验通过后再原子发布 JSON、MessagePack 与 C# 加载代码，失败不扰动现有产物。</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="proof" aria-labelledby="proof-title">
-        <div class="proof-copy">
-          <p class="kicker">Signals, not noise</p>
-          <h2 id="proof-title">每一次变化，<br />都清楚地留下去向。</h2>
-          <p>稳定的 CLI、结构化 patch 与可定位诊断，让策划、程序和 AI agent 在同一条工作流上协作。</p>
-          <ul class="proof-list">
-            <li><span>01</span>先读 schema，理解约束</li>
-            <li><span>02</span>提交最小结构化改动</li>
-            <li><span>03</span>根据诊断持续迭代</li>
-          </ul>
-        </div>
-
-        <div class="terminal" data-terminal aria-label="Coflow 命令行演示">
-          <header class="terminal-head">
-            <div class="terminal-dots"><i></i><i></i><i></i></div>
-            <span>coflow / examples/rpg</span>
-            <span class="terminal-state"><i></i> ready</span>
-          </header>
-          <div class="terminal-body">
-            <div class="command"><span class="prompt">›</span><code>coflow check .</code></div>
-            <div class="terminal-progress"><i></i></div>
-            <div class="result result-muted"><span>schema</span><b>18 types compiled</b><em>42ms</em></div>
-            <div class="result result-muted"><span>sources</span><b>486 records loaded</b><em>76ms</em></div>
-            <div class="result result-ok"><span>check</span><b>0 diagnostics</b><em>PASS</em></div>
-            <div class="terminal-rule"></div>
-            <div class="command command-next"><span class="prompt">›</span><code data-typed-command>coflow build .</code><span class="cursor"></span></div>
-          </div>
-          <footer class="terminal-foot">
-            <span>CFT</span><span>Excel</span><span>CFD</span><span>CSV</span>
-            <b>Flow 100%</b>
-          </footer>
-        </div>
-      </section>
-
-      <section class="start-section" id="start" aria-labelledby="start-title">
-        <div class="start-copy">
-          <p class="kicker">Start with one command</p>
-          <h2 id="start-title">把阻力留在系统之外。</h2>
-          <p>安装 CLI，跑通仓库中的 RPG 示例。</p>
-        </div>
-        <div class="install-command">
-          <span>powershell</span>
-          <code>cargo install --git https://github.com/Puring103/coflow.git coflow</code>
-          <button type="button" data-copy="cargo install --git https://github.com/Puring103/coflow.git coflow" aria-label="复制安装命令">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1"/><path d="M4 13V4h9"/></svg>
-          </button>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
-      <a class="brand footer-brand" href="#top" aria-label="返回顶部"><img src="assets/coflow-logo.svg" alt="Coflow" /></a>
-      <p>Configuration in motion.</p>
-      <div><a href="https://github.com/Puring103/coflow" target="_blank" rel="noopener">GitHub</a><a href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener">Docs</a><span>Apache-2.0</span></div>
+      <div class="wrap footer-inner">
+        <a class="brand footer-brand" href="#top" aria-label="返回顶部">
+          <img class="logo-light" src="assets/coflow-logo.svg" alt="Coflow" />
+          <img class="logo-dark" src="assets/coflow-logo-dark.svg" alt="Coflow" />
+        </a>
+        <p>高效无摩擦的数据配置工作流</p>
+        <nav class="footer-links" aria-label="页脚链接">
+          <a href="https://github.com/Puring103/coflow" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener">Docs</a>
+          <a href="https://github.com/Puring103/coflow/releases/latest" target="_blank" rel="noopener">Release</a>
+          <span>Apache-2.0</span>
+        </nav>
+      </div>
     </footer>
 
-    <div class="toast" data-toast role="status" aria-live="polite">已复制安装命令</div>
     <script src="app.js"></script>
   </body>
 </html>

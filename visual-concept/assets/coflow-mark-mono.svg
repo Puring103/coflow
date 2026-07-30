@@ -1,9 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 120" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 120" role="img" aria-labelledby="title desc">
   <title id="title">Coflow monochrome mark</title>
-  <desc id="desc">Three smooth paths converging into one continuous flow.</desc>
-  <g fill="none" stroke="#172a29" stroke-linecap="round" stroke-width="12">
-    <path d="M18 28h28c22 0 24 32 49 32h63"/>
-    <path d="M18 60h140"/>
-    <path d="M18 92h28c22 0 24-32 49-32h63"/>
+  <desc id="desc">三股路径汇入 Coflow 核心，再合为一股流出。</desc>
+  <g fill="none" stroke="#16312F" stroke-linecap="round" stroke-width="22">
+    <path d="M22 27h22c30 0 24 33 62 33h6"/>
+    <path d="M22 60h90"/>
+    <path d="M22 93h22c30 0 24-33 62-33h6"/>
+    <path d="M134 60h24" stroke-width="26"/>
   </g>
+  <rect x="90" y="38" width="44" height="44" rx="13" fill="#16312F"/>
 </svg>
