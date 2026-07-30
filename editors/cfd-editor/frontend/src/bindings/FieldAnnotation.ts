@@ -22,7 +22,15 @@ import type { SpreadInfo } from "./SpreadInfo";
  * - `children`: nested annotations for object fields, array items, or dict
  *   values. Keys are field names, zero-based array indexes, or dict-key text.
  */
-export type FieldAnnotation = { label?: string | null, description?: string | null, spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, nullable: boolean,
+export type FieldAnnotation = {
+/**
+ * Optional schema display name for this field; storage continues to use the field name.
+ */
+label?: string,
+/**
+ * Optional schema documentation shown by the editor as contextual help.
+ */
+description?: string, spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, nullable: boolean,
 /**
  * True when this cell is exposed for inspection but cannot be edited.
  */

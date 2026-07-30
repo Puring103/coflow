@@ -376,9 +376,11 @@ pub struct FieldCell {
 pub struct FieldAnnotation {
     /// Optional schema display name for this field; storage continues to use the field name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub label: Option<String>,
     /// Optional schema documentation shown by the editor as contextual help.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spread_info: Option<SpreadInfo>,
@@ -433,9 +435,9 @@ pub struct FieldAnnotation {
 )]
 pub struct EnumVariantOption {
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub label: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub description: Option<String>,
 }
 
@@ -755,4 +757,31 @@ pub struct GraphEdge {
 pub struct RefTarget {
     pub coordinate: RecordCoordinate,
     pub file_path: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EnumVariantOption;
+
+    #[test]
+    fn enum_variant_option_serializes_missing_metadata_as_null() {
+        let value = serde_json::to_value(EnumVariantOption {
+            name: "active".to_owned(),
+            label: None,
+            description: None,
+        });
+
+        assert!(value.is_ok());
+        assert_eq!(
+            value.as_ref().ok().and_then(|value| value.get("label")),
+            Some(&serde_json::Value::Null)
+        );
+        assert_eq!(
+            value
+                .as_ref()
+                .ok()
+                .and_then(|value| value.get("description")),
+            Some(&serde_json::Value::Null)
+        );
+    }
 }

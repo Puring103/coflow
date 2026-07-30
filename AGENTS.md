@@ -36,6 +36,12 @@ cargo check --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo test --features ts-export -p cfd-editor export_bindings
+git diff --exit-code editors/cfd-editor/frontend/src/bindings
+npm --prefix editors/cfd-editor/frontend ci
+npm --prefix editors/cfd-editor/frontend test
+npm --prefix editors/cfd-editor/frontend run build
+node editors/vscode-coflow/test/extension-unit.test.js
 ```
 
 Do not package or release while any of these commands fail.
