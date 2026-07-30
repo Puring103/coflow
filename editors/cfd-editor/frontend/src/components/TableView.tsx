@@ -1812,7 +1812,14 @@ function EditableCell({
       } : undefined}
       title={canEdit ? '双击编辑' : undefined}
     >
-      <DataCardCompact value={value} label={label} declaredType={declaredType} surface="table-cell" highlightQuery={highlightQuery} />
+      <DataCardCompact
+        value={value}
+        label={label}
+        declaredType={declaredType}
+        refTargetType={refTargetType}
+        surface="table-cell"
+        highlightQuery={highlightQuery}
+      />
     </div>
   )
 }

@@ -1,7 +1,8 @@
 import { createElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { DataCardCompact } from './DataCard'
+import { DataCardCompact, DataCardExpanded } from './DataCard'
+import { ObjectDraftHost } from './ObjectDraftHost'
 import type { FieldValue } from '../wire'
 
 describe('DataCardCompact complex previews', () => {
@@ -121,4 +122,191 @@ describe('DataCardCompact complex previews', () => {
     expect(html).toContain('inline-scalar-array')
     expect(html).not.toContain('markdown-tree-more')
   })
+
+  it('applies the referenced type color to scalar previews', () => {
+    const value: FieldValue = { kind: 'ref', value: '&ItemConfig.sword' }
+    const html = renderToStaticMarkup(createElement(DataCardCompact, {
+      value,
+      refTargetType: 'ItemConfig',
+    }))
+
+    expect(html).toContain('--ref-color:')
+    expect(html).toContain('vc-ref')
+  })
+
+  it('inlines singleton object collections under a count-only header', () => {
+    const fields = [{
+      name: 'MatterVariations',
+      annotation: null,
+      value: {
+        kind: 'array' as const,
+        value: [{
+          kind: 'object' as const,
+          value: {
+            actual_type: 'RegionMatterVariationConfig',
+            fields: { Matter: { kind: 'string' as const, value: 'Water' } },
+          },
+        }],
+      },
+    }]
+    const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
+      lookups: {} as never,
+      generationKey: 'test',
+      onOpenReference: () => {},
+      children: createElement(DataCardExpanded, {
+        fields,
+        actualType: 'MatterConfig',
+        expandedPaths: new Set(['MatterVariations']),
+        onEdit: () => {},
+        onCollectionEdit: () => {},
+      }),
+    }))
+
+    expect(html).toContain('class="vc-count">1</span>')
+    expect(html).toContain('Matter')
+    expect(html).toContain('dc-group-body')
+    expect(html).toContain('dc-row-actions')
+    expect(html).toContain('aria-label="添加元素"')
+    expect(html).toContain('title="删除唯一元素"')
+    expect(html).not.toContain('#1')
+    expect(html).not.toContain('dc-row-item')
+    expect(html).not.toContain('元素 1')
+    expect(html).not.toContain('>[0]<')
+    expect(html).not.toContain('[RegionMatterVariationConfig]')
+    expect(html).not.toContain('vc-count">·')
+  })
+
+  it('uses one-based index rails for multi-element object collections', () => {
+    const html = renderToStaticMarkup(createElement(DataCardExpanded, {
+      fields: [{
+        name: 'Entries',
+        annotation: null,
+        value: {
+          kind: 'array' as const,
+          value: [1, 2].map(index => ({
+            kind: 'object' as const,
+            value: {
+              actual_type: 'Entry',
+              fields: { Value: { kind: 'int' as const, value: BigInt(index) } },
+            },
+          })),
+        },
+      }],
+      expandedPaths: new Set(['Entries']),
+    }))
+
+    expect(html).toContain('dc-array-object-item')
+    expect(html).toContain('dc-array-item-index">1</span>')
+    expect(html).toContain('dc-array-item-index">2</span>')
+    expect(html).not.toContain('#1')
+    expect(html).not.toContain('#2')
+    expect(html).not.toContain('dc-row-static-group')
+  })
+
+  it('uses a narrow one-based index label for scalar collection items', () => {
+    const html = renderToStaticMarkup(createElement(DataCardExpanded, {
+      fields: [{
+        name: 'Values',
+        annotation: null,
+        value: {
+          kind: 'array' as const,
+          value: [
+            { kind: 'string' as const, value: 'first' },
+            { kind: 'string' as const, value: 'second' },
+          ],
+        },
+      }],
+      expandedPaths: new Set(['Values']),
+    }))
+
+    expect(html).toContain('dc-row dc-row-field dc-row-item')
+    expect(html).toContain('dc-row-label-text">1</span>')
+    expect(html).toContain('dc-row-label-text">2</span>')
+    expect(html).toContain('first')
+    expect(html).toContain('second')
+    expect(html).not.toContain('#1')
+  })
+
+  it('keeps empty collection state and its add action in the collection header', () => {
+    const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
+      lookups: {} as never,
+      generationKey: 'test',
+      onOpenReference: () => {},
+      children: createElement(DataCardExpanded, {
+        fields: [{
+          name: 'BioRemains',
+          annotation: null,
+          value: { kind: 'array' as const, value: [] },
+        }],
+        flattenSingleComplexField: true,
+        onEdit: () => {},
+        onCollectionEdit: () => {},
+      }),
+    }))
+
+    expect(html).toContain('class="vc-count">0</span>')
+    expect(html).toContain('BioRemains')
+    expect(html).toContain('aria-label="添加元素"')
+    expect(html).not.toContain('空数组')
+    expect(html).not.toContain('dc-row-empty')
+  })
+
+  it('summarizes nested diagnostics without marking ancestor labels as exact errors', () => {
+    const fields = [{
+      name: 'MatterVariations',
+      annotation: null,
+      value: {
+        kind: 'array' as const,
+        value: [{
+          kind: 'object' as const,
+          value: {
+            actual_type: 'RegionMatterVariationConfig',
+            fields: { PrefabId: { kind: 'string' as const, value: '' } },
+          },
+        }],
+      },
+    }]
+    const html = renderToStaticMarkup(createElement(DataCardExpanded, {
+      fields,
+      actualType: 'MatterConfig',
+      expandedPaths: new Set(['MatterVariations', 'MatterVariations[0]']),
+      diagnostics: [{
+        severity: 'error',
+        field_path: 'MatterVariations[0].PrefabId',
+        message: 'PrefabId is required',
+      }],
+    }))
+
+    expect(html).toContain('dc-row-diag-summary')
+    expect(html).toContain('dc-row-diag-exact')
+    expect(html).toContain('查看错误诊断')
+  })
+
+  it('keeps deeply nested inspector objects in the expanded form layout', () => {
+    let nested: FieldValue = { kind: 'string', value: 'deep-leaf' }
+    for (let depth = 7; depth >= 1; depth -= 1) {
+      nested = {
+        kind: 'object',
+        value: {
+          actual_type: `Level${depth}`,
+          fields: { [`level${depth}`]: nested },
+        },
+      }
+    }
+    const expandedPaths = new Set<string>(['root'])
+    let path = 'root'
+    for (let depth = 1; depth <= 6; depth += 1) {
+      path += `.level${depth}`
+      expandedPaths.add(path)
+    }
+    const html = renderToStaticMarkup(createElement(DataCardExpanded, {
+      fields: [{ name: 'root', annotation: null, value: nested }],
+      expandedPaths,
+    }))
+
+    expect(html).toContain('deep-leaf')
+    expect(html).toContain(`data-field-path="${path}.level7"`)
+    expect(html).not.toContain('markdown-value-tree')
+  })
+
 })

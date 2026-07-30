@@ -102,20 +102,19 @@ import {
   groupFilterPredicate,
   type ViewTab,
 } from './state/views'
+import {
+  defaultWorkspaceTab,
+  routeForWorkspaceTab,
+  sanitizeProjectWorkspace,
+  workspaceTabId,
+  workspaceToWire,
+  type WorkspaceTab,
+} from './state/workspaceTabs'
 import './style.css'
 
 const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
 const LAST_PROJECT_STORAGE_KEY = 'cfd-editor-last-project-yaml'
-
-interface WorkspaceTab {
-  id: string
-  filePath: string
-  typeName: string
-}
-function workspaceTabId(filePath: string, typeName: string): string {
-  return `${filePath}\u001f${typeName}`
-}
 
 function sameValueCells(left: readonly CellAnchor[], right: readonly CellAnchor[]): boolean {
   return left.length === right.length && left.every((cell, index) => {
@@ -127,7 +126,12 @@ function sameValueCells(left: readonly CellAnchor[], right: readonly CellAnchor[
 }
 
 function emptySettings(): EditorProjectSettings {
-  return { views: {}, default_table_column_widths: {}, record_groups: {} }
+  return {
+    views: {},
+    default_table_column_widths: {},
+    record_groups: {},
+    workspace: { tabs: [], active_tab_id: null },
+  }
 }
 
 function settingsWithRecordGroups(
@@ -269,11 +273,10 @@ export default function App() {
   const [activeType, setActiveType] = useState<string>('')
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([])
   const [activeWorkspaceTabId, setActiveWorkspaceTabId] = useState<string | null>(null)
-  // The last view the user actively picked. `openFile` pushes a table
-  // placeholder because record view needs a coordinate we don't yet have;
-  // once the file data lands, the effect below upgrades the route to
-  // `preferredView` if that's not what we currently show.
-  const [preferredView, setPreferredView] = useState<'table' | 'record' | 'graph'>('table')
+  const workspaceTabsRef = useRef(workspaceTabs)
+  const workspaceSaveChainRef = useRef<Promise<void>>(Promise.resolve())
+  const [workspaceReadySessionId, setWorkspaceReadySessionId] = useState<number | null>(null)
+  workspaceTabsRef.current = workspaceTabs
   const [activePane, setActivePane] = useState<'files' | 'search' | 'extensions' | 'ai'>(() => {
     try {
       const v = localStorage.getItem('cfd-editor-active-pane')
@@ -532,6 +535,61 @@ export default function App() {
   }, [])
   const closeInspector = useCallback(() => setInspectorSelection(null), [])
 
+  const navigateWorkspaceTab = useCallback((
+    tab: WorkspaceTab,
+    coordinate?: RecordCoordinate,
+  ) => {
+    setActiveWorkspaceTabId(tab.id)
+    setActiveType(tab.typeName)
+    if (!tab.typeName) {
+      setDimensionView(tab.viewKind === 'record' ? 'record' : 'table')
+      router.push({
+        view: 'table',
+        file: tab.filePath,
+        viewId: DEFAULT_TABLE_VIEW_ID,
+        typeFilter: '',
+      })
+      return
+    }
+    const fallbackCoordinate = coordinate ?? fileDataCacheRef.current[tab.filePath]?.records.find(
+      row => recordActualType(row) === tab.typeName,
+    )?.coordinate
+    router.push(routeForWorkspaceTab(tab, fallbackCoordinate))
+  }, [router])
+
+  const installWorkspace = useCallback((
+    snapshot: ProjectSnapshot,
+    settings: EditorProjectSettings,
+  ) => {
+    const sourceFiles = collectSourceFiles(snapshot)
+    const restored = sanitizeProjectWorkspace(
+      settings.workspace,
+      snapshot.file_types,
+      new Set(sourceFiles),
+    )
+    let tabs = restored?.tabs ?? []
+    let activeTabId = restored?.activeTabId ?? null
+    if (tabs.length === 0) {
+      const firstFile = snapshot.first_source_file ?? sourceFiles[0]
+      if (firstFile) {
+        const option = snapshot.file_types[firstFile]?.[0]
+        const tab = defaultWorkspaceTab(firstFile, option?.name ?? '', option?.is_singleton ?? false)
+        tabs = [tab]
+        activeTabId = tab.id
+      }
+    }
+    workspaceTabsRef.current = tabs
+    setWorkspaceTabs(tabs)
+    setActiveWorkspaceTabId(activeTabId)
+    const active = tabs.find(tab => tab.id === activeTabId) ?? tabs[0]
+    if (active) navigateWorkspaceTab(active)
+    else {
+      setActiveType('')
+      router.clear()
+    }
+    setWorkspaceReadySessionId(snapshot.session_id)
+  }, [navigateWorkspaceTab, router])
+
   // Auto-load mock data only when not running in Tauri (browser preview).
   useEffect(() => {
     if (!api.isTauri) {
@@ -542,17 +600,9 @@ export default function App() {
       setProjectSettings(MOCK_EDITOR_SETTINGS)
       setProjectDimensions(MOCK_PROJECT.dimensions)
       setGraphCache({ [graphCacheKey('data/npc.cfd', GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
-      if (MOCK_PROJECT.first_source_file) {
-        const filePath = MOCK_PROJECT.first_source_file
-        const typeName = MOCK_PROJECT.file_types[filePath]?.[0]?.name ?? ''
-        const tab = { id: workspaceTabId(filePath, typeName), filePath, typeName }
-        setWorkspaceTabs([tab])
-        setActiveWorkspaceTabId(tab.id)
-        setActiveType(typeName)
-        router.push({ view: 'table', file: filePath, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
-      }
+      installWorkspace(MOCK_PROJECT, MOCK_EDITOR_SETTINGS)
     }
-  }, [generation, lookups, router.push])
+  }, [generation, installWorkspace, lookups])
 
   // Reset all per-session UI state to a clean slate before swapping in a
   // new project snapshot. Used by both "open" and "new" flows so behavior
@@ -577,26 +627,23 @@ export default function App() {
       setProjectSettings(api.isTauri ? null : MOCK_EDITOR_SETTINGS)
       setProjectDimensions(api.isTauri ? [] : MOCK_PROJECT.dimensions)
       setWorkspaceTabs([])
+      workspaceTabsRef.current = []
       setActiveWorkspaceTabId(null)
+      setWorkspaceReadySessionId(null)
       setActiveType('')
       history.clear()
-      const firstFile = snapshot.first_source_file ?? collectSourceFiles(snapshot)[0]
-      if (firstFile) {
-        const typeName = snapshot.file_types[firstFile]?.[0]?.name ?? ''
-        const tab = { id: workspaceTabId(firstFile, typeName), filePath: firstFile, typeName }
-        setWorkspaceTabs([tab])
-        setActiveWorkspaceTabId(tab.id)
-        setActiveType(typeName)
-        router.push({ view: 'table', file: firstFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
-      } else {
-        router.clear()
-      }
+      router.clear()
       if (api.isTauri) {
         api.getProjectSettings(snapshot.session_id).then(settings => {
-          if (generation.currentSession() === snapshot.session_id) setProjectSettings(settings)
+          if (generation.currentSession() !== snapshot.session_id) return
+          setProjectSettings(settings)
+          installWorkspace(snapshot, settings)
         }).catch(err => {
           if (generation.currentSession() === snapshot.session_id) {
             setErrorMsg(`读取编辑器设置失败: ${errorMessage(err)}`)
+            const settings = emptySettings()
+            setProjectSettings(settings)
+            installWorkspace(snapshot, settings)
           }
         })
         api.getProjectDimensions(snapshot.session_id).then(dimensions => {
@@ -606,9 +653,11 @@ export default function App() {
             setErrorMsg(`读取维度配置失败: ${errorMessage(err)}`)
           }
         })
+      } else {
+        installWorkspace(snapshot, MOCK_EDITOR_SETTINGS)
       }
     },
-    [generation, history, lookups, router]
+    [generation, history, installWorkspace, lookups, router]
   )
 
   useEffect(() => {
@@ -648,6 +697,40 @@ export default function App() {
         : current
     ))
   }, [generation])
+
+  useEffect(() => {
+    if (
+      !api.isTauri
+      || !project
+      || workspaceReadySessionId !== project.session_id
+    ) return
+    const sessionId = project.session_id
+    const workspace = workspaceToWire(workspaceTabs, activeWorkspaceTabId)
+    const timer = window.setTimeout(() => {
+      workspaceSaveChainRef.current = workspaceSaveChainRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (generation.currentSession() !== sessionId) return
+          const saved = await api.setWorkspace(sessionId, workspace)
+          if (generation.currentSession() !== sessionId) return
+          setProjectSettings(current => current
+            ? { ...current, workspace: saved.workspace }
+            : current)
+        })
+        .catch(error => {
+          if (generation.currentSession() === sessionId) {
+            setErrorMsg(`保存工作区状态失败: ${errorMessage(error)}`)
+          }
+        })
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [
+    activeWorkspaceTabId,
+    generation,
+    project?.session_id,
+    workspaceReadySessionId,
+    workspaceTabs,
+  ])
 
   const openProject = useCallback(async () => {
     if (!api.isTauri) {
@@ -696,15 +779,17 @@ export default function App() {
       }
       if (!current || !keepFile) {
         setProject(snapshot)
-        const typeName = snapshot.file_types[nextFile]?.[0]?.name ?? ''
-        const tab = { id: workspaceTabId(nextFile, typeName), filePath: nextFile, typeName }
-        setWorkspaceTabs(existing => [
-          ...existing.filter(item => sourceFiles.includes(item.filePath) && item.id !== tab.id),
-          tab,
-        ])
-        setActiveWorkspaceTabId(tab.id)
-        setActiveType(typeName)
-        router.push({ view: 'table', file: nextFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
+        const option = snapshot.file_types[nextFile]?.[0]
+        const tab = defaultWorkspaceTab(nextFile, option?.name ?? '', option?.is_singleton ?? false)
+        setWorkspaceTabs(existing => {
+          const next = [
+            ...existing.filter(item => sourceFiles.includes(item.filePath) && item.id !== tab.id),
+            tab,
+          ]
+          workspaceTabsRef.current = next
+          return next
+        })
+        navigateWorkspaceTab(tab)
         return
       }
       try {
@@ -740,7 +825,7 @@ export default function App() {
         }
       }
     },
-    [generation, history, lookups, reportSessionError, router],
+    [generation, history, lookups, navigateWorkspaceTab, reportSessionError, router],
   )
 
   const commitProjectRevision = useCallback((
@@ -954,32 +1039,40 @@ export default function App() {
   const openFile = useCallback(
     (filePath: string, requestedType = '') => {
       setGlobalSearch('')
-      const typeName = requestedType || project?.file_types[filePath]?.[0]?.name || ''
+      const options = project?.file_types[filePath] ?? []
+      const typeName = requestedType || options[0]?.name || ''
       const id = workspaceTabId(filePath, typeName)
-      setWorkspaceTabs(current => current.some(tab => tab.id === id)
-        ? current
-        : [...current, { id, filePath, typeName }])
-      setActiveWorkspaceTabId(id)
-      setActiveType(typeName)
-      // Graph views are custom-only and keyed by (file, type), so a new file
-      // always opens on the default table view.
-      router.push({ view: 'table', file: filePath, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: typeName })
+      const existing = workspaceTabsRef.current.find(tab => tab.id === id)
+      const option = options.find(candidate => candidate.name === typeName)
+      const tab = existing ?? defaultWorkspaceTab(filePath, typeName, option?.is_singleton ?? false)
+      if (!existing) {
+        const next = [...workspaceTabsRef.current, tab]
+        workspaceTabsRef.current = next
+        setWorkspaceTabs(next)
+      }
+      navigateWorkspaceTab(tab)
     },
-    [project?.file_types, router]
+    [navigateWorkspaceTab, project?.file_types]
   )
 
   const openRecord = useCallback(
     (filePath: string, coordinate: RecordCoordinate) => {
-      setPreferredView('record')
       const id = workspaceTabId(filePath, coordinate.actual_type)
-      setWorkspaceTabs(current => current.some(tab => tab.id === id)
-        ? current
-        : [...current, { id, filePath, typeName: coordinate.actual_type }])
-      setActiveWorkspaceTabId(id)
-      setActiveType(coordinate.actual_type)
-      router.push({ view: 'record', file: filePath, viewId: DEFAULT_RECORD_VIEW_ID, coordinate })
+      const existing = workspaceTabsRef.current.find(tab => tab.id === id)
+      const tab: WorkspaceTab = {
+        ...(existing ?? defaultWorkspaceTab(filePath, coordinate.actual_type, false)),
+        viewKind: 'record',
+        viewId: DEFAULT_RECORD_VIEW_ID,
+        coordinate,
+      }
+      const next = existing
+        ? workspaceTabsRef.current.map(item => item.id === id ? tab : item)
+        : [...workspaceTabsRef.current, tab]
+      workspaceTabsRef.current = next
+      setWorkspaceTabs(next)
+      navigateWorkspaceTab(tab, coordinate)
     },
-    [router]
+    [navigateWorkspaceTab]
   )
 
   // Click on a corner badge (on a record or field): reveal the first
@@ -1047,6 +1140,42 @@ export default function App() {
     },
     [fileDataCache, generation, openRecord, project, reportSessionError],
   )
+
+  const openReference = useCallback((targetType: string, targetKey: string) => {
+    void lookups.loadRefTargets(targetType).then(result => {
+      if (!result.ok) {
+        if (result.reason === 'failed') {
+          setErrorMsg(`读取引用目标失败: ${result.error ?? targetType}`)
+        }
+        return
+      }
+      const target = result.value.find(item => (
+        item.coordinate.key === targetKey
+        && item.coordinate.actual_type === targetType
+      )) ?? result.value.find(item => item.coordinate.key === targetKey)
+      if (!target) {
+        setErrorMsg(`引用记录 ${targetKey} 未找到`)
+        return
+      }
+      const { coordinate, file_path: filePath } = target
+      const id = workspaceTabId(filePath, coordinate.actual_type)
+      const existing = workspaceTabsRef.current.find(tab => tab.id === id)
+      const option = project?.file_types[filePath]?.find(item => item.name === coordinate.actual_type)
+      const base = existing ?? defaultWorkspaceTab(
+        filePath,
+        coordinate.actual_type,
+        option?.is_singleton ?? false,
+      )
+      const tab = base.viewKind === 'record' ? { ...base, coordinate } : base
+      const next = existing
+        ? workspaceTabsRef.current.map(item => item.id === id ? tab : item)
+        : [...workspaceTabsRef.current, tab]
+      workspaceTabsRef.current = next
+      setWorkspaceTabs(next)
+      navigateWorkspaceTab(tab, coordinate)
+      if (tab.viewKind !== 'record') openInspector(filePath, coordinate)
+    })
+  }, [lookups, navigateWorkspaceTab, openInspector, project?.file_types])
 
   const rebindCoordinate = useCallback(
     (filePath: string, oldCoordinate: RecordCoordinate, newCoordinate: RecordCoordinate) => {
@@ -1385,7 +1514,16 @@ export default function App() {
 
   const currentRoute = router.current
   const activeFile = currentRoute?.file ?? null
-  useEffect(() => setDimensionView('table'), [activeFile])
+  useEffect(() => {
+    if (!currentRoute) return
+    const routedType = currentRoute.view === 'record'
+      ? currentRoute.coordinate.actual_type
+      : currentRoute.typeFilter ?? ''
+    const tab = workspaceTabsRef.current.find(
+      candidate => candidate.id === workspaceTabId(currentRoute.file, routedType),
+    )
+    setDimensionView(!tab?.typeName && tab?.viewKind === 'record' ? 'record' : 'table')
+  }, [currentRoute])
   useEffect(() => {
     if (!currentRoute) return
     const typeName = currentRoute.view === 'record'
@@ -1395,15 +1533,64 @@ export default function App() {
     if (!workspaceTabs.some(tab => tab.id === id)) return
     setActiveWorkspaceTabId(id)
     if (typeName) setActiveType(typeName)
-  }, [currentRoute, workspaceTabs])
+    if (!typeName) return
+    const singleton = project?.file_types[currentRoute.file]
+      ?.find(option => option.name === typeName)?.is_singleton ?? false
+    setWorkspaceTabs(current => {
+      let changed = false
+      const next = current.map(tab => {
+        if (tab.id !== id) return tab
+        const viewKind = singleton ? 'record' : currentRoute.view
+        const viewId = singleton ? DEFAULT_RECORD_VIEW_ID : currentRoute.viewId
+        const coordinate = viewKind === 'record' && currentRoute.view === 'record'
+          ? currentRoute.coordinate
+          : tab.coordinate
+        if (
+          tab.viewKind === viewKind
+          && tab.viewId === viewId
+          && (viewKind !== 'record' || sameCoordinate(
+            tab.coordinate ?? { actual_type: '', key: '' },
+            coordinate ?? { actual_type: '', key: '' },
+          ))
+        ) return tab
+        changed = true
+        return { ...tab, viewKind, viewId, coordinate }
+      })
+      if (!changed) return current
+      workspaceTabsRef.current = next
+      return next
+    })
+  }, [currentRoute, project?.file_types, workspaceTabs])
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeDimensionData = activeFile ? dimensionFileCache[activeFile] : null
+  useEffect(() => {
+    if (!activeDimensionData || !activeWorkspaceTabId) return
+    setWorkspaceTabs(current => {
+      let changed = false
+      const next = current.map(tab => {
+        if (tab.id !== activeWorkspaceTabId || tab.typeName) return tab
+        const viewId = dimensionView === 'record' ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID
+        if (tab.viewKind === dimensionView && tab.viewId === viewId) return tab
+        changed = true
+        return { ...tab, viewKind: dimensionView, viewId }
+      })
+      if (!changed) return current
+      workspaceTabsRef.current = next
+      return next
+    })
+  }, [activeDimensionData, activeWorkspaceTabId, dimensionView])
   const recordGroups = projectSettings?.record_groups[activeFile ?? '']?.[activeType] ?? []
   const activeTypeOption = useMemo(
     () => project?.file_types[activeFile ?? '']?.find(option => option.name === activeType) ?? null,
     [project?.file_types, activeFile, activeType],
   )
   const isSingletonType = activeTypeOption?.is_singleton ?? false
+  const activeViewKind = currentRoute && isSingletonType ? 'record' : currentRoute?.view
+  const activeRecordCoordinate = currentRoute?.view === 'record'
+    ? currentRoute.coordinate
+    : activeFileData?.records.find(record => (
+      !activeType || recordActualType(record) === activeType
+    ))?.coordinate ?? { actual_type: activeType, key: '' }
 
   useEffect(() => {
     setInspectorSelection(current => {
@@ -1599,9 +1786,9 @@ export default function App() {
   // The view the current route resolves to (default reserved id or custom uuid).
   const resolvedView = useMemo(
     () => activeFile && activeType && currentRoute
-      ? resolveView(projectSettings, activeFile, activeType, currentRoute.viewId)
+      ? resolveView(projectSettings, activeFile, activeType, currentRoute.viewId, isSingletonType)
       : null,
-    [projectSettings, activeFile, activeType, currentRoute],
+    [projectSettings, activeFile, activeType, currentRoute, isSingletonType],
   )
   // Fields the custom view restricts to (undefined = show all).
   const visibleFields = useMemo(
@@ -1805,6 +1992,7 @@ export default function App() {
     const index = workspaceTabs.findIndex(tab => tab.id === id)
     if (index < 0) return
     const remaining = workspaceTabs.filter(tab => tab.id !== id)
+    workspaceTabsRef.current = remaining
     setWorkspaceTabs(remaining)
     if (id !== activeWorkspaceTabId) return
     const next = remaining[Math.min(index, remaining.length - 1)]
@@ -1815,8 +2003,8 @@ export default function App() {
       router.clear()
       return
     }
-    openFile(next.filePath, next.typeName)
-  }, [activeWorkspaceTabId, closeInspector, openFile, router, workspaceTabs])
+    navigateWorkspaceTab(next)
+  }, [activeWorkspaceTabId, closeInspector, navigateWorkspaceTab, router, workspaceTabs])
 
   const focusFileTree = useCallback(() => {
     const tree = sidebarRef.current?.querySelector<HTMLElement>('.file-tree')
@@ -2053,7 +2241,6 @@ export default function App() {
 
   function switchView(tab: ViewTab) {
     if (!currentRoute) return
-    setPreferredView(tab.kind)
     if (tab.kind === 'table') {
       setFirstRecordFocusRequest(0)
       closeInspector()
@@ -2071,47 +2258,85 @@ export default function App() {
     }
   }
 
-  // When the user opens a file while `preferredView` is 'record', the initial
-  // route was pushed as 'table' (record view needs a coordinate). Upgrade it
-  // as soon as file data resolves and there's at least one record. Same
-  // dance when the user picks a different type tab while in record view —
-  // jump to the first record of the new type instead of stranding them on
-  // the previous coordinate.
+  // Record tabs can be restored before their file records have loaded. Once
+  // data arrives, replace the placeholder coordinate with a real record.
+  // Singleton types are always normalized to this record route.
   useEffect(() => {
     if (!currentRoute) return
     if (activeFileData?.file_path !== currentRoute.file) return
-    if (currentRoute.view === 'table' && preferredView === 'record') {
+    const activeTab = workspaceTabsRef.current.find(tab => tab.id === activeWorkspaceTabId)
+    const needsRecord = isSingletonType || activeTab?.viewKind === 'record'
+    if (!needsRecord) return
+    const coordinateIsValid = currentRoute.view === 'record'
+      && activeFileData.records.some(record => (
+        sameCoordinate(record.coordinate, currentRoute.coordinate)
+        && (!activeType || recordActualType(record) === activeType)
+      ))
+    if (coordinateIsValid) return
+    const firstCoord = activeFileData.records.find(
+      record => !activeType || recordActualType(record) === activeType,
+    )?.coordinate
+    if (firstCoord) {
+      router.replace({
+        view: 'record',
+        file: currentRoute.file,
+        viewId: DEFAULT_RECORD_VIEW_ID,
+        coordinate: firstCoord,
+      })
+    }
+  }, [activeFileData, activeType, activeWorkspaceTabId, currentRoute, isSingletonType, router])
+
+  // Deleted custom views and stale routes fall back locally for this tab.
+  useEffect(() => {
+    if (!currentRoute || !activeFileData || viewTabs.length === 0) return
+    const valid = viewTabs.some(tab => tab.id === currentRoute.viewId && tab.kind === currentRoute.view)
+    if (valid) return
+    if (isSingletonType) {
       const firstCoord = activeFileData.records.find(
         record => !activeType || recordActualType(record) === activeType,
       )?.coordinate
       if (firstCoord) {
-        router.replace({ view: 'record', file: currentRoute.file, viewId: DEFAULT_RECORD_VIEW_ID, coordinate: firstCoord })
+        router.replace({
+          view: 'record',
+          file: currentRoute.file,
+          viewId: DEFAULT_RECORD_VIEW_ID,
+          coordinate: firstCoord,
+        })
       }
       return
     }
-    if (currentRoute.view === 'record' && activeType) {
-      if (currentRoute.coordinate.actual_type !== activeType) {
-        const firstOfType = activeFileData.records.find(
-          r => recordActualType(r) === activeType,
-        )?.coordinate
-        if (firstOfType) {
-          router.replace({ view: 'record', file: currentRoute.file, viewId: currentRoute.viewId, coordinate: firstOfType })
-        }
-      }
-    }
-  }, [currentRoute, preferredView, activeType, activeFileData, router])
+    router.replace({
+      view: 'table',
+      file: currentRoute.file,
+      viewId: DEFAULT_TABLE_VIEW_ID,
+      typeFilter: activeType,
+    })
+  }, [activeFileData, activeType, currentRoute, isSingletonType, router, viewTabs])
 
   // If the current file doesn't support graph view but a stale route asks for
-  // it, drop back to the table so the empty state isn't shown.
+  // it, drop back to the type's valid default view.
   useEffect(() => {
     if (!currentRoute || currentRoute.view !== 'graph') return
     if (activeFileData?.file_path !== currentRoute.file) return
     if (graphSupported) return
-    router.replace({ view: 'table', file: currentRoute.file, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
-  }, [currentRoute, activeFileData, graphSupported, activeType, router])
+    if (isSingletonType) {
+      const coordinate = activeFileData.records.find(
+        record => !activeType || recordActualType(record) === activeType,
+      )?.coordinate
+      if (coordinate) {
+        router.replace({ view: 'record', file: currentRoute.file, viewId: DEFAULT_RECORD_VIEW_ID, coordinate })
+      }
+    } else {
+      router.replace({ view: 'table', file: currentRoute.file, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
+    }
+  }, [currentRoute, activeFileData, graphSupported, activeType, isSingletonType, router])
 
   return (
-    <ObjectDraftHost lookups={lookups} generationKey={lookupGenerationKey}>
+    <ObjectDraftHost
+      lookups={lookups}
+      generationKey={lookupGenerationKey}
+      onOpenReference={openReference}
+    >
     <div className="app">
       <div
         className="topbar"
@@ -2601,7 +2826,7 @@ export default function App() {
                     <Icon name="close" size={13} aria-hidden />
                   </button>
                 )}
-                {currentRoute.view === 'table' && (
+                {activeViewKind === 'table' && (
                   <label className="table-full-text-toggle" title="搜索数组、字典和对象中的嵌套内容">
                     <input
                       type="checkbox"
@@ -2620,7 +2845,7 @@ export default function App() {
               </div>
 
               <div className="view-container" ref={viewContainerRef}>
-                {currentRoute.view === 'table' && (
+                {activeViewKind === 'table' && (
                   <TableView
                     data={viewFilteredFileData ?? activeFileData}
                     activeType={activeType}
@@ -2669,12 +2894,12 @@ export default function App() {
                     }}
                   />
                 )}
-                {currentRoute.view === 'record' && (
+                {activeViewKind === 'record' && (
                   globalSearch.trim() && matchedCount === 0 ? (
                     <div className="empty-hint">无匹配 "{globalSearch}" 的记录</div>
                   ) : <RecordView
                     data={activeFileData}
-                    coordinate={currentRoute.coordinate}
+                    coordinate={activeRecordCoordinate}
                     typeFilter={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
@@ -2716,7 +2941,7 @@ export default function App() {
                     onFirstRecordFocusConsumed={consumeFirstRecordFocusRequest}
                   />
                 )}
-                {currentRoute.view === 'graph' && (
+                {activeViewKind === 'graph' && (
                   activeGraph ? (
                     <GraphView
                       graphData={viewFilteredGraph ?? activeGraph}
@@ -2772,8 +2997,8 @@ export default function App() {
           )}
         </div>
         <InspectorPanel
-          open={currentRoute?.view !== 'record'
-            && (inspectorOpen || ((currentRoute?.view === 'table' || currentRoute?.view === 'graph') && !!activeFileData))}
+          open={activeViewKind !== 'record'
+            && (inspectorOpen || ((activeViewKind === 'table' || activeViewKind === 'graph') && !!activeFileData))}
           collapsed={inspectorCollapsed}
           onToggleCollapse={() => setInspectorCollapsed(v => !v)}
           data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}

@@ -161,7 +161,7 @@ export function useRecordItemKeyboard(options: Options) {
 
 function recordItemElements(root: HTMLElement | null): HTMLElement[] {
   return Array.from(root?.querySelectorAll<HTMLElement>(
-    '.dc-row[data-field-path-wire], .dc-row-add[data-add-path-wire]',
+    '.dc-row[data-field-path-wire], .dc-array-object-item[data-field-path-wire], .dc-row-add[data-add-path-wire]',
   ) ?? [])
 }
 

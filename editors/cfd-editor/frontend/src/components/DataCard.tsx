@@ -7,6 +7,7 @@ import {
   useMemo,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type DragEvent as ReactDragEvent,
 } from 'react'
@@ -43,7 +44,7 @@ import {
 import { Icon } from './Icon'
 import { DiagBadge } from './DiagBadge'
 import { typeColor, fieldTypeColor } from '../utils/typeColor'
-import { useEditorLookups } from '../utils/editContext'
+import { useEditorLookups, useEditorNavigation } from '../utils/editContext'
 import type { EditorLookupAccess } from '../utils/editContext'
 import {
   collectionShapeForDeclaredType,
@@ -58,6 +59,7 @@ import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 import { SearchableSelect } from './SearchableSelect'
 import { PluginRendererMount, useFieldRenderer } from '../plugins'
 import type { FieldRenderSurface, FieldRenderer } from '../plugins/types'
+import { sameNumericValue, scrubNumericValue, type NumericFieldValue } from '../value/numericScrub'
 
 export function CardHeader({
   recordKey,
@@ -125,8 +127,11 @@ export function CardHeader({
   )
 }
 
-const MAX_DEPTH = 5
 const INDENT_PX = 14
+
+function inspectorDepthStyle(depth: number): CSSProperties {
+  return { '--dc-indent': `${depth * INDENT_PX}px` } as CSSProperties
+}
 
 function spreadHintText(info: SpreadInfo | undefined): string | undefined {
   if (!info) return undefined
@@ -144,27 +149,6 @@ function dictEnumVariantText(key: DictKey & { kind: 'enum' }): string {
   return key.value.variant ?? String(key.value.value)
 }
 
-function valueKindLabel(v: FieldValue): string {
-  switch (v.kind) {
-    case 'null': return 'null'
-    case 'bool': return 'bool'
-    case 'int': return 'int'
-    case 'float': return 'float'
-    case 'string': return 'string'
-    case 'enum': return v.value.enum_name
-    case 'object': return v.value.actual_type
-    case 'ref': return '&'
-    case 'array': return v.value[0] ? `${valueKindLabel(v.value[0])}[]` : '[]'
-    case 'dict': return v.value[0]
-      ? `{${dictKindLabel(v.value[0][0])}:${valueKindLabel(v.value[0][1])}}`
-      : '{}'
-  }
-}
-
-function typeLabelForValue(v: FieldValue, declaredType?: string): string {
-  return declaredType ?? valueKindLabel(v)
-}
-
 /** Strip trailing `?` off a declared type string. Kept for the rare cases
  *  (null-collection detection, resolveDefaultElement scalar shorthand) that
  *  still work on the wire-formatted type string. Other schema questions
@@ -172,14 +156,6 @@ function typeLabelForValue(v: FieldValue, declaredType?: string): string {
  *  `.enum_type` instead — the backend fills those directly. */
 function stripNullableType(declaredType?: string): string | undefined {
   return declaredType?.endsWith('?') ? declaredType.slice(0, -1) : declaredType
-}
-
-function dictKindLabel(k: DictKey): string {
-  switch (k.kind) {
-    case 'string': return 'string'
-    case 'int': return 'int'
-    case 'enum': return k.value.enum_name
-  }
 }
 
 function dictKeyText(k: DictKey): string {
@@ -190,10 +166,10 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, label, declaredType, surface = 'table-cell', highlightQuery }: { value: FieldValue; label?: string; declaredType?: string; surface?: FieldRenderSurface; highlightQuery?: string }) {
+export function DataCardCompact({ value, label, declaredType, refTargetType, surface = 'table-cell', highlightQuery }: { value: FieldValue; label?: string; declaredType?: string; refTargetType?: string; surface?: FieldRenderSurface; highlightQuery?: string }) {
   const fallback = isComplexValue(value)
     ? <MarkdownValueTree value={value} label={value.kind === 'array' ? undefined : label} depth={0} highlightQuery={highlightQuery} />
-    : <ValueChip value={value} highlightQuery={highlightQuery} />
+    : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
   const nullable = declaredType?.endsWith('?') ?? false
   const renderer = useFieldRenderer({ value, type: declaredType ?? '', nullable, surface })
   return (
@@ -291,7 +267,8 @@ function dictTreeKey(key: DictKey): string {
   }
 }
 
-function ValueChip({ value, highlightQuery }: { value: FieldValue; highlightQuery?: string }) {
+function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue; refTargetType?: string; highlightQuery?: string }) {
+  const navigation = useEditorNavigation()
   switch (value.kind) {
     case 'null':
       return <span className="vc vc-null">{highlightSearchText('null', highlightQuery)}</span>
@@ -314,10 +291,22 @@ function ValueChip({ value, highlightQuery }: { value: FieldValue; highlightQuer
         </span>
       )
     case 'ref':
+      const refKey = referenceKeyText(value.value)
+      const refColor = typeColor(refTargetType ?? 'ref')
       return (
-        <span className="vc vc-ref" title={referenceKeyText(value.value)}>
+        <span
+          className={`vc vc-ref${refTargetType && navigation ? ' vc-ref-navigable' : ''}`}
+          style={{ '--ref-color': refColor } as CSSProperties}
+          title={refTargetType ? `${refKey} · Ctrl/Cmd+点击跳转` : refKey}
+          onClick={event => {
+            if (!refTargetType || !navigation || (!event.ctrlKey && !event.metaKey)) return
+            event.preventDefault()
+            event.stopPropagation()
+            navigation.openReference(refTargetType, refKey)
+          }}
+        >
           <Icon name="dot" size={9} />
-          <span className="vc-ref-key">{highlightSearchText(referenceKeyText(value.value), highlightQuery)}</span>
+          <span className="vc-ref-key">{highlightSearchText(refKey, highlightQuery)}</span>
         </span>
       )
     case 'object':
@@ -419,9 +408,8 @@ function buildDiagCtx(
       const cut = Math.max(lastDot, lastBracket)
       if (cut <= 0) break
       p = p.slice(0, cut)
-      const cur = prefixes.get(p)
-      if (cur === 'error') break
-      if (severity === 'error' || cur !== 'warning') prefixes.set(p, severity)
+      const current = prefixes.get(p)
+      prefixes.set(p, severity === 'error' || current === 'error' ? 'error' : 'warning')
     }
   }
   return { byPath, prefixes, onBadgeClick }
@@ -563,7 +551,7 @@ export function DataCardExpanded({
         if (
           flattenSingleComplexField
           && fields.length === 1
-          && (displayedValue.kind === 'object' || displayedValue.kind === 'array' || displayedValue.kind === 'dict')
+          && displayedValue.kind === 'object'
         ) {
           return (
             <ComplexValueChildren
@@ -614,18 +602,26 @@ export function DataCardExpanded({
   return ctx ? <DiagCtx.Provider value={ctx}>{wrapped}</DiagCtx.Provider> : wrapped
 }
 
-function rowDiagSeverity(pathKey: string | undefined): { sev: 'error' | 'warning' | 'info' | null; messages: string[] } {
+function rowDiagSeverity(pathKey: string | undefined): {
+  sev: 'error' | 'warning' | 'info' | null
+  messages: string[]
+  exact: boolean
+} {
   const ctx = useContext(DiagCtx)
-  if (!ctx || !pathKey) return { sev: null, messages: [] }
+  if (!ctx || !pathKey) return { sev: null, messages: [], exact: false }
   const exact = ctx.byPath.get(pathKey)
   const prefix = ctx.prefixes.get(pathKey)
-  if (!exact && !prefix) return { sev: null, messages: [] }
+  if (!exact && !prefix) return { sev: null, messages: [], exact: false }
   const sevs: ('error' | 'warning' | 'info')[] = []
   if (exact) sevs.push(strongest(exact))
   if (prefix) sevs.push(prefix)
   let sev: 'error' | 'warning' | 'info' = 'info'
   for (const s of sevs) if (severityRank(s) > severityRank(sev)) sev = s
-  return { sev, messages: exact ? exact.map(d => d.message) : [] }
+  return {
+    sev,
+    messages: exact ? exact.map(d => d.message) : [],
+    exact: !!exact?.some(d => normalizedDiagnosticSeverity(d.severity) !== 'info'),
+  }
 }
 
 function FieldRow({
@@ -649,6 +645,7 @@ function FieldRow({
   leading,
   trailing,
   dragProps,
+  collectionItem,
 }: {
   label: string
   fieldName?: string
@@ -670,6 +667,7 @@ function FieldRow({
   leading?: ReactNode
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
+  collectionItem?: boolean
 }) {
   const pluginRenderer = useFieldRenderer({
     value,
@@ -684,7 +682,7 @@ function FieldRow({
   // hand. The materialization happens lazily when the user hits add.
   const nullCollectionShape = value.kind === 'null' ? collectionShapeForDeclaredType(declaredType) : null
   const displayValue = nullCollectionShape ?? value
-  const canExpand = (isComplex || nullCollectionShape !== null) && depth < MAX_DEPTH
+  const canExpand = isComplex || nullCollectionShape !== null
   const polyTypes = annotationPolymorphicTypes(valueAnnotation)
 
   // Extra trailing controls for nullable / polymorphic fields. Enum and ref
@@ -727,6 +725,7 @@ function FieldRow({
         leading={leading}
         trailing={mergedTrailing}
         dragProps={dragProps}
+        collectionItem={collectionItem}
         pluginRenderer={pluginRenderer}
         pluginContext={pluginRenderer ? { value, type: declaredType ?? '', nullable: !!nullable, surface: 'record-foldout-header' } : undefined}
       />
@@ -751,6 +750,7 @@ function FieldRow({
       leading={leading}
       trailing={mergedTrailing}
       dragProps={dragProps}
+      collectionItem={collectionItem}
     />
   )
 }
@@ -941,6 +941,7 @@ function ScalarFieldRow({
   leading,
   trailing,
   dragProps,
+  collectionItem,
   pluginRenderer,
   pluginContext,
 }: {
@@ -961,6 +962,7 @@ function ScalarFieldRow({
   leading?: ReactNode
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
+  collectionItem?: boolean
   pluginRenderer?: FieldRenderer
   pluginContext?: Parameters<typeof useFieldRenderer>[0]
 }) {
@@ -975,31 +977,88 @@ function ScalarFieldRow({
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
+  const numericValue = value.kind === 'int' || value.kind === 'float' ? value : null
+  const numericScrubEnabled = !!numericValue && canEdit && !dragProps
+  const [scrubPreview, setScrubPreview] = useState<NumericFieldValue | null>(null)
+  const scrubCleanupRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => scrubCleanupRef.current?.(), [])
+
+  function beginNumericScrub(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!numericValue || !numericScrubEnabled || !onCommit || event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    rowSelection?.onSelectValue?.(fieldPath)
+    scrubCleanupRef.current?.()
+    const pointerId = event.pointerId
+    const startX = event.clientX
+    const start = numericValue
+    let latest = start
+    let finished = false
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      document.body.classList.remove('dc-numeric-scrubbing')
+      if (scrubCleanupRef.current === cleanup) scrubCleanupRef.current = null
+    }
+    const finish = (commit: boolean) => {
+      if (finished) return
+      finished = true
+      cleanup()
+      setScrubPreview(null)
+      if (commit && !sameNumericValue(start, latest)) onCommit(latest)
+    }
+    const onMove = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return
+      pointerEvent.preventDefault()
+      latest = scrubNumericValue(start, pointerEvent.clientX - startX, {
+        shiftKey: pointerEvent.shiftKey,
+        altKey: pointerEvent.altKey,
+      })
+      setScrubPreview(latest)
+    }
+    const onUp = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === pointerId) finish(true)
+    }
+    const onCancel = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === pointerId) finish(false)
+    }
+
+    scrubCleanupRef.current = cleanup
+    document.body.classList.add('dc-numeric-scrubbing')
+    setScrubPreview(start)
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+  }
+
+  const displayedValue = scrubPreview ?? value
 
   return (
-    <div className={`dc-row${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
-      <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 12 }}>
+    <div className={`dc-row dc-row-field${collectionItem ? ' dc-row-item' : ''}${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+      <div
+        className={`dc-row-label${numericScrubEnabled ? ' dc-numeric-scrub-label' : ''}`}
+        onPointerDown={numericScrubEnabled ? beginNumericScrub : undefined}
+      >
         {leading}
         <span className="dc-row-label-text">{label}</span>
-        {declaredType && (
-          <span className="dc-field-type-hint" style={{ '--field-color': fieldTypeColor(declaredType) } as CSSProperties}>
-            {declaredType}
-          </span>
-        )}
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
           {pluginRenderer && pluginContext ? (
-            <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<ValueChip value={value} />} />
+            <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<ValueChip value={displayedValue} refTargetType={resolvedRefTarget} />} />
           ) : canEdit ? (
-            <DirectEditor value={value} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} nullable={nullable} />
+            <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} nullable={nullable} />
           ) : (
-            <DataCardCompact value={value} label={label} declaredType={declaredType} />
+            <DataCardCompact value={displayedValue} label={label} declaredType={declaredType} refTargetType={resolvedRefTarget} />
           )}
         </div>
-        {trailing}
       </div>
-      <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
+      <div className="dc-row-actions">
+        {trailing}
+        <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
+      </div>
     </div>
   )
 }
@@ -1227,6 +1286,7 @@ export function RefDirectSelect({
   nullable?: boolean
 }) {
   const lookups = useEditorLookups()
+  const navigation = useEditorNavigation()
   const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const currentKey = value.kind === 'ref' ? referenceKeyText(value.value) : ''
@@ -1284,6 +1344,9 @@ export function RefDirectSelect({
           ]}
           onCommit={commit}
           onExit={onExit}
+          onModifiedClick={value.kind === 'ref' && targetType && navigation
+            ? () => navigation.openReference(targetType, currentKey)
+            : undefined}
         />
       </span>
     )
@@ -1298,6 +1361,18 @@ export function RefDirectSelect({
         placeholder="key"
         aria-invalid={!!loadError}
         onBlur={e => commit(e.target.value)}
+        onClick={event => {
+          if (
+            value.kind === 'ref'
+            && targetType
+            && navigation
+            && (event.ctrlKey || event.metaKey)
+          ) {
+            event.preventDefault()
+            event.stopPropagation()
+            navigation.openReference(targetType, currentKey)
+          }
+        }}
         onKeyDown={e => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
           if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
@@ -1460,8 +1535,10 @@ function RefSelect({
   targetType?: string
 }) {
   const lookups = useEditorLookups()
+  const navigation = useEditorNavigation()
   const [val, setVal] = useState(referenceKeyText(value.value))
   const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
+  const color = typeColor(targetType ?? 'ref')
   useEffect(() => { setVal(referenceKeyText(value.value)) }, [value.value])
   useEffect(() => {
     if (!targetType) {
@@ -1481,13 +1558,14 @@ function RefSelect({
   }, [targetType, lookups])
 
   if (targetType && targets === null) {
-    return <input className="dc-input dc-input-ref-select" value={val} disabled placeholder="加载中..." />
+    return <input className="dc-input dc-input-ref-select" style={{ '--ref-color': color } as CSSProperties} value={val} disabled placeholder="加载中..." />
   }
   const loadedTargets = targets ?? []
   if (targetType && loadedTargets.length > 0) {
     return (
       <SearchableSelect
         className="dc-input dc-input-ref-select"
+        style={{ '--ref-color': color } as CSSProperties}
         value={referenceKeyText(value.value)}
         placeholder="选择..."
         autoFocus
@@ -1499,6 +1577,9 @@ function RefSelect({
         ]}
         onCommit={next => onCommit(refValue(next))}
         onExit={onCancel}
+        onModifiedClick={targetType && navigation
+          ? () => navigation.openReference(targetType, referenceKeyText(value.value))
+          : undefined}
       />
     )
   }
@@ -1506,11 +1587,19 @@ function RefSelect({
   return (
     <input
       className="dc-input dc-input-ref-select"
+      style={{ '--ref-color': color } as CSSProperties}
       value={val}
       autoFocus
       placeholder="key"
       onChange={e => setVal(e.target.value)}
       onBlur={() => onCommit(refValue(val))}
+      onClick={event => {
+        if (targetType && navigation && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault()
+          event.stopPropagation()
+          navigation.openReference(targetType, referenceKeyText(value.value))
+        }
+      }}
       onKeyDown={e => {
         if (e.key === 'Enter') onCommit(refValue(val))
         if (e.key === 'Escape') onCancel()
@@ -1538,8 +1627,7 @@ function ExpandableRow({
   leading,
   trailing,
   dragProps,
-  pluginRenderer,
-  pluginContext,
+  collectionItem,
 }: {
   label: string
   fieldName?: string
@@ -1559,6 +1647,7 @@ function ExpandableRow({
   leading?: ReactNode
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
+  collectionItem?: boolean
   pluginRenderer?: FieldRenderer
   pluginContext?: Parameters<typeof useFieldRenderer>[0]
 }) {
@@ -1566,7 +1655,10 @@ function ExpandableRow({
   const controlledExpansion = useContext(ControlledExpansionCtx)
   const shouldAutoExpand = !!pathKey && autoExpandPaths.has(pathKey)
   const [localExpanded, setLocalExpanded] = useState(shouldAutoExpand)
-  const expanded = pathKey && controlledExpansion
+  const staticObjectItem = !!collectionItem && value.kind === 'object'
+  const expanded = staticObjectItem
+    ? true
+    : pathKey && controlledExpansion
     ? controlledExpansion.has(pathKey)
     : localExpanded
   useEffect(() => {
@@ -1577,7 +1669,6 @@ function ExpandableRow({
     // Only fire when the auto-expand set changes for this row. If the user
     // then manually collapses it, we don't force it back open.
   }, [shouldAutoExpand])
-  const summary = headerSummary(value, declaredType)
   const count = childCount(value)
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
@@ -1585,54 +1676,83 @@ function ExpandableRow({
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
+  const structureClass = collectionItem
+    ? ' dc-row-item'
+    : value.kind === 'array' || value.kind === 'dict'
+      ? ' dc-row-collection'
+      : ' dc-row-object'
+  const inlineSingletonItem = value.kind === 'array'
+    && value.value.length === 1
+    && value.value[0]?.kind === 'object'
 
   function toggle() {
+    if (staticObjectItem) return
     const next = !expanded
     if (!controlledExpansion) setLocalExpanded(next)
     if (pathKey) onRowToggle?.(pathKey, next)
   }
 
+  function editCollection(edit: CollectionEdit) {
+    if (!onCollectionEdit) return
+    if (!expanded) {
+      if (!controlledExpansion) setLocalExpanded(true)
+      if (pathKey) onRowToggle?.(pathKey, true)
+    }
+    onCollectionEdit(fieldPath, edit)
+  }
+
   return (
-    <>
-      <div className={`dc-row dc-row-foldout${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
-        <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 4 }}>
+    <div className={`dc-group${collectionItem ? ' dc-group-item' : ''}${value.kind === 'array' || value.kind === 'dict' ? ' dc-group-collection' : ' dc-group-object'}`}>
+      <div className={`dc-row dc-row-structure${staticObjectItem ? ' dc-row-static-group' : ' dc-row-foldout'}${structureClass}${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={staticObjectItem ? undefined : toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+        <div className="dc-row-label">
           {leading}
-          <span className="dc-fold-arrow">
-            <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
-          </span>
-          <span className="dc-row-label-text">{label}</span>
-          {declaredType && (
-            <span className="dc-field-type-hint" style={{ '--field-color': fieldTypeColor(declaredType) } as CSSProperties}>
-              {declaredType}
+          {!staticObjectItem && (
+            <span className="dc-fold-arrow">
+              <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
             </span>
           )}
+          <span className="dc-row-label-text">{label}</span>
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">
-            {pluginRenderer && pluginContext ? (
-              <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<span className="vc vc-type">{summary}</span>} />
-            ) : <>
-              <span className="vc vc-type">{summary}</span>
-              {count !== null && <span className="vc-count">{count}</span>}
-            </>}
+            {count !== null && <span className="vc-count">{count}</span>}
           </div>
-          {trailing}
         </div>
-        <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
+        <div className="dc-row-actions">
+          {onCollectionEdit && (value.kind === 'array' || value.kind === 'dict') && (
+            <CollectionAddControl
+              container={value}
+              depth={depth}
+              fieldPath={fieldPath}
+              onCollectionEdit={editCollection}
+              itemAnnotation={annotationItem(valueAnnotation)}
+            />
+          )}
+          {onCollectionEdit && value.kind === 'array' && inlineSingletonItem && (
+            <DeleteButton
+              title="删除唯一元素"
+              onClick={() => onCollectionEdit(fieldPath, { kind: 'array_remove', index: 0 })}
+            />
+          )}
+          {trailing}
+          <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
+        </div>
       </div>
       {expanded && (
-        <ComplexValueChildren
-          value={value}
-          depth={depth + 1}
-          fieldPath={fieldPath}
-          pathKey={pathKey}
-          onEdit={onEdit}
-          onCollectionEdit={onCollectionEdit}
-          onRowToggle={onRowToggle}
-          valueAnnotation={valueAnnotation}
-        />
+        <div className="dc-group-body">
+          <ComplexValueChildren
+            value={value}
+            depth={depth + 1}
+            fieldPath={fieldPath}
+            pathKey={pathKey}
+            onEdit={onEdit}
+            onCollectionEdit={onCollectionEdit}
+            onRowToggle={onRowToggle}
+            valueAnnotation={valueAnnotation}
+          />
+        </div>
       )}
-    </>
+    </div>
   )
 }
 
@@ -1645,6 +1765,7 @@ function ComplexValueChildren({
   onCollectionEdit,
   onRowToggle,
   valueAnnotation,
+  firstChildTrailing,
 }: {
   value: FieldValue
   depth: number
@@ -1654,12 +1775,13 @@ function ComplexValueChildren({
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   onRowToggle?: (path: string, expanded: boolean) => void
   valueAnnotation?: FieldAnnotation | null
+  firstChildTrailing?: ReactNode
 }) {
   if (value.kind !== 'object' && value.kind !== 'array' && value.kind !== 'dict') return null
   const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
   return (
     <>
-      {value.kind === 'object' && objectFields(value).map((fc) => {
+      {value.kind === 'object' && objectFields(value).map((fc, index) => {
         const annotation = childAnnotation(fc.name) ?? fc.annotation
         return (
           <FieldRow
@@ -1677,6 +1799,7 @@ function ComplexValueChildren({
             enumType={annotationEnumType(annotation)}
             nullable={annotationNullable(annotation)}
             valueAnnotation={annotation}
+            trailing={index === 0 ? firstChildTrailing : undefined}
           />
         )
       })}
@@ -1719,41 +1842,8 @@ function ComplexValueChildren({
           />
         )
       })}
-      {onCollectionEdit && (value.kind === 'array' || value.kind === 'dict') && (
-        <CollectionAddRow
-          container={value}
-          depth={depth}
-          fieldPath={fieldPath}
-          onCollectionEdit={edit => onCollectionEdit(fieldPath, edit)}
-          itemAnnotation={annotationItem(valueAnnotation)}
-        />
-      )}
-      {value.kind === 'array' && value.value.length === 0 && <EmptyHint depth={depth} text="空数组" />}
-      {value.kind === 'dict' && value.value.length === 0 && <EmptyHint depth={depth} text="空字典" />}
     </>
   )
-}
-
-function EmptyHint({ depth, text }: { depth: number; text: string }) {
-  return (
-    <div className="dc-row dc-row-empty">
-      <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 12 }} />
-      <div className="dc-row-value">
-        <span className="vc vc-null">{text}</span>
-      </div>
-    </div>
-  )
-}
-
-function headerSummary(v: FieldValue, declaredType?: string): string {
-  switch (v.kind) {
-    case 'object': return v.value.actual_type
-    case 'array': return declaredType ?? (v.value[0] ? `[${typeLabelForValue(v.value[0])}]` : 'array')
-    case 'dict': return v.value[0]
-      ? declaredType ?? `${dictKindLabel(v.value[0][0])} -> ${typeLabelForValue(v.value[0][1])}`
-      : 'dict'
-    default: return ''
-  }
 }
 
 function childCount(v: FieldValue): number | null {
@@ -1815,6 +1905,23 @@ function ArrayItems({
   const [overIdx, setOverIdx] = useState<number | null>(null)
   const dragArmedRef = useRef<number | null>(null)
 
+  const onlyItem = container.value[0]
+  if (container.value.length === 1 && onlyItem?.kind === 'object') {
+    const itemAnnotation = itemAnnotations?.['0'] ?? itemTemplate
+    return (
+      <ComplexValueChildren
+        value={onlyItem}
+        depth={depth}
+        fieldPath={[...fieldPath, fieldPathIndex(0)]}
+        pathKey={pathKey ? `${pathKey}[0]` : '[0]'}
+        onEdit={onEdit}
+        onCollectionEdit={onCollectionEdit}
+        onRowToggle={onRowToggle}
+        valueAnnotation={itemAnnotation}
+      />
+    )
+  }
+
   function dropAt(target: number) {
     if (dragIdx === null || dragIdx === target) return
     onCollectionEdit?.(fieldPath, { kind: 'array_move', from: dragIdx, to: target })
@@ -1828,22 +1935,69 @@ function ArrayItems({
         const itemAnnotation = itemAnnotations?.[String(i)] ?? itemTemplate
         const canCollectionEdit = !!onCollectionEdit
         const dragHandle = canCollectionEdit ? <DragHandle rowIndex={i} dragArmedRef={dragArmedRef} /> : undefined
+        const itemPath = [...fieldPath, fieldPathIndex(i)]
+        const itemPathKey = pathKey ? `${pathKey}[${i}]` : `[${i}]`
         const trailing = canCollectionEdit ? (
           <DeleteButton
             title="删除"
             onClick={() => onCollectionEdit?.(fieldPath, { kind: 'array_remove', index: i })}
           />
         ) : undefined
+        const itemDragProps = canCollectionEdit ? {
+          extraClass: `dc-row-draggable${overIdx === i && dragIdx !== null && dragIdx !== i ? ' drop-target' : ''}${dragIdx === i ? ' dragging' : ''}`,
+          draggable: true,
+          onDragStart: (e: ReactDragEvent) => {
+            if (dragArmedRef.current !== i) {
+              e.preventDefault()
+              return
+            }
+            e.dataTransfer.effectAllowed = 'move'
+            e.dataTransfer.setData('text/plain', String(i))
+            setDragIdx(i)
+          },
+          onDragOver: (e: ReactDragEvent) => {
+            if (dragIdx === null) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            if (overIdx !== i) setOverIdx(i)
+          },
+          onDragLeave: () => { if (overIdx === i) setOverIdx(null) },
+          onDrop: (e: ReactDragEvent) => { e.preventDefault(); dropAt(i) },
+          onDragEnd: () => {
+            dragArmedRef.current = null
+            setDragIdx(null)
+            setOverIdx(null)
+          },
+        } : undefined
+        if (item.kind === 'object') {
+          return (
+            <ArrayObjectItem
+              key={i}
+              index={i}
+              value={item}
+              depth={depth}
+              fieldPath={itemPath}
+              pathKey={itemPathKey}
+              onEdit={onEdit}
+              onCollectionEdit={onCollectionEdit}
+              onRowToggle={onRowToggle}
+              valueAnnotation={itemAnnotation}
+              leading={dragHandle}
+              trailing={trailing}
+              dragProps={itemDragProps}
+            />
+          )
+        }
         return (
           <FieldRow
             key={i}
-            label={`[${i}]`}
+            label={String(i + 1)}
             value={item}
             depth={depth}
             onEdit={onEdit}
             onCollectionEdit={onCollectionEdit}
-            fieldPath={[...fieldPath, fieldPathIndex(i)]}
-            pathKey={pathKey ? `${pathKey}[${i}]` : `[${i}]`}
+            fieldPath={itemPath}
+            pathKey={itemPathKey}
             onRowToggle={onRowToggle}
             declaredType={annotationDeclaredType(itemAnnotation)}
             refTargetType={annotationRefTargetType(itemAnnotation)}
@@ -1852,31 +2006,8 @@ function ArrayItems({
             valueAnnotation={itemAnnotation}
             leading={dragHandle}
             trailing={trailing}
-            dragProps={canCollectionEdit ? {
-              extraClass: `dc-row-draggable${overIdx === i && dragIdx !== null && dragIdx !== i ? ' drop-target' : ''}${dragIdx === i ? ' dragging' : ''}`,
-              draggable: true,
-              onDragStart: (e: ReactDragEvent) => {
-                if (dragArmedRef.current !== i) {
-                  e.preventDefault()
-                  return
-                }
-                e.dataTransfer.effectAllowed = 'move'
-                e.dataTransfer.setData('text/plain', String(i))
-                setDragIdx(i)
-              },
-              onDragOver: (e: ReactDragEvent) => {
-                if (dragIdx === null) return
-                e.preventDefault()
-                e.dataTransfer.dropEffect = 'move'
-                if (overIdx !== i) setOverIdx(i)
-              },
-              onDragLeave: () => { if (overIdx === i) setOverIdx(null) },
-              onDrop: (e: ReactDragEvent) => { e.preventDefault(); dropAt(i) },
-              onDragEnd: () => {
-                dragArmedRef.current = null
-                setDragIdx(null); setOverIdx(null)
-              },
-            } : undefined}
+            collectionItem
+            dragProps={itemDragProps}
           />
         )
       })}
@@ -1911,11 +2042,11 @@ function DeleteButton({ onClick, title }: { onClick: () => void; title: string }
       className="btn-tiny btn-tiny-danger dc-row-delete"
       title={title}
       onClick={(e: ReactMouseEvent) => { e.stopPropagation(); onClick() }}
-    >x</button>
+    ><Icon name="close" size={10} /></button>
   )
 }
 
-function CollectionAddRow({ container, depth, fieldPath, onCollectionEdit, itemAnnotation }: {
+function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, itemAnnotation }: {
   container: FieldValue & { kind: 'array' | 'dict' }
   depth: number
   fieldPath: FieldPathSegment[]
@@ -1924,14 +2055,13 @@ function CollectionAddRow({ container, depth, fieldPath, onCollectionEdit, itemA
 }) {
   const [adding, setAdding] = useState(false)
   const [dupError, setDupError] = useState<string | null>(null)
-  const [addError, setAddError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const { openObjectDraft } = useObjectDraft()
   const rowSelection = useContext(ValueRowSelectionCtx)
   const pathWire = JSON.stringify(fieldPath)
   const selected = rowSelection?.selectedActionPathWire === pathWire
 
-  function reset() { setAdding(false); setDupError(null); setAddError(null) }
+  function reset() { setAdding(false); setDupError(null) }
 
   const objectDraft = container.value.length === 0
     ? objectDraftForAnnotation(itemAnnotation)
@@ -1953,12 +2083,22 @@ function CollectionAddRow({ container, depth, fieldPath, onCollectionEdit, itemA
 
   if (container.kind === 'array') {
     return (
-      <div className={`dc-row dc-row-add${selected ? ' keyboard-selected' : ''}`} data-depth={depth} data-add-path-wire={pathWire} style={{ paddingLeft: depth * INDENT_PX + 8 }} onMouseDown={() => rowSelection?.onSelectAction?.(pathWire)}>
+      <span
+        className={`dc-row-add dc-collection-add${container.value.length === 0 ? ' dc-collection-add-empty' : ''}${selected ? ' keyboard-selected' : ''}`}
+        data-depth={depth}
+        data-add-path-wire={pathWire}
+        onMouseDown={event => {
+          event.stopPropagation()
+          rowSelection?.onSelectAction?.(pathWire)
+        }}
+        onClick={event => event.stopPropagation()}
+      >
         <button
           className="btn-add-item"
+          title="添加元素"
+          aria-label="添加元素"
           disabled={busy}
           onClick={async () => {
-            setAddError(null)
             setBusy(true)
             try {
               addArrayItem()
@@ -1967,10 +2107,9 @@ function CollectionAddRow({ container, depth, fieldPath, onCollectionEdit, itemA
             }
           }}
         >
-          <Icon name="plus" size={11} /> {busy ? '添加中…' : '添加元素'}
+          <Icon name="plus" size={11} />
         </button>
-        {addError && <span className="dc-inline-error" role="alert">{addError}</span>}
-      </div>
+      </span>
     )
   }
 
@@ -1996,10 +2135,19 @@ function CollectionAddRow({ container, depth, fieldPath, onCollectionEdit, itemA
     reset()
   }
   return (
-    <div className={`dc-row dc-row-add${selected ? ' keyboard-selected' : ''}`} data-depth={depth} data-add-path-wire={pathWire} style={{ paddingLeft: depth * INDENT_PX + 8 }} onMouseDown={() => rowSelection?.onSelectAction?.(pathWire)}>
+    <span
+      className={`dc-row-add dc-collection-add${container.value.length === 0 ? ' dc-collection-add-empty' : ''}${selected ? ' keyboard-selected' : ''}`}
+      data-depth={depth}
+      data-add-path-wire={pathWire}
+      onMouseDown={event => {
+        event.stopPropagation()
+        rowSelection?.onSelectAction?.(pathWire)
+      }}
+      onClick={event => event.stopPropagation()}
+    >
       {!adding ? (
-        <button className="btn-add-item" onClick={() => { setAdding(true); setDupError(null) }}>
-          <Icon name="plus" size={11} /> 添加项
+        <button className="btn-add-item" title="添加项" aria-label="添加项" onClick={() => { setAdding(true); setDupError(null) }}>
+          <Icon name="plus" size={11} />
         </button>
       ) : (
         <span className="dc-add-stack">
@@ -2011,6 +2159,90 @@ function CollectionAddRow({ container, depth, fieldPath, onCollectionEdit, itemA
           {dupError && <span className="dc-inline-error" role="alert">{dupError}</span>}
         </span>
       )}
+    </span>
+  )
+}
+
+function ArrayObjectItem({
+  index,
+  value,
+  depth,
+  fieldPath,
+  pathKey,
+  onEdit,
+  onCollectionEdit,
+  onRowToggle,
+  valueAnnotation,
+  leading,
+  trailing,
+  dragProps,
+}: {
+  index: number
+  value: FieldValue & { kind: 'object' }
+  depth: number
+  fieldPath: FieldPathSegment[]
+  pathKey: string
+  onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
+  onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
+  onRowToggle?: (path: string, expanded: boolean) => void
+  valueAnnotation?: FieldAnnotation
+  leading?: ReactNode
+  trailing?: ReactNode
+  dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
+}) {
+  const diag = rowDiagSeverity(pathKey)
+  const rowSelection = useContext(ValueRowSelectionCtx)
+  const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
+  const hasFields = objectFields(value).length > 0
+
+  return (
+    <div
+      className={`dc-array-object-item${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-array-item-diag-${diag.sev}` : ''}${dragProps?.extraClass ? ` ${dragProps.extraClass}` : ''}`}
+      style={inspectorDepthStyle(depth)}
+      data-depth={depth}
+      data-field-path={pathKey}
+      data-field-path-wire={JSON.stringify(fieldPath)}
+      data-value-kind="object"
+      data-keyboard-editable={!!onEdit || undefined}
+      title={diag.messages.join('\n') || undefined}
+      onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)}
+      {...(dragProps && {
+        onDragStart: dragProps.onDragStart,
+        onDragOver: dragProps.onDragOver,
+        onDragLeave: dragProps.onDragLeave,
+        onDrop: dragProps.onDrop,
+        onDragEnd: dragProps.onDragEnd,
+        draggable: dragProps.draggable,
+      })}
+    >
+      <div className="dc-array-item-rail">
+        {leading}
+        <span className="dc-array-item-index">{index + 1}</span>
+        {(diag.sev === 'error' || diag.sev === 'warning') && (
+          <span className={`dc-array-item-diag-dot ${diag.sev}`} aria-hidden />
+        )}
+      </div>
+      <div className="dc-array-object-fields">
+        {hasFields ? (
+          <ComplexValueChildren
+            value={value}
+            depth={depth + 1}
+            fieldPath={fieldPath}
+            pathKey={pathKey}
+            onEdit={onEdit}
+            onCollectionEdit={onCollectionEdit}
+            onRowToggle={onRowToggle}
+            valueAnnotation={valueAnnotation}
+            firstChildTrailing={trailing}
+          />
+        ) : (
+          <div className="dc-row dc-array-empty-object" style={inspectorDepthStyle(depth + 1)}>
+            <div className="dc-row-label"><span className="vc vc-null">空对象</span></div>
+            <div className="dc-row-value" />
+            <div className="dc-row-actions">{trailing}</div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
