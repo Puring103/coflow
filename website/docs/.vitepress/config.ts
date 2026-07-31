@@ -11,7 +11,7 @@ export default withMermaid(defineConfig({
   description: 'A typed, validated, AI-friendly game configuration workflow.',
   base: pagesBase,
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${pagesBase}logo-v15.svg` }]
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${pagesBase}logo.svg` }]
   ],
   cleanUrls: true,
   markdown: {
@@ -28,7 +28,7 @@ export default withMermaid(defineConfig({
   },
   lastUpdated: true,
   themeConfig: {
-    logo: { src: '/logo-v15.svg', alt: 'Coflow' },
+    logo: { src: '/logo.svg', alt: 'Coflow' },
     search: {
       provider: 'local'
     },

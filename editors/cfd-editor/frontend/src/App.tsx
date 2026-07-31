@@ -110,6 +110,7 @@ import {
   workspaceToWire,
   type WorkspaceTab,
 } from './state/workspaceTabs'
+import coflowLogo from '../../../../assets/coflow-logo.svg'
 import './style.css'
 
 const GRAPH_DEPTH = 3
@@ -2345,7 +2346,10 @@ export default function App() {
         onKeyDown={event => onToolbarKeyDown(event, focusFileTree)}
       >
         <div className="topbar-left">
-          <span className="app-title">CFD Editor</span>
+          <span className="app-title">
+            <img className="app-logo" src={coflowLogo} alt="" aria-hidden />
+            CFD Editor
+          </span>
           <button className="btn btn-outlined" onClick={openProject}>
             <Icon name="open" size={13} />
             <span className="btn-label">打开</span>

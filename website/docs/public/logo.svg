@@ -1,12 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 120" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" role="img" aria-labelledby="title desc">
   <title id="title">Coflow</title>
-  <desc id="desc">Three colored streams converge into the Coflow core and continue as one unified flow.</desc>
-  <g fill="none" stroke-linecap="round" stroke-width="20">
-    <path d="M18 27h20c26 0 20 27 46 30" stroke="#E9A23B"/>
-    <path d="M18 60h30" stroke="#2DB9AC"/>
-    <path d="M18 93h20c26 0 20-27 46-30" stroke="#E8665B"/>
-    <path d="M112 60h26" stroke="#2E8A82" stroke-width="30"/>
+  <desc id="desc">Programmers and AI join the configuration backbone, then advance together.</desc>
+  <defs>
+    <mask id="branch-gap">
+      <rect width="160" height="120" fill="#fff"/>
+      <rect y="47" width="160" height="2" fill="#000"/>
+      <rect y="71" width="160" height="2" fill="#000"/>
+    </mask>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-width="22" mask="url(#branch-gap)">
+    <path d="M18 27h22c32 0 33 33 74 33" stroke="#2F93A6"/>
+    <path d="M18 93h22c32 0 33-33 74-33" stroke="#8EAD3C"/>
   </g>
-  <circle cx="80" cy="60" r="27" fill="#2E8A82"/>
-  <path d="M88 50 A13.5 13.5 0 1 0 88 70" fill="none" stroke="#F1F9F5" stroke-width="7" stroke-linecap="round"/>
+  <path d="M31 60h103" fill="none" stroke="#E2776B" stroke-linecap="round" stroke-width="22"/>
 </svg>
