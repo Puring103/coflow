@@ -339,7 +339,6 @@ fn build_id_as_enums(
                 name: "None".to_string(),
                 value: 0,
                 summary: None,
-                label: None,
                 obsolete: false,
             });
         }
@@ -348,7 +347,6 @@ fn build_id_as_enums(
                 name: variant.name,
                 value: variant.value,
                 summary: None,
-                label: None,
                 obsolete: false,
             });
         }
@@ -358,7 +356,6 @@ fn build_id_as_enums(
                 name: name.clone(),
                 is_flags,
                 summary: None,
-                label: None,
                 obsolete: false,
                 variants: enum_variants,
             },

@@ -2,20 +2,17 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 
 namespace {{ project.namespace }}
 {
 
 {% if type.summary %}/// <summary>{{ type.summary }}</summary>
-{% endif %}{% if type.label %}[Description("{{ type.label }}")]
 {% endif %}{% if type.obsolete %}[Obsolete]
 {% endif %}{{ type.declaration }}
 {
 {% for property in type.properties %}{% if property.backing_field %}    internal {{ property.type_name }} {{ property.backing_field }} = default!;
 
 {% endif %}{% if property.summary %}    /// <summary>{{ property.summary }}</summary>
-{% endif %}{% if property.label %}    [Description("{{ property.label }}")]
 {% endif %}{% if property.obsolete %}    [Obsolete]
 {% endif %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get{% if property.backing_field %} => {{ property.backing_field }}{% endif %}; }
 {% if not loop.last %}
