@@ -69,6 +69,13 @@ pub fn publish_artifacts(
     let mut pending_generations = PendingGenerations::default();
     let mut requested_outputs = Vec::with_capacity(staged_outputs.len());
     for (slot, staged) in staged_outputs {
+        let unchanged = manifest.outputs.get(&slot).is_some_and(|active| {
+            active.requested_dir == staged.requested_dir()
+                && staged.requested_output_is_unchanged()
+        });
+        if unchanged {
+            continue;
+        }
         let (generation, requested_output) = staged.seal()?;
         pending_generations.track(&generation);
         manifest.outputs.insert(slot, generation);
@@ -475,6 +482,101 @@ mod tests {
             read_active_enum_lock(&project).expect("read enum lock"),
             Some(versioned_lock)
         );
+        std::fs::remove_dir_all(root).expect("remove test project");
+    }
+
+    #[test]
+    fn unchanged_output_reuses_the_active_generation() {
+        let root = test_project_root(fault::Point::WriteActiveManifest);
+        let project = open_test_project(&root);
+        let requested = root.join("generated/data");
+        let state_dir = super::artifact_state_dir(&project);
+        let baseline = stage_artifact_set(
+            &state_dir,
+            DATA_OUTPUT_SLOT,
+            &requested,
+            artifact_set("same"),
+        )
+        .expect("stage baseline artifacts");
+        let baseline = publish_artifacts(
+            &project,
+            vec![(DATA_OUTPUT_SLOT.to_string(), baseline)],
+            &[],
+            EnumLockUpdate::Preserve,
+        )
+        .expect("publish baseline artifacts");
+        let baseline_generation = baseline.manifest.outputs[DATA_OUTPUT_SLOT]
+            .generation_dir
+            .clone();
+
+        let unchanged = stage_artifact_set(
+            &state_dir,
+            DATA_OUTPUT_SLOT,
+            &requested,
+            artifact_set("same"),
+        )
+        .expect("stage unchanged artifacts");
+        let published = publish_artifacts(
+            &project,
+            vec![(DATA_OUTPUT_SLOT.to_string(), unchanged)],
+            &[],
+            EnumLockUpdate::Preserve,
+        )
+        .expect("publish unchanged artifacts");
+
+        assert_eq!(
+            published.manifest.outputs[DATA_OUTPUT_SLOT].generation_dir,
+            baseline_generation
+        );
+        assert_eq!(generation_count(&state_dir.join("generations")), 1);
+        std::fs::remove_dir_all(root).expect("remove test project");
+    }
+
+    #[test]
+    fn extra_output_file_forces_replacement() {
+        let root = test_project_root(fault::Point::WriteActiveManifest);
+        let project = open_test_project(&root);
+        let requested = root.join("generated/data");
+        let state_dir = super::artifact_state_dir(&project);
+        let baseline = stage_artifact_set(
+            &state_dir,
+            DATA_OUTPUT_SLOT,
+            &requested,
+            artifact_set("same"),
+        )
+        .expect("stage baseline artifacts");
+        let baseline = publish_artifacts(
+            &project,
+            vec![(DATA_OUTPUT_SLOT.to_string(), baseline)],
+            &[],
+            EnumLockUpdate::Preserve,
+        )
+        .expect("publish baseline artifacts");
+        let baseline_generation = baseline.manifest.outputs[DATA_OUTPUT_SLOT]
+            .generation_dir
+            .clone();
+        std::fs::write(requested.join("stale.txt"), "stale").expect("write stale output");
+
+        let replacement = stage_artifact_set(
+            &state_dir,
+            DATA_OUTPUT_SLOT,
+            &requested,
+            artifact_set("same"),
+        )
+        .expect("stage replacement artifacts");
+        let published = publish_artifacts(
+            &project,
+            vec![(DATA_OUTPUT_SLOT.to_string(), replacement)],
+            &[],
+            EnumLockUpdate::Preserve,
+        )
+        .expect("publish replacement artifacts");
+
+        assert_ne!(
+            published.manifest.outputs[DATA_OUTPUT_SLOT].generation_dir,
+            baseline_generation
+        );
+        assert!(!requested.join("stale.txt").exists());
         std::fs::remove_dir_all(root).expect("remove test project");
     }
 

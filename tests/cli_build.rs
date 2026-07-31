@@ -435,7 +435,7 @@ outputs:
 }
 
 #[test]
-fn build_updates_configured_outputs_and_tracks_immutable_generations() {
+fn build_replaces_changed_outputs_and_reuses_unchanged_outputs() {
     let root = temp_project_dir("build-immutable-generations");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(&root).expect("create project root");
@@ -484,7 +484,7 @@ fn build_updates_configured_outputs_and_tracks_immutable_generations() {
     let second_data = active_artifact_dir(&root, "data");
     let second_code = active_artifact_dir(&root, "code");
     assert_ne!(first_data, second_data);
-    assert_ne!(first_code, second_code);
+    assert_eq!(first_code, second_code);
     assert!(std::fs::read_to_string(second_data.join("Item.json"))
         .expect("read second Item.json")
         .contains("Elixir"));
@@ -507,7 +507,7 @@ fn build_updates_configured_outputs_and_tracks_immutable_generations() {
     let generation_root = root.join(".coflow/artifacts/generations");
     let canonical_generation_root =
         std::fs::canonicalize(&generation_root).expect("canonical generation root");
-    for generation in [&first_data, &first_code, &second_data, &second_code] {
+    for generation in [&first_data, &first_code, &second_data] {
         assert!(
             std::fs::canonicalize(generation)
                 .expect("canonical generation")
@@ -522,7 +522,21 @@ fn build_updates_configured_outputs_and_tracks_immutable_generations() {
     .expect("parse versioned enum lock");
     assert_eq!(versioned_lock, active_enum_lock(&root));
 
-    assert_eq!(directory_count(&generation_root), 4);
+    assert_eq!(directory_count(&generation_root), 3);
+
+    let third = coflow()
+        .args(["build", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run unchanged build");
+    assert!(
+        third.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&third.stdout),
+        String::from_utf8_lossy(&third.stderr)
+    );
+    assert_eq!(active_artifact_dir(&root, "data"), second_data);
+    assert_eq!(active_artifact_dir(&root, "code"), second_code);
+    assert_eq!(directory_count(&generation_root), 3);
 
     let abandoned_staging = root.join(".coflow/artifacts/staging/abandoned");
     std::fs::create_dir_all(&abandoned_staging).expect("create abandoned staging entry");
@@ -539,12 +553,12 @@ fn build_updates_configured_outputs_and_tracks_immutable_generations() {
         String::from_utf8_lossy(&clean.stderr)
     );
     assert!(String::from_utf8_lossy(&clean.stdout)
-        .contains("Cleaned 2 historical generations and 1 staging entries"));
+        .contains("Cleaned 1 historical generations and 1 staging entries"));
     assert_eq!(directory_count(&generation_root), 2);
     assert!(second_data.is_dir());
     assert!(second_code.is_dir());
     assert!(!first_data.exists());
-    assert!(!first_code.exists());
+    assert!(first_code.exists());
     assert!(!abandoned_staging.exists());
 }
 
