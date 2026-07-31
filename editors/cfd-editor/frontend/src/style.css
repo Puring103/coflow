@@ -176,12 +176,11 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   align-items: center;
   gap: 8px;
 }
-.app-title::before {
-  content: '';
-  width: 3px;
-  height: 13px;
-  border-radius: 1px;
-  background: var(--accent);
+.app-logo {
+  display: block;
+  width: 24px;
+  height: 18px;
+  flex-shrink: 0;
 }
 
 .btn {
