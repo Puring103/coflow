@@ -39,15 +39,15 @@ use coflow_runtime::{
 use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
 use crate::editor::settings::{
     read_project_settings, sanitized_column_widths, sanitized_record_groups, sanitized_views,
-    write_project_settings,
+    sanitized_workspace, write_project_settings,
 };
 use crate::editor::types::{
     BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit,
     CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome, DeletedRecordSnapshot,
-    EditorError, EditorProjectSettings, EditorRecordGroup, FileRecords, FileTypeOption, GraphData,
-    GraphQuery, InsertRecordOutcome, PluginSchemaField, PluginSchemaType, ProjectSnapshot,
-    RecordColumn, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
-    WriteFieldOutcome,
+    EditorError, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, FileRecords,
+    FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome, PluginSchemaField, PluginSchemaType,
+    ProjectSnapshot, RecordColumn, RecordRow, RefTarget, RenameRecordOutcome,
+    ReorderRecordsOutcome, ViewConfig, WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -285,6 +285,18 @@ impl SessionStore {
             .entry(file_path)
             .or_default()
             .insert(actual_type, sanitized_record_groups(groups));
+        write_project_settings(&project_root, &settings)?;
+        Ok(settings)
+    }
+
+    pub fn set_workspace(
+        &self,
+        id: u32,
+        workspace: EditorWorkspaceState,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        let project_root = self.project_root_for(id)?;
+        let mut settings = read_project_settings(&project_root)?;
+        settings.workspace = sanitized_workspace(workspace);
         write_project_settings(&project_root, &settings)?;
         Ok(settings)
     }

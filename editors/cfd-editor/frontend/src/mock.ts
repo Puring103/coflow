@@ -188,9 +188,10 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
 }
 
 export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
-  views: {},
-  default_table_column_widths: {},
-  record_groups: {
+    views: {},
+    default_table_column_widths: {},
+    workspace: { tabs: [], active_tab_id: null },
+    record_groups: {
     'data/item.cfd': {
       Item: [{
         id: 'mock-potions',

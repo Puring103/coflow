@@ -14,8 +14,18 @@ export interface EditorLookupAccess {
 
 export const EditorLookupContext = createContext<EditorLookupAccess | null>(null)
 
+export interface EditorNavigationAccess {
+  openReference: (targetType: string, recordKey: string) => void
+}
+
+export const EditorNavigationContext = createContext<EditorNavigationAccess | null>(null)
+
 export function useEditorLookups(): EditorLookupAccess {
   const lookups = useContext(EditorLookupContext)
   if (!lookups) throw new Error('useEditorLookups used outside EditorLookupContext')
   return lookups
+}
+
+export function useEditorNavigation(): EditorNavigationAccess | null {
+  return useContext(EditorNavigationContext)
 }

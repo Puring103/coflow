@@ -8,6 +8,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -28,6 +29,7 @@ interface Props {
   placeholder?: string
   ariaLabel?: string
   autoFocus?: boolean
+  onModifiedClick?: () => void
 }
 
 interface MenuPosition {
@@ -71,6 +73,7 @@ export function SearchableSelect({
   placeholder,
   ariaLabel,
   autoFocus,
+  onModifiedClick,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const exitNotifiedRef = useRef(false)
@@ -279,7 +282,15 @@ export function SearchableSelect({
         onFocus={() => {
           if (!open) openMenu()
         }}
-        onClick={() => {
+        onClick={(event: MouseEvent<HTMLInputElement>) => {
+          if ((event.ctrlKey || event.metaKey) && onModifiedClick) {
+            event.preventDefault()
+            event.stopPropagation()
+            closeMenu()
+            event.currentTarget.blur()
+            onModifiedClick()
+            return
+          }
           if (!open) openMenu()
         }}
         onChange={event => {

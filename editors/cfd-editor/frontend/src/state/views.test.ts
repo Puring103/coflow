@@ -49,6 +49,7 @@ function settingsWith(views: ViewConfig[]): EditorProjectSettings {
     views: { [FILE]: { [TYPE]: views } },
     default_table_column_widths: { [FILE]: { [TYPE]: { name: 200 } } },
     record_groups: {},
+    workspace: { tabs: [], active_tab_id: null },
   }
 }
 
@@ -80,6 +81,14 @@ describe('viewTabsFor', () => {
 })
 
 describe('resolveView', () => {
+  it('never resolves a table route for singleton types', () => {
+    expect(resolveView(null, FILE, TYPE, DEFAULT_TABLE_VIEW_ID, true)).toEqual({
+      id: DEFAULT_RECORD_VIEW_ID,
+      kind: 'record',
+      isDefault: true,
+    })
+  })
+
   it('resolves the default record view without restrictions', () => {
     expect(resolveView(null, FILE, TYPE, DEFAULT_RECORD_VIEW_ID)).toMatchObject({
       kind: 'record',

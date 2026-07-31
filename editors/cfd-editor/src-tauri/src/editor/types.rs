@@ -209,6 +209,49 @@ pub struct EditorProjectSettings {
     pub default_table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
     #[serde(default)]
     pub record_groups: BTreeMap<String, BTreeMap<String, Vec<EditorRecordGroup>>>,
+    #[serde(default)]
+    pub workspace: EditorWorkspaceState,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct EditorWorkspaceState {
+    #[serde(default)]
+    pub tabs: Vec<EditorWorkspaceTab>,
+    #[serde(default)]
+    pub active_tab_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct EditorWorkspaceTab {
+    pub file_path: String,
+    pub type_name: String,
+    pub view_id: String,
+    pub view_kind: WorkspaceViewKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coordinate: Option<RecordCoordinate>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceViewKind {
+    Record,
+    Table,
+    Graph,
 }
 
 /// Kind of a custom view. Record view is implicit and cannot be created,

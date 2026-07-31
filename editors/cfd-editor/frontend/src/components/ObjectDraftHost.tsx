@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { FieldValue } from '../wire'
 import type { EditorLookupController } from '../state/editorLookups'
-import { EditorLookupContext } from '../utils/editContext'
+import { EditorLookupContext, EditorNavigationContext } from '../utils/editContext'
 import { ObjectDraftDialog } from './ObjectDraftDialog'
 
 interface OpenOptions {
@@ -29,10 +29,12 @@ const Ctx = createContext<ObjectDraftHostValue | null>(null)
 export function ObjectDraftHost({
   lookups,
   generationKey,
+  onOpenReference,
   children,
 }: {
   lookups: EditorLookupController
   generationKey: string
+  onOpenReference: (targetType: string, recordKey: string) => void
   children: ReactNode
 }) {
   const [request, setRequest] = useState<(OpenOptions & { currentType: string }) | null>(null)
@@ -62,24 +64,26 @@ export function ObjectDraftHost({
 
   return (
     <EditorLookupContext.Provider value={lookupAccess}>
-      <Ctx.Provider value={value}>
-        {children}
-        {request && (
-          <ObjectDraftDialog
-            title={request.title}
-            actualType={request.currentType}
-            polymorphicTypes={request.polymorphicTypes ?? []}
-            onTypeChange={next => setRequest(r => r ? { ...r, currentType: next } : r)}
-            onLoadDraft={loadDraft}
-            confirmLabel={request.confirmLabel ?? '确定'}
-            onConfirm={payload => {
-              request.onConfirm(payload)
-              setRequest(null)
-            }}
-            onClose={() => setRequest(null)}
-          />
-        )}
-      </Ctx.Provider>
+      <EditorNavigationContext.Provider value={{ openReference: onOpenReference }}>
+        <Ctx.Provider value={value}>
+          {children}
+          {request && (
+            <ObjectDraftDialog
+              title={request.title}
+              actualType={request.currentType}
+              polymorphicTypes={request.polymorphicTypes ?? []}
+              onTypeChange={next => setRequest(r => r ? { ...r, currentType: next } : r)}
+              onLoadDraft={loadDraft}
+              confirmLabel={request.confirmLabel ?? '确定'}
+              onConfirm={payload => {
+                request.onConfirm(payload)
+                setRequest(null)
+              }}
+              onClose={() => setRequest(null)}
+            />
+          )}
+        </Ctx.Provider>
+      </EditorNavigationContext.Provider>
     </EditorLookupContext.Provider>
   )
 }

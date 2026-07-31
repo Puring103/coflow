@@ -1880,7 +1880,7 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
  * make the td padding toggle mid-flight and shift the whole column. */
 .data-table td.pill-cell {
   padding: 0;
-  vertical-align: middle;
+  vertical-align: top;
 }
 .data-table td.complex-cell {
   height: auto;
@@ -2644,24 +2644,25 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   position: relative;
   padding: 1px 8px 1px 10px;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
-  cursor: pointer;
+  background: color-mix(in srgb, var(--ref-color, var(--accent)) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ref-color, var(--accent)) 25%, transparent);
+  cursor: default;
   transition: background 80ms, border-color 80ms;
   max-width: 100%;
   overflow: hidden;
 }
 .vc-ref::before {
   content: '&';
-  color: var(--accent);
+  color: var(--ref-color, var(--accent));
   font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
   font-weight: 600;
   flex-shrink: 0;
 }
 .vc-ref:hover {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--ref-color, var(--accent)) 18%, transparent);
+  border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 45%, transparent);
 }
+.vc-ref-navigable { cursor: pointer; }
 .vc-ref > svg { display: none; }
 .vc-ref-key { font-weight: 500; color: var(--text-key); overflow: hidden; text-overflow: ellipsis; }
 .vc-ref-type {
@@ -2837,50 +2838,64 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   align-items: start;
 }
 .vc-count {
+  margin-left: auto;
   color: var(--text-mute);
   font-size: var(--fs-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-.vc-count::before { content: '·'; margin-right: 4px; opacity: 0.6; }
 
-/* ─── Inspector grid ─── */
+/* ─── Inspector form tree ─── */
 .dc-inspector {
   display: flex;
   flex-direction: column;
   background: var(--bg-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
   font-size: var(--fs-ui);
-  /* Thin left-separator mirroring label/value split */
-  border: 1px solid var(--border);
 }
-
+.dc-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dc-group-body {
+  min-width: 0;
+  margin-left: 0;
+  border-left: none;
+}
+.dc-group-body:empty { display: none; }
+.dc-group-item > .dc-group-body {
+  margin-left: 0;
+  border-left: none;
+}
 .dc-row {
   display: grid;
-  grid-template-columns: minmax(180px, 42%) minmax(0, 1fr);
+  grid-template-columns: minmax(120px, 34%) minmax(0, 1fr) 68px;
   align-items: stretch;
   min-height: var(--h-row);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
   position: relative;
 }
-.dc-row:last-child { border-bottom: none; }
-.dc-row:hover { background: var(--bg-3); }
-
+.dc-row:hover { background: color-mix(in srgb, var(--text) 3%, transparent); }
 .dc-row-label {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
+  padding: 4px 8px 4px calc(22px + min(var(--dc-indent, 0px), 70px));
   color: var(--text-dim);
   font-size: var(--fs-sm);
   font-weight: 500;
   white-space: normal;
   overflow: visible;
   background: transparent;
-  /* Vertical separator between label and value */
-  border-right: 1px solid var(--border);
+  position: relative;
+  border-right: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
+.dc-numeric-scrub-label { cursor: ew-resize; user-select: none; }
+.dc-numeric-scrubbing,
+.dc-numeric-scrubbing * { cursor: ew-resize !important; user-select: none !important; }
 .dc-row-value {
   padding: 3px 8px 3px 10px;
   overflow: hidden;
@@ -2889,12 +2904,21 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   gap: 8px;
   min-width: 0;
 }
+.dc-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 7px 3px 4px;
+}
 .dc-row.keyboard-selected {
   background: var(--bg-4);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .dc-row.keyboard-selected > .dc-row-label,
-.dc-row.keyboard-selected > .dc-row-value {
+.dc-row.keyboard-selected > .dc-row-value,
+.dc-row.keyboard-selected > .dc-row-actions {
   background: var(--bg-4);
 }
 .dc-row.keyboard-selected > .dc-row-label {
@@ -2930,18 +2954,86 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   outline: 1px solid var(--border-strong);
 }
 
-/* Foldout (Object/Array/Dict) header row — slightly stronger label, no fill */
-.dc-row-foldout {
-  cursor: pointer;
-  user-select: none;
-  /* Distinct band so container headers don't blend into their children. */
-  background: var(--bg-2);
+/* Structure headers span the full row. Only leaf fields use the two-column
+ * label/value grid, so nested groups no longer produce empty value cells. */
+.dc-row-structure {
+  display: grid;
+  align-items: center;
+  min-height: 30px;
+  background: color-mix(in srgb, var(--text) 2.2%, transparent);
 }
-.dc-row-foldout .dc-row-label {
+.dc-row-structure > .dc-row-label {
+  min-width: 0;
+  padding-top: 5px;
+  padding-bottom: 5px;
   color: var(--text);
   font-weight: 600;
 }
-.dc-row-foldout:hover { background: var(--bg-3); }
+.dc-row-structure > .dc-row-value {
+  padding: 4px 7px;
+  overflow: hidden;
+  gap: 5px;
+}
+.dc-row-structure > .dc-row-value .dc-row-value-inner {
+  justify-content: flex-end;
+  min-height: 18px;
+}
+.dc-row-structure .vc-count {
+  margin-left: 0;
+  min-width: 14px;
+  text-align: right;
+}
+.dc-row-foldout {
+  cursor: pointer;
+  user-select: none;
+}
+.dc-row-foldout:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.dc-row-collection {
+  background: color-mix(in srgb, var(--text) 3.2%, transparent);
+}
+.dc-row-object {
+  background: color-mix(in srgb, var(--text) 1.8%, transparent);
+}
+.dc-row-structure:not([data-depth="0"]) {
+  background: transparent;
+}
+.dc-row-structure.keyboard-selected,
+.dc-row-structure.keyboard-selected > .dc-row-label,
+.dc-row-structure.keyboard-selected > .dc-row-value,
+.dc-row-structure.keyboard-selected > .dc-row-actions {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.dc-row-item {
+  background: transparent;
+  min-height: 23px;
+}
+.dc-row-field.dc-row-item {
+  grid-template-columns:
+    calc(42px + min(var(--dc-indent, 0px), 70px))
+    minmax(0, 1fr)
+    68px;
+}
+.dc-row-field.dc-row-item > .dc-row-label {
+  padding-left: calc(6px + min(var(--dc-indent, 0px), 70px));
+  padding-right: 5px;
+}
+.dc-row-static-group {
+  cursor: default;
+  user-select: none;
+}
+.dc-row-item > .dc-row-label {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.dc-row-item .dc-row-label-text {
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.dc-row-item .dc-fold-arrow {
+  opacity: 0.55;
+}
 .dc-fold-arrow {
   display: inline-flex;
   width: 12px;
@@ -2950,32 +3042,68 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   justify-content: center;
   color: var(--text-mute);
 }
+.dc-row-foldout > .dc-row-label > .dc-fold-arrow {
+  position: absolute;
+  left: calc(6px + min(var(--dc-indent, 0px), 70px));
+}
 .dc-row-foldout:hover .dc-fold-arrow { color: var(--text); }
 
-/* Nested-row depth cues: one 3px vertical stripe on the left edge, colored
- * deeper per depth. Prefer a single stripe over stacked indicators — the
- * label's indent already conveys depth; the stripe just makes it scannable. */
-.dc-row[data-depth="1"] { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--text-mute) 45%, transparent); }
-.dc-row[data-depth="2"] { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
-.dc-row[data-depth="3"] { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 70%, transparent); }
-.dc-row[data-depth="4"] { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 85%, transparent); }
-.dc-row[data-depth="5"] { box-shadow: inset 3px 0 0 var(--accent); }
-/* Foldout rows keep their distinct band background even at depth. */
-.dc-row-foldout[data-depth="1"],
-.dc-row-foldout[data-depth="2"],
-.dc-row-foldout[data-depth="3"],
-.dc-row-foldout[data-depth="4"],
-.dc-row-foldout[data-depth="5"] { background: var(--bg-2); }
-.dc-row-foldout[data-depth="1"]:hover,
-.dc-row-foldout[data-depth="2"]:hover,
-.dc-row-foldout[data-depth="3"]:hover,
-.dc-row-foldout[data-depth="4"]:hover,
-.dc-row-foldout[data-depth="5"]:hover { background: var(--bg-3); }
-
-.dc-row-empty .dc-row-label {
-  color: var(--text-mute);
-  font-style: italic;
+.dc-array-object-item {
+  position: relative;
+  min-height: var(--h-row);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
 }
+.dc-array-object-item.keyboard-selected {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.dc-array-object-fields { min-width: 0; }
+.dc-array-object-fields > .dc-row:last-child,
+.dc-array-object-fields > .dc-group:last-child > .dc-row-structure {
+  border-bottom: none;
+}
+.dc-array-item-rail {
+  position: absolute;
+  top: 0;
+  left: calc(6px + min(var(--dc-indent, 0px), 70px));
+  z-index: 3;
+  width: 32px;
+  min-height: var(--h-row);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  pointer-events: none;
+}
+.dc-array-item-rail .dc-drag-handle {
+  width: 8px;
+  opacity: 0;
+  pointer-events: auto;
+}
+.dc-array-object-item:hover .dc-array-item-rail .dc-drag-handle { opacity: 0.7; }
+.dc-array-item-index {
+  min-width: 12px;
+  text-align: right;
+  line-height: 1;
+}
+.dc-array-item-diag-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dc-array-item-diag-dot.error { background: var(--red); }
+.dc-array-item-diag-dot.warning { background: var(--yellow); }
+.dc-array-object-item:hover .dc-row-delete { opacity: 0.75; }
+.dc-array-object-item.dragging { opacity: 0.45; }
+.dc-array-object-item.drop-target {
+  box-shadow: inset 0 2px 0 var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.dc-array-empty-object .vc-null { font-style: italic; }
 
 /* Trailing controls for nullable / polymorphic fields. Sit right of the
  * value; each button is a small square icon so multiple can fit inline. */
@@ -3099,37 +3227,6 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   /* Yield less than the type hint — label has higher priority */
   flex-shrink: 1;
 }
-/* Type hint pill — subdued neutral chip beside the label. Label always wins:
- * we give the hint a higher flex-shrink so it collapses first, and drop it
- * entirely below a threshold so the user never loses the identifier. */
-.dc-field-type-hint {
-  margin-left: auto;
-  max-width: 45%;
-  min-width: 0;
-  padding: 0 5px;
-  height: 15px;
-  display: inline-flex;
-  align-items: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-mute);
-  background: color-mix(in srgb, var(--text-mute) 14%, transparent);
-  border-radius: 3px;
-  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  flex: 0 1 auto;
-  flex-shrink: 4;
-  opacity: 0.85;
-}
-.dc-row:hover .dc-field-type-hint { opacity: 1; background: color-mix(in srgb, var(--text-mute) 22%, transparent); }
-/* When the row is really tight, hide the type hint before it can crowd the label.
- * `contain: inline-size` on `.inspector-body` (declared below) makes the container query resolve. */
-.inspector-body { container-type: inline-size; container-name: inspector; }
-@container inspector (max-width: 340px) {
-  .dc-field-type-hint { display: none; }
-}
 .dc-drag-handle {
   display: inline-flex;
   align-items: center;
@@ -3156,7 +3253,9 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   opacity: 0;
   transition: opacity 0.1s;
 }
+.dc-row:hover .dc-row-delete { opacity: 0.75; }
 .dc-row-draggable:hover .dc-row-delete { opacity: 0.85; }
+.dc-row-collection:hover .dc-row-delete { opacity: 0.75; }
 .dc-row-delete:hover { opacity: 1 !important; }
 
 /* Drag-and-drop visual feedback */
@@ -3169,34 +3268,33 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 }
 
 /* ─── Diagnostic highlighting ─── */
-/* Rows whose pathKey is referenced by a project diagnostic. Tints background
- * and adds a left bar in the severity color. Foldout ancestors get a paler
- * tint via dc-row-diag-* with no exact-match — we still mark them so users
- * can see something's wrong before expanding. */
+/* Exact errors mark the affected field. Ancestors only expose a compact count
+ * in their group header, avoiding repeated red rails at every depth. */
 .dc-row-diag {
   position: relative;
 }
 .dc-row-diag::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  z-index: 2;
+  display: none;
 }
-.dc-row-diag-error {
-  background: color-mix(in srgb, var(--red) 14%, transparent) !important;
-}
-.dc-row-diag-error::before { background: var(--red); }
-.dc-row-diag-error .dc-row-label-text { color: var(--red); }
-.dc-row-diag-error:hover { background: color-mix(in srgb, var(--red) 22%, var(--bg-3)) !important; }
+.dc-row-diag-error { background: transparent; }
+.dc-row-diag-error.dc-row-diag-exact .dc-row-label-text { color: var(--red); }
+.dc-row-diag-error.dc-row-diag-exact:hover { background: color-mix(in srgb, var(--red) 5%, var(--bg-3)); }
 
-.dc-row-diag-warning {
-  background: color-mix(in srgb, var(--yellow) 12%, transparent) !important;
+.dc-row-diag-warning { background: transparent; }
+.dc-row-diag-warning.dc-row-diag-exact .dc-row-label-text { color: var(--yellow); }
+.dc-row-diag-warning.dc-row-diag-exact:hover { background: color-mix(in srgb, var(--yellow) 4%, var(--bg-3)); }
+.dc-row-diag-summary::before { display: none; }
+.dc-row-item.dc-row-diag-summary .diag-corner-badge { display: none; }
+.dc-row-diag-exact .dc-input,
+.dc-row-diag-exact .dc-pill-wrap,
+.dc-row-diag-exact .dc-select-trigger {
+  border-color: color-mix(in srgb, var(--red) 58%, var(--border-strong));
 }
-.dc-row-diag-warning::before { background: var(--yellow); }
-.dc-row-diag-warning .dc-row-label-text { color: var(--yellow); }
+.dc-row-diag-warning.dc-row-diag-exact .dc-input,
+.dc-row-diag-warning.dc-row-diag-exact .dc-pill-wrap,
+.dc-row-diag-warning.dc-row-diag-exact .dc-select-trigger {
+  border-color: color-mix(in srgb, var(--yellow) 55%, var(--border-strong));
+}
 
 /* Brief flash when a diagnostic jump targets a row: scrollIntoView + pulse. */
 @keyframes dc-row-flash-pulse {
@@ -3243,6 +3341,25 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 }
 .diag-corner-error   { background: var(--red); }
 .diag-corner-warning { background: var(--yellow); color: #221; }
+.dc-row-actions > .diag-corner-badge {
+  position: static;
+  flex-shrink: 0;
+  margin: 0;
+}
+.dc-row-structure > .dc-row-actions > .diag-corner-badge {
+  position: static;
+  align-self: center;
+  min-width: 16px;
+  height: 18px;
+  margin-right: 7px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  box-shadow: none;
+}
+.dc-row-structure > .dc-row-actions > .diag-corner-error { color: var(--red); }
+.dc-row-structure > .dc-row-actions > .diag-corner-warning { color: var(--yellow); }
 
 /* Cells / rows / headers that host a corner badge. `cell-key-wrap` and
  * `dc-null-wrap` are added by TableView; the others are pre-existing.
@@ -3346,28 +3463,44 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   opacity: 1 !important;
 }
 .dc-row-add {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding-top: 2px;
-  padding-bottom: 2px;
+  min-height: 20px;
+  padding: 0;
+}
+.dc-collection-add {
+  opacity: 0.22;
+  transition: opacity 100ms;
+}
+.dc-row-structure:hover .dc-collection-add,
+.dc-collection-add-empty,
+.dc-collection-add.keyboard-selected {
+  opacity: 1;
 }
 .btn-add-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   background: transparent;
-  border: 1px dashed var(--border-strong);
-  color: var(--text-dim);
-  padding: 2px 8px;
+  border: 1px solid transparent;
+  color: var(--text-muted);
   border-radius: 3px;
-  font-size: 11px;
   cursor: pointer;
+  transition: color 80ms, background 80ms, border-color 80ms;
 }
 .btn-add-item:hover {
   background: var(--bg-3);
-  color: var(--text);
-  border-color: var(--text-dim);
+  color: var(--accent);
+  border-color: var(--border-strong);
+}
+.btn-add-item:disabled { opacity: 0.45; cursor: wait; }
+.dc-collection-add.keyboard-selected .btn-add-item {
+  color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 .dc-add-form {
   display: inline-flex;
@@ -3636,21 +3769,21 @@ td:hover select.dc-pill-select,
  * flash white when the pointer leaves the wrap. */
 select.dc-pill-select.dc-pill-select-ref,
 input.dc-pill-select.dc-pill-select-ref {
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  background-color: color-mix(in srgb, var(--accent) 6%, var(--bg-2));
+  border: 1px solid color-mix(in srgb, var(--ref-color, var(--accent)) 18%, transparent);
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 6%, var(--bg-2));
 }
 select.dc-pill-select.dc-pill-select-ref:hover,
 input.dc-pill-select.dc-pill-select-ref:hover,
 .dc-row:hover select.dc-pill-select.dc-pill-select-ref,
 td:hover select.dc-pill-select.dc-pill-select-ref,
 .dc-node-card:hover select.dc-pill-select.dc-pill-select-ref {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background-color: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+  border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 45%, transparent);
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 10%, var(--bg-1));
 }
 select.dc-pill-select.dc-pill-select-ref:focus,
 input.dc-pill-select.dc-pill-select-ref:focus {
-  border-color: var(--accent);
-  background-color: color-mix(in srgb, var(--accent) 12%, var(--bg-1));
+  border-color: var(--ref-color, var(--accent));
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 12%, var(--bg-1));
 }
 
 /* Enum pill — --enum-color themed. Background is opaque for the same
@@ -3687,8 +3820,8 @@ td:hover select.dc-pill-select.dc-pill-select-enum,
  * width too — including the `&`. */
 .dc-pill-wrap-ref {
   position: relative;
-  border-color: var(--border);
-  background-color: var(--bg-2);
+  border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 40%, var(--border));
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 10%, var(--bg-2));
 }
 .dc-pill-wrap-ref::before {
   content: '&';
@@ -3708,19 +3841,19 @@ td:hover select.dc-pill-select.dc-pill-select-enum,
 .dc-row:hover .dc-pill-wrap-ref,
 td:hover .dc-pill-wrap-ref,
 .dc-node-card:hover .dc-pill-wrap-ref {
-  border-color: var(--border-strong);
-  background-color: var(--bg-1);
+  border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 42%, var(--border-strong));
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 9%, var(--bg-1));
 }
 .dc-pill-wrap-ref:focus-within {
-  border-color: var(--border-strong);
-  background-color: var(--bg-1);
+  border-color: var(--ref-color, var(--accent));
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 11%, var(--bg-1));
 }
 
 /* Select nested in the ref wrapper keeps the pill border on its wrapper. */
 select.dc-pill-select.dc-pill-select-inwrap,
 input.dc-pill-select.dc-pill-select-inwrap {
   border: none;
-  background-color: var(--bg-2);
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 10%, var(--bg-2));
   padding-left: 20px;
   height: 100%;
 }
@@ -3730,13 +3863,22 @@ input.dc-pill-select.dc-pill-select-inwrap:hover,
 .dc-row:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap,
 td:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap,
 .dc-node-card:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap {
-  background-color: var(--bg-1);
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 16%, var(--bg-1));
   border: none;
 }
 select.dc-pill-select.dc-pill-select-inwrap:focus,
 input.dc-pill-select.dc-pill-select-inwrap:focus {
-  background-color: var(--bg-1);
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 18%, var(--bg-1));
   border: none;
+}
+
+input.dc-input-ref-select {
+  border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 55%, var(--border));
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 12%, var(--bg-1));
+}
+input.dc-input-ref-select:focus {
+  border-color: var(--ref-color, var(--accent));
+  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 18%, var(--bg-1));
 }
 
 select.dc-pill-select.dc-pill-select-enum:focus,
@@ -3766,18 +3908,31 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   font-size: var(--fs-sm);
 }
 .dc-node-card .dc-row {
-  grid-template-columns: minmax(70px, 38%) 1fr;
+  grid-template-columns: minmax(70px, 38%) minmax(0, 1fr) 44px;
   min-height: 22px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .dc-node-card .dc-row:last-child { border-bottom: none; }
 .dc-node-card .dc-row:hover { background: rgba(255, 255, 255, 0.04); }
 .dc-node-card .dc-row-label {
-  padding: 3px 8px;
+  padding: 3px 6px 3px calc(19px + min(var(--dc-indent, 0px), 28px));
   font-size: var(--fs-xs);
   color: var(--text-mute);
   background: transparent;
   border-right: 1px solid rgba(255,255,255,0.06);
+}
+.dc-node-card .dc-row-foldout > .dc-row-label > .dc-fold-arrow {
+  left: calc(4px + min(var(--dc-indent, 0px), 28px));
+}
+.dc-node-card .dc-row-structure {
+  display: grid;
+}
+.dc-node-card .dc-row-structure > .dc-row-label {
+  border-right: none;
+}
+.dc-node-card .dc-group-body {
+  margin-left: 9px;
+  border-left-color: rgba(255,255,255,0.08);
 }
 .dc-node-card .dc-row-value {
   padding: 3px 8px;
@@ -4032,13 +4187,35 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   flex-shrink: 0;
   background: var(--bg-0);
   border-top: 1px solid var(--border);
-  max-height: 200px;
+  max-height: calc(100% - 120px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: max-height 180ms ease;
+  position: relative;
+  transition: height 180ms ease;
 }
-.diag-panel.collapsed { max-height: var(--h-toolbar); }
+.diag-panel.collapsed {
+  height: var(--h-toolbar) !important;
+  max-height: var(--h-toolbar);
+}
+.diag-panel.resizing { transition: none; }
+
+.diag-resizer {
+  position: absolute;
+  top: -3px;
+  left: var(--dc-indent, 0px);
+  right: 0;
+  height: 7px;
+  cursor: row-resize;
+  touch-action: none;
+  z-index: 3;
+}
+.diag-resizer:hover,
+.diag-resizer:focus-visible,
+.diag-panel.resizing .diag-resizer {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  outline: none;
+}
 
 .diag-header {
   display: flex;
@@ -4095,107 +4272,9 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   min-height: 0;
   flex: 1;
 }
-.diag-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-1);
-  flex-shrink: 0;
-  height: var(--h-toolbar);
-  overflow: hidden;
-}
-.diag-sev-filters {
-  display: inline-flex;
-  gap: 4px;
-}
-.diag-filter-chip {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  border-radius: 10px;
-  padding: 1px 9px;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-  font-family: inherit;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: background 80ms, border-color 80ms, color 80ms;
-}
-.diag-filter-chip:hover { border-color: var(--border-strong); color: var(--text); }
-.diag-filter-chip.active {
-  background: var(--bg-3);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* File filter: pill buttons (replaces <select>) */
-.diag-file-pills {
-  display: inline-flex;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  flex-shrink: 1;
-  min-width: 0;
-}
-.diag-file-pills::-webkit-scrollbar { display: none; }
-.diag-file-pill {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-mute);
-  border-radius: var(--radius-sm);
-  padding: 0 8px;
-  font-size: var(--fs-xs);
-  font-family: 'JetBrains Mono', monospace;
-  cursor: pointer;
-  white-space: nowrap;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  transition: all 80ms;
-}
-.diag-file-pill:hover { border-color: var(--border-strong); color: var(--text-dim); }
-.diag-file-pill.active { background: var(--bg-3); border-color: var(--accent); color: var(--accent); }
-
-.diag-group-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--fs-xs);
-  color: var(--text-dim);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.diag-group-toggle input { margin: 0; }
-
 .diag-list {
   overflow-y: auto;
   flex: 1;
-}
-.diag-group { }
-.diag-group-head {
-  padding: 5px 12px 4px;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--text-mute);
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.diag-group-count {
-  font-weight: 400;
-  color: var(--text-mute);
-  opacity: 0.7;
 }
 .diag-empty {
   padding: 24px;
@@ -4225,10 +4304,19 @@ input.dc-pill-select.dc-pill-select-enum:focus {
 
 .diag-msg {
   flex: 1;
+  min-width: 0;
   color: var(--text);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.diag-actions {
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  flex-shrink: 0;
 }
 .diag-code {
   font-family: 'JetBrains Mono', monospace;
@@ -4261,7 +4349,9 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   gap: 4px;
   height: 20px;
   flex-shrink: 0;
-  align-self: center;
+  max-width: min(420px, 40vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: color 80ms, border-color 80ms;
 }
 .diag-jump:hover { color: var(--accent); border-color: var(--accent); }
