@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Coflow — 高效无摩擦的数据配置工作流。程序、策划与 AI 汇入同一个 Coflow，再交付到运行时。" />
+    <title>Coflow — 高效无摩擦的数据配置工作流</title>
+    <link rel="icon" href="assets/coflow-icon.svg" type="image/svg+xml" />
+    <script>
+      (() => {
+        const forced = new URLSearchParams(location.search).get('theme');
+        const saved = localStorage.getItem('coflow-theme');
+        const preferred = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = forced || saved || preferred;
+      })();
+    </script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+
+    <header class="site-header" data-header>
+      <a class="brand" href="#top" aria-label="Coflow 首页">
+        <img src="assets/coflow-mark.svg" alt="" />
+        <span>Coflow</span>
+      </a>
+
+      <div class="header-actions">
+        <a class="header-icon-link" href="https://github.com/Puring103/coflow" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.87c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.35 1.09 2.92.83.09-.65.35-1.09.64-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 6.84a9.6 9.6 0 0 1 2.5.34c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
+        </a>
+        <div class="language-picker" data-lang-picker>
+          <button class="language-trigger" type="button" data-lang-trigger aria-label="页面语言" aria-haspopup="menu" aria-expanded="false"><span data-lang-current>中</span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg></button>
+          <div class="language-menu" data-lang-menu role="menu">
+            <button type="button" role="menuitem" data-lang-option="zh"><span>中文</span><i>中</i></button>
+            <button type="button" role="menuitem" data-lang-option="en"><span>English</span><i>EN</i></button>
+          </div>
+        </div>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="切换到深色模式" title="切换明暗模式">
+          <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 13.3A8.5 8.5 0 1 1 10.7 3.3 6.5 6.5 0 0 0 20.7 13.3Z"/></svg>
+        </button>
+        <a class="header-icon-link header-docs" href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener" aria-label="阅读文档" title="阅读文档">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H12v18H7.5A3.5 3.5 0 0 0 4 23V5.5ZM20 5.5A3.5 3.5 0 0 0 16.5 2H12v18h4.5A3.5 3.5 0 0 1 20 23V5.5Z" /></svg>
+        </a>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- ─────────────────────────  HERO  ───────────────────────── -->
+      <section class="hero" id="top">
+        <div class="wrap hero-inner">
+          <div class="hero-top">
+            <div class="hero-head">
+              <div>
+                <p class="eyebrow" data-reveal><span class="eyebrow-mark"></span>Game data, one flow</p>
+                <h1 class="hero-title" data-reveal data-en="The game data workflow for the AI era"><span>AI 时代的</span><span>游戏数据配置工作流</span></h1>
+                <ul class="hero-traits" data-reveal aria-label="核心特性">
+                  <li data-en="Precise">精确</li><li data-en="Reliable">可信</li><li data-en="Frictionless">无摩擦</li>
+                </ul>
+              </div>
+            </div>
+            <div class="hero-aside" data-reveal>
+              <div class="hero-actions">
+                <a class="btn btn-primary" href="https://puring103.github.io/coflow/docs/guide/install.html" target="_blank" rel="noopener">
+                  <span data-en="Get started">快速开始</span>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
+                </a>
+                <a class="btn btn-secondary" href="https://github.com/Puring103/coflow/releases/latest" target="_blank" rel="noopener">
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>
+                  <span data-en="Download release">下载 Release</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ─────────────────────────  STAGES  ───────────────────────── -->
+      <section class="stages" id="stages">
+        <div class="wrap">
+          <ol class="stage-list">
+            <!-- 01 —— CFT 定义能力：多卡叠放 -->
+            <li class="stage stage-wide" data-sequence="1" data-accent="engineer" data-reveal>
+              <div class="stage-marker"><span>01</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">MODEL</p>
+                <h3 data-en="Build a unified data model">建立统一的数据模型</h3>
+                <p data-en="Use a purpose-built language to describe fields, types and enums, giving programmers, designers and AI one shared data language.">使用专门设计的语言描述数据、字段、类型、枚举，让程序、策划和 AI 遵循共同的数据语言。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="card-stack code-stack" data-cardstack aria-label="CFT 定义能力">
+                  <div class="stack-tabs" role="tablist">
+                    <button type="button" data-view="type" data-label="类型与字段" class="is-active">类型与字段</button>
+                    <button type="button" data-view="enum" data-label="枚举">枚举</button>
+                    <button type="button" data-view="annotation" data-label="注解">注解</button>
+                    <button type="button" data-view="inherit" data-label="继承">继承</button>
+                  </div>
+                  <div class="stack-deck">
+                    <article class="stack-card code-card" data-card="type" data-depth="0">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/skills.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-anno">@idAsEnum</span>(<span class="tok-type">SkillId</span>)
+<span class="tok-anno">@label</span>(<span class="tok-string">"技能"</span>)
+<span class="tok-keyword">type</span> <span class="tok-type">Skill</span> {
+  name: <span class="tok-type">string</span> = <span class="tok-string">"未命名技能"</span>;
+  element: <span class="tok-type">Element</span> = <span class="tok-type">Element.Fire</span>;
+  power: <span class="tok-type">int</span> = <span class="tok-number">0</span>;
+  cooldown: <span class="tok-type">float</span> = <span class="tok-number">0.0</span>;
+  tags: [<span class="tok-type">string</span>] = [];
+  resistance: {<span class="tok-type">Element</span>: <span class="tok-type">float</span>} = {};
+  is_passive: <span class="tok-type">bool</span> = <span class="tok-keyword">false</span>;
+  follow_up: <span class="tok-op">&amp;</span><span class="tok-type">Skill</span>? = <span class="tok-keyword">null</span>;
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="enum" data-depth="1">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/enums.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-anno">@label</span>(<span class="tok-string">"稀有度"</span>)
+<span class="tok-keyword">enum</span> <span class="tok-type">Rarity</span> {
+  <span class="tok-anno">@label</span>(<span class="tok-string">"普通"</span>) <span class="tok-type">Common</span> = <span class="tok-number">0</span>,
+  <span class="tok-anno">@label</span>(<span class="tok-string">"稀有"</span>) <span class="tok-type">Rare</span> = <span class="tok-number">1</span>,
+  <span class="tok-anno">@label</span>(<span class="tok-string">"史诗"</span>) <span class="tok-type">Epic</span> = <span class="tok-number">2</span>,
+  <span class="tok-anno">@label</span>(<span class="tok-string">"传说"</span>) <span class="tok-type">Legendary</span> = <span class="tok-number">3</span>,
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="annotation" data-depth="2">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/items.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-comment"># record key 生成强类型 SkillId 枚举</span>
+<span class="tok-anno">@idAsEnum</span>(<span class="tok-type">SkillId</span>)
+<span class="tok-anno">@label</span>(<span class="tok-string">"技能"</span>)
+<span class="tok-anno">@description</span>(<span class="tok-string">"战斗技能配置"</span>)
+<span class="tok-keyword">type</span> <span class="tok-type">Skill</span> {
+  <span class="tok-comment"># 按语言维度保存本地化名称</span>
+  <span class="tok-anno">@localized</span>
+  <span class="tok-anno">@label</span>(<span class="tok-string">"名称"</span>)
+  name: <span class="tok-type">string</span> = <span class="tok-string">"未命名"</span>;
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="inherit" data-depth="3">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/rewards.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-keyword">abstract type</span> <span class="tok-type">Reward</span> {
+  id: <span class="tok-type">string</span> = <span class="tok-string">"reward_001"</span>;
+  <span class="tok-keyword">check</span> { id != <span class="tok-string">""</span>; }
+}
+<span class="tok-keyword">type</span> <span class="tok-type">ItemReward</span> : <span class="tok-type">Reward</span> {
+  item: <span class="tok-type">Item</span>;
+  count: <span class="tok-type">int</span> = <span class="tok-number">1</span>;
+}
+<span class="tok-keyword">sealed type</span> <span class="tok-type">CurrencyReward</span> : <span class="tok-type">Reward</span> {
+  amount: <span class="tok-type">int</span> = <span class="tok-number">100</span>;
+}</code></pre>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 02 —— check 约束能力：多卡叠放 -->
+            <li class="stage stage-wide" data-sequence="2" data-accent="brand" data-reveal>
+              <div class="stage-marker"><span>02</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">CHECK</p>
+                <h3 data-en="Define rules for your data">为数据定义规则</h3>
+                <p data-en="Define the rules data must follow directly in CFT to keep every configuration correct.">在 CFT 内直接定义数据需要遵循的规则，保证数据的正确性。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="card-stack code-stack" data-cardstack aria-label="check 约束能力">
+                  <div class="stack-tabs" role="tablist">
+                    <button type="button" data-view="basic" data-label="基础约束" class="is-active">基础约束</button>
+                    <button type="button" data-view="when" data-label="条件分支">条件分支</button>
+                    <button type="button" data-view="quant" data-label="集合规则">集合规则</button>
+                    <button type="button" data-view="project" data-label="项目检查">项目检查</button>
+                  </div>
+                  <div class="stack-deck">
+                    <article class="stack-card code-card" data-card="basic" data-depth="0">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/skills.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-keyword">check</span> {
+  power &gt;= <span class="tok-number">0</span>: <span class="tok-string">"技能威力不能为负"</span>;
+  cooldown &gt;= <span class="tok-number">0.0</span>;
+  tags.isUnique(): <span class="tok-string">"标签不能重复"</span>;
+  name != <span class="tok-string">""</span>: <span class="tok-string">"技能名不能为空"</span>;
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="when" data-depth="1">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/skills.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-keyword">check</span> {
+  <span class="tok-keyword">when</span> !is_passive {
+    power &gt; <span class="tok-number">0</span>: <span class="tok-string">"主动技能威力需大于 0"</span>;
+    cooldown &gt; <span class="tok-number">0.0</span>: <span class="tok-string">"主动技能需要冷却时间"</span>;
+  }
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="quant" data-depth="2">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/loot.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-keyword">check</span> {
+  <span class="tok-keyword">all</span> w <span class="tok-keyword">in</span> weights { w &gt;= <span class="tok-number">0</span>; }
+  <span class="tok-keyword">any</span> w <span class="tok-keyword">in</span> weights { w &gt; <span class="tok-number">0</span>; }
+  <span class="tok-keyword">none</span> id <span class="tok-keyword">in</span> item_ids { id == <span class="tok-string">""</span>; }
+}</code></pre>
+                      </div>
+                    </article>
+                    <article class="stack-card code-card" data-card="project" data-depth="3">
+                      <div class="code-window">
+                        <div class="win-bar"><span class="win-file">schema/project-checks.cft</span><span class="win-lang">CFT</span></div>
+                        <pre class="code-sample"><code><span class="tok-comment"># 跨记录的项目级完整性规则</span>
+<span class="tok-keyword">check</span> <span class="tok-type">SkillIntegrity</span> {
+  records(<span class="tok-type">Skill</span>).len() &gt; <span class="tok-number">0</span>:
+    <span class="tok-string">"项目中至少需要一个技能"</span>;
+
+  <span class="tok-keyword">all</span> skill <span class="tok-keyword">in</span> records(<span class="tok-type">Skill</span>) {
+    skill.power &gt;= <span class="tok-number">0</span>:
+      <span class="tok-string">"技能威力不能为负"</span>;
+  }
+}</code></pre>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 03 -->
+            <li class="stage" data-sequence="5" data-accent="diagnostic" data-reveal>
+              <div class="stage-marker"><span>05</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">DIAGNOSE</p>
+                <h3 data-en="Pinpoint errors precisely">精准定位错误</h3>
+                <p data-en="Validate data at any time. Detailed diagnostics take you straight to the exact source of every problem.">随时验证数据正确性，详细的诊断信息帮助您精准定位数据位置。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="diagnostic-showcase terminal-diagnostics">
+                  <div class="code-window"><div class="win-bar"><span class="win-file">Excel</span><span class="win-lang">stderr</span></div><pre class="code-sample"><code><span class="tok-prompt">$</span> coflow check .
+<span class="tok-dim">----------------------------------------</span>
+[<span class="tok-err">CELL-TypeMismatch</span>] [<span class="tok-type">CELL</span>]
+<span class="tok-key">file</span>    data/items.xlsx
+<span class="tok-key">sheet</span>   Item
+<span class="tok-key">cell</span>    B2
+<span class="tok-key">message</span>
+  failed to parse `Item.level` cell:
+  expected int</code></pre></div>
+                  <div class="code-window"><div class="win-bar"><span class="win-file">CFD</span><span class="win-lang">stderr</span></div><pre class="code-sample"><code><span class="tok-prompt">$</span> coflow check .
+<span class="tok-dim">----------------------------------------</span>
+[<span class="tok-err">CFD-TEXT-TypeMismatch</span>] [<span class="tok-type">CFD</span>]
+<span class="tok-key">file</span>    data/skills.cfd
+<span class="tok-key">line</span>    4
+<span class="tok-key">column</span>  11
+<span class="tok-key">message</span>
+  expected int</code></pre></div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 04 —— 卡片叠放：三种视图 -->
+            <li class="stage stage-wide" data-sequence="6" data-accent="planner" data-reveal>
+              <div class="stage-marker"><span>06</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">EDIT</p>
+                <h3 data-en="Multi-view configuration">多视图配置</h3>
+                <p data-en="Choose the right view for each configuration: tables for bulk editing, records for focused editing, and graphs for record relationships.">为不同的配置提供不同的视图，高效配置数据。表格视图批量配置，记录视图逐条配置，图视图配置记录关联，为每种视图选用最合适的配置方式。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="card-stack cfd-stack" data-cardstack aria-label="CFD Editor 三种视图">
+                  <div class="stack-tabs" role="tablist">
+                    <button type="button" data-view="table" data-label="表格视图" class="is-active">表格</button>
+                    <button type="button" data-view="record" data-label="记录视图">记录</button>
+                    <button type="button" data-view="graph" data-label="关系图视图">关系图</button>
+                  </div>
+                  <div class="stack-deck">
+                    <!-- 表格视图（还原 .table-view / .data-table） -->
+                    <article class="stack-card cfd-card" data-card="table" data-depth="0">
+                      <div class="cfd-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M14 14l4 4"/></svg><span>按 Key 搜索…</span><em>128 条</em></div>
+                      <div class="cfd-table">
+                        <div class="cfd-thead">
+                          <div class="cfd-th th-key"><span class="th-name">Key</span><span class="th-type th-type-key">key</span></div>
+                          <div class="cfd-th"><span class="th-name">name</span><span class="th-type">string</span></div>
+                          <div class="cfd-th"><span class="th-name">element</span><span class="th-type c-enum">Element</span></div>
+                          <div class="cfd-th"><span class="th-name">power</span><span class="th-type">int</span></div>
+                          <div class="cfd-th"><span class="th-name">cooldown</span><span class="th-type">float</span></div>
+                        </div>
+                        <div class="cfd-tr selected">
+                          <div class="td-key">fireball</div>
+                          <div class="td"><span class="vc-str">火球术</span></div>
+                          <div class="td"><span class="vc-enum">Fire</span></div>
+                          <div class="td sel-cell"><span class="vc-num">35</span></div>
+                          <div class="td"><span class="vc-num">3.0</span></div>
+                        </div>
+                        <div class="cfd-tr">
+                          <div class="td-key">frost_nova</div>
+                          <div class="td"><span class="vc-str">冰霜新星</span></div>
+                          <div class="td"><span class="vc-enum">Ice</span></div>
+                          <div class="td"><span class="vc-num">28</span></div>
+                          <div class="td"><span class="vc-num">5.0</span></div>
+                        </div>
+                        <div class="cfd-tr">
+                          <div class="td-key">heal</div>
+                          <div class="td"><span class="vc-str">治疗术</span></div>
+                          <div class="td"><span class="vc-enum">Holy</span></div>
+                          <div class="td"><span class="vc-num">20</span></div>
+                          <div class="td"><span class="vc-num">2.5</span></div>
+                        </div>
+                        <div class="cfd-tr">
+                          <div class="td-key">thunder</div>
+                          <div class="td"><span class="vc-str">落雷</span></div>
+                          <div class="td"><span class="vc-enum">Thunder</span></div>
+                          <div class="td"><span class="vc-num">42</span></div>
+                          <div class="td"><span class="vc-num">6.0</span></div>
+                        </div>
+                      </div>
+                    </article>
+                    <!-- 记录视图（还原 .record-view：左 sidebar + 右 gn-header + dc-inspector） -->
+                    <article class="stack-card cfd-card" data-card="record" data-depth="1">
+                      <div class="cfd-record">
+                        <div class="rv-sidebar">
+                          <div class="rv-item selected"><span class="rv-key">fireball</span><span class="rv-sub">火球术</span></div>
+                          <div class="rv-item"><span class="rv-key">frost_nova</span><span class="rv-sub">冰霜新星</span></div>
+                          <div class="rv-item"><span class="rv-key">heal</span><span class="rv-sub">治疗术</span></div>
+                          <div class="rv-item"><span class="rv-key">thunder</span><span class="rv-sub">落雷</span></div>
+                        </div>
+                        <div class="rv-main">
+                          <div class="gn-header"><span class="gn-bar"></span><span class="gn-key">fireball</span><span class="gn-type">SKILL</span></div>
+                          <div class="dc-inspector">
+                            <div class="dc-row"><div class="dc-label">name<span class="dc-type">string</span></div><div class="dc-value"><span class="vc-str">火球术</span></div></div>
+                            <div class="dc-row"><div class="dc-label">element<span class="dc-type c-enum">Element</span></div><div class="dc-value"><span class="vc-enum">Fire</span></div></div>
+                            <div class="dc-row"><div class="dc-label">power<span class="dc-type">int</span></div><div class="dc-value"><span class="vc-num">35</span></div></div>
+                            <div class="dc-row"><div class="dc-label">cooldown<span class="dc-type">float</span></div><div class="dc-value"><span class="vc-num">3.0</span></div></div>
+                            <div class="dc-row"><div class="dc-label">is_passive<span class="dc-type">bool</span></div><div class="dc-value"><span class="vc-bool">FALSE</span></div></div>
+                            <div class="dc-row"><div class="dc-label">follow_up<span class="dc-type c-ref">&amp;Skill</span></div><div class="dc-value"><span class="vc-ref">frost_nova</span></div></div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                    <!-- 关系图视图（还原 GraphView：点状网格 + graph-node + 贝塞尔连线） -->
+                    <article class="stack-card cfd-card" data-card="graph" data-depth="2">
+                      <div class="cfd-graph">
+                        <svg class="rf-edges" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                          <defs><marker id="tree-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 8 4 0 8Z" /></marker></defs>
+                          <path class="rf-edge tech-edge" d="M40 47 C49 47 49 24 58 24" marker-end="url(#tree-arrow)" />
+                          <path class="rf-edge tech-edge" d="M40 47 C49 47 49 70 58 70" marker-end="url(#tree-arrow)" />
+                        </svg>
+                        <div class="graph-node gn-focused gn-relationship tree-root" style="left:4%;top:108px">
+                          <span class="node-port node-port-out"></span>
+                          <div class="gn-header"><span class="gn-bar"></span><span class="gn-key">fire_mastery</span><span class="gn-type">TECH</span></div>
+                          <div class="gn-body">
+                            <div class="dc-row"><div class="dc-label">cost</div><div class="dc-value"><span class="vc-num">1</span></div></div>
+                            <div class="dc-more">火焰专精</div>
+                          </div>
+                        </div>
+                        <div class="graph-node gn-relationship tree-leaf" style="left:58%;top:34px">
+                          <span class="node-port node-port-in"></span>
+                          <div class="gn-header"><span class="gn-bar"></span><span class="gn-key">explosive_fire</span><span class="gn-type">TECH</span></div>
+                          <div class="gn-body"><div class="dc-row"><div class="dc-label">cost</div><div class="dc-value"><span class="vc-num">2</span></div></div><div class="dc-more">爆裂火球</div></div>
+                        </div>
+                        <div class="graph-node gn-relationship tree-leaf" style="left:58%;top:184px">
+                          <span class="node-port node-port-in"></span>
+                          <div class="gn-header"><span class="gn-bar"></span><span class="gn-key">burning_field</span><span class="gn-type">TECH</span></div>
+                          <div class="gn-body"><div class="dc-row"><div class="dc-label">cost</div><div class="dc-value"><span class="vc-num">3</span></div></div><div class="dc-more">灼烧领域</div></div>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 05 -->
+            <li class="stage" data-sequence="7" data-accent="agent" data-reveal>
+              <div class="stage-marker"><span>07</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">ITERATE</p>
+                <h3 data-en="Diagnose continuously">随时诊断</h3>
+                <p data-en="Diagnose throughout editing and fix invalid configurations on the spot.">编辑过程随时诊断，错误配置当场修复。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="editor-chrome live-editor-demo cfd-stack">
+                  <div class="live-grid"><b>Key</b><b>power</b><b>tags</b><strong>fireball</strong><span class="live-error">-5 <i>1</i></span><span>[burn]</span><strong>frost_nova</strong><span>28</span><span class="live-warning">[ice, ice] <i>1</i></span></div>
+                  <div class="live-diag-head"><span>诊断</span><em>1</em><i>1</i></div>
+                  <div class="live-diag-row"><i>×</i><span>技能威力不能为负</span><code>CFD-CHECK-007</code><b>power</b></div>
+                  <div class="live-status"><span>items.xlsx</span><span>实时检查</span><b>● 已同步</b></div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 06 -->
+            <li class="stage" data-sequence="9" data-accent="brand" data-reveal>
+              <div class="stage-marker"><span>09</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">DELIVER</p>
+                <h3 data-en="Multiple languages and data formats">多语言，多数据类型交付</h3>
+                <p data-en="Export one configuration into different data formats and programming languages.">一份配置可以导出为各种不同的数据和编程语言。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="editor-chrome artifact-view">
+                  <div class="artifact-group"><header>数据文件</header><span><b>JSON</b><code>skills.json</code></span><span><b>MessagePack</b><code>skills.bytes</code></span></div>
+                  <div class="artifact-group"><header>代码文件</header><span><b>C#</b><code>Skill.cs</code></span><span><b>TypeScript</b><code>Skill.ts</code></span></div>
+                  <footer><i></i> Build complete · Published atomically</footer>
+                </div>
+              </div>
+            </li>
+
+            <!-- 07 -->
+            <li class="stage stage-wide" data-sequence="10" data-accent="engineer" data-reveal>
+              <div class="stage-marker"><span>10</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">EXTEND</p>
+                <h3 data-en="Customize how types are displayed">定制类型显示</h3>
+                <p data-en="Implement a more tailored display for specific data types.">为特定类型实现更加定制化的显示方式。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="plugin-demo-grid">
+                  <div class="editor-chrome extensions-demo">
+                    <header><span>插件</span><button type="button" aria-label="从文件安装插件">从文件安装</button></header>
+                    <article><i>⌘</i><div><b>化学方程式</b><span>为 ChemicalExpression 注册单元格渲染器</span><em>chemical-equation · v0.1.0</em></div><label><input type="checkbox" checked disabled /><span>已启用</span></label></article>
+                  </div>
+                  <div class="editor-chrome plugin-effect">
+                    <header><span>字段</span><b>reaction</b><em>ChemicalExpression</em></header>
+                    <div class="plugin-effect-row"><span>原始数据</span><code>2H2 + O2 -&gt; 2H2O</code></div>
+                    <div class="plugin-effect-row is-rendered"><span>插件显示</span><strong><i>2</i>H<sub>2</sub> + O<sub>2</sub> <b>→</b> <i>2</i>H<sub>2</sub>O</strong></div>
+                  </div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 08 -->
+            <li class="stage stage-wide" data-sequence="3" data-accent="planner" data-reveal>
+              <div class="stage-marker"><span>03</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">UNIFY</p>
+                <h3 data-en="Multiple sources, one configuration model">多种数据，统一配置</h3>
+                <p data-en="Bring different data sources into one consistent model. Use Excel for tabular data, CFD for complex nested structures, and CSV or JSON for version-friendly workflows.">将不同类型的数据统合成一致的模型，统一配置。用 Excel 表达同构数据，用专门设计的 CFD 语言配置复杂嵌套数据，用 CSV 与 JSON 文件配置，利于版本管理。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="card-stack code-stack source-stack" data-cardstack aria-label="同一条数据的四种配置文件">
+                  <div class="stack-tabs" role="tablist">
+                    <button type="button" data-view="excel" class="is-active">Excel</button>
+                    <button type="button" data-view="cfd">CFD</button>
+                    <button type="button" data-view="csv">CSV</button>
+                    <button type="button" data-view="json">JSON</button>
+                  </div>
+                  <div class="stack-deck">
+                    <article class="stack-card code-card spreadsheet-card" data-card="excel" data-offset="0">
+                      <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.xlsx · Skill</span><span class="win-lang">EXCEL</span></div><div class="sheet-grid"><b></b><b>A</b><b>B</b><b>C</b><b>D</b><b>E</b><i>1</i><strong>key</strong><strong>name</strong><strong>element</strong><strong>power</strong><strong>cooldown</strong><i>2</i><span>fireball</span><span>火球术</span><span>Fire</span><span>35</span><span>3.0</span><i>3</i><span>frost_nova</span><span>冰霜新星</span><span>Ice</span><span>28</span><span>5.0</span><i>4</i><span>heal</span><span>治疗术</span><span>Holy</span><span>20</span><span>2.5</span></div></div>
+                    </article>
+                    <article class="stack-card code-card" data-card="cfd" data-offset="1">
+                      <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.cfd</span><span class="win-lang">CFD</span></div><pre class="code-sample"><code><span class="tok-type">Skill</span> fireball {
+  name = <span class="tok-string">"火球术"</span>
+  element = <span class="tok-type">Fire</span>
+  power = <span class="tok-number">35</span>
+  cooldown = <span class="tok-number">3.0</span>
+}</code></pre></div>
+                    </article>
+                    <article class="stack-card code-card" data-card="csv" data-offset="2">
+                      <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.csv</span><span class="win-lang">CSV</span></div><pre class="code-sample"><code><span class="tok-key">key,name,element,power,cooldown</span>
+fireball,火球术,Fire,35,3.0
+frost_nova,冰霜新星,Ice,28,5.0
+heal,治疗术,Holy,20,2.5</code></pre></div>
+                    </article>
+                    <article class="stack-card code-card" data-card="json" data-offset="-1">
+                      <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.json</span><span class="win-lang">JSON</span></div><pre class="code-sample"><code>{
+  <span class="tok-string">"key"</span>: <span class="tok-string">"fireball"</span>,
+  <span class="tok-string">"name"</span>: <span class="tok-string">"火球术"</span>,
+  <span class="tok-string">"element"</span>: <span class="tok-string">"Fire"</span>,
+  <span class="tok-string">"power"</span>: <span class="tok-number">35</span>,
+  <span class="tok-string">"cooldown"</span>: <span class="tok-number">3.0</span>
+}</code></pre></div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+            </li>
+
+            <li class="stage" data-sequence="4" data-accent="brand" data-reveal>
+              <div class="stage-marker"><span>04</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">DIMENSION</p>
+                <h3 data-en="Dimensions and localization">维度和本地化</h3>
+                <p data-en="Dimensions give one field multiple variants. This makes it straightforward to localize any data while also handling platform-specific differences.">引入了维度的概念，让同一个字段有不同的变体。通过这个特性，我们可以简单地实现任意数据的本地化。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="editor-chrome dimension-demo">
+                  <header><b>维度配置</b><span>配置 · CFT · 具体数据</span></header>
+                  <div class="dimension-columns">
+                    <section><strong>coflow.yaml</strong><pre><code><span class="tok-key">dimensions</span>:
+  <span class="tok-key">platform</span>:
+    <span class="tok-key">variants</span>: [windows, android, ios]
+    <span class="tok-key">out_dir</span>: data/dimensions/platform
+  <span class="tok-key">language</span>:
+    <span class="tok-key">variants</span>: [zh, en]
+    <span class="tok-key">out_dir</span>: data/dimensions/language</code></pre></section>
+                    <section><strong>schema/skills.cft</strong><pre><code><span class="tok-anno">@dimension</span>(<span class="tok-string">"platform"</span>)
+asset_bundle: <span class="tok-type">string</span>;
+
+<span class="tok-anno">@localized</span>
+name: <span class="tok-type">string</span>;</code></pre></section>
+                    <section class="dimension-values"><strong>Skill · fireball</strong><p><i>windows</i><span>skills_pc.bundle</span></p><p><i>android</i><span>skills_mobile.bundle</span></p><p><i>zh</i><span>火球术</span></p><p><i>en</i><span>Fireball</span></p></section>
+                  </div>
+                </div>
+              </div>
+            </li>
+
+            <!-- 09 -->
+            <li class="stage" data-sequence="8" data-accent="agent" data-reveal>
+              <div class="stage-marker"><span>08</span></div>
+              <div class="stage-text">
+                <p class="stage-tag">AI ITERATE</p>
+                <h3 data-en="AI in the loop, rapid iteration">AI 参与，高速迭代</h3>
+                <p data-en="A complete CLI and detailed skills combine precise CFT types, a unified model and rich diagnostics so AI can change data quickly and correctly.">提供一套完备的 CLI 工具和一组详细的 Skill，结合 CFT 定义的准确数据类型、统一数据模型对数据源差异的弥合，以及丰富详细的诊断信息，保证 AI 改得快、改得对。</p>
+              </div>
+              <div class="stage-demo">
+                <div class="editor-chrome cli-demo" aria-label="常用 Coflow 命令">
+                  <div><span>$</span><code>coflow skill install -g</code><em>安装 Skill</em></div>
+                  <div><span>$</span><code>coflow schema inspect Skill</code><em>理解类型</em></div>
+                  <div><span>$</span><code>coflow data get Skill.fireball</code><em>读取数据</em></div>
+                  <div><span>$</span><code>coflow data patch --patch change.json</code><em>准确修改</em></div>
+                  <div><span>$</span><code>coflow check .</code><em>验证结果</em></div>
+                </div>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────  ROLES  ───────────────────────── -->
+      <section class="roles" id="roles">
+        <div class="wrap">
+          <header class="section-head" data-reveal>
+            <h2 data-en="Each role works naturally in the same flow">各司其职，自然流动</h2>
+          </header>
+          <figure class="flow workflow-overview" id="flow" data-reveal aria-label="程序、策划、AI 汇入 Coflow，再交付到 Runtime">
+            <div class="flow-stage"><div class="flow-canvas">
+              <svg class="flow-lines" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true"><path class="lane lane-e" d="M198 70 C400 70 400 150 500 150" /><path class="lane lane-p" d="M198 150 H500" /><path class="lane lane-a" d="M198 230 C400 230 400 150 500 150" /><path class="lane lane-o" d="M500 150 H818" /></svg>
+              <div class="flow-node role-engineer"><i></i><div><b data-en="Programmers">程序</b><small>CFT · check</small></div></div>
+              <div class="flow-node role-planner"><i></i><div><b data-en="Designers">策划</b><small>Excel · CSV · CFD</small></div></div>
+              <div class="flow-node role-agent"><i></i><div><b>AI</b><small>CLI · Skills</small></div></div>
+              <div class="flow-core"><b>Coflow</b></div>
+              <div class="flow-output"><div><b>Runtime</b><small>JSON · MsgPack · C#</small></div><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg></div>
+            </div></div>
+          </figure>
+          <div class="role-cards" data-reveal>
+            <article class="role-card role-engineer">
+              <span class="role-bar"></span>
+              <h3 data-en="Programmers">程序</h3>
+              <p class="role-entry">CFT · check</p>
+              <p data-en="Define data precisely with CFT and express business constraints with check, keeping configuration accurate and reliable.">用 CFT 准确定义数据，用 <code>check</code> 描述业务约束，让配置准确可信。</p>
+            </article>
+            <article class="role-card role-planner">
+              <span class="role-bar"></span>
+              <h3 data-en="Designers">策划</h3>
+              <p class="role-entry">Excel · CSV · CFD</p>
+              <p data-en="Keep familiar file formats or use the purpose-built editor. Changes are validated immediately and errors point to exact cells.">沿用熟悉的文件格式，或用专门设计的编辑器编写配置；改动实时校验，错误精确定位到单元格。</p>
+            </article>
+            <article class="role-card role-agent">
+              <span class="role-bar"></span>
+              <h3>AI</h3>
+              <p class="role-entry">CLI · Skills</p>
+              <p data-en="Give AI precise data definitions and diagnostics so it can iterate with confidence.">为 AI 提供准确的数据定义和精确的诊断信息，让 AI 自我迭代。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────  CTA  ───────────────────────── -->
+      <section class="cta">
+        <div class="wrap cta-inner" data-reveal>
+          <h2 data-en="Put your configuration in motion">让配置流动起来</h2>
+          <p data-en="Install Coflow and turn types, validation and delivery into one reliable workflow.">安装 Coflow，把类型、校验与交付整理成一条可信的流水线。</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="https://puring103.github.io/coflow/docs/guide/install.html" target="_blank" rel="noopener">
+              <span data-en="Get started">快速开始</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
+            </a>
+            <a class="btn btn-secondary" href="https://github.com/Puring103/coflow" target="_blank" rel="noopener">
+              <span data-en="View GitHub">查看 GitHub</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <a class="brand footer-brand" href="#top" aria-label="返回顶部">
+          <img src="assets/coflow-mark.svg" alt="" />
+          <span>Coflow</span>
+        </a>
+        <p data-en="An efficient, frictionless data configuration workflow">高效无摩擦的数据配置工作流</p>
+        <nav class="footer-links" aria-label="页脚链接">
+          <a href="https://github.com/Puring103/coflow" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener">Docs</a>
+          <a href="https://github.com/Puring103/coflow/releases/latest" target="_blank" rel="noopener">Release</a>
+          <span>Apache-2.0</span>
+        </nav>
+      </div>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

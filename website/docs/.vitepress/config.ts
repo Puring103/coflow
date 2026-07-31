@@ -25,7 +25,7 @@ export default withMermaid(defineConfig({
   },
   lastUpdated: true,
   themeConfig: {
-    logo: '/logo.svg',
+    logo: { src: '/logo.svg', alt: 'Coflow' },
     search: {
       provider: 'local'
     },
