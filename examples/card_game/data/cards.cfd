@@ -119,13 +119,13 @@ CardText {
 
 DamageEffect {
   eff_fireball_damage {
-    damage: { lo: 6, hi: 6 },
+    damage: { lo: 52, hi: 76 },
     target: Single,
     pierce_divine: true,
   }
 
   eff_execute_damage {
-    damage: { lo: 999, hi: 999 },
+    damage: { lo: 1105, hi: 309 },
     target: Random,
     pierce_divine: true,
   }
@@ -157,12 +157,12 @@ HealEffect {
 DrawEffect {
   eff_arcane_intellect_draw {
     count: 2,
-    filter_cost: null,
+    filter_cost: 0,
   }
 
   eff_divine_favor_draw {
     count: 3,
-    filter_cost: null,
+    filter_cost: 0,
   }
 }
 

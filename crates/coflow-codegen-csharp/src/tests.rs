@@ -62,31 +62,46 @@ fn require_not_contains(contents: &str, needle: &str) -> Result<(), String> {
 }
 
 #[test]
-fn emits_display_metadata_as_csharp_documentation_and_description_attributes() -> Result<(), String>
-{
+fn emits_display_metadata_only_as_csharp_documentation() -> Result<(), String> {
     let schema = compile_schema(
         r#"
         @label("状态")
-        enum Status { @label("启用") Enabled = 1, }
+        @description("状态说明。")
+        enum Status {
+            @label("启用")
+            @description("启用说明。")
+            Enabled = 1,
+            @label("禁用") Disabled = 2,
+        }
+        @label("物品")
         @description("物品说明。")
-        type Item { @label("售价") price: int; }
+        type Item {
+            @label("售价")
+            @description("售价说明。")
+            price: int;
+        }
     "#,
     )?;
     let files = generate_csharp(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
     let enum_file = generated_file(&files, "Status.cs")?;
-    require_contains(enum_file, "/// <summary>状态</summary>")?;
-    require_contains(enum_file, "[Description(\"启用\")]")?;
+    require_contains(enum_file, "/// <summary>状态: 状态说明。</summary>")?;
+    require_contains(enum_file, "/// <summary>启用: 启用说明。</summary>")?;
+    require_contains(enum_file, "/// <summary>禁用</summary>")?;
+    require_not_contains(enum_file, "System.ComponentModel")?;
+    require_not_contains(enum_file, "[Description(")?;
     let type_file = generated_file(&files, "Item.cs")?;
-    require_contains(type_file, "/// <summary>物品说明。</summary>")?;
-    require_contains(type_file, "[Description(\"售价\")]")
+    require_contains(type_file, "/// <summary>物品: 物品说明。</summary>")?;
+    require_contains(type_file, "/// <summary>售价: 售价说明。</summary>")?;
+    require_not_contains(type_file, "System.ComponentModel")?;
+    require_not_contains(type_file, "[Description(")
 }
 
 #[test]
 fn escapes_display_metadata_for_csharp_source_and_xml_documentation() -> Result<(), String> {
     let schema = compile_schema(
         r#"
-        @label("A \"quoted\" \\ label")
+        @label("A <label> & data")
         @description("uses <tag> & data")
         type Item {}
     "#,
@@ -96,9 +111,8 @@ fn escapes_display_metadata_for_csharp_source_and_xml_documentation() -> Result<
     let type_file = generated_file(&files, "Item.cs")?;
     require_contains(
         type_file,
-        "/// <summary>uses &lt;tag&gt; &amp; data</summary>",
-    )?;
-    require_contains(type_file, "[Description(\"A \\\"quoted\\\" \\\\ label\")]")
+        "/// <summary>A &lt;label&gt; &amp; data: uses &lt;tag&gt; &amp; data</summary>",
+    )
 }
 
 fn generated_output(files: &[GeneratedFile]) -> String {

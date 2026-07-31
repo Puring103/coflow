@@ -32,7 +32,6 @@ pub struct CsharpEnum {
     pub name: String,
     pub is_flags: bool,
     pub summary: Option<String>,
-    pub label: Option<String>,
     pub obsolete: bool,
     pub variants: Vec<CsharpEnumVariant>,
 }
@@ -42,7 +41,6 @@ pub struct CsharpEnumVariant {
     pub name: String,
     pub value: i64,
     pub summary: Option<String>,
-    pub label: Option<String>,
     pub obsolete: bool,
 }
 
@@ -52,7 +50,6 @@ pub struct CsharpType {
     pub declaration: String,
     pub constructor_visibility: String,
     pub summary: Option<String>,
-    pub label: Option<String>,
     pub obsolete: bool,
     pub properties: Vec<CsharpProperty>,
     pub constructor_parameters: Vec<CsharpParameter>,
@@ -70,7 +67,6 @@ pub struct CsharpProperty {
     pub type_name: String,
     pub backing_field: Option<String>,
     pub summary: Option<String>,
-    pub label: Option<String>,
     pub obsolete: bool,
 }
 

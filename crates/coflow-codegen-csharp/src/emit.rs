@@ -26,7 +26,6 @@ pub fn build_csharp_enum(schema_enum: &CftEnum) -> CsharpEnum {
         name: csharp_public_type_name(&schema_enum.name),
         is_flags: schema_enum.is_flag,
         summary: csharp_summary(schema_enum.display.as_ref()),
-        label: csharp_label(schema_enum.display.as_ref()),
         obsolete: false,
         variants: schema_enum
             .variants
@@ -35,7 +34,6 @@ pub fn build_csharp_enum(schema_enum: &CftEnum) -> CsharpEnum {
                 name: csharp_public_member_name(&variant.name),
                 value: variant.value,
                 summary: csharp_summary(variant.display.as_ref()),
-                label: csharp_label(variant.display.as_ref()),
                 obsolete: false,
             })
             .collect(),
@@ -120,7 +118,6 @@ pub fn build_csharp_type(
             "public".to_string()
         },
         summary: csharp_summary(schema_type.display.as_ref()),
-        label: csharp_label(schema_type.display.as_ref()),
         obsolete: false,
         properties,
         constructor_parameters,
@@ -148,7 +145,6 @@ pub fn build_csharp_dimension_type(
         type_name: "string".to_string(),
         backing_field: None,
         summary: None,
-        label: None,
         obsolete: false,
     }];
     let mut assignments = vec![CsharpConstructorAssignment {
@@ -179,7 +175,6 @@ pub fn build_csharp_dimension_type(
         declaration: format!("public sealed partial class {name} : IEquatable<{name}>"),
         constructor_visibility: "public".to_string(),
         summary: None,
-        label: None,
         obsolete: false,
         properties,
         constructor_parameters,
@@ -219,7 +214,6 @@ fn add_id_constructor_member(
         type_name: csharp_type(&key_ty, view),
         backing_field: None,
         summary: None,
-        label: None,
         obsolete: false,
     });
     assignments.push(CsharpConstructorAssignment {
@@ -245,7 +239,6 @@ fn add_field_constructor_member(
         type_name: property_type,
         backing_field: backing_field.clone(),
         summary: csharp_summary(field.display.as_ref()),
-        label: csharp_label(field.display.as_ref()),
         obsolete: false,
     });
     assignments.push(CsharpConstructorAssignment {
@@ -257,22 +250,16 @@ fn add_field_constructor_member(
 
 fn csharp_summary(display: Option<&coflow_cft::CftDisplayMetadata>) -> Option<String> {
     display
-        .and_then(coflow_cft::CftDisplayMetadata::summary)
+        .and_then(|display| match (&display.label, &display.description) {
+            (Some(label), Some(description)) => Some(format!("{label}: {description}")),
+            (Some(label), None) => Some(label.clone()),
+            (None, Some(description)) => Some(description.clone()),
+            (None, None) => None,
+        })
         .map(|text| {
             text.replace('&', "&amp;")
                 .replace('<', "&lt;")
                 .replace('>', "&gt;")
-        })
-}
-
-fn csharp_label(display: Option<&coflow_cft::CftDisplayMetadata>) -> Option<String> {
-    display
-        .and_then(|display| display.label.as_deref())
-        .map(|text| {
-            text.replace('\\', "\\\\")
-                .replace('"', "\\\"")
-                .replace('\r', "\\r")
-                .replace('\n', "\\n")
         })
 }
 

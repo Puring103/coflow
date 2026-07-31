@@ -291,7 +291,7 @@ type Item {
 | `@localized` / `@localized("bucket")` | field | dimensions / check / codegen | 字段值按语言维度变化 |
 | `@dimension("name")` | field | dimensions / check / codegen | 字段值按指定维度变化 |
 | `@singleton` | type | data model / codegen | 数据集中该 type 只有一条 record |
-| `@label("text")` | type / enum / field / enum variant | editor / codegen | 面向人的展示名称；不改变 CFT 名称、数据键或生成代码标识符 |
+| `@label("text")` | type / enum / field / enum variant | editor / codegen | 面向人的展示名称；生成 C# XML 文档注释，不改变名称或标识符 |
 | `@description("text")` | type / enum / field / enum variant | editor / codegen | 详细说明；生成 C# XML 文档注释 |
 
 示例：
@@ -308,7 +308,7 @@ enum ItemId {}
 
 ### `@label` 与 `@description`
 
-`@label` 为编辑器提供显示别名，并生成 C# 的 `DescriptionAttribute`；`@description` 作为编辑器可消费的说明元数据，并生成 C# 的 XML `<summary>`。若只写 `@label`，它也会作为 C# 摘要。两者均不改变 schema 的稳定名称、CFD 中存储的字段/枚举变体名称，或 C# 的类型和成员标识符。
+`@label` 为编辑器提供显示别名，`@description` 提供更详细的说明。两者都会进入 C# XML `<summary>`，不生成运行时 attribute；同时存在时格式为 `label: description`，只写其中一个时直接使用对应文本。两者均不改变 schema 的稳定名称、CFD 中存储的字段/枚举变体名称，或 C# 的类型和成员标识符。
 
 ```cft
 @label("物品稀有度")

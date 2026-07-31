@@ -168,6 +168,9 @@ object 字段会在加载时直接解析为最终对象，不生成 `xxxKey` 或
 | `@idAsEnum(EnumName)` | record key 使用强类型 enum |
 | `@singleton` | 入口类直接暴露 singleton 属性 |
 | `@localized` | 字段包装为 `Localized<T>` |
+| `@label` / `@description` | 生成 XML `<summary>` 文档注释；两者同时存在时格式为 `label: description` |
+
+显示元数据只生成文档注释，不生成 `DescriptionAttribute` 或引入 `System.ComponentModel`。
 
 ## `@idAsEnum`
 
