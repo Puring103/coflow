@@ -8,7 +8,7 @@ const host = ref<HTMLElement | null>(null)
 const bodyMatch = prototypeDocument.match(/<body>([\s\S]*?)<script src="app\.js"><\/script>\s*<\/body>/)
 
 const prototypeBody = (bodyMatch?.[1] ?? '')
-  .replaceAll('assets/coflow-mark.svg', withBase('/logo.svg'))
+  .replaceAll('assets/coflow-mark.svg', withBase('/logo-v15.svg'))
   .replaceAll('https://puring103.github.io/coflow/docs/guide/install.html', withBase('/docs/guide/install'))
   .replaceAll('https://puring103.github.io/coflow/docs/', withBase('/docs/'))
 

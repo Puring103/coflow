@@ -164,7 +164,7 @@
             </li>
 
             <!-- 02 —— check 约束能力：多卡叠放 -->
-            <li class="stage stage-wide" data-sequence="2" data-accent="brand" data-reveal>
+            <li class="stage stage-wide" data-sequence="2" data-accent="engineer" data-reveal>
               <div class="stage-marker"><span>02</span></div>
               <div class="stage-text">
                 <p class="stage-tag">CHECK</p>
@@ -376,7 +376,7 @@
             </li>
 
             <!-- 05 -->
-            <li class="stage" data-sequence="7" data-accent="agent" data-reveal>
+            <li class="stage" data-sequence="7" data-accent="planner" data-reveal>
               <div class="stage-marker"><span>07</span></div>
               <div class="stage-text">
                 <p class="stage-tag">ITERATE</p>
@@ -540,7 +540,17 @@ name: <span class="tok-type">string</span>;</code></pre></section>
           </header>
           <figure class="flow workflow-overview" id="flow" data-reveal aria-label="程序、策划、AI 汇入 Coflow，再交付到 Runtime">
             <div class="flow-stage"><div class="flow-canvas">
-              <svg class="flow-lines" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true"><path class="lane lane-e" d="M198 70 C400 70 400 150 500 150" /><path class="lane lane-p" d="M198 150 H500" /><path class="lane lane-a" d="M198 230 C400 230 400 150 500 150" /><path class="lane lane-o" d="M500 150 H818" /></svg>
+              <svg class="flow-lines" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
+                <defs><mask id="joint-branch-gap"><rect width="1000" height="300" fill="#fff" /><rect y="138" width="1000" height="4" fill="#000" /><rect y="158" width="1000" height="4" fill="#000" /></mask></defs>
+                <g mask="url(#joint-branch-gap)">
+                  <path class="lane lane-e" d="M198 70 C380 70 410 150 610 150" />
+                  <path class="lane lane-a" d="M198 230 C380 230 410 150 610 150" />
+                  <path class="lane-flow lane-flow-e" d="M198 70 C380 70 410 150 610 150" />
+                  <path class="lane-flow lane-flow-a" d="M198 230 C380 230 410 150 610 150" />
+                </g>
+                <path class="lane lane-p" d="M198 150 H818" />
+                <path class="lane-flow lane-flow-p" d="M198 150 H818" />
+              </svg>
               <div class="flow-node role-engineer"><i></i><div><b data-en="Programmers">程序</b><small>CFT · check</small></div></div>
               <div class="flow-node role-planner"><i></i><div><b data-en="Designers">策划</b><small>Excel · CSV · CFD</small></div></div>
               <div class="flow-node role-agent"><i></i><div><b>AI</b><small>CLI · Skills</small></div></div>
