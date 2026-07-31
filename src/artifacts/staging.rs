@@ -3,7 +3,7 @@ use super::fault::{self, Point};
 use coflow_api::{ArtifactContent, ArtifactSet, DiagnosticSet};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -178,6 +178,16 @@ impl StagedArtifactDir {
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.staging_dir
+    }
+
+    pub(super) fn requested_dir(&self) -> &Path {
+        &self.requested_dir
+    }
+
+    pub(super) fn requested_output_is_unchanged(&self) -> bool {
+        self.requested_path().is_ok_and(|staging| {
+            directory_trees_equal(staging, &self.requested_dir).unwrap_or(false)
+        })
     }
 
     fn requested_path(&self) -> Result<&Path, DiagnosticSet> {
@@ -415,4 +425,62 @@ fn unique_requested_path(target: &Path, kind: &str) -> PathBuf {
         ".{name}.coflow-{kind}-{}-{suffix}",
         std::process::id()
     ))
+}
+
+fn directory_trees_equal(left: &Path, right: &Path) -> std::io::Result<bool> {
+    if !left.is_dir() || !right.is_dir() {
+        return Ok(false);
+    }
+
+    let mut left_entries = fs::read_dir(left)?.collect::<Result<Vec<_>, _>>()?;
+    let mut right_entries = fs::read_dir(right)?.collect::<Result<Vec<_>, _>>()?;
+    left_entries.sort_by_key(fs::DirEntry::file_name);
+    right_entries.sort_by_key(fs::DirEntry::file_name);
+
+    if left_entries.len() != right_entries.len() {
+        return Ok(false);
+    }
+
+    for (left_entry, right_entry) in left_entries.iter().zip(&right_entries) {
+        if left_entry.file_name() != right_entry.file_name() {
+            return Ok(false);
+        }
+
+        let left_type = left_entry.file_type()?;
+        let right_type = right_entry.file_type()?;
+        if left_type.is_dir() && right_type.is_dir() {
+            if !directory_trees_equal(&left_entry.path(), &right_entry.path())? {
+                return Ok(false);
+            }
+        } else if left_type.is_file() && right_type.is_file() {
+            if !files_equal(&left_entry.path(), &right_entry.path())? {
+                return Ok(false);
+            }
+        } else {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+fn files_equal(left: &Path, right: &Path) -> std::io::Result<bool> {
+    if fs::metadata(left)?.len() != fs::metadata(right)?.len() {
+        return Ok(false);
+    }
+
+    let mut left = BufReader::new(fs::File::open(left)?);
+    let mut right = BufReader::new(fs::File::open(right)?);
+    let mut left_buffer = [0; 64 * 1024];
+    let mut right_buffer = [0; 64 * 1024];
+    loop {
+        let left_read = left.read(&mut left_buffer)?;
+        let right_read = right.read(&mut right_buffer)?;
+        if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
+            return Ok(false);
+        }
+        if left_read == 0 {
+            return Ok(true);
+        }
+    }
 }
