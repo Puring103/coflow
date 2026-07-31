@@ -2412,7 +2412,7 @@ export default function App() {
       <div className="main-layout">
         <nav className="activity-bar" role="toolbar" aria-label="活动栏">
           <button
-            className={`activity-btn${activePane === 'files' ? ' active' : ''}`}
+            className={`activity-btn activity-planner${activePane === 'files' ? ' active' : ''}`}
             title="文件"
             aria-label="文件"
             aria-pressed={activePane === 'files'}
@@ -2421,7 +2421,7 @@ export default function App() {
             <Icon name="folder" size={20} />
           </button>
           <button
-            className={`activity-btn${activePane === 'search' ? ' active' : ''}`}
+            className={`activity-btn activity-brand${activePane === 'search' ? ' active' : ''}`}
             title="搜索记录 (Ctrl+F)"
             aria-label="搜索"
             aria-pressed={activePane === 'search'}
@@ -2430,7 +2430,7 @@ export default function App() {
             <Icon name="search" size={20} />
           </button>
           <button
-            className={`activity-btn${activePane === 'extensions' ? ' active' : ''}`}
+            className={`activity-btn activity-engineer${activePane === 'extensions' ? ' active' : ''}`}
             title="扩展"
             aria-label="扩展"
             aria-pressed={activePane === 'extensions'}
@@ -2439,7 +2439,7 @@ export default function App() {
             <Icon name="extensions" size={20} />
           </button>
           <button
-            className={`activity-btn${activePane === 'ai' ? ' active' : ''}`}
+            className={`activity-btn activity-agent${activePane === 'ai' ? ' active' : ''}`}
             title="AI 助手"
             aria-label="AI 助手"
             aria-pressed={activePane === 'ai'}
