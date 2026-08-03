@@ -40,9 +40,12 @@ publisher warning.
 
 macOS bundles are codesigned with a Developer ID Application certificate,
 notarized through Apple's notary service, and stapled so Gatekeeper accepts a
-freshly downloaded DMG. The workflow reads the certificate, its export
-password, the App Store Connect API key, and the identity string from
-repository secrets. Provisioning steps live in
+freshly downloaded DMG. The standalone CLI archives are codesigned with the
+Hardened Runtime and notarized with the same certificate, but a bare Mach-O
+binary cannot carry a stapled ticket, so Gatekeeper verifies the CLI online on
+first run (see `packaging/macos/sign-notarize-cli.sh`). The workflow reads the
+certificate, its export password, the App Store Connect API key, and the
+identity string from repository secrets. Provisioning steps live in
 [releasing-macos-signing.md](./releasing-macos-signing.md).
 
 ## Published assets
@@ -75,6 +78,15 @@ macOS bundles and CLI archives have no installer hook. After moving
 `Coflow Tools.app` (from the DMG) to `/Applications` or extracting the CLI
 tarball, users run `coflow skill install -g` themselves. The DMG is signed and
 notarized, so Gatekeeper accepts a first-time launch without a warning.
+
+The editor bundle (including its embedded CLI sidecar) auto-updates through the
+Tauri updater. The standalone macOS CLI does not, so it ships `coflow
+self-update`: it queries the GitHub `releases/latest` API, matches the
+`coflow-cli-macos-<arch>` archive for the current platform, and replaces the
+running binary in place. Use `coflow self-update --check` to only report
+whether a newer release exists. The Windows CLI ships as an installer rather
+than a plain archive, so it is updated by re-running that installer;
+`self-update` reports the platform as unsupported there.
 
 Release tags must match the root Cargo package version exactly (`vX.Y.Z`). Run
 the full release gate from `AGENTS.md` before tagging.
