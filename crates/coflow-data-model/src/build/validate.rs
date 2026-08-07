@@ -287,6 +287,25 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 )?;
                 Some(ValueDraft::Value(value))
             }
+            (
+                CftValueType::Enum(expected),
+                LoadedValueDraft::EnumValue { enum_name, value },
+            ) => {
+                let enum_value = self.resolve_enum_int_value(
+                    enum_name,
+                    *value,
+                    record,
+                    path.clone(),
+                )?;
+                let value = CfdValue::Enum(enum_value);
+                self.validate_materialized_value(
+                    &CftValueType::Enum(expected.clone()),
+                    &value,
+                    record,
+                    path,
+                )?;
+                Some(ValueDraft::Value(value))
+            }
             (CftValueType::RecordRef(expected), LoadedValueDraft::RecordRef(key)) => {
                 Some(ValueDraft::PendingRef {
                     expected_type: expected.clone(),
@@ -443,6 +462,46 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 CfdDiagnostic::error(
                     CfdErrorCode::InvalidEnumVariant,
                     format!("unknown enum variant `{enum_name}.{variant}`"),
+                )
+                .with_primary(record, path),
+            );
+            return None;
+        };
+        Some(value.into())
+    }
+
+    pub(super) fn resolve_enum_key_value(
+        &mut self,
+        enum_name: &str,
+        variant: &str,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<CfdEnumValue> {
+        let Some(value) = self.schema.enum_key_value(enum_name, variant) else {
+            self.push(
+                CfdDiagnostic::error(
+                    CfdErrorCode::InvalidEnumVariant,
+                    format!("unknown enum variant `{enum_name}.{variant}`"),
+                )
+                .with_primary(record, path),
+            );
+            return None;
+        };
+        Some(value.into())
+    }
+
+    fn resolve_enum_int_value(
+        &mut self,
+        enum_name: &str,
+        value: i64,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<CfdEnumValue> {
+        let Some(value) = self.schema.enum_value_from_int(enum_name, value) else {
+            self.push(
+                CfdDiagnostic::error(
+                    CfdErrorCode::InvalidEnumVariant,
+                    format!("unknown enum `{enum_name}`"),
                 )
                 .with_primary(record, path),
             );
@@ -619,7 +678,7 @@ fn input_value_kind(value: &LoadedValueDraft) -> &'static str {
         LoadedValueDraft::Int(_) => "int",
         LoadedValueDraft::Float(_) => "float",
         LoadedValueDraft::String(_) => "string",
-        LoadedValueDraft::EnumVariant { .. } => "enum",
+        LoadedValueDraft::EnumVariant { .. } | LoadedValueDraft::EnumValue { .. } => "enum",
         LoadedValueDraft::Object { .. } => "object",
         LoadedValueDraft::ObjectSpread { .. } => "object spread",
         LoadedValueDraft::RecordRef(_) => "record ref",

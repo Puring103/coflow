@@ -22,6 +22,8 @@ interface Props {
   value: string
   options: readonly SearchableOption[]
   onCommit: (value: string) => void
+  selectedValues?: readonly string[]
+  onToggle?: (value: string) => void
   onExit?: () => void
   className?: string
   style?: CSSProperties
@@ -66,6 +68,8 @@ export function SearchableSelect({
   value,
   options,
   onCommit,
+  selectedValues,
+  onToggle,
   onExit,
   className,
   style,
@@ -77,6 +81,7 @@ export function SearchableSelect({
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const exitNotifiedRef = useRef(false)
+  const menuPointerDownRef = useRef(false)
   const listboxId = useId()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -138,11 +143,24 @@ export function SearchableSelect({
     if (notify) notifyExit()
   }, [notifyExit])
 
+  const selectedSet = useMemo(() => new Set(selectedValues), [selectedValues])
+
   const chooseOption = useCallback((option: SearchableOption) => {
+    if (onToggle) {
+      // A portaled option can still blur the trigger in some browser event
+      // orders. Multi-select interactions must leave the menu available for
+      // the next toggle.
+      exitNotifiedRef.current = false
+      setOpen(true)
+      onToggle(option.value)
+      setQuery('')
+      inputRef.current?.focus()
+      return
+    }
     onCommit(option.value)
     closeMenu(true)
     inputRef.current?.blur()
-  }, [closeMenu, onCommit])
+  }, [closeMenu, onCommit, onToggle])
 
   useLayoutEffect(() => {
     if (open) updateMenuPosition()
@@ -218,6 +236,7 @@ export function SearchableSelect({
       id={listboxId}
       className="searchable-select-menu"
       role="listbox"
+      aria-multiselectable={onToggle ? true : undefined}
       aria-label={ariaLabel ?? title ?? placeholder ?? '选项'}
       style={{
         left: menuPosition.left,
@@ -227,15 +246,19 @@ export function SearchableSelect({
         transform: menuPosition.opensUpward ? 'translateY(-100%)' : undefined,
       }}
       onMouseDown={event => {
+        menuPointerDownRef.current = true
         event.preventDefault()
         event.stopPropagation()
       }}
-      onClick={event => event.stopPropagation()}
+      onClick={event => {
+        menuPointerDownRef.current = false
+        event.stopPropagation()
+      }}
     >
       {filteredOptions.length === 0 ? (
         <div className="searchable-select-empty">无匹配项</div>
       ) : filteredOptions.map((option, index) => {
-        const selected = option.value === value
+        const selected = onToggle ? selectedSet.has(option.value) : option.value === value
         const active = index === activeIndex
         return (
           <button
@@ -246,12 +269,25 @@ export function SearchableSelect({
             role="option"
             aria-selected={selected}
             title={option.description ?? option.label ?? option.value}
-            onMouseDown={event => event.preventDefault()}
+            onMouseDown={event => {
+              menuPointerDownRef.current = true
+              event.preventDefault()
+            }}
             onMouseEnter={() => setActiveIndex(index)}
             onClick={() => chooseOption(option)}
           >
             <span>{option.label ?? option.value}</span>
-            {selected && <span className="searchable-select-check" aria-hidden="true">✓</span>}
+            {onToggle && (
+              <input
+                className="searchable-select-checkbox"
+                type="checkbox"
+                checked={selected}
+                readOnly
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+            )}
+            {!onToggle && selected && <span className="searchable-select-check" aria-hidden="true">✓</span>}
           </button>
         )
       })}
@@ -305,6 +341,7 @@ export function SearchableSelect({
         }}
         onKeyDown={handleKeyDown}
         onBlur={() => {
+          if (menuPointerDownRef.current && onToggle) return
           if (open) closeMenu(true)
         }}
       />
