@@ -305,6 +305,7 @@ fn collect_ref_key_spans_in_value(value: &AstValue, old_key: &str, out: &mut Vec
         }
         AstValue::Block(_)
         | AstValue::Scalar(_, _)
+        | AstValue::BitExpr(_)
         | AstValue::QuotedString(_, _)
         | AstValue::Null(_) => {}
     }

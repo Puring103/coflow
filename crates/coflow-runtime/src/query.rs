@@ -295,7 +295,7 @@ impl<'a> ProjectQueries<'a> {
     pub fn enum_variant_options(
         self,
         enum_name: &str,
-    ) -> Vec<(String, Option<String>, Option<String>)> {
+    ) -> Vec<(String, i64, Option<String>, Option<String>)> {
         self.session
             .schema()
             .resolve_enum(enum_name)
@@ -307,6 +307,7 @@ impl<'a> ProjectQueries<'a> {
                         let display = variant.display.as_ref();
                         (
                             variant.name.to_string(),
+                            variant.value,
                             display.and_then(|meta| meta.label.clone()),
                             display.and_then(|meta| meta.description.clone()),
                         )
@@ -488,6 +489,10 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         CftValueType::Enum(name) => Some(name.to_string()),
         _ => None,
     };
+    let enum_is_flag = enum_type
+        .as_deref()
+        .and_then(|name| schema.resolve_enum(name))
+        .is_some_and(|schema_enum| schema_enum.is_flag);
     let polymorphic_types = match non_nullable {
         CftValueType::Object(name) => Some(name.as_str()),
         _ => None,
@@ -530,6 +535,7 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         description: None,
         ref_target_type,
         enum_type,
+        enum_is_flag,
         nullable: matches!(ty, CftValueType::Nullable(_)),
         polymorphic_types,
         collection_item,

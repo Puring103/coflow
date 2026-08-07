@@ -80,9 +80,15 @@ impl Validator<'_, '_> {
                 variant,
                 value,
             } if matches!(ty.non_nullable(), CftValueType::Enum(name) if name == enum_name) => {
+                let variant = (!self
+                    .schema
+                    .cft()
+                    .resolve_enum(enum_name)
+                    .is_some_and(|schema_enum| schema_enum.is_flag))
+                .then(|| variant.clone());
                 CfdValue::Enum(CfdEnumValue {
                     enum_name: enum_name.clone(),
-                    variant: Some(variant.clone()),
+                    variant,
                     value: *value,
                 })
             }

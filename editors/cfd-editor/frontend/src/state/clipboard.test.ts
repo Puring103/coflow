@@ -12,6 +12,7 @@ const annotation = (overrides: Partial<FieldAnnotation> = {}): FieldAnnotation =
   declared_type: 'string',
   ref_target_type: null,
   enum_type: null,
+  enum_is_flag: false,
   nullable: false,
   read_only: false,
   item_annotation: null,

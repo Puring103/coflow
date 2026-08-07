@@ -447,7 +447,32 @@ fn validate_enum(
             ),
         ));
     }
-    let Some(variant) = value.variant.as_deref() else {
+    let Some(schema_enum) = schema.resolve_enum(expected_enum) else {
+        return Err(CfdValueSemanticError::new(
+            CfdValueSemanticErrorKind::InvalidEnumVariant,
+            path,
+            format!("unknown enum `{expected_enum}`"),
+        ));
+    };
+    if let Some(variant) = value.variant.as_deref() {
+        let Some(expected_value) = schema.enum_variant_value(expected_enum, variant) else {
+            return Err(CfdValueSemanticError::new(
+                CfdValueSemanticErrorKind::InvalidEnumVariant,
+                path,
+                format!("unknown enum variant `{expected_enum}.{variant}`"),
+            ));
+        };
+        if value.value != expected_value {
+            return Err(CfdValueSemanticError::new(
+                CfdValueSemanticErrorKind::InvalidEnumVariant,
+                path,
+                format!(
+                    "enum value `{expected_enum}.{variant}` has value {}, expected {expected_value}",
+                    value.value
+                ),
+            ));
+        }
+    } else if !schema_enum.is_flag {
         return Err(CfdValueSemanticError::new(
             CfdValueSemanticErrorKind::InvalidEnumVariant,
             path,
@@ -456,23 +481,22 @@ fn validate_enum(
                 value.value
             ),
         ));
-    };
-    let Some(expected_value) = schema.enum_variant_value(expected_enum, variant) else {
-        return Err(CfdValueSemanticError::new(
-            CfdValueSemanticErrorKind::InvalidEnumVariant,
-            path,
-            format!("unknown enum variant `{expected_enum}.{variant}`"),
-        ));
-    };
-    if value.value != expected_value {
-        return Err(CfdValueSemanticError::new(
-            CfdValueSemanticErrorKind::InvalidEnumVariant,
-            path,
-            format!(
-                "enum value `{expected_enum}.{variant}` has value {}, expected {expected_value}",
-                value.value
-            ),
-        ));
+    }
+    if schema_enum.is_flag {
+        let declared_mask = schema_enum
+            .variants
+            .iter()
+            .fold(0_i64, |mask, variant| mask | variant.value);
+        if value.value < 0 || value.value & !declared_mask != 0 {
+            return Err(CfdValueSemanticError::new(
+                CfdValueSemanticErrorKind::InvalidEnumVariant,
+                path,
+                format!(
+                    "flag enum `{expected_enum}` value {} contains undeclared bits",
+                    value.value
+                ),
+            ));
+        }
     }
     Ok(())
 }

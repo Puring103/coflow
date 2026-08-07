@@ -3747,6 +3747,14 @@ input.searchable-select.searchable-select-open::placeholder {
   flex: none;
   color: var(--accent);
 }
+.searchable-select-checkbox {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  pointer-events: none;
+}
 .searchable-select-empty {
   padding: 12px 8px;
   color: var(--text-mute);

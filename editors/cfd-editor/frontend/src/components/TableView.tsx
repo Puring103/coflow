@@ -22,6 +22,7 @@ import {
   coordinateId,
   cellDeclaredType,
   cellEnumType,
+  cellEnumIsFlag,
   cellNullable,
   cellReadOnly,
   cellRefTargetType,
@@ -537,6 +538,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   editable={cellEditable}
                   refTargetType={cellRefTargetType(f)}
                   enumType={cellEnumType(f)}
+                  enumIsFlag={cellEnumIsFlag(f)}
                   nullable={cellNullable(f)}
                   declaredType={cellDeclaredType(f)}
                   highlightQuery={highlightQueryRef.current}
@@ -1723,13 +1725,14 @@ function CellSyntaxEditor({
 }
 
 function EditableCell({
-  value, label, editable, refTargetType, enumType, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
+  value, label, editable, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
 }: {
   value: FieldValue
   label?: string
   editable: boolean
   refTargetType?: string
   enumType?: string
+  enumIsFlag?: boolean
   nullable?: boolean
   declaredType?: string
   highlightQuery?: string
@@ -1768,8 +1771,9 @@ function EditableCell({
         <EnumDirectSelect
           value={value as FieldValue & { kind: 'enum' | 'null' }}
           enumType={enumType}
+          isFlag={enumIsFlag}
           nullable={nullable}
-          onCommit={commitAndRestoreFocus}
+          onCommit={enumIsFlag ? onCommit! : commitAndRestoreFocus}
           onExit={onEditingFinished}
         />
       </div>

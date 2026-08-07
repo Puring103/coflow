@@ -156,8 +156,9 @@ impl SessionStore {
             .enum_variant_options(enum_name)
             .into_iter()
             .map(
-                |(name, label, description)| crate::editor::types::EnumVariantOption {
+                |(name, value, label, description)| crate::editor::types::EnumVariantOption {
                     name,
+                    value,
                     label,
                     description,
                 },
