@@ -1551,13 +1551,12 @@ export default function App() {
         const coordinate = viewKind === 'record' && currentRoute.view === 'record'
           ? currentRoute.coordinate
           : tab.coordinate
+        const sameRecordCoordinate = (!tab.coordinate && !coordinate)
+          || (!!tab.coordinate && !!coordinate && sameCoordinate(tab.coordinate, coordinate))
         if (
           tab.viewKind === viewKind
           && tab.viewId === viewId
-          && (viewKind !== 'record' || sameCoordinate(
-            tab.coordinate ?? { actual_type: '', key: '' },
-            coordinate ?? { actual_type: '', key: '' },
-          ))
+          && (viewKind !== 'record' || sameRecordCoordinate)
         ) return tab
         changed = true
         return { ...tab, viewKind, viewId, coordinate }
@@ -1596,7 +1595,7 @@ export default function App() {
     ? currentRoute.coordinate
     : activeFileData?.records.find(record => (
       !activeType || recordActualType(record) === activeType
-    ))?.coordinate ?? { actual_type: activeType, key: '' }
+    ))?.coordinate ?? null
 
   useEffect(() => {
     setInspectorSelection(current => {
@@ -2903,7 +2902,7 @@ export default function App() {
                     }}
                   />
                 )}
-                {activeViewKind === 'record' && (
+                {activeViewKind === 'record' && activeRecordCoordinate && (
                   globalSearch.trim() && matchedCount === 0 ? (
                     <div className="empty-hint">无匹配 "{globalSearch}" 的记录</div>
                   ) : <RecordView
