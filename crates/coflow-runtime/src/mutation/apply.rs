@@ -257,10 +257,17 @@ fn blocking_rebuild_diagnostics(session: &ProjectSession) -> DiagnosticSet {
         .diagnostics
         .as_set()
         .iter()
-        .filter(|diagnostic| diagnostic.severity == Severity::Error && diagnostic.stage != "CHECK")
+        .filter(|diagnostic| {
+            diagnostic.severity == Severity::Error && !is_editable_diagnostic(diagnostic)
+        })
         .cloned()
         .collect::<Vec<_>>()
         .into()
+}
+
+fn is_editable_diagnostic(diagnostic: &coflow_api::Diagnostic) -> bool {
+    diagnostic.stage == "CHECK"
+        || matches!(diagnostic.code.as_str(), "DATA-006" | "REF-001" | "REF-002")
 }
 
 fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> MutationAppliedOp {

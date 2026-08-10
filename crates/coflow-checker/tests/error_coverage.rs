@@ -195,6 +195,13 @@ fn cases() -> Vec<Case> {
             adjacent: adjacent_existing_ref_target,
         },
         Case {
+            name: "ref target type mismatch",
+            schema: "abstract type Reward {} type ItemReward : Reward {} type CurrencyReward : Reward {} type Drop { reward: &ItemReward; }",
+            phase: Phase::Build(build_ref_target_type_mismatch),
+            code: CfdErrorCode::RefTargetTypeMismatch,
+            adjacent: adjacent_assignable_ref_target,
+        },
+        Case {
             name: "check failed fallback",
             schema: "",
             phase: Phase::Direct(build_check_failed_fallback),
@@ -613,6 +620,20 @@ fn build_missing_ref_target(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
     )
 }
 
+fn build_ref_target_type_mismatch(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
+    model_from_records(
+        schema,
+        [
+            one_record("reward", "CurrencyReward", []),
+            one_record(
+                "drop",
+                "Drop",
+                [("reward", LoadedValueDraft::record_ref("reward"))],
+            ),
+        ],
+    )
+}
+
 fn build_check_failed_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
@@ -982,6 +1003,20 @@ fn adjacent_existing_ref_target() {
                 "drop",
                 "Drop",
                 [("item", LoadedValueDraft::record_ref("sword"))],
+            ),
+        ],
+    );
+}
+
+fn adjacent_assignable_ref_target() {
+    assert_builds(
+        "abstract type Reward {} type ItemReward : Reward {} type CurrencyReward : Reward {} type Drop { reward: &ItemReward; }",
+        [
+            one_record("reward", "ItemReward", []),
+            one_record(
+                "drop",
+                "Drop",
+                [("reward", LoadedValueDraft::record_ref("reward"))],
             ),
         ],
     );
