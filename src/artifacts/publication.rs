@@ -508,6 +508,10 @@ mod tests {
         let baseline_generation = baseline.manifest.outputs[DATA_OUTPUT_SLOT]
             .generation_dir
             .clone();
+        std::fs::write(requested.join("nested.meta"), "directory-guid")
+            .expect("write Unity directory metadata");
+        std::fs::write(requested.join("nested/value.txt.meta"), "asset-guid")
+            .expect("write Unity asset metadata");
 
         let unchanged = stage_artifact_set(
             &state_dir,
@@ -529,6 +533,136 @@ mod tests {
             baseline_generation
         );
         assert_eq!(generation_count(&state_dir.join("generations")), 1);
+        assert_eq!(
+            std::fs::read_to_string(requested.join("nested.meta"))
+                .expect("read preserved Unity directory metadata"),
+            "directory-guid"
+        );
+        assert_eq!(
+            std::fs::read_to_string(requested.join("nested/value.txt.meta"))
+                .expect("read preserved Unity asset metadata"),
+            "asset-guid"
+        );
+        std::fs::remove_dir_all(root).expect("remove test project");
+    }
+
+    #[test]
+    fn unity_meta_without_a_current_artifact_is_left_for_unity() {
+        let root = test_project_root(fault::Point::WriteActiveManifest);
+        let project = open_test_project(&root);
+        let requested = root.join("generated/data");
+        let state_dir = super::artifact_state_dir(&project);
+        let baseline = stage_artifact_set(
+            &state_dir,
+            DATA_OUTPUT_SLOT,
+            &requested,
+            artifact_set("same"),
+        )
+        .expect("stage baseline artifacts");
+        publish_artifacts(
+            &project,
+            vec![(DATA_OUTPUT_SLOT.to_string(), baseline)],
+            &[],
+            EnumLockUpdate::Preserve,
+        )
+        .expect("publish baseline artifacts");
+        std::fs::create_dir(requested.join("removed")).expect("create removed output directory");
+        std::fs::write(requested.join("removed.txt.meta"), "stale-guid")
+            .expect("write unmatched Unity metadata");
+        std::fs::write(requested.join("removed/value.txt.meta"), "nested-stale-guid")
+            .expect("write nested unmatched Unity metadata");
+
+        let replacement = stage_artifact_set(
+            &state_dir,
+            DATA_OUTPUT_SLOT,
+            &requested,
+            artifact_set("new"),
+        )
+        .expect("stage replacement artifacts");
+        publish_artifacts(
+            &project,
+            vec![(DATA_OUTPUT_SLOT.to_string(), replacement)],
+            &[],
+            EnumLockUpdate::Preserve,
+        )
+        .expect("publish replacement artifacts");
+
+        assert_eq!(
+            std::fs::read_to_string(requested.join("nested/value.txt"))
+                .expect("read replacement artifact"),
+            "new"
+        );
+        assert_eq!(
+            std::fs::read_to_string(requested.join("removed.txt.meta"))
+                .expect("read unmatched Unity metadata"),
+            "stale-guid"
+        );
+        assert_eq!(
+            std::fs::read_to_string(requested.join("removed/value.txt.meta"))
+                .expect("read nested unmatched Unity metadata"),
+            "nested-stale-guid"
+        );
+        std::fs::remove_dir_all(root).expect("remove test project");
+    }
+
+    #[test]
+    fn changed_output_preserves_unity_meta_for_current_artifacts() {
+        let root = test_project_root(fault::Point::WriteActiveManifest);
+        let project = open_test_project(&root);
+        let requested = root.join("generated/data");
+        let state_dir = super::artifact_state_dir(&project);
+        let baseline = stage_artifact_set(
+            &state_dir,
+            DATA_OUTPUT_SLOT,
+            &requested,
+            artifact_set("old"),
+        )
+        .expect("stage baseline artifacts");
+        publish_artifacts(
+            &project,
+            vec![(DATA_OUTPUT_SLOT.to_string(), baseline)],
+            &[],
+            EnumLockUpdate::Preserve,
+        )
+        .expect("publish baseline artifacts");
+        std::fs::write(requested.join("nested.meta"), "directory-guid")
+            .expect("write Unity directory metadata");
+        std::fs::write(requested.join("nested/value.txt.meta"), "asset-guid")
+            .expect("write Unity asset metadata");
+
+        let replacement = stage_artifact_set(
+            &state_dir,
+            DATA_OUTPUT_SLOT,
+            &requested,
+            artifact_set("new"),
+        )
+        .expect("stage replacement artifacts");
+        let published = publish_artifacts(
+            &project,
+            vec![(DATA_OUTPUT_SLOT.to_string(), replacement)],
+            &[],
+            EnumLockUpdate::Preserve,
+        )
+        .expect("publish replacement artifacts");
+
+        assert_eq!(
+            std::fs::read_to_string(requested.join("nested/value.txt"))
+                .expect("read replacement artifact"),
+            "new"
+        );
+        assert_eq!(
+            std::fs::read_to_string(requested.join("nested.meta"))
+                .expect("read preserved Unity directory metadata"),
+            "directory-guid"
+        );
+        assert_eq!(
+            std::fs::read_to_string(requested.join("nested/value.txt.meta"))
+                .expect("read preserved Unity asset metadata"),
+            "asset-guid"
+        );
+        let generation = &published.manifest.outputs[DATA_OUTPUT_SLOT].generation_dir;
+        assert!(!generation.join("nested.meta").exists());
+        assert!(!generation.join("nested/value.txt.meta").exists());
         std::fs::remove_dir_all(root).expect("remove test project");
     }
 
