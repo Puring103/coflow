@@ -22,7 +22,7 @@ function diagnostic(
 ): DiagnosticItem {
   return {
     severity,
-    code: 'CFD-CHECK-007',
+    code: 'CHECK-007',
     stage: 'CHECK',
     message: `${severity} diagnostic`,
     file_path: target.filePath,

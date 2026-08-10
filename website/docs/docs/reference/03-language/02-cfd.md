@@ -164,6 +164,19 @@ element: Element.Fire
 
 当上下文清楚时，短写法更简洁；当多个枚举有相同变体名时，完整写法更明确。
 
+`@flag` enum 还可以写整数 mask 或按位表达式：
+
+```cfd
+permissions: Read | Write
+permissions: Permission.Read | Permission.Execute
+permissions: Read | Write & (Execute | Admin)
+permissions: 5
+```
+
+支持 `&`、`^`、`|` 和括号，优先级从高到低为 `&`、`^`、`|`。操作数可以是短变体名、带 enum 前缀的变体名或非负整数。所有名称必须属于字段声明的 flag enum，整数和计算结果不能包含未声明的位。普通 enum 不接受按位表达式或整数值。
+
+writer 会把有效 mask 按 schema 变体声明顺序规范化为 `Read | Write`；零值优先写已声明的零值变体，否则写 `0`。原始表达式的括号和运算形式不会保留。
+
 ### 数组
 
 数组使用 `[...]`，元素之间用 `,` 分隔：
@@ -412,3 +425,5 @@ fire_encounter: Encounter {
 | `...&sword_fire` spread 到 `Stats` | spread 来源类型不能赋给目标对象类型 | 使用同类型或可赋值对象来源 |
 | `name: null` 且 `name` 不是 nullable | `null` 只能赋给 `T?` | 改字段类型为 `string?` 或提供字符串 |
 | `element: Flame` | enum variant 不存在 | 检查 CFT enum 定义并写正确 variant |
+| 普通 enum 写 `A | B` | 只有 `@flag` enum 支持按位表达式 | 改为单个变体，或把 enum 声明为 `@flag` |
+| flag enum 写 `16`，但没有声明该位 | mask 包含未声明位 | 只组合已声明变体对应的位 |

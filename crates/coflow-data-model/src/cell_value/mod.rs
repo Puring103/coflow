@@ -139,6 +139,22 @@ pub(crate) fn parse_enum(
     enum_name: &str,
     text: &str,
 ) -> Result<LoadedValueDraft, CellValueDiagnostics> {
+    let Some(schema_enum) = schema.resolve_enum(enum_name) else {
+        return Err(type_mismatch(enum_name));
+    };
+    if schema_enum.is_flag {
+        if let Ok(value) = text.parse::<i64>() {
+            return Ok(LoadedValueDraft::enum_value(enum_name, value));
+        }
+    }
+    parse_enum_variant(schema, enum_name, text)
+}
+
+pub(crate) fn parse_enum_variant(
+    schema: &CftSchema,
+    enum_name: &str,
+    text: &str,
+) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let variant = text
         .strip_prefix(enum_name)
         .and_then(|rest| rest.strip_prefix('.'))

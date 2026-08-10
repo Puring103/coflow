@@ -35,7 +35,36 @@ impl<'a> BuildSchema<'a> {
 
     pub(crate) fn enum_value(self, enum_name: &str, variant: &str) -> Option<CftEnumValue> {
         let value = self.cft.enum_variant_value(enum_name, variant)?;
+        let mut resolved = self.cft.enum_value_from_int(enum_name, value)?;
+        if self
+            .cft
+            .resolve_enum(enum_name)
+            .is_some_and(|schema_enum| schema_enum.is_flag)
+        {
+            resolved.variant = None;
+        }
+        Some(resolved)
+    }
+
+    pub(crate) fn enum_key_value(self, enum_name: &str, variant: &str) -> Option<CftEnumValue> {
+        let value = self.cft.enum_variant_value(enum_name, variant)?;
         self.cft.enum_value_from_int(enum_name, value)
+    }
+
+    pub(crate) fn enum_value_from_int(self, enum_name: &str, value: i64) -> Option<CftEnumValue> {
+        let meta = self.cft.resolve_enum(enum_name)?;
+        let mut resolved =
+            self.cft
+                .enum_value_from_int(enum_name, value)
+                .unwrap_or_else(|| CftEnumValue {
+                    enum_name: meta.name.clone(),
+                    variant: None,
+                    value,
+                });
+        if meta.is_flag {
+            resolved.variant = None;
+        }
+        Some(resolved)
     }
 
     pub(crate) fn singleton_types(self) -> impl Iterator<Item = &'a CftType> {

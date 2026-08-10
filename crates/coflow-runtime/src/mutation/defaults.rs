@@ -245,8 +245,8 @@ impl<'a> DefaultValueMaterializer<'a> {
                 enum_name,
                 variant,
                 value,
-            } => Ok(CfdValue::Enum(
-                self.schema
+            } => {
+                let mut enum_value = self.schema
                     .enum_value_from_int(enum_name, *value)
                     .map_or_else(
                         || CfdEnumValue {
@@ -255,8 +255,16 @@ impl<'a> DefaultValueMaterializer<'a> {
                             value: *value,
                         },
                         Into::into,
-                    ),
-            )),
+                    );
+                if self
+                    .schema
+                    .resolve_enum(enum_name)
+                    .is_some_and(|schema_enum| schema_enum.is_flag)
+                {
+                    enum_value.variant = None;
+                }
+                Ok(CfdValue::Enum(enum_value))
+            }
             CftSchemaDefaultValue::EmptyArray => Ok(CfdValue::Array(Vec::new())),
             CftSchemaDefaultValue::EmptyObject => match ty.non_nullable() {
                 CftValueType::Object(name) => {
@@ -286,10 +294,9 @@ impl<'a> DefaultValueMaterializer<'a> {
             CftValueType::Array(_) => Ok(CfdValue::Array(Vec::new())),
             CftValueType::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
             CftValueType::Enum(name) => {
-                let value = self
-                    .schema
-                    .resolve_enum(name)
-                    .and_then(|enm| enm.variants.first());
+                let schema_enum = self.schema.resolve_enum(name);
+                let value = schema_enum.and_then(|enm| enm.variants.first());
+                let is_flag = schema_enum.is_some_and(|enm| enm.is_flag);
                 Ok(value.map_or_else(
                     || {
                         CfdValue::Enum(CfdEnumValue {
@@ -301,7 +308,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                     |variant| {
                         CfdValue::Enum(CfdEnumValue {
                             enum_name: name.clone(),
-                            variant: Some(variant.name.clone()),
+                            variant: (!is_flag).then(|| variant.name.clone()),
                             value: variant.value,
                         })
                     },

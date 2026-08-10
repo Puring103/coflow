@@ -267,7 +267,8 @@ export async function openSourceFile(sessionId: number, filePath: string): Promi
 }
 
 export async function getEnumVariants(sessionId: number, enumName: string): Promise<EnumVariantOption[]> {
-  return invokeCommand<EnumVariantOption[]>('get_enum_variants', { sessionId, enumName })
+  const variants = await invokeCommand<EnumVariantOption[]>('get_enum_variants', { sessionId, enumName })
+  return variants.map(variant => ({ ...variant, value: BigInt(variant.value) }))
 }
 
 export async function getRefTargets(sessionId: number, targetType: string): Promise<RefTarget[]> {

@@ -125,6 +125,64 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
 }
 
 #[test]
+fn flag_enum_fields_accept_expressions_and_integer_masks() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            @flag enum Access { None = 0, Read = 1, Write = 2, Execute = 4, Admin = 8 }
+            type User { access: Access; }
+        "#,
+    );
+    let records = parse_cfd_input_records(
+        &schema,
+        r#"
+            alice: User { access: Read | Write & (Execute | Access.Admin) }
+            bob: User { access: 5 }
+        "#,
+    )?;
+    assert_eq!(
+        records[0].fields.get("access"),
+        Some(&LoadedValueDraft::enum_value("Access", 1))
+    );
+    assert_eq!(
+        records[1].fields.get("access"),
+        Some(&LoadedValueDraft::enum_value("Access", 5))
+    );
+
+    let model = load_cfd_model(&schema, "alice: User { access: Read | Write }")?;
+    let alice = model
+        .lookup_assignable(&schema, "User", "alice")
+        .and_then(|id| model.record(id))
+        .expect("alice record");
+    let Some(CfdValue::Enum(access)) = alice.field("access") else {
+        panic!("expected enum value");
+    };
+    assert_eq!(access.value, 3);
+    assert_eq!(access.variant, None);
+    Ok(())
+}
+
+#[test]
+fn flag_enum_fields_reject_invalid_operands_and_non_flag_expressions() {
+    let schema = compile_schema(
+        r#"
+            @flag enum Access { Read = 1, Write = 2 }
+            enum Rarity { Common, Rare }
+            type User { access: Access; rarity: Rarity; }
+        "#,
+    );
+    for source in [
+        "alice: User { access: Missing | Read, rarity: Common }",
+        "alice: User { access: Other.Read | Write, rarity: Common }",
+        "alice: User { access: -1, rarity: Common }",
+        "alice: User { access: 4, rarity: Common }",
+        "alice: User { access: Read, rarity: Common | Rare }",
+    ] {
+        let error = parse_cfd_input_records(&schema, source).expect_err(source);
+        assert!(matches!(error, CfdTextLoadError::Text(_)));
+    }
+}
+
+#[test]
 fn cfd_rejects_invalid_reference_syntax_and_bare_object_keys() {
     let schema = compile_schema(
         r#"

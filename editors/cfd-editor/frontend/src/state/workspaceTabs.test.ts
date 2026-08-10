@@ -13,12 +13,24 @@ const fileTypes = {
 }
 
 describe('project workspace tabs', () => {
-  it('defaults singleton types to record view', () => {
+  it('waits for a real singleton coordinate before entering record view', () => {
     const tab = defaultWorkspaceTab('data/settings.cfd', 'Settings', true)
     expect(tab).toMatchObject({ viewKind: 'record', viewId: '__default_record' })
     expect(routeForWorkspaceTab(tab)).toMatchObject({
+      view: 'table',
+      viewId: '__default_table',
+      typeFilter: 'Settings',
+    })
+    expect(routeForWorkspaceTab(tab, { actual_type: 'Settings', key: 'settings' })).toMatchObject({
       view: 'record',
+      coordinate: { actual_type: 'Settings', key: 'settings' },
+    })
+    expect(routeForWorkspaceTab({
+      ...tab,
       coordinate: { actual_type: 'Settings', key: '' },
+    }, { actual_type: 'Settings', key: 'settings' })).toMatchObject({
+      view: 'record',
+      coordinate: { actual_type: 'Settings', key: 'settings' },
     })
   })
 
@@ -49,6 +61,14 @@ describe('project workspace tabs', () => {
         view_kind: 'table',
       }],
     })
+  })
+
+  it('does not serialize an empty record coordinate', () => {
+    const tab = {
+      ...defaultWorkspaceTab('data/settings.cfd', 'Settings', true),
+      coordinate: { actual_type: 'Settings', key: '' },
+    }
+    expect(workspaceToWire([tab], tab.id).tabs[0]).not.toHaveProperty('coordinate')
   })
 
   it('restores a dimension file tab with an empty type name', () => {

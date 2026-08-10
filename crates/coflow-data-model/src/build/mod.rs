@@ -34,6 +34,12 @@ pub struct CfdModelBuilder<'a> {
     structural_limits: StructuralLimits,
 }
 
+#[derive(Debug)]
+pub struct CfdModelBuildOutput {
+    pub model: CfdDataModel,
+    pub diagnostics: CfdDiagnostics,
+}
+
 impl<'a> CfdModelBuilder<'a> {
     #[must_use]
     pub fn new(schema: &'a CftSchema) -> Self {
@@ -87,6 +93,22 @@ impl<'a> CfdModelBuilder<'a> {
     /// Returns data-model diagnostics for invalid values, duplicate keys, or
     /// unresolved references.
     pub fn build(self) -> Result<CfdDataModel, CfdDiagnostics> {
+        let output = self.build_editable()?;
+        if output.diagnostics.is_empty() {
+            Ok(output.model)
+        } else {
+            Err(output.diagnostics)
+        }
+    }
+
+    /// Builds a model while preserving source states that can be repaired by
+    /// later mutations.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when invalid input cannot be represented without
+    /// dropping records or values.
+    pub fn build_editable(self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
         ModelCompiler::new(
             self.schema,
             self.records,
@@ -102,6 +124,7 @@ pub(crate) struct ModelCompiler<'a> {
     input: Vec<LoadedRecordDraft>,
     dimension_values: Vec<DimensionValueDraft>,
     diagnostics: Vec<CfdDiagnostic>,
+    editable_diagnostics: Vec<CfdDiagnostic>,
     structural_limits: StructuralLimits,
 }
 
@@ -117,12 +140,16 @@ impl<'a> ModelCompiler<'a> {
             input,
             dimension_values,
             diagnostics: Vec::new(),
+            editable_diagnostics: Vec::new(),
             structural_limits,
         }
     }
 
-    pub(crate) fn build(mut self) -> Result<CfdDataModel, CfdDiagnostics> {
+    pub(crate) fn build(mut self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
         let drafts = self.validate_input_records();
+        self.move_editable_diagnostics(|code| {
+            code == crate::CfdErrorCode::MissingRequiredField
+        });
         self.fail_if_diagnostics()?;
 
         let indexes = indexes::build_indexes(self.schema, &drafts, &mut self.diagnostics);
@@ -138,6 +165,13 @@ impl<'a> ModelCompiler<'a> {
             &indexes.record_by_domain_key,
             &mut self.diagnostics,
         );
+        self.move_editable_diagnostics(|code| {
+            matches!(
+                code,
+                crate::CfdErrorCode::RefTargetNotFound
+                    | crate::CfdErrorCode::RefTargetTypeMismatch
+            )
+        });
         self.fail_if_diagnostics()?;
 
         let validated_dimension_values =
@@ -178,18 +212,32 @@ impl<'a> ModelCompiler<'a> {
             &spread_indexes.edges,
         );
 
-        Ok(CfdDataModel {
-            tables: indexes.tables,
-            record_by_domain_key: indexes.record_by_domain_key,
-            records,
-            ref_edges: ref_indexes.edges,
-            ref_by_site: ref_indexes.by_site,
-            ref_by_host: ref_indexes.by_host,
-            ref_by_target: ref_indexes.by_target,
-            spread_edges: spread_indexes.edges,
-            spread_by_host: spread_indexes.by_host,
-            spread_by_source: spread_indexes.by_source,
+        Ok(CfdModelBuildOutput {
+            model: CfdDataModel {
+                tables: indexes.tables,
+                record_by_domain_key: indexes.record_by_domain_key,
+                records,
+                ref_edges: ref_indexes.edges,
+                ref_by_site: ref_indexes.by_site,
+                ref_by_host: ref_indexes.by_host,
+                ref_by_target: ref_indexes.by_target,
+                spread_edges: spread_indexes.edges,
+                spread_by_host: spread_indexes.by_host,
+                spread_by_source: spread_indexes.by_source,
+            },
+            diagnostics: CfdDiagnostics::new(self.editable_diagnostics),
         })
+    }
+
+    fn move_editable_diagnostics(
+        &mut self,
+        predicate: impl Fn(crate::CfdErrorCode) -> bool,
+    ) {
+        let (editable, blocking) = std::mem::take(&mut self.diagnostics)
+            .into_iter()
+            .partition(|diagnostic| predicate(diagnostic.code));
+        self.editable_diagnostics.extend(editable);
+        self.diagnostics = blocking;
     }
 
     fn validate_input_records(&mut self) -> Vec<RecordDraft> {
@@ -466,7 +514,9 @@ impl<'a> ModelCompiler<'a> {
         if self.diagnostics.is_empty() {
             Ok(())
         } else {
-            Err(CfdDiagnostics::new(std::mem::take(&mut self.diagnostics)))
+            let mut diagnostics = std::mem::take(&mut self.diagnostics);
+            diagnostics.append(&mut self.editable_diagnostics);
+            Err(CfdDiagnostics::new(diagnostics))
         }
     }
 }
@@ -606,6 +656,8 @@ pub(super) const fn semantic_error_code(kind: CfdValueSemanticErrorKind) -> crat
         }
         CfdValueSemanticErrorKind::InvalidEnumVariant => crate::CfdErrorCode::InvalidEnumVariant,
         CfdValueSemanticErrorKind::RefTargetNotFound => crate::CfdErrorCode::RefTargetNotFound,
-        CfdValueSemanticErrorKind::RefTargetTypeMismatch => crate::CfdErrorCode::TypeMismatch,
+        CfdValueSemanticErrorKind::RefTargetTypeMismatch => {
+            crate::CfdErrorCode::RefTargetTypeMismatch
+        }
     }
 }

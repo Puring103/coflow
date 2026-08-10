@@ -11,6 +11,10 @@ pub enum LoadedValueDraft {
         enum_name: String,
         variant: String,
     },
+    EnumValue {
+        enum_name: String,
+        value: i64,
+    },
     Object {
         actual_type: Option<String>,
         fields: BTreeMap<String, LoadedValueDraft>,
@@ -35,6 +39,14 @@ impl LoadedValueDraft {
         Self::EnumVariant {
             enum_name: enum_name.into(),
             variant: variant.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn enum_value(enum_name: impl Into<String>, value: i64) -> Self {
+        Self::EnumValue {
+            enum_name: enum_name.into(),
+            value,
         }
     }
 

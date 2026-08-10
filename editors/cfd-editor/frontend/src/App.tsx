@@ -81,7 +81,6 @@ import {
   moveRecordsToGroup,
   nextRecordGroupName,
   colorRecordGroup,
-  removeRecordFromGroups,
   removeRecordsFromGroups,
   renameRecordGroup,
   replaceGroupedCoordinate,
@@ -1358,15 +1357,21 @@ export default function App() {
     },
     [mutations],
   )
-  const deleteRecord = useCallback(
-    async (filePath: string, coordinate: RecordCoordinate) => {
-      const groups = projectSettings?.record_groups[filePath]?.[coordinate.actual_type] ?? []
-      await mutations.deleteRecord(filePath, coordinate)
-      saveRecordGroups(
-        filePath,
-        coordinate.actual_type,
-        removeRecordFromGroups(groups, coordinate),
-      )
+  const deleteRecords = useCallback(
+    async (filePath: string, coordinates: readonly RecordCoordinate[]) => {
+      for (const coordinate of coordinates) {
+        await mutations.deleteRecord(filePath, coordinate)
+      }
+
+      const actualTypes = new Set(coordinates.map(coordinate => coordinate.actual_type))
+      for (const actualType of actualTypes) {
+        const groups = projectSettings?.record_groups[filePath]?.[actualType] ?? []
+        saveRecordGroups(
+          filePath,
+          actualType,
+          removeRecordsFromGroups(groups, coordinates),
+        )
+      }
     },
     [mutations, projectSettings, saveRecordGroups],
   )
@@ -1462,13 +1467,12 @@ export default function App() {
         const coordinate = viewKind === 'record' && currentRoute.view === 'record'
           ? currentRoute.coordinate
           : tab.coordinate
+        const sameRecordCoordinate = (!tab.coordinate && !coordinate)
+          || (!!tab.coordinate && !!coordinate && sameCoordinate(tab.coordinate, coordinate))
         if (
           tab.viewKind === viewKind
           && tab.viewId === viewId
-          && (viewKind !== 'record' || sameCoordinate(
-            tab.coordinate ?? { actual_type: '', key: '' },
-            coordinate ?? { actual_type: '', key: '' },
-          ))
+          && (viewKind !== 'record' || sameRecordCoordinate)
         ) return tab
         changed = true
         return { ...tab, viewKind, viewId, coordinate }
@@ -1507,7 +1511,7 @@ export default function App() {
     ? currentRoute.coordinate
     : activeFileData?.records.find(record => (
       !activeType || recordActualType(record) === activeType
-    ))?.coordinate ?? { actual_type: activeType, key: '' }
+    ))?.coordinate ?? null
 
   useEffect(() => {
     setInspectorSelection(current => {
@@ -2077,12 +2081,12 @@ export default function App() {
     },
     [lookups],
   )
-  const tableOnDeleteRecord = useCallback(
-    (coordinate: RecordCoordinate): Promise<void> => {
-      if (currentRoute?.view === 'table') return deleteRecord(currentRoute.file, coordinate)
+  const tableOnDeleteRecords = useCallback(
+    (coordinates: readonly RecordCoordinate[]): Promise<void> => {
+      if (currentRoute?.view === 'table') return deleteRecords(currentRoute.file, coordinates)
       return Promise.resolve()
     },
-    [currentRoute?.view, currentRoute?.file, deleteRecord],
+    [currentRoute?.view, currentRoute?.file, deleteRecords],
   )
   const tableOnMoveRecord = useCallback(
     (coordinate: RecordCoordinate, targetIndex: number): Promise<void> => {
@@ -2798,7 +2802,7 @@ export default function App() {
                     onRenameRecord={tableOnRenameRecord}
                     onInsertRecord={tableOnInsertRecord}
                     onCreateRecordDraft={tableOnCreateRecordDraft}
-                    onDeleteRecord={tableOnDeleteRecord}
+                    onDeleteRecords={tableOnDeleteRecords}
                     onMoveRecord={tableOnMoveRecord}
                     onDiagnosticBadgeClick={tableOnBadgeClick}
                     columnWidths={tableColumnWidths}
@@ -2814,7 +2818,7 @@ export default function App() {
                     }}
                   />
                 )}
-                {activeViewKind === 'record' && (
+                {activeViewKind === 'record' && activeRecordCoordinate && (
                   globalSearch.trim() && matchedCount === 0 ? (
                     <div className="empty-hint">无匹配 "{globalSearch}" 的记录</div>
                   ) : <RecordView

@@ -75,7 +75,7 @@ fn command_check_uses_engine_diagnostics() {
         diagnostics
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == "CFD-CHECK-007"),
+            .any(|diagnostic| diagnostic.code == "CHECK-007"),
         "check diagnostics should flow through canonical DiagnosticSet"
     );
 }
