@@ -30,6 +30,9 @@ fn export_bindings() {
     export_with_retry::<t::ViewConfig>("ViewConfig");
     export_with_retry::<t::ViewKind>("ViewKind");
     export_with_retry::<t::FileRecords>("FileRecords");
+    export_with_retry::<t::ProjectSearchMode>("ProjectSearchMode");
+    export_with_retry::<t::ProjectSearchHit>("ProjectSearchHit");
+    export_with_retry::<t::ProjectSearchResults>("ProjectSearchResults");
     export_with_retry::<t::RecordRow>("RecordRow");
     export_with_retry::<t::FieldCell>("FieldCell");
     export_with_retry::<t::FieldAnnotation>("FieldAnnotation");

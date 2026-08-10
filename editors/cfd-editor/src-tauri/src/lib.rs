@@ -15,9 +15,9 @@ use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
     EditorRecordGroup, EditorWorkspaceState, FileRecords, GraphData, GraphQuery,
-    InsertRecordOutcome, PluginSchemaType, ProjectSnapshot, RecordRow, RefTarget,
-    RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig, WriteDimensionValueOutcome,
-    WriteFieldOutcome,
+    InsertRecordOutcome, PluginSchemaType, ProjectSearchMode, ProjectSearchResults,
+    ProjectSnapshot, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
+    WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use extension_api::ExtensionManifest;
 use host::EditorHost;
@@ -649,6 +649,23 @@ async fn get_file_records(
     run_blocking(move || host.sessions().get_file_records(session_id, &file_path)).await
 }
 
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn search_records(
+    session_id: u32,
+    query: String,
+    mode: ProjectSearchMode,
+    limit: usize,
+    host: State<'_, EditorHost>,
+) -> Result<ProjectSearchResults, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .search_records(session_id, &query, mode, limit)
+    })
+    .await
+}
+
 #[tauri::command]
 async fn get_plugin_schema(
     session_id: u32,
@@ -989,6 +1006,7 @@ pub fn run() -> tauri::Result<()> {
             build_project,
             open_source_file,
             get_file_records,
+            search_records,
             get_plugin_schema,
             get_plugin_records_by_type,
             get_graph,

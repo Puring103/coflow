@@ -324,6 +324,45 @@ pub struct FileRecords {
     pub capabilities: WriterCapabilities,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectSearchMode {
+    Key,
+    FullText,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct ProjectSearchHit {
+    pub file_path: String,
+    pub coordinate: RecordCoordinate,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct ProjectSearchResults {
+    pub revision: u32,
+    pub hits: Vec<ProjectSearchHit>,
+    pub truncated: bool,
+}
+
 /// A top-level field column available in a file/type table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]

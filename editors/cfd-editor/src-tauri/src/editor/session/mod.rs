@@ -46,8 +46,9 @@ use crate::editor::types::{
     CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome, DeletedRecordSnapshot,
     EditorError, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, FileRecords,
     FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome, PluginSchemaField,
-    PluginSchemaType, ProjectSnapshot, RecordColumn, RecordRow, RefTarget, RenameRecordOutcome,
-    ReorderRecordsOutcome, ViewConfig, WriteFieldOutcome,
+    PluginSchemaType, ProjectSearchHit, ProjectSearchMode, ProjectSearchResults, ProjectSnapshot,
+    RecordColumn, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
+    WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;

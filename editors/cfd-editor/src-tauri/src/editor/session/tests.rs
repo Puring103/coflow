@@ -9,7 +9,7 @@ use coflow_runtime::{DimensionValueCoordinate, DimensionValueState, RecordCoordi
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rust_xlsxwriter::Workbook;
 
-use super::SessionStore;
+use super::{ProjectSearchMode, SessionStore};
 use crate::watcher::filter_relevant_paths;
 
 #[test]
@@ -58,6 +58,55 @@ fn stale_reload_candidate_cannot_replace_a_newer_internal_write() {
         records.records[0].fields[0].value,
         CfdValue::String("Internal write".to_string())
     );
+    std::fs::remove_dir_all(root).expect("remove temp project");
+}
+
+#[test]
+fn project_search_covers_all_files_and_reports_field_matches() {
+    let root = temp_project_dir("project-search");
+    write_project(&root, "Iron Sword");
+    std::fs::write(
+        root.join("data/shields.cfd"),
+        "shield: Item { name: \"Oak Shield\" }",
+    )
+    .expect("write second source");
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+
+    let key_results = store
+        .search_records(snapshot.session_id, "SHIELD", ProjectSearchMode::Key, 20)
+        .expect("search record keys");
+    assert_eq!(key_results.hits.len(), 1);
+    assert_eq!(key_results.hits[0].file_path, "data/shields.cfd");
+    assert_eq!(key_results.hits[0].coordinate.key.as_str(), "shield");
+    assert_eq!(key_results.hits[0].field_path, None);
+
+    let full_text_results = store
+        .search_records(
+            snapshot.session_id,
+            "iron sword",
+            ProjectSearchMode::FullText,
+            20,
+        )
+        .expect("search record values");
+    assert_eq!(full_text_results.hits.len(), 1);
+    assert_eq!(
+        full_text_results.hits[0].coordinate.key.as_str(),
+        "sword"
+    );
+    assert_eq!(full_text_results.hits[0].field_path.as_deref(), Some("name"));
+    assert_eq!(
+        full_text_results.hits[0].preview.as_deref(),
+        Some("name: Iron Sword")
+    );
+
+    let limited = store
+        .search_records(snapshot.session_id, "s", ProjectSearchMode::Key, 1)
+        .expect("search with limit");
+    assert_eq!(limited.hits.len(), 1);
+    assert!(limited.truncated);
     std::fs::remove_dir_all(root).expect("remove temp project");
 }
 
