@@ -12,6 +12,7 @@ Excel 和 CSV 表格共享表格加载语义。表格 source 适合维护大量�
 - `id`、`Id` 或 `ID` 列作为 record key。
 - 表头文本映射到同名 CFT 字段。
 - 单元格内容按目标字段类型使用 [单元格值语法](./cell-value.md) 解析。
+- `@flag` enum 列以非负整数 mask 存储和写回；按位表达式只在 CFD 中提供。
 
 表格 source 的第一行必须是表头。空数据行会被跳过。某个 sheet 的表头无法可靠映射时，该 sheet 的数据行会被跳过，但其他 sheet 和其他 source 仍会继续收集诊断。
 
@@ -176,7 +177,7 @@ type Item {
 
 ## 写回
 
-表格 writer 会根据 record origin 定位原始行和列，再写回单元格文本。嵌套数组、字典、多态对象等复杂值会被渲染为可再次解析的单元格值文本。
+表格 writer 会根据 record origin 定位原始行和列，再写回单元格文本。嵌套数组、字典、多态对象等复杂值会被渲染为可再次解析的单元格值文本。flag enum 始终写回一个整数 mask，包括只选中单个变体的情况。
 
 写回仍会遵守 Provider 文件边界和 schema 约束，不会绕过数据源直接改 DataModel。
 

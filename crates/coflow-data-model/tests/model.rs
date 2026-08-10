@@ -759,10 +759,7 @@ fn editable_build_keeps_records_with_only_missing_required_fields() {
     let output = builder
         .build_editable()
         .expect("a missing field can be repaired later");
-    assert_has_code(
-        &output.diagnostics,
-        CfdErrorCode::MissingRequiredField,
-    );
+    assert_has_code(&output.diagnostics, CfdErrorCode::MissingRequiredField);
     assert_eq!(CfdErrorCode::MissingRequiredField.as_str(), "DATA-006");
     let item_id = output
         .model

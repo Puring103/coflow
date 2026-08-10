@@ -97,7 +97,7 @@ fn plan_configured_dimension(
                     && entry.get().is_singleton
                     && entry.get().actual_type == field.source_type.as_str() =>
             {
-                entry.get_mut().entries.extend(operation.entries)
+                entry.get_mut().entries.extend(operation.entries);
             }
             std::collections::btree_map::Entry::Occupied(entry) => {
                 diagnostics.push(dimension_diagnostic(
@@ -108,7 +108,7 @@ fn plan_configured_dimension(
                         "dimension fields map to the same managed source `{}`",
                         entry.get().path.display()
                     ),
-                ))
+                ));
             }
         }
     }

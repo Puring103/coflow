@@ -343,7 +343,10 @@ fn flag_enum_cells_use_integer_masks() -> TestResult {
         return Err("expected flag enum".to_string());
     };
     assert_eq!(flag.variant, None);
-    assert_eq!(render_cell_value(value).map_err(|err| err.to_string())?, "1");
+    assert_eq!(
+        render_cell_value(value).map_err(|err| err.to_string())?,
+        "1"
+    );
     Ok(())
 }
 
@@ -359,7 +362,10 @@ fn flag_enum_dict_keys_keep_single_variant_identity() -> TestResult {
     builder.add_record(
         "reader",
         "Role",
-        [("limits", parse_value(&schema, "{Permission: int}", "Read: 3")?)],
+        [(
+            "limits",
+            parse_value(&schema, "{Permission: int}", "Read: 3")?,
+        )],
     );
     let model = build_model(builder)?;
     let role = model.records().next().expect("role").1;

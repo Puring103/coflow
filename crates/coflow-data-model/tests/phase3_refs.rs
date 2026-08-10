@@ -220,10 +220,7 @@ fn wrong_ref_target_type_has_a_reference_diagnostic() {
     let output = builder
         .build_editable()
         .expect("wrong-type refs remain editable");
-    let diagnostic = diagnostic_with_code(
-        &output.diagnostics,
-        CfdErrorCode::RefTargetTypeMismatch,
-    );
+    let diagnostic = diagnostic_with_code(&output.diagnostics, CfdErrorCode::RefTargetTypeMismatch);
     assert_eq!(diagnostic.stage, CfdStage::Reference);
     assert_eq!(diagnostic.code.as_str(), "REF-002");
 }

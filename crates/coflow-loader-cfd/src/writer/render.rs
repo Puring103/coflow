@@ -346,23 +346,36 @@ mod tests {
     use coflow_data_model::{CfdEnumValue, CfdValue};
 
     #[test]
-    fn serializes_flag_masks_in_schema_order() {
+    fn serializes_flag_masks_in_schema_order() -> Result<(), String> {
         let modules = parse_modules([CftFile::from_source(
             ModuleId::from("main"),
             "@flag enum Access { None = 0, Read = 1, Write = 2, Execute = 4 }",
         )]);
-        let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
-        let ty = CftValueType::Enum(schema.resolve_enum("Access").expect("enum").name.clone());
-        let value = CfdValue::Enum(CfdEnumValue::try_new("Access", None::<String>, 5).expect("enum"));
-        assert_eq!(
-            serialize_value_for_type(&value, Some(&schema), Some(&ty), 0),
-            "Read | Execute"
+        let schema = build_schema(&modules, &CftDimensionInputs::default())
+            .map_err(|error| format!("{error:?}"))?;
+        let schema_enum = schema
+            .resolve_enum("Access")
+            .ok_or_else(|| "missing Access enum".to_string())?;
+        let ty = CftValueType::Enum(schema_enum.name.clone());
+        let value = CfdValue::Enum(
+            CfdEnumValue::try_new("Access", None::<String>, 5)
+                .map_err(|error| error.to_string())?,
         );
+        let rendered = serialize_value_for_type(&value, Some(&schema), Some(&ty), 0);
+        if rendered != "Read | Execute" {
+            return Err(format!(
+                "expected flag names in schema order, got `{rendered}`"
+            ));
+        }
 
-        let zero = CfdValue::Enum(CfdEnumValue::try_new("Access", None::<String>, 0).expect("enum"));
-        assert_eq!(
-            serialize_value_for_type(&zero, Some(&schema), Some(&ty), 0),
-            "None"
+        let zero = CfdValue::Enum(
+            CfdEnumValue::try_new("Access", None::<String>, 0)
+                .map_err(|error| error.to_string())?,
         );
+        let rendered = serialize_value_for_type(&zero, Some(&schema), Some(&ty), 0);
+        if rendered != "None" {
+            return Err(format!("expected the zero flag name, got `{rendered}`"));
+        }
+        Ok(())
     }
 }

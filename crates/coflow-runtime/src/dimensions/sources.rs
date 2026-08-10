@@ -147,7 +147,7 @@ mod tests {
     fn dimension_source_matching_preserves_supported_formats() {
         let dimension = DimensionName::new("language").expect("dimension");
         let regular = DimensionField {
-            dimension: dimension.clone(),
+            dimension,
             source_type: TypeName::new("Item").expect("type"),
             source_field: FieldName::new("name").expect("field"),
             bucket: BucketName::new("Item").expect("bucket"),

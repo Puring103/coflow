@@ -8,49 +8,63 @@
 #[test]
 fn export_bindings() {
     use cfd_editor_lib::editor::types as t;
-    use ts_rs::TS;
     // Core types
-    coflow_data_model::CfdValue::export_all().expect("export CfdValue tree");
-    coflow_data_model::CfdRecord::export_all().expect("export CfdRecord tree");
-    coflow_data_model::CfdDictKey::export_all().expect("export CfdDictKey tree");
-    coflow_data_model::CfdPathSegment::export_all().expect("export CfdPathSegment tree");
-    coflow_api::FlatDiagnostic::export_all().expect("export FlatDiagnostic");
-    coflow_api::WriterCapabilities::export_all().expect("export WriterCapabilities");
-    coflow_runtime::FileTreeNode::export_all().expect("export FileTreeNode");
-    coflow_runtime::DimensionValueCoordinate::export_all()
-        .expect("export DimensionValueCoordinate");
-    coflow_runtime::DimensionValueView::export_all().expect("export DimensionValueView");
-    coflow_runtime::CreateFieldSource::export_all().expect("export CreateFieldSource");
-    coflow_runtime::CreateRequiredInput::export_all().expect("export CreateRequiredInput");
+    export_with_retry::<coflow_data_model::CfdValue>("CfdValue tree");
+    export_with_retry::<coflow_data_model::CfdRecord>("CfdRecord tree");
+    export_with_retry::<coflow_data_model::CfdDictKey>("CfdDictKey tree");
+    export_with_retry::<coflow_data_model::CfdPathSegment>("CfdPathSegment tree");
+    export_with_retry::<coflow_api::FlatDiagnostic>("FlatDiagnostic");
+    export_with_retry::<coflow_api::WriterCapabilities>("WriterCapabilities");
+    export_with_retry::<coflow_runtime::FileTreeNode>("FileTreeNode");
+    export_with_retry::<coflow_runtime::DimensionValueCoordinate>("DimensionValueCoordinate");
+    export_with_retry::<coflow_runtime::DimensionValueView>("DimensionValueView");
+    export_with_retry::<coflow_runtime::CreateFieldSource>("CreateFieldSource");
+    export_with_retry::<coflow_runtime::CreateRequiredInput>("CreateRequiredInput");
     // Editor composition views
-    t::EditorError::export_all().expect("export EditorError");
-    t::ProjectSnapshot::export_all().expect("export ProjectSnapshot");
-    t::PluginSchemaType::export_all().expect("export PluginSchemaType");
-    t::PluginSchemaField::export_all().expect("export PluginSchemaField");
-    t::EditorProjectSettings::export_all().expect("export EditorProjectSettings");
-    t::EditorRecordGroup::export_all().expect("export EditorRecordGroup");
-    t::ViewConfig::export_all().expect("export ViewConfig");
-    t::ViewKind::export_all().expect("export ViewKind");
-    t::FileRecords::export_all().expect("export FileRecords");
-    t::RecordRow::export_all().expect("export RecordRow");
-    t::FieldCell::export_all().expect("export FieldCell");
-    t::FieldAnnotation::export_all().expect("export FieldAnnotation");
-    t::SpreadInfo::export_all().expect("export SpreadInfo");
-    t::WriteFieldOutcome::export_all().expect("export WriteFieldOutcome");
-    t::WriteDimensionValueOutcome::export_all().expect("export WriteDimensionValueOutcome");
-    t::CollectionEdit::export_all().expect("export CollectionEdit");
-    t::RenameRecordOutcome::export_all().expect("export RenameRecordOutcome");
-    t::InsertRecordOutcome::export_all().expect("export InsertRecordOutcome");
-    t::CreateRecordDraft::export_all().expect("export CreateRecordDraft");
-    t::CreateRecordFieldDraft::export_all().expect("export CreateRecordFieldDraft");
-    t::DeleteRecordOutcome::export_all().expect("export DeleteRecordOutcome");
-    t::ReorderRecordsOutcome::export_all().expect("export ReorderRecordsOutcome");
-    t::DeletedRecordSnapshot::export_all().expect("export DeletedRecordSnapshot");
-    t::GraphData::export_all().expect("export GraphData");
-    t::GraphNode::export_all().expect("export GraphNode");
-    t::GraphEdge::export_all().expect("export GraphEdge");
-    t::RefTarget::export_all().expect("export RefTarget");
+    export_with_retry::<t::EditorError>("EditorError");
+    export_with_retry::<t::ProjectSnapshot>("ProjectSnapshot");
+    export_with_retry::<t::PluginSchemaType>("PluginSchemaType");
+    export_with_retry::<t::PluginSchemaField>("PluginSchemaField");
+    export_with_retry::<t::EditorProjectSettings>("EditorProjectSettings");
+    export_with_retry::<t::EditorRecordGroup>("EditorRecordGroup");
+    export_with_retry::<t::ViewConfig>("ViewConfig");
+    export_with_retry::<t::ViewKind>("ViewKind");
+    export_with_retry::<t::FileRecords>("FileRecords");
+    export_with_retry::<t::RecordRow>("RecordRow");
+    export_with_retry::<t::FieldCell>("FieldCell");
+    export_with_retry::<t::FieldAnnotation>("FieldAnnotation");
+    export_with_retry::<t::SpreadInfo>("SpreadInfo");
+    export_with_retry::<t::WriteFieldOutcome>("WriteFieldOutcome");
+    export_with_retry::<t::WriteDimensionValueOutcome>("WriteDimensionValueOutcome");
+    export_with_retry::<t::CollectionEdit>("CollectionEdit");
+    export_with_retry::<t::RenameRecordOutcome>("RenameRecordOutcome");
+    export_with_retry::<t::InsertRecordOutcome>("InsertRecordOutcome");
+    export_with_retry::<t::CreateRecordDraft>("CreateRecordDraft");
+    export_with_retry::<t::CreateRecordFieldDraft>("CreateRecordFieldDraft");
+    export_with_retry::<t::DeleteRecordOutcome>("DeleteRecordOutcome");
+    export_with_retry::<t::ReorderRecordsOutcome>("ReorderRecordsOutcome");
+    export_with_retry::<t::DeletedRecordSnapshot>("DeletedRecordSnapshot");
+    export_with_retry::<t::GraphData>("GraphData");
+    export_with_retry::<t::GraphNode>("GraphNode");
+    export_with_retry::<t::GraphEdge>("GraphEdge");
+    export_with_retry::<t::RefTarget>("RefTarget");
     normalize_generated_bindings();
+}
+
+#[cfg(feature = "ts-export")]
+fn export_with_retry<T: ts_rs::TS + 'static>(label: &str) {
+    let mut delays = [10, 20, 40, 80, 160, 320, 640].into_iter();
+    loop {
+        match T::export_all() {
+            Ok(()) => return,
+            Err(error) => {
+                let Some(delay_ms) = delays.next() else {
+                    panic!("export {label}: {error}");
+                };
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            }
+        }
+    }
 }
 
 #[cfg(feature = "ts-export")]

@@ -314,13 +314,15 @@ fn lower_flag_operand(
     } else {
         raw
     };
-    schema.enum_variant_value(enum_name, variant).ok_or_else(|| {
-        error(
-            CfdTextErrorCode::InvalidEnumVariant,
-            format!("unknown enum variant `{enum_name}.{variant}`"),
-            span,
-        )
-    })
+    schema
+        .enum_variant_value(enum_name, variant)
+        .ok_or_else(|| {
+            error(
+                CfdTextErrorCode::InvalidEnumVariant,
+                format!("unknown enum variant `{enum_name}.{variant}`"),
+                span,
+            )
+        })
 }
 
 fn validate_flag_mask(
@@ -329,15 +331,12 @@ fn validate_flag_mask(
     value: i64,
     span: Span,
 ) -> Result<(), CfdTextDiagnostics> {
-    let declared_mask = schema
-        .resolve_enum(enum_name)
-        .map(|schema_enum| {
-            schema_enum
-                .variants
-                .iter()
-                .fold(0_i64, |mask, variant| mask | variant.value)
-        })
-        .unwrap_or(0);
+    let declared_mask = schema.resolve_enum(enum_name).map_or(0, |schema_enum| {
+        schema_enum
+            .variants
+            .iter()
+            .fold(0_i64, |mask, variant| mask | variant.value)
+    });
     if value < 0 {
         return Err(error(
             CfdTextErrorCode::InvalidEnumVariant,

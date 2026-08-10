@@ -59,16 +59,17 @@ describe('project workspace tabs', () => {
         type_name: 'Item',
         view_id: '__default_table',
         view_kind: 'table',
+        coordinate: null,
       }],
     })
   })
 
-  it('does not serialize an empty record coordinate', () => {
+  it('serializes an empty record coordinate as null', () => {
     const tab = {
       ...defaultWorkspaceTab('data/settings.cfd', 'Settings', true),
       coordinate: { actual_type: 'Settings', key: '' },
     }
-    expect(workspaceToWire([tab], tab.id).tabs[0]).not.toHaveProperty('coordinate')
+    expect(workspaceToWire([tab], tab.id).tabs[0].coordinate).toBeNull()
   })
 
   it('restores a dimension file tab with an empty type name', () => {

@@ -85,7 +85,8 @@ pub struct PatchDimensionValueSelector {
 impl PatchDimensionValueSelector {
     fn into_coordinate(self) -> Result<DimensionValueCoordinate, String> {
         Ok(DimensionValueCoordinate {
-            actual_type: TypeName::new(self.record.actual_type).map_err(|error| error.to_string())?,
+            actual_type: TypeName::new(self.record.actual_type)
+                .map_err(|error| error.to_string())?,
             record_key: RecordKey::new(self.record.key).map_err(|error| error.to_string())?,
             field: self.field,
             dimension: self.dimension,
@@ -180,7 +181,7 @@ impl DataPatchRequest {
                     coflow_api::DiagnosticSet::one(coflow_api::Diagnostic::error(
                         "PATCH-DIMENSION-COORDINATE",
                         "PATCH",
-                        error.to_string(),
+                        error,
                     )),
                 )
             })?;

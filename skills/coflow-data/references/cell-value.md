@@ -89,6 +89,14 @@ Rarity.Rare
 
 完整写法的枚举名前缀必须与目标枚举类型一致。
 
+`@flag` enum 的表格单元格使用非负整数 mask，不使用变体列表或按位表达式：
+
+```text
+5
+```
+
+例如 `Read = 1`、`Write = 2`、`Execute = 4` 时，`5` 表示 `Read + Execute`。mask 只能包含 schema 已声明的位。为兼容已有数据，单个变体仍可写成 `Read`；组合值必须写整数。`Read | Execute` 是 CFD 专用写法；在表格单元格中，`|` 仍然是数组元素分隔符。
+
 ## 对象
 
 对象可以按字段顺序填写：
@@ -189,6 +197,7 @@ CFT 字段类型决定单元格形态：`&Item` 必须写 `&sword_fire`，`Item`
 | `string` | `Fire Sword` |
 | `int` | `100` |
 | `Rarity` | `Rarity.Rare` |
+| `@flag Permission` | `5` |
 | `[string]` | `weapon | melee` |
 | `{Element: float}` | `Fire: 1.25, Ice: 1.0` |
 | `Stats` | `hp: 100, attack: 20` |
@@ -205,3 +214,4 @@ CFT 字段类型决定单元格形态：`&Item` 必须写 `&sword_fire`，`Item`
 | 对象数组写成 `hp:100 | hp:200` | 对象元素缺少 `{}` | 写 `{hp:100} | {hp:200}` |
 | `item: sword_fire` | 裸 key 不是对象引用 | 写 `item: &sword_fire` |
 | `null` 写给 `string` | `null` 只允许用于 nullable | 改为 `string?` 或写字符串 |
+| flag enum 单元格写 `Read | Write` | `|` 在单元格语法中用于数组分隔，不是 flag 运算符 | 写整数 mask，例如 `3` |

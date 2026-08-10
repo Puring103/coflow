@@ -109,6 +109,18 @@ pub(crate) enum Command {
     Data(DataArgs),
     /// Install, remove, or inspect bundled Coflow agent skills.
     Skill(SkillArgs),
+    /// Update the standalone `coflow` binary to the latest release.
+    SelfUpdate(SelfUpdateArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SelfUpdateArgs {
+    /// Check for a newer release without downloading or installing it.
+    #[arg(long)]
+    pub(crate) check: bool,
+    /// Install without prompting for confirmation.
+    #[arg(long, short = 'y')]
+    pub(crate) yes: bool,
 }
 
 #[derive(Debug, Args)]

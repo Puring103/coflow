@@ -130,7 +130,10 @@ fn preserve_unity_meta_tree(source_dir: &Path, staging_dir: &Path) -> Result<(),
         let file_type = entry.file_type().map_err(|err| {
             diagnostic_set(
                 &source,
-                format!("failed to inspect output entry `{}`: {err}", source.display()),
+                format!(
+                    "failed to inspect output entry `{}`: {err}",
+                    source.display()
+                ),
             )
         })?;
         if file_type.is_dir() {
@@ -561,12 +564,15 @@ fn files_equal(left: &Path, right: &Path) -> std::io::Result<bool> {
 
     let mut left = BufReader::new(fs::File::open(left)?);
     let mut right = BufReader::new(fs::File::open(right)?);
-    let mut left_buffer = [0; 64 * 1024];
-    let mut right_buffer = [0; 64 * 1024];
+    let mut left_buffer = vec![0; 64 * 1024].into_boxed_slice();
+    let mut right_buffer = vec![0; 64 * 1024].into_boxed_slice();
     loop {
         let left_read = left.read(&mut left_buffer)?;
         let right_read = right.read(&mut right_buffer)?;
-        if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
+        if left_read != right_read {
+            return Ok(false);
+        }
+        if left_buffer[..left_read] != right_buffer[..left_read] {
             return Ok(false);
         }
         if left_read == 0 {

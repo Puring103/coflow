@@ -116,6 +116,7 @@ pub(crate) struct LoadProjectDataOptions {
     pub(crate) run_checks: bool,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct ReloadProjectDataOptions<'a> {
     pub(crate) load: LoadProjectDataOptions,
     pub(crate) refresh_implicit_dimension_sources: bool,
@@ -140,6 +141,7 @@ pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput,
     })
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn load_project_data(
     project: &Project,
     schema: &CftSchema,
@@ -187,7 +189,11 @@ pub(crate) fn load_project_data(
                     .saturating_add(resolved_sources.len());
                 for resolved_source in resolved_sources {
                     diagnostics.extend(load_resolved_dimension_source(
-                        project, schema, registry, &mut state, resolved_source,
+                        project,
+                        schema,
+                        registry,
+                        &mut state,
+                        resolved_source,
                     ));
                 }
             }
@@ -260,6 +266,7 @@ pub(crate) fn load_project_data(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn reload_project_data_from_cache(
     project: &Project,
     schema: &CftSchema,
@@ -281,8 +288,7 @@ pub(crate) fn reload_project_data_from_cache(
             .cloned()
             .collect(),
     };
-    if options.load.include_implicit_dimension_sources
-        && options.refresh_implicit_dimension_sources
+    if options.load.include_implicit_dimension_sources && options.refresh_implicit_dimension_sources
     {
         statistics.sources_resolved = refresh_dimension_source_plans(
             project,
@@ -361,13 +367,7 @@ pub(crate) fn reload_project_data_from_cache(
         });
     }
 
-    build_output_from_cache(
-        schema,
-        indexes,
-        source_data,
-        &options,
-        statistics,
-    )
+    build_output_from_cache(schema, indexes, source_data, &options, statistics)
 }
 
 fn preflight_cached_sources(
@@ -507,14 +507,7 @@ fn load_resolved_dimension_source(
         .files
         .add_source_file(entry.display_path.clone(), source_id);
     for field in resolved.fields {
-        match load_dimension_batch(
-            project,
-            schema,
-            registry,
-            &source,
-            &field,
-            &state.records,
-        ) {
+        match load_dimension_batch(project, schema, registry, &source, &field, &state.records) {
             Ok(values) => state.source_data.batches.push(CachedSourceBatch {
                 entry: entry.clone(),
                 records: Arc::default(),

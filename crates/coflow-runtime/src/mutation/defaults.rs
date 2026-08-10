@@ -246,7 +246,8 @@ impl<'a> DefaultValueMaterializer<'a> {
                 variant,
                 value,
             } => {
-                let mut enum_value = self.schema
+                let mut enum_value = self
+                    .schema
                     .enum_value_from_int(enum_name, *value)
                     .map_or_else(
                         || CfdEnumValue {

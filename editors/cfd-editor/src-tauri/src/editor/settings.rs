@@ -119,9 +119,24 @@ pub(super) fn sanitized_workspace(workspace: EditorWorkspaceState) -> EditorWork
         .tabs
         .into_iter()
         .filter_map(|tab| {
-            let file_path = tab.file_path.trim().chars().take(MAX_ID_LEN).collect::<String>();
-            let type_name = tab.type_name.trim().chars().take(MAX_FIELD_LEN).collect::<String>();
-            let view_id = tab.view_id.trim().chars().take(MAX_ID_LEN).collect::<String>();
+            let file_path = tab
+                .file_path
+                .trim()
+                .chars()
+                .take(MAX_ID_LEN)
+                .collect::<String>();
+            let type_name = tab
+                .type_name
+                .trim()
+                .chars()
+                .take(MAX_FIELD_LEN)
+                .collect::<String>();
+            let view_id = tab
+                .view_id
+                .trim()
+                .chars()
+                .take(MAX_ID_LEN)
+                .collect::<String>();
             if file_path.is_empty() || view_id.is_empty() {
                 return None;
             }
@@ -146,7 +161,10 @@ pub(super) fn sanitized_workspace(workspace: EditorWorkspaceState) -> EditorWork
     let active_tab_id = workspace
         .active_tab_id
         .filter(|active| retained_ids.contains(active));
-    EditorWorkspaceState { tabs, active_tab_id }
+    EditorWorkspaceState {
+        tabs,
+        active_tab_id,
+    }
 }
 
 pub(super) fn sanitized_column_widths(widths: BTreeMap<String, f64>) -> BTreeMap<String, f64> {

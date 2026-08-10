@@ -464,6 +464,7 @@ fn load_data(
     Ok((output, indexes))
 }
 
+#[derive(Clone, Copy)]
 struct CachedLoadOptions<'a> {
     reload_paths: &'a BTreeSet<String>,
     include_implicit_dimension_sources: bool,

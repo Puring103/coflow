@@ -2,4 +2,4 @@
 import type { RecordCoordinate } from "./RecordCoordinate";
 import type { WorkspaceViewKind } from "./WorkspaceViewKind";
 
-export type EditorWorkspaceTab = { file_path: string, type_name: string, view_id: string, view_kind: WorkspaceViewKind, coordinate?: RecordCoordinate };
+export type EditorWorkspaceTab = { file_path: string, type_name: string, view_id: string, view_kind: WorkspaceViewKind, coordinate: RecordCoordinate | null, };
