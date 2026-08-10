@@ -154,6 +154,7 @@ pub struct FieldShapeInfo {
     pub description: Option<String>,
     pub ref_target_type: Option<String>,
     pub enum_type: Option<String>,
+    pub enum_is_flag: bool,
     pub nullable: bool,
     pub polymorphic_types: Vec<String>,
     pub collection_item: Option<Box<Self>>,

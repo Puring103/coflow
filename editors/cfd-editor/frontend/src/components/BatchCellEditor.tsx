@@ -6,6 +6,7 @@ import { projectBatchCells } from '../state/batchRecordProjection'
 import {
   cellDeclaredType,
   cellEnumType,
+  cellEnumIsFlag,
   cellNullable,
   cellRefTargetType,
   type FieldValue,
@@ -56,6 +57,7 @@ export function BatchCellEditor({ cells, readOnly, onWriteBatch }: Props) {
           sample={cell.value}
           declaredType={cellDeclaredType(cell)}
           enumType={cellEnumType(cell)}
+          enumIsFlag={cellEnumIsFlag(cell)}
           refTargetType={cellRefTargetType(cell)}
           nullable={cellNullable(cell)}
           disabled={!editable}

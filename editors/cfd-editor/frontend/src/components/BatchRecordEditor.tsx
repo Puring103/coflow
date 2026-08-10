@@ -3,6 +3,7 @@ import type { RecordRow } from '../bindings/RecordRow'
 import {
   cellDeclaredType,
   cellEnumType,
+  cellEnumIsFlag,
   cellNullable,
   cellRefTargetType,
   fieldPathField,
@@ -62,6 +63,7 @@ export function BatchRecordEditor({ records, readOnly, onWriteFields }: Props) {
             sample={field.cell.value}
             declaredType={cellDeclaredType(field.cell)}
             enumType={cellEnumType(field.cell)}
+            enumIsFlag={cellEnumIsFlag(field.cell)}
             refTargetType={cellRefTargetType(field.cell)}
             nullable={cellNullable(field.cell)}
             disabled={!editable}
@@ -74,11 +76,12 @@ export function BatchRecordEditor({ records, readOnly, onWriteFields }: Props) {
   )
 }
 
-export function MixedFieldRow({ label, sample, declaredType, enumType, refTargetType, nullable, disabled, busy, onCommit }: {
+export function MixedFieldRow({ label, sample, declaredType, enumType, enumIsFlag, refTargetType, nullable, disabled, busy, onCommit }: {
   label: string
   sample: FieldValue
   declaredType?: string
   enumType?: string
+  enumIsFlag?: boolean
   refTargetType?: string
   nullable: boolean
   disabled: boolean
@@ -103,7 +106,7 @@ export function MixedFieldRow({ label, sample, declaredType, enumType, refTarget
           ) : valueKind === 'bool' ? (
             <MixedCheckbox onCommit={onCommit} />
           ) : valueKind === 'enum' && enumType ? (
-            <EnumDirectSelect value={nullValue() as FieldValue & { kind: 'null' }} enumType={enumType} nullable={nullable} onCommit={onCommit} />
+            <EnumDirectSelect value={nullValue() as FieldValue & { kind: 'null' }} enumType={enumType} isFlag={enumIsFlag} nullable={nullable} onCommit={onCommit} />
           ) : valueKind === 'ref' && refTargetType ? (
             <RefDirectSelect value={nullValue() as FieldValue & { kind: 'null' }} targetType={refTargetType} nullable={nullable} onCommit={onCommit} />
           ) : valueKind === 'int' || valueKind === 'float' || valueKind === 'string' ? (

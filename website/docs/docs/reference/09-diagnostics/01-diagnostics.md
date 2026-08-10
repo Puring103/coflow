@@ -106,8 +106,8 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 | Excel 表头 | 表头错误会跳过该 sheet 的数据行 |
 | Cell parse | 有效表头下跨行收集 |
 | CFD 文本 | 文件间继续，单文件内有限恢复 |
-| DataModel | 子阶段内聚合；无效 model 阻塞引用和 check |
-| 引用解析 | 子阶段内聚合；未解析引用阻塞 check |
+| DataModel | 子阶段内聚合；`DATA-006` 保留缺字段记录供编辑，其他 model 错误阻塞后续阶段 |
+| 引用解析 | `REF-001` / `REF-002` 保留引用值与 model，供后续删除、补记录或修引用 |
 | Check | 跨 block 和 record 聚合；硬运行期错误只停止当前 block |
 | Codegen / 产物检查 | 尽量聚合 |
 
@@ -118,8 +118,8 @@ JSON 中的行列位置是零基；human 输出显示为一基。
 1. `CLI` / `PROJECT` / `DIM-CONFIG`：命令和项目配置。
 2. `CFT-LEX` / `CFT-SYN` / `CFT-SCHEMA` / `CFT-TYPE`：CFT schema。
 3. `EXCEL` / `CSV` / `CELL` / `CFD-TEXT`：数据源读取和文本解析。
-4. `CFD-DATA` / `CFD-REF`：DataModel 和引用。
-5. `CFD-CHECK`：业务规则。
+4. `DATA` / `REF`：DataModel 和引用。
+5. `CHECK`：业务规则。
 6. `CODEGEN` / `ARTIFACT`：生成和输出目录。
 
-前序阶段出错时，后续阶段可能不会运行。例如 DataModel 无效时，引用解析和 check 不会继续。
+前序阶段出错时，后续阶段可能不会运行。`DATA-006`、`REF-001`、`REF-002` 和 `CHECK-*` 是可编辑中间态：mutation 可以写入并返回 `write_ok=true`、`check_ok=false`；严格 build、codegen 和 export 仍会被这些错误阻断。其他 DataModel 错误仍会阻塞 model 构建。

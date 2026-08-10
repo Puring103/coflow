@@ -3,7 +3,9 @@
 //! Each function takes the parsed [`CfdAst`] (plus optional compiled schema)
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
-use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdSyntaxDiagnostic, CfdValue};
+use coflow_cfd::{
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBlockEntry, CfdRecord, CfdSyntaxDiagnostic, CfdValue,
+};
 use coflow_cft::{CftSchema, CftValueType, Span};
 use serde_json::{json, Value};
 
@@ -110,19 +112,9 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst) -> Value {
 fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
     match value {
         CfdValue::Scalar(text, span) => {
-            if text == "null" || text == "true" || text == "false" {
-                c.add_plain(*span, SEM_KEYWORD);
-            } else if text
-                .bytes()
-                .next()
-                .is_some_and(|b| b.is_ascii_digit() || b == b'-')
-            {
-                c.add_plain(*span, SEM_NUMBER);
-            } else if text.bytes().next().is_some_and(|b| b.is_ascii_uppercase()) {
-                // PascalCase bare identifier → enum variant
-                c.add(*span, SEM_ENUM_MEMBER, MOD_REFERENCE | MOD_SCHEMA);
-            }
+            collect_scalar_token(text, *span, c);
         }
+        CfdValue::BitExpr(expr) => collect_bit_expr_tokens(expr, c),
         CfdValue::QuotedString(_, span) => c.add_plain(*span, SEM_STRING),
         CfdValue::Null(span) => c.add_plain(*span, SEM_KEYWORD),
         CfdValue::Block(block) => {
@@ -152,6 +144,30 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
             c.add_plain(Span::new(span.start, span.start + 3), SEM_OPERATOR); // ...
             collect_value_tokens(inner, c);
         }
+    }
+}
+
+fn collect_bit_expr_tokens(expr: &CfdBitExpr, c: &mut TokenCollector<'_>) {
+    match &expr.kind {
+        CfdBitExprKind::Value(text) => collect_scalar_token(text, expr.span, c),
+        CfdBitExprKind::Binary { lhs, rhs, .. } => {
+            collect_bit_expr_tokens(lhs, c);
+            collect_bit_expr_tokens(rhs, c);
+        }
+    }
+}
+
+fn collect_scalar_token(text: &str, span: Span, c: &mut TokenCollector<'_>) {
+    if text == "null" || text == "true" || text == "false" {
+        c.add_plain(span, SEM_KEYWORD);
+    } else if text
+        .bytes()
+        .next()
+        .is_some_and(|b| b.is_ascii_digit() || b == b'-')
+    {
+        c.add_plain(span, SEM_NUMBER);
+    } else if text.bytes().next().is_some_and(|b| b.is_ascii_uppercase()) {
+        c.add(span, SEM_ENUM_MEMBER, MOD_REFERENCE | MOD_SCHEMA);
     }
 }
 

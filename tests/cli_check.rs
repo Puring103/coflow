@@ -66,7 +66,7 @@ fn full_project_check_failure_uses_check_diagnostics_in_human_output() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("[CFD-CHECK-007] [CHECK]"),
+        stderr.contains("[CHECK-007] [CHECK]"),
         "stderr: {stderr}"
     );
     assert!(
@@ -108,7 +108,7 @@ fn full_project_check_failure_uses_check_diagnostics_in_json_output() {
     let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
     assert_eq!(diagnostics.len(), 1);
     let diagnostic = &diagnostics[0];
-    assert_eq!(diagnostic["code"], "CFD-CHECK-007");
+    assert_eq!(diagnostic["code"], "CHECK-007");
     assert_eq!(diagnostic["stage"], "CHECK");
     assert_eq!(
         diagnostic["message"],

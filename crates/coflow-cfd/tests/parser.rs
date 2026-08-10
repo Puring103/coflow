@@ -1,8 +1,8 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use coflow_cfd::{
-    parse_cfd, parse_cfd_with_options, CfdAst, CfdBlockEntry, CfdParseOptions, CfdValue,
-    StructuralLimits,
+    parse_cfd, parse_cfd_with_options, CfdAst, CfdBitExprKind, CfdBitOp, CfdBlockEntry,
+    CfdParseOptions, CfdValue, StructuralLimits,
 };
 
 fn parse_ok(source: &str) -> CfdAst {
@@ -115,6 +115,48 @@ fn direct_ref_value() {
         CfdValue::Ref(r) => assert_eq!(r.key.0, "boss"),
         other => panic!("expected Ref, got {other:?}"),
     }
+}
+
+#[test]
+fn bit_expression_uses_and_xor_or_precedence() {
+    let ast = parse_ok("r: T { flags: A | B ^ C & D }");
+    let CfdValue::BitExpr(expr) = &ast.records[0].fields().next().expect("field").value else {
+        panic!("expected bit expression");
+    };
+    let CfdBitExprKind::Binary { op, rhs, .. } = &expr.kind else {
+        panic!("expected outer binary expression");
+    };
+    assert_eq!(*op, CfdBitOp::Or);
+    let CfdBitExprKind::Binary { op, rhs, .. } = &rhs.kind else {
+        panic!("expected xor expression");
+    };
+    assert_eq!(*op, CfdBitOp::Xor);
+    assert!(matches!(
+        rhs.kind,
+        CfdBitExprKind::Binary {
+            op: CfdBitOp::And,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn bit_expression_parentheses_override_precedence() {
+    let ast = parse_ok("r: T { flags: (A | B) & C }");
+    let CfdValue::BitExpr(expr) = &ast.records[0].fields().next().expect("field").value else {
+        panic!("expected bit expression");
+    };
+    let CfdBitExprKind::Binary { op, lhs, .. } = &expr.kind else {
+        panic!("expected outer binary expression");
+    };
+    assert_eq!(*op, CfdBitOp::And);
+    assert!(matches!(
+        lhs.kind,
+        CfdBitExprKind::Binary {
+            op: CfdBitOp::Or,
+            ..
+        }
+    ));
 }
 
 #[test]

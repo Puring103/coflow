@@ -235,6 +235,7 @@ function annotationForDraft(field: CreateRecordFieldDraft): FieldAnnotation | nu
     declared_type: base?.declared_type ?? null,
     ref_target_type: base?.ref_target_type ?? requiredRef ?? null,
     enum_type: base?.enum_type ?? null,
+    enum_is_flag: base?.enum_is_flag ?? false,
     nullable: base?.nullable ?? false,
     read_only: base?.read_only ?? false,
     item_annotation: base?.item_annotation ?? null,

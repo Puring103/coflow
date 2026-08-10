@@ -112,7 +112,7 @@ fn ref_fields_accept_child_records_and_reject_inline_objects_siblings_and_parent
     let err = sibling_builder
         .build()
         .expect_err("&ItemReward should reject sibling records");
-    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+    assert_has_code(&err, CfdErrorCode::RefTargetTypeMismatch);
 
     let mut parent_builder = CfdDataModel::builder(&schema);
     parent_builder.add_record("base", "Reward", [("name", LoadedValueDraft::from("base"))]);
@@ -127,7 +127,7 @@ fn ref_fields_accept_child_records_and_reject_inline_objects_siblings_and_parent
     let err = parent_builder
         .build()
         .expect_err("&ItemReward should reject parent records");
-    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+    assert_has_code(&err, CfdErrorCode::RefTargetTypeMismatch);
 }
 
 #[test]
@@ -171,6 +171,61 @@ fn missing_key_reports_ref_target_not_found() {
 
     let err = builder.build().expect_err("missing ref should fail");
     assert_has_code(&err, CfdErrorCode::RefTargetNotFound);
+}
+
+#[test]
+fn editable_build_preserves_unresolved_refs() {
+    let schema = compile_schema("type Item {} type Holder { item: &Item; }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "holder",
+        "Holder",
+        [("item", LoadedValueDraft::record_ref("missing"))],
+    );
+
+    let output = builder
+        .build_editable()
+        .expect("unresolved refs are representable in an editable model");
+    assert_has_code(&output.diagnostics, CfdErrorCode::RefTargetNotFound);
+    let holder_id = output
+        .model
+        .lookup_assignable(&schema, "Holder", "holder")
+        .expect("holder remains addressable");
+    assert_eq!(
+        output
+            .model
+            .record(holder_id)
+            .and_then(|record| record.field("item")),
+        Some(&CfdValue::record_ref("missing").unwrap())
+    );
+}
+
+#[test]
+fn wrong_ref_target_type_has_a_reference_diagnostic() {
+    let schema = compile_schema(
+        "abstract type Reward {} type ItemReward : Reward {} type CurrencyReward : Reward {} type Holder { reward: &ItemReward; }",
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "reward",
+        "CurrencyReward",
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
+    );
+    builder.add_record(
+        "holder",
+        "Holder",
+        [("reward", LoadedValueDraft::record_ref("reward"))],
+    );
+
+    let output = builder
+        .build_editable()
+        .expect("wrong-type refs remain editable");
+    let diagnostic = diagnostic_with_code(
+        &output.diagnostics,
+        CfdErrorCode::RefTargetTypeMismatch,
+    );
+    assert_eq!(diagnostic.stage, CfdStage::Reference);
+    assert_eq!(diagnostic.code.as_str(), "REF-002");
 }
 
 #[test]

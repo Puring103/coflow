@@ -58,6 +58,7 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::Dia
             .ok_or_else(|| one_value_error("cell float must be finite")),
         LoadedValueDraft::String(value) => Ok(Value::String(value)),
         LoadedValueDraft::EnumVariant { variant, .. } => Ok(Value::String(variant)),
+        LoadedValueDraft::EnumValue { value, .. } => Ok(Value::Number(Number::from(value))),
         LoadedValueDraft::RecordRef(key) => {
             let mut object = Map::new();
             object.insert("$ref".to_string(), Value::String(key));

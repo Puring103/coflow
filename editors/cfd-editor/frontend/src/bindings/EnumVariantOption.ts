@@ -3,4 +3,4 @@
 /**
  * Stable enum variant identity plus schema-provided presentation metadata.
  */
-export type EnumVariantOption = { name: string, label: string | null, description: string | null, };
+export type EnumVariantOption = { name: string, value: bigint, label: string | null, description: string | null, };

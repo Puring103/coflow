@@ -103,7 +103,7 @@ fn render_enum_value(value: &CfdEnumValue) -> Result<String, CellRenderError> {
         .variant
         .as_ref()
         .map(ToString::to_string)
-        .ok_or(CellRenderError::AnonymousEnum)
+        .map_or_else(|| Ok(value.value.to_string()), Ok)
 }
 
 pub(super) fn render_string(value: &str) -> String {
