@@ -77,7 +77,9 @@ pub use schema_inspect::{
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,
 };
-pub use search::{RecordSearchHit, RecordSearchMode, RecordSearchResults};
+pub use search::{
+    RecordSearchHit, RecordSearchMode, RecordSearchOptions, RecordSearchResults,
+};
 pub use session::ProjectSchemaSession;
 pub(crate) use session::ProjectSession;
 pub use statistics::ProjectExecutionStats;

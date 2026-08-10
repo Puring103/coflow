@@ -85,6 +85,7 @@ fn read_only_project_commands_do_not_generate_or_rewrite_dimension_sources() {
         ("check", &["check"]),
         ("data-sources", &["data", "sources"]),
         ("data-list", &["data", "list"]),
+        ("data-search", &["data", "search", "potion", "--project"]),
         ("data-get", &["data", "get"]),
     ];
 
@@ -575,6 +576,168 @@ fn data_get_can_fetch_single_complete_record() {
     assert_eq!(json["records"][0]["fields"]["name"]["value"], "Sword");
     assert_eq!(json["records"][0]["fields"]["price"]["kind"], "int");
     assert_eq!(json["records"][0]["fields"]["price"]["value"], "100");
+}
+
+#[test]
+fn data_search_supports_key_full_text_and_human_output() {
+    let root = temp_project_dir("cli-data-search");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_project(&root);
+
+    let output = coflow()
+        .args([
+            "data",
+            "search",
+            "sword",
+            "--project",
+            root.to_str().expect("utf8 path"),
+            "--json",
+        ])
+        .output()
+        .expect("run key search");
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("search json");
+    assert_eq!(json["hits"][0]["record"]["key"], "sword");
+    assert_eq!(json["hits"][0]["file"], "data/items.cfd");
+    assert_eq!(json["hits"][0]["field_path"], Value::Null);
+    assert_eq!(json["truncated"], false);
+
+    let output = coflow()
+        .args([
+            "data",
+            "search",
+            "100",
+            "--project",
+            root.to_str().expect("utf8 path"),
+            "--mode",
+            "full-text",
+            "--json",
+        ])
+        .output()
+        .expect("run full-text search");
+    assert!(output.status.success());
+    let json: Value = serde_json::from_slice(&output.stdout).expect("full-text json");
+    assert_eq!(json["hits"][0]["field_path"], "price");
+    assert_eq!(json["hits"][0]["preview"], "price: 100");
+
+    let output = coflow()
+        .args([
+            "data",
+            "search",
+            "sword",
+            "--project",
+            root.to_str().expect("utf8 path"),
+        ])
+        .output()
+        .expect("run human search");
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "Item.sword\tdata/items.cfd\n"
+    );
+}
+
+#[test]
+fn data_search_filters_before_paginating_and_empty_results_succeed() {
+    let root = temp_project_dir("cli-data-search-filters");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_project(&root);
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"
+            type Item { name: string; price: int; }
+            type Spell { name: string; price: int; }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("more.cfd"),
+        r#"shield: Item { name: "Shield", price: 80 }
+spark: Spell { name: "Spark", price: 20 }"#,
+    )
+    .expect("write second source");
+
+    let output = coflow()
+        .args([
+            "data",
+            "search",
+            "s",
+            "--project",
+            root.to_str().expect("utf8 path"),
+            "--type",
+            "Spell",
+            "--limit",
+            "1",
+            "--json",
+        ])
+        .output()
+        .expect("run filtered search");
+    assert!(output.status.success());
+    let json: Value = serde_json::from_slice(&output.stdout).expect("filtered json");
+    assert_eq!(json["hits"].as_array().expect("hits").len(), 1);
+    assert_eq!(json["hits"][0]["record"]["key"], "spark");
+    assert_eq!(json["truncated"], false);
+
+    let output = coflow()
+        .args([
+            "data",
+            "search",
+            "s",
+            "--project",
+            root.to_str().expect("utf8 path"),
+            "--limit",
+            "1",
+            "--json",
+        ])
+        .output()
+        .expect("run truncated search");
+    assert!(output.status.success());
+    let json: Value = serde_json::from_slice(&output.stdout).expect("truncated json");
+    assert_eq!(json["hits"].as_array().expect("hits").len(), 1);
+    assert_eq!(json["truncated"], true);
+
+    let output = coflow()
+        .args([
+            "data",
+            "search",
+            "s",
+            "--project",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/more.cfd",
+            "--limit",
+            "1",
+            "--offset",
+            "1",
+            "--json",
+        ])
+        .output()
+        .expect("run paged file search");
+    assert!(output.status.success());
+    let json: Value = serde_json::from_slice(&output.stdout).expect("paged json");
+    assert_eq!(json["hits"].as_array().expect("hits").len(), 1);
+    assert_eq!(json["hits"][0]["record"]["key"], "spark");
+    assert_eq!(json["truncated"], false);
+
+    let output = coflow()
+        .args([
+            "data",
+            "search",
+            "missing",
+            "--project",
+            root.to_str().expect("utf8 path"),
+            "--json",
+        ])
+        .output()
+        .expect("run empty search");
+    assert!(output.status.success());
+    let json: Value = serde_json::from_slice(&output.stdout).expect("empty json");
+    assert!(json["hits"].as_array().expect("hits").is_empty());
 }
 
 #[test]

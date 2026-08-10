@@ -2,6 +2,8 @@ use crate::diagnostics::cli_error;
 use coflow::data_patch::DataPatchReport;
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_runtime::{DataFileReport, DataGetReport, DataListReport, DataSourcesReport};
+
+use super::DataSearchReport;
 use std::io::{self, Write};
 
 pub(super) use crate::write_file::write_json;
@@ -30,6 +32,28 @@ pub(super) fn write_list_human(report: &DataListReport) -> Result<(), Diagnostic
             record.record.actual_type, record.record.key, record.file, record.provider
         )
         .map_err(|err| output_error(&err))?;
+    }
+    write_flat_diagnostics(&mut stdout, &report.diagnostics)
+}
+
+pub(super) fn write_search_human(report: &DataSearchReport) -> Result<(), DiagnosticSet> {
+    let mut stdout = io::stdout().lock();
+    for hit in &report.hits {
+        if let (Some(field_path), Some(preview)) = (&hit.field_path, &hit.preview) {
+            writeln!(
+                stdout,
+                "{}.{}\t{}\t{}\t{}",
+                hit.record.actual_type, hit.record.key, hit.file, field_path, preview
+            )
+            .map_err(|err| output_error(&err))?;
+        } else {
+            writeln!(
+                stdout,
+                "{}.{}\t{}",
+                hit.record.actual_type, hit.record.key, hit.file
+            )
+            .map_err(|err| output_error(&err))?;
+        }
     }
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
