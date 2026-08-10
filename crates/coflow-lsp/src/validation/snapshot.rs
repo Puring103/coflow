@@ -95,7 +95,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
             &mut snapshot,
             diagnostics,
             &BTreeMap::new(),
-            &input.project.config_path,
+            input.project.config_path(),
         );
         return snapshot;
     }
@@ -107,7 +107,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
                 &mut snapshot,
                 &diagnostics,
                 &BTreeMap::new(),
-                &input.project.config_path,
+                input.project.config_path(),
             );
             return snapshot;
         }
@@ -162,7 +162,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
                 "schema runtime did not produce a schema attempt",
             )),
             &preferred_uris,
-            &input.project.config_path,
+            input.project.config_path(),
         );
         return snapshot;
     };
@@ -170,7 +170,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
         &mut snapshot,
         &raw_build.diagnostics().clone().into_set(),
         &preferred_uris,
-        &input.project.config_path,
+        input.project.config_path(),
     );
 
     for (_, module) in raw_build.modules().modules() {
@@ -289,8 +289,8 @@ fn collect_cfd_sources(
 ) -> (Vec<CfdProjectSource>, Vec<CfdSourceFailure>) {
     let mut sources = Vec::new();
     let mut failures = Vec::new();
-    for source in &project.config.sources {
-        let path = (source.location()).path();
+    for source in &project.config().sources {
+        let path = source.location();
         let resolved = project.resolve_path(path);
         if resolved.is_dir() {
             match discover_directory_files(&resolved) {

@@ -351,17 +351,17 @@ fn manifest_path(project: &Project) -> PathBuf {
 
 pub(crate) fn artifact_state_dir(project: &Project) -> PathBuf {
     project
-        .config_path
+        .config_path()
         .parent()
-        .unwrap_or(&project.root_dir)
+        .unwrap_or(project.root_dir())
         .join(STATE_DIR)
 }
 
 pub fn enum_lockfile_path(project: &Project) -> PathBuf {
     project
-        .config_path
+        .config_path()
         .parent()
-        .unwrap_or(&project.root_dir)
+        .unwrap_or(project.root_dir())
         .join(ENUM_LOCKFILE_NAME)
 }
 

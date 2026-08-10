@@ -13,8 +13,8 @@ use crate::dimensions::{DimensionGenerationTransaction, DimensionRuntimePlan};
 use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
 use crate::load::{
     empty_load_output, empty_model, load_project_data, reload_project_data_from_cache,
-    LoadDiagnostics, LoadProjectDataOptions, ProjectLoadOutput, ReloadProjectDataOptions,
-    SourceDataCache,
+    DataSourceTextOverride, LoadDiagnostics, LoadProjectDataOptions, ProjectLoadOutput,
+    ReloadProjectDataOptions, SourceDataCache,
 };
 use crate::project_schema::open_project_schema_attempt;
 use crate::session::{ProjectSchemaSession, ProjectSession};
@@ -41,12 +41,27 @@ pub(crate) fn open_project_session(
     build_project_session_with_effects(project, registry, options).map(|output| output.session)
 }
 
+pub(crate) fn open_project_session_with_source_overrides(
+    project: Project,
+    registry: &ProviderRegistry,
+    options: SessionOpenOptions,
+    source_overrides: &[DataSourceTextOverride],
+) -> Result<ProjectSession, DiagnosticSet> {
+    finish_project_session(
+        open_schema_session(project)?,
+        registry,
+        options,
+        source_overrides,
+    )
+    .map(|output| output.session)
+}
+
 pub(crate) fn open_project_session_from_schema(
     schema_session: ProjectSchemaSession,
     registry: &ProviderRegistry,
     options: SessionOpenOptions,
 ) -> Result<ProjectSession, DiagnosticSet> {
-    finish_project_session(schema_session, registry, options).map(|output| output.session)
+    finish_project_session(schema_session, registry, options, &[]).map(|output| output.session)
 }
 
 pub(crate) struct SessionBuildOutput {
@@ -75,7 +90,7 @@ pub(crate) fn build_project_session_with_effects(
     registry: &ProviderRegistry,
     options: SessionOpenOptions,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
-    finish_project_session(open_schema_session(project)?, registry, options)
+    finish_project_session(open_schema_session(project)?, registry, options, &[])
 }
 
 pub(crate) fn rebuild_project_session_from_generation(
@@ -90,6 +105,7 @@ pub(crate) fn rebuild_project_session_from_generation(
         registry,
         mode: SessionOpenOptions::Build,
         dimension_plan: Arc::clone(&session.dimension_plan),
+        source_overrides: &[],
     };
     let mut diagnostics = DiagnosticsStore::empty();
     let LoadedSessionData {
@@ -118,6 +134,7 @@ fn finish_project_session(
     schema_session: ProjectSchemaSession,
     registry: &ProviderRegistry,
     options: SessionOpenOptions,
+    source_overrides: &[DataSourceTextOverride],
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
     let ProjectSchemaSession {
         project,
@@ -138,6 +155,7 @@ fn finish_project_session(
         registry,
         mode: options,
         dimension_plan,
+        source_overrides,
     };
 
     let LoadedSessionData {
@@ -180,6 +198,7 @@ struct SessionBuildContext<'a> {
     registry: &'a ProviderRegistry,
     mode: SessionOpenOptions,
     dimension_plan: Arc<DimensionRuntimePlan>,
+    source_overrides: &'a [DataSourceTextOverride],
 }
 
 impl SessionBuildContext<'_> {
@@ -189,7 +208,7 @@ impl SessionBuildContext<'_> {
 
     fn should_generate_dimensions(&self) -> bool {
         self.mode == SessionOpenOptions::Build
-            && !self.project.config.dimensions.is_empty()
+            && !self.project.config().dimensions.is_empty()
     }
 }
 
@@ -432,6 +451,7 @@ fn load_data(
             include_implicit_dimension_sources,
             run_checks,
         },
+        ctx.source_overrides,
     ) {
         Ok(output) => output,
         Err(diagnostics) => {
@@ -489,7 +509,7 @@ fn load_cached_data(
 }
 
 fn project_display_path(project: &Project, path: &std::path::Path) -> String {
-    path.strip_prefix(&project.root_dir).map_or_else(
+    path.strip_prefix(project.root_dir()).map_or_else(
         |_| path.display().to_string(),
         coflow_project::path_to_slash,
     )
@@ -597,7 +617,7 @@ fn rollback_dimensions_after_failed_pipeline(
         return;
     }
     if let Some(transaction) = dimension_transaction.take() {
-        diagnostics.extend(transaction.rollback(&ctx.project.config_path));
+        diagnostics.extend(transaction.rollback(ctx.project.config_path()));
     }
 }
 

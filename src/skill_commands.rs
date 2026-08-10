@@ -147,7 +147,7 @@ fn project_target(root: &Path) -> InstallTarget {
 
 fn project_targets(config_or_dir: Option<&Path>) -> Result<Vec<InstallTarget>, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
-    Ok(vec![project_target(&project.root_dir)])
+    Ok(vec![project_target(project.root_dir())])
 }
 
 fn install_global_in(context: &GlobalContext) -> Result<SkillReport, DiagnosticSet> {

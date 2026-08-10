@@ -90,7 +90,7 @@ impl<'a> SourceResolver<'a> {
     ) -> Result<ResolvedSource, DiagnosticSet> {
         let source_index = self
             .project
-            .config
+            .config()
             .sources
             .iter()
             .position(|candidate| std::ptr::eq(candidate, source));
@@ -129,13 +129,13 @@ impl<'a> SourceResolver<'a> {
         let provider = match forced_provider {
             Some(provider_id) => self.registry.source_provider(provider_id).ok_or_else(|| {
                 DiagnosticSet::one(project_diagnostic(
-                    &self.project.config_path,
+                    self.project.config_path(),
                     format!("source provider `{provider_id}` is not registered"),
                 ))
             })?,
             None => self.select(configured, None)?,
         };
-        decode_configured_source(provider.as_ref(), configured, &self.project.config_path)
+        decode_configured_source(provider.as_ref(), configured, self.project.config_path())
     }
 
     fn resolve_directory(
@@ -150,18 +150,18 @@ impl<'a> SourceResolver<'a> {
         let decoded_directory = selected_provider
             .as_ref()
             .map(|provider| {
-                decode_configured_source(provider.as_ref(), configured, &self.project.config_path)
+                decode_configured_source(provider.as_ref(), configured, self.project.config_path())
             })
             .transpose()?;
         let files = discover_directory_files(directory).map_err(|error| {
             DiagnosticSet::one(project_diagnostic(
-                &self.project.config_path,
+                self.project.config_path(),
                 error.to_string(),
             ))
         })?;
         let managed_dimension_dirs = self
             .project
-            .config
+            .config()
             .dimensions
             .values()
             .filter_map(|config| config.out_dir.as_ref())
@@ -202,7 +202,7 @@ impl<'a> SourceResolver<'a> {
             validate_directory_options(
                 &configured.options,
                 selected.iter().map(|(_, provider)| provider.as_ref()),
-                &self.project.config_path,
+                self.project.config_path(),
                 configured.source_index,
             )?;
         }
@@ -242,7 +242,7 @@ impl<'a> SourceResolver<'a> {
             Ok(provider) => Ok(Some(provider)),
             Err(SourceProviderSelectionError::NoSourceProvider) => Ok(None),
             Err(error) => Err(DiagnosticSet::one(loader_selection_diagnostic(
-                &self.project.config_path,
+                self.project.config_path(),
                 configured,
                 error,
             ))),
@@ -259,7 +259,7 @@ impl<'a> SourceResolver<'a> {
             .select_source_provider(&source_ref(configured, source_type, &option_keys))
             .map_err(|error| {
                 DiagnosticSet::one(loader_selection_diagnostic(
-                    &self.project.config_path,
+                    self.project.config_path(),
                     configured,
                     error,
                 ))
@@ -272,7 +272,7 @@ impl<'a> SourceResolver<'a> {
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let decoded =
-            decode_configured_source(provider.as_ref(), configured, &self.project.config_path)?;
+            decode_configured_source(provider.as_ref(), configured, self.project.config_path())?;
         self.expand_decoded(provider, &decoded)
     }
 
@@ -282,7 +282,7 @@ impl<'a> SourceResolver<'a> {
         decoded: &ResolvedSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let context = SourceResolveContext {
-            project_root: &self.project.root_dir,
+            project_root: self.project.root_dir(),
         };
         provider
             .resolve(context, decoded)?
@@ -323,7 +323,7 @@ fn configured_source(
     source: &SourceConfig,
     source_index: Option<usize>,
 ) -> ConfiguredSource {
-    let path = (source.location()).path();
+    let path = source.location();
     let location = SourceLocationSpec::new(project.resolve_path(path));
     let display_name = path.display().to_string();
     ConfiguredSource {

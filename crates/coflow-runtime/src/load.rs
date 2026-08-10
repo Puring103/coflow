@@ -11,6 +11,7 @@ use coflow_data_model::{
 use coflow_project::{path_to_slash, Project};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::checks::impact::CheckImpact;
@@ -34,6 +35,12 @@ pub(crate) struct ProjectLoadOutput {
     pub(crate) source_data: SourceDataCache,
     pub(crate) check_state: CheckDiagnosticStore,
     pub(crate) statistics: ProjectExecutionStats,
+}
+
+#[derive(Debug, Clone)]
+pub struct DataSourceTextOverride {
+    pub normalized_path: PathBuf,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -140,6 +147,7 @@ pub(crate) fn load_project_data(
     registry: &ProviderRegistry,
     indexes: &mut SessionIndexBuilder,
     options: LoadProjectDataOptions,
+    source_overrides: &[DataSourceTextOverride],
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut statistics = ProjectExecutionStats::default();
     let mut state = LoadState {
@@ -149,7 +157,7 @@ pub(crate) fn load_project_data(
     };
     let mut diagnostics = DiagnosticSet::empty();
     let resolver = SourceResolver::new(project, registry);
-    for (source_index, source) in project.config.sources.iter().enumerate() {
+    for (source_index, source) in project.config().sources.iter().enumerate() {
         let configured = resolver.configured(source, Some(source_index));
         let resolved_sources = match resolver.resolve_for_load(source, &configured) {
             Ok(resolved_sources) => resolved_sources,
@@ -167,6 +175,7 @@ pub(crate) fn load_project_data(
             schema,
             &mut state,
             resolved_sources,
+            source_overrides,
         ));
     }
 
@@ -322,8 +331,9 @@ pub(crate) fn reload_project_data_from_cache(
         };
         match loader.load(
             SourceLoadContext {
-                project_root: &project.root_dir,
+                project_root: project.root_dir(),
                 schema,
+                source_text: None,
             },
             &batch.entry.source,
         ) {
@@ -366,8 +376,9 @@ fn preflight_cached_sources(
         };
         diagnostics.extend(loader.preflight(
             SourceLoadContext {
-                project_root: &project.root_dir,
+                project_root: project.root_dir(),
                 schema,
+                source_text: None,
             },
             &batch.entry.source,
         ));
@@ -387,13 +398,15 @@ fn load_resolved_sources(
     schema: &CftSchema,
     state: &mut LoadState<'_>,
     resolved_sources: Vec<ResolvedLoaderSource>,
+    source_overrides: &[DataSourceTextOverride],
 ) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
     for resolved in &resolved_sources {
         diagnostics.extend(resolved.provider.preflight(
             SourceLoadContext {
-                project_root: &project.root_dir,
+                project_root: project.root_dir(),
                 schema,
+                source_text: source_override_text(&resolved.source, source_overrides),
             },
             &resolved.source,
         ));
@@ -419,8 +432,9 @@ fn load_resolved_sources(
         state.indexes.sources.push(entry.clone());
         match loader.load(
             SourceLoadContext {
-                project_root: &project.root_dir,
+                project_root: project.root_dir(),
                 schema,
+                source_text: source_override_text(&spec, source_overrides),
             },
             &spec,
         ) {
@@ -445,6 +459,18 @@ fn load_resolved_sources(
         }
     }
     diagnostics
+}
+
+fn source_override_text<'a>(
+    source: &ResolvedSource,
+    overrides: &'a [DataSourceTextOverride],
+) -> Option<&'a str> {
+    let source_path = coflow_project::normalize_path(source.location.path());
+    overrides
+        .iter()
+        .rev()
+        .find(|source_override| source_override.normalized_path == source_path)
+        .map(|source_override| source_override.source.as_str())
 }
 
 fn load_resolved_dimension_source(
@@ -522,7 +548,7 @@ fn load_dimension_batch(
     let mut values = manager
         .load_dimension_source(
             TableContext {
-                project_root: &project.root_dir,
+                project_root: project.root_dir(),
             },
             &DimensionSourceLoadRequest {
                 source,
@@ -785,7 +811,7 @@ fn runtime_invariant(message: impl Into<String>) -> DiagnosticSet {
 fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
     let path = source.location.path();
     let relative = path
-        .strip_prefix(&project.root_dir)
+        .strip_prefix(project.root_dir())
         .unwrap_or(path.as_path());
     path_to_slash(relative)
 }

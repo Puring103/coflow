@@ -5,7 +5,7 @@ use crate::validation::{build_snapshot, ValidationInput};
 #[test]
 fn request_errors_are_reported_without_returning_from_handler() {
     let (_cleanup, project) = test_project("lsp-request-error", "type Item { key: string; }\n");
-    let schema_path = project.root_dir.join("schema");
+    let schema_path = project.root_dir().join("schema");
     std::fs::remove_dir_all(schema_path).expect("remove schema dir");
     let mut server = LspServer::new(project, Vec::new());
 
@@ -36,7 +36,7 @@ fn request_errors_are_reported_without_returning_from_handler() {
 fn notification_errors_are_logged_without_returning_from_handler() {
     let (_cleanup, project) =
         test_project("lsp-notification-error", "type Item { key: string; }\n");
-    let schema_path = project.root_dir.join("schema");
+    let schema_path = project.root_dir().join("schema");
     std::fs::remove_dir_all(schema_path).expect("remove schema dir");
     let mut server = LspServer::new(project, Vec::new());
 
@@ -163,7 +163,7 @@ fn handler_ignores_malformed_notifications_and_reports_unknown_requests() {
 fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
     let source = "type Item { key: string; }\n";
     let (_cleanup, project) = test_project("lsp-save-edges", source);
-    let schema_path = project.root_dir.join("schema").join("main.cft");
+    let schema_path = project.root_dir().join("schema").join("main.cft");
     let uri = path_to_file_uri(&schema_path);
     let mut server = LspServer::new(project, Vec::new());
 
@@ -217,7 +217,7 @@ fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
 #[test]
 fn validation_snapshot_rejects_stale_revision_commit() {
     let (_cleanup, project) = test_project("lsp-stale-snapshot", "type First {}\n");
-    let schema_path = project.root_dir.join("schema").join("main.cft");
+    let schema_path = project.root_dir().join("schema").join("main.cft");
     let uri = path_to_file_uri(&schema_path);
     let mut core = LspValidationCore::new(project);
 
@@ -250,7 +250,7 @@ fn validation_snapshot_rejects_stale_revision_commit() {
 #[test]
 fn failed_snapshot_invalidates_build_and_clears_old_uri() {
     let (_cleanup, project) = test_project("lsp-failed-snapshot", "type Item {}\n");
-    let schema_dir = project.root_dir.join("schema");
+    let schema_dir = project.root_dir().join("schema");
     let schema_uri = path_to_file_uri(&schema_dir.join("main.cft"));
     let mut core = LspValidationCore::new(project);
 
@@ -287,7 +287,7 @@ fn unreadable_cfd_source_invalidates_current_snapshot() {
         "type Item {}\n",
         "data/items.cfd",
     );
-    let source_path = project.root_dir.join("data").join("items.cfd");
+    let source_path = project.root_dir().join("data").join("items.cfd");
     std::fs::create_dir_all(source_path.parent().expect("data parent"))
         .expect("create data directory");
     std::fs::write(&source_path, "item: Item {}\n").expect("write CFD source");
@@ -316,7 +316,7 @@ fn unreadable_cfd_source_invalidates_current_snapshot() {
 #[test]
 fn stale_document_version_does_not_replace_newer_text() {
     let (_cleanup, project) = test_project("lsp-document-version", "type Item {}\n");
-    let uri = path_to_file_uri(&project.root_dir.join("schema").join("main.cft"));
+    let uri = path_to_file_uri(&project.root_dir().join("schema").join("main.cft"));
     let mut core = LspValidationCore::new(project);
 
     assert!(core
@@ -341,7 +341,7 @@ fn validation_worker_coalesces_pending_revisions_and_commits_only_latest() {
     use std::time::Duration;
 
     let (_cleanup, project) = test_project("lsp-validation-coalescing", "type First {}\n");
-    let uri = path_to_file_uri(&project.root_dir.join("schema").join("main.cft"));
+    let uri = path_to_file_uri(&project.root_dir().join("schema").join("main.cft"));
     let mut core = LspValidationCore::new(project);
     core.apply_open_document(uri.clone(), "type First {}\n".to_string(), Some(1))
         .expect("open first revision");
@@ -398,7 +398,7 @@ fn validation_worker_coalesces_pending_revisions_and_commits_only_latest() {
 #[test]
 fn queued_feature_request_is_cancelled_when_its_validation_revision_expires() {
     let (_cleanup, project) = test_project("lsp-stale-queued-request", "type First {}\n");
-    let uri = path_to_file_uri(&project.root_dir.join("schema").join("main.cft"));
+    let uri = path_to_file_uri(&project.root_dir().join("schema").join("main.cft"));
     let mut server = LspServer::new(project, Vec::new());
     server
         .core
@@ -436,7 +436,7 @@ fn queued_feature_request_is_cancelled_when_its_validation_revision_expires() {
 fn watched_closed_schema_cfd_and_config_files_refresh_the_snapshot() {
     let (_cleanup, project) =
         test_project_with_config("lsp-watched-files", "type Item {}\n", "data/items.cfd");
-    let root = project.root_dir.clone();
+    let root = project.root_dir().to_path_buf();
     let schema_path = root.join("schema").join("main.cft");
     let cfd_path = root.join("data").join("items.cfd");
     std::fs::create_dir_all(cfd_path.parent().expect("data parent")).expect("create data dir");
@@ -586,9 +586,9 @@ fn initialize_advertises_semantic_token_modifiers() {
 fn formatting_requests_handle_idempotent_unknown_and_dirty_documents() {
     let source = "type Item {\n  key: string;\n}\n";
     let (_cleanup, project) = test_project("lsp-formatting-edges", source);
-    let schema_path = project.root_dir.join("schema").join("main.cft");
+    let schema_path = project.root_dir().join("schema").join("main.cft");
     let schema_uri = path_to_file_uri(&schema_path);
-    let extra_uri = path_to_file_uri(&project.root_dir.join("outside.cft"));
+    let extra_uri = path_to_file_uri(&project.root_dir().join("outside.cft"));
     let mut server = LspServer::new(project, Vec::new());
 
     server

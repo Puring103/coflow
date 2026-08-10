@@ -34,6 +34,7 @@ pub use diagnostics::{
 };
 use lower::{lower_records, syntax_diagnostics, ParsedLoadedRecordDraft};
 use options::decode_cfd_source_options;
+use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -175,13 +176,16 @@ impl SourceProvider for CfdLoader {
         source: &ResolvedSource,
     ) -> Result<LoadedSource, DiagnosticSet> {
         let file = source.location.path();
-        let contents = fs::read_to_string(file).map_err(|err| {
-            DiagnosticSet::one(Diagnostic::error(
-                "CFD-READ",
-                "CFD",
-                format!("failed to read CFD source `{}`: {err}", file.display()),
-            ))
-        })?;
+        let contents = match ctx.source_text {
+            Some(source) => Cow::Borrowed(source),
+            None => Cow::Owned(fs::read_to_string(file).map_err(|err| {
+                DiagnosticSet::one(Diagnostic::error(
+                    "CFD-READ",
+                    "CFD",
+                    format!("failed to read CFD source `{}`: {err}", file.display()),
+                ))
+            })?),
+        };
         parse_cfd_input_records_with_spans(ctx.schema, &contents)
             .map(|records| {
                 let records = records

@@ -36,8 +36,8 @@ pub(super) fn build_session(
     let project = Project::open_schema_only(Some(yaml_path_in)).map_err(|err| {
         EditorError::project(prefixed_diagnostics("failed to open project", &err))
     })?;
-    let yaml_path = project.config_path.clone();
-    let project_root = project.root_dir.clone();
+    let yaml_path = project.config_path().to_path_buf();
+    let project_root = project.root_dir().to_path_buf();
     let runtime = Runtime::new(registry.clone());
     let mut schema_runtime = ProjectRuntime::new(project);
     let _ = schema_runtime.refresh();

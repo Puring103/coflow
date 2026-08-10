@@ -62,7 +62,7 @@ fn output_scope_diagnostics(
     let mut diagnostics = DiagnosticSet::empty();
 
     let project_root =
-        resolve_input_path(&project.root_dir, "project root", output, &mut diagnostics);
+        resolve_input_path(project.root_dir(), "project root", output, &mut diagnostics);
     if project_root.as_deref() == Some(output_dir) {
         diagnostics.push(artifact_diagnostic(
             &output.dir,
@@ -75,7 +75,7 @@ fn output_scope_diagnostics(
     }
 
     let config_path = resolve_input_path(
-        &project.config_path,
+        project.config_path(),
         "project config",
         output,
         &mut diagnostics,
@@ -90,7 +90,7 @@ fn output_scope_diagnostics(
                 "{} `{}` overlaps project config `{}`",
                 output.label,
                 output.dir.display(),
-                project.config_path.display()
+                project.config_path().display()
             ),
         ));
     }
@@ -180,7 +180,7 @@ fn overlapping_output_diagnostics(outputs: &[(&ArtifactOutputPlan, PathBuf)]) ->
 
 fn configured_schema_paths(project: &Project) -> Vec<PathBuf> {
     project
-        .config
+        .config()
         .schema
         .paths()
         .iter()
@@ -190,10 +190,10 @@ fn configured_schema_paths(project: &Project) -> Vec<PathBuf> {
 
 fn configured_source_paths(project: &Project) -> Vec<PathBuf> {
     project
-        .config
+        .config()
         .sources
         .iter()
-        .map(|source| source.location().path())
+        .map(coflow_project::SourceConfig::location)
         .flat_map(|path| source_overlap_paths(&project.resolve_path(path)))
         .collect()
 }

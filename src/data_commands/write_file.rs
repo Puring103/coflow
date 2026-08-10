@@ -1,10 +1,12 @@
 use super::{
-    open_read_session, DataWriteCheck, DataWriteFileOptions, DataWriteFileReport, DataWriteMode,
+    default_provider_registry, DataWriteCheck, DataWriteFileOptions, DataWriteFileReport,
+    DataWriteMode,
 };
 use crate::diagnostics::{cli_error, cli_file_error};
 use crate::write_file::{read_source, read_stdin_source, write_source};
 use coflow_api::{DiagnosticSet, FlatDiagnostic};
 use coflow_project::Project;
+use coflow_runtime::{DataSourceTextOverride, Runtime};
 use std::path::{Path, PathBuf};
 
 pub(super) fn run_write_file(
@@ -21,9 +23,13 @@ pub(super) fn run_write_file(
         write_source(&target.absolute_path, &source)?;
     }
 
-    let should_check = matches!(options.check, DataWriteCheck::Run) && !dry_run;
+    let should_check = matches!(options.check, DataWriteCheck::Run);
     let diagnostics = if should_check {
-        check_project_after_data_write(config_or_dir)?
+        let source_override = dry_run.then(|| DataSourceTextOverride {
+            normalized_path: coflow_project::normalize_path(&target.absolute_path),
+            source: source.clone(),
+        });
+        check_project_after_data_write(project, source_override.as_slice())?
     } else {
         Vec::new()
     };
@@ -80,7 +86,7 @@ fn resolve_data_write_target(
             format!("`--file {file}` is not covered by a configured local CFD data source"),
         ));
     }
-    let project_path = canonical_path.strip_prefix(&project.root_dir).map_or_else(
+    let project_path = canonical_path.strip_prefix(project.root_dir()).map_or_else(
         |_| coflow_project::path_to_slash(&canonical_path),
         coflow_project::path_to_slash,
     );
@@ -91,7 +97,7 @@ fn resolve_data_write_target(
 }
 
 fn is_within_configured_local_data_source(project: &Project, canonical_path: &Path) -> bool {
-    project.config.sources.iter().any(|source| {
+    project.config().sources.iter().any(|source| {
         if source
             .source_type
             .as_deref()
@@ -99,7 +105,7 @@ fn is_within_configured_local_data_source(project: &Project, canonical_path: &Pa
         {
             return false;
         }
-        let path = (source.location()).path();
+        let path = source.location();
         let source_path = project.resolve_path(path);
         let Ok(source_canonical) = std::fs::canonicalize(source_path) else {
             return false;
@@ -113,8 +119,11 @@ fn is_within_configured_local_data_source(project: &Project, canonical_path: &Pa
 }
 
 fn check_project_after_data_write(
-    config_or_dir: Option<&Path>,
+    project: Project,
+    source_overrides: &[DataSourceTextOverride],
 ) -> Result<Vec<FlatDiagnostic>, DiagnosticSet> {
-    let (session, _registry) = open_read_session(config_or_dir)?;
+    let registry = default_provider_registry()?;
+    let runtime = Runtime::new(registry);
+    let session = runtime.open_read_only_session_with_source_overrides(project, source_overrides)?;
     Ok(session.queries().diagnostics().flat_diagnostics())
 }

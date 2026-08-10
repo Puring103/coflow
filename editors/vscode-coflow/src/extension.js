@@ -3,6 +3,10 @@ const cp = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
+const MAX_LSP_CONTENT_LENGTH = 16 * 1024 * 1024;
+const MAX_LSP_HEADER_LENGTH = 8 * 1024;
+const MAX_LSP_STDERR_LENGTH = 64 * 1024;
+
 const CFT_SEMANTIC_TOKENS_LEGEND = new vscode.SemanticTokensLegend(
   [
     "namespace",
@@ -480,7 +484,11 @@ class CftLspSession {
     this.child.stdout.on("data", (chunk) => this.handleStdout(chunk));
     this.child.stderr.setEncoding("utf8");
     this.child.stderr.on("data", (chunk) => {
-      this.lastStderr = `${this.lastStderr || ""}${chunk}`;
+      this.lastStderr = appendBoundedText(
+        this.lastStderr,
+        chunk,
+        MAX_LSP_STDERR_LENGTH
+      );
     });
     this.child.stdin.on("error", (error) => this.markFailed(error.message));
     this.child.on("error", (error) => this.markFailed(error.message));
@@ -590,7 +598,7 @@ class CftLspSession {
   }
 
   handleStdout(chunk) {
-    if (this.disposed) {
+    if (this.disposed || this.failed) {
       return;
     }
     this.buffer = Buffer.concat([this.buffer, Buffer.from(chunk)]);
@@ -598,6 +606,17 @@ class CftLspSession {
     while (true) {
       const headerEnd = this.buffer.indexOf("\r\n\r\n");
       if (headerEnd < 0) {
+        if (this.buffer.length > MAX_LSP_HEADER_LENGTH) {
+          this.markFailed(
+            `language server LSP header exceeds ${MAX_LSP_HEADER_LENGTH} bytes`
+          );
+        }
+        return;
+      }
+      if (headerEnd > MAX_LSP_HEADER_LENGTH) {
+        this.markFailed(
+          `language server LSP header exceeds ${MAX_LSP_HEADER_LENGTH} bytes`
+        );
         return;
       }
 
@@ -609,6 +628,12 @@ class CftLspSession {
       }
 
       const length = Number(match[1]);
+      if (!Number.isSafeInteger(length) || length > MAX_LSP_CONTENT_LENGTH) {
+        this.markFailed(
+          `language server LSP Content-Length exceeds ${MAX_LSP_CONTENT_LENGTH} bytes`
+        );
+        return;
+      }
       const bodyStart = headerEnd + 4;
       const bodyEnd = bodyStart + length;
       if (this.buffer.length < bodyEnd) {
@@ -724,6 +749,7 @@ class CftLspSession {
       return;
     }
     this.failed = true;
+    this.buffer = Buffer.alloc(0);
     this.failureMessage = message || "language server failed";
     this.rejectPendingRequests(this.failureMessage);
     for (const uriString of this.openedUris) {
@@ -1073,6 +1099,15 @@ function formatFailureMessage(message) {
   return String(message || "language server failed").trim() || "language server failed";
 }
 
+function appendBoundedText(current, chunk, limit) {
+  const next = String(chunk || "");
+  if (next.length >= limit) {
+    return next.slice(-limit);
+  }
+  const previous = String(current || "");
+  return `${previous.slice(-(limit - next.length))}${next}`;
+}
+
 function normalizePath(filePath) {
   return path.resolve(filePath);
 }
@@ -1086,6 +1121,10 @@ module.exports = {
     CftDocumentSymbolProvider,
     CftHoverProvider,
     CftLspSession,
+    appendBoundedText,
+    maxLspContentLength: MAX_LSP_CONTENT_LENGTH,
+    maxLspHeaderLength: MAX_LSP_HEADER_LENGTH,
+    maxLspStderrLength: MAX_LSP_STDERR_LENGTH,
     semanticTokensLegend: CFT_SEMANTIC_TOKENS_LEGEND,
     lspDefinitionLocations,
     isPathWithin,

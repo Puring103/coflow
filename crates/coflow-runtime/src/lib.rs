@@ -54,7 +54,7 @@ pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef
 // engine data to a wire format so they don't diverge in path formatting.
 pub use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 pub use coflow_data_model::{CfdPathSegment, RecordCoordinate};
-pub use load::format_cfd_path as format_field_path;
+pub use load::{format_cfd_path as format_field_path, DataSourceTextOverride};
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,

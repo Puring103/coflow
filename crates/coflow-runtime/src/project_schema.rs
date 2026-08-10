@@ -84,7 +84,7 @@ fn collect_project_schema(
         .collect();
     let dimensions = CftDimensionInputs::try_new(
         project
-            .config
+            .config()
             .dimensions
             .iter()
             .map(|(name, config)| (name.clone(), config.variants.clone())),

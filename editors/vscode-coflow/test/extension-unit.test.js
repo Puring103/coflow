@@ -192,6 +192,33 @@ async function main() {
   ]);
   assert.notStrictEqual(immediate, "timed-out");
 
+  const oversizedHeaderSession = lspBufferTestSession();
+  oversizedHeaderSession.handleStdout(
+    Buffer.alloc(extension.__test.maxLspHeaderLength + 1, "x")
+  );
+  assert.strictEqual(oversizedHeaderSession.failed, true);
+  assert.strictEqual(oversizedHeaderSession.buffer.length, 0);
+  assert.match(oversizedHeaderSession.failureMessage, /header exceeds/);
+
+  const oversizedBodySession = lspBufferTestSession();
+  oversizedBodySession.handleStdout(
+    Buffer.from(
+      `Content-Length: ${extension.__test.maxLspContentLength + 1}\r\n\r\n`,
+      "utf8"
+    )
+  );
+  assert.strictEqual(oversizedBodySession.failed, true);
+  assert.strictEqual(oversizedBodySession.buffer.length, 0);
+  assert.match(oversizedBodySession.failureMessage, /Content-Length exceeds/);
+
+  const stderrTail = extension.__test.appendBoundedText(
+    "prefix",
+    "x".repeat(extension.__test.maxLspStderrLength + 10),
+    extension.__test.maxLspStderrLength
+  );
+  assert.strictEqual(stderrTail.length, extension.__test.maxLspStderrLength);
+  assert(!stderrTail.includes("prefix"));
+
   const watchedNotifications = [];
   const watchedSession = Object.create(extension.__test.CftLspSession.prototype);
   Object.assign(watchedSession, {
@@ -381,6 +408,22 @@ async function main() {
     completionDocument.positionAt(completionSource.indexOf("Item"))
   );
   assert.strictEqual(noDefinitionFallback, undefined);
+}
+
+function lspBufferTestSession() {
+  const session = Object.create(extension.__test.CftLspSession.prototype);
+  Object.assign(session, {
+    buffer: Buffer.alloc(0),
+    failed: false,
+    disposed: false,
+    failureMessage: undefined,
+    markFailed(message) {
+      this.failed = true;
+      this.buffer = Buffer.alloc(0);
+      this.failureMessage = message;
+    }
+  });
+  return session;
 }
 
 function textDocument(filePath, text) {

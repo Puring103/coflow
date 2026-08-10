@@ -124,7 +124,7 @@ pub fn build_project(
     }
     let mut diagnostics = DiagnosticSet::empty();
     let mut targets = Vec::new();
-    for (index, target) in project.config.outputs.targets().iter().enumerate() {
+    for (index, target) in project.config().outputs.targets().iter().enumerate() {
         let exporter = registry.exporter(&target.data.output_type);
         if exporter.is_none() {
             diagnostics.push(output_target_diagnostic(
@@ -230,8 +230,8 @@ pub fn build_project(
         Ok(published) => published,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    let mut reports = Vec::with_capacity(project.config.outputs.targets().len());
-    for (index, target) in project.config.outputs.targets().iter().enumerate() {
+    let mut reports = Vec::with_capacity(project.config().outputs.targets().len());
+    for (index, target) in project.config().outputs.targets().iter().enumerate() {
         let data = export_report(published.output(&data_output_slot(index))?);
         let code = target
             .code
@@ -263,15 +263,15 @@ pub fn export_project_data(
 ) -> Result<CommandOutcome<ExportProjectReport>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.data_diagnostic_set());
-    if project.config.outputs.targets().is_empty() {
+    if project.config().outputs.targets().is_empty() {
         diagnostics.push(project_diagnostic(
-            &project.config_path,
+            project.config_path(),
             "coflow.yaml missing outputs.data",
             ["outputs", "data"],
         ));
     }
     let mut targets = Vec::new();
-    for (index, target) in project.config.outputs.targets().iter().enumerate() {
+    for (index, target) in project.config().outputs.targets().iter().enumerate() {
         match registry.exporter(&target.data.output_type) {
             Some(exporter) => targets.push((index, target, exporter)),
             None => diagnostics.push(output_target_diagnostic(
@@ -308,7 +308,7 @@ pub fn export_project_data(
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
     let reports = project
-        .config
+        .config()
         .outputs
         .targets()
         .iter()
@@ -339,7 +339,7 @@ pub fn generate_project_code(
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.codegen_diagnostic_set());
     let mut targets = Vec::new();
-    for (index, target) in project.config.outputs.targets().iter().enumerate() {
+    for (index, target) in project.config().outputs.targets().iter().enumerate() {
         let Some(output) = target.code.as_ref() else {
             continue;
         };
@@ -396,7 +396,7 @@ pub fn generate_project_code(
     }
     if targets.is_empty() && diagnostics.is_empty() {
         diagnostics.push(project_diagnostic(
-            &project.config_path,
+            project.config_path(),
             "coflow.yaml has no output target with code configuration",
             ["outputs", "code"],
         ));
@@ -451,9 +451,9 @@ pub fn generate_project_code(
 fn build_config_diagnostics(project: &Project) -> DiagnosticSet {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.data_diagnostic_set());
-    if project.config.outputs.targets().is_empty() {
+    if project.config().outputs.targets().is_empty() {
         diagnostics.push(project_diagnostic(
-            &project.config_path,
+            project.config_path(),
             "coflow.yaml missing outputs.data",
             ["outputs", "data"],
         ));
@@ -468,12 +468,12 @@ fn output_target_diagnostic(
     message: impl Into<String>,
 ) -> Diagnostic {
     let mut key_path = vec!["outputs".to_string()];
-    if !project.config.outputs.is_object_shape() {
+    if !project.config().outputs.is_object_shape() {
         key_path.push(target_index.to_string());
     }
     key_path.push(component.to_string());
     key_path.push("type".to_string());
-    project_diagnostic(&project.config_path, message, key_path)
+    project_diagnostic(project.config_path(), message, key_path)
 }
 
 fn export_report(output: &crate::artifacts::ReleasedOutput) -> ExportReport {

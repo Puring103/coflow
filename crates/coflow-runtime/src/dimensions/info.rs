@@ -48,12 +48,12 @@ pub(crate) fn dimensions_for_project(
     }
 
     let mut out = Vec::new();
-    for (name, config) in &project.config.dimensions {
+    for (name, config) in &project.config().dimensions {
         let display_name = resolved_display_name(name, config);
         let out_dir = config.out_dir.as_ref().map(|p: &PathBuf| {
             let absolute = project.resolve_path(p);
             let rel = absolute
-                .strip_prefix(&project.root_dir)
+                .strip_prefix(project.root_dir())
                 .unwrap_or(&absolute);
             rel.to_string_lossy().replace('\\', "/")
         });

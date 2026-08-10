@@ -600,6 +600,7 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
             SourceLoadContext {
                 project_root: &root,
                 schema: schema,
+                source_text: None,
             },
             &ResolvedSource {
                 provider_id: "cfd".to_string(),

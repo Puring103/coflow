@@ -274,7 +274,7 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let project_diagnostics = project.schema_diagnostic_set();
     if !project_diagnostics.is_empty() {
-        write_project_diagnostics(project_diagnostics, args.json, &project.root_dir)
+        write_project_diagnostics(project_diagnostics, args.json, project.root_dir())
             .map_err(output_error)?;
         return Ok(false);
     }
@@ -286,7 +286,7 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
         let absolute = if path.is_absolute() {
             path.to_path_buf()
         } else {
-            project.root_dir.join(path)
+            project.root_dir().join(path)
         };
         vec![SchemaTextOverride {
             requested_module: Some(path_to_slash(path)),
@@ -308,10 +308,10 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
     if success && !args.json {
         println!(
             "CFT check passed: {}",
-            project_path(&project, &project.config_path)
+            project_path(&project, project.config_path())
         );
     } else {
-        write_project_diagnostics(diagnostics, args.json, &project.root_dir)
+        write_project_diagnostics(diagnostics, args.json, project.root_dir())
             .map_err(output_error)?;
     }
     Ok(success)
@@ -324,8 +324,8 @@ fn run_lsp(args: &LspArgs) -> Result<bool, DiagnosticSet> {
 
 fn project_check(args: &ProjectCheckArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let root_dir = project.root_dir.clone();
-    let config_path = project.config_path.clone();
+    let root_dir = project.root_dir().to_path_buf();
+    let config_path = project.config_path().to_path_buf();
     let registry = default_provider_registry()?;
     match check_project(&project, &registry)? {
         CommandOutcome::Success(_) => {
@@ -348,8 +348,8 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, DiagnosticSet> {
 
 fn project_build(args: &BuildArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let root_dir = project.root_dir.clone();
-    let config_path = project.config_path.clone();
+    let root_dir = project.root_dir().to_path_buf();
+    let config_path = project.config_path().to_path_buf();
     let registry = default_provider_registry()?;
     match build_project(&project, &registry)? {
         CommandOutcome::Success(report) => {
@@ -387,14 +387,14 @@ fn project_clean(args: &CleanArgs) -> Result<bool, DiagnosticSet> {
         "Cleaned {} historical generations and {} staging entries from {}",
         report.generations_removed,
         report.staging_removed,
-        project_path(&project, &project.root_dir.join(".coflow"))
+        project_path(&project, &project.root_dir().join(".coflow"))
     );
     Ok(true)
 }
 
 fn export_data(args: &ExportArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let root_dir = project.root_dir.clone();
+    let root_dir = project.root_dir().to_path_buf();
     let registry = default_provider_registry()?;
     match export_project_data(&project, &registry)? {
         CommandOutcome::Success(report) => {
@@ -416,7 +416,7 @@ fn export_data(args: &ExportArgs) -> Result<bool, DiagnosticSet> {
 
 fn generate_code(args: &CodegenArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let root_dir = project.root_dir.clone();
+    let root_dir = project.root_dir().to_path_buf();
     let registry = default_provider_registry()?;
     match generate_project_code(&project, &registry)? {
         CommandOutcome::Success(report) => {

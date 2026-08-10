@@ -38,7 +38,7 @@ pub(crate) fn preflight_mutation_op(
     };
     let diagnostics = plan.writer.preflight(
         WriteContext {
-            project_root: &session.project.root_dir,
+            project_root: session.project.root_dir(),
             schema,
             model: Some(&session.model),
         },
@@ -205,7 +205,7 @@ pub(crate) fn stage_field_mutation_batch(
         });
     }
     let ctx = WriteContext {
-        project_root: &session.project.root_dir,
+        project_root: session.project.root_dir(),
         schema: session.schema(),
         model: Some(&session.model),
     };
@@ -261,7 +261,7 @@ fn stage_write_field(
         source: &plan.source,
     };
     let ctx = WriteContext {
-        project_root: &session.project.root_dir,
+        project_root: session.project.root_dir(),
         schema,
         model: Some(&session.model),
     };
@@ -289,7 +289,7 @@ fn stage_write_dimension_value(
         .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
     let result = plan.manager.write_dimension_value(
         coflow_api::TableContext {
-            project_root: &session.project.root_dir,
+            project_root: session.project.root_dir(),
         },
         &WriteDimensionValueRequest {
             source: &plan.source,
@@ -358,7 +358,7 @@ fn stage_rename_record_key(
     let plan: &RenameWritePlan = plan;
     let schema = session.schema();
     let ctx = WriteContext {
-        project_root: &session.project.root_dir,
+        project_root: session.project.root_dir(),
         schema,
         model: Some(&session.model),
     };
@@ -373,11 +373,11 @@ fn stage_rename_record_key(
     let mut diagnostics = plan.writer.rename_record(ctx, &target_request)?.diagnostics;
     let mut affected_files = BTreeSet::from([plan.display_path.clone()]);
     for action in &plan.reference_actions {
-        diagnostics.extend(action.execute(&session.project.root_dir, schema, &session.model)?);
+        diagnostics.extend(action.execute(session.project.root_dir(), schema, &session.model)?);
         affected_files.insert(action.display_path().to_string());
     }
     for action in &plan.rewrite_actions {
-        diagnostics.extend(action.execute(&session.project.root_dir, schema, &session.model)?);
+        diagnostics.extend(action.execute(session.project.root_dir(), schema, &session.model)?);
         affected_files.insert(action.display_path().to_string());
     }
     let old_key = plan.old_coordinate.key.clone();
@@ -427,7 +427,7 @@ fn stage_insert_record(
         before: None,
     };
     let ctx = WriteContext {
-        project_root: &session.project.root_dir,
+        project_root: session.project.root_dir(),
         schema,
         model: Some(&session.model),
     };
@@ -458,7 +458,7 @@ fn stage_delete_record(
         source: &plan.source,
     };
     let ctx = WriteContext {
-        project_root: &session.project.root_dir,
+        project_root: session.project.root_dir(),
         schema,
         model: Some(&session.model),
     };
@@ -506,7 +506,7 @@ fn stage_reorder_records(
         ),
     };
     let ctx = WriteContext {
-        project_root: &session.project.root_dir,
+        project_root: session.project.root_dir(),
         schema: session.schema(),
         model: Some(&session.model),
     };
@@ -534,7 +534,7 @@ fn stage_transfer_record(
 ) -> Result<WriteOutcome, DiagnosticSet> {
     let schema = session.schema();
     let ctx = WriteContext {
-        project_root: &session.project.root_dir,
+        project_root: session.project.root_dir(),
         schema,
         model: Some(&session.model),
     };
@@ -604,7 +604,7 @@ fn rewrite_dimension_records(
             .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
         let result = action.manager.rewrite_dimension_record(
             coflow_api::TableContext {
-                project_root: &session.project.root_dir,
+                project_root: session.project.root_dir(),
             },
             &RewriteDimensionRecordRequest {
                 source: &action.source,

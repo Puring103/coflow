@@ -148,7 +148,7 @@ fn resolve_schema_write_target(
     };
     let project_path = schema_file
         .canonical_path
-        .strip_prefix(&project.root_dir)
+        .strip_prefix(project.root_dir())
         .map_or_else(
             |_| path_to_slash(&schema_file.canonical_path),
             path_to_slash,

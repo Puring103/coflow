@@ -457,7 +457,7 @@ fn provider_option_diagnostics_keep_the_project_key_path() {
 
     let config_path = root.join("coflow.yaml");
     let project = Project::open_schema_only(Some(&config_path)).expect("open project");
-    let canonical_config_path = project.config_path.clone();
+    let canonical_config_path = project.config_path().to_path_buf();
     let session = Runtime::new(registry())
         .build_project_session(project)
         .expect("project diagnostics should be retained in a session");

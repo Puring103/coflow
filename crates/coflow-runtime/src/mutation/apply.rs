@@ -64,7 +64,7 @@ fn execute_generation_mutation(
 ) -> MutationReport {
     let schema = session.schema();
     let ctx = WriteContext {
-        project_root: &session.project.root_dir,
+        project_root: session.project.root_dir(),
         schema,
         model: Some(&session.model),
     };
@@ -146,7 +146,7 @@ fn execute_generation_mutation(
         .changed_dimension_paths
         .iter()
         .map(|path| {
-            path.strip_prefix(&session.project.root_dir).map_or_else(
+            path.strip_prefix(session.project.root_dir()).map_or_else(
                 |_| path.display().to_string(),
                 coflow_project::path_to_slash,
             )

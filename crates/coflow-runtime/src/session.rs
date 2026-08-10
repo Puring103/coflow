@@ -272,7 +272,7 @@ impl ProjectSession {
         let ext_whitelist: BTreeSet<String> = options.extra_extensions.into_iter().collect();
         let mut skip: BTreeSet<String> = BTreeSet::new();
         for group in &options.dimension_groups {
-            if let Ok(rel) = group.dir.strip_prefix(&self.project.root_dir) {
+            if let Ok(rel) = group.dir.strip_prefix(self.project.root_dir()) {
                 let slash = path_to_slash(rel);
                 if !slash.is_empty() {
                     skip.insert(slash);
@@ -280,14 +280,14 @@ impl ProjectSession {
             }
         }
         let mut tree = files::build_file_tree(
-            &self.project.root_dir,
+            self.project.root_dir(),
             &options.in_sources,
             &ext_whitelist,
             &skip,
         );
         for group in options.dimension_groups.iter().rev() {
             if let Some(node) = files::build_dimension_subtree(
-                &self.project.root_dir,
+                self.project.root_dir(),
                 group.display_name.clone(),
                 &group.dir,
                 &options.in_sources,
